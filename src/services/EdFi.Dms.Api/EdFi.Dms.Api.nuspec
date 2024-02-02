@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<package >
+  <metadata>
+    <id>EdFi.Dms.Api</id>
+    <version>1.0.0.0</version>
+    <title>Ed-Fi Dms API</title>
+    <authors>Ed-Fi Alliance</authors>
+    <projectUrl>https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service</projectUrl>
+    <copyright>Copyright @ $year$ Ed-Fi Alliance, LLC and Contributors</copyright>
+    <summary>Ed-Fi Dms API</summary>
+    <description>Ed-Fi Dms API</description>
+    <license type="expression">Apache-2.0</license>
+  </metadata>
+  <files>
+       <file src="**" />
+  </files>
+</package>
