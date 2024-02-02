@@ -1,0 +1,75 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+name: On Pull Request
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      # TODO: restore this with AA-1601, except run in a PS-specific
+      # workflow, so that the C# build and CodeQL do not run
+      # unnecessarily.
+      # - "**/*.ps1"
+      # - "**/*.psm1"
+      - "**/*.cs"
+      - "**/*.csproj"
+      - ".github/**/*.yml"
+  workflow_dispatch:
+
+jobs:
+  # TODO: restore this with AA-1601
+  # run-ps-lint:
+  #   name: PowerShell Linter
+  #   uses: Ed-Fi-Alliance-OSS/Ed-Fi-Actions/.github/workflows/powershell-analyzer.yml@main
+  scan-actions-bidi:
+    name: Scan Actions, scan all files for BIDI Trojan Attacks
+    uses: ed-fi-alliance-oss/ed-fi-actions/.github/workflows/repository-scanner.yml@main
+    with:
+      config-file-path: ./.github/workflows/bidi-config.json
+
+  run-cs-tests:
+    name: Run C# Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
+
+      - name: Build
+        run: ./build.ps1 Build -Configuration Debug
+
+      - name: Run Unit Tests
+        if: success()
+        run: ./build.ps1 UnitTest -Configuration Debug
+
+      - name: Upload Test Results
+        uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+        with:
+          name: csharp-tests
+          path: "**/*.trx"
+          retention-days: 5
+
+      - name: Dependency Review ("Dependabot on PR")
+        uses: actions/dependency-review-action@c090f4e553673e6e505ea70d6a95362ee12adb94 # v3.0.3
+
+      - name: Initialize CodeQL
+        if: success()
+        uses: github/codeql-action/init@896079047b4bb059ba6f150a5d87d47dde99e6e5 # codeql-bundle-20221211
+        with:
+          languages: csharp
+
+      # Must build the software after initialization of CodeQL; something about
+      # CodeQL initialization causes the resulting build to fail unit tests.
+      # Therefore rebuilding here, even though also built above.
+      - name: Build
+        run: ./build.ps1 Build -Configuration Debug
+
+      - name: Perform CodeQL Analysis
+        if: success()
+        uses: github/codeql-action/analyze@896079047b4bb059ba6f150a5d87d47dde99e6e5 # codeql-bundle-20221211
