@@ -29,7 +29,7 @@ jobs:
       dms-api-version: ${{ steps.versions.outputs.dms-api }}
 
     steps:
-      - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
           fetch-depth: 0
 
@@ -79,7 +79,7 @@ jobs:
 
       - name: Upload Packages as Artifacts
         if: success()
-        uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         with:
           name: "${{ env.PACKAGE_NAME }}-NuGet"
           path: ./*.nupkg
@@ -96,7 +96,7 @@ jobs:
     outputs:
       sbom-hash-code: ${{ steps.sbom-hash-code.outputs.sbom-hash-code }}
     steps:
-      - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
 
       - name: Get Artifacts
         uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a #v3.0.2
@@ -130,7 +130,7 @@ jobs:
 
       - name: Upload SBOM
         if: success()
-        uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         with:
           name: ${{ env.PACKAGE_NAME }}-SBOM
           path: ./manifest
@@ -214,7 +214,7 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@ac593985615ec2ede58e132d2e21d2b1cbd6127c # v3.3.0
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
 
       - name: Get Artifact
         uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a #v3.0.2
