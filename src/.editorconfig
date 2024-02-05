@@ -19,11 +19,6 @@ charset = utf-8
 trim_trailing_whitespace = true
 max_line_length = 110
 
-[**/**.min.js]
-# Minified JavaScript files shouldn't be changed
-indent_style = ignore
-insert_final_newline = ignore
-
 [**/*.md]
 trim_trailing_whitespace = false
 
