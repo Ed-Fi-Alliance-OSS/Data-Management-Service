@@ -14,7 +14,7 @@ env:
   ARTIFACTS_FEED_URL: ${{ secrets.AZURE_ARTIFACTS_FEED_URL }}
   VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "${{ secrets.AZURE_ARTIFACTS_FEED_URL }}","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
   MANIFEST_FILE: "_manifest/spdx_2.2/manifest.spdx.json"
-  PACKAGE_NAME: "EdFi.Dms.Api"
+  PACKAGE_NAME: "EdFi.DataManagementService"
   REF: ${{ github.ref_name }}
 
 jobs:
@@ -113,7 +113,7 @@ jobs:
           Invoke-RestMethod -Uri $url -OutFile $out
           chmod +x $out
 
-          Get-ChildItem -Include "EdFi.Suite3.ODS.$packageName.*.nupkg" -Recurse | ForEach-Object { $_.FullName } > buildfilelist.txt
+          Get-ChildItem -Include "$packageName.*.nupkg" -Recurse | ForEach-Object { $_.FullName } > buildfilelist.txt
           New-Item -Path manifest -Type Directory
 
           $version = "${{ needs.pack.outputs.dms-api-version }}"
@@ -121,8 +121,8 @@ jobs:
           &$out generate `
               -b ./ `
               -bl ./buildfilelist.txt `
-              -bc "./Application/EdFi.Ods.$packageName" `
-              -pn "EdFi.Suite3.ODS.$packageName" `
+              -bc "./src/services/$packageName.Api" `
+              -pn "$packageName" `
               -pv $version `
               -nsb https://ed-fi.org `
               -m manifest `
@@ -198,6 +198,7 @@ jobs:
       actions: read
       id-token: write
       contents: write
+    # This action will break if commit hash used, instead of the version tag
     uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v1.5.0
     with:
       base64-subjects: ${{ needs.pack.outputs.hash-code }}
