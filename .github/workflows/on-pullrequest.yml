@@ -10,21 +10,18 @@ on:
     branches:
       - main
     paths:
-      # TODO: restore this with AA-1601, except run in a PS-specific
-      # workflow, so that the C# build and CodeQL do not run
-      # unnecessarily.
-      # - "**/*.ps1"
-      # - "**/*.psm1"
+      - "**/*.ps1"
+      - "**/*.psm1"
       - "**/*.cs"
       - "**/*.csproj"
       - ".github/**/*.yml"
   workflow_dispatch:
 
 jobs:
-  # TODO: restore this with AA-1601
-  # run-ps-lint:
-  #   name: PowerShell Linter
-  #   uses: Ed-Fi-Alliance-OSS/Ed-Fi-Actions/.github/workflows/powershell-analyzer.yml@main
+  run-ps-lint:
+    name: PowerShell Linter
+    uses: Ed-Fi-Alliance-OSS/Ed-Fi-Actions/.github/workflows/powershell-analyzer.yml@main
+
   scan-actions-bidi:
     name: Scan Actions, scan all files for BIDI Trojan Attacks
     uses: ed-fi-alliance-oss/ed-fi-actions/.github/workflows/repository-scanner.yml@main
