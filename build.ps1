@@ -77,7 +77,8 @@ $Env:MSBUILDDISABLENODEREUSE = "1"
 
 $solutionRoot = "$PSScriptRoot/src"
 $servicesRoot = "$solutionRoot/services"
-$projectName =  "EdFi.Dms.Api"
+$projectName =  "EdFi.DataManagementService.Api"
+$packageName = "EdFi.DataManagementService"
 $testResults = "$PSScriptRoot/TestResults"
 
 $maintainers = "Ed-Fi Alliance, LLC and contributors"
@@ -105,7 +106,7 @@ function SetAdminApiAssemblyInfo {
         <InformationalVersion>$assembly_version</InformationalVersion>
         <TreatWarningsAsErrors>True</TreatWarningsAsErrors>
         <ErrorLog>results.sarif,version=2.1</ErrorLog>
-        <Product>Ed-Fi Dms API</Product>
+        <Product>Ed-Fi Data Management Service</Product>
         <Authors>$maintainers</Authors>
         <Company>$maintainers</Company>
         <Copyright>Copyright © ${(Get-Date).year)} Ed-Fi Alliance</Copyright>
@@ -229,7 +230,7 @@ function PushPackage {
     }
 
     if (-not $PackageFile) {
-        $PackageFile = "$PSScriptRoot/$projectName.$APIVersion.nupkg"
+        $PackageFile = "$PSScriptRoot/$packageName.$APIVersion.nupkg"
     }
 
     if($DryRun){
