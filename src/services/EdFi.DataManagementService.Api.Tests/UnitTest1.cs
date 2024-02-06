@@ -5,7 +5,7 @@
 
 using NUnit.Framework;
 
-namespace EdFi.DataManagementService.Tests
+namespace EdFi.DataManagementService.Api.Tests
 {
     [TestFixture]
     public class UnitTest1
