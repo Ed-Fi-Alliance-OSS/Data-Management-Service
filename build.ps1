@@ -73,8 +73,6 @@ param(
     $IsLocalBuild
 )
 
-$Env:MSBUILDDISABLENODEREUSE = "1"
-
 $solutionRoot = "$PSScriptRoot/src"
 $servicesRoot = "$solutionRoot/services"
 $projectName =  "EdFi.DataManagementService.Api"
