@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+name: On Merge to Main or Releasable Tag
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*.*.*"
+
+env:
+  API_URL: https://api.github.com/repos/${{ github.repository }}
+  TOKEN: ${{ secrets.EDFI_BUILD_AGENT_PAT }}
+
+jobs:
+  create-pre-releases:
+    name: Create Pre-Releases
+    # Was not successful filtering out alpha in on.push.tags, so try filtering at the job level
+    if: "! contains(github.ref_name, 'alpha')"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          # MinVer needs to have more than just the current commit, so tell
+          # GitHub to get many more. Setting to 0 forces retrieval of _all_
+          # commits. Which might be excessive, but we don't know how many
+          # there will be between different major.minor releases.
+          fetch-depth: 0
+
+      - name: Set Version Numbers
+        id: versions
+        run: |
+          $apiPrefix = "v"
+
+          # Install the MinVer CLI tool
+          &dotnet tool install --global minver-cli
+
+          "dms-api=$($apiPrefix)$(minver -t $apiPrefix)" >> $env:GITHUB_OUTPUT
+
+      - name: Create Dms API Pre-Release
+        run: |
+          $version = "${{ steps.versions.outputs.dms-api }}"
+          $tag = $version -replace "v","Pre-Release-v"
+
+          $body = @{
+            tag_name = "$tag"
+            target_commitish = "main"
+            name = $version
+            body = ""
+            draft = $false
+            prerelease = $true
+            generate_release_notes = $false
+          } | ConvertTo-Json
+
+          $headers = @{
+            Accept = "application/vnd.github+json"
+            Authorization = "Bearer ${{ env.TOKEN }}"
+          }
+
+          Invoke-RestMethod -Method POST -Uri ${{ env.API_URL }}/releases -Body $body -Headers $headers
