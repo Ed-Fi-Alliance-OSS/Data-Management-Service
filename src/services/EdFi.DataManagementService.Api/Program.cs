@@ -6,6 +6,10 @@
 var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
 
+app.UsePathBase("/api");
+app.UseRouting();
+
 app.MapGet("/", () => "Data Management Service");
+app.MapGet("/ping", () => Results.Ok(new { StatusCode = 200, CurrentDateTime = DateTime.Now.ToString() }));
 
 app.Run();
