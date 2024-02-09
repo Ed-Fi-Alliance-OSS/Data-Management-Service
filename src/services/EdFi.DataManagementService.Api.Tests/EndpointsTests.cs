@@ -19,7 +19,7 @@ namespace EdFi.DataManagementService.Api.Tests
             // Arrange
             await using var factory = new WebApplicationFactory<Program>();
             using var client = factory.CreateClient();
-            var expectedDate = DateTime.Now.ToShortDateString();
+            var expectedDate = DateTime.Now.ToString("yyyy-MM-dd");
 
             // Act
             var response = await client.GetAsync("/api/ping");

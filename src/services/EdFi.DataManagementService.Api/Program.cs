@@ -10,8 +10,12 @@ app.UsePathBase("/api");
 app.UseRouting();
 
 app.MapGet("/", () => "Data Management Service");
-app.MapGet("/ping", () => Results.Ok(new { CurrentDateTime = DateTime.Now.ToString() }));
+app.MapGet("/ping", () => Results.Ok(DateTime.Now));
 
 app.Run();
 
-public partial class Program { }
+public partial class Program
+{
+    // Compliant solution for Sonar lint S1118
+    private Program() { }
+}
