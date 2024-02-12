@@ -16,8 +16,8 @@ app.UseRouting();
 app.MapGet("/", () => "Data Management Service");
 app.MapGet("/ping", () => Results.Ok(DateTime.Now));
 
-var appSettingsService = app.Services.GetRequiredService<LogAppSettingsService>();
-appSettingsService.Log();
+var logAppSettingsService = app.Services.GetRequiredService<LogAppSettingsService>();
+logAppSettingsService.LogToConsole();
 
 app.Run();
 

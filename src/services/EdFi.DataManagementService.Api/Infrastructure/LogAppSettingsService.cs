@@ -5,27 +5,23 @@
 
 using EdFi.DataManagementService.Api.Configuration;
 using Microsoft.Extensions.Options;
+using System.Text.Json;
 
 namespace EdFi.DataManagementService.Api.Infrastructure
 {
     // Example class for IOptions 
     public class LogAppSettingsService()
     {
-        private readonly ILogger<LogAppSettingsService>? _logger;
-        private readonly IOptions<AppSettings>? _options;
+        private readonly ILogger<LogAppSettingsService> _logger = null!;
+        private readonly IOptions<AppSettings> _options = null!;
 
-        public LogAppSettingsService(ILogger<LogAppSettingsService>? logger,
-            IOptions<AppSettings>? options) : this()
+        public LogAppSettingsService(ILogger<LogAppSettingsService> logger,
+            IOptions<AppSettings> options) : this()
         {
             _logger = logger;
             _options = options;
         }
 
-        public void Log()
-        {
-            var appSettings = _options?.Value;
-            _logger?.LogInformation("BeginAllowedSchoolYear = {year}.", appSettings?.BeginAllowedSchoolYear);
-            _logger?.LogInformation("EndAllowedSchoolYear = {year}.", appSettings?.EndAllowedSchoolYear);
-        }
+        public void LogToConsole() => _logger.LogInformation(message: JsonSerializer.Serialize(_options?.Value));
     }
 }
