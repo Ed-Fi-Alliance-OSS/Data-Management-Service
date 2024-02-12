@@ -6,6 +6,7 @@
 using System.Net;
 using System.Threading.RateLimiting;
 using EdFi.DataManagementService.Api.Configuration;
+using Serilog;
 
 namespace EdFi.DataManagementService.Api.Infrastructure
 {
@@ -14,11 +15,23 @@ namespace EdFi.DataManagementService.Api.Infrastructure
         public static void AddServices(this WebApplicationBuilder webAppBuilder)
         {
             webAppBuilder.Services.Configure<AppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"));
-            webAppBuilder.Services.AddLogging(builder => builder.AddConsole());
+
             webAppBuilder.Services.AddSingleton<LogAppSettingsService>();
             if (webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
             {
                 ConfigureRateLimit(webAppBuilder);
+            }
+            ConfigureLogging();
+
+            void ConfigureLogging()
+            {
+                var logger = new LoggerConfiguration()
+                            .ReadFrom.Configuration(new ConfigurationBuilder()
+                            .AddJsonFile("Serilog_Configuration.json").Build())
+                            .Enrich.FromLogContext()
+                            .CreateLogger();
+                webAppBuilder.Logging.ClearProviders();
+                webAppBuilder.Logging.AddSerilog(logger);
             }
         }
 

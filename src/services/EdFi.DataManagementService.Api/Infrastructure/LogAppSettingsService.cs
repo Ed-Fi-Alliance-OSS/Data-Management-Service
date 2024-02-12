@@ -22,6 +22,10 @@ namespace EdFi.DataManagementService.Api.Infrastructure
             _options = options;
         }
 
-        public void LogToConsole() => _logger.LogInformation(message: JsonSerializer.Serialize(_options.Value));
+        public void LogToConsole()
+        {
+            _logger.LogDebug($"Log to console");
+            _logger.LogInformation(message: JsonSerializer.Serialize(_options.Value));
+        }
     }
 }
