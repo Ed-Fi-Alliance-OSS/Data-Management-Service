@@ -14,8 +14,9 @@ app.UsePathBase("/api");
 app.UseRouting();
 app.UseRateLimiter();
 
-app.MapGet("/", () => "Data Management Service").RequireRateLimiting("fixed");
-app.MapGet("/ping", () => Results.Ok(DateTime.Now)).RequireRateLimiting("fixed");
+app.MapGet("/", () => "Data Management Service");
+app.MapGet("/ping", () => Results.Ok(DateTime.Now));
+
 
 var logAppSettingsService = app.Services.GetRequiredService<LogAppSettingsService>();
 logAppSettingsService.LogToConsole();

@@ -3,9 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net;
 using System.Threading.RateLimiting;
 using EdFi.DataManagementService.Api.Configuration;
-using Microsoft.AspNetCore.RateLimiting;
 
 namespace EdFi.DataManagementService.Api.Infrastructure
 {
@@ -16,30 +16,32 @@ namespace EdFi.DataManagementService.Api.Infrastructure
             webAppBuilder.Services.Configure<AppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"));
             webAppBuilder.Services.AddLogging(builder => builder.AddConsole());
             webAppBuilder.Services.AddSingleton<LogAppSettingsService>();
-            webAppBuilder.Services.Configure<RateLimitOptions>(webAppBuilder.Configuration.GetSection("RateLimit"));
-            ConfigureRateLimit(webAppBuilder);
+            if (webAppBuilder.Configuration.GetSection("RateLimit").Exists())
+            {
+                ConfigureRateLimit(webAppBuilder);
+            }
         }
 
         private static void ConfigureRateLimit(WebApplicationBuilder webAppBuilder)
         {
+            webAppBuilder.Services.Configure<RateLimitOptions>(webAppBuilder.Configuration.GetSection("RateLimit"));
             var rateLimitOptions = new RateLimitOptions();
             webAppBuilder.Configuration.GetSection("RateLimit").Bind(rateLimitOptions);
 
             webAppBuilder.Services.AddRateLimiter(limiterOptions =>
             {
-                limiterOptions.OnRejected = (context, cancellationToken) =>
-                {
-                    context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
-                    return new ValueTask();
-                };
-                limiterOptions.AddFixedWindowLimiter("fixed", options =>
-                {
-                    options.PermitLimit = rateLimitOptions.PermitLimit;
-                    options.Window = TimeSpan.FromSeconds(rateLimitOptions.Window);
-                    options.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
-                    options.QueueLimit = rateLimitOptions.QueueLimit;
-                });
+                limiterOptions.RejectionStatusCode = (int) HttpStatusCode.TooManyRequests;
+                limiterOptions.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+                    RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey: httpContext.Request.Headers.Host.ToString(),
+                        factory: partition => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = rateLimitOptions.PermitLimit,
+                            QueueLimit = rateLimitOptions.QueueLimit,
+                            Window = TimeSpan.FromSeconds(rateLimitOptions.Window)
+                        }));
             });
+
         }
     }
 }
