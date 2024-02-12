@@ -8,9 +8,6 @@ using EdFi.DataManagementService.Api.Infrastructure;
 var builder = WebApplication.CreateBuilder(args);
 builder.AddServices();
 
-builder.Services.AddLogging(builder => builder.AddConsole());
-builder.Services.AddSingleton<LogAppSettingsService>();
-
 var app = builder.Build();
 
 app.UsePathBase("/api");
