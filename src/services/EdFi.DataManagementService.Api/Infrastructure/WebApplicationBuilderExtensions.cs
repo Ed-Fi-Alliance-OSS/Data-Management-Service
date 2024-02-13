@@ -16,7 +16,7 @@ namespace EdFi.DataManagementService.Api.Infrastructure
             webAppBuilder.Services.Configure<AppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"));
             webAppBuilder.Services.AddLogging(builder => builder.AddConsole());
             webAppBuilder.Services.AddSingleton<LogAppSettingsService>();
-            if (webAppBuilder.Configuration.GetSection("RateLimit").Exists())
+            if (webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
             {
                 ConfigureRateLimit(webAppBuilder);
             }
@@ -24,9 +24,9 @@ namespace EdFi.DataManagementService.Api.Infrastructure
 
         private static void ConfigureRateLimit(WebApplicationBuilder webAppBuilder)
         {
-            webAppBuilder.Services.Configure<RateLimitOptions>(webAppBuilder.Configuration.GetSection("RateLimit"));
+            webAppBuilder.Services.Configure<RateLimitOptions>(webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit));
             var rateLimitOptions = new RateLimitOptions();
-            webAppBuilder.Configuration.GetSection("RateLimit").Bind(rateLimitOptions);
+            webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Bind(rateLimitOptions);
 
             webAppBuilder.Services.AddRateLimiter(limiterOptions =>
             {

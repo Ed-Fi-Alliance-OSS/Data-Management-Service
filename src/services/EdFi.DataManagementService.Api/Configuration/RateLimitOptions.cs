@@ -7,6 +7,8 @@ namespace EdFi.DataManagementService.Api.Configuration
 {
     public class RateLimitOptions
     {
+        public const string RateLimit = "RateLimit";
+
         //Number of requests per window
         public int PermitLimit { get; set; }
         //Number of seconds before permits are reset
