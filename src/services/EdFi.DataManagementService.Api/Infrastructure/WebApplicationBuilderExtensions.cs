@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net;
+using System.Threading.RateLimiting;
 using EdFi.DataManagementService.Api.Configuration;
 
 namespace EdFi.DataManagementService.Api.Infrastructure
@@ -14,6 +16,32 @@ namespace EdFi.DataManagementService.Api.Infrastructure
             webAppBuilder.Services.Configure<AppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"));
             webAppBuilder.Services.AddLogging(builder => builder.AddConsole());
             webAppBuilder.Services.AddSingleton<LogAppSettingsService>();
+            if (webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
+            {
+                ConfigureRateLimit(webAppBuilder);
+            }
+        }
+
+        private static void ConfigureRateLimit(WebApplicationBuilder webAppBuilder)
+        {
+            webAppBuilder.Services.Configure<RateLimitOptions>(webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit));
+            var rateLimitOptions = new RateLimitOptions();
+            webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Bind(rateLimitOptions);
+
+            webAppBuilder.Services.AddRateLimiter(limiterOptions =>
+            {
+                limiterOptions.RejectionStatusCode = (int) HttpStatusCode.TooManyRequests;
+                limiterOptions.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+                    RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey: httpContext.Request.Headers.Host.ToString(),
+                        factory: partition => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = rateLimitOptions.PermitLimit,
+                            QueueLimit = rateLimitOptions.QueueLimit,
+                            Window = TimeSpan.FromSeconds(rateLimitOptions.Window)
+                        }));
+            });
+
         }
     }
 }
