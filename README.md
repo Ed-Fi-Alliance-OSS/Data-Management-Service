@@ -24,7 +24,11 @@ Developer Documents:
 ## Configuration
 
 ### RateLimit
-Basic rate limiting can be applied by supplying a `RateLimit` object in the `appsettings.json` file. If no `RateLimit` object is supplied, rate limiting is not configured for the application. Rate limiting (when applied) will be set globally and apply to all application endpoints. 
+
+Basic rate limiting can be applied by supplying a `RateLimit` object in the
+`appsettings.json` file. If no `RateLimit` object is supplied, rate limiting is
+not configured for the application. Rate limiting (when applied) will be set
+globally and apply to all application endpoints. 
 
 The `RateLimit` object should have the following parameters.
 

@@ -17,7 +17,6 @@ app.UseRateLimiter();
 app.MapGet("/", () => "Data Management Service");
 app.MapGet("/ping", () => Results.Ok(DateTime.Now));
 
-
 var logAppSettingsService = app.Services.GetRequiredService<LogAppSettingsService>();
 logAppSettingsService.LogToConsole();
 
