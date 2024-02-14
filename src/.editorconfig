@@ -26,7 +26,7 @@ trim_trailing_whitespace = false
 indent_style = space
 indent_size = 4
 tab_width = 4
-end_of_line = crlf
+end_of_line = lf
 csharp_new_line_before_members_in_object_initializers = false
 csharp_preferred_modifier_order = private, public, protected, internal, new, abstract, virtual, sealed, override, static, readonly, extern, unsafe, volatile, async:suggestion
 

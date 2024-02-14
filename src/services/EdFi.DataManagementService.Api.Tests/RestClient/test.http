@@ -1,0 +1,165 @@
+### Test POST of invalid resource
+
+POST http://localhost:5198/ed-fi/doesNotExistDescriptor/
+
+{
+  "codeValue": "Presentation",
+  "shortDescription": "Presentation",
+  "description": "Presentation",
+  "namespace": "uri://ed-fi.org/DoesNotExistDescriptor"
+}
+
+
+### Test POST of descriptor
+
+POST http://localhost:5198/ed-fi/contentClassDescriptors/
+
+{
+  "codeValue": "Presentation",
+  "shortDescription": "Presentation",
+  "description": "Presentation",
+  "namespace": "uri://ed-fi.org/ContentClassDescriptor"
+}
+
+### Test GET of descriptor
+
+GET http://localhost:5198/ed-fi/contentClassDescriptors/f87e33d5-5c7d-4941-929a-97b60ffa64c4
+
+
+
+### Test POST of an EducationContent
+
+POST http://localhost:5198/ed-fi/educationContents
+
+{
+    "contentIdentifier": "933zsd4350",
+    "namespace": "43210",
+    "shortDescription": "abc",
+    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Presentation",
+    "learningResourceMetadataURI": "21430"
+}
+
+### Test GET of an EducationContent
+
+GET http://localhost:5198/ed-fi/educationContents/8902c802-2b20-4481-9a27-1e92edb3834a
+
+
+### Test POST of an EducationContent with two overposted fields
+POST http://localhost:5198/ed-fi/educationContents
+
+{
+    "contentIdentifier": "933zsd4350",
+    "namespace": "43210",
+    "shortDescription": "abc",
+    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Presentation",
+    "learningResourceMetadataURI": "21430",
+    "scalarOverpost": "x",
+    "objectOverpost": {
+      "x": 1
+    }
+}
+
+#### Test POST of a Section
+POST http://localhost:5198/ed-fi/sections
+
+{
+    "sectionIdentifier": "c00v",
+    "courseOfferingReference": {
+        "localCourseCode": "abc",
+        "schoolId": 666,
+        "sessionName": "d",
+        "schoolYear": 2034
+    },
+    "locationReference": {
+      "classroomIdentificationCode": "1",
+      "schoolId": 2
+    },
+    "availableCreditTypeDescriptor": "k",
+    "classPeriods": [
+        {
+            "classPeriodReference":
+            {
+                "schoolId": 66,
+                "classPeriodName": "z1"
+            }
+        },
+        {
+            "classPeriodReference":
+            {
+                "schoolId": 66,
+                "classPeriodName": "z2"
+            }
+        }
+    ]
+}
+
+#### Test POST of a Section with overposts in the classPeriods array
+POST http://localhost:5198/ed-fi/sections
+
+{
+    "sectionIdentifier": "c00v",
+    "courseOfferingReference": {
+        "localCourseCode": "abc",
+        "schoolId": 666,
+        "sessionName": "d",
+        "schoolYear": 2034
+    },
+    "locationReference": {
+      "classroomIdentificationCode": "1",
+      "schoolId": 2
+    },
+    "availableCreditTypeDescriptor": "k",
+    "classPeriods": [
+        {
+            "classPeriodReference":
+            {
+                "schoolId": 66,
+                "classPeriodName": "z1",
+                "scalarOverpost": "x"
+            }
+        },
+        {
+            "classPeriodReference":
+            {
+                "schoolId": 66,
+                "classPeriodName": "z2",
+                "objectOverpost": {
+                    "x": 1
+                }
+            }
+        }
+    ]
+}
+
+#### Test POST of a Section with non-overpost error - missing classPeriodName in the classPeriods array
+POST http://localhost:5198/ed-fi/sections
+
+{
+    "sectionIdentifier": "c00v",
+    "courseOfferingReference": {
+        "localCourseCode": "abc",
+        "schoolId": 666,
+        "sessionName": "d",
+        "schoolYear": 2034
+    },
+    "locationReference": {
+      "classroomIdentificationCode": "1",
+      "schoolId": 2
+    },
+    "availableCreditTypeDescriptor": "k",
+    "classPeriods": [
+        {
+            "classPeriodReference":
+            {
+                "schoolId": 66,
+                "classPeriodName": "z1"
+            }
+        },
+        {
+            "classPeriodReference":
+            {
+                "schoolId": 66
+            }
+        }
+    ]
+}
