@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <Content Include="EdFi.DataManagementService.Api.nuspec" CopyToPublishDirectory="Always" CopyToOutputDirectory="Never" />
+    <None Include="ApiSchema/DataStandard-5.0.0-ApiSchema.json" CopyToPublishDirectory="Always" CopyToOutputDirectory="Always"/>
     <PackageReference Include="Microsoft.CodeAnalysis" Version="4.8.0" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle" Version="4.8.0">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -24,6 +25,8 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <PackageReference Include="JsonSchema.Net" Version="5.5.0" />
+    <PackageReference Include="JsonPath.Net" Version="0.8.1" />
   </ItemGroup>
 
 </Project>

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using static EdFi.DataManagementService.Api.Frontend;
 using EdFi.DataManagementService.Api.Configuration;
 using EdFi.DataManagementService.Api.Infrastructure;
 using EdFi.DataManagementService.Api.Infrastructure.Extensions;
@@ -31,6 +32,11 @@ app.MapGet("/LogAppSettings", (IOptions<AppSettings> options, ILogger<Program> l
     logger.LogInformation(message: JsonSerializer.Serialize(options.Value));
     return Results.Ok("Successfully logged Application Settings");
 });
+
+app.MapPost("/{**catchAll}", Upsert);
+app.MapGet("/{**catchAll}", GetById);
+app.MapPut("/{**catchAll}", UpdateById);
+app.MapDelete("/{**catchAll}", DeleteById);
 
 app.Run();
 

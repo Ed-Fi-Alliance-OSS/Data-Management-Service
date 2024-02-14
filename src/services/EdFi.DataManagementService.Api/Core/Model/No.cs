@@ -1,0 +1,50 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Api.ApiSchema;
+
+namespace EdFi.DataManagementService.Api.Core.Model;
+
+/// <summary>
+/// Null objects to avoid nullable types when null is irrelevant
+/// </summary>
+public static class No
+{
+    /// <summary>
+    /// The null object for ApiSchemaDocument
+    /// </summary>
+    public static readonly ApiSchemaDocument ApiSchemaDocument = new(new JsonObject());
+
+    /// <summary>
+    /// The null object for ProjectSchema
+    /// </summary>
+    public static readonly ProjectSchema ProjectSchema = new(new JsonObject());
+
+    /// <summary>
+    /// The null object for ResourceSchema
+    /// </summary>
+    public static readonly ResourceSchema ResourceSchema = new(new JsonObject());
+
+    /// <summary>
+    /// The null object for PathComponents
+    /// </summary>
+    public static readonly PathComponents PathComponents = new(ProjectNamespace: new(""), EndpointName: new(""), DocumentUuid: null);
+
+    /// <summary>
+    /// The null object for ResourceInfo
+    /// </summary>
+    public static readonly ResourceInfo ResourceInfo = new(ProjectName: new(""), ResourceName: new(""), IsDescriptor: false,
+      ResourceVersion: new(""), AllowIdentityUpdates: false);
+
+    /// <summary>
+    /// The null object for FrontendResponse
+    /// </summary>
+    public static readonly FrontendResponse FrontendResponse = new(StatusCode: 503, Body: "");
+}
+
+
+
+
