@@ -16,7 +16,6 @@ namespace EdFi.DataManagementService.Api.Infrastructure
         {
             webAppBuilder.Services.Configure<AppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"));
 
-            webAppBuilder.Services.AddSingleton<LogAppSettingsService>();
             if (webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
             {
                 ConfigureRateLimit(webAppBuilder);
