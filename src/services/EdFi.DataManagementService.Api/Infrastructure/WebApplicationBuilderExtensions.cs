@@ -26,8 +26,7 @@ namespace EdFi.DataManagementService.Api.Infrastructure
             void ConfigureLogging()
             {
                 var logger = new LoggerConfiguration()
-                            .ReadFrom.Configuration(new ConfigurationBuilder()
-                            .AddJsonFile("Serilog_Configuration.json").Build())
+                            .ReadFrom.Configuration(webAppBuilder.Configuration)
                             .Enrich.FromLogContext()
                             .CreateLogger();
                 webAppBuilder.Logging.ClearProviders();
