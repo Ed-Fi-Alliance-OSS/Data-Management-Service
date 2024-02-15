@@ -14,15 +14,13 @@ public class LoggingMiddleware
 
     public LoggingMiddleware(RequestDelegate next)
     {
-        _next = next ?? throw new ArgumentNullException(nameof(next));
+        _next = next;
     }
 
     public async Task Invoke(HttpContext context, ILogger<LoggingMiddleware> logger)
     {
         try
         {
-            context = context ?? throw new ArgumentNullException(nameof(context));
-
             logger.LogInformation(JsonSerializer.Serialize(new
             {
                 method = context.Request.Method,
