@@ -8,15 +8,8 @@ using System.Text.Json;
 
 namespace EdFi.DataManagementService.Api.Infrastructure;
 
-public class LoggingMiddleware
+public class LoggingMiddleware(RequestDelegate next)
 {
-    private readonly RequestDelegate _next;
-
-    public LoggingMiddleware(RequestDelegate next)
-    {
-        _next = next;
-    }
-
     public async Task Invoke(HttpContext context, ILogger<LoggingMiddleware> logger)
     {
         try
@@ -29,7 +22,7 @@ public class LoggingMiddleware
                 clientId = context.Request.Host
             }));
 
-            await _next(context);
+            await next(context);
         }
         catch (Exception ex)
         {
