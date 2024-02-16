@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Api.Configuration;
 using EdFi.DataManagementService.Api.Infrastructure;
+using EdFi.DataManagementService.Api.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
 
@@ -23,7 +24,10 @@ app.MapGet("/ping", () => Results.Ok(DateTime.Now));
 
 app.MapGet("/LogAppSettings", (IOptions<AppSettings> options, ILogger<Program> logger) =>
 {
-    logger.LogDebug($"Log while debugging");
+    if (logger.IsDebugEnabled())
+    {
+        logger.LogInformation($"Log information while debugging");
+    }
     logger.LogInformation(message: JsonSerializer.Serialize(options.Value));
     return Results.Ok("Successfully logged Application Settings");
 });
