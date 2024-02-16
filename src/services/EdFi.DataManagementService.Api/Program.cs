@@ -3,7 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Api.Configuration;
 using EdFi.DataManagementService.Api.Infrastructure;
+using EdFi.DataManagementService.Api.Infrastructure.Extensions;
+using Microsoft.Extensions.Options;
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddServices();
@@ -11,14 +15,22 @@ builder.AddServices();
 var app = builder.Build();
 
 app.UsePathBase("/api");
+app.UseMiddleware<LoggingMiddleware>();
 app.UseRouting();
 app.UseRateLimiter();
 
-app.MapGet("/", () => "Data Management Service");
+app.MapGet("/", () => Results.Ok("Data Management Service"));
 app.MapGet("/ping", () => Results.Ok(DateTime.Now));
 
-var logAppSettingsService = app.Services.GetRequiredService<LogAppSettingsService>();
-logAppSettingsService.LogToConsole();
+app.MapGet("/LogAppSettings", (IOptions<AppSettings> options, ILogger<Program> logger) =>
+{
+    if (logger.IsDebugEnabled())
+    {
+        logger.LogInformation($"Log information while debugging");
+    }
+    logger.LogInformation(message: JsonSerializer.Serialize(options.Value));
+    return Results.Ok("Successfully logged Application Settings");
+});
 
 app.Run();
 
