@@ -6,6 +6,6 @@
 namespace EdFi.DataManagementService.Api.Core.Model;
 
 /// <summary>
-/// A string type branded as a traceId, which is a UUID representing a unique request
+/// A string type branded as a traceId, which is a frontend-provided identifier representing a unique request
 /// </summary>
 public record struct TraceId(string Value);

@@ -10,7 +10,7 @@ namespace EdFi.DataManagementService.Core.Pipeline;
 /// is modeled on the Middleware pattern.
 ///
 /// Add pipeline steps in execution order with StartWith() and AndThen().
-/// Run the pipleline steps with Run().
+/// Run the pipeline steps with Run().
 /// </summary>
 public class PipelineProvider
 {

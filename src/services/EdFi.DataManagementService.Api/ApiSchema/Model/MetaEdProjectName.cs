@@ -5,8 +5,8 @@
 
 namespace EdFi.DataManagementService.Api.ApiSchema.Model;
 
-/**
- * A string type branded as a MetaEdProjectName, which is the MetaEd project name for a collection of
- * API resources, e.g. "EdFi" for an Ed-Fi data standard version.
- */
+/// <summary>
+/// A string type branded as a MetaEdProjectName, which is the MetaEd project name for a collection of
+/// API resources, e.g. "EdFi" for an Ed-Fi data standard version.
+/// </summary>
 public record struct MetaEdProjectName(string Value);
