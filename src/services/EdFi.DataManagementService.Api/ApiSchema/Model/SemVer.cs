@@ -5,8 +5,8 @@
 
 namespace EdFi.DataManagementService.Api.ApiSchema.Model;
 
-/**
- * A string type branded as a SemVer, which is a semantic version string.
- * See https://semver.org/spec/v2.0.0.html
- */
+/// <summary>
+/// A string type branded as a SemVer, which is a semantic version string.
+/// See https://semver.org/spec/v2.0.0.html
+/// </summary>
 public record struct SemVer(string Value);

@@ -5,8 +5,8 @@
 
 namespace EdFi.DataManagementService.Api.ApiSchema.Model;
 
-/**
- * A string type branded as a MetaEdPropertyFullName, which is the full property name of a MetaEd
- * property on a MetaEd entity. Role names on a property are expressed by prefix on the property name.
- */
+/// <summary>
+/// A string type branded as a MetaEdPropertyFullName, which is the full property name of a MetaEd
+/// property on a MetaEd entity. Role names on a property are expressed by prefix on the property name.
+/// </summary>
 public record struct MetaEdPropertyFullName(string Value);

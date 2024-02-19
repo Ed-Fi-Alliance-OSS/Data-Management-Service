@@ -5,8 +5,8 @@
 
 namespace EdFi.DataManagementService.Api.ApiSchema.Model;
 
-/**
- * A string type branded as a ProjectNamespace, which is the URI path component referring to a ProjectSchema
- * e.g. "ed-fi" for an Ed-Fi data standard version.
- */
+/// <summary>
+/// A string type branded as a ProjectNamespace, which is the URI path component referring to a ProjectSchema
+/// e.g. "ed-fi" for an Ed-Fi data standard version.
+/// </summary>
 public record struct ProjectNamespace(string Value);
