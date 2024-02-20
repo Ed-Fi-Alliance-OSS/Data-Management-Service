@@ -11,10 +11,12 @@ namespace EdFi.DataManagementService.Api.Core.Middleware;
 /// Validates resource endpoint exists, adding the corresponding ProjectSchema and ResourceSchemas
 /// to the context if it does.
 /// </summary>
-public class ValidateEndpointMiddleware : IPipelineStep
+public class ValidateEndpointMiddleware(ILogger _logger) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
+        _logger.LogInformation("ValidateEndpointMiddleware");
+
         JsonNode? projectSchemaNode = context.ApiSchemaDocument.FindProjectSchemaNode(context.PathComponents.ProjectNamespace);
         if (projectSchemaNode == null)
         {
