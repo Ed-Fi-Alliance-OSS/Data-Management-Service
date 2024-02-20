@@ -8,4 +8,6 @@ namespace EdFi.DataManagementService.Api.Core.Model;
 /// <summary>
 /// The API response returned to the frontend
 /// </summary>
-public record FrontendResponse(int StatusCode, string Body);
+/// <param name="StatusCode">The HTTP status code to return</param>
+/// <param name="Body">The body to return as a string, or null if there is no body to return</param>
+public record FrontendResponse(int StatusCode, string? Body);
