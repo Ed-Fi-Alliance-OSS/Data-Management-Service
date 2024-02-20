@@ -17,13 +17,13 @@ namespace EdFi.DataManagementService.Api.Core;
 /// for 1) ease of testing and 2) ease of supporting future frontends e.g.
 /// AWS Lambda, Azure functions, etc.
 /// </summary>
-public class CoreFacade(ILogger<CoreFacade> _logger) : ICoreFacade
+public class CoreFacade(IApiSchemaLoader _apiSchemaLoader, ILogger<CoreFacade> _logger) : ICoreFacade
 {
     /// <summary>
     /// The pipeline steps to satisfy an upsert request
     /// </summary>
     private readonly PipelineProvider _upsertSteps = new PipelineProvider()
-        .StartWith(new ApiSchemaLoadingMiddleware(_logger))
+        .StartWith(new ApiSchemaLoadingMiddleware(_apiSchemaLoader, _logger))
         .AndThen(new ParsePathMiddleware(_logger))
         .AndThen(new ValidateEndpointMiddleware(_logger))
         .AndThen(new ValidateDocumentMiddleware(_logger))
@@ -34,7 +34,7 @@ public class CoreFacade(ILogger<CoreFacade> _logger) : ICoreFacade
     /// The pipeline steps to satisfy a get by id request
     /// </summary>
     private readonly PipelineProvider _getByIdSteps = new PipelineProvider()
-        .StartWith(new ApiSchemaLoadingMiddleware(_logger))
+        .StartWith(new ApiSchemaLoadingMiddleware(_apiSchemaLoader, _logger))
         .AndThen(new ParsePathMiddleware(_logger))
         .AndThen(new ValidateEndpointMiddleware(_logger))
         .AndThen(new BuildResourceInfoMiddleware(_logger))
@@ -44,7 +44,7 @@ public class CoreFacade(ILogger<CoreFacade> _logger) : ICoreFacade
     /// The pipeline steps to satisfy an update request
     /// </summary>
     private readonly PipelineProvider _updateSteps = new PipelineProvider()
-        .StartWith(new ApiSchemaLoadingMiddleware(_logger))
+        .StartWith(new ApiSchemaLoadingMiddleware(_apiSchemaLoader, _logger))
         .AndThen(new ParsePathMiddleware(_logger))
         .AndThen(new ValidateEndpointMiddleware(_logger))
         .AndThen(new ValidateDocumentMiddleware(_logger))
@@ -55,7 +55,7 @@ public class CoreFacade(ILogger<CoreFacade> _logger) : ICoreFacade
     /// The pipeline steps to satisfy a delete by id request
     /// </summary>
     private readonly PipelineProvider _deleteByIdSteps = new PipelineProvider()
-        .StartWith(new ApiSchemaLoadingMiddleware(_logger))
+        .StartWith(new ApiSchemaLoadingMiddleware(_apiSchemaLoader, _logger))
         .AndThen(new ParsePathMiddleware(_logger))
         .AndThen(new ValidateEndpointMiddleware(_logger))
         .AndThen(new BuildResourceInfoMiddleware(_logger))
