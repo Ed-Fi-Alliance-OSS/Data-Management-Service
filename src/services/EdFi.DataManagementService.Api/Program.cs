@@ -3,18 +3,20 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using Microsoft.Extensions.Options;
+using System.Text.Json;
 using static EdFi.DataManagementService.Api.Frontend;
 using EdFi.DataManagementService.Api.Configuration;
 using EdFi.DataManagementService.Api.Infrastructure;
 using EdFi.DataManagementService.Api.Infrastructure.Extensions;
-using Microsoft.Extensions.Options;
-using System.Text.Json;
 using EdFi.DataManagementService.Api.Core;
+using EdFi.DataManagementService.Api.Core.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddServices();
 
 builder.Services.AddSingleton<ICoreFacade, CoreFacade>();
+builder.Services.AddSingleton<IApiSchemaLoader, ApiSchemaLoader>();
 
 var app = builder.Build();
 
