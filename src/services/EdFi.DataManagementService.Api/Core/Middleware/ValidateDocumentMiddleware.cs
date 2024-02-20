@@ -10,10 +10,11 @@ namespace EdFi.DataManagementService.Api.Core.Middleware;
 /// <summary>
 /// Validates that the resource document is properly shaped.
 /// </summary>
-public class ValidateDocumentMiddleware : IPipelineStep
+public class ValidateDocumentMiddleware(ILogger _logger) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
+        _logger.LogInformation("ValidateDocumentMiddleware");
         // DMS-13
 
         await next();

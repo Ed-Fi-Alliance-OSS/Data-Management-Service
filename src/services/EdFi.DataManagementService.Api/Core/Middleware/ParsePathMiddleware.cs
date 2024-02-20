@@ -12,7 +12,7 @@ namespace EdFi.DataManagementService.Api.Core.Middleware;
 /// Parses and validates the path from the frontend is well formed. Adds PathComponents
 /// to the context if it is.
 /// </summary>
-public class ParsePathMiddleware : IPipelineStep
+public class ParsePathMiddleware(ILogger _logger) : IPipelineStep
 {
     private static string Decapitalize(string str)
     {
@@ -56,6 +56,8 @@ public class ParsePathMiddleware : IPipelineStep
 
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
+        _logger.LogInformation("ParsePathMiddleware");
+
         PathComponents? pathComponents = PathComponentsFrom(context.FrontendRequest.Path);
 
         if (pathComponents == null)

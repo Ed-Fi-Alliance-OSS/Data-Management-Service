@@ -10,10 +10,12 @@ namespace EdFi.DataManagementService.Api.Core.Handler;
 /// <summary>
 /// Handles a get by id request that has made it through the middleware pipeline steps.
 /// </summary>
-public class GetByIdHandler : IPipelineStep
+public class GetByIdHandler(ILogger _logger) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
+        _logger.LogInformation("GetByIdHandler");
+
         await Task.FromResult("Here to suppress 'missing await' complaints until this is not a stub");
 
         context.FrontendResponse = new(StatusCode: 200, Body: "");

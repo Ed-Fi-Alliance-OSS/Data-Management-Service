@@ -9,9 +9,12 @@ using EdFi.DataManagementService.Api.Infrastructure;
 using EdFi.DataManagementService.Api.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
+using EdFi.DataManagementService.Api.Core;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddServices();
+
+builder.Services.AddSingleton<ICoreFacade, CoreFacade>();
 
 var app = builder.Build();
 

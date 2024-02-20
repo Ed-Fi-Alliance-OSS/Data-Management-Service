@@ -10,10 +10,12 @@ namespace EdFi.DataManagementService.Api.Core.Handler;
 /// <summary>
 /// Handles an upsert request that has made it through the middleware pipeline steps.
 /// </summary>
-public class UpsertHandler : IPipelineStep
+public class UpsertHandler(ILogger _logger) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
+        _logger.LogInformation("UpsertHandler");
+
         await Task.FromResult("Here to suppress 'missing await' complaints until this is not a stub");
 
         context.FrontendResponse = new(StatusCode: 204, Body: null);

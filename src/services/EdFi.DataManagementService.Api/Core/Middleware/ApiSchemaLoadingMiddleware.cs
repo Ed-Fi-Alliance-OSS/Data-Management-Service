@@ -9,10 +9,12 @@ using EdFi.DataManagementService.Core.Pipeline;
 namespace EdFi.DataManagementService.Api.Core.Middleware;
 
 
-public class ApiSchemaLoadingMiddleware : IPipelineStep
+public class ApiSchemaLoadingMiddleware(ILogger _logger) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
+        _logger.LogInformation("ApiSchemaLoadingMiddleware");
+
         // Hardcoded and synchronous way to read the API Schema file - every time!
         JsonNode apiSchemaRootNode =
             JsonNode.Parse(File.ReadAllText($"{AppContext.BaseDirectory}/ApiSchema/DataStandard-5.0.0-ApiSchema.json")) ??
