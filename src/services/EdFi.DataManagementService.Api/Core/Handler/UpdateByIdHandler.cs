@@ -16,6 +16,6 @@ public class UpdateByIdHandler : IPipelineStep
     {
         await Task.FromResult("Here to suppress 'missing await' complaints until this is not a stub");
 
-        context.FrontendResponse = new(StatusCode: 204, Body: "");
+        context.FrontendResponse = new(StatusCode: 204, Body: null);
     }
 }

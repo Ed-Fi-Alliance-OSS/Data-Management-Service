@@ -39,6 +39,13 @@ public class ProjectSchema(JsonNode _projectSchemaNode)
     /// </summary>
     public JsonNode? FindResourceSchemaNode(EndpointName endpointName)
     {
-        return _projectSchemaNode.SelectNodeFromPath($"$.resourceSchemas[\"{endpointName.Value}\"]");
+        string? caseCorrectedEndpointName = _projectSchemaNode
+            .SelectNodeFromPathAs<string>(
+                $"$.caseInsensitiveEndpointNameMapping[\"{endpointName.Value.ToLower()}\"]"
+            );
+
+        if (caseCorrectedEndpointName == null) return null;
+
+        return _projectSchemaNode.SelectNodeFromPath($"$.resourceSchemas[\"{caseCorrectedEndpointName}\"]");
     }
 }

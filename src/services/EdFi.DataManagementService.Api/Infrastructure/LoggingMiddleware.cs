@@ -26,11 +26,19 @@ public class LoggingMiddleware(RequestDelegate next)
         }
         catch (Exception ex)
         {
-            var response = context.Response;
-            response.ContentType = "application/json";
             logger.LogError(JsonSerializer.Serialize(new { message = "An uncaught error has occurred", error = new { ex.Message, ex.StackTrace }, traceId = context.TraceIdentifier }));
-            response.StatusCode = (int) HttpStatusCode.InternalServerError;
-            await response.WriteAsync(JsonSerializer.Serialize(new { message = "The server encountered an unexpected condition that prevented it from fulfilling the request.", traceId = context.TraceIdentifier }));
+
+            var response = context.Response;
+            if (!response.HasStarted)
+            {
+                response.ContentType = "application/json";
+                response.StatusCode = (int) HttpStatusCode.InternalServerError;
+                await response.WriteAsync(JsonSerializer.Serialize(new
+                {
+                    message = "The server encountered an unexpected condition that prevented it from fulfilling the request.",
+                    traceId = context.TraceIdentifier
+                }));
+            }
         }
     }
 }
