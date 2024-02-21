@@ -11,9 +11,9 @@ public class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider, I
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        _logger.LogInformation("ProvideApiSchemaMiddleware");
+        _logger.LogDebug("Entering ProvideApiSchemaMiddleware- {TraceId}", context.FrontendRequest.TraceId);
 
-        context.ApiSchemaDocument = new ApiSchemaDocument(_apiSchemaProvider.ApiSchemaRootNode);
+        context.ApiSchemaDocument = new ApiSchemaDocument(_apiSchemaProvider.ApiSchemaRootNode, _logger);
 
         await next();
     }

@@ -12,8 +12,19 @@ namespace EdFi.DataManagementService.Api.Core.Middleware;
 /// Parses and validates the path from the frontend is well formed. Adds PathComponents
 /// to the context if it is.
 /// </summary>
-public class ParsePathMiddleware(ILogger _logger) : IPipelineStep
+public partial class ParsePathMiddleware(ILogger _logger) : IPipelineStep
 {
+    // Matches all of the following sample expressions:
+    // /ed-fi/Sections
+    // /ed-fi/Sections/
+    // /ed-fi/Sections/idValue
+    [GeneratedRegex(@"\/(?<projectNamespace>[^/]+)\/(?<endpointName>[^/]+)(\/|$)((?<documentUuid>[^/]*$))?")]
+    private static partial Regex PathExpressionRegex();
+
+    // Regex for a UUID v4 string
+    [GeneratedRegex(@"^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")]
+    private static partial Regex Uuid4Regex();
+
     private static string Decapitalize(string str)
     {
         if (str.Length == 0) return str;
@@ -23,13 +34,7 @@ public class ParsePathMiddleware(ILogger _logger) : IPipelineStep
 
     private static PathComponents? PathComponentsFrom(string path)
     {
-        // Matches all of the following sample expressions:
-        // /ed-fi/Sections
-        // /ed-fi/Sections/
-        // /ed-fi/Sections/idValue
-        Regex pathExpression = new(@"\/(?<projectNamespace>[^/]+)\/(?<endpointName>[^/]+)(\/|$)((?<documentUuid>[^/]*$))?");
-
-        Match? match = pathExpression.Match(path);
+        Match? match = PathExpressionRegex().Match(path);
 
         if (match == null) return null;
 
@@ -39,7 +44,7 @@ public class ParsePathMiddleware(ILogger _logger) : IPipelineStep
         return new(
           ProjectNamespace: new(match.Groups["projectNamespace"].Value.ToLower()),
           EndpointName: new(Decapitalize(match.Groups["endpointName"].Value)),
-          DocumentUuid: documentUuidValue == null ? null : new(documentUuidValue)
+          DocumentUuid: documentUuidValue == null ? No.DocumentUuid : new(documentUuidValue)
         );
     }
 
@@ -48,28 +53,27 @@ public class ParsePathMiddleware(ILogger _logger) : IPipelineStep
     /// </summary>
     private static bool IsDocumentUuidWellFormed(DocumentUuid documentUuid)
     {
-        // Regex for a UUID v4 string
-        Regex uuid4Regex = new(@"^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$");
-
-        return uuid4Regex.IsMatch(documentUuid.Value.ToLower());
+        return Uuid4Regex().IsMatch(documentUuid.Value.ToLower());
     }
 
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        _logger.LogInformation("ParsePathMiddleware");
+        _logger.LogDebug("Entering ParsePathMiddleware - {TraceId}", context.FrontendRequest.TraceId);
 
         PathComponents? pathComponents = PathComponentsFrom(context.FrontendRequest.Path);
 
         if (pathComponents == null)
         {
+            _logger.LogDebug("ParsePathMiddleware: Not a valid path - {TraceId}", context.FrontendRequest.TraceId);
             context.FrontendResponse = new(StatusCode: 404, Body: "");
             return;
         }
 
         context.PathComponents = pathComponents;
 
-        if (pathComponents.DocumentUuid != null && !IsDocumentUuidWellFormed(pathComponents.DocumentUuid.Value))
+        if (pathComponents.DocumentUuid != No.DocumentUuid && !IsDocumentUuidWellFormed(pathComponents.DocumentUuid))
         {
+            _logger.LogDebug("ParsePathMiddleware: Not a valid document UUID - {TraceId}", context.FrontendRequest.TraceId);
             context.FrontendResponse = new(StatusCode: 404, Body: "");
             return;
         }

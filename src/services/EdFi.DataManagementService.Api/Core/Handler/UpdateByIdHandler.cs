@@ -17,7 +17,7 @@ public class UpdateByIdHandler(IDocumentStoreRepository _documentStoreRepository
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        _logger.LogInformation("UpdateByIdHandler");
+        _logger.LogDebug("Entering UpdateByIdHandler - {TraceId}", context.FrontendRequest.TraceId);
 
         UpdateResult result = await _documentStoreRepository.UpdateDocumentById(new(
             ReferentialId: new("ReferentialId placeholder"),

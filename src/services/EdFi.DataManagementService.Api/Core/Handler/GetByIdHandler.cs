@@ -16,7 +16,7 @@ public class GetByIdHandler(IDocumentStoreRepository _documentStoreRepository, I
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        _logger.LogInformation("GetByIdHandler");
+        _logger.LogDebug("Entering GetByIdHandler - {TraceId}", context.FrontendRequest.TraceId);
 
         GetResult result = await _documentStoreRepository.GetDocumentById(new(
             DocumentUuid: context.PathComponents.DocumentUuid,

@@ -12,11 +12,11 @@ namespace EdFi.DataManagementService.Api.ApiSchema;
 /// <summary>
 /// Provides information from the ProjectSchema portion of an ApiSchema.json document
 /// </summary>
-public class ProjectSchema(JsonNode _projectSchemaNode)
+public class ProjectSchema(JsonNode _projectSchemaNode, ILogger _logger)
 {
     private readonly Lazy<MetaEdProjectName> _projectName = new(() =>
     {
-        return new MetaEdProjectName(_projectSchemaNode.SelectRequiredNodeFromPathAs<string>("$.projectName"));
+        return new MetaEdProjectName(_projectSchemaNode.SelectRequiredNodeFromPathAs<string>("$.projectName", _logger));
     });
 
     /// <summary>
@@ -26,7 +26,7 @@ public class ProjectSchema(JsonNode _projectSchemaNode)
 
     private readonly Lazy<SemVer> _resourceVersion = new(() =>
     {
-        return new SemVer(_projectSchemaNode.SelectRequiredNodeFromPathAs<string>("$.projectVersion"));
+        return new SemVer(_projectSchemaNode.SelectRequiredNodeFromPathAs<string>("$.projectVersion", _logger));
     });
 
     /// <summary>
@@ -41,11 +41,12 @@ public class ProjectSchema(JsonNode _projectSchemaNode)
     {
         string? caseCorrectedEndpointName = _projectSchemaNode
             .SelectNodeFromPathAs<string>(
-                $"$.caseInsensitiveEndpointNameMapping[\"{endpointName.Value.ToLower()}\"]"
+                $"$.caseInsensitiveEndpointNameMapping[\"{endpointName.Value.ToLower()}\"]",
+                _logger
             );
 
         if (caseCorrectedEndpointName == null) return null;
 
-        return _projectSchemaNode.SelectNodeFromPath($"$.resourceSchemas[\"{caseCorrectedEndpointName}\"]");
+        return _projectSchemaNode.SelectNodeFromPath($"$.resourceSchemas[\"{caseCorrectedEndpointName}\"]", _logger);
     }
 }
