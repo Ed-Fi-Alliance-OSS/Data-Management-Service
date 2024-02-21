@@ -5,7 +5,10 @@
 
 using System.Net;
 using System.Threading.RateLimiting;
+using EdFi.DataManagementService.Api.ApiSchema;
+using EdFi.DataManagementService.Api.Backend;
 using EdFi.DataManagementService.Api.Configuration;
+using EdFi.DataManagementService.Api.Core;
 using Serilog;
 
 namespace EdFi.DataManagementService.Api.Infrastructure
@@ -14,6 +17,10 @@ namespace EdFi.DataManagementService.Api.Infrastructure
     {
         public static void AddServices(this WebApplicationBuilder webAppBuilder)
         {
+            webAppBuilder.Services.AddSingleton<IApiSchemaProvider, ApiSchemaFileLoader>();
+            webAppBuilder.Services.AddSingleton<ICoreFacade, CoreFacade>();
+            webAppBuilder.Services.AddSingleton<IDocumentStoreRepository, NoDocumentStoreRepository>();
+
             webAppBuilder.Services.Configure<AppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"));
 
             if (webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())

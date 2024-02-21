@@ -3,21 +3,43 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Api.Backend;
 using EdFi.DataManagementService.Core.Pipeline;
+using static EdFi.DataManagementService.Api.Backend.UpdateResult;
 
 namespace EdFi.DataManagementService.Api.Core.Handler;
 
 /// <summary>
 /// Handles an update request that has made it through the middleware pipeline steps.
 /// </summary>
-public class UpdateByIdHandler(ILogger _logger) : IPipelineStep
+public class UpdateByIdHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         _logger.LogInformation("UpdateByIdHandler");
 
-        await Task.FromResult("Here to suppress 'missing await' complaints until this is not a stub");
+        UpdateResult result = await _documentStoreRepository.UpdateDocumentById(new(
+            ReferentialId: new("ReferentialId placeholder"),
+            DocumentUuid: context.PathComponents.DocumentUuid,
+            ResourceInfo: context.ResourceInfo,
+            DocumentInfo: new("DocumentInfo placeholder"),
+            EdfiDoc: new JsonObject(),
+            validateDocumentReferencesExist: false,
+            TraceId: context.FrontendRequest.TraceId
+        ));
 
-        context.FrontendResponse = new(StatusCode: 204, Body: null);
+        context.FrontendResponse = result switch
+        {
+            UpdateSuccess => new(StatusCode: 204, Body: null),
+            UpdateFailureNotExists => new(StatusCode: 404, Body: null),
+            UpdateFailureReference failure => new(StatusCode: 409, Body: failure.ReferencingDocumentInfo),
+            UpdateFailureIdentityConflict failure => new(StatusCode: 400, Body: failure.ReferencingDocumentInfo),
+            UpdateFailureWriteConflict failure => new(StatusCode: 409, Body: failure.FailureMessage),
+            UpdateFailureImmutableIdentity failure => new(StatusCode: 409, Body: failure.FailureMessage),
+            UpdateFailureCascadeRequired => new(StatusCode: 400, Body: null),
+            UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage),
+            _ => new(StatusCode: 500, Body: "Unknown UpdateResult")
+        };
     }
 }

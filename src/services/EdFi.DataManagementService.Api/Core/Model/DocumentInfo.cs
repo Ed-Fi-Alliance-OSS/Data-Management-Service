@@ -5,5 +5,8 @@
 
 namespace EdFi.DataManagementService.Api.Core.Model;
 
-// A string type branded as a DocumentUuid, which is a UUID that identifies a document
-public record struct DocumentUuid(string Value);
+/// <summary>
+/// Document metdata extracted from the document
+/// </summary>
+public record DocumentInfo(string Placeholder);
+

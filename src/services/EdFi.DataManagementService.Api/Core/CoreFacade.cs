@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Api.ApiSchema;
+using EdFi.DataManagementService.Api.Backend;
 using EdFi.DataManagementService.Api.Core.Handler;
 using EdFi.DataManagementService.Api.Core.Middleware;
 using EdFi.DataManagementService.Api.Core.Model;
@@ -11,55 +13,55 @@ using EdFi.DataManagementService.Core.Pipeline;
 namespace EdFi.DataManagementService.Api.Core;
 
 /// <summary>
-/// The facade a frontend uses to access DMS Core.
-///
-/// The intent of this design is to provide a web framework-independent interface
-/// for 1) ease of testing and 2) ease of supporting future frontends e.g.
-/// AWS Lambda, Azure functions, etc.
+/// The null backend facade.
 /// </summary>
-public class CoreFacade(IApiSchemaLoader _apiSchemaLoader, ILogger<CoreFacade> _logger) : ICoreFacade
+public class CoreFacade(
+    IApiSchemaProvider _apiSchemaProvider,
+    IDocumentStoreRepository _documentStoreRepository,
+    ILogger<CoreFacade> _logger
+) : ICoreFacade
 {
     /// <summary>
     /// The pipeline steps to satisfy an upsert request
     /// </summary>
     private readonly PipelineProvider _upsertSteps = new PipelineProvider()
-        .StartWith(new ApiSchemaLoadingMiddleware(_apiSchemaLoader, _logger))
+        .StartWith(new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger))
         .AndThen(new ParsePathMiddleware(_logger))
         .AndThen(new ValidateEndpointMiddleware(_logger))
         .AndThen(new ValidateDocumentMiddleware(_logger))
         .AndThen(new BuildResourceInfoMiddleware(_logger))
-        .AndThen(new UpsertHandler(_logger));
+        .AndThen(new UpsertHandler(_documentStoreRepository, _logger));
 
     /// <summary>
     /// The pipeline steps to satisfy a get by id request
     /// </summary>
     private readonly PipelineProvider _getByIdSteps = new PipelineProvider()
-        .StartWith(new ApiSchemaLoadingMiddleware(_apiSchemaLoader, _logger))
+        .StartWith(new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger))
         .AndThen(new ParsePathMiddleware(_logger))
         .AndThen(new ValidateEndpointMiddleware(_logger))
         .AndThen(new BuildResourceInfoMiddleware(_logger))
-        .AndThen(new GetByIdHandler(_logger));
+        .AndThen(new GetByIdHandler(_documentStoreRepository, _logger));
 
     /// <summary>
     /// The pipeline steps to satisfy an update request
     /// </summary>
     private readonly PipelineProvider _updateSteps = new PipelineProvider()
-        .StartWith(new ApiSchemaLoadingMiddleware(_apiSchemaLoader, _logger))
+        .StartWith(new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger))
         .AndThen(new ParsePathMiddleware(_logger))
         .AndThen(new ValidateEndpointMiddleware(_logger))
         .AndThen(new ValidateDocumentMiddleware(_logger))
         .AndThen(new BuildResourceInfoMiddleware(_logger))
-        .AndThen(new UpdateByIdHandler(_logger));
+        .AndThen(new UpdateByIdHandler(_documentStoreRepository, _logger));
 
     /// <summary>
     /// The pipeline steps to satisfy a delete by id request
     /// </summary>
     private readonly PipelineProvider _deleteByIdSteps = new PipelineProvider()
-        .StartWith(new ApiSchemaLoadingMiddleware(_apiSchemaLoader, _logger))
+        .StartWith(new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger))
         .AndThen(new ParsePathMiddleware(_logger))
         .AndThen(new ValidateEndpointMiddleware(_logger))
         .AndThen(new BuildResourceInfoMiddleware(_logger))
-        .AndThen(new DeleteByIdHandler(_logger));
+        .AndThen(new DeleteByIdHandler(_documentStoreRepository, _logger));
 
     /// <summary>
     /// DMS entry point for API upsert requests

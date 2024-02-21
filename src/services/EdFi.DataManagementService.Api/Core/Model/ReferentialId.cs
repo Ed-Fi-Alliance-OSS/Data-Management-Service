@@ -5,5 +5,5 @@
 
 namespace EdFi.DataManagementService.Api.Core.Model;
 
-// A string type branded as a DocumentUuid, which is a UUID that identifies a document
-public record struct DocumentUuid(string Value);
+// A string type branded as a ReferentialId, which is a document id based on the document's identity
+public record struct ReferentialId(string Value);

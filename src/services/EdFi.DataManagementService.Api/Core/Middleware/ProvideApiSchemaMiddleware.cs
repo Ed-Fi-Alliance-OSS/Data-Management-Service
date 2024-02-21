@@ -7,14 +7,13 @@ using EdFi.DataManagementService.Core.Pipeline;
 
 namespace EdFi.DataManagementService.Api.Core.Middleware;
 
-
-public class ApiSchemaLoadingMiddleware(IApiSchemaLoader _apiSchemaLoader, ILogger _logger) : IPipelineStep
+public class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider, ILogger _logger) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        _logger.LogInformation("ApiSchemaLoadingMiddleware");
+        _logger.LogInformation("ProvideApiSchemaMiddleware");
 
-        context.ApiSchemaDocument = new ApiSchemaDocument(_apiSchemaLoader.ApiSchemaRootNode);
+        context.ApiSchemaDocument = new ApiSchemaDocument(_apiSchemaProvider.ApiSchemaRootNode);
 
         await next();
     }

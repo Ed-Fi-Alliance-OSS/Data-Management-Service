@@ -122,6 +122,8 @@ dotnet_diagnostic.S4136.severity=suggestion # Method overloads should be grouped
 dotnet_diagnostic.S1135.severity=suggestion # Complete TODO comments
 dotnet_diagnostic.S112.severity=suggestion # 'System.Exception' should not be thrown by user code.
 
+# Allow empty records for discriminated union types
+dotnet_diagnostic.S2094.severity=none # S2094: Classes should not be empty
 
 [**/tests/**/*.cs]
 # Allow our strange test class naming convention

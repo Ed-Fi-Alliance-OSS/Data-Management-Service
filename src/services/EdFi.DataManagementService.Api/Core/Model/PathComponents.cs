@@ -25,5 +25,5 @@ public record PathComponents(
   /// <summary>
   /// The optional resource identifier, which is a document uuid
   /// </summary>
-  DocumentUuid? DocumentUuid
+  DocumentUuid DocumentUuid
 );

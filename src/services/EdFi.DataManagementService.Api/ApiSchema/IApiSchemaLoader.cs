@@ -4,10 +4,16 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Text.Json.Nodes;
 
-namespace EdFi.DataManagementService.Api.Core.Middleware;
+namespace EdFi.DataManagementService.Api.ApiSchema;
 
-
-public interface IApiSchemaLoader
+/// <summary>
+/// Provides an ApiSchema as parsed JSON
+/// </summary>
+public interface IApiSchemaProvider
 {
+
+    /// <summary>
+    /// ApiSchema as parsed JSON
+    /// </summary>
     JsonNode ApiSchemaRootNode { get; }
 }
