@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - "**/Dockerfile"
-      - ".github/workflows/on-pullrequest-dockerfile.yml"
   pull_request:
     branches:
       - main
@@ -55,7 +52,19 @@ jobs:
           command: cves
           image: local://${{ env.IMAGE_NAME }}
           sarif-file: sarif-${{ env.IMAGE_NAME }}.output.json
-          summary: true
+
+      - name: Results
+        run: |
+          results=$(cat sarif-${{ env.IMAGE_NAME }}.output.json)
+          errors=$(echo $results | jq '[.runs[].results[] | select(.level == "error")] | length')
+          warnings=$(echo $results | jq '[.runs[].results[] | select(.level == "warning")] | length')
+          notes=$(echo $results | jq '[.runs[].results[] | select(.level == "note")] | length')
+
+          if [[ $errors -gt 0 ]]
+          then
+            echo "::error::There are $errors errors"
+            exit 1
+          fi
 
       - name: Upload SARIF result
         id: upload-sarif
