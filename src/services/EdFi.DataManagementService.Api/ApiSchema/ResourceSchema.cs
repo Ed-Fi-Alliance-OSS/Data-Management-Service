@@ -12,11 +12,11 @@ namespace EdFi.DataManagementService.Api.ApiSchema;
 /// <summary>
 /// Provides information from the ResourceSchema portion of an ApiSchema.json document
 /// </summary>
-public class ResourceSchema(JsonNode _resourceSchemaNode)
+public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
 {
     private readonly Lazy<MetaEdResourceName> _resourceName = new(() =>
     {
-        return new MetaEdResourceName(_resourceSchemaNode.SelectRequiredNodeFromPathAs<string>("$.resourceName"));
+        return new MetaEdResourceName(_resourceSchemaNode.SelectRequiredNodeFromPathAs<string>("$.resourceName", _logger));
     });
 
     /// <summary>
@@ -26,7 +26,7 @@ public class ResourceSchema(JsonNode _resourceSchemaNode)
 
     private readonly Lazy<bool> _isDescriptor = new(() =>
     {
-        return _resourceSchemaNode.SelectRequiredNodeFromPathAs<bool>("$.isDescriptor");
+        return _resourceSchemaNode.SelectRequiredNodeFromPathAs<bool>("$.isDescriptor", _logger);
     });
 
     /// <summary>
@@ -36,7 +36,7 @@ public class ResourceSchema(JsonNode _resourceSchemaNode)
 
     private readonly Lazy<bool> _allowIdentityUpdates = new(() =>
     {
-        return _resourceSchemaNode.SelectRequiredNodeFromPathAs<bool>("$.allowIdentityUpdates");
+        return _resourceSchemaNode.SelectRequiredNodeFromPathAs<bool>("$.allowIdentityUpdates", _logger);
     });
 
     /// <summary>
@@ -46,7 +46,7 @@ public class ResourceSchema(JsonNode _resourceSchemaNode)
 
     private readonly Lazy<JsonNode> _jsonSchemaForInsert = new(() =>
     {
-        return _resourceSchemaNode.SelectRequiredNodeFromPath("$.jsonSchemaForInsert");
+        return _resourceSchemaNode.SelectRequiredNodeFromPath("$.jsonSchemaForInsert", _logger);
     });
 
     /// <summary>

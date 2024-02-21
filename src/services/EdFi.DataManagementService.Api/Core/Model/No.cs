@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Api.ApiSchema;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DataManagementService.Api.Core.Model;
 
@@ -16,17 +17,17 @@ public static class No
     /// <summary>
     /// The null object for ApiSchemaDocument
     /// </summary>
-    public static readonly ApiSchemaDocument ApiSchemaDocument = new(new JsonObject());
+    public static readonly ApiSchemaDocument ApiSchemaDocument = new(new JsonObject(), NullLogger<ApiSchemaDocument>.Instance);
 
     /// <summary>
     /// The null object for ProjectSchema
     /// </summary>
-    public static readonly ProjectSchema ProjectSchema = new(new JsonObject());
+    public static readonly ProjectSchema ProjectSchema = new(new JsonObject(), NullLogger<ProjectSchema>.Instance);
 
     /// <summary>
     /// The null object for ResourceSchema
     /// </summary>
-    public static readonly ResourceSchema ResourceSchema = new(new JsonObject());
+    public static readonly ResourceSchema ResourceSchema = new(new JsonObject(), NullLogger<ResourceSchema>.Instance);
 
     /// <summary>
     /// The null object for DocumentUuid

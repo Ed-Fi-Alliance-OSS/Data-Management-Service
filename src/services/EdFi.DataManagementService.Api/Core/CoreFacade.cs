@@ -68,8 +68,12 @@ public class CoreFacade(
     /// </summary>
     public async Task<FrontendResponse> Upsert(FrontendRequest frontendRequest)
     {
+        _logger.LogDebug("Upsert FrontendRequest: {FrontendRequest}", frontendRequest);
+
         PipelineContext pipelineContext = new(frontendRequest);
         await _upsertSteps.Run(pipelineContext);
+
+        _logger.LogDebug("Upsert FrontendResponse: {FrontendResponse}", pipelineContext.FrontendResponse);
         return pipelineContext.FrontendResponse;
     }
 
@@ -78,8 +82,12 @@ public class CoreFacade(
     /// </summary>
     public async Task<FrontendResponse> GetById(FrontendRequest frontendRequest)
     {
+        _logger.LogDebug("GetById FrontendRequest: {FrontendRequest}", frontendRequest);
+
         PipelineContext pipelineContext = new(frontendRequest);
         await _getByIdSteps.Run(pipelineContext);
+
+        _logger.LogDebug("GetById FrontendResponse: {FrontendResponse}", pipelineContext.FrontendResponse);
         return pipelineContext.FrontendResponse;
     }
 
@@ -88,8 +96,12 @@ public class CoreFacade(
     /// </summary>
     public async Task<FrontendResponse> UpdateById(FrontendRequest frontendRequest)
     {
+        _logger.LogDebug("UpdateById FrontendRequest: {FrontendRequest}", frontendRequest);
+
         PipelineContext pipelineContext = new(frontendRequest);
         await _updateSteps.Run(pipelineContext);
+
+        _logger.LogDebug("UpdateById FrontendResponse: {FrontendResponse}", pipelineContext.FrontendResponse);
         return pipelineContext.FrontendResponse;
     }
 
@@ -98,8 +110,12 @@ public class CoreFacade(
     /// </summary>
     public async Task<FrontendResponse> DeleteById(FrontendRequest frontendRequest)
     {
+        _logger.LogDebug("DeleteById FrontendRequest: {FrontendRequest}", frontendRequest);
+
         PipelineContext pipelineContext = new(frontendRequest);
         await _deleteByIdSteps.Run(pipelineContext);
+
+        _logger.LogDebug("DeleteById FrontendResponse: {FrontendResponse}", pipelineContext.FrontendResponse);
         return pipelineContext.FrontendResponse;
     }
 }

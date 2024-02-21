@@ -17,7 +17,7 @@ public class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, IL
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        _logger.LogInformation("UpsertHandler");
+        _logger.LogDebug("Entering UpsertHandler - {TraceId}", context.FrontendRequest.TraceId);
 
         UpsertResult result = await _documentStoreRepository.UpsertDocument(new(
             ReferentialId: new("ReferentialId placeholder"),

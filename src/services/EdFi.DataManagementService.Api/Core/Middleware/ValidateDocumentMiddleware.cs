@@ -14,7 +14,8 @@ public class ValidateDocumentMiddleware(ILogger _logger) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        _logger.LogInformation("ValidateDocumentMiddleware");
+        _logger.LogDebug("Entering ValidateDocumentMiddleware- {TraceId}", context.FrontendRequest.TraceId);
+
         // DMS-13
 
         await next();

@@ -14,7 +14,7 @@ public class BuildResourceInfoMiddleware(ILogger _logger) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        _logger.LogInformation("BuildResourceInfoMiddleware");
+        _logger.LogDebug("Entering BuildResourceInfoMiddleware - {TraceId}", context.FrontendRequest.TraceId);
 
         context.ResourceInfo = new(
               ProjectName: context.ProjectSchema.ProjectName,

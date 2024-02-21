@@ -12,13 +12,13 @@ namespace EdFi.DataManagementService.Api.ApiSchema;
 /// <summary>
 /// Provides information from a loaded ApiSchema.json document
 /// </summary>
-public class ApiSchemaDocument(JsonNode _apiSchemaRootNode)
+public class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
 {
     /// <summary>
     /// Finds the ProjectSchema that represents the given ProjectNamespace. Returns null if not found.
     /// </summary>
     public JsonNode? FindProjectSchemaNode(ProjectNamespace projectNamespace)
     {
-        return _apiSchemaRootNode.SelectNodeFromPath($"$.projectSchemas[\"{projectNamespace.Value}\"]");
+        return _apiSchemaRootNode.SelectNodeFromPath($"$.projectSchemas[\"{projectNamespace.Value}\"]", _logger);
     }
 }

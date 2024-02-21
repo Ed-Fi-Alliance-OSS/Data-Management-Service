@@ -16,7 +16,7 @@ public class DeleteByIdHandler(IDocumentStoreRepository _documentStoreRepository
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        _logger.LogDebug("DeleteByIdHandler");
+        _logger.LogDebug("Entering DeleteByIdHandler - {TraceId}", context.FrontendRequest.TraceId);
 
         DeleteResult result = await _documentStoreRepository.DeleteDocumentById(new(
             DocumentUuid: context.PathComponents.DocumentUuid,

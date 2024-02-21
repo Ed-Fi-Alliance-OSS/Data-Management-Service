@@ -19,11 +19,17 @@ public class ApiSchemaFileLoader : IApiSchemaProvider
     public JsonNode ApiSchemaRootNode => _apiSchemaRootNode;
     public ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger)
     {
-        _logger.LogInformation("ApiSchemaFileLoader");
+        _logger.LogDebug("Entering ApiSchemaFileLoader");
 
         // Hardcoded and synchronous way to read the API Schema file
-        _apiSchemaRootNode =
-            JsonNode.Parse(File.ReadAllText($"{AppContext.BaseDirectory}/ApiSchema/DataStandard-5.0.0-ApiSchema.json")) ??
+        string fileLocation = $"{AppContext.BaseDirectory}/ApiSchema/DataStandard-5.0.0-ApiSchema.json";
+        JsonNode? rootNodeFromFile = JsonNode.Parse(File.ReadAllText(fileLocation));
+
+        if (rootNodeFromFile == null)
+        {
+            _logger.LogCritical("Unable to read and parse Api Schema file at {fileLocation}", fileLocation);
             throw new InvalidOperationException("Unable to read and parse Api Schema file.");
+        }
+        _apiSchemaRootNode = rootNodeFromFile;
     }
 }
