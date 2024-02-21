@@ -5,18 +5,13 @@
 
 using Microsoft.Extensions.Options;
 using System.Text.Json;
-using static EdFi.DataManagementService.Api.Frontend;
+using static EdFi.DataManagementService.Api.AspNetCoreFrontend;
 using EdFi.DataManagementService.Api.Configuration;
 using EdFi.DataManagementService.Api.Infrastructure;
 using EdFi.DataManagementService.Api.Infrastructure.Extensions;
-using EdFi.DataManagementService.Api.Core;
-using EdFi.DataManagementService.Api.Core.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddServices();
-
-builder.Services.AddSingleton<ICoreFacade, CoreFacade>();
-builder.Services.AddSingleton<IApiSchemaLoader, ApiSchemaLoader>();
 
 var app = builder.Build();
 

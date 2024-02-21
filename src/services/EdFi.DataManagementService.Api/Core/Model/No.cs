@@ -29,9 +29,14 @@ public static class No
     public static readonly ResourceSchema ResourceSchema = new(new JsonObject());
 
     /// <summary>
+    /// The null object for DocumentUuid
+    /// </summary>
+    public static readonly DocumentUuid DocumentUuid = new("00000000-0000-0000-0000-000000000000");
+
+    /// <summary>
     /// The null object for PathComponents
     /// </summary>
-    public static readonly PathComponents PathComponents = new(ProjectNamespace: new(""), EndpointName: new(""), DocumentUuid: null);
+    public static readonly PathComponents PathComponents = new(ProjectNamespace: new(""), EndpointName: new(""), DocumentUuid: DocumentUuid);
 
     /// <summary>
     /// The null object for ResourceInfo

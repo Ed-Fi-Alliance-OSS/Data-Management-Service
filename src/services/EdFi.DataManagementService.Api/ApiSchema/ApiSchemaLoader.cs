@@ -4,16 +4,22 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Text.Json.Nodes;
 
-namespace EdFi.DataManagementService.Api.Core.Middleware;
+namespace EdFi.DataManagementService.Api.ApiSchema;
 
-
-public class ApiSchemaLoader : IApiSchemaLoader
+/// <summary>
+/// Loads and parses the ApiSchema.json from a file.
+/// </summary>
+public class ApiSchemaFileLoader : IApiSchemaProvider
 {
     private readonly JsonNode _apiSchemaRootNode;
+
+    /// <summary>
+    /// The parsed ApiSchema.json file
+    /// </summary>
     public JsonNode ApiSchemaRootNode => _apiSchemaRootNode;
-    public ApiSchemaLoader(ILogger<ApiSchemaLoader> _logger)
+    public ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger)
     {
-        _logger.LogInformation("ApiSchemaLoader");
+        _logger.LogInformation("ApiSchemaFileLoader");
 
         // Hardcoded and synchronous way to read the API Schema file
         _apiSchemaRootNode =

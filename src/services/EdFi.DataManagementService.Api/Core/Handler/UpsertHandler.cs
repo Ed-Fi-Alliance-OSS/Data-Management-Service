@@ -3,21 +3,40 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Api.Backend;
 using EdFi.DataManagementService.Core.Pipeline;
+using static EdFi.DataManagementService.Api.Backend.UpsertResult;
 
 namespace EdFi.DataManagementService.Api.Core.Handler;
 
 /// <summary>
 /// Handles an upsert request that has made it through the middleware pipeline steps.
 /// </summary>
-public class UpsertHandler(ILogger _logger) : IPipelineStep
+public class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         _logger.LogInformation("UpsertHandler");
 
-        await Task.FromResult("Here to suppress 'missing await' complaints until this is not a stub");
+        UpsertResult result = await _documentStoreRepository.UpsertDocument(new(
+            ReferentialId: new("ReferentialId placeholder"),
+            ResourceInfo: context.ResourceInfo,
+            DocumentInfo: new("DocumentInfo placeholder"),
+            EdfiDoc: new JsonObject(),
+            validateDocumentReferencesExist: false,
+            TraceId: context.FrontendRequest.TraceId
+        ));
 
-        context.FrontendResponse = new(StatusCode: 204, Body: null);
+        context.FrontendResponse = result switch
+        {
+            InsertSuccess => new(StatusCode: 201, Body: null),
+            UpdateSuccess => new(StatusCode: 200, Body: null),
+            UpsertFailureReference failure => new(StatusCode: 409, Body: failure.ReferencingDocumentInfo),
+            UpsertFailureIdentityConflict failure => new(StatusCode: 400, Body: failure.ReferencingDocumentInfo),
+            UpsertFailureWriteConflict failure => new(StatusCode: 409, Body: failure.FailureMessage),
+            UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage),
+            _ => new(StatusCode: 500, Body: "Unknown UpsertResult")
+        };
     }
 }
