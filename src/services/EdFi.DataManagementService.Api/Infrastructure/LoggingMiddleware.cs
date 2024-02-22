@@ -45,7 +45,7 @@ public class LoggingMiddleware(RequestDelegate next)
             if (!response.HasStarted)
             {
                 response.ContentType = "application/json";
-                response.StatusCode = (int) HttpStatusCode.InternalServerError;
+                response.StatusCode = (int)HttpStatusCode.InternalServerError;
                 await response.WriteAsync(
                     JsonSerializer.Serialize(
                         new

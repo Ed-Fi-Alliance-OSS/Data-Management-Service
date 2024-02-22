@@ -52,7 +52,7 @@ namespace EdFi.DataManagementService.Api.Infrastructure
 
             webAppBuilder.Services.AddRateLimiter(limiterOptions =>
             {
-                limiterOptions.RejectionStatusCode = (int) HttpStatusCode.TooManyRequests;
+                limiterOptions.RejectionStatusCode = (int)HttpStatusCode.TooManyRequests;
                 limiterOptions.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(
                     httpContext =>
                         RateLimitPartition.GetFixedWindowLimiter(
