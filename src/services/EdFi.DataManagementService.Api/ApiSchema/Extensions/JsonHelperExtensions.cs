@@ -33,12 +33,18 @@ public static class JsonHelperExtensions
                 throw new InvalidOperationException($"Unexpected Json.Path error for '{jsonPathString}'");
             }
 
-            if (result.Matches.Count == 0) return null;
+            if (result.Matches.Count == 0)
+                return null;
 
             if (result.Matches.Count != 1)
             {
-                logger.LogError("JSONPath string '{jsonPathString}' selected multiple values", jsonPathString);
-                throw new InvalidOperationException($"JSONPath string '{jsonPathString}' selected multiple values");
+                logger.LogError(
+                    "JSONPath string '{jsonPathString}' selected multiple values",
+                    jsonPathString
+                );
+                throw new InvalidOperationException(
+                    $"JSONPath string '{jsonPathString}' selected multiple values"
+                );
             }
 
             return result.Matches[0].Value;
@@ -54,7 +60,11 @@ public static class JsonHelperExtensions
     /// Helper to go from a scalar JSONPath selection directly to the selected JsonNode.
     /// Throws if the value does not exist
     /// </summary>
-    public static JsonNode SelectRequiredNodeFromPath(this JsonNode jsonNode, string jsonPathString, ILogger logger)
+    public static JsonNode SelectRequiredNodeFromPath(
+        this JsonNode jsonNode,
+        string jsonPathString,
+        ILogger logger
+    )
     {
         JsonNode? result = SelectNodeFromPath(jsonNode, jsonPathString, logger);
         if (result == null)
@@ -73,7 +83,8 @@ public static class JsonHelperExtensions
     {
         JsonNode? selectedNode = SelectNodeFromPath(jsonNode, jsonPathString, logger);
 
-        if (selectedNode == null) return default;
+        if (selectedNode == null)
+            return default;
 
         JsonValue? resultNode = selectedNode!.AsValue();
         if (resultNode == null)
@@ -88,7 +99,11 @@ public static class JsonHelperExtensions
     /// Helper to go from a scalar JSONPath selection directly to the typed value.
     /// Throws if the value does not exist
     /// </summary>
-    public static T SelectRequiredNodeFromPathAs<T>(this JsonNode jsonNode, string jsonPathString, ILogger logger)
+    public static T SelectRequiredNodeFromPathAs<T>(
+        this JsonNode jsonNode,
+        string jsonPathString,
+        ILogger logger
+    )
     {
         T? result = SelectNodeFromPathAs<T>(jsonNode, jsonPathString, logger);
         if (result == null)

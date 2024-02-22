@@ -19,6 +19,9 @@ public class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
     /// </summary>
     public JsonNode? FindProjectSchemaNode(ProjectNamespace projectNamespace)
     {
-        return _apiSchemaRootNode.SelectNodeFromPath($"$.projectSchemas[\"{projectNamespace.Value}\"]", _logger);
+        return _apiSchemaRootNode.SelectNodeFromPath(
+            $"$.projectSchemas[\"{projectNamespace.Value}\"]",
+            _logger
+        );
     }
 }

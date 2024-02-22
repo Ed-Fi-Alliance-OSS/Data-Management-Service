@@ -13,8 +13,4 @@ namespace EdFi.DataManagementService.Api.Backend;
 /// <param name="DocumentUuid">The document UUID to get</param>
 /// <param name="ResourceInfo">The ResourceInfo for the resource being retrieved</param>
 /// <param name="TraceId">The request TraceId</param>
-public record GetRequest(
-    DocumentUuid DocumentUuid,
-    ResourceInfo ResourceInfo,
-    TraceId TraceId
-);
+public record GetRequest(DocumentUuid DocumentUuid, ResourceInfo ResourceInfo, TraceId TraceId);

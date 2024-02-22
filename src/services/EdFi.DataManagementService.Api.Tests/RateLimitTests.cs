@@ -18,12 +18,11 @@ public class RateLimitTests
     public async Task TestRateLimit()
     {
         // Arrange
-        await using var factory = new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
-            {
-                // This environment has an extreme rate limit
-                builder.UseEnvironment("Test");
-            });
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            // This environment has an extreme rate limit
+            builder.UseEnvironment("Test");
+        });
         using var client = factory.CreateClient();
 
         // Act

@@ -21,7 +21,9 @@ namespace EdFi.DataManagementService.Api.Infrastructure
             webAppBuilder.Services.AddSingleton<ICoreFacade, CoreFacade>();
             webAppBuilder.Services.AddSingleton<IDocumentStoreRepository, SuccessDocumentStoreRepository>();
 
-            webAppBuilder.Services.Configure<AppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"));
+            webAppBuilder.Services.Configure<AppSettings>(
+                webAppBuilder.Configuration.GetSection("AppSettings")
+            );
 
             if (webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
             {
@@ -32,9 +34,9 @@ namespace EdFi.DataManagementService.Api.Infrastructure
             void ConfigureLogging()
             {
                 var logger = new LoggerConfiguration()
-                            .ReadFrom.Configuration(webAppBuilder.Configuration)
-                            .Enrich.FromLogContext()
-                            .CreateLogger();
+                    .ReadFrom.Configuration(webAppBuilder.Configuration)
+                    .Enrich.FromLogContext()
+                    .CreateLogger();
                 webAppBuilder.Logging.ClearProviders();
                 webAppBuilder.Logging.AddSerilog(logger);
             }
@@ -42,24 +44,28 @@ namespace EdFi.DataManagementService.Api.Infrastructure
 
         private static void ConfigureRateLimit(WebApplicationBuilder webAppBuilder)
         {
-            webAppBuilder.Services.Configure<RateLimitOptions>(webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit));
+            webAppBuilder.Services.Configure<RateLimitOptions>(
+                webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit)
+            );
             var rateLimitOptions = new RateLimitOptions();
             webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Bind(rateLimitOptions);
 
             webAppBuilder.Services.AddRateLimiter(limiterOptions =>
             {
                 limiterOptions.RejectionStatusCode = (int) HttpStatusCode.TooManyRequests;
-                limiterOptions.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
-                    RateLimitPartition.GetFixedWindowLimiter(
-                        partitionKey: httpContext.Request.Headers.Host.ToString(),
-                        factory: partition => new FixedWindowRateLimiterOptions
-                        {
-                            PermitLimit = rateLimitOptions.PermitLimit,
-                            QueueLimit = rateLimitOptions.QueueLimit,
-                            Window = TimeSpan.FromSeconds(rateLimitOptions.Window)
-                        }));
+                limiterOptions.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(
+                    httpContext =>
+                        RateLimitPartition.GetFixedWindowLimiter(
+                            partitionKey: httpContext.Request.Headers.Host.ToString(),
+                            factory: partition => new FixedWindowRateLimiterOptions
+                            {
+                                PermitLimit = rateLimitOptions.PermitLimit,
+                                QueueLimit = rateLimitOptions.QueueLimit,
+                                Window = TimeSpan.FromSeconds(rateLimitOptions.Window)
+                            }
+                        )
+                );
             });
-
         }
     }
 }

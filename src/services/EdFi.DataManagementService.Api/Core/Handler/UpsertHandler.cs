@@ -19,21 +19,30 @@ public class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, IL
     {
         _logger.LogDebug("Entering UpsertHandler - {TraceId}", context.FrontendRequest.TraceId);
 
-        UpsertResult result = await _documentStoreRepository.UpsertDocument(new(
-            ReferentialId: new("ReferentialId placeholder"),
-            ResourceInfo: context.ResourceInfo,
-            DocumentInfo: new("DocumentInfo placeholder"),
-            EdfiDoc: new JsonObject(),
-            validateDocumentReferencesExist: false,
-            TraceId: context.FrontendRequest.TraceId
-        ));
+        UpsertResult result = await _documentStoreRepository.UpsertDocument(
+            new(
+                ReferentialId: new("ReferentialId placeholder"),
+                ResourceInfo: context.ResourceInfo,
+                DocumentInfo: new("DocumentInfo placeholder"),
+                EdfiDoc: new JsonObject(),
+                validateDocumentReferencesExist: false,
+                TraceId: context.FrontendRequest.TraceId
+            )
+        );
+
+        _logger.LogDebug(
+            "Document store UpsertDocument returned {UpsetResult}- {TraceId}",
+            result.GetType().FullName,
+            context.FrontendRequest.TraceId
+        );
 
         context.FrontendResponse = result switch
         {
             InsertSuccess => new(StatusCode: 201, Body: null),
             UpdateSuccess => new(StatusCode: 200, Body: null),
             UpsertFailureReference failure => new(StatusCode: 409, Body: failure.ReferencingDocumentInfo),
-            UpsertFailureIdentityConflict failure => new(StatusCode: 400, Body: failure.ReferencingDocumentInfo),
+            UpsertFailureIdentityConflict failure
+                => new(StatusCode: 400, Body: failure.ReferencingDocumentInfo),
             UpsertFailureWriteConflict failure => new(StatusCode: 409, Body: failure.FailureMessage),
             UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage),
             _ => new(StatusCode: 500, Body: "Unknown UpsertResult")

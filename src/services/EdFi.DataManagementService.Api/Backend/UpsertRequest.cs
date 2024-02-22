@@ -17,10 +17,10 @@ namespace EdFi.DataManagementService.Api.Backend;
 /// <param name="validateDocumentReferencesExist">If true, validates that all references in the document exist</param>
 /// <param name="TraceId">The request TraceId</param>
 public record UpsertRequest(
-  ReferentialId ReferentialId,
-  ResourceInfo ResourceInfo,
-  DocumentInfo DocumentInfo,
-  JsonNode EdfiDoc,
-  bool validateDocumentReferencesExist,
-  TraceId TraceId
+    ReferentialId ReferentialId,
+    ResourceInfo ResourceInfo,
+    DocumentInfo DocumentInfo,
+    JsonNode EdfiDoc,
+    bool validateDocumentReferencesExist,
+    TraceId TraceId
 );

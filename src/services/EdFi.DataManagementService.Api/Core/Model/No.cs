@@ -17,17 +17,20 @@ public static class No
     /// <summary>
     /// The null object for ApiSchemaDocument
     /// </summary>
-    public static readonly ApiSchemaDocument ApiSchemaDocument = new(new JsonObject(), NullLogger<ApiSchemaDocument>.Instance);
+    public static readonly ApiSchemaDocument ApiSchemaDocument =
+        new(new JsonObject(), NullLogger<ApiSchemaDocument>.Instance);
 
     /// <summary>
     /// The null object for ProjectSchema
     /// </summary>
-    public static readonly ProjectSchema ProjectSchema = new(new JsonObject(), NullLogger<ProjectSchema>.Instance);
+    public static readonly ProjectSchema ProjectSchema =
+        new(new JsonObject(), NullLogger<ProjectSchema>.Instance);
 
     /// <summary>
     /// The null object for ResourceSchema
     /// </summary>
-    public static readonly ResourceSchema ResourceSchema = new(new JsonObject(), NullLogger<ResourceSchema>.Instance);
+    public static readonly ResourceSchema ResourceSchema =
+        new(new JsonObject(), NullLogger<ResourceSchema>.Instance);
 
     /// <summary>
     /// The null object for DocumentUuid
@@ -37,20 +40,23 @@ public static class No
     /// <summary>
     /// The null object for PathComponents
     /// </summary>
-    public static readonly PathComponents PathComponents = new(ProjectNamespace: new(""), EndpointName: new(""), DocumentUuid: DocumentUuid);
+    public static readonly PathComponents PathComponents =
+        new(ProjectNamespace: new(""), EndpointName: new(""), DocumentUuid: DocumentUuid);
 
     /// <summary>
     /// The null object for ResourceInfo
     /// </summary>
-    public static readonly ResourceInfo ResourceInfo = new(ProjectName: new(""), ResourceName: new(""), IsDescriptor: false,
-      ResourceVersion: new(""), AllowIdentityUpdates: false);
+    public static readonly ResourceInfo ResourceInfo =
+        new(
+            ProjectName: new(""),
+            ResourceName: new(""),
+            IsDescriptor: false,
+            ResourceVersion: new(""),
+            AllowIdentityUpdates: false
+        );
 
     /// <summary>
     /// The null object for FrontendResponse
     /// </summary>
     public static readonly FrontendResponse FrontendResponse = new(StatusCode: 503, Body: "");
 }
-
-
-
-
