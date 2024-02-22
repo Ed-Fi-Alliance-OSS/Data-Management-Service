@@ -5,6 +5,8 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Api.ApiSchema;
+using EdFi.DataManagementService.Api.Core.Middleware;
+using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DataManagementService.Api.Core.Model;
@@ -56,7 +58,18 @@ public static class No
         );
 
     /// <summary>
+    /// The null object for FrontendRequest
+    /// </summary>
+    public static readonly FrontendRequest FrontendRequest =
+        new(Method: RequestMethod.POST, Body: "{}", Path: "", TraceId: new(""));
+
+    /// <summary>
     /// The null object for FrontendResponse
     /// </summary>
     public static readonly FrontendResponse FrontendResponse = new(StatusCode: 503, Body: "");
+
+    /// <summary>
+    /// The null object for PipelineContext
+    /// </summary>
+    public static readonly PipelineContext PipelineContext = new(FrontendRequest);
 }

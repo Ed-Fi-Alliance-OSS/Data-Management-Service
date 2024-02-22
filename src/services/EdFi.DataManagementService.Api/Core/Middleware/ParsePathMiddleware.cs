@@ -25,30 +25,25 @@ public partial class ParsePathMiddleware(ILogger _logger) : IPipelineStep
     [GeneratedRegex(@"^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")]
     private static partial Regex Uuid4Regex();
 
-    private static string Decapitalize(string str)
-    {
-        if (str.Length == 0)
-            return str;
-        if (str.Length == 1)
-            return str.ToLower();
-        return str[0..1].ToLower() + str[1..];
-    }
-
+    /// <summary>
+    /// Uses a regex to split the path into PathComponents, or return null if the path is invalid
+    /// </summary>
     private static PathComponents? PathComponentsFrom(string path)
     {
-        Match? match = PathExpressionRegex().Match(path);
+        Match match = PathExpressionRegex().Match(path);
 
-        if (match == null)
+        if (!match.Success)
+        {
             return null;
+        }
 
-        string? documentUuidValue = match.Groups["documentUuid"].Value;
-        if (documentUuidValue == "")
-            documentUuidValue = null;
+        string documentUuidValue = match.Groups["documentUuid"].Value;
+        DocumentUuid documentUuid = documentUuidValue == "" ? No.DocumentUuid : new(documentUuidValue);
 
         return new(
             ProjectNamespace: new(match.Groups["projectNamespace"].Value.ToLower()),
-            EndpointName: new(Decapitalize(match.Groups["endpointName"].Value)),
-            DocumentUuid: documentUuidValue == null ? No.DocumentUuid : new(documentUuidValue)
+            EndpointName: new(match.Groups["endpointName"].Value),
+            DocumentUuid: documentUuid
         );
     }
 
