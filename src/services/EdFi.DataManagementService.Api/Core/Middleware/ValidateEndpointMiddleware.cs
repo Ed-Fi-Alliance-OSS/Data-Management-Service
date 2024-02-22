@@ -17,22 +17,40 @@ public class ValidateEndpointMiddleware(ILogger _logger) : IPipelineStep
     {
         _logger.LogDebug("Entering ValidateEndpointMiddleware - {TraceId}", context.FrontendRequest.TraceId);
 
-        JsonNode? projectSchemaNode = context.ApiSchemaDocument.FindProjectSchemaNode(context.PathComponents.ProjectNamespace);
+        JsonNode? projectSchemaNode = context.ApiSchemaDocument.FindProjectSchemaNode(
+            context.PathComponents.ProjectNamespace
+        );
         if (projectSchemaNode == null)
         {
-            _logger.LogDebug("Invalid resource project namespace in '{EndpointName}' - {TraceId}", context.PathComponents.EndpointName, context.FrontendRequest.TraceId);
-            context.FrontendResponse = new(StatusCode: 404, Body: $"Invalid resource '{context.PathComponents.EndpointName}'.");
+            _logger.LogDebug(
+                "Invalid resource project namespace in '{EndpointName}' - {TraceId}",
+                context.PathComponents.EndpointName,
+                context.FrontendRequest.TraceId
+            );
+            context.FrontendResponse = new(
+                StatusCode: 404,
+                Body: $"Invalid resource '{context.PathComponents.EndpointName}'."
+            );
             return;
         }
 
         context.ProjectSchema = new(projectSchemaNode, _logger);
 
-        JsonNode? resourceSchemaNode = context.ProjectSchema.FindResourceSchemaNode(context.PathComponents.EndpointName);
+        JsonNode? resourceSchemaNode = context.ProjectSchema.FindResourceSchemaNode(
+            context.PathComponents.EndpointName
+        );
 
         if (resourceSchemaNode == null)
         {
-            _logger.LogDebug("Invalid resource name in '{EndpointName}' - {TraceId}", context.PathComponents.EndpointName, context.FrontendRequest.TraceId);
-            context.FrontendResponse = new(StatusCode: 404, Body: $"Invalid resource '{context.PathComponents.EndpointName}'.");
+            _logger.LogDebug(
+                "Invalid resource name in '{EndpointName}' - {TraceId}",
+                context.PathComponents.EndpointName,
+                context.FrontendRequest.TraceId
+            );
+            context.FrontendResponse = new(
+                StatusCode: 404,
+                Body: $"Invalid resource '{context.PathComponents.EndpointName}'."
+            );
             return;
         }
 

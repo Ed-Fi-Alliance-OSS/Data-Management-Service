@@ -13,28 +13,38 @@ namespace EdFi.DataManagementService.Api.Core.Handler;
 /// <summary>
 /// Handles an update request that has made it through the middleware pipeline steps.
 /// </summary>
-public class UpdateByIdHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger) : IPipelineStep
+public class UpdateByIdHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger)
+    : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         _logger.LogDebug("Entering UpdateByIdHandler - {TraceId}", context.FrontendRequest.TraceId);
 
-        UpdateResult result = await _documentStoreRepository.UpdateDocumentById(new(
-            ReferentialId: new("ReferentialId placeholder"),
-            DocumentUuid: context.PathComponents.DocumentUuid,
-            ResourceInfo: context.ResourceInfo,
-            DocumentInfo: new("DocumentInfo placeholder"),
-            EdfiDoc: new JsonObject(),
-            validateDocumentReferencesExist: false,
-            TraceId: context.FrontendRequest.TraceId
-        ));
+        UpdateResult result = await _documentStoreRepository.UpdateDocumentById(
+            new(
+                ReferentialId: new("ReferentialId placeholder"),
+                DocumentUuid: context.PathComponents.DocumentUuid,
+                ResourceInfo: context.ResourceInfo,
+                DocumentInfo: new("DocumentInfo placeholder"),
+                EdfiDoc: new JsonObject(),
+                validateDocumentReferencesExist: false,
+                TraceId: context.FrontendRequest.TraceId
+            )
+        );
+
+        _logger.LogDebug(
+            "Document store UpdateDocumentById returned {UpdateResult}- {TraceId}",
+            result.GetType().FullName,
+            context.FrontendRequest.TraceId
+        );
 
         context.FrontendResponse = result switch
         {
             UpdateSuccess => new(StatusCode: 204, Body: null),
             UpdateFailureNotExists => new(StatusCode: 404, Body: null),
             UpdateFailureReference failure => new(StatusCode: 409, Body: failure.ReferencingDocumentInfo),
-            UpdateFailureIdentityConflict failure => new(StatusCode: 400, Body: failure.ReferencingDocumentInfo),
+            UpdateFailureIdentityConflict failure
+                => new(StatusCode: 400, Body: failure.ReferencingDocumentInfo),
             UpdateFailureWriteConflict failure => new(StatusCode: 409, Body: failure.FailureMessage),
             UpdateFailureImmutableIdentity failure => new(StatusCode: 409, Body: failure.FailureMessage),
             UpdateFailureCascadeRequired => new(StatusCode: 400, Body: null),

@@ -11,8 +11,10 @@ namespace EdFi.DataManagementService.Api.Configuration
 
         //Number of requests per window
         public int PermitLimit { get; set; }
+
         //Number of seconds before permits are reset
         public int Window { get; set; }
+
         //Number of requests that can be put in queue when there are no more permits
         public int QueueLimit { get; set; }
     }

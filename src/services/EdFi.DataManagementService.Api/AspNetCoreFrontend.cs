@@ -24,7 +24,8 @@ namespace EdFi.DataManagementService.Api
             using StreamReader bodyReader = new(body);
             var requestBodyString = await bodyReader.ReadToEndAsync();
 
-            if (string.IsNullOrEmpty(requestBodyString)) return null;
+            if (string.IsNullOrEmpty(requestBodyString))
+                return null;
 
             return JsonNode.Parse(requestBodyString);
         }
@@ -36,7 +37,13 @@ namespace EdFi.DataManagementService.Api
         {
             JsonNode? body = await ExtractJsonBodyFrom(request);
 
-            FrontendRequest frontendRequest = new(Method: RequestMethod.POST, Body: body, Path: request.Path, TraceId: new(request.HttpContext.TraceIdentifier));
+            FrontendRequest frontendRequest =
+                new(
+                    Method: RequestMethod.POST,
+                    Body: body,
+                    Path: request.Path,
+                    TraceId: new(request.HttpContext.TraceIdentifier)
+                );
             FrontendResponse frontendResponse = await coreFacade.Upsert(frontendRequest);
 
             return Results.Content(statusCode: frontendResponse.StatusCode, content: frontendResponse.Body);
@@ -47,7 +54,13 @@ namespace EdFi.DataManagementService.Api
         /// </summary>
         public static async Task<IResult> GetById(HttpRequest request, ICoreFacade coreFacade)
         {
-            FrontendRequest frontendRequest = new(Method: RequestMethod.GET, Body: null, Path: request.Path, TraceId: new(request.HttpContext.TraceIdentifier));
+            FrontendRequest frontendRequest =
+                new(
+                    Method: RequestMethod.GET,
+                    Body: null,
+                    Path: request.Path,
+                    TraceId: new(request.HttpContext.TraceIdentifier)
+                );
             FrontendResponse frontendResponse = await coreFacade.GetById(frontendRequest);
 
             return Results.Content(statusCode: frontendResponse.StatusCode, content: frontendResponse.Body);
@@ -60,7 +73,13 @@ namespace EdFi.DataManagementService.Api
         {
             JsonNode? body = await ExtractJsonBodyFrom(request);
 
-            FrontendRequest frontendRequest = new(Method: RequestMethod.PUT, Body: body, Path: request.Path, TraceId: new(request.HttpContext.TraceIdentifier));
+            FrontendRequest frontendRequest =
+                new(
+                    Method: RequestMethod.PUT,
+                    Body: body,
+                    Path: request.Path,
+                    TraceId: new(request.HttpContext.TraceIdentifier)
+                );
             FrontendResponse frontendResponse = await coreFacade.UpdateById(frontendRequest);
 
             return Results.Content(statusCode: frontendResponse.StatusCode, content: frontendResponse.Body);
@@ -71,7 +90,13 @@ namespace EdFi.DataManagementService.Api
         /// </summary>
         public static async Task<IResult> DeleteById(HttpRequest request, ICoreFacade coreFacade)
         {
-            FrontendRequest frontendRequest = new(Method: RequestMethod.DELETE, Body: null, Path: request.Path, TraceId: new(request.HttpContext.TraceIdentifier));
+            FrontendRequest frontendRequest =
+                new(
+                    Method: RequestMethod.DELETE,
+                    Body: null,
+                    Path: request.Path,
+                    TraceId: new(request.HttpContext.TraceIdentifier)
+                );
             FrontendResponse frontendResponse = await coreFacade.DeleteById(frontendRequest);
 
             return Results.Content(statusCode: frontendResponse.StatusCode, content: frontendResponse.Body);

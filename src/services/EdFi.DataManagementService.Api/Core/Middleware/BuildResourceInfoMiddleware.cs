@@ -17,12 +17,12 @@ public class BuildResourceInfoMiddleware(ILogger _logger) : IPipelineStep
         _logger.LogDebug("Entering BuildResourceInfoMiddleware - {TraceId}", context.FrontendRequest.TraceId);
 
         context.ResourceInfo = new(
-              ProjectName: context.ProjectSchema.ProjectName,
-              ResourceVersion: context.ProjectSchema.ResourceVersion,
-              ResourceName: context.ResourceSchema.ResourceName,
-              IsDescriptor: context.ResourceSchema.IsDescriptor,
-              AllowIdentityUpdates: context.ResourceSchema.AllowIdentityUpdates
-         );
+            ProjectName: context.ProjectSchema.ProjectName,
+            ResourceVersion: context.ProjectSchema.ResourceVersion,
+            ResourceName: context.ResourceSchema.ResourceName,
+            IsDescriptor: context.ResourceSchema.IsDescriptor,
+            AllowIdentityUpdates: context.ResourceSchema.AllowIdentityUpdates
+        );
 
         await next();
     }

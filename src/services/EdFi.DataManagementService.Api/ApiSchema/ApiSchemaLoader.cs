@@ -17,6 +17,7 @@ public class ApiSchemaFileLoader : IApiSchemaProvider
     /// The parsed ApiSchema.json file
     /// </summary>
     public JsonNode ApiSchemaRootNode => _apiSchemaRootNode;
+
     public ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger)
     {
         _logger.LogDebug("Entering ApiSchemaFileLoader");

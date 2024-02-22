@@ -12,18 +12,16 @@ namespace EdFi.DataManagementService.Api.Core.Model;
 /// </summary>
 
 public record PathComponents(
-  /// <summary>
-  /// Project namespace, all lowercased
-  /// </summary>
-  ProjectNamespace ProjectNamespace,
-
-  /// <summary>
-  /// Endpoint name, which is always decapitalized and plural
-  /// </summary>
-  EndpointName EndpointName,
-
-  /// <summary>
-  /// The optional resource identifier, which is a document uuid
-  /// </summary>
-  DocumentUuid DocumentUuid
+    /// <summary>
+    /// Project namespace, all lowercased
+    /// </summary>
+    ProjectNamespace ProjectNamespace,
+    /// <summary>
+    /// Endpoint name, which is always decapitalized and plural
+    /// </summary>
+    EndpointName EndpointName,
+    /// <summary>
+    /// The optional resource identifier, which is a document uuid
+    /// </summary>
+    DocumentUuid DocumentUuid
 );

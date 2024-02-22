@@ -12,18 +12,27 @@ namespace EdFi.DataManagementService.Api.Core.Handler;
 /// <summary>
 /// Handles a delete request that has made it through the middleware pipeline steps.
 /// </summary>
-public class DeleteByIdHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger) : IPipelineStep
+public class DeleteByIdHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger)
+    : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         _logger.LogDebug("Entering DeleteByIdHandler - {TraceId}", context.FrontendRequest.TraceId);
 
-        DeleteResult result = await _documentStoreRepository.DeleteDocumentById(new(
-            DocumentUuid: context.PathComponents.DocumentUuid,
-            ResourceInfo: context.ResourceInfo,
-            validateNoReferencesToDocument: false,
-            TraceId: context.FrontendRequest.TraceId
-        ));
+        DeleteResult result = await _documentStoreRepository.DeleteDocumentById(
+            new(
+                DocumentUuid: context.PathComponents.DocumentUuid,
+                ResourceInfo: context.ResourceInfo,
+                validateNoReferencesToDocument: false,
+                TraceId: context.FrontendRequest.TraceId
+            )
+        );
+
+        _logger.LogDebug(
+            "Document store DeleteDocumentById returned {DeleteResult}- {TraceId}",
+            result.GetType().FullName,
+            context.FrontendRequest.TraceId
+        );
 
         context.FrontendResponse = result switch
         {

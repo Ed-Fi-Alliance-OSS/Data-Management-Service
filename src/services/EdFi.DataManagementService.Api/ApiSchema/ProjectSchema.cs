@@ -14,20 +14,26 @@ namespace EdFi.DataManagementService.Api.ApiSchema;
 /// </summary>
 public class ProjectSchema(JsonNode _projectSchemaNode, ILogger _logger)
 {
-    private readonly Lazy<MetaEdProjectName> _projectName = new(() =>
-    {
-        return new MetaEdProjectName(_projectSchemaNode.SelectRequiredNodeFromPathAs<string>("$.projectName", _logger));
-    });
+    private readonly Lazy<MetaEdProjectName> _projectName =
+        new(() =>
+        {
+            return new MetaEdProjectName(
+                _projectSchemaNode.SelectRequiredNodeFromPathAs<string>("$.projectName", _logger)
+            );
+        });
 
     /// <summary>
     /// The ProjectName for this ProjectSchema, taken from the projectName
     /// </summary>
     public MetaEdProjectName ProjectName => _projectName.Value;
 
-    private readonly Lazy<SemVer> _resourceVersion = new(() =>
-    {
-        return new SemVer(_projectSchemaNode.SelectRequiredNodeFromPathAs<string>("$.projectVersion", _logger));
-    });
+    private readonly Lazy<SemVer> _resourceVersion =
+        new(() =>
+        {
+            return new SemVer(
+                _projectSchemaNode.SelectRequiredNodeFromPathAs<string>("$.projectVersion", _logger)
+            );
+        });
 
     /// <summary>
     /// The ResourceVersion for this ProjectSchema, taken from the projectVersion
@@ -39,14 +45,17 @@ public class ProjectSchema(JsonNode _projectSchemaNode, ILogger _logger)
     /// </summary>
     public JsonNode? FindResourceSchemaNode(EndpointName endpointName)
     {
-        string? caseCorrectedEndpointName = _projectSchemaNode
-            .SelectNodeFromPathAs<string>(
-                $"$.caseInsensitiveEndpointNameMapping[\"{endpointName.Value.ToLower()}\"]",
-                _logger
-            );
+        string? caseCorrectedEndpointName = _projectSchemaNode.SelectNodeFromPathAs<string>(
+            $"$.caseInsensitiveEndpointNameMapping[\"{endpointName.Value.ToLower()}\"]",
+            _logger
+        );
 
-        if (caseCorrectedEndpointName == null) return null;
+        if (caseCorrectedEndpointName == null)
+            return null;
 
-        return _projectSchemaNode.SelectNodeFromPath($"$.resourceSchemas[\"{caseCorrectedEndpointName}\"]", _logger);
+        return _projectSchemaNode.SelectNodeFromPath(
+            $"$.resourceSchemas[\"{caseCorrectedEndpointName}\"]",
+            _logger
+        );
     }
 }

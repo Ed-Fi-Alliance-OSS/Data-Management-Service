@@ -27,8 +27,10 @@ public partial class ParsePathMiddleware(ILogger _logger) : IPipelineStep
 
     private static string Decapitalize(string str)
     {
-        if (str.Length == 0) return str;
-        if (str.Length == 1) return str.ToLower();
+        if (str.Length == 0)
+            return str;
+        if (str.Length == 1)
+            return str.ToLower();
         return str[0..1].ToLower() + str[1..];
     }
 
@@ -36,15 +38,17 @@ public partial class ParsePathMiddleware(ILogger _logger) : IPipelineStep
     {
         Match? match = PathExpressionRegex().Match(path);
 
-        if (match == null) return null;
+        if (match == null)
+            return null;
 
         string? documentUuidValue = match.Groups["documentUuid"].Value;
-        if (documentUuidValue == "") documentUuidValue = null;
+        if (documentUuidValue == "")
+            documentUuidValue = null;
 
         return new(
-          ProjectNamespace: new(match.Groups["projectNamespace"].Value.ToLower()),
-          EndpointName: new(Decapitalize(match.Groups["endpointName"].Value)),
-          DocumentUuid: documentUuidValue == null ? No.DocumentUuid : new(documentUuidValue)
+            ProjectNamespace: new(match.Groups["projectNamespace"].Value.ToLower()),
+            EndpointName: new(Decapitalize(match.Groups["endpointName"].Value)),
+            DocumentUuid: documentUuidValue == null ? No.DocumentUuid : new(documentUuidValue)
         );
     }
 
@@ -64,16 +68,25 @@ public partial class ParsePathMiddleware(ILogger _logger) : IPipelineStep
 
         if (pathComponents == null)
         {
-            _logger.LogDebug("ParsePathMiddleware: Not a valid path - {TraceId}", context.FrontendRequest.TraceId);
+            _logger.LogDebug(
+                "ParsePathMiddleware: Not a valid path - {TraceId}",
+                context.FrontendRequest.TraceId
+            );
             context.FrontendResponse = new(StatusCode: 404, Body: "");
             return;
         }
 
         context.PathComponents = pathComponents;
 
-        if (pathComponents.DocumentUuid != No.DocumentUuid && !IsDocumentUuidWellFormed(pathComponents.DocumentUuid))
+        if (
+            pathComponents.DocumentUuid != No.DocumentUuid
+            && !IsDocumentUuidWellFormed(pathComponents.DocumentUuid)
+        )
         {
-            _logger.LogDebug("ParsePathMiddleware: Not a valid document UUID - {TraceId}", context.FrontendRequest.TraceId);
+            _logger.LogDebug(
+                "ParsePathMiddleware: Not a valid document UUID - {TraceId}",
+                context.FrontendRequest.TraceId
+            );
             context.FrontendResponse = new(StatusCode: 404, Body: "");
             return;
         }

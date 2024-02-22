@@ -15,7 +15,8 @@ public record UpdateRequest(
     bool validateDocumentReferencesExist,
     TraceId TraceId,
     DocumentUuid DocumentUuid
-) : UpsertRequest(
+)
+    : UpsertRequest(
         ReferentialId,
         ResourceInfo,
         DocumentInfo,
