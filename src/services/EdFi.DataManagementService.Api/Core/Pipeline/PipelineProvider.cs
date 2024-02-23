@@ -7,36 +7,32 @@ namespace EdFi.DataManagementService.Core.Pipeline;
 
 /// <summary>
 /// Implements a simple Data Management Service pipeline provider, which
-/// is modeled on the Middleware pattern.
+/// is modeled on the Middleware pattern. The class does not maintain
+/// state beyond the initialized task list.
 ///
-/// Add pipeline steps in execution order with StartWith() and AndThen().
+/// Create pipeline steps in execution order with constructor.
 /// Run the pipeline steps with Run().
 /// </summary>
-public class PipelineProvider
+public class PipelineProvider(List<IPipelineStep> _steps)
 {
-    private readonly List<IPipelineStep> _steps = [];
-
-    public PipelineProvider AndThen(IPipelineStep step)
-    {
-        _steps.Add(step);
-        return this;
-    }
-
-    public PipelineProvider StartWith(IPipelineStep step)
-    {
-        return AndThen(step);
-    }
-
-    public async Task Run(PipelineContext context)
-    {
-        await RunInternal(0, context);
-    }
-
+    /// <summary>
+    /// Run the step at the given index, if there is one. (If not, we are at the end.)
+    /// Pass the context to the step, along with a "next" function that will
+    /// run the next step in the list.
+    /// </summary>
     private async Task RunInternal(int stepIndex, PipelineContext context)
     {
         if (_steps.Count > stepIndex)
         {
             await _steps[stepIndex].Execute(context, () => RunInternal(stepIndex + 1, context));
         }
+    }
+
+    /// <summary>
+    /// Start the pipeline with the first step
+    /// </summary>
+    public async Task Run(PipelineContext context)
+    {
+        await RunInternal(0, context);
     }
 }
