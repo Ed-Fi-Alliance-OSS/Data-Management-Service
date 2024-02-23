@@ -69,7 +69,10 @@ public static class No
     public static readonly FrontendResponse FrontendResponse = new(StatusCode: 503, Body: "");
 
     /// <summary>
-    /// The null object for PipelineContext
+    /// A constructor of a PipelineContext initialized with null objects
     /// </summary>
-    public static readonly PipelineContext PipelineContext = new(FrontendRequest);
+    public static PipelineContext PipelineContext()
+    {
+        return new PipelineContext(FrontendRequest);
+    }
 }

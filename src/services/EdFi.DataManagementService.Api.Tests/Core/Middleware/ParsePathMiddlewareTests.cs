@@ -15,13 +15,17 @@ namespace EdFi.DataManagementService.Api.Tests.Core.Middleware;
 [TestFixture]
 public class ParsePathMiddlewareTests
 {
-    private static readonly IPipelineStep _parsePathMiddleware = new ParsePathMiddleware(NullLogger.Instance);
     private static readonly Func<Task> _nullNext = () => Task.CompletedTask;
+
+    public static IPipelineStep Middleware()
+    {
+        return new ParsePathMiddleware(NullLogger.Instance);
+    }
 
     [TestFixture]
     public class Given_an_empty_path : ParsePathMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext;
+        private PipelineContext _context = No.PipelineContext();
 
         [SetUp]
         public async Task Setup()
@@ -29,7 +33,7 @@ public class ParsePathMiddlewareTests
             FrontendRequest frontendRequest =
                 new(Method: RequestMethod.POST, Body: "{}", Path: "", TraceId: new(""));
             _context = new(frontendRequest);
-            await _parsePathMiddleware.Execute(_context, _nullNext);
+            await Middleware().Execute(_context, _nullNext);
         }
 
         [Test]
@@ -48,7 +52,7 @@ public class ParsePathMiddlewareTests
     [TestFixture]
     public class Given_an_invalid_path : ParsePathMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext;
+        private PipelineContext _context = No.PipelineContext();
 
         [SetUp]
         public async Task Setup()
@@ -56,7 +60,7 @@ public class ParsePathMiddlewareTests
             FrontendRequest frontendRequest =
                 new(Method: RequestMethod.POST, Body: "{}", Path: "badpath", TraceId: new(""));
             _context = new(frontendRequest);
-            await _parsePathMiddleware.Execute(_context, _nullNext);
+            await Middleware().Execute(_context, _nullNext);
         }
 
         [Test]
@@ -75,7 +79,7 @@ public class ParsePathMiddlewareTests
     [TestFixture]
     public class Given_a_valid_path_without_resourceId : ParsePathMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext;
+        private PipelineContext _context = No.PipelineContext();
 
         [SetUp]
         public async Task Setup()
@@ -88,7 +92,7 @@ public class ParsePathMiddlewareTests
                     TraceId: new("")
                 );
             _context = new(frontendRequest);
-            await _parsePathMiddleware.Execute(_context, _nullNext);
+            await Middleware().Execute(_context, _nullNext);
         }
 
         [Test]
@@ -110,7 +114,7 @@ public class ParsePathMiddlewareTests
     [TestFixture]
     public class Given_a_valid_path_with_valid_resourceId : ParsePathMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext;
+        private PipelineContext _context = No.PipelineContext();
         private readonly string documentUuid = "7825fba8-0b3d-4fc9-ae72-5ad8194d3ce2";
 
         [SetUp]
@@ -124,7 +128,7 @@ public class ParsePathMiddlewareTests
                     TraceId: new("")
                 );
             _context = new(frontendRequest);
-            await _parsePathMiddleware.Execute(_context, _nullNext);
+            await Middleware().Execute(_context, _nullNext);
         }
 
         [Test]
@@ -147,7 +151,7 @@ public class ParsePathMiddlewareTests
     [TestFixture]
     public class Given_a_valid_path_with_invalid_resourceId : ParsePathMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext;
+        private PipelineContext _context = No.PipelineContext();
 
         [SetUp]
         public async Task Setup()
@@ -160,7 +164,7 @@ public class ParsePathMiddlewareTests
                     TraceId: new("")
                 );
             _context = new(frontendRequest);
-            await _parsePathMiddleware.Execute(_context, _nullNext);
+            await Middleware().Execute(_context, _nullNext);
         }
 
         [Test]
