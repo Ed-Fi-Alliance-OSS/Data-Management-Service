@@ -24,44 +24,72 @@ public class CoreFacade(
     /// <summary>
     /// The pipeline steps to satisfy an upsert request
     /// </summary>
-    private readonly PipelineProvider _upsertSteps = new PipelineProvider()
-        .StartWith(new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger))
-        .AndThen(new ParsePathMiddleware(_logger))
-        .AndThen(new ValidateEndpointMiddleware(_logger))
-        .AndThen(new ValidateDocumentMiddleware(_logger))
-        .AndThen(new BuildResourceInfoMiddleware(_logger))
-        .AndThen(new UpsertHandler(_documentStoreRepository, _logger));
+    private readonly Lazy<PipelineProvider> _upsertSteps =
+        new(
+            () =>
+                new(
+                    [
+                        new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
+                        new ParsePathMiddleware(_logger),
+                        new ValidateEndpointMiddleware(_logger),
+                        new ValidateDocumentMiddleware(_logger),
+                        new BuildResourceInfoMiddleware(_logger),
+                        new UpsertHandler(_documentStoreRepository, _logger)
+                    ]
+                )
+        );
 
     /// <summary>
     /// The pipeline steps to satisfy a get by id request
     /// </summary>
-    private readonly PipelineProvider _getByIdSteps = new PipelineProvider()
-        .StartWith(new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger))
-        .AndThen(new ParsePathMiddleware(_logger))
-        .AndThen(new ValidateEndpointMiddleware(_logger))
-        .AndThen(new BuildResourceInfoMiddleware(_logger))
-        .AndThen(new GetByIdHandler(_documentStoreRepository, _logger));
+    private readonly Lazy<PipelineProvider> _getByIdSteps =
+        new(
+            () =>
+                new(
+                    [
+                        new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
+                        new ParsePathMiddleware(_logger),
+                        new ValidateEndpointMiddleware(_logger),
+                        new BuildResourceInfoMiddleware(_logger),
+                        new GetByIdHandler(_documentStoreRepository, _logger)
+                    ]
+                )
+        );
 
     /// <summary>
     /// The pipeline steps to satisfy an update request
     /// </summary>
-    private readonly PipelineProvider _updateSteps = new PipelineProvider()
-        .StartWith(new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger))
-        .AndThen(new ParsePathMiddleware(_logger))
-        .AndThen(new ValidateEndpointMiddleware(_logger))
-        .AndThen(new ValidateDocumentMiddleware(_logger))
-        .AndThen(new BuildResourceInfoMiddleware(_logger))
-        .AndThen(new UpdateByIdHandler(_documentStoreRepository, _logger));
+    private readonly Lazy<PipelineProvider> _updateSteps =
+        new(
+            () =>
+                new(
+                    [
+                        new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
+                        new ParsePathMiddleware(_logger),
+                        new ValidateEndpointMiddleware(_logger),
+                        new ValidateDocumentMiddleware(_logger),
+                        new BuildResourceInfoMiddleware(_logger),
+                        new UpdateByIdHandler(_documentStoreRepository, _logger)
+                    ]
+                )
+        );
 
     /// <summary>
     /// The pipeline steps to satisfy a delete by id request
     /// </summary>
-    private readonly PipelineProvider _deleteByIdSteps = new PipelineProvider()
-        .StartWith(new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger))
-        .AndThen(new ParsePathMiddleware(_logger))
-        .AndThen(new ValidateEndpointMiddleware(_logger))
-        .AndThen(new BuildResourceInfoMiddleware(_logger))
-        .AndThen(new DeleteByIdHandler(_documentStoreRepository, _logger));
+    private readonly Lazy<PipelineProvider> _deleteByIdSteps =
+        new(
+            () =>
+                new(
+                    [
+                        new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
+                        new ParsePathMiddleware(_logger),
+                        new ValidateEndpointMiddleware(_logger),
+                        new BuildResourceInfoMiddleware(_logger),
+                        new DeleteByIdHandler(_documentStoreRepository, _logger)
+                    ]
+                )
+        );
 
     /// <summary>
     /// DMS entry point for API upsert requests
@@ -71,7 +99,7 @@ public class CoreFacade(
         _logger.LogDebug("Upsert FrontendRequest: {FrontendRequest}", frontendRequest);
 
         PipelineContext pipelineContext = new(frontendRequest);
-        await _upsertSteps.Run(pipelineContext);
+        await _upsertSteps.Value.Run(pipelineContext);
 
         _logger.LogDebug("Upsert FrontendResponse: {FrontendResponse}", pipelineContext.FrontendResponse);
         return pipelineContext.FrontendResponse;
@@ -85,7 +113,7 @@ public class CoreFacade(
         _logger.LogDebug("GetById FrontendRequest: {FrontendRequest}", frontendRequest);
 
         PipelineContext pipelineContext = new(frontendRequest);
-        await _getByIdSteps.Run(pipelineContext);
+        await _getByIdSteps.Value.Run(pipelineContext);
 
         _logger.LogDebug("GetById FrontendResponse: {FrontendResponse}", pipelineContext.FrontendResponse);
         return pipelineContext.FrontendResponse;
@@ -99,7 +127,7 @@ public class CoreFacade(
         _logger.LogDebug("UpdateById FrontendRequest: {FrontendRequest}", frontendRequest);
 
         PipelineContext pipelineContext = new(frontendRequest);
-        await _updateSteps.Run(pipelineContext);
+        await _updateSteps.Value.Run(pipelineContext);
 
         _logger.LogDebug("UpdateById FrontendResponse: {FrontendResponse}", pipelineContext.FrontendResponse);
         return pipelineContext.FrontendResponse;
@@ -113,7 +141,7 @@ public class CoreFacade(
         _logger.LogDebug("DeleteById FrontendRequest: {FrontendRequest}", frontendRequest);
 
         PipelineContext pipelineContext = new(frontendRequest);
-        await _deleteByIdSteps.Run(pipelineContext);
+        await _deleteByIdSteps.Value.Run(pipelineContext);
 
         _logger.LogDebug("DeleteById FrontendResponse: {FrontendResponse}", pipelineContext.FrontendResponse);
         return pipelineContext.FrontendResponse;
