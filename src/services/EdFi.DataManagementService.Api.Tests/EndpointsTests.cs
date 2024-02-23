@@ -8,26 +8,25 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using NUnit.Framework;
 
-namespace EdFi.DataManagementService.Api.Tests
+namespace EdFi.DataManagementService.Api.Tests;
+
+[TestFixture]
+public class EndpointsTests
 {
-    [TestFixture]
-    public class EndpointsTests
+    [Test]
+    public async Task TestPingEndpoint()
     {
-        [Test]
-        public async Task TestPingEndpoint()
-        {
-            // Arrange
-            await using var factory = new WebApplicationFactory<Program>();
-            using var client = factory.CreateClient();
-            var expectedDate = DateTime.Now.ToString("yyyy-MM-dd");
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>();
+        using var client = factory.CreateClient();
+        var expectedDate = DateTime.Now.ToString("yyyy-MM-dd");
 
-            // Act
-            var response = await client.GetAsync("/api/ping");
-            var content = await response.Content.ReadAsStringAsync();
+        // Act
+        var response = await client.GetAsync("/api/ping");
+        var content = await response.Content.ReadAsStringAsync();
 
-            // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            content.Should().Contain(expectedDate);
-        }
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        content.Should().Contain(expectedDate);
     }
 }
