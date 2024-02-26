@@ -16,8 +16,8 @@ namespace EdFi.DataManagementService.Core.Pipeline;
 public class PipelineProvider(List<IPipelineStep> _steps)
 {
     /// <summary>
-    /// Run the step at the given index, if there is one. (If not, we are at the end.)
-    /// Pass the context to the step, along with a "next" function that will
+    /// Runs the step at the given index, if there is one. (If not, we are at the end.)
+    /// Passes the context to the step, along with a "next" function that will
     /// run the next step in the list.
     /// </summary>
     private async Task RunInternal(int stepIndex, PipelineContext context)
