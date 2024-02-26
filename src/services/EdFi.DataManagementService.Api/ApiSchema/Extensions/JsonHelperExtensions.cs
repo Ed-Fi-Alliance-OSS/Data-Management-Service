@@ -51,7 +51,6 @@ public static class JsonHelperExtensions
         }
         catch (PathParseException)
         {
-            logger.LogError("Unexpected Json.Path error for '{jsonPathString}", jsonPathString);
             throw new InvalidOperationException($"Unexpected Json.Path error for '{jsonPathString}'");
         }
     }
@@ -66,12 +65,9 @@ public static class JsonHelperExtensions
         ILogger logger
     )
     {
-        JsonNode? result = SelectNodeFromPath(jsonNode, jsonPathString, logger);
-        if (result == null)
-        {
-            logger.LogError("Node at path '{jsonPathString}' not found", jsonPathString);
-            throw new InvalidOperationException($"Node at path '{jsonPathString}' not found");
-        }
+        JsonNode? result =
+            SelectNodeFromPath(jsonNode, jsonPathString, logger)
+            ?? throw new InvalidOperationException($"Node at path '{jsonPathString}' not found");
         return result;
     }
 
@@ -86,12 +82,8 @@ public static class JsonHelperExtensions
         if (selectedNode == null)
             return default;
 
-        JsonValue? resultNode = selectedNode!.AsValue();
-        if (resultNode == null)
-        {
-            logger.LogError("Unexpected JSONPath value error");
-            throw new InvalidOperationException("Unexpected JSONPath value error");
-        }
+        JsonValue? resultNode =
+            selectedNode!.AsValue() ?? throw new InvalidOperationException("Unexpected JSONPath value error");
         return resultNode.GetValue<T>();
     }
 
@@ -105,12 +97,9 @@ public static class JsonHelperExtensions
         ILogger logger
     )
     {
-        T? result = SelectNodeFromPathAs<T>(jsonNode, jsonPathString, logger);
-        if (result == null)
-        {
-            logger.LogError("Node at path '{jsonPathString}' not found", jsonPathString);
-            throw new InvalidOperationException($"Node at path '{jsonPathString}' not found");
-        }
+        T? result =
+            SelectNodeFromPathAs<T>(jsonNode, jsonPathString, logger)
+            ?? throw new InvalidOperationException($"Node at path '{jsonPathString}' not found");
         return result;
     }
 }
