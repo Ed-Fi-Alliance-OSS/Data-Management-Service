@@ -9,14 +9,13 @@ using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Api.Tests.TestHelper;
 
 namespace EdFi.DataManagementService.Api.Tests.Core.Middleware;
 
 [TestFixture]
 public class ParsePathMiddlewareTests
 {
-    private static readonly Func<Task> _nullNext = () => Task.CompletedTask;
-
     public static IPipelineStep Middleware()
     {
         return new ParsePathMiddleware(NullLogger.Instance);
@@ -33,7 +32,7 @@ public class ParsePathMiddlewareTests
             FrontendRequest frontendRequest =
                 new(Method: RequestMethod.POST, Body: "{}", Path: "", TraceId: new(""));
             _context = new(frontendRequest);
-            await Middleware().Execute(_context, _nullNext);
+            await Middleware().Execute(_context, NullNext);
         }
 
         [Test]
@@ -60,7 +59,7 @@ public class ParsePathMiddlewareTests
             FrontendRequest frontendRequest =
                 new(Method: RequestMethod.POST, Body: "{}", Path: "badpath", TraceId: new(""));
             _context = new(frontendRequest);
-            await Middleware().Execute(_context, _nullNext);
+            await Middleware().Execute(_context, NullNext);
         }
 
         [Test]
@@ -85,14 +84,9 @@ public class ParsePathMiddlewareTests
         public async Task Setup()
         {
             FrontendRequest frontendRequest =
-                new(
-                    Method: RequestMethod.POST,
-                    Body: "{}",
-                    Path: "/ed-fi/endpointName",
-                    TraceId: new("")
-                );
+                new(Method: RequestMethod.POST, Body: "{}", Path: "/ed-fi/endpointName", TraceId: new(""));
             _context = new(frontendRequest);
-            await Middleware().Execute(_context, _nullNext);
+            await Middleware().Execute(_context, NullNext);
         }
 
         [Test]
@@ -128,7 +122,7 @@ public class ParsePathMiddlewareTests
                     TraceId: new("")
                 );
             _context = new(frontendRequest);
-            await Middleware().Execute(_context, _nullNext);
+            await Middleware().Execute(_context, NullNext);
         }
 
         [Test]
@@ -164,7 +158,7 @@ public class ParsePathMiddlewareTests
                     TraceId: new("")
                 );
             _context = new(frontendRequest);
-            await Middleware().Execute(_context, _nullNext);
+            await Middleware().Execute(_context, NullNext);
         }
 
         [Test]
