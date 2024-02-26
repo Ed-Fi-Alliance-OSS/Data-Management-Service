@@ -11,14 +11,13 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Api.Backend.GetResult;
+using static EdFi.DataManagementService.Api.Tests.TestHelper;
 
 namespace EdFi.DataManagementService.Api.Core.Handler;
 
 [TestFixture]
 public class GetByIdHandlerTests
 {
-    private static readonly Func<Task> _nullNext = () => Task.CompletedTask;
-
     public static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
     {
         return new GetByIdHandler(documentStoreRepository, NullLogger.Instance);
@@ -45,7 +44,7 @@ public class GetByIdHandlerTests
         public async Task Setup()
         {
             IPipelineStep getByIdHandler = Handler(new Repository());
-            await getByIdHandler.Execute(context, _nullNext);
+            await getByIdHandler.Execute(context, NullNext);
         }
 
         [Test]
@@ -73,7 +72,7 @@ public class GetByIdHandlerTests
         public async Task Setup()
         {
             IPipelineStep getByIdHandler = Handler(new Repository());
-            await getByIdHandler.Execute(context, _nullNext);
+            await getByIdHandler.Execute(context, NullNext);
         }
 
         [Test]
@@ -103,7 +102,7 @@ public class GetByIdHandlerTests
         public async Task Setup()
         {
             IPipelineStep getByIdHandler = Handler(new Repository());
-            await getByIdHandler.Execute(context, _nullNext);
+            await getByIdHandler.Execute(context, NullNext);
         }
 
         [Test]
