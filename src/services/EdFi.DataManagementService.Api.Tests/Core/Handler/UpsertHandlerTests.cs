@@ -10,14 +10,13 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Api.Backend.UpsertResult;
+using static EdFi.DataManagementService.Api.Tests.TestHelper;
 
 namespace EdFi.DataManagementService.Api.Core.Handler;
 
 [TestFixture]
 public class UpsertHandlerTests
 {
-    private static readonly Func<Task> NullNext = () => Task.CompletedTask;
-
     public static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
     {
         return new UpsertHandler(documentStoreRepository, NullLogger.Instance);
