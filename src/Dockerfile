@@ -6,10 +6,11 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 
 WORKDIR /app
-COPY *.csproj ./
+COPY services/EdFi.DataManagementService.Api/*.csproj ./
 RUN dotnet restore
 
-COPY . .
+COPY services/EdFi.DataManagementService.Api .
+COPY .editorconfig .
 
 RUN dotnet publish -c Release -o out
 
