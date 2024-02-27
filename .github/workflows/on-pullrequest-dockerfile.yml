@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 env:
-  DOCKER_FILE_DIR: src/services/EdFi.DataManagementService.Api
+  DOCKER_FILE_DIR: src
   DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME }}
   DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
   IMAGE_NAME: dms
