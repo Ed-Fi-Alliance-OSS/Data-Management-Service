@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<package >
+  <metadata>
+    <version>0.0.0</version>
+    <id>EdFi.ApiSchema</id>
+    <title>Ed-Fi API Schema definition</title>
+    <authors>Ed-Fi Alliance</authors>
+    <projectUrl>https://github.com/Ed-Fi-Alliance-OSS</projectUrl>
+    <copyright>Copyright © 2024, Ed-Fi Alliance, LLC and contributors.</copyright>
+    <summary>API Schema definition file representing the core Ed-Fi Data Standard, without extensions.</summary>
+    <description>The API Schema definition file can be used to generate a full API stack representing the Ed-Fi Data Standard. The file definition includes JSON Schema, along with other information required to build an Ed-Fi compatible application.</description>
+  </metadata>
+  <files>
+    <file src="LICENSE" target="docs\" />
+    <file src="README.md" target="docs\" />
+    <file src="EdFi.DataStandard-5.0.0-ApiSchema.json" PackagePath="contentFiles\any\any;content" />
+  </files>
+</package>

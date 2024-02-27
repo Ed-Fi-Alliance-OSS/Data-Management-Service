@@ -8,7 +8,8 @@ param (
     $Publish
 )
 
-&dotnet pack -p:PackageVersion=$Version -o .
+&dotnet build -c release -p:Version=$Version
+&dotnet pack -c release -p:PackageVersion=$Version -o .
 
 if ($Publish) {
     # Must have https://github.com/microsoft/artifacts-credprovider#azure-artifacts-credential-provider
