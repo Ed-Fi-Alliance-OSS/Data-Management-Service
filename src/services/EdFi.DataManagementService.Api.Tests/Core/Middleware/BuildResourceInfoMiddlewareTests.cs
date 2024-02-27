@@ -4,13 +4,13 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-using FluentAssertions;
-using Microsoft.Extensions.Logging.Abstractions;
-using NUnit.Framework;
 using EdFi.DataManagementService.Api.ApiSchema;
 using EdFi.DataManagementService.Api.Core.Middleware;
 using EdFi.DataManagementService.Api.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
+using NUnit.Framework;
 using static EdFi.DataManagementService.Api.Tests.TestHelper;
 
 namespace EdFi.DataManagementService.Api.Tests.Core.Middleware;
@@ -23,38 +23,6 @@ public class BuildResourceInfoMiddlewareTests
         return new BuildResourceInfoMiddleware(NullLogger.Instance);
     }
 
-    public static ApiSchemaDocument SchemaDocument()
-    {
-        string apiSchemaString = """
-{
-  "projectNameMapping": {
-    "Ed-Fi": "ed-fi"
-  },
-  "projectSchemas": {
-    "ed-fi": {
-      "description": "The Ed-Fi Data Standard v5.0",
-      "isExtensionProject": false,
-      "projectName": "Ed-Fi",
-      "projectVersion": "5.0.0",
-      "caseInsensitiveEndpointNameMapping": {
-        "schools": "schools"
-      },
-      "resourceNameMapping": {
-        "School": "schools"
-      },
-      "resourceSchemas": {
-        "schools": {
-          "resourceName": "School"
-        }
-      }
-    }
-  }
-}
-""";
-        JsonNode _apiSchemaNode = JsonNode.Parse(apiSchemaString) ?? new JsonObject();
-        return new ApiSchemaDocument(_apiSchemaNode, NullLogger.Instance);
-    }
-
     [TestFixture]
     public class Given_pipeline_context_has_project_and_resource_schemas : ParsePathMiddlewareTests
     {
@@ -63,8 +31,15 @@ public class BuildResourceInfoMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
+            ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
+                .WithProjectStart("Ed-Fi", "5.0.0")
+                .WithResourceStart("School")
+                .WithResourceEnd()
+                .WithProjectEnd()
+                .ToApiSchemaDocument();
+
             context.ProjectSchema = new ProjectSchema(
-                SchemaDocument().FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
+                apiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
                 NullLogger.Instance
             );
             context.ResourceSchema = new ResourceSchema(
