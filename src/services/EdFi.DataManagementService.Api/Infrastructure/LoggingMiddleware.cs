@@ -14,23 +14,48 @@ public class LoggingMiddleware(RequestDelegate next)
     {
         try
         {
-            logger.LogInformation(JsonSerializer.Serialize(new
-            {
-                method = context.Request.Method,
-                path = context.Request.Path.Value,
-                traceId = context.TraceIdentifier,
-                clientId = context.Request.Host
-            }));
+            logger.LogInformation(
+                JsonSerializer.Serialize(
+                    new
+                    {
+                        method = context.Request.Method,
+                        path = context.Request.Path.Value,
+                        traceId = context.TraceIdentifier,
+                        clientId = context.Request.Host
+                    }
+                )
+            );
 
             await next(context);
         }
         catch (Exception ex)
         {
+            logger.LogError(
+                JsonSerializer.Serialize(
+                    new
+                    {
+                        message = "An uncaught error has occurred",
+                        error = new { ex.Message, ex.StackTrace },
+                        traceId = context.TraceIdentifier
+                    }
+                )
+            );
+
             var response = context.Response;
-            response.ContentType = "application/json";
-            logger.LogError(JsonSerializer.Serialize(new { message = "An uncaught error has occurred", error = new { ex.Message, ex.StackTrace }, traceId = context.TraceIdentifier }));
-            response.StatusCode = (int) HttpStatusCode.InternalServerError;
-            await response.WriteAsync(JsonSerializer.Serialize(new { message = "The server encountered an unexpected condition that prevented it from fulfilling the request.", traceId = context.TraceIdentifier }));
+            if (!response.HasStarted)
+            {
+                response.ContentType = "application/json";
+                response.StatusCode = (int)HttpStatusCode.InternalServerError;
+                await response.WriteAsync(
+                    JsonSerializer.Serialize(
+                        new
+                        {
+                            message = "The server encountered an unexpected condition that prevented it from fulfilling the request.",
+                            traceId = context.TraceIdentifier
+                        }
+                    )
+                );
+            }
         }
     }
 }

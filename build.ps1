@@ -18,7 +18,7 @@
           do not connect to a database.
         * BuildAndPublish: build and publish with `dotnet publish`
         * Package: builds pre-release and release NuGet packages for the Dms API application.
-        * Push: uploads a NuGet package to the NuGet feed.     
+        * Push: uploads a NuGet package to the NuGet feed.
     .EXAMPLE
         .\build.ps1 build -Configuration Release -Version "2.0" -BuildCounter 45
 
@@ -28,10 +28,10 @@
     .EXAMPLE
         .\build.ps1 unittest
 
-        Output: test results displayed in the console and saved to XML files. 
+        Output: test results displayed in the console and saved to XML files.
 
     .EXAMPLE
-        .\build.ps1 push -NuGetApiKey $env:nuget_key   
+        .\build.ps1 push -NuGetApiKey $env:nuget_key
 #>
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'False positive')]
 param(
@@ -40,10 +40,11 @@ param(
     [ValidateSet("Clean", "Build", "BuildAndPublish", "UnitTest", "Package", "Push")]
     $Command = "Build",
 
-    # Assembly and package version number for Admin API. The current package number is
-    # configured in the build automation tool and passed to this script.
+    # Assembly and package version number for the Data Management Service. The
+    # current package number is configured in the build automation tool and
+    # passed to this script.
     [string]
-    $APIVersion = "0.1",
+    $DMSVersion = "0.1",
 
     # .NET project build configuration, defaults to "Debug". Options are: Debug, Release.
     [string]
@@ -64,7 +65,7 @@ param(
 
     # Full path of a package file to push to the NuGet feed. Optional, only
     # applies with the Push command. If not set, then the script looks for a
-    # NuGet package corresponding to the provided $APIVersion and $BuildCounter.
+    # NuGet package corresponding to the provided $DMSVersion and $BuildCounter.
     [string]
     $PackageFile,
 
@@ -93,7 +94,7 @@ function Restore {
 
 function SetAdminApiAssemblyInfo {
     Invoke-Execute {
-        $assembly_version = $APIVersion
+        $assembly_version = $DMSVersion
 
         Invoke-RegenerateFile "$solutionRoot/Directory.Build.props" @"
 <Project>
@@ -146,7 +147,7 @@ function RunTests {
 
         $fileName = Split-Path -Path  $($_) -Leaf
         $fileNameNoExt = $fileName.subString(0, $fileName.length-4)
-        
+
         Invoke-Execute {
             dotnet test $_ `
                 --logger "trx;LogFileName=$testResults/$fileNameNoExt.trx" `
@@ -183,7 +184,7 @@ function BuildPackage {
     $projectPath = "$mainPath/$projectName.csproj"
     $nugetSpecPath = "$mainPath/publish/$projectName.nuspec"
 
-    RunNuGetPack -ProjectPath $projectPath -PackageVersion $APIVersion $nugetSpecPath
+    RunNuGetPack -ProjectPath $projectPath -PackageVersion $DMSVersion $nugetSpecPath
 }
 
 function Invoke-Build {
@@ -199,7 +200,7 @@ function Invoke-SetAssemblyInfo {
 }
 
 function Invoke-Publish {
-    Write-Output "Building Version ($APIVersion)"
+    Write-Output "Building Version ($DMSVersion)"
 
     Invoke-Step { PublishApi }
 }
@@ -227,7 +228,7 @@ function PushPackage {
     }
 
     if (-not $PackageFile) {
-        $PackageFile = "$PSScriptRoot/$packageName.$APIVersion.nupkg"
+        $PackageFile = "$PSScriptRoot/$packageName.$DMSVersion.nupkg"
     }
 
     if($DryRun){
@@ -236,7 +237,7 @@ function PushPackage {
         Write-Host "Pushing $PackageFile to $EdFiNuGetFeed"
 
         dotnet nuget push $PackageFile --api-key $NuGetApiKey --source $EdFiNuGetFeed
-    }  
+    }
   }
 }
 
@@ -257,10 +258,10 @@ Invoke-Main {
             Invoke-SetAssemblyInfo
             Invoke-Build
             Invoke-Publish
-        }      
+        }
         UnitTest { Invoke-UnitTestSuite }
         Package { Invoke-BuildPackage }
-        Push { Invoke-PushPackage }       
+        Push { Invoke-PushPackage }
         default { throw "Command '$Command' is not recognized" }
     }
 }

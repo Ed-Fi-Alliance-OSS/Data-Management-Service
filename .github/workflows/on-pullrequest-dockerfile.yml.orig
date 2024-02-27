@@ -1,0 +1,78 @@
+name: On Pull Request - Dockerfile
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "**/Dockerfile"
+      - ".github/workflows/on-pullrequest-dockerfile.yml"
+  workflow_dispatch:
+
+env:
+<<<<<<< HEAD
+  DOCKER_FILE_DIR: src
+=======
+  DOCKER_FILE_DIR: src/services/EdFi.DataManagementService.Api
+>>>>>>> c5fb90e ([DMS-12] more tests)
+  DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME }}
+  DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
+  IMAGE_NAME: dms
+
+jobs:
+  docker-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Lint
+        uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
+        with:
+          dockerfile: ${{ env.DOCKER_FILE_DIR }}/Dockerfile
+
+  docker-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
+        with:
+          username: ${{ env.DOCKER_USERNAME }}
+          password: ${{ env.DOCKER_HUB_TOKEN }}
+
+      - name: Build
+        run: docker build -t ${{ env.IMAGE_NAME }} .
+        working-directory: ${{ env.DOCKER_FILE_DIR }}
+
+      - name: Analyze
+        uses: docker/scout-action@67eb1afe777307506aaecb9acd9a0e0389cb99ae # v1.5.0
+        with:
+          command: cves
+          image: local://${{ env.IMAGE_NAME }}
+          sarif-file: sarif-${{ env.IMAGE_NAME }}.output.json
+
+      - name: Results
+        run: |
+          results=$(cat sarif-${{ env.IMAGE_NAME }}.output.json)
+          errors=$(echo $results | jq '[.runs[].results[] | select(.level == "error")] | length')
+          warnings=$(echo $results | jq '[.runs[].results[] | select(.level == "warning")] | length')
+          notes=$(echo $results | jq '[.runs[].results[] | select(.level == "note")] | length')
+
+          if [[ $errors -gt 0 ]]
+          then
+            echo "::error::There are $errors errors"
+            exit 1
+          fi
+
+      - name: Upload SARIF result
+        id: upload-sarif
+        if: ${{ github.event_name != 'pull_request_target' }}
+        uses: github/codeql-action/upload-sarif@cf7e9f23492505046de9a37830c3711dd0f25bb3 #codeql-bundle-v2.16.2
+        with:
+          sarif_file: sarif-${{ env.IMAGE_NAME }}.output.json

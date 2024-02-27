@@ -1,0 +1,7 @@
+{
+    "files.eol": "\n",
+    "[csharp]": {
+      "editor.defaultFormatter": "csharpier.csharpier-vscode",
+      "editor.formatOnSave": true
+    }
+}

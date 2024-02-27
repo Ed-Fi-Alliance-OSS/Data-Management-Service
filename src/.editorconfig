@@ -26,7 +26,7 @@ trim_trailing_whitespace = false
 indent_style = space
 indent_size = 4
 tab_width = 4
-end_of_line = crlf
+end_of_line = lf
 csharp_new_line_before_members_in_object_initializers = false
 csharp_preferred_modifier_order = private, public, protected, internal, new, abstract, virtual, sealed, override, static, readonly, extern, unsafe, volatile, async:suggestion
 
@@ -43,11 +43,11 @@ csharp_new_line_before_members_in_anonymous_types = true
 csharp_new_line_between_query_expression_clauses = true
 csharp_indent_case_contents = true
 csharp_indent_switch_labels = true
-csharp_indent_labels = flush_left
+csharp_indent_labels = no_change
 csharp_indent_block_contents = true
 csharp_indent_braces = false
 csharp_indent_case_contents_when_block = true
-csharp_space_after_cast = true
+csharp_space_after_cast = false
 csharp_space_after_keywords_in_control_flow_statements = true
 csharp_space_between_parentheses = none
 csharp_space_before_colon_in_inheritance_clause = true
@@ -69,6 +69,8 @@ csharp_space_around_declaration_statements = false
 csharp_space_before_open_square_brackets = false
 csharp_space_between_empty_square_brackets = false
 csharp_space_between_square_brackets = false
+csharp_preserve_single_line_blocks = true
+csharp_preserve_single_line_statements = false
 
 # Naming rules
 dotnet_naming_rule.local_constants_rule.severity = warning
@@ -106,6 +108,9 @@ dotnet_style_qualification_for_field = false:suggestion
 dotnet_style_qualification_for_method = false:suggestion
 dotnet_style_qualification_for_property = false:suggestion
 dotnet_style_require_accessibility_modifiers = for_non_interface_members:warning
+dotnet_style_operator_placement_when_wrapping = beginning_of_line
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
 
 # We *like* var
 dotnet_diagnostic.IDE0008.severity=none # IDE0008: Use explicit type
@@ -122,6 +127,8 @@ dotnet_diagnostic.S4136.severity=suggestion # Method overloads should be grouped
 dotnet_diagnostic.S1135.severity=suggestion # Complete TODO comments
 dotnet_diagnostic.S112.severity=suggestion # 'System.Exception' should not be thrown by user code.
 
+# Allow empty records for discriminated union types
+dotnet_diagnostic.S2094.severity=none # S2094: Classes should not be empty
 
 [**/tests/**/*.cs]
 # Allow our strange test class naming convention
