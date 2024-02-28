@@ -27,5 +27,5 @@ COPY --from=build /app/out/*runtimeconfig.json ./
 COPY --from=build /app/out/*.deps.json ./
 
 EXPOSE $ASPNETCORE_HTTP_PORT
-
+USER app
 ENTRYPOINT ["dotnet", "EdFi.DataManagementService.Api.dll"]
