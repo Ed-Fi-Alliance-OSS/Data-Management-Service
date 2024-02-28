@@ -6,26 +6,33 @@ using System.Net;
 namespace EdFi.DataManagementService.Api.E2E.Tests;
 
 [TestFixture]
-public class Ping : PageTest
+public class PingTest : PageTest
 {
-    private PlaywrightContext _PlaywrightContext;
 
-    [OneTimeSetUp]
-    public void Init()
+    [TestFixture]
+    public class Given_a_ping_to_the_server : PingTest
     {
-        _PlaywrightContext = new PlaywrightContext();
-    }
 
-    [Test]
-    public async Task Test()
-    {
-        var response = await _PlaywrightContext.ApiRequestContext?.GetAsync("ping")!;
+        private PlaywrightContext _PlaywrightContext;
 
-        string content = await response.TextAsync();
-        string expectedDate = DateTime.Now.ToString("yyyy-MM-dd");
+        [SetUp]
+        public void SetUp()
+        {
+            _PlaywrightContext = new PlaywrightContext();
+        }
 
-        response.Status.Should().Be((int)HttpStatusCode.OK);
-        content.Should().Contain(expectedDate);
+        [Test]
+        public async Task It_returns_the_dateTime()
+        {
+            var response = await _PlaywrightContext.ApiRequestContext?.GetAsync("ping")!;
+
+            string content = await response.TextAsync();
+            string expectedDate = DateTime.Now.ToString("yyyy-MM-dd");
+
+            response.Status.Should().Be((int)HttpStatusCode.OK);
+            content.Should().Contain(expectedDate);
+        }
+
     }
 
 }
