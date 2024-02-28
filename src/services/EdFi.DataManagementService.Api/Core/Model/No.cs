@@ -58,6 +58,17 @@ public static class No
         );
 
     /// <summary>
+    /// The null object for DocumentInfo
+    /// </summary>
+    public static readonly DocumentInfo DocumentInfo =
+        new(
+            DocumentIdentity: new([]),
+            DocumentReferences: [],
+            DescriptorReferences: [],
+            SuperclassIdentity: null
+        );
+
+    /// <summary>
     /// The null object for FrontendRequest
     /// </summary>
     public static readonly FrontendRequest FrontendRequest =

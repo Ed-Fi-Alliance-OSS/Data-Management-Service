@@ -23,7 +23,7 @@ public class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, IL
             new(
                 ReferentialId: new("ReferentialId placeholder"),
                 ResourceInfo: context.ResourceInfo,
-                DocumentInfo: new("DocumentInfo placeholder"),
+                DocumentInfo: context.DocumentInfo,
                 EdfiDoc: new JsonObject(),
                 validateDocumentReferencesExist: false,
                 TraceId: context.FrontendRequest.TraceId

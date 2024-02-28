@@ -44,6 +44,11 @@ public class PipelineContext(FrontendRequest _frontendRequest)
     public ResourceInfo ResourceInfo { get; set; } = No.ResourceInfo;
 
     /// <summary>
+    /// API document information for passing along to backends.
+    /// </summary>
+    public DocumentInfo DocumentInfo { get; set; } = No.DocumentInfo;
+
+    /// <summary>
     /// The API response to be returned to the frontend
     /// </summary>
     public FrontendResponse FrontendResponse { get; set; } = No.FrontendResponse;

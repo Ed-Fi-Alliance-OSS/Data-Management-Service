@@ -6,6 +6,23 @@
 namespace EdFi.DataManagementService.Api.Core.Model;
 
 /// <summary>
-/// Document metdata extracted from the document
+/// Complete information on a validated API document
 /// </summary>
-public record DocumentInfo(string Placeholder);
+public record DocumentInfo(
+    /// <summary>
+    /// The identity elements extracted from the API document
+    /// </summary>
+    DocumentIdentity DocumentIdentity,
+    /// <summary>
+    /// A list of the document references extracted from the API document
+    /// </summary>
+    DocumentReference[] DocumentReferences,
+    /// <summary>
+    /// A list of the non-reference (meaning top-level only) descriptor values of the entity extracted from the API document
+    /// </summary>
+    DocumentReference[] DescriptorReferences,
+    /// <summary>
+    /// If this document is a subclass, this provides the document superclass identity information.
+    /// </summary>
+    SuperclassIdentity? SuperclassIdentity
+);
