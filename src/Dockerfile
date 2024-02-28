@@ -3,21 +3,25 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:8.0.201-jammy@sha256:9aacef90e2773ff7d13a2f2687739778ed39312678b3669de06ec5fbeb0e86af AS build
+
+ENV ASPNETCORE_HTTP_PORT=8080
 
 WORKDIR /app
-COPY services/EdFi.DataManagementService.Api/*.csproj ./
+COPY services/EdFi.DataManagementService.Api/*.csproj ./services/EdFi.DataManagementService.Api/
+COPY EdFi.DataManagementService-Docker.sln ./
+COPY nuget.config .
 RUN dotnet restore
 
-COPY services/EdFi.DataManagementService.Api .
+COPY services/EdFi.DataManagementService.Api ./services/EdFi.DataManagementService.Api
 COPY .editorconfig .
 
 RUN dotnet publish -c Release -o out
 
-FROM mcr.microsoft.com/dotnet/aspnet:8.0-jammy-chiseled AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:8.0.2-jammy-chiseled@sha256:cb35170c5c4687e42749a4f3538e6667cd682493466cc1535d8579befc23e077 AS runtime
 WORKDIR /app
 COPY --from=build /app/out ./
 
-EXPOSE 80
+EXPOSE $ASPNETCORE_HTTP_PORT
 
 ENTRYPOINT ["dotnet", "EdFi.DataManagementService.Api.dll"]
