@@ -19,6 +19,8 @@
         * BuildAndPublish: build and publish with `dotnet publish`
         * Package: builds pre-release and release NuGet packages for the Dms API application.
         * Push: uploads a NuGet package to the NuGet feed.
+        * DockerBuild: builds a Docker image from source code
+        * DockerRun: runs the Docker image that was built from source code
     .EXAMPLE
         .\build.ps1 build -Configuration Release -Version "2.0" -BuildCounter 45
 
@@ -37,7 +39,7 @@
 param(
     # Command to execute, defaults to "Build".
     [string]
-    [ValidateSet("Clean", "Build", "BuildAndPublish", "UnitTest", "Package", "Push")]
+    [ValidateSet("Clean", "Build", "BuildAndPublish", "UnitTest", "Package", "Push", "DockerBuild", "DockerRun")]
     $Command = "Build",
 
     # Assembly and package version number for the Data Management Service. The
@@ -245,6 +247,18 @@ function Invoke-PushPackage {
     Invoke-Step { PushPackage }
 }
 
+$dockerTagBase = "local"
+$dockerTagDMS = "$($dockerTagBase)/edfi-data-management-service"
+function DockerBuild {
+    Push-Location src/
+    &docker build -t $dockerTagDMS .
+    Pop-Location
+}
+
+function DockerRun {
+    &docker run --rm -p 8080:8080 -d $dockerTagDMS
+}
+
 Invoke-Main {
     if($IsLocalBuild)
     {
@@ -262,6 +276,8 @@ Invoke-Main {
         UnitTest { Invoke-UnitTestSuite }
         Package { Invoke-BuildPackage }
         Push { Invoke-PushPackage }
+        DockerBuild { Invoke-Step { DockerBuild } }
+        DockerRun { Invoke-Step { DockerRun } }
         default { throw "Command '$Command' is not recognized" }
     }
 }
