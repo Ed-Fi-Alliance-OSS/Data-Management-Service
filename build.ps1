@@ -41,7 +41,7 @@
 param(
     # Command to execute, defaults to "Build".
     [string]
-    [ValidateSet("Clean", "Build", "BuildAndPublish", "UnitTest", "E2ETest", "Package", "Push", "DockerBuild", "DockerRun")]
+    [ValidateSet("Clean", "Build", "BuildAndPublish", "UnitTest", "Package", "Push", "DockerBuild", "DockerRun")]
     $Command = "Build",
 
     # Assembly and package version number for the Data Management Service. The
