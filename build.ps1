@@ -159,7 +159,7 @@ function RunTests {
 }
 
 function UnitTests {
-    Invoke-Execute { RunTests -Filter "*.Tests" }
+    Invoke-Execute { RunTests -Filter "*.Api.Tests" }
 }
 
 function RunNuGetPack {
