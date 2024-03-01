@@ -32,6 +32,33 @@ jobs:
     with:
       config-file-path: ./.github/workflows/bidi-config.json
 
+  code-analysis:
+    name: Code Analysis
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout the Repo
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Dependency Review ("Dependabot on PR")
+        uses: actions/dependency-review-action@4901385134134e04cec5fbe5ddfe3b2c5bd5d976 # v4.0.0
+
+      - name: Initialize CodeQL
+        if: success()
+        uses: github/codeql-action/init@df32e399139a3050671466d7d9b3cbacc1cfd034 # codeql-bundle-v2.15.2
+        with:
+          languages: csharp
+
+      # Must build the software after initialization of CodeQL; something about
+      # CodeQL initialization causes the resulting build to fail unit tests.
+      # Therefore rebuilding here, even though also built above.
+      - name: Build
+        run: ./build.ps1 Build -Configuration Debug
+
+      - name: Perform CodeQL Analysis
+        if: success()
+        uses: github/codeql-action/analyze@df32e399139a3050671466d7d9b3cbacc1cfd034 # codeql-bundle-v2.15.2
+
   run-cs-tests:
     name: Run C# Tests
     runs-on: ubuntu-latest
@@ -55,22 +82,3 @@ jobs:
           name: csharp-tests
           path: "**/*.trx"
           retention-days: 5
-
-      - name: Dependency Review ("Dependabot on PR")
-        uses: actions/dependency-review-action@4901385134134e04cec5fbe5ddfe3b2c5bd5d976 # v4.0.0
-
-      - name: Initialize CodeQL
-        if: success()
-        uses: github/codeql-action/init@df32e399139a3050671466d7d9b3cbacc1cfd034 # codeql-bundle-v2.15.2
-        with:
-          languages: csharp
-
-      # Must build the software after initialization of CodeQL; something about
-      # CodeQL initialization causes the resulting build to fail unit tests.
-      # Therefore rebuilding here, even though also built above.
-      - name: Build
-        run: ./build.ps1 Build -Configuration Debug
-
-      - name: Perform CodeQL Analysis
-        if: success()
-        uses: github/codeql-action/analyze@df32e399139a3050671466d7d9b3cbacc1cfd034 # codeql-bundle-v2.15.2
