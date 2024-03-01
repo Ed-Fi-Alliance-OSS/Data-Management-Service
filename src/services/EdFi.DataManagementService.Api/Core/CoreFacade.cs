@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Api.Backend;
 using EdFi.DataManagementService.Api.Core.Handler;
 using EdFi.DataManagementService.Api.Core.Middleware;
 using EdFi.DataManagementService.Api.Core.Model;
+using EdFi.DataManagementService.Api.Core.Validation;
 using EdFi.DataManagementService.Core.Pipeline;
 
 namespace EdFi.DataManagementService.Api.Core;
@@ -18,6 +19,7 @@ namespace EdFi.DataManagementService.Api.Core;
 public class CoreFacade(
     IApiSchemaProvider _apiSchemaProvider,
     IDocumentStoreRepository _documentStoreRepository,
+    IDocumentValidatorResolver _documentValidatorResolver,
     ILogger<CoreFacade> _logger
 ) : ICoreFacade
 {
@@ -32,7 +34,7 @@ public class CoreFacade(
                         new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                         new ParsePathMiddleware(_logger),
                         new ValidateEndpointMiddleware(_logger),
-                        new ValidateDocumentMiddleware(_logger),
+                        new ValidateDocumentMiddleware(_logger, _documentValidatorResolver),
                         new BuildResourceInfoMiddleware(_logger),
                         new UpsertHandler(_documentStoreRepository, _logger)
                     ]
@@ -67,7 +69,7 @@ public class CoreFacade(
                         new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                         new ParsePathMiddleware(_logger),
                         new ValidateEndpointMiddleware(_logger),
-                        new ValidateDocumentMiddleware(_logger),
+                        new ValidateDocumentMiddleware(_logger, _documentValidatorResolver),
                         new BuildResourceInfoMiddleware(_logger),
                         new UpdateByIdHandler(_documentStoreRepository, _logger)
                     ]
