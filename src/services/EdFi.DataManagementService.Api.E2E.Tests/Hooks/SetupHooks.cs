@@ -19,16 +19,15 @@ namespace EdFi.DataManagementService.Api.E2E.Tests.Hooks
         public IAPIRequestContext? _requestContext;
 
         [BeforeTestRun]
-        public async void BeforeTestRun()
+        public static void BeforeTestRun(PlaywrightContext context)
         {
+            var x = context.ApiRequestContext;
+        }
 
-            var playwright = await Playwright.CreateAsync();
-
-            _requestContext = await playwright.APIRequest.NewContextAsync(new APIRequestNewContextOptions
-            {
-                BaseURL = "http://localhost:5198/",
-                IgnoreHTTPSErrors = true
-            });
+        [AfterTestRun]
+        public static void AfterTestRun(PlaywrightContext context)
+        {
+            context.Dispose();
         }
     }
 }

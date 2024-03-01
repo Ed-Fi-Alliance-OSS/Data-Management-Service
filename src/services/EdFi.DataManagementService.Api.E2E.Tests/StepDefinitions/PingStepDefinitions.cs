@@ -17,10 +17,14 @@ namespace EdFi.DataManagementService.Api.E2E.Tests.StepDefinitions
         private PlaywrightContext _PlaywrightContext = null!;
         private IAPIResponse _APIResponse = null!;
 
+        public PingStepDefinitions(PlaywrightContext context)
+        {
+            _PlaywrightContext = context;
+        }
+
         [Given("a ping to the server")]
         public async Task Given_a_ping_to_the_server()
         {
-            _PlaywrightContext = new PlaywrightContext();
             _APIResponse = await _PlaywrightContext.ApiRequestContext?.GetAsync("ping")!;
         }
 
