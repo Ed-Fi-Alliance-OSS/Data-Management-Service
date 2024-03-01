@@ -31,6 +31,7 @@
     <PackageReference Include="NUnit3TestAdapter" Version="4.5.0" />
     <PackageReference Include="Reqnroll" Version="1.0.1" />
     <PackageReference Include="Reqnroll.NUnit" Version="1.0.1" />
+    <PackageReference Include="Testcontainers" Version="3.7.0" />
   </ItemGroup>
 
   <ItemGroup>

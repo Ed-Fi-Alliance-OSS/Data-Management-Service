@@ -4,11 +4,14 @@ namespace EdFi.DataManagementService.Api.E2E.Tests;
 
 public class PlaywrightContext
 {
-    private readonly Task<IAPIRequestContext?>? _requestContext;
+    private static Task<IAPIRequestContext>? _requestContext;
 
-    public PlaywrightContext()
+    private string _apiURL = "http://localhost:5198/";  // Backing store
+
+    public string API_URL
     {
-        _requestContext = CreateApiContext();
+        get => _apiURL;
+        set => _apiURL = value;
     }
 
     public IAPIRequestContext? ApiRequestContext => _requestContext?.GetAwaiter().GetResult();
@@ -18,14 +21,13 @@ public class PlaywrightContext
         _requestContext?.Dispose();
     }
 
-
-    private async Task<IAPIRequestContext?> CreateApiContext()
+    public async Task CreateApiContext()
     {
         var playwright = await Playwright.CreateAsync();
 
-        return await playwright.APIRequest.NewContextAsync(new APIRequestNewContextOptions
+        _requestContext = playwright.APIRequest.NewContextAsync(new APIRequestNewContextOptions
         {
-            BaseURL = "http://localhost:5198/",
+            BaseURL = _apiURL,
             IgnoreHTTPSErrors = true
         });
     }
