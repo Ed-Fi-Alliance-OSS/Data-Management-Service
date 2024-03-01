@@ -7,9 +7,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "services", "services", "{22
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Api", "services\EdFi.DataManagementService.Api\EdFi.DataManagementService.Api.csproj", "{7414BD00-0951-498D-81BF-09920D49DB60}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Api.Tests", "services\EdFi.DataManagementService.Api.Tests\EdFi.DataManagementService.Api.Tests.csproj", "{85D13886-A93A-4591-AF2F-9EF089BCC50D}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Api.Tests.Unit", "services\EdFi.DataManagementService.Api.Tests.Unit\EdFi.DataManagementService.Api.Tests.Unit.csproj", "{85D13886-A93A-4591-AF2F-9EF089BCC50D}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Api.E2E.Tests", "services\EdFi.DataManagementService.Api.E2E.Tests\EdFi.DataManagementService.Api.E2E.Tests.csproj", "{678F06E1-CC23-438A-9CDF-52CA4C24BCED}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Api.Tests.E2E", "services\EdFi.DataManagementService.Api.Tests.E2E\EdFi.DataManagementService.Api.Tests.E2E.csproj", "{678F06E1-CC23-438A-9CDF-52CA4C24BCED}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

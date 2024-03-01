@@ -7,7 +7,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Api.ApiSchema;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace EdFi.DataManagementService.Api.Tests;
+namespace EdFi.DataManagementService.Api.Tests.Unit;
 
 /// <summary>
 /// This class provides a fluent interface for building an ApiSchema suitable for unit testing,

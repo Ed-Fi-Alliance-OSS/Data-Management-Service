@@ -9,27 +9,27 @@ using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
-using static EdFi.DataManagementService.Api.Backend.UpsertResult;
-using static EdFi.DataManagementService.Api.Tests.TestHelper;
+using static EdFi.DataManagementService.Api.Backend.DeleteResult;
+using static EdFi.DataManagementService.Api.Tests.Unit.TestHelper;
 
 namespace EdFi.DataManagementService.Api.Core.Handler;
 
 [TestFixture]
-public class UpsertHandlerTests
+public class DeleteByIdHandlerTests
 {
     public static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
     {
-        return new UpsertHandler(documentStoreRepository, NullLogger.Instance);
+        return new DeleteByIdHandler(documentStoreRepository, NullLogger.Instance);
     }
 
     [TestFixture]
-    public class Given_a_repository_that_returns_success : UpsertHandlerTests
+    public class Given_a_repository_that_returns_success : DeleteByIdHandlerTests
     {
         public class Repository : NotImplementedDocumentStoreRepository
         {
-            public override Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)
+            public override Task<DeleteResult> DeleteDocumentById(DeleteRequest deleteRequest)
             {
-                return Task.FromResult<UpsertResult>(new UpdateSuccess());
+                return Task.FromResult<DeleteResult>(new DeleteSuccess());
             }
         }
 
@@ -38,8 +38,8 @@ public class UpsertHandlerTests
         [SetUp]
         public async Task Setup()
         {
-            IPipelineStep upsertHandler = Handler(new Repository());
-            await upsertHandler.Execute(context, NullNext);
+            IPipelineStep deleteByIdHandler = Handler(new Repository());
+            await deleteByIdHandler.Execute(context, NullNext);
         }
 
         [Test]
@@ -51,15 +51,43 @@ public class UpsertHandlerTests
     }
 
     [TestFixture]
-    public class Given_a_repository_that_returns_failure_reference : UpsertHandlerTests
+    public class Given_a_repository_that_returns_failure_not_exists : DeleteByIdHandlerTests
+    {
+        public class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<DeleteResult> DeleteDocumentById(DeleteRequest deleteRequest)
+            {
+                return Task.FromResult<DeleteResult>(new DeleteFailureNotExists());
+            }
+        }
+
+        private readonly PipelineContext context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            IPipelineStep deleteByIdHandler = Handler(new Repository());
+            await deleteByIdHandler.Execute(context, NullNext);
+        }
+
+        [Test]
+        public void It_has_the_correct_response()
+        {
+            context.FrontendResponse.StatusCode.Should().Be(404);
+            context.FrontendResponse.Body.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_repository_that_returns_failure_reference : DeleteByIdHandlerTests
     {
         public class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly string ResponseBody = "ReferencingDocumentInfo";
 
-            public override Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)
+            public override Task<DeleteResult> DeleteDocumentById(DeleteRequest deleteRequest)
             {
-                return Task.FromResult<UpsertResult>(new UpsertFailureReference(ResponseBody));
+                return Task.FromResult<DeleteResult>(new DeleteFailureReference(ResponseBody));
             }
         }
 
@@ -68,8 +96,8 @@ public class UpsertHandlerTests
         [SetUp]
         public async Task Setup()
         {
-            IPipelineStep upsertHandler = Handler(new Repository());
-            await upsertHandler.Execute(context, NullNext);
+            IPipelineStep deleteByIdHandler = Handler(new Repository());
+            await deleteByIdHandler.Execute(context, NullNext);
         }
 
         [Test]
@@ -81,15 +109,15 @@ public class UpsertHandlerTests
     }
 
     [TestFixture]
-    public class Given_a_repository_that_returns_failure_identity_conflict : UpsertHandlerTests
+    public class Given_a_repository_that_returns_failure_write_conflict : DeleteByIdHandlerTests
     {
         public class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly string ResponseBody = "FailureMessage";
 
-            public override Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)
+            public override Task<DeleteResult> DeleteDocumentById(DeleteRequest deleteRequest)
             {
-                return Task.FromResult<UpsertResult>(new UpsertFailureIdentityConflict(ResponseBody));
+                return Task.FromResult<DeleteResult>(new DeleteFailureWriteConflict(ResponseBody));
             }
         }
 
@@ -98,38 +126,8 @@ public class UpsertHandlerTests
         [SetUp]
         public async Task Setup()
         {
-            IPipelineStep upsertHandler = Handler(new Repository());
-            await upsertHandler.Execute(context, NullNext);
-        }
-
-        [Test]
-        public void It_has_the_correct_response()
-        {
-            context.FrontendResponse.StatusCode.Should().Be(400);
-            context.FrontendResponse.Body.Should().Be(Repository.ResponseBody);
-        }
-    }
-
-    [TestFixture]
-    public class Given_a_repository_that_returns_failure_write_conflict : UpsertHandlerTests
-    {
-        public class Repository : NotImplementedDocumentStoreRepository
-        {
-            public static readonly string ResponseBody = "FailureMessage";
-
-            public override Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)
-            {
-                return Task.FromResult<UpsertResult>(new UpsertFailureWriteConflict(ResponseBody));
-            }
-        }
-
-        private readonly PipelineContext context = No.PipelineContext();
-
-        [SetUp]
-        public async Task Setup()
-        {
-            IPipelineStep upsertHandler = Handler(new Repository());
-            await upsertHandler.Execute(context, NullNext);
+            IPipelineStep deleteByIdHandler = Handler(new Repository());
+            await deleteByIdHandler.Execute(context, NullNext);
         }
 
         [Test]
@@ -141,15 +139,15 @@ public class UpsertHandlerTests
     }
 
     [TestFixture]
-    public class Given_a_repository_that_returns_unknown_failure : UpsertHandlerTests
+    public class Given_a_repository_that_returns_unknown_failure : DeleteByIdHandlerTests
     {
         public class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly string ResponseBody = "FailureMessage";
 
-            public override Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)
+            public override Task<DeleteResult> DeleteDocumentById(DeleteRequest deleteRequest)
             {
-                return Task.FromResult<UpsertResult>(new UnknownFailure(ResponseBody));
+                return Task.FromResult<DeleteResult>(new UnknownFailure(ResponseBody));
             }
         }
 
@@ -158,8 +156,8 @@ public class UpsertHandlerTests
         [SetUp]
         public async Task Setup()
         {
-            IPipelineStep upsertHandler = Handler(new Repository());
-            await upsertHandler.Execute(context, NullNext);
+            IPipelineStep deleteByIdHandler = Handler(new Repository());
+            await deleteByIdHandler.Execute(context, NullNext);
         }
 
         [Test]

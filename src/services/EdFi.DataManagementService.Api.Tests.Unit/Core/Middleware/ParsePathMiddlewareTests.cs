@@ -9,9 +9,9 @@ using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
-using static EdFi.DataManagementService.Api.Tests.TestHelper;
+using static EdFi.DataManagementService.Api.Tests.Unit.TestHelper;
 
-namespace EdFi.DataManagementService.Api.Tests.Core.Middleware;
+namespace EdFi.DataManagementService.Api.Tests.Unit.Core.Middleware;
 
 [TestFixture]
 public class ParsePathMiddlewareTests
