@@ -79,6 +79,7 @@ param(
 )
 
 $solutionRoot = "$PSScriptRoot/src"
+$defaultSolution = "$solutionRoot/EdFi.DataManagementService.sln"
 $servicesRoot = "$solutionRoot/services"
 $projectName =  "EdFi.DataManagementService.Api"
 $packageName = "EdFi.DataManagementService"
@@ -89,11 +90,11 @@ $maintainers = "Ed-Fi Alliance, LLC and contributors"
 Import-Module -Name "$PSScriptRoot/eng/build-helpers.psm1" -Force
 
 function DotNetClean {
-    Invoke-Execute { dotnet clean $solutionRoot -c $Configuration --nologo -v minimal }
+    Invoke-Execute { dotnet clean $defaultSolution -c $Configuration --nologo -v minimal }
 }
 
 function Restore {
-    Invoke-Execute { dotnet restore $solutionRoot }
+    Invoke-Execute { dotnet restore $defaultSolution }
 }
 
 function SetAdminApiAssemblyInfo {
@@ -120,7 +121,7 @@ function SetAdminApiAssemblyInfo {
 
 function Compile {
     Invoke-Execute {
-        dotnet build $solutionRoot -c $Configuration --nologo --no-restore
+        dotnet build $defaultSolution -c $Configuration --nologo --no-restore
     }
 }
 
