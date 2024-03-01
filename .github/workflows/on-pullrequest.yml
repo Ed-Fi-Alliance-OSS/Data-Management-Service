@@ -59,8 +59,8 @@ jobs:
         if: success()
         uses: github/codeql-action/analyze@df32e399139a3050671466d7d9b3cbacc1cfd034 # codeql-bundle-v2.15.2
 
-  run-cs-tests:
-    name: Run C# Tests
+  run-unit-tests:
+    name: Run Unit Tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -79,6 +79,27 @@ jobs:
       - name: Upload Test Results
         uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
         with:
-          name: csharp-tests
+          name: unit-tests
+          path: "**/*.trx"
+          retention-days: 5
+
+  run-e2e-tests:
+    name: Run E2E Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Run End to End Tests
+        if: success()
+        run: ./build.ps1 E2ETest
+
+      - name: Upload Test Results
+        uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+        with:
+          name: e2e-tests
           path: "**/*.trx"
           retention-days: 5
