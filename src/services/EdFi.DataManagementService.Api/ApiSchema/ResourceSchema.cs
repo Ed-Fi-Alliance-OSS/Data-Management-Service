@@ -186,9 +186,9 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
                 );
             }
 
-            foreach (var (documentObjectKey, jsonPath) in identityPaths.Paths)
+            foreach (var (documentObjectKey, jsonPath) in identityPaths.paths)
             {
-                identityDocumentPaths[documentObjectKey] = jsonPath;
+                identityDocumentPaths[documentObjectKey] = new(jsonPath);
             }
         }
 
@@ -197,7 +197,7 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
         foreach (string documentKey in IdentityPathOrder)
         {
             JsonPath documentJsonPath = identityDocumentPaths[documentKey];
-            string documentValue = documentBody.SelectRequiredNodeFromPathAs<string>(
+            string documentValue = documentBody.SelectRequiredNodeFromPathCoerceToString(
                 documentJsonPath.Value,
                 _logger
             );
@@ -218,15 +218,10 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
     /// </summary>
     public SuperclassIdentity? DeriveSuperclassIdentityFrom(DocumentIdentity documentIdentity)
     {
-        JsonNode documentsPathsMapping =
-            _resourceSchemaNode["documentPathsMapping"]
-            ?? throw new InvalidOperationException(
-                "Expected documentPathsMapping to be in resourceSchema, invalid ApiSchema"
-            );
         bool isSubclass =
-            documentsPathsMapping["isSubclass"]?.GetValue<bool>()
+            _resourceSchemaNode["isSubclass"]?.GetValue<bool>()
             ?? throw new InvalidOperationException(
-                "Expected isSubclass to be in documentPathsMapping, invalid ApiSchema"
+                "Expected isSubclass to be in resourceSchema, invalid ApiSchema"
             );
 
         // Only applies to subclasses
@@ -234,6 +229,12 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
         {
             return null;
         }
+
+        JsonNode documentsPathsMapping =
+            _resourceSchemaNode["documentPathsMapping"]
+            ?? throw new InvalidOperationException(
+                "Expected documentPathsMapping to be in resourceSchema, invalid ApiSchema"
+            );
 
         string subclassType =
             documentsPathsMapping["subclassType"]?.GetValue<string>()

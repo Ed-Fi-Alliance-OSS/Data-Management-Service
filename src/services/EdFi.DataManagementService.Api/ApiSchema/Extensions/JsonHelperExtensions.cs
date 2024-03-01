@@ -89,6 +89,25 @@ public static class JsonHelperExtensions
     }
 
     /// <summary>
+    /// Helper to go from a scalar JSONPath selection directly to a string value regardless of the JSON type
+    /// Throws if the value does not exist
+    /// </summary>
+    public static string SelectRequiredNodeFromPathCoerceToString(
+        this JsonNode jsonNode,
+        string jsonPathString,
+        ILogger logger
+    )
+    {
+        JsonNode selectedNode =
+            SelectNodeFromPath(jsonNode, jsonPathString, logger)
+            ?? throw new InvalidOperationException("Unexpected JSONPath value error");
+
+        JsonValue resultNode =
+            selectedNode!.AsValue() ?? throw new InvalidOperationException("Unexpected JSONPath value error");
+        return resultNode.ToString();
+    }
+
+    /// <summary>
     /// Helper to go from a scalar JSONPath selection directly to the typed value.
     /// Throws if the value does not exist
     /// </summary>
