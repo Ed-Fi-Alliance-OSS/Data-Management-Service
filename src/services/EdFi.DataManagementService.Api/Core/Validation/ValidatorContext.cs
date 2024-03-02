@@ -8,13 +8,10 @@ using EdFi.DataManagementService.Api.Core.Middleware;
 
 namespace EdFi.DataManagementService.Api.Core.Validation
 {
-    public class ValidatorContext
-    {
-        public bool IsDescriptor { get; set; }
-
-        public ResourceSchema? ResourceJsonSchema { get; set; }
-
-        public RequestMethod RequestActionMethod { get; set; }
-    }
-
+    /// <summary>
+    /// Validator context contains ResourceJsonSchema and RequestActionMethod to use with schema generation
+    /// </summary>
+    /// <param name="ResourceJsonSchema"></param>
+    /// <param name="RequestActionMethod"></param>
+    public record ValidatorContext(ResourceSchema? ResourceJsonSchema, RequestMethod RequestActionMethod);
 }

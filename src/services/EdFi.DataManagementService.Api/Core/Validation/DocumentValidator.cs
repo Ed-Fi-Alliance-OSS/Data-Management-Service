@@ -4,43 +4,73 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Api.ApiSchema.Extensions;
 using Json.Schema;
 
 namespace EdFi.DataManagementService.Api.Core.Validation;
 
 public interface IDocumentValidator
 {
-    IEnumerable<string>? Validate(JsonNode? input);
+    /// <summary>
+    /// Validates input json
+    /// </summary>
+    /// <param name="input"></param>
+    /// <param name="validatorContext"></param>
+    /// <returns></returns>
+    IEnumerable<string>? Validate(JsonNode? input, ValidatorContext validatorContext);
 }
 
-public class ResourceDocumentValidator(ISchemaValidator schemaValidator) : IDocumentValidator
+public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentValidator
 {
-    public EvaluationOptions ValidatorEvaluationOptions
-    { get => new() { OutputFormat = OutputFormat.List }; }
-
-    public IEnumerable<string>? Validate(JsonNode? input)
+    public IEnumerable<string>? Validate(JsonNode? input, ValidatorContext validatorContext)
     {
-        var resourceSchemaValidator = schemaValidator.GetSchema();
-        var results = resourceSchemaValidator.Evaluate(input, ValidatorEvaluationOptions);
+        var formatValidationResult = input.ValidateJsonFormat();
+
+        if (formatValidationResult != null
+            && formatValidationResult.Any())
+        {
+            return formatValidationResult;
+        }
+
+        EvaluationOptions? validatorEvaluationOptions = new EvaluationOptions
+        {
+            OutputFormat = OutputFormat.List,
+            RequireFormatValidation = true
+        };
+
+        var resourceSchemaValidator = schemaValidator.GetSchema(validatorContext);
+        var results = resourceSchemaValidator.Evaluate(input, validatorEvaluationOptions);
 
         return PruneValidationErrors(results);
 
         List<string>? PruneValidationErrors(EvaluationResults results)
         {
-            var allMessages = results.Details.Where(x => x.HasErrors).SelectMany(x => x.Errors == null ? [] : x.Errors.ToArray()).Select(x => x.Value).ToArray();
+            var validationErrors = new List<string>();
+            foreach (var detail in results.Details)
+            {
+                var propertyName = string.Empty;
 
-            var pruneMessages = results.Details.Where(x => x.HasErrors && x.EvaluationPath.Segments.Any() && x.EvaluationPath.Segments[^1] == "additionalProperties").Select(x => $"Overpost at {x.InstanceLocation}").ToArray();
-
-            // Remove the unhelpful messages
-            return allMessages.Where(x => x != "All values fail against the false schema").Concat(pruneMessages).ToList();
+                if (detail.InstanceLocation != null &&
+                    detail.InstanceLocation.Segments.Length != 0)
+                {
+                    propertyName = $"{detail.InstanceLocation.Segments[^1].Value} : ";
+                }
+                if (detail.HasErrors)
+                {
+                    if (detail.Errors != null && detail.Errors.Any())
+                    {
+                        foreach (var error in detail.Errors)
+                        {
+                            validationErrors.Add($"{propertyName}{error.Value}");
+                        }
+                    }
+                    if (detail.EvaluationPath.Segments.Any() && detail.EvaluationPath.Segments[^1] == "additionalProperties")
+                    {
+                        validationErrors.Add($"{propertyName} : Overpost");
+                    }
+                }
+            }
+            return validationErrors.Where(x => !x.Contains("All values fail against the false schema")).ToList();
         }
-    }
-}
-
-public class DescriptorDocumentValidator : IDocumentValidator
-{
-    public IEnumerable<string> Validate(JsonNode? input)
-    {
-        throw new NotImplementedException();
     }
 }

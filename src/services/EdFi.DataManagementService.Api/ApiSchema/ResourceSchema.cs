@@ -72,6 +72,11 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
     /// </summary>
     public JsonNode JsonSchemaForUpdate => _jsonSchemaForUpdate.Value;
 
+    /// <summary>
+    /// Returns request method specific JSONSchema
+    /// </summary>
+    /// <param name="requestMethod"></param>
+    /// <returns></returns>
     public JsonNode JsonSchemaForRequestMethod(RequestMethod requestMethod)
     {
         if (requestMethod == RequestMethod.POST)

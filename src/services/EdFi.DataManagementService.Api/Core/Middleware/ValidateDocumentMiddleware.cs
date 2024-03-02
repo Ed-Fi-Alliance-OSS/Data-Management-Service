@@ -13,22 +13,16 @@ namespace EdFi.DataManagementService.Api.Core.Middleware;
 /// <summary>
 /// Validates that the resource document is properly shaped.
 /// </summary>
-public class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidatorResolver _documentValidatorResolver) : IPipelineStep
+public class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _documentValidator) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         _logger.LogDebug("Entering ValidateDocumentMiddleware- {TraceId}", context.FrontendRequest.TraceId);
 
-        var validator = _documentValidatorResolver.Resolve(new ValidatorContext
-        {
-            RequestActionMethod = context.FrontendRequest.Method,
-            ResourceJsonSchema = context.ResourceSchema,
-            IsDescriptor = context.ResourceInfo.IsDescriptor
-        });
+        var validatorContext = new ValidatorContext(context.ResourceSchema, context.FrontendRequest.Method);
+        var validationErrors = _documentValidator.Validate(context.FrontendRequest.Body, validatorContext)?.ToArray();
 
-        var validationErrors = validator.Validate(context.FrontendRequest.Body)?.ToArray();
-
-        if (validationErrors == null)
+        if (validationErrors == null || validationErrors.Length == 0)
         {
             await next();
         }
@@ -43,7 +37,7 @@ public class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidatorResol
 
             context.FrontendResponse = new(
                StatusCode: exception.Status,
-               Body: JsonSerializer.Serialize<BaseDetailedException>(exception)
+               Body: JsonSerializer.Serialize<IDetailedException>(exception)
            );
             return;
         }
