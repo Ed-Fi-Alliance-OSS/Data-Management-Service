@@ -23,10 +23,10 @@ public class ValidateEndpointMiddlewareTests
     public static ApiSchemaDocument SchemaDocument()
     {
         return new ApiSchemaBuilder()
-            .WithProjectStart("Ed-Fi", "5.0.0")
-            .WithResourceStart("School")
-            .WithResourceEnd()
-            .WithProjectEnd()
+            .WithStartProject("Ed-Fi", "5.0.0")
+            .WithStartResource("School")
+            .WithEndResource()
+            .WithEndProject()
             .ToApiSchemaDocument();
     }
 

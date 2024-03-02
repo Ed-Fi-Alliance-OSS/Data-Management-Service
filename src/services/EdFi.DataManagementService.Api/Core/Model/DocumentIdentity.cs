@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
 using static EdFi.DataManagementService.Api.Core.Model.HashUtility;
 
 namespace EdFi.DataManagementService.Api.Core.Model;
@@ -18,6 +19,12 @@ namespace EdFi.DataManagementService.Api.Core.Model;
 public record DocumentIdentity(IList<DocumentIdentityElement> _documentIdentityElements)
 {
     /// <summary>
+    /// An immutable version of the underlying identity elements, mostly for testability
+    /// </summary>
+    public IList<DocumentIdentityElement> DocumentIdentityElements =>
+        _documentIdentityElements.ToImmutableList();
+
+    /// <summary>
     /// For a DocumentIdentity with a single element, returns a new DocumentIdentity with the
     /// element DocumentObjectKey replaced with a new DocumentObjectKey.
     /// </summary>
@@ -25,15 +32,25 @@ public record DocumentIdentity(IList<DocumentIdentityElement> _documentIdentityE
     {
         if (_documentIdentityElements.Count != 1)
         {
-            throw new InvalidOperationException("DocumentIdentity rename attempt with more than one element, invalid ApiSchema");
+            throw new InvalidOperationException(
+                "DocumentIdentity rename attempt with more than one element, invalid ApiSchema"
+            );
         }
 
         if (_documentIdentityElements[0].DocumentObjectKey != originalKey)
         {
-            throw new InvalidOperationException("DocumentIdentity rename attempt with wrong orignal key name, invalid ApiSchema");
+            throw new InvalidOperationException(
+                "DocumentIdentity rename attempt with wrong orignal key name, invalid ApiSchema"
+            );
         }
 
-        DocumentIdentityElement[] newElementList = [_documentIdentityElements[0] with { DocumentObjectKey = replacementKey }];
+        DocumentIdentityElement[] newElementList =
+        [
+            _documentIdentityElements[0] with
+            {
+                DocumentObjectKey = replacementKey
+            }
+        ];
         return new(newElementList.ToList());
     }
 

@@ -15,9 +15,9 @@ namespace EdFi.DataManagementService.Api.Core.Middleware;
 public partial class ParsePathMiddleware(ILogger _logger) : IPipelineStep
 {
     // Matches all of the following sample expressions:
-    // /ed-fi/Sections
-    // /ed-fi/Sections/
-    // /ed-fi/Sections/idValue
+    // /ed-fi/sections
+    // /ed-fi/sections/
+    // /ed-fi/sections/idValue
     [GeneratedRegex(@"\/(?<projectNamespace>[^/]+)\/(?<endpointName>[^/]+)(\/|$)((?<documentUuid>[^/]*$))?")]
     private static partial Regex PathExpressionRegex();
 

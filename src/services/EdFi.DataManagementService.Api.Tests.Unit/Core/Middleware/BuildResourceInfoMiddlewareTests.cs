@@ -32,10 +32,10 @@ public class BuildResourceInfoMiddlewareTests
         public async Task Setup()
         {
             ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
-                .WithProjectStart("Ed-Fi", "5.0.0")
-                .WithResourceStart("School")
-                .WithResourceEnd()
-                .WithProjectEnd()
+                .WithStartProject("Ed-Fi", "5.0.0")
+                .WithStartResource("School")
+                .WithEndResource()
+                .WithEndProject()
                 .ToApiSchemaDocument();
 
             context.ProjectSchema = new ProjectSchema(
