@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Json.Path;
 
@@ -101,5 +102,36 @@ public static class JsonHelperExtensions
             SelectNodeFromPathAs<T>(jsonNode, jsonPathString, logger)
             ?? throw new InvalidOperationException($"Node at path '{jsonPathString}' not found");
         return result;
+    }
+
+    /// <summary>
+    /// Helper to validate basic json format.Throws if validation fails
+    /// </summary>
+    public static IEnumerable<string>? ValidateJsonFormat(
+        this JsonNode? jsonNode
+    )
+    {
+        List<string>? validationErrors = [];
+        if (jsonNode == null)
+        {
+            validationErrors.Add("A non-empty request body is required.");
+        }
+        else
+        {
+            JsonNode? parsedInputJson = null;
+            try
+            {
+                string inputJson = JsonSerializer.Serialize(jsonNode);
+                parsedInputJson = JsonNode.Parse(inputJson);
+            }
+            catch
+            {
+                if (parsedInputJson == null)
+                {
+                    validationErrors.Add("Request body is not valid.");
+                }
+            }
+        }
+        return validationErrors;
     }
 }

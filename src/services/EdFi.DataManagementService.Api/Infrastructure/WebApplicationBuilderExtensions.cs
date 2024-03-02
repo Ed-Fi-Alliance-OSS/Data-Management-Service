@@ -21,8 +21,8 @@ namespace EdFi.DataManagementService.Api.Infrastructure
             webAppBuilder.Services.AddSingleton<IApiSchemaProvider, ApiSchemaFileLoader>();
             webAppBuilder.Services.AddSingleton<ICoreFacade, CoreFacade>();
             webAppBuilder.Services.AddSingleton<IDocumentStoreRepository, SuccessDocumentStoreRepository>();
-            webAppBuilder.Services.AddTransient<IDocumentValidatorResolver, DocumentValidatorResolver>();
-            webAppBuilder.Services.AddTransient<ISchemaValidatorResolver, SchemaValidatorResolver>();
+            webAppBuilder.Services.AddTransient<IDocumentValidator, DocumentValidator>();
+            webAppBuilder.Services.AddTransient<ISchemaValidator, SchemaValidator>();
 
             webAppBuilder.Services.Configure<AppSettings>(
                 webAppBuilder.Configuration.GetSection("AppSettings")
