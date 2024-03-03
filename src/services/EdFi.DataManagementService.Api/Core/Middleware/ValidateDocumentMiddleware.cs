@@ -28,7 +28,7 @@ public class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _doc
         }
         else
         {
-            var exception = new BadRequestDataException("Data validation failed. See Errors for details.", errors: validationErrors);
+            var exception = new BadRequestDataException("Data validation failed. See Errors for details.", errors: validationErrors).AsSerializableModel();
 
             _logger.LogDebug("'{Status}'.'{EndpointName}' - {TraceId}",
                  exception.Status.ToString(),
@@ -37,7 +37,7 @@ public class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _doc
 
             context.FrontendResponse = new(
                StatusCode: exception.Status,
-               Body: JsonSerializer.Serialize<IDetailedException>(exception)
+               Body: JsonSerializer.Serialize(exception)
            );
             return;
         }
