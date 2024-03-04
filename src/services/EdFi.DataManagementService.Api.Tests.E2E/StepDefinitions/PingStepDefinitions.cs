@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using EdFi.DataManagementService.Api.Tests.E2E.Management;
 using FluentAssertions;
 using Microsoft.Playwright;
 using Reqnroll;

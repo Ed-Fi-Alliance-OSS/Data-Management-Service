@@ -3,16 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using DotNet.Testcontainers.Builders;
-using Microsoft.Extensions.Logging;
-using Microsoft.Playwright;
-using Microsoft.VisualStudio.TestPlatform.ObjectModel;
+using EdFi.DataManagementService.Api.Tests.E2E.Management;
 using Reqnroll;
 
 namespace EdFi.DataManagementService.Api.Tests.E2E.Hooks
@@ -22,20 +13,13 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Hooks
     {
 
         [BeforeTestRun]
-        public static async Task BeforeTestRun(PlaywrightContext context, IReqnrollOutputHelper _outputHelper)
+        public static async Task BeforeTestRun(PlaywrightContext context, ContainerSetup containers, IReqnrollOutputHelper _outputHelper)
         {
             try
             {
-                string imageName = "local/edfi-data-management-service";
-                // Image needs to be previously built
-                var dockerImage = new ContainerBuilder()
-                    .WithImage(imageName)
-                    .WithPortBinding(8080)
-                    .Build();
+                string containerURL = await containers.SetupDataManagement();
 
-                await dockerImage.StartAsync();
-
-                context.API_URL = new UriBuilder(Uri.UriSchemeHttp, dockerImage.Hostname, dockerImage.GetMappedPublicPort(8080)).ToString();
+                context.API_URL = containerURL;
                 await context.CreateApiContext();
             }
             catch (Exception exception)

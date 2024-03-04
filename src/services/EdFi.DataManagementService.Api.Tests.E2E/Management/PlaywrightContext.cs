@@ -1,6 +1,6 @@
 using Microsoft.Playwright;
 
-namespace EdFi.DataManagementService.Api.Tests.E2E;
+namespace EdFi.DataManagementService.Api.Tests.E2E.Management;
 
 public class PlaywrightContext
 {
