@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    serviceName: postgres
+  name: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      serviceName: postgres
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        serviceName: postgres
+    spec:
+      containers:
+      - name: postgres-ml
+        image: postgres:11.22-alpine3.19@sha256:93d6dc7c9fea3535c331717465259b77e0a768ef5e2854bccf9501d340483d22
+        ports:
+            - containerPort: 80
+        env:
+          - name: POSTGRES_USER
+            valueFrom:
+              configMapKeyRef:
+                name: app-configmap
+                key: postgres-user
+          - name: POSTGRES_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: app-secret
+                key: postgres-password
+          - name: POSTGRES_HOST
+            valueFrom:
+              configMapKeyRef:
+                name: app-configmap
+                key: postgres-host
+          - name: POSTGRES_PORT
+            valueFrom:
+              configMapKeyRef:
+                name: app-configmap
+                key: postgres-port
+        resources: {}
+        volumeMounts:
+          - mountPath: /var/lib/postgresql/data
+            name: pgsql-ml-data
+      restartPolicy: Always
+      volumes:
+        - name: pgsql-ml-data
+          persistentVolumeClaim:
+            claimName: pgsql-ml-data
+status: {}
