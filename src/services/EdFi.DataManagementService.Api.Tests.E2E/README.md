@@ -11,9 +11,9 @@ This is a suite of end to end tests that will cover different scenarios.
 
 The tests can be executed against an isolated environment or your current running environment.
 
-By default, the tests run against an isolated [TestContainers](https://dotnet.testcontainers.org/) environment. This will setup the Docker containers for the API and the Backend, see [ContainerSetup.cs](./EdFi.DataManagementService.Api.Tests.E2E/Management/ContainerSetup.cs) for more information.
+By default, the tests run against an isolated [TestContainers](https://dotnet.testcontainers.org/) environment. This will setup the Docker containers for the API and the Backend, see [ContainerSetup.cs](./Management/ContainerSetup.cs) for more information.
 
-You can also run the tests against your current running environment, by setting UseTestContainers to false in the [appsettings](./EdFi.DataManagementService.Api.Tests.E2E/appsettings.json)
+You can also run the tests against your current running environment, by setting UseTestContainers to false in the [appsettings](./appsettings.json)
 
 ## Adding new Tests
 
