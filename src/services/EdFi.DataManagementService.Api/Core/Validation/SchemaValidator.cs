@@ -24,9 +24,8 @@ public class SchemaValidator : ISchemaValidator
     public JsonSchema GetSchema(ValidatorContext validatorContext)
     {
         var requestActionMethod = validatorContext.RequestActionMethod;
-        var resourceJsonSchema = validatorContext.ResourceJsonSchema
-            ?? throw new Exception("Resource schema not found.");
-        var schemaNode = resourceJsonSchema.JsonSchemaForRequestMethod(requestActionMethod);
+        var resourceJsonSchema = validatorContext.ResourceJsonSchema;
+        var schemaNode = resourceJsonSchema!.JsonSchemaForRequestMethod(requestActionMethod);
         var resourceSchema = JsonSerializer.Serialize(schemaNode);
         return JsonSchema.FromText(resourceSchema);
     }

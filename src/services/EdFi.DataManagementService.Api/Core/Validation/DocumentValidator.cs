@@ -66,7 +66,7 @@ public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentVali
                     }
                     if (detail.EvaluationPath.Segments.Any() && detail.EvaluationPath.Segments[^1] == "additionalProperties")
                     {
-                        validationErrors.Add($"{propertyName} : Overpost");
+                        validationErrors.Add($"{propertyName}Overpost");
                     }
                 }
             }
