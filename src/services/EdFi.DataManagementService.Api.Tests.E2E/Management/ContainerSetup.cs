@@ -5,25 +5,23 @@
 
 using DotNet.Testcontainers.Builders;
 
-namespace EdFi.DataManagementService.Api.Tests.E2E.Management
+namespace EdFi.DataManagementService.Api.Tests.E2E.Management;
+
+public class ContainerSetup
 {
-
-    public class ContainerSetup
+    public async Task<string> SetupDataManagement()
     {
-        public async Task<string> SetupDataManagement()
-        {
-            string imageName = "local/edfi-data-management-service";
-            // Image needs to be previously built
-            var dockerImage = new ContainerBuilder()
-                .WithImage(imageName)
-                .WithPortBinding(8080)
-                .Build();
+        string imageName = "local/edfi-data-management-service";
+        // Image needs to be previously built
+        var dockerImage = new ContainerBuilder()
+            .WithImage(imageName)
+            .WithPortBinding(8080)
+            .Build();
 
-            await dockerImage.StartAsync();
+        await dockerImage.StartAsync();
 
-            return new UriBuilder(Uri.UriSchemeHttp, dockerImage.Hostname, dockerImage.GetMappedPublicPort(8080)).ToString();
+        return new UriBuilder(Uri.UriSchemeHttp, dockerImage.Hostname, dockerImage.GetMappedPublicPort(8080)).ToString();
 
 
-        }
     }
 }

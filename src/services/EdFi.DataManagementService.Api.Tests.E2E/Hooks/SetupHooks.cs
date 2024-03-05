@@ -7,46 +7,45 @@ using EdFi.DataManagementService.Api.Tests.E2E.Management;
 using Microsoft.Extensions.Configuration;
 using Reqnroll;
 
-namespace EdFi.DataManagementService.Api.Tests.E2E.Hooks
+namespace EdFi.DataManagementService.Api.Tests.E2E.Hooks;
+
+[Binding]
+public class SetupHooks
 {
-    [Binding]
-    public class SetupHooks
+    private static IConfiguration? _configuration;
+
+    [BeforeTestRun]
+    public static async Task BeforeTestRun(PlaywrightContext context, ContainerSetup containers, TestLogger logger)
     {
-        private static IConfiguration? config;
-
-        [BeforeTestRun]
-        public static async Task BeforeTestRun(PlaywrightContext context, ContainerSetup containers, TestLogger logger)
+        try
         {
-            try
+            _configuration ??= new ConfigurationBuilder()
+                    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                    .Build();
+
+            bool.TryParse(_configuration["useTestContainers"], out bool useTestContainers);
+
+            if (useTestContainers)
             {
-                config ??= new ConfigurationBuilder()
-                        .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-                        .Build();
-
-                bool.TryParse(config["useTestContainers"], out bool useTestContainers);
-
-                if (useTestContainers)
-                {
-                    logger.log.Debug("Using TestContainers to set environment");
-                    context.ApiUrl = await containers.SetupDataManagement();
-                }
-                else
-                {
-                    logger.log.Debug("Using local environment, verify that it's correctly set.");
-                }
-
-                await context.CreateApiContext();
+                logger.log.Debug("Using TestContainers to set environment");
+                context.ApiUrl = await containers.SetupDataManagement();
             }
-            catch (Exception exception)
+            else
             {
-                Assert.Fail($"Unable to configure environment\nError starting API: {exception}");
+                logger.log.Debug("Using local environment, verify that it's correctly set.");
             }
+
+            await context.CreateApiContext();
         }
-
-        [AfterTestRun]
-        public static void AfterTestRun(PlaywrightContext context)
+        catch (Exception exception)
         {
-            context.Dispose();
+            Assert.Fail($"Unable to configure environment\nError starting API: {exception}");
         }
+    }
+
+    [AfterTestRun]
+    public static void AfterTestRun(PlaywrightContext context)
+    {
+        context.Dispose();
     }
 }
