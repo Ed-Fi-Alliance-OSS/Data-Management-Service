@@ -16,6 +16,8 @@
           (clean, restore, inject version information).
         * UnitTest: executes NUnit tests in projects named `*.UnitTests`, which
           do not connect to a database.
+        * E2ETest: executes NUnit tests in projects named `*.E2ETests`, which
+          runs the API in an isolated Docker environment and executes API Calls .
         * BuildAndPublish: build and publish with `dotnet publish`
         * Package: builds pre-release and release NuGet packages for the Dms API application.
         * Push: uploads a NuGet package to the NuGet feed.
@@ -39,7 +41,7 @@
 param(
     # Command to execute, defaults to "Build".
     [string]
-    [ValidateSet("Clean", "Build", "BuildAndPublish", "UnitTest", "Package", "Push", "DockerBuild", "DockerRun")]
+    [ValidateSet("Clean", "Build", "BuildAndPublish", "UnitTest", "E2ETest", "Package", "Push", "DockerBuild", "DockerRun")]
     $Command = "Build",
 
     # Assembly and package version number for the Data Management Service. The
@@ -77,6 +79,7 @@ param(
 )
 
 $solutionRoot = "$PSScriptRoot/src"
+$defaultSolution = "$solutionRoot/EdFi.DataManagementService.sln"
 $servicesRoot = "$solutionRoot/services"
 $projectName =  "EdFi.DataManagementService.Api"
 $packageName = "EdFi.DataManagementService"
@@ -87,11 +90,11 @@ $maintainers = "Ed-Fi Alliance, LLC and contributors"
 Import-Module -Name "$PSScriptRoot/eng/build-helpers.psm1" -Force
 
 function DotNetClean {
-    Invoke-Execute { dotnet clean $solutionRoot -c $Configuration --nologo -v minimal }
+    Invoke-Execute { dotnet clean $defaultSolution -c $Configuration --nologo -v minimal }
 }
 
 function Restore {
-    Invoke-Execute { dotnet restore $solutionRoot }
+    Invoke-Execute { dotnet restore $defaultSolution }
 }
 
 function SetAdminApiAssemblyInfo {
@@ -118,7 +121,7 @@ function SetAdminApiAssemblyInfo {
 
 function Compile {
     Invoke-Execute {
-        dotnet build $solutionRoot -c $Configuration --nologo --no-restore
+        dotnet build $defaultSolution -c $Configuration --nologo --no-restore
     }
 }
 
@@ -159,7 +162,17 @@ function RunTests {
 }
 
 function UnitTests {
-    Invoke-Execute { RunTests -Filter "*.Tests" }
+    Invoke-Execute { RunTests -Filter "*.Tests.Unit" }
+}
+
+function RunE2E {
+    Invoke-Execute { RunTests -Filter "*.Tests.E2E" }
+}
+
+function E2ETests {
+    Invoke-Step { DockerBuild }
+    Invoke-Step { RunE2E }
+
 }
 
 function RunNuGetPack {
@@ -213,6 +226,10 @@ function Invoke-Clean {
 
 function Invoke-UnitTestSuite {
     Invoke-Step { UnitTests }
+}
+
+function Invoke-E2ETestSuite {
+    Invoke-Step { E2ETests }
 }
 
 function Invoke-BuildPackage {
@@ -274,6 +291,7 @@ Invoke-Main {
             Invoke-Publish
         }
         UnitTest { Invoke-UnitTestSuite }
+        E2ETest { Invoke-E2ETestSuite }
         Package { Invoke-BuildPackage }
         Push { Invoke-PushPackage }
         DockerBuild { Invoke-Step { DockerBuild } }

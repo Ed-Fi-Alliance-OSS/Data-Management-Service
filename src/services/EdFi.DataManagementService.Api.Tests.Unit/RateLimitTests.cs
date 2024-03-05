@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using NUnit.Framework;
 
-namespace EdFi.DataManagementService.Api.Tests;
+namespace EdFi.DataManagementService.Api.Tests.Unit;
 
 [TestFixture]
 public class RateLimitTests

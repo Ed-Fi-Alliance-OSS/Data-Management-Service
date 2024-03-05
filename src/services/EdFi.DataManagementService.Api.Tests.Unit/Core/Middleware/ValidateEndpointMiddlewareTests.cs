@@ -11,7 +11,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
-namespace EdFi.DataManagementService.Api.Tests.Core.Middleware;
+namespace EdFi.DataManagementService.Api.Tests.Unit.Core.Middleware;
 
 public class ValidateEndpointMiddlewareTests
 {
