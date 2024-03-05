@@ -4,16 +4,18 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
-using EdFi.DataManagementService.Api.Core.Exceptions;
+using static EdFi.DataManagementService.Api.Core.ResponseBody.DataValidationFailureElements;
 using EdFi.DataManagementService.Api.Core.Validation;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Api.Core.Exceptions;
 
 namespace EdFi.DataManagementService.Api.Core.Middleware;
 
 /// <summary>
 /// Validates that the resource document is properly shaped.
 /// </summary>
-public class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _documentValidator) : IPipelineStep
+public class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _documentValidator)
+    : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
@@ -28,17 +30,24 @@ public class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _doc
         }
         else
         {
-            var exception = new BadRequestDataException("Data validation failed. See errors for details.", errors: errors).AsSerializableModel();
+            FailureResponseBody body =
+                new(
+                    title: FailureTitle,
+                    status: 400,
+                    detail: FailureDetail,
+                    type: FailureType,
+                    errors: errors,
+                    correlationId: context.FrontendRequest.TraceId.Value
+                );
 
-            _logger.LogDebug("'{Status}'.'{EndpointName}' - {TraceId}",
-                 exception.Status.ToString(),
-                 context.PathComponents.EndpointName,
-                 context.FrontendRequest.TraceId);
+            _logger.LogDebug(
+                "'{Status}'.'{EndpointName}' - {TraceId}",
+                body.status.ToString(),
+                context.PathComponents.EndpointName,
+                context.FrontendRequest.TraceId
+            );
 
-            context.FrontendResponse = new(
-               StatusCode: exception.Status,
-               Body: JsonSerializer.Serialize(exception)
-           );
+            context.FrontendResponse = new(StatusCode: body.status, Body: JsonSerializer.Serialize(body));
             return;
         }
     }
