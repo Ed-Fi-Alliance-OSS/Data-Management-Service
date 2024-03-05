@@ -6,13 +6,7 @@ public class PlaywrightContext
 {
     private static Task<IAPIRequestContext>? _requestContext;
 
-    private string _apiURL = "http://localhost:5198/";
-
-    public string API_URL
-    {
-        get => _apiURL;
-        set => _apiURL = value;
-    }
+    public string ApiUrl { get; set; } = "http://localhost:5198";
 
     public IAPIRequestContext? ApiRequestContext => _requestContext?.GetAwaiter().GetResult();
 
@@ -27,7 +21,7 @@ public class PlaywrightContext
 
         _requestContext = playwright.APIRequest.NewContextAsync(new APIRequestNewContextOptions
         {
-            BaseURL = _apiURL,
+            BaseURL = ApiUrl,
             IgnoreHTTPSErrors = true
         });
     }
