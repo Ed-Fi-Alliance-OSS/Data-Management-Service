@@ -15,7 +15,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Hooks
         private static IConfiguration? config;
 
         [BeforeTestRun]
-        public static async Task BeforeTestRun(PlaywrightContext context, ContainerSetup containers)
+        public static async Task BeforeTestRun(PlaywrightContext context, ContainerSetup containers, TestLogger logger)
         {
             try
             {
@@ -27,11 +27,12 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Hooks
 
                 if (useTestContainers)
                 {
+                    logger.log.Debug("Using TestContainers to set environment");
                     context.ApiUrl = await containers.SetupDataManagement();
                 }
                 else
                 {
-                    //Will print message
+                    logger.log.Debug("Using local environment, verify that it's correctly set.");
                 }
 
                 await context.CreateApiContext();
