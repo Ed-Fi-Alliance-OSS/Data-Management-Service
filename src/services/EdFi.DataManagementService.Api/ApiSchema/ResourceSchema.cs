@@ -61,16 +61,21 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
     /// </summary>
     public JsonNode JsonSchemaForInsert => _jsonSchemaForInsert.Value;
 
-    private readonly Lazy<JsonNode> _jsonSchemaForUpdate =
-        new(() =>
-        {
-            return _resourceSchemaNode.SelectRequiredNodeFromPath("$.jsonSchemaForUpdate", _logger);
-        });
-
     /// <summary>
     /// The JSONSchema for the body of this resource on update
     /// </summary>
-    public JsonNode JsonSchemaForUpdate => _jsonSchemaForUpdate.Value;
+    /// <returns></returns>
+    public JsonNode JsonSchemaForUpdate()
+    {
+        JsonNode jsonSchemaForUpdate = JsonSchemaForInsert.DeepClone();
+        jsonSchemaForUpdate["properties"]!["id"] = new JsonObject
+        {
+                { "type", "string" },
+                { "description", "The item id" }
+        };
+        jsonSchemaForUpdate["required"]!.AsArray().Add("id");
+        return jsonSchemaForUpdate;
+    }
 
     /// <summary>
     /// Returns request method specific JSONSchema
@@ -83,6 +88,6 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
         {
             return JsonSchemaForInsert;
         }
-        return JsonSchemaForUpdate;
+        return JsonSchemaForUpdate();
     }
 }
