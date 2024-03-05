@@ -3,8 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Api.ApiSchema;
+using Json.Schema;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DataManagementService.Api.Tests;
@@ -132,6 +135,28 @@ public class ApiSchemaBuilder
         _currentProjectNode["resourceNameMapping"]![resourceName] = endpointName;
         _currentProjectNode["resourceSchemas"]![endpointName] = _currentResourceNode;
         _currentProjectNode["caseInsensitiveEndpointNameMapping"]![endpointName.ToLower()] = endpointName;
+        return this;
+    }
+
+    /// <summary>
+    /// Define resource schema. Can only be done inside a project definition.
+    /// Always end a resource definition when finished.
+    ///
+    /// resourceSchema should contain schema definition for insert.
+    /// </summary>
+    public ApiSchemaBuilder WithJsonSchemaForInsert(JsonSchema jsonSchema)
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        var serializedJson = JsonSerializer.Serialize(jsonSchema);
+        _currentResourceNode["jsonSchemaForInsert"] = JsonNode.Parse(serializedJson);
+
         return this;
     }
 
