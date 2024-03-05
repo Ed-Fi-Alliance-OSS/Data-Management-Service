@@ -88,6 +88,7 @@ jobs:
 
   run-e2e-tests:
     name: Run E2E Tests
+    needs: run-unit-tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -102,6 +103,17 @@ jobs:
       - name: Run End to End Tests
         if: success()
         run: ./build.ps1 E2ETest
+
+      - name: Upload Logs
+        if: failure()
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+        with:
+          name: test-logs
+          path: |
+            ./src/services/EdFi.DataManagementService.Api.Tests.E2E/bin/Debug/net8.0/logs
+          retention-days: 10
+
+
 
       - name: Upload Test Results
         uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
