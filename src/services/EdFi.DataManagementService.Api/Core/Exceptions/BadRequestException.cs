@@ -7,7 +7,7 @@ namespace EdFi.DataManagementService.Api.Core.Exceptions
 {
     public class BadRequestException : BaseDetailedException
     {
-        // Fields containing override values for Problem Details
+        // Fields containing override values for exception Details
         private const string TypePart = "bad-request";
         private const string TitleText = "Bad Request";
         private const string DefaultDetail = "The request construction was invalid.";
@@ -32,9 +32,6 @@ namespace EdFi.DataManagementService.Api.Core.Exceptions
             ((IDetailedException)this).Errors = errors;
         }
 
-        // ---------------------------
-        //  Boilerplate for overrides
-        // ---------------------------
         public override string Title { get => TitleText; }
 
         public override int Status { get => StatusValue; }

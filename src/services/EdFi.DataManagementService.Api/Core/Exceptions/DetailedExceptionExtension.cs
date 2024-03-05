@@ -5,7 +5,7 @@
 
 namespace EdFi.DataManagementService.Api.Core.Exceptions;
 
-public static class EdFiProblemDetailsExceptionExtensions
+public static class DetailedExceptionExtension
 {
     public static IDetailedException AsSerializableModel(this IDetailedException wrappedInstance)
     {

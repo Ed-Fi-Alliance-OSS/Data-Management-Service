@@ -5,6 +5,9 @@
 
 namespace EdFi.DataManagementService.Api.Core.Exceptions
 {
+    /// <summary>
+    /// Bad request exception type for data validation
+    /// </summary>
     public class BadRequestDataException : BadRequestException
     {
         private const string TypePart = "data";
@@ -25,9 +28,6 @@ namespace EdFi.DataManagementService.Api.Core.Exceptions
             ((IDetailedException)this).Errors = errors;
         }
 
-        // ---------------------------
-        //  Boilerplate for overrides
-        // ---------------------------
         public override string Title { get => TitleText; }
 
         protected override IEnumerable<string> GetTypeParts()
