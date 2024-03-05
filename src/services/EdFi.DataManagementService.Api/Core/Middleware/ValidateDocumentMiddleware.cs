@@ -20,15 +20,15 @@ public class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _doc
         _logger.LogDebug("Entering ValidateDocumentMiddleware- {TraceId}", context.FrontendRequest.TraceId);
 
         var validatorContext = new ValidatorContext(context.ResourceSchema, context.FrontendRequest.Method);
-        var validationErrors = _documentValidator.Validate(context.FrontendRequest.Body, validatorContext)?.ToArray();
+        var errors = _documentValidator.Validate(context.FrontendRequest.Body, validatorContext)?.ToArray();
 
-        if (validationErrors == null || validationErrors.Length == 0)
+        if (errors == null || errors.Length == 0)
         {
             await next();
         }
         else
         {
-            var exception = new BadRequestDataException("Data validation failed. See Errors for details.", errors: validationErrors).AsSerializableModel();
+            var exception = new BadRequestDataException("Data validation failed. See errors for details.", errors: errors).AsSerializableModel();
 
             _logger.LogDebug("'{Status}'.'{EndpointName}' - {TraceId}",
                  exception.Status.ToString(),
