@@ -13,5 +13,5 @@ namespace EdFi.DataManagementService.Api.Core.Validation
     /// </summary>
     /// <param name="ResourceJsonSchema"></param>
     /// <param name="RequestActionMethod"></param>
-    public record ValidatorContext(ResourceSchema? ResourceJsonSchema, RequestMethod RequestActionMethod);
+    public record ValidatorContext(ResourceSchema ResourceJsonSchema, RequestMethod RequestActionMethod);
 }

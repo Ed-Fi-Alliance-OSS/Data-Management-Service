@@ -12,34 +12,30 @@ namespace EdFi.DataManagementService.Api.Core.Validation;
 public interface IDocumentValidator
 {
     /// <summary>
-    /// Validates input json
+    /// Validates a document body against a JSON Schema
     /// </summary>
-    /// <param name="input"></param>
+    /// <param name="documentBody"></param>
     /// <param name="validatorContext"></param>
     /// <returns></returns>
-    IEnumerable<string>? Validate(JsonNode? input, ValidatorContext validatorContext);
+    IEnumerable<string>? Validate(JsonNode? documentBody, ValidatorContext validatorContext);
 }
 
 public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentValidator
 {
-    public IEnumerable<string>? Validate(JsonNode? input, ValidatorContext validatorContext)
+    public IEnumerable<string>? Validate(JsonNode? documentBody, ValidatorContext validatorContext)
     {
-        var formatValidationResult = input.ValidateJsonFormat();
+        var formatValidationResult = documentBody.ValidateJsonFormat();
 
-        if (formatValidationResult != null
-            && formatValidationResult.Any())
+        if (formatValidationResult != null && formatValidationResult.Any())
         {
             return formatValidationResult;
         }
 
-        EvaluationOptions? validatorEvaluationOptions = new EvaluationOptions
-        {
-            OutputFormat = OutputFormat.List,
-            RequireFormatValidation = true
-        };
+        EvaluationOptions? validatorEvaluationOptions =
+            new() { OutputFormat = OutputFormat.List, RequireFormatValidation = true };
 
         var resourceSchemaValidator = schemaValidator.GetSchema(validatorContext);
-        var results = resourceSchemaValidator.Evaluate(input, validatorEvaluationOptions);
+        var results = resourceSchemaValidator.Evaluate(documentBody, validatorEvaluationOptions);
 
         return PruneValidationErrors(results);
 
@@ -50,8 +46,7 @@ public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentVali
             {
                 var propertyName = string.Empty;
 
-                if (detail.InstanceLocation != null &&
-                    detail.InstanceLocation.Segments.Length != 0)
+                if (detail.InstanceLocation != null && detail.InstanceLocation.Segments.Length != 0)
                 {
                     propertyName = $"{detail.InstanceLocation.Segments[^1].Value} : ";
                 }
@@ -64,13 +59,18 @@ public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentVali
                             validationErrors.Add($"{propertyName}{error.Value}");
                         }
                     }
-                    if (detail.EvaluationPath.Segments.Any() && detail.EvaluationPath.Segments[^1] == "additionalProperties")
+                    if (
+                        detail.EvaluationPath.Segments.Any()
+                        && detail.EvaluationPath.Segments[^1] == "additionalProperties"
+                    )
                     {
                         validationErrors.Add($"{propertyName}Overpost");
                     }
                 }
             }
-            return validationErrors.Where(x => !x.Contains("All values fail against the false schema")).ToList();
+            return validationErrors
+                .Where(x => !x.Contains("All values fail against the false schema"))
+                .ToList();
         }
     }
 }

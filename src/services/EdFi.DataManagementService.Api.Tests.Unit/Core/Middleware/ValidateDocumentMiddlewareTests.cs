@@ -30,25 +30,22 @@ public class ValidateDocumentMiddlewareTests
         builder.Description("This entity represents an educational organization");
         builder.Schema("https://json-schema.org/draft/2020-12/schema");
         builder.AdditionalProperties(false);
-        builder.Properties(
-        ("schoolId", new JsonSchemaBuilder()
-            .Type(SchemaValueType.Integer)
-        ),
-        ("gradeLevels", new JsonSchemaBuilder()
-            .Type(SchemaValueType.Object)
+        builder
             .Properties(
-            ("gradeLevelDescriptor", new JsonSchemaBuilder()
-            .Type(SchemaValueType.String))
-            ).Required("gradeLevelDescriptor")
-        ),
-        ("nameOfInstitution", new JsonSchemaBuilder()
-        .Type(SchemaValueType.String)
-        ),
-        ("webSite", new JsonSchemaBuilder()
-        .Type(SchemaValueType.String)
-        .MinLength(5)
-        .MaxLength(10)
-        )).Required("schoolId", "gradeLevels", "nameOfInstitution");
+                ("schoolId", new JsonSchemaBuilder().Type(SchemaValueType.Integer)),
+                (
+                    "gradeLevels",
+                    new JsonSchemaBuilder()
+                        .Type(SchemaValueType.Object)
+                        .Properties(
+                            ("gradeLevelDescriptor", new JsonSchemaBuilder().Type(SchemaValueType.String))
+                        )
+                        .Required("gradeLevelDescriptor")
+                ),
+                ("nameOfInstitution", new JsonSchemaBuilder().Type(SchemaValueType.String)),
+                ("webSite", new JsonSchemaBuilder().Type(SchemaValueType.String).MinLength(5).MaxLength(10))
+            )
+            .Required("schoolId", "gradeLevels", "nameOfInstitution");
 
         return new ApiSchemaBuilder()
             .WithProjectStart("Ed-Fi", "5.0.0")
@@ -68,14 +65,16 @@ public class ValidateDocumentMiddlewareTests
 
     public PipelineContext Context(FrontendRequest frontendRequest)
     {
-        PipelineContext _context = new(frontendRequest)
-        {
-            ApiSchemaDocument = SchemaDocument(),
-            PathComponents = new(
-               ProjectNamespace: new("ed-fi"),
-               EndpointName: new("schools"),
-               DocumentUuid: No.DocumentUuid)
-        };
+        PipelineContext _context =
+            new(frontendRequest)
+            {
+                ApiSchemaDocument = SchemaDocument(),
+                PathComponents = new(
+                    ProjectNamespace: new("ed-fi"),
+                    EndpointName: new("schools"),
+                    DocumentUuid: No.DocumentUuid
+                )
+            };
         _context.ProjectSchema = new ProjectSchema(
             _context.ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
             NullLogger.Instance
@@ -95,7 +94,12 @@ public class ValidateDocumentMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            var frontEndRequest = new FrontendRequest(RequestMethod.POST, "ed-fi/schools", Body: null, new TraceId("traceId"));
+            var frontEndRequest = new FrontendRequest(
+                RequestMethod.POST,
+                "ed-fi/schools",
+                Body: null,
+                new TraceId("traceId")
+            );
             _context = Context(frontEndRequest);
             await Middleware().Execute(_context, Next());
         }
@@ -127,9 +131,15 @@ public class ValidateDocumentMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            string jsonData = "{\"schoolId\": 989, \"gradeLevels\":{\"gradeLevelDescriptor\": \"grade1\"},\"nameOfInstitution\":\"school12\", \"propertyOverPost\": \"overpostedvalue\"}";
+            string jsonData =
+                """{"schoolId": 989, "gradeLevels":{"gradeLevelDescriptor": "grade1"},"nameOfInstitution":"school12", "propertyOverPost": "overpostedvalue"}""";
 
-            var frontEndRequest = new FrontendRequest(RequestMethod.POST, "ed-fi/schools", Body: JsonNode.Parse(jsonData), new TraceId("traceId"));
+            var frontEndRequest = new FrontendRequest(
+                RequestMethod.POST,
+                "ed-fi/schools",
+                Body: JsonNode.Parse(jsonData),
+                new TraceId("traceId")
+            );
             _context = Context(frontEndRequest);
             await Middleware().Execute(_context, Next());
         }
@@ -161,9 +171,15 @@ public class ValidateDocumentMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            string jsonData = "{\"gradeLevels\":{\"gradeLevelDescriptor\": \"grade1\"},\"nameOfInstitution\":\"school12\"}";
+            string jsonData =
+                """{"gradeLevels":{"gradeLevelDescriptor": "grade1"},"nameOfInstitution":"school12"}""";
 
-            var frontEndRequest = new FrontendRequest(RequestMethod.POST, "ed-fi/schools", Body: JsonNode.Parse(jsonData), new TraceId("traceId"));
+            var frontEndRequest = new FrontendRequest(
+                RequestMethod.POST,
+                "ed-fi/schools",
+                Body: JsonNode.Parse(jsonData),
+                new TraceId("traceId")
+            );
             _context = Context(frontEndRequest);
             await Middleware().Execute(_context, Next());
         }
@@ -196,9 +212,15 @@ public class ValidateDocumentMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            string jsonData = "{\"schoolId\": \"wrongvalue\",\"gradeLevels\":{\"gradeLevelDescriptor\": \"grade1\"},\"nameOfInstitution\":\"school12\"}";
+            string jsonData =
+                """{"schoolId": "wrongvalue","gradeLevels":{"gradeLevelDescriptor": "grade1"},"nameOfInstitution":"school12"}""";
 
-            var frontEndRequest = new FrontendRequest(RequestMethod.POST, "ed-fi/schools", Body: JsonNode.Parse(jsonData), new TraceId("traceId"));
+            var frontEndRequest = new FrontendRequest(
+                RequestMethod.POST,
+                "ed-fi/schools",
+                Body: JsonNode.Parse(jsonData),
+                new TraceId("traceId")
+            );
             _context = Context(frontEndRequest);
             await Middleware().Execute(_context, Next());
         }
@@ -231,9 +253,15 @@ public class ValidateDocumentMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            string jsonData = "{\"schoolId\": 7687,\"gradeLevels\":{\"gradeLevelDescriptor\": \"grade1\"},\"nameOfInstitution\":\"school12\"}";
+            string jsonData =
+                """{"schoolId": 7687,"gradeLevels":{"gradeLevelDescriptor": "grade1"},"nameOfInstitution":"school12"}""";
 
-            var frontEndRequest = new FrontendRequest(RequestMethod.PUT, "ed-fi/schools", Body: JsonNode.Parse(jsonData), new TraceId("traceId"));
+            var frontEndRequest = new FrontendRequest(
+                RequestMethod.PUT,
+                "ed-fi/schools",
+                Body: JsonNode.Parse(jsonData),
+                new TraceId("traceId")
+            );
             _context = Context(frontEndRequest);
             await Middleware().Execute(_context, Next());
         }

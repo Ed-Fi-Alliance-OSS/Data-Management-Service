@@ -25,7 +25,7 @@ public class SchemaValidator : ISchemaValidator
     {
         var requestActionMethod = validatorContext.RequestActionMethod;
         var resourceJsonSchema = validatorContext.ResourceJsonSchema;
-        var schemaNode = resourceJsonSchema!.JsonSchemaForRequestMethod(requestActionMethod);
+        var schemaNode = resourceJsonSchema.JsonSchemaForRequestMethod(requestActionMethod);
         var resourceSchema = JsonSerializer.Serialize(schemaNode);
         return JsonSchema.FromText(resourceSchema);
     }

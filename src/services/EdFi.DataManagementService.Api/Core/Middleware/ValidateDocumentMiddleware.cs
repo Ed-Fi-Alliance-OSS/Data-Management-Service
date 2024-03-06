@@ -4,7 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
-using EdFi.DataManagementService.Api.Core.Exceptions;
+using EdFi.DataManagementService.Api.Core.Response;
 using EdFi.DataManagementService.Api.Core.Validation;
 using EdFi.DataManagementService.Core.Pipeline;
 
@@ -13,7 +13,8 @@ namespace EdFi.DataManagementService.Api.Core.Middleware;
 /// <summary>
 /// Validates that the resource document is properly shaped.
 /// </summary>
-public class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _documentValidator) : IPipelineStep
+public class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _documentValidator)
+    : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
@@ -28,17 +29,23 @@ public class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _doc
         }
         else
         {
-            var exception = FailureResponse.DataValidationError("Data validation failed. See errors for details.", null, errors);
+            var failureResponse = FailureResponse.ForDataValidation(
+                "Data validation failed. See errors for details.",
+                null,
+                errors
+            );
 
-            _logger.LogDebug("'{Status}'.'{EndpointName}' - {TraceId}",
-                 exception.Status.ToString(),
-                 context.PathComponents.EndpointName,
-                 context.FrontendRequest.TraceId);
+            _logger.LogDebug(
+                "'{Status}'.'{EndpointName}' - {TraceId}",
+                failureResponse.status.ToString(),
+                context.PathComponents.EndpointName,
+                context.FrontendRequest.TraceId
+            );
 
             context.FrontendResponse = new(
-               StatusCode: exception.Status,
-               Body: JsonSerializer.Serialize(exception)
-           );
+                StatusCode: failureResponse.status,
+                Body: JsonSerializer.Serialize(failureResponse)
+            );
             return;
         }
     }
