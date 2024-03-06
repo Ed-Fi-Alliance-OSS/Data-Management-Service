@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Api.ApiSchema;
 using EdFi.DataManagementService.Api.Core.Middleware;
 using EdFi.DataManagementService.Api.Core.Model;
 using EdFi.DataManagementService.Api.Core.Validation;
+using EdFi.DataManagementService.Api.Tests.Unit;
 using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
 using Json.Schema;
