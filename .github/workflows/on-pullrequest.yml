@@ -17,6 +17,10 @@ on:
       - ".github/**/*.yml"
   workflow_dispatch:
 
+permissions:
+  checks: write
+  pull-requests: write
+
 jobs:
   run-ps-lint:
     name: PowerShell Linter
@@ -76,11 +80,11 @@ jobs:
         run: ./build.ps1 UnitTest -Configuration Debug
 
       - name: Upload Test Results
-        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+        uses: EnricoMi/publish-unit-test-result-action@f355d34d53ad4e7f506f699478db2dd71da9de5f # v2.15.1
+        if: always()
         with:
-          name: unit-tests
-          path: "**/*.trx"
-          retention-days: 5
+          files: |
+            **/*.trx
 
   run-e2e-tests:
     name: Run E2E Tests
@@ -109,11 +113,9 @@ jobs:
             ./src/services/EdFi.DataManagementService.Api.Tests.E2E/bin/Debug/net8.0/logs
           retention-days: 10
 
-
-
       - name: Upload Test Results
-        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+        uses: EnricoMi/publish-unit-test-result-action@f355d34d53ad4e7f506f699478db2dd71da9de5f # v2.15.1
+        if: always()
         with:
-          name: e2e-tests
-          path: "**/*.trx"
-          retention-days: 5
+          files: |
+            **/*.trx
