@@ -49,12 +49,12 @@ public record FailureResponse(
     private const string DataValidationTypePrefix = $"{BadRequestTypePrefix}:data";
 
     public static FailureResponse ForDataValidation(
-        string detail,
+        string Detail,
         Dictionary<string, string[]>? ValidationErrors,
         string[]? Errors
     ) =>
         new(
-            detail: detail,
+            detail: Detail,
             type: DataValidationTypePrefix,
             title: "Data Validation Error",
             status: 400,
@@ -64,12 +64,12 @@ public record FailureResponse(
         );
 
     public static FailureResponse ForBadRequest(
-        string detail,
+        string Detail,
         Dictionary<string, string[]>? ValidationErrors,
         string[]? Errors
     ) =>
         new(
-            detail: detail,
+            detail: Detail,
             type: BadRequestTypePrefix,
             title: "Bad Request",
             status: 400,
