@@ -2,17 +2,11 @@
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
-using System.Text.Json.Nodes;
 
-namespace EdFi.DataManagementService.Api.ApiSchema;
+namespace EdFi.DataManagementService.Api.Core.ApiSchema.Model;
 
 /// <summary>
-/// Provides an ApiSchema as parsed JSON
+/// A string type branded as a ProjectNamespace, which is the URI path component referring to a ProjectSchema
+/// e.g. "ed-fi" for an Ed-Fi data standard version.
 /// </summary>
-public interface IApiSchemaProvider
-{
-    /// <summary>
-    /// ApiSchema as parsed JSON
-    /// </summary>
-    JsonNode ApiSchemaRootNode { get; }
-}
+public record struct ProjectNamespace(string Value);

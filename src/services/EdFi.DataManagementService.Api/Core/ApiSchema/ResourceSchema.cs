@@ -5,11 +5,12 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Api.ApiSchema.Extensions;
-using EdFi.DataManagementService.Api.ApiSchema.Model;
+using EdFi.DataManagementService.Api.Core.ApiSchema.Extensions;
+using EdFi.DataManagementService.Api.Core.ApiSchema.Model;
+using EdFi.DataManagementService.Api.Core.Middleware;
 using EdFi.DataManagementService.Api.Core.Model;
 
-namespace EdFi.DataManagementService.Api.ApiSchema;
+namespace EdFi.DataManagementService.Api.Core.ApiSchema;
 
 /// <summary>
 /// Provides information from the ResourceSchema portion of an ApiSchema.json document
@@ -113,6 +114,20 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
                     "Expected identityFullnames to be on ResourceSchema, invalid ApiSchema"
                 );
         });
+
+    /// <summary>
+    /// Returns request method specific JSONSchema
+    /// </summary>
+    /// <param name="requestMethod"></param>
+    /// <returns></returns>
+    public JsonNode JsonSchemaForRequestMethod(RequestMethod requestMethod)
+    {
+        if (requestMethod == RequestMethod.POST)
+        {
+            return JsonSchemaForInsert;
+        }
+        return JsonSchemaForUpdate;
+    }
 
     /// <summary>
     /// A list of the MetaEd property fullnames for each property that is part of the identity
@@ -230,26 +245,20 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
             return null;
         }
 
-        JsonNode documentsPathsMapping =
-            _resourceSchemaNode["documentPathsMapping"]
-            ?? throw new InvalidOperationException(
-                "Expected documentPathsMapping to be in resourceSchema, invalid ApiSchema"
-            );
-
         string subclassType =
-            documentsPathsMapping["subclassType"]?.GetValue<string>()
+            _resourceSchemaNode["subclassType"]?.GetValue<string>()
             ?? throw new InvalidOperationException(
                 "Expected subclassType to be in documentPathsMapping, invalid ApiSchema"
             );
 
         string superclassResourceName =
-            documentsPathsMapping["superclassResourceName"]?.GetValue<string>()
+            _resourceSchemaNode["superclassResourceName"]?.GetValue<string>()
             ?? throw new InvalidOperationException(
                 "Expected superclassResourceName to be in documentPathsMapping, invalid ApiSchema"
             );
 
         string superclassProjectName =
-            documentsPathsMapping["superclassProjectName"]?.GetValue<string>()
+            _resourceSchemaNode["superclassProjectName"]?.GetValue<string>()
             ?? throw new InvalidOperationException(
                 "Expected superclassProjectName to be in documentPathsMapping, invalid ApiSchema"
             );
@@ -268,13 +277,13 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
         }
 
         string subclassIdentityDocumentKey =
-            documentsPathsMapping["subclassIdentityDocumentKey"]?.GetValue<string>()
+            _resourceSchemaNode["subclassIdentityDocumentKey"]?.GetValue<string>()
             ?? throw new InvalidOperationException(
                 "Expected subclassIdentityDocumentKey to be in documentPathsMapping, invalid ApiSchema"
             );
 
         string superclassIdentityDocumentKey =
-            documentsPathsMapping["superclassIdentityDocumentKey"]?.GetValue<string>()
+            _resourceSchemaNode["superclassIdentityDocumentKey"]?.GetValue<string>()
             ?? throw new InvalidOperationException(
                 "Expected superclassIdentityDocumentKey to be in documentPathsMapping, invalid ApiSchema"
             );

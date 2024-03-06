@@ -3,10 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-namespace EdFi.DataManagementService.Api.ApiSchema.Model;
+namespace EdFi.DataManagementService.Api.Core.ApiSchema.Model;
 
 /// <summary>
-/// A string type branded as a ProjectNamespace, which is the URI path component referring to a ProjectSchema
-/// e.g. "ed-fi" for an Ed-Fi data standard version.
+/// A string type branded as a MetaEdProjectName, which is the MetaEd project name for a collection of
+/// API resources, e.g. "EdFi" for an Ed-Fi data standard version.
 /// </summary>
-public record struct ProjectNamespace(string Value);
+public record struct MetaEdProjectName(string Value);

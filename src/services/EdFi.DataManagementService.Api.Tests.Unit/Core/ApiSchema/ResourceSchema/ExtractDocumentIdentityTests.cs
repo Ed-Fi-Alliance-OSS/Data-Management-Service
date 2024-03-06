@@ -4,31 +4,17 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Api.ApiSchema;
+using EdFi.DataManagementService.Api.Core.ApiSchema;
 using EdFi.DataManagementService.Api.Core.Model;
 using FluentAssertions;
-using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Api.Tests.Unit.Core.ApiSchema.ResourceSchemaTestHelper;
 
-namespace EdFi.DataManagementService.Api.Tests.Unit.Core.Extraction;
+namespace EdFi.DataManagementService.Api.Tests.Unit.Core.ApiSchema;
 
 [TestFixture]
 public class ExtractDocumentIdentityTests
 {
-    public static ResourceSchema BuildResourceSchema(
-        ApiSchemaDocument apiSchemaDocument,
-        string projectNamespace,
-        string endpointName
-    )
-    {
-        JsonNode projectSchemaNode = apiSchemaDocument.FindProjectSchemaNode(new(projectNamespace))!;
-        ProjectSchema projectSchema = new(projectSchemaNode, NullLogger.Instance);
-        return new ResourceSchema(
-            projectSchema.FindResourceSchemaNode(new(endpointName))!,
-            NullLogger.Instance
-        );
-    }
-
     [TestFixture]
     public class Given_extracting_an_identity_composed_of_several_references : ExtractDocumentIdentityTests
     {
@@ -38,7 +24,7 @@ public class ExtractDocumentIdentityTests
         public void Setup()
         {
             ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
-                .WithStartProject("Ed-Fi", "5.0.0")
+                .WithStartProject()
                 .WithStartResource("Section")
                 .WithIdentityFullnames(["SectionIdentifier", "CourseOffering"])
                 .WithIdentityPathOrder(
@@ -60,7 +46,7 @@ public class ExtractDocumentIdentityTests
                 .WithEndProject()
                 .ToApiSchemaDocument();
 
-            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "ed-fi", "sections");
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
             documentIdentity = resourceSchema.ExtractDocumentIdentity(
                 JsonNode.Parse(
@@ -112,7 +98,7 @@ public class ExtractDocumentIdentityTests
         public void Setup()
         {
             ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
-                .WithStartProject("Ed-Fi", "5.0.0")
+                .WithStartProject()
                 .WithStartResource("StaffEducationOrganizationAssignmentAssociation")
                 .WithIdentityFullnames(["StaffClassification"])
                 .WithIdentityPathOrder(["staffClassificationDescriptor"])
@@ -129,7 +115,6 @@ public class ExtractDocumentIdentityTests
 
             ResourceSchema resourceSchema = BuildResourceSchema(
                 apiSchemaDocument,
-                "ed-fi",
                 "staffEducationOrganizationAssignmentAssociations"
             );
 
@@ -170,7 +155,7 @@ public class ExtractDocumentIdentityTests
         public void Setup()
         {
             ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
-                .WithStartProject("Ed-Fi", "5.0.0")
+                .WithStartProject()
                 .WithStartResource("GradingPeriod")
                 .WithIdentityFullnames(["SchoolYear"])
                 .WithIdentityPathOrder(["schoolYear"])
@@ -181,7 +166,7 @@ public class ExtractDocumentIdentityTests
                 .WithEndProject()
                 .ToApiSchemaDocument();
 
-            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "ed-fi", "gradingPeriods");
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "gradingPeriods");
 
             documentIdentity = resourceSchema.ExtractDocumentIdentity(
                 JsonNode.Parse(
@@ -201,14 +186,8 @@ public class ExtractDocumentIdentityTests
         public void It_has_extracted_the_identity()
         {
             documentIdentity!.DocumentIdentityElements.Should().HaveCount(1);
-            documentIdentity!
-                .DocumentIdentityElements[0]
-                .DocumentObjectKey.Value.Should()
-                .Be("schoolYear");
-            documentIdentity!
-                .DocumentIdentityElements[0]
-                .DocumentValue.Should()
-                .Be("2030");
+            documentIdentity!.DocumentIdentityElements[0].DocumentObjectKey.Value.Should().Be("schoolYear");
+            documentIdentity!.DocumentIdentityElements[0].DocumentValue.Should().Be("2030");
         }
     }
 }

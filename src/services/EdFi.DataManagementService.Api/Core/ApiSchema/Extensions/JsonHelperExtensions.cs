@@ -7,7 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Json.Path;
 
-namespace EdFi.DataManagementService.Api.ApiSchema.Extensions;
+namespace EdFi.DataManagementService.Api.Core.ApiSchema.Extensions;
 
 public static class JsonHelperExtensions
 {

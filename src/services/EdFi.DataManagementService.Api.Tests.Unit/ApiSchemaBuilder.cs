@@ -4,7 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Api.ApiSchema;
+using EdFi.DataManagementService.Api.Core.ApiSchema;
 using Json.Schema;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -63,7 +63,7 @@ public class ApiSchemaBuilder
     ///
     /// projectName should be the MetaEdProjectName for a project, e.g. Ed-Fi, TPDM, Michigan
     /// </summary>
-    public ApiSchemaBuilder WithStartProject(string projectName = "Ed-Fi", string projectVersion = "1.0.0")
+    public ApiSchemaBuilder WithStartProject(string projectName = "Ed-Fi", string projectVersion = "5.0.0")
     {
         if (_currentProjectNode != null)
         {
@@ -127,6 +127,36 @@ public class ApiSchemaBuilder
         _currentProjectNode["resourceNameMapping"]![resourceName] = endpointName;
         _currentProjectNode["resourceSchemas"]![endpointName] = _currentResourceNode;
         _currentProjectNode["caseInsensitiveEndpointNameMapping"]![endpointName.ToLower()] = endpointName;
+        return this;
+    }
+
+    /// <summary>
+    /// Adds an identityFullnames section to a resource
+    /// </summary>
+    public ApiSchemaBuilder WithSuperclassInformation(
+        string subclassType,
+        string subclassIdentityDocumentKey,
+        string superclassIdentityDocumentKey,
+        string superclassResourceName,
+        string superclassProjectName = "Ed-Fi"
+    )
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentResourceNode["isSubclass"] = true;
+        _currentResourceNode["subclassIdentityDocumentKey"] = subclassIdentityDocumentKey;
+        _currentResourceNode["subclassType"] = subclassType;
+        _currentResourceNode["superclassIdentityDocumentKey"] = superclassIdentityDocumentKey;
+        _currentResourceNode["superclassProjectName"] = superclassProjectName;
+        _currentResourceNode["superclassResourceName"] = superclassResourceName;
+
         return this;
     }
 

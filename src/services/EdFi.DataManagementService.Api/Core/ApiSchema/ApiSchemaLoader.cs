@@ -5,7 +5,7 @@
 using System.Reflection;
 using System.Text.Json.Nodes;
 
-namespace EdFi.DataManagementService.Api.ApiSchema;
+namespace EdFi.DataManagementService.Api.Core.ApiSchema;
 
 /// <summary>
 /// Loads and parses the ApiSchema.json from a file.
