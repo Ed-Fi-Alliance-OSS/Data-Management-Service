@@ -20,11 +20,11 @@ on:
 jobs:
   run-ps-lint:
     name: PowerShell Linter
-    uses: stephenfuqua/Ed-Fi-Actions/.github/workflows/powershell-analyzer.yml@main
+    uses: Ed-Fi-Alliance-OSS/Ed-Fi-Actions/.github/workflows/powershell-analyzer.yml@main
 
   scan-actions-bidi:
     name: Scan Actions, scan all files for BIDI Trojan Attacks
-    uses: stephenfuqua/ed-fi-actions/.github/workflows/repository-scanner.yml@main
+    uses: Ed-Fi-Alliance-OSS/ed-fi-actions/.github/workflows/repository-scanner.yml@main
     with:
       config-file-path: ./.github/workflows/bidi-config.json
 
