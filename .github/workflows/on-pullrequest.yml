@@ -10,18 +10,14 @@ on:
     branches:
       - main
     paths:
-      # TODO: restore this later, except run in a PS-specific
-      # workflow, so that the C# build and CodeQL do not run
-      # unnecessarily.
-      # - "**/*.ps1"
-      # - "**/*.psm1"
+      - "**/*.ps1"
+      - "**/*.psm1"
       - "**/*.cs"
       - "**/*.csproj"
       - ".github/**/*.yml"
   workflow_dispatch:
 
 jobs:
-  # TODO: restore this later
   run-ps-lint:
     name: PowerShell Linter
     uses: stephenfuqua/Ed-Fi-Actions/.github/workflows/powershell-analyzer.yml@main
