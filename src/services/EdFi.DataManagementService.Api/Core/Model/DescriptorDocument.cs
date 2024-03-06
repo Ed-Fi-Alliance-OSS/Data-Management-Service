@@ -21,10 +21,16 @@ public class DescriptorDocument(JsonNode _document)
     public DocumentIdentity ToDocumentIdentity()
     {
         string? namespaceName = _document["namespace"]?.GetValue<string>();
-        Debug.Assert(namespaceName != null, "Failed getting namespace field, JSON schema validation?");
+        Debug.Assert(
+            namespaceName != null,
+            "Failed getting namespace field, JSON schema validation not in pipeline?"
+        );
 
         string? codeValue = _document["codeValue"]?.GetValue<string>();
-        Debug.Assert(namespaceName != null, "Failed getting codeValue field, JSON schema validation?");
+        Debug.Assert(
+            namespaceName != null,
+            "Failed getting codeValue field, JSON schema validation not in pipeline?"
+        );
 
         DocumentIdentityElement[] descriptorElement =
         [

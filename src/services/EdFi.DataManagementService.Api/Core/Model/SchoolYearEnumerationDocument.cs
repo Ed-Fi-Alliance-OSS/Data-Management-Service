@@ -20,11 +20,16 @@ public record SchoolYearEnumerationDocument(JsonNode _document)
     /// </summary>
     public DocumentIdentity ToDocumentIdentity()
     {
-        string? schoolYear = _document["schoolYear"]?.GetValue<string>();
-        Debug.Assert(schoolYear != null, "Failed getting schoolYear field, JSON schema validation?");
+        JsonValue? schoolYearNode = _document["schoolYear"]!.AsValue();
+
+        Debug.Assert(
+            schoolYearNode != null,
+            "Failed getting schoolYear field, JSON schema validation not in pipeline?"
+        );
+
         DocumentIdentityElement[] schoolYearEnumerationElement =
         [
-            new(DocumentObjectKey: _schoolYearKey, DocumentValue: schoolYear)
+            new(DocumentObjectKey: _schoolYearKey, DocumentValue: schoolYearNode.ToString())
         ];
         return new DocumentIdentity(schoolYearEnumerationElement);
     }
