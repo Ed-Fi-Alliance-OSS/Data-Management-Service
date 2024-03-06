@@ -20,6 +20,9 @@ on:
 permissions:
   checks: write
   pull-requests: write
+  actions: read
+  contents: read
+  security-events: write
 
 jobs:
   run-ps-lint:
@@ -28,7 +31,7 @@ jobs:
 
   scan-actions-bidi:
     name: Scan Actions, scan all files for BIDI Trojan Attacks
-    uses: Ed-Fi-Alliance-OSS/ed-fi-actions/.github/workflows/repository-scanner.yml@main
+    uses: Ed-Fi-Alliance-OSS/Ed-Fi-Actions/.github/workflows/repository-scanner.yml@main
     with:
       config-file-path: ./.github/workflows/bidi-config.json
 
