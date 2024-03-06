@@ -28,7 +28,7 @@ public class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _doc
         }
         else
         {
-            var exception = new BadRequestDataException("Data validation failed. See errors for details.", errors: errors).AsSerializableModel();
+            var exception = FailureResponse.DataValidationError("Data validation failed. See errors for details.", null, errors);
 
             _logger.LogDebug("'{Status}'.'{EndpointName}' - {TraceId}",
                  exception.Status.ToString(),
