@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Api.ApiSchema.Extensions;
 using EdFi.DataManagementService.Api.ApiSchema.Model;
+using EdFi.DataManagementService.Api.Core.Middleware;
 
 namespace EdFi.DataManagementService.Api.ApiSchema;
 
@@ -59,4 +60,36 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
     /// The JSONSchema for the body of this resource on insert
     /// </summary>
     public JsonNode JsonSchemaForInsert => _jsonSchemaForInsert.Value;
+
+    private Lazy<JsonNode> _jsonSchemaForUpdate => new(() =>
+    {
+        JsonNode jsonSchemaForUpdate = JsonSchemaForInsert.DeepClone();
+        jsonSchemaForUpdate["properties"]!["id"] = new JsonObject
+        {
+                { "type", "string" },
+                { "description", "The item id" }
+        };
+        jsonSchemaForUpdate["required"]!.AsArray().Add("id");
+        return jsonSchemaForUpdate;
+    });
+
+    /// <summary>
+    /// The JSONSchema for the body of this resource on update
+    /// </summary>
+    public JsonNode JsonSchemaForUpdate => _jsonSchemaForUpdate.Value;
+
+
+    /// <summary>
+    /// Returns request method specific JSONSchema
+    /// </summary>
+    /// <param name="requestMethod"></param>
+    /// <returns></returns>
+    public JsonNode JsonSchemaForRequestMethod(RequestMethod requestMethod)
+    {
+        if (requestMethod == RequestMethod.POST)
+        {
+            return JsonSchemaForInsert;
+        }
+        return JsonSchemaForUpdate;
+    }
 }

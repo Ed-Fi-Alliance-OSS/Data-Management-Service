@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Api.ApiSchema;
 using EdFi.DataManagementService.Api.Backend;
 using EdFi.DataManagementService.Api.Configuration;
 using EdFi.DataManagementService.Api.Core;
+using EdFi.DataManagementService.Api.Core.Validation;
 using Serilog;
 
 namespace EdFi.DataManagementService.Api.Infrastructure
@@ -20,6 +21,8 @@ namespace EdFi.DataManagementService.Api.Infrastructure
             webAppBuilder.Services.AddSingleton<IApiSchemaProvider, ApiSchemaFileLoader>();
             webAppBuilder.Services.AddSingleton<ICoreFacade, CoreFacade>();
             webAppBuilder.Services.AddSingleton<IDocumentStoreRepository, SuccessDocumentStoreRepository>();
+            webAppBuilder.Services.AddTransient<IDocumentValidator, DocumentValidator>();
+            webAppBuilder.Services.AddTransient<ISchemaValidator, SchemaValidator>();
 
             webAppBuilder.Services.Configure<AppSettings>(
                 webAppBuilder.Configuration.GetSection("AppSettings")
