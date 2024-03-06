@@ -17,8 +17,8 @@ spec:
         serviceName: postgres
     spec:
       containers:
-      - name: postgres-ml
-        image: postgres:11.22-alpine3.19@sha256:93d6dc7c9fea3535c331717465259b77e0a768ef5e2854bccf9501d340483d22
+      - name: postgres-db
+        image: postgres:16.2-alpine3.19@sha256:b89a4e92591810eac1fbce6107485d7c6b9449df51c1ccfcfed514a7fdd69955
         ports:
             - containerPort: 80
         env:
@@ -45,10 +45,10 @@ spec:
         resources: {}
         volumeMounts:
           - mountPath: /var/lib/postgresql/data
-            name: pgsql-ml-data
+            name: pgsql-data
       restartPolicy: Always
       volumes:
-        - name: pgsql-ml-data
+        - name: pgsql-data
           persistentVolumeClaim:
-            claimName: pgsql-ml-data
+            claimName: pgsql-data
 status: {}
