@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    serviceName: data-management-service
+  name: data-management-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      serviceName: data-management-service
+  strategy: {}
+  template:
+    metadata:
+      labels:
+        serviceName: data-management-service
+    spec:
+      containers:
+        - name: data-management-service
+          image: local/edfi-data-management-service:latest
+          imagePullPolicy: Never
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: app-configmap
+                  key: postgres-user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: app-secret
+                  key: postgres-password
+            - name: POSTGRES_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: app-configmap
+                  key: postgres-host
+            - name: POSTGRES_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: app-configmap
+                  key: postgres-port
+          livenessProbe:
+            exec:
+              command:
+                - curl -s http://localhost:8080 >/dev/null || exit 1
+            failureThreshold: 50
+            periodSeconds: 30
+            timeoutSeconds: 10
+          resources: {}
+      hostname: data-management-service
+      restartPolicy: Always
+status: {}
