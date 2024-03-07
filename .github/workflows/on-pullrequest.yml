@@ -137,12 +137,12 @@ jobs:
           path: |
             **/*.trx
 
-    event_file:
-      name: Upload Event File
-      runs-on: ubuntu-latest
-      steps:
-      - name: Upload
-        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
-        with:
-          name: Event File
-          path: ${{ github.event_path }}
+  event_file:
+    name: Upload Event File
+    runs-on: ubuntu-latest
+    steps:
+    - name: Upload
+      uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+      with:
+        name: Event File
+        path: ${{ github.event_path }}
