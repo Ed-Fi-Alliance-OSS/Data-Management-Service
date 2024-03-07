@@ -6,29 +6,38 @@
 name: On Pull Request
 
 on:
+  push:
+    # Running on push to main to support CodeQL on C#
+    branches:
+      - main
+    paths:
+      - "**/*.cs"
   pull_request:
     branches:
       - main
     paths:
-      # TODO: restore this later, except run in a PS-specific
-      # workflow, so that the C# build and CodeQL do not run
-      # unnecessarily.
-      # - "**/*.ps1"
-      # - "**/*.psm1"
+      - "**/*.ps1"
+      - "**/*.psm1"
       - "**/*.cs"
       - "**/*.csproj"
       - ".github/**/*.yml"
   workflow_dispatch:
 
+permissions:
+  checks: write
+  pull-requests: write
+  actions: read
+  contents: read
+  security-events: write
+
 jobs:
-  # TODO: restore this later
-  # run-ps-lint:
-  #   name: PowerShell Linter
-  #   uses: Ed-Fi-Alliance-OSS/Ed-Fi-Actions/.github/workflows/powershell-analyzer.yml@main
+  run-ps-lint:
+    name: PowerShell Linter
+    uses: Ed-Fi-Alliance-OSS/Ed-Fi-Actions/.github/workflows/powershell-analyzer.yml@main
 
   scan-actions-bidi:
     name: Scan Actions, scan all files for BIDI Trojan Attacks
-    uses: ed-fi-alliance-oss/ed-fi-actions/.github/workflows/repository-scanner.yml@main
+    uses: Ed-Fi-Alliance-OSS/Ed-Fi-Actions/.github/workflows/repository-scanner.yml@main
     with:
       config-file-path: ./.github/workflows/bidi-config.json
 
@@ -80,11 +89,13 @@ jobs:
         run: ./build.ps1 UnitTest -Configuration Debug
 
       - name: Upload Test Results
+        if: always()
         uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         with:
-          name: unit-tests
-          path: "**/*.trx"
-          retention-days: 5
+          name: Unit Test Results
+          overwrite: true
+          path: |
+            **/*.trx
 
   run-e2e-tests:
     name: Run E2E Tests
@@ -113,11 +124,21 @@ jobs:
             ./src/services/EdFi.DataManagementService.Api.Tests.E2E/bin/Debug/net8.0/logs
           retention-days: 10
 
-
-
       - name: Upload Test Results
+        if: always()
         uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         with:
-          name: e2e-tests
-          path: "**/*.trx"
-          retention-days: 5
+          name: E2E Test Results
+          overwrite: true
+          path: |
+            **/*.trx
+
+  event_file:
+    name: Upload Event File
+    runs-on: ubuntu-latest
+    steps:
+    - name: Upload
+      uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+      with:
+        name: Event File
+        path: ${{ github.event_path }}
