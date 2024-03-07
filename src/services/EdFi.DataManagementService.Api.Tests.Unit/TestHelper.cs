@@ -11,8 +11,14 @@ namespace EdFi.DataManagementService.Api.Tests.Unit;
 
 public static class TestHelper
 {
+    /// <summary>
+    /// Provides a no-op awaitable Next function
+    /// </summary>
     public static readonly Func<Task> NullNext = () => Task.CompletedTask;
 
+    /// <summary>
+    /// Builds a ResourceSchema for the given endpointName on the given apiSchemaDocument
+    /// </summary>
     public static ResourceSchema BuildResourceSchema(
         ApiSchemaDocument apiSchemaDocument,
         string endpointName,

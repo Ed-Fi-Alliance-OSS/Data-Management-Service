@@ -131,7 +131,7 @@ public class ApiSchemaBuilder
     }
 
     /// <summary>
-    /// Adds an identityFullnames section to a resource
+    /// Adds superclass information to a resource
     /// </summary>
     public ApiSchemaBuilder WithSuperclassInformation(
         string subclassType,
@@ -182,7 +182,7 @@ public class ApiSchemaBuilder
     }
 
     /// <summary>
-    /// Adds an identityFullnames section to a resource
+    /// Adds an identityPathOrder section to a resource
     /// </summary>
     public ApiSchemaBuilder WithIdentityPathOrder(string[] identityPathOrder)
     {
@@ -224,6 +224,10 @@ public class ApiSchemaBuilder
         return this;
     }
 
+    /// <summary>
+    /// Start a document paths mapping definition. Can only be done inside a resource definition.
+    /// Always end when finished.
+    /// </summary>
     public ApiSchemaBuilder WithStartDocumentPathsMapping()
     {
         if (_currentProjectNode == null)
@@ -347,6 +351,9 @@ public class ApiSchemaBuilder
         return this;
     }
 
+    /// <summary>
+    /// End a document paths mapping definition. 
+    /// </summary>
     public ApiSchemaBuilder WithEndDocumentPathsMapping()
     {
         if (_currentProjectNode == null)
