@@ -23,10 +23,14 @@ public class ApiSchemaFileLoader : IApiSchemaProvider
     {
         _logger.LogDebug("Entering ApiSchemaFileLoader");
 
-        var assembly = Assembly.GetAssembly(typeof(EdFi.ApiSchema.Marker)) ?? throw new InvalidOperationException("Could not load the ApiSchema library");
+        var assembly =
+            Assembly.GetAssembly(typeof(EdFi.ApiSchema.Marker))
+            ?? throw new InvalidOperationException("Could not load the ApiSchema library");
 
         var resourceName = assembly.GetManifestResourceNames().Single(str => str.EndsWith(".json"));
-        using Stream stream = assembly.GetManifestResourceStream(resourceName) ?? throw new InvalidOperationException("Could not load ApiSchema resource");
+        using Stream stream =
+            assembly.GetManifestResourceStream(resourceName)
+            ?? throw new InvalidOperationException("Could not load ApiSchema resource");
         using StreamReader reader = new(stream);
         var jsonContent = reader.ReadToEnd();
 

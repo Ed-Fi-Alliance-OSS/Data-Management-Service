@@ -126,9 +126,7 @@ public static class JsonHelperExtensions
     /// <summary>
     /// Helper to validate basic json format.Throws if validation fails
     /// </summary>
-    public static IEnumerable<string>? ValidateJsonFormat(
-        this JsonNode? jsonNode
-    )
+    public static IEnumerable<string>? ValidateJsonFormat(this JsonNode? jsonNode)
     {
         List<string>? validationErrors = [];
         if (jsonNode == null)

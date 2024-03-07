@@ -224,7 +224,6 @@ public class ApiSchemaBuilder
         return this;
     }
 
-
     public ApiSchemaBuilder WithStartDocumentPathsMapping()
     {
         if (_currentProjectNode == null)
