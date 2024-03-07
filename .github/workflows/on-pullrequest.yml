@@ -6,6 +6,12 @@
 name: On Pull Request
 
 on:
+  push:
+    # Running on push to main to support CodeQL on C#
+    branches:
+      - main
+    paths:
+      - "**/*.cs"
   pull_request:
     branches:
       - main
