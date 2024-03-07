@@ -7,7 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Json.Path;
 
-namespace EdFi.DataManagementService.Api.ApiSchema.Extensions;
+namespace EdFi.DataManagementService.Api.Core.ApiSchema.Extensions;
 
 public static class JsonHelperExtensions
 {
@@ -89,6 +89,25 @@ public static class JsonHelperExtensions
     }
 
     /// <summary>
+    /// Helper to go from a scalar JSONPath selection directly to a string value regardless of the JSON type
+    /// Throws if the value does not exist
+    /// </summary>
+    public static string SelectRequiredNodeFromPathCoerceToString(
+        this JsonNode jsonNode,
+        string jsonPathString,
+        ILogger logger
+    )
+    {
+        JsonNode selectedNode =
+            SelectNodeFromPath(jsonNode, jsonPathString, logger)
+            ?? throw new InvalidOperationException("Unexpected JSONPath value error");
+
+        JsonValue resultNode =
+            selectedNode!.AsValue() ?? throw new InvalidOperationException("Unexpected JSONPath value error");
+        return resultNode.ToString();
+    }
+
+    /// <summary>
     /// Helper to go from a scalar JSONPath selection directly to the typed value.
     /// Throws if the value does not exist
     /// </summary>
@@ -107,9 +126,7 @@ public static class JsonHelperExtensions
     /// <summary>
     /// Helper to validate basic json format.Throws if validation fails
     /// </summary>
-    public static IEnumerable<string>? ValidateJsonFormat(
-        this JsonNode? jsonNode
-    )
+    public static IEnumerable<string>? ValidateJsonFormat(this JsonNode? jsonNode)
     {
         List<string>? validationErrors = [];
         if (jsonNode == null)

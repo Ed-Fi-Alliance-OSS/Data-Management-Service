@@ -4,10 +4,10 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Api.ApiSchema.Extensions;
-using EdFi.DataManagementService.Api.ApiSchema.Model;
+using EdFi.DataManagementService.Api.Core.ApiSchema.Extensions;
+using EdFi.DataManagementService.Api.Core.ApiSchema.Model;
 
-namespace EdFi.DataManagementService.Api.ApiSchema;
+namespace EdFi.DataManagementService.Api.Core.ApiSchema;
 
 /// <summary>
 /// Provides information from the ProjectSchema portion of an ApiSchema.json document

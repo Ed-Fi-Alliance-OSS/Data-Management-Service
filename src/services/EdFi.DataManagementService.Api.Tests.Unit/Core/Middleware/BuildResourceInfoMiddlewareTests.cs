@@ -4,7 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Api.ApiSchema;
+using EdFi.DataManagementService.Api.Core.ApiSchema;
 using EdFi.DataManagementService.Api.Core.Middleware;
 using EdFi.DataManagementService.Api.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -24,7 +24,7 @@ public class BuildResourceInfoMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_pipeline_context_has_project_and_resource_schemas : ParsePathMiddlewareTests
+    public class Given_pipeline_context_has_project_and_resource_schemas : BuildResourceInfoMiddlewareTests
     {
         private readonly PipelineContext context = No.PipelineContext();
 
@@ -32,10 +32,10 @@ public class BuildResourceInfoMiddlewareTests
         public async Task Setup()
         {
             ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
-                .WithProjectStart("Ed-Fi", "5.0.0")
-                .WithResourceStart("School")
-                .WithResourceEnd()
-                .WithProjectEnd()
+                .WithStartProject("Ed-Fi", "5.0.0")
+                .WithStartResource("School")
+                .WithEndResource()
+                .WithEndProject()
                 .ToApiSchemaDocument();
 
             context.ProjectSchema = new ProjectSchema(

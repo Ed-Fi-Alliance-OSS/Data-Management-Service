@@ -4,7 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Api.ApiSchema.Extensions;
+using EdFi.DataManagementService.Api.Core.ApiSchema.Extensions;
 using Json.Schema;
 
 namespace EdFi.DataManagementService.Api.Core.Validation;

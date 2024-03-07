@@ -3,7 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Api.ApiSchema;
+using EdFi.DataManagementService.Api.Core.ApiSchema;
 using EdFi.DataManagementService.Api.Core.Middleware;
 using EdFi.DataManagementService.Api.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -23,10 +23,10 @@ public class ValidateEndpointMiddlewareTests
     public static ApiSchemaDocument SchemaDocument()
     {
         return new ApiSchemaBuilder()
-            .WithProjectStart("Ed-Fi", "5.0.0")
-            .WithResourceStart("School")
-            .WithResourceEnd()
-            .WithProjectEnd()
+            .WithStartProject("Ed-Fi", "5.0.0")
+            .WithStartResource("School")
+            .WithEndResource()
+            .WithEndProject()
             .ToApiSchemaDocument();
     }
 

@@ -25,7 +25,7 @@ public class UpdateByIdHandler(IDocumentStoreRepository _documentStoreRepository
                 ReferentialId: new("ReferentialId placeholder"),
                 DocumentUuid: context.PathComponents.DocumentUuid,
                 ResourceInfo: context.ResourceInfo,
-                DocumentInfo: new("DocumentInfo placeholder"),
+                DocumentInfo: context.DocumentInfo,
                 EdfiDoc: new JsonObject(),
                 validateDocumentReferencesExist: false,
                 TraceId: context.FrontendRequest.TraceId

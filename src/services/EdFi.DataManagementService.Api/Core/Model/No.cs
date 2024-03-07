@@ -4,7 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Api.ApiSchema;
+using EdFi.DataManagementService.Api.Core.ApiSchema;
 using EdFi.DataManagementService.Api.Core.Middleware;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -55,6 +55,17 @@ public static class No
             IsDescriptor: false,
             ResourceVersion: new(""),
             AllowIdentityUpdates: false
+        );
+
+    /// <summary>
+    /// The null object for DocumentInfo
+    /// </summary>
+    public static readonly DocumentInfo DocumentInfo =
+        new(
+            DocumentIdentity: new([]),
+            DocumentReferences: [],
+            DescriptorReferences: [],
+            SuperclassIdentity: null
         );
 
     /// <summary>

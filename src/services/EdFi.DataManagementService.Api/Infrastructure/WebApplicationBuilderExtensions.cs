@@ -5,7 +5,7 @@
 
 using System.Net;
 using System.Threading.RateLimiting;
-using EdFi.DataManagementService.Api.ApiSchema;
+using EdFi.DataManagementService.Api.Core.ApiSchema;
 using EdFi.DataManagementService.Api.Backend;
 using EdFi.DataManagementService.Api.Configuration;
 using EdFi.DataManagementService.Api.Core;

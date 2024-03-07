@@ -3,7 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Api.ApiSchema;
+using EdFi.DataManagementService.Api.Core.ApiSchema;
 using EdFi.DataManagementService.Api.Core.Model;
 
 namespace EdFi.DataManagementService.Core.Pipeline;
@@ -42,6 +42,11 @@ public class PipelineContext(FrontendRequest _frontendRequest)
     /// API resource information for passing along to backends.
     /// </summary>
     public ResourceInfo ResourceInfo { get; set; } = No.ResourceInfo;
+
+    /// <summary>
+    /// API document information for passing along to backends.
+    /// </summary>
+    public DocumentInfo DocumentInfo { get; set; } = No.DocumentInfo;
 
     /// <summary>
     /// The API response to be returned to the frontend
