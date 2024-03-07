@@ -24,7 +24,7 @@ public class BuildResourceInfoMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_pipeline_context_has_project_and_resource_schemas : ParsePathMiddlewareTests
+    public class Given_pipeline_context_has_project_and_resource_schemas : BuildResourceInfoMiddlewareTests
     {
         private readonly PipelineContext context = No.PipelineContext();
 

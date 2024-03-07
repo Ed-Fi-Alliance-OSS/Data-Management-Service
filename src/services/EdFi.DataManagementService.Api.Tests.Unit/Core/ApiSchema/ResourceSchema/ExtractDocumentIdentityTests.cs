@@ -8,7 +8,7 @@ using EdFi.DataManagementService.Api.Core.ApiSchema;
 using EdFi.DataManagementService.Api.Core.Model;
 using FluentAssertions;
 using NUnit.Framework;
-using static EdFi.DataManagementService.Api.Tests.Unit.Core.ApiSchema.ResourceSchemaTestHelper;
+using static EdFi.DataManagementService.Api.Tests.Unit.TestHelper;
 
 namespace EdFi.DataManagementService.Api.Tests.Unit.Core.ApiSchema;
 
