@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Api.Infrastructure.Extensions;
+
 namespace EdFi.DataManagementService.Api.Modules;
 
 public class DiscoveryModule : IModule
@@ -25,9 +27,7 @@ public class DiscoveryModule : IModule
         Dictionary<string, string> GetUrlsByName()
         {
             var urlsByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-            var request = httpContext.Request;
-            var rootUrl = $"{request.Scheme}://{request.Host}{request.PathBase}";
+            var rootUrl = httpContext.Request.RootUrl;
             urlsByName["dependencies"] = $"{rootUrl}/metadata/data/dependencies";
             urlsByName["openApiMetadata"] = $"{rootUrl}/metadata/";
             urlsByName["oauth"] = $"{rootUrl}/oauth/token";

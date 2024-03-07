@@ -5,4 +5,4 @@
 
 namespace EdFi.DataManagementService.Api.Modules;
 
-public record RouteInformation(string Name, string Template);
+public record RouteInformation(string name, string endpointUri);
