@@ -92,7 +92,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         with:
-          name: Test Results
+          name: Unit Test Results
           overwrite: true
           path: |
             **/*.trx
@@ -128,7 +128,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         with:
-          name: Test Results
+          name: E2E Test Results
           overwrite: true
           path: |
             **/*.trx
