@@ -25,6 +25,8 @@ For local development, you need to use
 > once the image is published to the registry.
 
 * Set the terminal in the */deployments/kubernetes* folder.
+* Create an app-secret.yaml file with a encrypted password, see [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/)
+  for more information.
 * Run `kubectl apply -f .` to apply all files.
 * After done, inspect with `kubectl get pods`, and verify that all pods have
   status **RUNNING** (This can take a couple of minutes).
@@ -64,3 +66,12 @@ Copy the URL and connect to the Data Management Service.
 > [!IMPORTANT]
 > At the moment, the postgres infrastructure is only for demo purposes and does not connect
 > to the Data Management Service.
+
+## File Description
+
+The folder includes a series of YAML files to handle the Kubernetes Setup, this includes:
+
+* Data Management Service and Deployment: Building and deployment of Data Management Service pod
+* Postgres Service, Deployment and Persistent Volume Claim: Building, deployment and volumes for Postgres pod.
+* Config Map: Environment variables
+* Secrets: Encrypted secret values example.
