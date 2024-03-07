@@ -82,11 +82,18 @@ jobs:
         if: success()
         run: ./build.ps1 UnitTest -Configuration Debug
 
+      # - name: Upload Test Results
+      #   uses: EnricoMi/publish-unit-test-result-action@f355d34d53ad4e7f506f699478db2dd71da9de5f # v2.15.1
+      #   if: always()
+      #   with:
+      #     files: |
+      #       **/*.trx
       - name: Upload Test Results
-        uses: EnricoMi/publish-unit-test-result-action@f355d34d53ad4e7f506f699478db2dd71da9de5f # v2.15.1
         if: always()
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         with:
-          files: |
+          name: Test Results
+          path: |
             **/*.trx
 
   run-e2e-tests:
@@ -116,9 +123,26 @@ jobs:
             ./src/services/EdFi.DataManagementService.Api.Tests.E2E/bin/Debug/net8.0/logs
           retention-days: 10
 
+      # - name: Upload Test Results
+      #   uses: EnricoMi/publish-unit-test-result-action@f355d34d53ad4e7f506f699478db2dd71da9de5f # v2.15.1
+      #   if: always()
+      #   with:
+      #     files: |
+      #       **/*.trx
       - name: Upload Test Results
-        uses: EnricoMi/publish-unit-test-result-action@f355d34d53ad4e7f506f699478db2dd71da9de5f # v2.15.1
         if: always()
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         with:
-          files: |
+          name: Test Results
+          path: |
             **/*.trx
+
+    event_file:
+      name: Upload Event File
+      runs-on: ubuntu-latest
+      steps:
+      - name: Upload
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+        with:
+          name: Event File
+          path: ${{ github.event_path }}
