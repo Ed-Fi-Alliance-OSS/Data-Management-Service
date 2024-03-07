@@ -38,22 +38,3 @@ jobs:
           event_file: artifacts/Event File/event.json
           event_name: ${{ github.event.workflow_run.event }}
           files: "artifacts/**/*.trx"
-
-    # steps:
-    #   - name: Upload Unit Test Results
-    #     uses: dorny/test-reporter@c9b3d0e2bd2a4e96aaf424dbaa31c46b42318226 #v1.6.0
-    #     with:
-    #       artifact: unit-tests
-    #       name: Unit Test Results
-    #       path: "**/*.trx"
-    #       reporter: dotnet-trx
-    #       fail-on-error: false
-
-    #   - name: Upload E2E Test Results
-    #     uses: dorny/test-reporter@c9b3d0e2bd2a4e96aaf424dbaa31c46b42318226 #v1.6.0
-    #     with:
-    #       artifact: e2e-tests
-    #       name: E2E Test Results
-    #       path: "**/*.trx"
-    #       reporter: dotnet-trx
-    #       fail-on-error: false
