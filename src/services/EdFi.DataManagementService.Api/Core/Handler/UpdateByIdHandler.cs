@@ -22,7 +22,7 @@ public class UpdateByIdHandler(IDocumentStoreRepository _documentStoreRepository
 
         UpdateResult result = await _documentStoreRepository.UpdateDocumentById(
             new(
-                ReferentialId: new("ReferentialId placeholder"),
+                ReferentialId: new(Guid.Empty),
                 DocumentUuid: context.PathComponents.DocumentUuid,
                 ResourceInfo: context.ResourceInfo,
                 DocumentInfo: context.DocumentInfo,

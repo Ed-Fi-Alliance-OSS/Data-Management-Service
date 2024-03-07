@@ -6,4 +6,4 @@
 namespace EdFi.DataManagementService.Api.Core.Model;
 
 // A string type branded as a ReferentialId, which is a document id based on the document's identity
-public record struct ReferentialId(string Value);
+public record struct ReferentialId(Guid Value);
