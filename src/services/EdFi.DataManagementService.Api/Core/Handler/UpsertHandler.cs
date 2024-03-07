@@ -21,7 +21,7 @@ public class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, IL
 
         UpsertResult result = await _documentStoreRepository.UpsertDocument(
             new(
-                ReferentialId: new("ReferentialId placeholder"),
+                ReferentialId: new(Guid.Empty),
                 ResourceInfo: context.ResourceInfo,
                 DocumentInfo: context.DocumentInfo,
                 EdfiDoc: new JsonObject(),

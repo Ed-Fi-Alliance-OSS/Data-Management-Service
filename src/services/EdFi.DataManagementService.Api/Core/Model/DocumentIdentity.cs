@@ -4,7 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
-using static EdFi.DataManagementService.Api.Core.Model.HashUtility;
+using Be.Vlaanderen.Basisregisters.Generators.Guid;
 
 namespace EdFi.DataManagementService.Api.Core.Model;
 
@@ -18,6 +18,11 @@ namespace EdFi.DataManagementService.Api.Core.Model;
 /// </summary>
 public record DocumentIdentity(IList<DocumentIdentityElement> _documentIdentityElements)
 {
+    /// <summary>
+    /// A UUID namespace for generating UUIDv5-compliant deterministic UUIDs per RFC 4122.
+    /// </summary>
+    public static readonly Guid EdFiUuidv5Namespace = new("edf1edf1-3df1-3df1-3df1-3df1edf1edf1");
+
     /// <summary>
     /// An immutable version of the underlying identity elements, mostly for testability
     /// </summary>
@@ -55,41 +60,37 @@ public record DocumentIdentity(IList<DocumentIdentityElement> _documentIdentityE
     }
 
     /// <summary>
-    /// Returns the 12 byte SHAKE256 Base64Url encoded hash form of a ResourceInfo.
+    /// Returns the string form of a ResourceInfo for identity hashing.
     /// </summary>
-    public static string ResourceInfoHashFrom(BaseResourceInfo resourceInfo)
+    private static string ResourceInfoString(BaseResourceInfo resourceInfo)
     {
-        return ToHash($"{resourceInfo.ProjectName.Value}{resourceInfo.ResourceName.Value}", 12);
+        return $"{resourceInfo.ProjectName.Value}{resourceInfo.ResourceName.Value}";
     }
 
     /// <summary>
-    /// Returns the 16 byte SHAKE256 Base64Url encoded hash form of a DocumentIdentity.
+    /// Returns the string form of a DocumentIdentity.
     /// </summary>
-    private string DocumentIdentityHashFrom()
+    private string DocumentIdentityString()
     {
-        string documentIdentityString = string.Join(
+        return string.Join(
             "#",
             _documentIdentityElements.Select(
                 (DocumentIdentityElement element) =>
                     $"${element.DocumentObjectKey.Value}=${element.DocumentValue}"
             )
         );
-
-        return ToHash(documentIdentityString, 16);
     }
 
     /// <summary>
-    /// Returns a 224-bit ReferentialId for the document identity and given BaseResourceInfo, as a concatenation
-    /// of two Base64Url hashes.
-    ///
-    /// The first 96 bits (12 bytes) are a SHAKE256 Base64Url encoded hash of the resource info.
-    /// The remaining 128 bits (16 bytes) are a SHAKE256 Base64Url encoded hash of the document identity.
-    ///
-    /// The resulting Base64Url string is 38 characters long. The first 16 characters are the resource info hash
-    /// and the remaining 22 characters are the identity hash.
+    /// Returns a ReferentialId as a UUIDv5-compliant deterministic UUID per RFC 4122.
     /// </summary>
     public ReferentialId ToReferentialId(BaseResourceInfo resourceInfo)
     {
-        return new($"{ResourceInfoHashFrom(resourceInfo)}{DocumentIdentityHashFrom()}");
+        return new(
+            Deterministic.Create(
+                EdFiUuidv5Namespace,
+                $"{ResourceInfoString(resourceInfo)}{DocumentIdentityString()}"
+            )
+        );
     }
 }
