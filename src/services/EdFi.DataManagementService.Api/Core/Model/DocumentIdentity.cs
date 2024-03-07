@@ -40,7 +40,7 @@ public record DocumentIdentity(IList<DocumentIdentityElement> _documentIdentityE
         if (_documentIdentityElements[0].DocumentObjectKey != originalKey)
         {
             throw new InvalidOperationException(
-                "DocumentIdentity rename attempt with wrong orignal key name, invalid ApiSchema"
+                "DocumentIdentity rename attempt with wrong original key name, invalid ApiSchema"
             );
         }
 
