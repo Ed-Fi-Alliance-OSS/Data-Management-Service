@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Api.Infrastructure;
-using static EdFi.DataManagementService.Api.AspNetCoreFrontend;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddServices();
@@ -14,15 +13,8 @@ var app = builder.Build();
 app.UsePathBase("/api");
 app.UseMiddleware<LoggingMiddleware>();
 app.UseRouting();
+app.MapRouteEndpoints();
 app.UseRateLimiter();
-
-app.MapGet("/", () => Results.Ok("Data Management Service"));
-app.MapGet("/ping", () => Results.Ok(DateTime.Now));
-
-app.MapPost("/{**catchAll}", Upsert);
-app.MapGet("/{**catchAll}", GetById);
-app.MapPut("/{**catchAll}", UpdateById);
-app.MapDelete("/{**catchAll}", DeleteById);
 
 app.Run();
 
