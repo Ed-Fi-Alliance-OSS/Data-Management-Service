@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DataManagementService.Api.Infrastructure.Extensions;
 
 namespace EdFi.DataManagementService.Api.Modules;
@@ -23,11 +24,14 @@ public class DiscoveryModule : IModule
             [new DataModel("Ed-Fi", "1.0.0", "1.0.0")],
             GetUrlsByName()
         );
-        await httpContext.Response.WriteAsJsonAsync(result);
+
+        var options = new JsonSerializerOptions { WriteIndented = true };
+
+        await httpContext.Response.WriteAsync(JsonSerializer.Serialize(result, options));
         Dictionary<string, string> GetUrlsByName()
         {
             var urlsByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            var rootUrl = httpContext.Request.RootUrl;
+            var rootUrl = httpContext.Request.RootUrl();
             urlsByName["dependencies"] = $"{rootUrl}/metadata/data/dependencies";
             urlsByName["openApiMetadata"] = $"{rootUrl}/metadata/";
             urlsByName["oauth"] = $"{rootUrl}/oauth/token";

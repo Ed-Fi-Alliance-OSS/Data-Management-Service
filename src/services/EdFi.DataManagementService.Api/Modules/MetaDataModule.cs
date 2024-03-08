@@ -22,7 +22,7 @@ public class ApiMetaDataModule : IModule
 
     internal async Task GetSections(HttpContext httpContext)
     {
-        var baseUrl = httpContext.Request.UrlWithPathSegment;
+        var baseUrl = httpContext.Request.UrlWithPathSegment();
         List<RouteInformation> sections = [];
         sections.Add(new RouteInformation("Resources", $"{baseUrl}resources/swagger.json"));
         sections.Add(new RouteInformation("Descriptors", $"{baseUrl}descriptors/swagger.json"));

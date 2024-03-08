@@ -10,8 +10,8 @@
 
   <ItemGroup>
     <Content Include="EdFi.DataManagementService.Api.nuspec" CopyToPublishDirectory="Always" CopyToOutputDirectory="Never" />
+    <PackageReference Include="EdFi.ApiSchema" Version="5.0.0-alpha-7" />
     <PackageReference Include="Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic" Version="4.0.0" />
-    <PackageReference Include="EdFi.ApiSchema" Version="5.0.0-alpha-4" />
     <PackageReference Include="Microsoft.CodeAnalysis" Version="4.8.0" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle" Version="4.8.0">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
