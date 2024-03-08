@@ -41,14 +41,6 @@ jobs:
           Import-Module ./github-builder.psm1
           Get-VersionNumber
 
-      - name: Publish .NET Assemblies
-        run: |
-          $apiVersion = "${{ steps.versions.outputs.dms-semver }}"
-
-          ./build.ps1 -Command BuildAndPublish `
-              -Configuration Release `
-              -APIVersion $apiVersion
-
       - name: Create NuGet Package
         run: |
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}"
@@ -74,6 +66,9 @@ jobs:
   sbom-create:
     name: Create SBOM
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
     needs: pack
     permissions:
       actions: read
