@@ -20,11 +20,12 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <None Remove="EdFi.DataStandard-5.0.0-ApiSchema.json" />
+      <None Remove="*.json" />
     </ItemGroup>
 
     <ItemGroup>
-      <EmbeddedResource Include="EdFi.DataStandard-5.0.0-ApiSchema.json" />
+      <EmbeddedResource Include="*.json" />
+      <EmbeddedResource Include="xsd/*.xsd" />
     </ItemGroup>
 
     <ItemGroup>
