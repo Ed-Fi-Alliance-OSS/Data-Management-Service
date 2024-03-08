@@ -8,7 +8,7 @@ using System.Text.Json.Nodes;
 
 namespace EdFi.DataManagementService.Api.Content;
 
-public interface IContentLoader
+public interface IContentProvider
 {
     /// <summary>
     /// Loads and parses the json file content.
@@ -36,11 +36,11 @@ public interface IContentLoader
 /// <summary>
 /// Loads and parses the file content.
 /// </summary>
-public class ContentLoader : IContentLoader
+public class ContentProvider : IContentProvider
 {
-    private readonly ILogger<ContentLoader> _logger;
+    private readonly ILogger<ContentProvider> _logger;
 
-    public ContentLoader(ILogger<ContentLoader> logger)
+    public ContentProvider(ILogger<ContentProvider> logger)
     {
         _logger = logger;
     }

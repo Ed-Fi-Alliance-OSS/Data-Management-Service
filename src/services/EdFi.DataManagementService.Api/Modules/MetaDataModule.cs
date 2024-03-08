@@ -6,13 +6,16 @@
 
 using System.Net;
 using System.Text.RegularExpressions;
+using EdFi.DataManagementService.Api.Content;
 using EdFi.DataManagementService.Api.Infrastructure.Extensions;
 
 namespace EdFi.DataManagementService.Api.Modules;
 
-public class ApiMetaDataModule : IModule
+public class MetaDataModule : IModule
 {
     private readonly Regex PathExpressionRegex = new(@"\/(?<section>[^/]+)\/swagger.json?");
+    private const string Resources = "resources";
+    private const string Descriptors = "descriptors";
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
@@ -24,13 +27,13 @@ public class ApiMetaDataModule : IModule
     {
         var baseUrl = httpContext.Request.UrlWithPathSegment();
         List<RouteInformation> sections = [];
-        sections.Add(new RouteInformation("Resources", $"{baseUrl}resources/swagger.json"));
-        sections.Add(new RouteInformation("Descriptors", $"{baseUrl}descriptors/swagger.json"));
+        sections.Add(new RouteInformation("Resources", $"{baseUrl}{Resources}/swagger.json"));
+        sections.Add(new RouteInformation("Descriptors", $"{baseUrl}{Descriptors}/swagger.json"));
 
-        await httpContext.Response.WriteAsJsonAsync(sections);
+        await httpContext.Response.WriteAsSerializedJsonAsync(sections);
     }
 
-    internal async Task GetSectionMetaData(HttpContext httpContext)
+    internal async Task GetSectionMetaData(HttpContext httpContext, IContentProvider contentProvider)
     {
         var request = httpContext.Request;
         Match match = PathExpressionRegex.Match(request.Path);
@@ -40,13 +43,17 @@ public class ApiMetaDataModule : IModule
         }
 
         string section = match.Groups["section"].Value;
-        if (section.ToLower().Equals("resources"))
+        if (section.ToLower().Equals(Resources))
         {
-            await httpContext.Response.WriteAsJsonAsync("Resources");
+            var content = contentProvider.LoadJsonContent(Resources);
+            await httpContext.Response.WriteAsSerializedJsonAsync(content);
         }
         else
         {
-            await httpContext.Response.WriteAsJsonAsync("Descriptors");
+            var content = contentProvider.LoadJsonContent(Descriptors);
+            await httpContext.Response.WriteAsSerializedJsonAsync(content);
         }
     }
 }
+
+public record RouteInformation(string name, string endpointUri);

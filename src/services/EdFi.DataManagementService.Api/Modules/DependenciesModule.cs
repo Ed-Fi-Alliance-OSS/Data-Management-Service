@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Api.Content;
+using EdFi.DataManagementService.Api.Infrastructure.Extensions;
 
 namespace EdFi.DataManagementService.Api.Modules;
 
@@ -14,12 +15,9 @@ public class DependenciesModule : IModule
         endpoints.MapGet("/metadata/data/dependencies", GetDependencies);
     }
 
-    internal async Task GetDependencies(
-        HttpContext httpContext,
-        IOpenApiContentProvider dependenciesContentProvider
-    )
+    internal async Task GetDependencies(HttpContext httpContext, IContentProvider contentProvider)
     {
-        var content = await dependenciesContentProvider.GetContent();
-        await httpContext.Response.WriteAsJsonAsync(content.First().metadata.Value);
+        var content = contentProvider.LoadJsonContent("dependencies");
+        await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
 }

@@ -5,11 +5,11 @@
 
 using System.Net;
 using System.Threading.RateLimiting;
-using EdFi.DataManagementService.Api.Core.ApiSchema;
 using EdFi.DataManagementService.Api.Backend;
 using EdFi.DataManagementService.Api.Configuration;
 using EdFi.DataManagementService.Api.Content;
 using EdFi.DataManagementService.Api.Core;
+using EdFi.DataManagementService.Api.Core.ApiSchema;
 using EdFi.DataManagementService.Api.Core.Validation;
 using Serilog;
 
@@ -24,8 +24,7 @@ public static class WebApplicationBuilderExtensions
         webAppBuilder.Services.AddSingleton<IDocumentStoreRepository, SuccessDocumentStoreRepository>();
         webAppBuilder.Services.AddTransient<IDocumentValidator, DocumentValidator>();
         webAppBuilder.Services.AddTransient<ISchemaValidator, SchemaValidator>();
-        webAppBuilder.Services.AddTransient<IOpenApiContentProvider, DependenciesContentProvider>();
-        webAppBuilder.Services.AddTransient<IContentLoader, ContentLoader>();
+        webAppBuilder.Services.AddTransient<IContentProvider, ContentProvider>();
 
         webAppBuilder.Services.Configure<AppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"));
 

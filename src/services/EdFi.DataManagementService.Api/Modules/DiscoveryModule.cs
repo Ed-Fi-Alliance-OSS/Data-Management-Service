@@ -25,9 +25,8 @@ public class DiscoveryModule : IModule
             GetUrlsByName()
         );
 
-        var options = new JsonSerializerOptions { WriteIndented = true };
+        await httpContext.Response.WriteAsSerializedJsonAsync(result);
 
-        await httpContext.Response.WriteAsync(JsonSerializer.Serialize(result, options));
         Dictionary<string, string> GetUrlsByName()
         {
             var urlsByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
