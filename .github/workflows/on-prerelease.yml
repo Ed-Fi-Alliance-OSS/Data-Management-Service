@@ -11,11 +11,13 @@ on:
 
 env:
   ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
-  AZURE_ARTIFACT_URL: "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json"
+  ARTIFACTS_FEED_URL: "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json"
   VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
-  MANIFEST_FILE: "_manifest/spdx_2.2/manifest.spdx.json"
+  MANIFEST_FILE: "manifest.spdx.json"
   PACKAGE_NAME: "EdFi.DataManagementService"
   REF: ${{ github.ref_name }}
+  SBOM_TOOL_URL: ${{ vars.SBOM_TOOL_LINUX_X64_URL }}
+  SBOM_TOOL_HASH: ${{ vars.SBOM_TOOL_LINUX_X64_HASH }}
 
 jobs:
   pack:
@@ -26,7 +28,7 @@ jobs:
         shell: pwsh
     outputs:
       hash-code: ${{ steps.hash-code.outputs.hash-code }}
-      dms-api-version: ${{ steps.versions.outputs.dms-api }}
+      dms-version: ${{ steps.versions.outputs.dms-v }}
 
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -36,53 +38,36 @@ jobs:
       - name: Set Version Numbers
         id: versions
         run: |
-          $apiPrefix = "v"
-
-          # Install the MinVer CLI tool
-          &dotnet tool install --global minver-cli
-
-          $apiVersion = $(minver -t $apiPrefix)
-
-          # Full release name
-          "dms-api=$apiVersion" >> $env:GITHUB_OUTPUT
-
-          # SemVer
-          "dms-api-semver=$($apiVersion -Replace $apiPrefix)" >> $env:GITHUB_OUTPUT
+          Import-Module ./github-builder.psm1
+          Get-VersionNumber
 
       - name: Publish .NET Assemblies
         run: |
-          $apiVersion = "${{ steps.versions.outputs.dms-api-semver }}"
+          $apiVersion = "${{ steps.versions.outputs.dms-semver }}"
 
           ./build.ps1 -Command BuildAndPublish `
               -Configuration Release `
               -APIVersion $apiVersion
 
-      - name: Setup Nuget.exe
-        uses: nuget/setup-nuget@a21f25cd3998bf370fde17e3f1b4c12c175172f9 #v2.0.0
-
-      - name: Create NuGet Packages
-        if: success()
+      - name: Create NuGet Package
         run: |
-          $apiVersion = "${{ steps.versions.outputs.dms-api-semver }}"
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}"
 
-          "Building ${{ env.PACKAGE_NAME }} NuGet Package" | Write-Output
-          # dms API
-          ./build.ps1 -Command Package `
-              -APIVersion  $apiVersion `
-              -Configuration Release
+          Import-Module ./github-builder.psm1
+
+          Invoke-DotnetPack $packageVersion
 
       - name: Generate hash for NuGet package
         id: hash-code
-        shell: bash
         run: |
-          echo "hash-code=$(sha256sum *.nupkg | base64 -w0)" >> $GITHUB_OUTPUT
+          "hash-code=$(sha256sum *.nupkg | base64 -w0)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Upload Packages as Artifacts
         if: success()
         uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         with:
           name: "${{ env.PACKAGE_NAME }}-NuGet"
-          path: ./*.nupkg
+          path: ${{ github.workspace }}/*.nupkg
           if-no-files-found: error
           retention-days: 30
 
@@ -103,30 +88,35 @@ jobs:
         with:
           name: ${{ env.PACKAGE_NAME }}-NuGet
 
-      - name: Generate Software Bill of Materials (SBOM) - API
-        shell: pwsh
+      - name: Generate Software Bill of Materials (SBOM)
         run: |
           $packageName = "${{ env.PACKAGE_NAME }}"
+          $version = "${{ needs.pack.outputs.dms-version }}"
 
-          $url = "https://github.com/microsoft/sbom-tool/releases/latest/download/sbom-tool-linux-x64"
-          $out = "$($env:RUNNER_TEMP)/sbom-tool"
+          $url = "${{ env.SBOM_TOOL_URL }}"
+          "${{ env.SBOM_TOOL_HASH }}" | Out-File hash-value
+          $out = "$($env:RUNNER_TEMP)/sbom-tool-linux-x64"
           Invoke-RestMethod -Uri $url -OutFile $out
+
+          pushd $($env:RUNNER_TEMP)
+          md5sum --check hash-value
+          popd
+
           chmod +x $out
 
-          Get-ChildItem -Include "$packageName.*.nupkg" -Recurse | ForEach-Object { $_.FullName } > buildfilelist.txt
-          New-Item -Path manifest -Type Directory
-
-          $version = "${{ needs.pack.outputs.dms-api-version }}"
+          (Resolve-Path ("./$($packageName).$($version).nupkg")).Path | Out-File -FilePath buildfilelist.txt
 
           &$out generate `
               -b ./ `
               -bl ./buildfilelist.txt `
-              -bc "./src/services/$packageName.Api" `
+              -bc "./" `
               -pn "$packageName" `
               -pv $version `
               -nsb https://ed-fi.org `
-              -m manifest `
+              -m ./ `
               -ps "Ed-Fi Alliance"
+
+          cp _manifest/spdx_2.2/manifest.spdx.* .
 
       - name: Upload SBOM
         if: success()
@@ -156,7 +146,7 @@ jobs:
       contents: write
     steps:
       - name: Download the SBOM
-        uses: slsa-framework/slsa-github-generator/.github/actions/secure-download-artifact@07e64b653f10a80b6510f4568f685f8b7b9ea830 #v1.9.0
+        uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/actions/secure-download-artifact@main
         with:
           name: "${{ env.PACKAGE_NAME }}-SBOM"
           path: ${{ env.MANIFEST_FILE }}
@@ -198,8 +188,7 @@ jobs:
       actions: read
       id-token: write
       contents: write
-    # This action will break if commit hash used, instead of the version tag
-    uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v1.5.0
+    uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@main
     with:
       base64-subjects: ${{ needs.pack.outputs.hash-code }}
       provenance-name: dmsApi.intoto.jsonl
@@ -227,13 +216,5 @@ jobs:
 
       - name: Push Package to Azure Artifacts
         run: |
-          $artifact = (Get-ChildItem -Path $_ -Name -Include *.nupkg)
-          $arguments = @{
-            EdFiNuGetFeed = "${{ env.AZURE_ARTIFACT_URL }}"
-            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
-          }
-
-          $artifact | ForEach-Object {
-              $arguments.PackageFile = $_
-              ./build.ps1 Push @arguments
-           } 
+          Import-Module ./github-builder.psm1
+          Invoke-NuGetPush -NuGetFeed ${{ env.ARTIFACTS_FEED_URL }} -NuGetApiKey ${{ env.ARTIFACTS_API_KEY }}
