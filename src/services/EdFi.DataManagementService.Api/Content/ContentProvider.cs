@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Reflection;
 using System.Text.Json.Nodes;
 
 namespace EdFi.DataManagementService.Api.Content;
@@ -40,16 +39,20 @@ public interface IContentProvider
 public class ContentProvider : IContentProvider
 {
     private readonly ILogger<ContentProvider> _logger;
+    private readonly IAssemblyProvider _assemblyProvider;
+    private readonly Type _type = typeof(ApiSchema.Marker);
 
-    public ContentProvider(ILogger<ContentProvider> logger)
+    public ContentProvider(ILogger<ContentProvider> logger, IAssemblyProvider assemblyProvider)
     {
         _logger = logger;
+        _assemblyProvider = assemblyProvider;
     }
 
     public IEnumerable<string> Files(string fileNamePattern, string fileExtension)
     {
         var files = new List<string>();
-        foreach (string resourceName in GetApiSchemaAssembly().GetManifestResourceNames())
+        var assembly = _assemblyProvider.GetAssemby(_type);
+        foreach (string resourceName in assembly.GetManifestResourceNames())
         {
             if (resourceName.Contains(fileNamePattern) && resourceName.EndsWith(fileExtension))
             {
@@ -109,7 +112,7 @@ public class ContentProvider : IContentProvider
 
     private Stream GetStream(string fileNamePattern, string fileExtension)
     {
-        var assembly = GetApiSchemaAssembly();
+        var assembly = _assemblyProvider.GetAssemby(_type);
         var resourceName = assembly
             .GetManifestResourceNames()
             .Single(str => str.Contains(fileNamePattern) && str.EndsWith(fileExtension));
@@ -119,13 +122,5 @@ public class ContentProvider : IContentProvider
             ?? throw new InvalidOperationException($"Couldn't get resource at {resourceName}");
 
         return stream;
-    }
-
-    private Assembly GetApiSchemaAssembly()
-    {
-        var assembly =
-            Assembly.GetAssembly(typeof(EdFi.ApiSchema.Marker))
-            ?? throw new InvalidOperationException($"Could not load ApiSchema assembly");
-        return assembly;
     }
 }
