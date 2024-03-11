@@ -3,7 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
+using EdFi.DataManagementService.Api.Content;
 using EdFi.DataManagementService.Api.Infrastructure.Extensions;
 
 namespace EdFi.DataManagementService.Api.Modules;
@@ -15,13 +15,19 @@ public class DiscoveryModule : IModule
         endpoints.MapGet("/", GetApiDetails);
     }
 
-    internal async Task GetApiDetails(HttpContext httpContext)
+    internal async Task GetApiDetails(
+        HttpContext httpContext,
+        IVersionProvider versionProvider,
+        IDomainModelProvider domainModelProvider
+    )
     {
+        var dataModels = domainModelProvider.GetDataModels().ToArray();
+
         var result = new DiscoveryApiDetails(
-            version: "1.0.0",
-            informationalVersion: "1.0.0",
-            build: "1",
-            [new DataModel("Ed-Fi", "1.0.0", "1.0.0")],
+            version: versionProvider.Version,
+            informationalVersion: versionProvider.InformationalVersion,
+            build: versionProvider.Build,
+            dataModels,
             GetUrlsByName()
         );
 
@@ -45,8 +51,6 @@ public record DiscoveryApiDetails(
     string version,
     string informationalVersion,
     string build,
-    DataModel[] DataModels,
+    DataModel[] dataModels,
     Dictionary<string, string> Urls
 );
-
-public record DataModel(string name, string version, string informationalVersion);

@@ -43,14 +43,15 @@ public class MetaDataModule : IModule
         }
 
         string section = match.Groups["section"].Value;
+        string? rootUrl = request.RootUrl();
         if (section.ToLower().Equals(Resources))
         {
-            var content = contentProvider.LoadJsonContent(Resources);
+            var content = contentProvider.LoadJsonContent(Resources, rootUrl);
             await httpContext.Response.WriteAsSerializedJsonAsync(content);
         }
         else
         {
-            var content = contentProvider.LoadJsonContent(Descriptors);
+            var content = contentProvider.LoadJsonContent(Descriptors, rootUrl);
             await httpContext.Response.WriteAsSerializedJsonAsync(content);
         }
     }
