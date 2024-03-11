@@ -4,11 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
-using System.Reflection;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Api.Content;
 using EdFi.DataManagementService.Api.Infrastructure.Extensions;
-using Microsoft.Extensions.FileProviders;
 
 namespace EdFi.DataManagementService.Api.Modules;
 
@@ -68,7 +66,7 @@ public class XsdMetaDataModule : IModule
         }
     }
 
-    internal async Task GetXsdMetaDataFileContent(HttpContext httpContext, IContentProvider contentProvider)
+    internal IResult GetXsdMetaDataFileContent(HttpContext httpContext, IContentProvider contentProvider)
     {
         var request = httpContext.Request;
         Match match = FilePathExpressionRegex.Match(request.Path);
@@ -82,18 +80,13 @@ public class XsdMetaDataModule : IModule
         {
             var fileName = match.Groups["fileName"].Value;
 
-            var assembly =
-                Assembly.GetAssembly(typeof(EdFi.ApiSchema.Marker))
-                ?? throw new InvalidOperationException($"Could not load ApiSchema assembly");
+            var content = contentProvider.LoadXsdContent($"{fileName}.xsd");
 
-            var fileProvider = new EmbeddedFileProvider(assembly);
-
-            await httpContext.Response.SendFileAsync(fileProvider.GetFileInfo($"{fileName}.xsd"));
+            return Results.File(content.Value, "application/xml");
         }
         else
         {
-            httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
-            await httpContext.Response.WriteAsync("Path not found");
+            return Results.NotFound();
         }
     }
 }

@@ -14,15 +14,16 @@ public interface IContentProvider
     /// Loads and parses the json file content.
     /// </summary>
     /// <param name="fileNamePattern"></param>
+    /// <param name="hostUrl"></param>
     /// <returns></returns>
-    Lazy<JsonNode> LoadJsonContent(string fileNamePattern);
+    Lazy<JsonNode> LoadJsonContent(string fileNamePattern, string? hostUrl = null);
 
     /// <summary>
     /// Provides xsd file stream.
     /// </summary>
-    /// <param name="fileNamePattern"></param>
+    /// <param name="fileName"></param>
     /// <returns></returns>
-    Lazy<Stream> LoadXsdContent(string fileNamePattern);
+    Lazy<Stream> LoadXsdContent(string fileName);
 
     /// <summary>
     /// Provides list of files.
@@ -59,7 +60,7 @@ public class ContentProvider : IContentProvider
         return files;
     }
 
-    public Lazy<JsonNode> LoadJsonContent(string fileNamePattern)
+    public Lazy<JsonNode> LoadJsonContent(string fileNamePattern, string? hostUrl = null)
     {
         _logger.LogDebug("Entering Json FileLoader");
 
@@ -74,13 +75,36 @@ public class ContentProvider : IContentProvider
             _logger.LogCritical(contentError);
             throw new InvalidOperationException(contentError);
         }
+        if (hostUrl != null)
+        {
+            ReplaceHostUrl(jsonNodeFromFile);
+        }
         return new Lazy<JsonNode>(jsonNodeFromFile);
+
+        void ReplaceHostUrl(JsonNode? jsonNodeFromFile)
+        {
+            var servers = jsonNodeFromFile?["servers"]?.AsArray();
+            if (servers != null)
+            {
+                foreach (var server in servers)
+                {
+                    if (server != null)
+                    {
+                        var url = server["url"];
+                        if (url != null)
+                        {
+                            server["url"] = url.GetValue<string>().Replace("HOST_URL", hostUrl);
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    public Lazy<Stream> LoadXsdContent(string fileNamePattern)
+    public Lazy<Stream> LoadXsdContent(string fileName)
     {
         _logger.LogDebug("Entering Xsd FileLoader");
-        return new Lazy<Stream>(GetStream(fileNamePattern, ".xsd"));
+        return new Lazy<Stream>(GetStream(fileName, ".xsd"));
     }
 
     private Stream GetStream(string fileNamePattern, string fileExtension)
