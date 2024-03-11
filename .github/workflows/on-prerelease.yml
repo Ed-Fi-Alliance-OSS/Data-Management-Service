@@ -16,8 +16,6 @@ env:
   MANIFEST_FILE: "manifest.spdx.json"
   PACKAGE_NAME: "EdFi.DataManagementService.Api"
   REF: ${{ github.ref_name }}
-  SBOM_TOOL_URL: ${{ vars.SBOM_TOOL_LINUX_X64_URL }}
-  SBOM_TOOL_HASH: ${{ vars.SBOM_TOOL_LINUX_X64_HASH }}
 
 jobs:
   pack:
@@ -88,20 +86,11 @@ jobs:
           $packageName = "${{ env.PACKAGE_NAME }}"
           $version = "${{ needs.pack.outputs.dms-version }}"
 
-          $url = "${{ env.SBOM_TOOL_URL }}"
-          "${{ env.SBOM_TOOL_HASH }}" | Out-File hash-value
-          $out = "$($env:RUNNER_TEMP)/sbom-tool-linux-x64"
-          Invoke-RestMethod -Uri $url -OutFile $out
-
-          pushd $($env:RUNNER_TEMP)
-          md5sum --check hash-value
-          popd
-
-          chmod +x $out
-
           (Resolve-Path ("./$($packageName).$($version).nupkg")).Path | Out-File -FilePath buildfilelist.txt
 
-          &$out generate `
+          dotnet tool install --global Microsoft.Sbom.DotNetTool
+
+          sbom-tool generate `
               -b ./ `
               -bl ./buildfilelist.txt `
               -bc "./" `
@@ -127,7 +116,7 @@ jobs:
         shell: bash
         run: |
           # sha256sum returns "<hashcode>  <name of file". Split that and return only the <hashcode>.
-          sbom_hash=$(sha256sum ./manifest/${{ env.MANIFEST_FILE }} | awk '{split($0,a); print a[1]}')
+          sbom_hash=$(sha256sum ./${{ env.MANIFEST_FILE }} | awk '{split($0,a); print a[1]}')
           echo "sbom-hash-code=$sbom_hash" >> $GITHUB_OUTPUT
 
   sbom-attach:
