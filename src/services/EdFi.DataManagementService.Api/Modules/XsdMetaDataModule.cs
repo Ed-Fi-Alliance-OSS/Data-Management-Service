@@ -15,8 +15,6 @@ public class XsdMetaDataModule : IModule
     private readonly Regex PathExpressionRegex = new(@"\/(?<section>[^/]+)\/files?");
     private readonly Regex FilePathExpressionRegex = new(@"\/(?<section>[^/]+)\/(?<fileName>[^/]+).xsd?");
 
-    private const string EdFi = "ed-fi";
-
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/metadata/xsd", GetSections);
@@ -24,34 +22,45 @@ public class XsdMetaDataModule : IModule
         endpoints.MapGet("/metadata/xsd/{section}/{fileName}.xsd", GetXsdMetaDataFileContent);
     }
 
-    internal async Task GetSections(HttpContext httpContext)
+    internal async Task GetSections(HttpContext httpContext, IDomainModelProvider domainModelProvider)
     {
         var baseUrl = httpContext.Request.UrlWithPathSegment();
         List<XsdMetaDataSectionInfo> sections = [];
 
-        sections.Add(
-            new XsdMetaDataSectionInfo(
-                description: "Core schema (Ed-Fi) files for the data model",
-                name: "Ed-Fi",
-                version: "1.0.0",
-                files: $"{baseUrl}/{EdFi}/files"
-            )
-        );
-
+        foreach (var model in domainModelProvider.GetDataModels())
+        {
+            sections.Add(
+                new XsdMetaDataSectionInfo(
+                    description: $"Core schema ({model.name}) files for the data model",
+                    name: model.name,
+                    version: model.version,
+                    files: $"{baseUrl}/{model.name}/files"
+                )
+            );
+        }
         await httpContext.Response.WriteAsSerializedJsonAsync(sections);
     }
 
-    internal async Task GetXsdMetaDataFiles(HttpContext httpContext, IContentProvider contentProvider)
+    internal async Task GetXsdMetaDataFiles(
+        HttpContext httpContext,
+        IContentProvider contentProvider,
+        IDomainModelProvider domainModelProvider
+    )
     {
+        var errorPathNotFound = "Path not found";
+
         var request = httpContext.Request;
         Match match = PathExpressionRegex.Match(request.Path);
         if (!match.Success)
         {
             httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
+            await httpContext.Response.WriteAsync(errorPathNotFound);
         }
 
         string section = match.Groups["section"].Value;
-        if (section.ToLower().Equals(EdFi))
+        var dataModels = domainModelProvider.GetDataModels();
+
+        if (dataModels.Any(x => x.name.Equals(section, StringComparison.InvariantCultureIgnoreCase)))
         {
             var baseUrl = httpContext.Request.UrlWithPathSegment().Replace("files", "");
             var withFullPath = new List<string>();
@@ -62,7 +71,7 @@ public class XsdMetaDataModule : IModule
         else
         {
             httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
-            await httpContext.Response.WriteAsync("Path not found");
+            await httpContext.Response.WriteAsync(errorPathNotFound);
         }
     }
 
@@ -74,14 +83,12 @@ public class XsdMetaDataModule : IModule
         {
             httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
         }
-
-        string section = match.Groups["section"].Value;
-        if (section.ToLower().Equals(EdFi))
+        var fileName = match.Groups["fileName"].Value;
+        var fileFullName = $"{fileName}.xsd";
+        var files = contentProvider.Files(fileFullName, ".xsd");
+        if (files.Any())
         {
-            var fileName = match.Groups["fileName"].Value;
-
-            var content = contentProvider.LoadXsdContent($"{fileName}.xsd");
-
+            var content = contentProvider.LoadXsdContent(fileFullName);
             return Results.File(content.Value, "application/xml");
         }
         else

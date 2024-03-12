@@ -27,6 +27,7 @@ public static class WebApplicationBuilderExtensions
         webAppBuilder.Services.AddTransient<IContentProvider, ContentProvider>();
         webAppBuilder.Services.AddTransient<IVersionProvider, VersionProvider>();
         webAppBuilder.Services.AddTransient<IDomainModelProvider, DomainModelProvider>();
+        webAppBuilder.Services.AddTransient<IAssemblyProvider, AssemblyProvider>();
 
         webAppBuilder.Services.Configure<AppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"));
 
