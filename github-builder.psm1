@@ -8,6 +8,11 @@
 
 $ErrorActionPreference = "Stop"
 
+<#
+.DESCRIPTION
+Builds a pre-release version number based on the last tag in the commit history
+and the number of commits since then.
+#>
 function Get-VersionNumber {
 
     $prefix = "v"
@@ -21,9 +26,14 @@ function Get-VersionNumber {
     "dms-semver=$($version -Replace $prefix)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 }
 
+<#
+.DESCRIPTION
+Builds the EdFi.DataManagementService NuGet package.
+#>
 function Invoke-DotnetPack {
     [CmdletBinding()]
     param (
+        # Package version number
         [string]
         [Parameter(Mandatory = $true)]
         $Version
@@ -32,13 +42,19 @@ function Invoke-DotnetPack {
     &dotnet pack ./src/EdFi.DataManagementService.sln -p:PackageVersion=$Version -o ./
 }
 
+<#
+.DESCRIPTION
+PUblishes any local NuGet packages to the given feed.
+#>
 function Invoke-NuGetPush {
     [CmdletBinding()]
     param (
+        # NuGet package feed / source
         [string]
         [Parameter(Mandatory = $true)]
         $NuGetFeed,
 
+        # API key for authentication
         [string]
         [Parameter(Mandatory = $true)]
         $NuGetApiKey
@@ -49,8 +65,17 @@ function Invoke-NuGetPush {
     }
 }
 
-
+<#
+.DESCRIPTION
+Retrieves a list package versions previously published to Azure Artifacts.
+#>
 function Get-PackagesFromAzure {
+    param(
+        # Array of packages to look up
+        [Parameter(Mandatory=$true)]
+        [String[]]
+        $Packages
+    )
 
     $uri = "$FeedsURL/packages?api-version=6.0-preview.1"
     $result = @{ }
@@ -71,40 +96,51 @@ function Get-PackagesFromAzure {
     return $result
 }
 
+<#
+.DESCRIPTION
+Promotes a package in Azure Artifacts to a view, e.g. pre-release or release.
+#>
 function Invoke-Promote {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'False positive')]
     param(
+        # NuGet package feed / source
         [Parameter(Mandatory = $true)]
         [String]
         $FeedsURL,
 
+        # NuGet Packages API URL
         [Parameter(Mandatory = $true)]
         [String]
         $PackagesURL,
 
+        # Azure Artifacts user name
         [Parameter(Mandatory = $true)]
         [String]
         $Username,
 
+        # Azure Artifacts password
         [Parameter(Mandatory = $true)]
         [SecureString]
         $Password,
 
+        # View to promote into
         [Parameter(Mandatory = $true)]
         [String]
         $View
     )
 
 
+    $packages = @("EdFi.DataManagement.Service")
+
     $body = @{
         data      = @{
             viewId = $View
         }
         operation = 0
-        packages  = @("EdFi.DataManagement.Service")
+        packages  = $packages
     }
 
-    $latestPackages = Get-PackagesFromAzure
+    $latestPackages = Get-PackagesFromAzure -Packages $packages
 
     foreach ($key in $latestPackages.Keys) {
         $body.packages += @{
