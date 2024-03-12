@@ -14,7 +14,7 @@ env:
   ARTIFACTS_FEED_URL: "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json"
   VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
   MANIFEST_FILE: "manifest.spdx.json"
-  PACKAGE_NAME: "EdFi.DataManagementService.Api"
+  PACKAGE_NAME: "EdFi.DataManagementService"
   REF: ${{ github.ref_name }}
 
 jobs:
