@@ -115,11 +115,21 @@ public class ContentProvider : IContentProvider
         var assembly = _assemblyProvider.GetAssemby(_type);
         var resourceName = assembly
             .GetManifestResourceNames()
-            .Single(str => str.Contains(fileNamePattern) && str.EndsWith(fileExtension));
+            .SingleOrDefault(str => str.Contains(fileNamePattern) && str.EndsWith(fileExtension));
+        if (resourceName == null)
+        {
+            var error = $"{fileNamePattern} not found";
+            _logger.LogCritical(error);
+            throw new InvalidOperationException(error);
+        }
 
-        Stream stream =
-            assembly.GetManifestResourceStream(resourceName)
-            ?? throw new InvalidOperationException($"Couldn't get resource at {resourceName}");
+        Stream? stream = assembly.GetManifestResourceStream(resourceName);
+        if (stream == null)
+        {
+            var error = $"Couldn't load {resourceName}";
+            _logger.LogCritical(error);
+            throw new InvalidOperationException(error);
+        }
 
         return stream;
     }

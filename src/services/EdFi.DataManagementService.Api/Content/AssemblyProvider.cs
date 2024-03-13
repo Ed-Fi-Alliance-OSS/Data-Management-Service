@@ -5,26 +5,36 @@
 
 using System.Reflection;
 
-namespace EdFi.DataManagementService.Api.Content
+namespace EdFi.DataManagementService.Api.Content;
+
+public interface IAssemblyProvider
 {
-    public interface IAssemblyProvider
+    /// <summary>
+    /// Gets assembly by type
+    /// </summary>
+    /// <param name="assemblyType"></param>
+    /// <returns></returns>
+    Assembly GetAssemby(Type assemblyType);
+}
+
+public class AssemblyProvider : IAssemblyProvider
+{
+    private readonly ILogger<AssemblyProvider> _logger;
+
+    public AssemblyProvider(ILogger<AssemblyProvider> logger)
     {
-        /// <summary>
-        /// Gets assembly by type
-        /// </summary>
-        /// <param name="assemblyType"></param>
-        /// <returns></returns>
-        Assembly GetAssemby(Type assemblyType);
+        _logger = logger;
     }
 
-    public class AssemblyProvider : IAssemblyProvider
+    public Assembly GetAssemby(Type assemblyType)
     {
-        public Assembly GetAssemby(Type assemblyType)
+        var assembly = Assembly.GetAssembly(assemblyType);
+        if (assembly == null)
         {
-            var assembly =
-                Assembly.GetAssembly(assemblyType)
-                ?? throw new InvalidOperationException($"Could not load {nameof(assemblyType)} assembly");
-            return assembly;
+            var error = $"Could not load {nameof(assemblyType)} assembly";
+            _logger.LogCritical(error);
+            throw new InvalidOperationException(error);
         }
+        return assembly;
     }
 }

@@ -20,10 +20,12 @@ public record DataModel(string name, string version, string informationalVersion
 
 public class DomainModelProvider : IDomainModelProvider
 {
+    private readonly ILogger<DomainModelProvider> _logger;
     private readonly IApiSchemaProvider _apiSchemaProvider;
 
-    public DomainModelProvider(IApiSchemaProvider apiSchemaProvider)
+    public DomainModelProvider(ILogger<DomainModelProvider> logger, IApiSchemaProvider apiSchemaProvider)
     {
+        _logger = logger;
         _apiSchemaProvider = apiSchemaProvider;
     }
 
@@ -31,9 +33,13 @@ public class DomainModelProvider : IDomainModelProvider
     {
         var schema = _apiSchemaProvider.ApiSchemaRootNode;
 
-        var projectSchemas =
-            (schema["projectSchemas"]?.AsObject().ToArray())
-            ?? throw new Exception("No data model details found");
+        var projectSchemas = schema["projectSchemas"]?.AsObject().ToArray();
+        if (projectSchemas == null || projectSchemas.Length == 0)
+        {
+            var error = "No data model details found";
+            _logger.LogCritical(error);
+            throw new Exception(error);
+        }
 
         List<DataModel> result = [];
         var dataModels = projectSchemas.Where(x => x.Value != null).Select(x => x.Value).ToList();
