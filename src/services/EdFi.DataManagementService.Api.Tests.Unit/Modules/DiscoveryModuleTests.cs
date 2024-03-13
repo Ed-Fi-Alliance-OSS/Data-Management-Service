@@ -20,7 +20,7 @@ namespace EdFi.DataManagementService.Api.Tests.Unit.Modules;
 public class DiscoveryModuleTests
 {
     [Test]
-    public async Task TestDiscoveryEndpoint()
+    public async Task Discovery_Endpoint_Returns_Ok_Response()
     {
         // Arrange
         var versionProvider = A.Fake<IVersionProvider>();

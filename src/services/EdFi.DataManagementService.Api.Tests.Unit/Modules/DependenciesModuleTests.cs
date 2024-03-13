@@ -20,7 +20,7 @@ namespace EdFi.DataManagementService.Api.Tests.Unit.Modules;
 public class DependenciesModuleTests
 {
     [Test]
-    public async Task TestDependenciesEndpoint()
+    public async Task Dependencies_Endpoint_Returns_Ok_Response()
     {
         // Arrange
         var contentProvider = A.Fake<IContentProvider>();

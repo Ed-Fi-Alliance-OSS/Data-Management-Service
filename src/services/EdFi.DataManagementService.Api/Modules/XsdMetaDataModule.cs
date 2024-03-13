@@ -14,6 +14,7 @@ public class XsdMetaDataModule : IModule
 {
     private readonly Regex PathExpressionRegex = new(@"\/(?<section>[^/]+)\/files?");
     private readonly Regex FilePathExpressionRegex = new(@"\/(?<section>[^/]+)\/(?<fileName>[^/]+).xsd?");
+    private readonly string ErrorResourcePath = "Invalid resource path";
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
@@ -47,14 +48,12 @@ public class XsdMetaDataModule : IModule
         IDomainModelProvider domainModelProvider
     )
     {
-        var errorPathNotFound = "Path not found";
-
         var request = httpContext.Request;
         Match match = PathExpressionRegex.Match(request.Path);
         if (!match.Success)
         {
             httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
-            await httpContext.Response.WriteAsync(errorPathNotFound);
+            await httpContext.Response.WriteAsync(ErrorResourcePath);
         }
 
         string section = match.Groups["section"].Value;
@@ -71,7 +70,7 @@ public class XsdMetaDataModule : IModule
         else
         {
             httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
-            await httpContext.Response.WriteAsync(errorPathNotFound);
+            await httpContext.Response.WriteAsync(ErrorResourcePath);
         }
     }
 
@@ -81,7 +80,7 @@ public class XsdMetaDataModule : IModule
         Match match = FilePathExpressionRegex.Match(request.Path);
         if (!match.Success)
         {
-            httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
+            return Results.NotFound(ErrorResourcePath);
         }
         var fileName = match.Groups["fileName"].Value;
         var fileFullName = $"{fileName}.xsd";
@@ -93,7 +92,7 @@ public class XsdMetaDataModule : IModule
         }
         else
         {
-            return Results.NotFound();
+            return Results.NotFound(ErrorResourcePath);
         }
     }
 }

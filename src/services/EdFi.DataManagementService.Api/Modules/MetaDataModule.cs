@@ -14,8 +14,8 @@ namespace EdFi.DataManagementService.Api.Modules;
 public class MetaDataModule : IModule
 {
     private readonly Regex PathExpressionRegex = new(@"\/(?<section>[^/]+)\/swagger.json?");
-    private const string Resources = "resources";
-    private const string Descriptors = "descriptors";
+    private readonly string[] Sections = ["Resources", "Descriptors"];
+    private readonly string ErrorResourcePath = "Invalid resource path";
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
@@ -27,8 +27,10 @@ public class MetaDataModule : IModule
     {
         var baseUrl = httpContext.Request.UrlWithPathSegment();
         List<RouteInformation> sections = [];
-        sections.Add(new RouteInformation("Resources", $"{baseUrl}{Resources}/swagger.json"));
-        sections.Add(new RouteInformation("Descriptors", $"{baseUrl}{Descriptors}/swagger.json"));
+        foreach (var section in Sections)
+        {
+            sections.Add(new RouteInformation(section, $"{baseUrl}/{section.ToLower()}/swagger.json"));
+        }
 
         await httpContext.Response.WriteAsSerializedJsonAsync(sections);
     }
@@ -40,19 +42,25 @@ public class MetaDataModule : IModule
         if (!match.Success)
         {
             httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
+            await httpContext.Response.WriteAsync(ErrorResourcePath);
         }
 
-        string section = match.Groups["section"].Value;
+        string section = match.Groups["section"].Value.ToLower();
         string? rootUrl = request.RootUrl();
-        if (section.ToLower().Equals(Resources))
+        if (
+            Array.Exists(
+                Sections,
+                x => x.ToLowerInvariant().Equals(section, StringComparison.InvariantCultureIgnoreCase)
+            )
+        )
         {
-            var content = contentProvider.LoadJsonContent(Resources, rootUrl);
+            var content = contentProvider.LoadJsonContent(section, rootUrl);
             await httpContext.Response.WriteAsSerializedJsonAsync(content);
         }
         else
         {
-            var content = contentProvider.LoadJsonContent(Descriptors, rootUrl);
-            await httpContext.Response.WriteAsSerializedJsonAsync(content);
+            httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
+            await httpContext.Response.WriteAsync(ErrorResourcePath);
         }
     }
 }

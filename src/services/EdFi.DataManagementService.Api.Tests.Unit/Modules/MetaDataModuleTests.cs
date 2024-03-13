@@ -19,7 +19,7 @@ namespace EdFi.DataManagementService.Api.Tests.Unit.Modules;
 public class MetaDataModuleTests
 {
     [Test]
-    public async Task TestMetaDataEndpoint()
+    public async Task MetaData_Endpoint_Returns_Section_List()
     {
         // Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -44,7 +44,7 @@ public class MetaDataModuleTests
     }
 
     [Test]
-    public async Task TestMetaDataResourcesSectionEndpoint()
+    public async Task MetaData_Returns_Resources_Content()
     {
         // Arrange
         var contentProvider = A.Fake<IContentProvider>();
@@ -85,7 +85,7 @@ public class MetaDataModuleTests
     }
 
     [Test]
-    public async Task TestMetaDataDescriptorsSectionEndpoint()
+    public async Task MetaData_Returns_Descriptors_Content()
     {
         // Arrange
         var contentProvider = A.Fake<IContentProvider>();
@@ -123,5 +123,24 @@ public class MetaDataModuleTests
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         jsonContent.Should().NotBeNull();
         sectionInfo.Should().Contain("descriptors");
+    }
+
+    [Test]
+    public async Task MetaData_Returns_Invalid_Resource_Error()
+    {
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/metadata/swagger.json");
+        var content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        content.Should().Contain("Invalid resource");
     }
 }
