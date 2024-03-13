@@ -26,7 +26,7 @@ public class VersionProvider : IVersionProvider
 
     public string Build => FullVersion.ToString();
 
-    public string Suite => "1";
+    public string Suite => "DMS";
 
     private static Version FullVersion
     {
