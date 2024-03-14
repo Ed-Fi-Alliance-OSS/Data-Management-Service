@@ -13,8 +13,8 @@ var app = builder.Build();
 app.UsePathBase("/api");
 app.UseMiddleware<LoggingMiddleware>();
 app.UseRouting();
-app.MapRouteEndpoints();
 app.UseRateLimiter();
+app.MapRouteEndpoints();
 
 app.Run();
 

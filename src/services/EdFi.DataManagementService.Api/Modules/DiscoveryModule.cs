@@ -30,6 +30,7 @@ public class DiscoveryModule : IModule
             version: versionProvider.Version,
             informationalVersion: versionProvider.InformationalVersion,
             build: versionProvider.Build,
+            suite: versionProvider.Suite,
             dataModels,
             GetUrlsByName()
         );
@@ -54,6 +55,7 @@ public record DiscoveryApiDetails(
     string version,
     string informationalVersion,
     string build,
+    string suite,
     DataModel[] dataModels,
     Dictionary<string, string> Urls
 );
