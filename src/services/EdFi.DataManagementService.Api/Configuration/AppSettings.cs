@@ -9,6 +9,6 @@ namespace EdFi.DataManagementService.Api.Configuration
     {
         public int BeginAllowedSchoolYear { get; set; }
         public int EndAllowedSchoolYear { get; set; }
-        public string? AuthenticationService { get; set; }
+        public required string AuthenticationService { get; set; }
     }
 }

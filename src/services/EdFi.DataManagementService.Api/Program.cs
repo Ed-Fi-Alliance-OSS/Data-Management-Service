@@ -10,7 +10,6 @@ builder.AddServices();
 
 var app = builder.Build();
 
-app.UsePathBase("/api");
 app.UseMiddleware<LoggingMiddleware>();
 app.UseRouting();
 app.UseRateLimiter();

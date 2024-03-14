@@ -7,7 +7,7 @@ using EdFi.DataManagementService.Api.Core.ApiSchema;
 
 namespace EdFi.DataManagementService.Api.Content;
 
-public interface IDomainModelProvider
+public interface IDataModelProvider
 {
     /// <summary>
     /// Provides list of data models from api schema
@@ -18,12 +18,12 @@ public interface IDomainModelProvider
 
 public record DataModel(string name, string version, string informationalVersion);
 
-public class DomainModelProvider : IDomainModelProvider
+public class DataModelProvider : IDataModelProvider
 {
-    private readonly ILogger<DomainModelProvider> _logger;
+    private readonly ILogger<DataModelProvider> _logger;
     private readonly IApiSchemaProvider _apiSchemaProvider;
 
-    public DomainModelProvider(ILogger<DomainModelProvider> logger, IApiSchemaProvider apiSchemaProvider)
+    public DataModelProvider(ILogger<DataModelProvider> logger, IApiSchemaProvider apiSchemaProvider)
     {
         _logger = logger;
         _apiSchemaProvider = apiSchemaProvider;

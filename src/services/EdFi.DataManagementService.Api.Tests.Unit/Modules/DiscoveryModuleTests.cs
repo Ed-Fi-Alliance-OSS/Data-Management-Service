@@ -25,12 +25,11 @@ public class DiscoveryModuleTests
         // Arrange
         var versionProvider = A.Fake<IVersionProvider>();
         A.CallTo(() => versionProvider.Version).Returns("1.0");
-        A.CallTo(() => versionProvider.InformationalVersion).Returns("1.0");
-        A.CallTo(() => versionProvider.Build).Returns("1.0.0.0");
+        A.CallTo(() => versionProvider.Suite).Returns("DMS");
 
         var expectedDataModel = new DataModel("Ed-Fi", "5.0.0", "Ed-Fi data standard 5.0.0");
-        var domainModelProvider = A.Fake<IDomainModelProvider>();
-        A.CallTo(() => domainModelProvider.GetDataModels()).Returns(new[] { expectedDataModel });
+        var dataModelProvider = A.Fake<IDataModelProvider>();
+        A.CallTo(() => dataModelProvider.GetDataModels()).Returns(new[] { expectedDataModel });
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -39,7 +38,7 @@ public class DiscoveryModuleTests
                 (collection) =>
                 {
                     collection.AddTransient((x) => versionProvider);
-                    collection.AddTransient((x) => domainModelProvider);
+                    collection.AddTransient((x) => dataModelProvider);
                 }
             );
         });
@@ -53,8 +52,8 @@ public class DiscoveryModuleTests
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         apiDetails.Should().NotBeNull();
-        apiDetails?.Urls.Count.Should().Be(5);
-        apiDetails?.informationalVersion.Should().Be("1.0");
+        apiDetails?.urls.Count.Should().Be(5);
+        apiDetails?.suite.Should().Be("DMS");
         apiDetails?.dataModels.Should().NotBeNull();
         apiDetails?.dataModels.Count().Should().Be(1);
         apiDetails?.dataModels.First().name.Should().Be("Ed-Fi");

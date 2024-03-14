@@ -23,12 +23,12 @@ public class XsdMetaDataModule : IModule
         endpoints.MapGet("/metadata/xsd/{section}/{fileName}.xsd", GetXsdMetaDataFileContent);
     }
 
-    internal async Task GetSections(HttpContext httpContext, IDomainModelProvider domainModelProvider)
+    internal async Task GetSections(HttpContext httpContext, IDataModelProvider dataModelProvider)
     {
         var baseUrl = httpContext.Request.UrlWithPathSegment();
         List<XsdMetaDataSectionInfo> sections = [];
 
-        foreach (var model in domainModelProvider.GetDataModels())
+        foreach (var model in dataModelProvider.GetDataModels())
         {
             sections.Add(
                 new XsdMetaDataSectionInfo(
@@ -45,7 +45,7 @@ public class XsdMetaDataModule : IModule
     internal async Task GetXsdMetaDataFiles(
         HttpContext httpContext,
         IContentProvider contentProvider,
-        IDomainModelProvider domainModelProvider
+        IDataModelProvider dataModelProvider
     )
     {
         var request = httpContext.Request;
@@ -57,7 +57,7 @@ public class XsdMetaDataModule : IModule
         }
 
         string section = match.Groups["section"].Value;
-        var dataModels = domainModelProvider.GetDataModels();
+        var dataModels = dataModelProvider.GetDataModels();
 
         if (dataModels.Any(x => x.name.Equals(section, StringComparison.InvariantCultureIgnoreCase)))
         {

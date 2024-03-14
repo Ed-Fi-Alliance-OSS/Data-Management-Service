@@ -11,10 +11,6 @@ public interface IVersionProvider
 {
     string Version { get; }
 
-    string InformationalVersion { get; }
-
-    string Build { get; }
-
     string Suite { get; }
 }
 
@@ -22,11 +18,7 @@ public class VersionProvider : IVersionProvider
 {
     public string Version => $"{FullVersion.Major}.{FullVersion.Minor}";
 
-    public string InformationalVersion => $"{FullVersion.Major}.{FullVersion.Minor}";
-
-    public string Build => FullVersion.ToString();
-
-    public string Suite => "DMS";
+    public string Suite => "Ed-Fi Alliance Data Management Service";
 
     private static Version FullVersion
     {

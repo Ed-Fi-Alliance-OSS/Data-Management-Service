@@ -12,11 +12,11 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Api.Tests.Unit.Content;
 
-public class DomainModelProviderTests
+public class DataModelProviderTests
 {
     private IApiSchemaProvider? _apiSchemaProvider;
     private string _projectName = "ed-fi-test";
-    private ILogger<DomainModelProvider>? _logger;
+    private ILogger<DataModelProvider>? _logger;
 
     [SetUp]
     public void Setup()
@@ -30,14 +30,14 @@ public class DomainModelProviderTests
         _apiSchemaProvider = A.Fake<IApiSchemaProvider>();
 
         A.CallTo(() => _apiSchemaProvider.ApiSchemaRootNode).Returns(schemaBuilder.RootNode);
-        _logger = A.Fake<ILogger<DomainModelProvider>>();
+        _logger = A.Fake<ILogger<DataModelProvider>>();
     }
 
     [Test]
     public void Returns_Expected_Domain_Model()
     {
         // Arrange
-        var domainModelProvider = new DomainModelProvider(_logger!, _apiSchemaProvider!);
+        var domainModelProvider = new DataModelProvider(_logger!, _apiSchemaProvider!);
 
         // Act
         var response = domainModelProvider.GetDataModels();
@@ -58,7 +58,7 @@ public class DomainModelProviderTests
         schemaBuilder.RootNode["projectSchemas"] = null;
         A.CallTo(() => _apiSchemaProvider!.ApiSchemaRootNode).Returns(schemaBuilder.RootNode);
 
-        var domainModelProvider = new DomainModelProvider(_logger!, _apiSchemaProvider!);
+        var domainModelProvider = new DataModelProvider(_logger!, _apiSchemaProvider!);
 
         // Act
         Action action = () => domainModelProvider.GetDataModels();

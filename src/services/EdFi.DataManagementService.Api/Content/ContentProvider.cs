@@ -15,7 +15,14 @@ public interface IContentProvider
     /// <param name="fileNamePattern"></param>
     /// <param name="hostUrl"></param>
     /// <returns></returns>
-    Lazy<JsonNode> LoadJsonContent(string fileNamePattern, string? hostUrl = null);
+    Lazy<JsonNode> LoadJsonContent(string fileNamePattern, string hostUrl);
+
+    /// <summary>
+    /// Loads and parses the json file content.
+    /// </summary>
+    /// <param name="fileNamePattern"></param>
+    /// <returns></returns>
+    Lazy<JsonNode> LoadJsonContent(string fileNamePattern);
 
     /// <summary>
     /// Provides xsd file stream.
@@ -63,25 +70,15 @@ public class ContentProvider : IContentProvider
         return files;
     }
 
-    public Lazy<JsonNode> LoadJsonContent(string fileNamePattern, string? hostUrl = null)
+    public Lazy<JsonNode> LoadJsonContent(string fileNamePattern, string hostUrl)
     {
-        _logger.LogDebug("Entering Json FileLoader");
+        var jsonNodeFromFile = LoadJsonContent(fileNamePattern).Value;
 
-        var contentError = "Unable to read and parse Api Schema file";
-
-        using StreamReader reader = new(GetStream(fileNamePattern, ".json"));
-        var jsonContent = reader.ReadToEnd();
-
-        JsonNode? jsonNodeFromFile = JsonNode.Parse(jsonContent);
-        if (jsonNodeFromFile == null)
-        {
-            _logger.LogCritical(contentError);
-            throw new InvalidOperationException(contentError);
-        }
-        if (hostUrl != null)
+        if (!string.IsNullOrEmpty(hostUrl))
         {
             ReplaceHostUrl(jsonNodeFromFile);
         }
+
         return new Lazy<JsonNode>(jsonNodeFromFile);
 
         void ReplaceHostUrl(JsonNode? jsonNodeFromFile)
@@ -102,6 +99,25 @@ public class ContentProvider : IContentProvider
                 }
             }
         }
+    }
+
+    public Lazy<JsonNode> LoadJsonContent(string fileNamePattern)
+    {
+        _logger.LogDebug("Entering Json FileLoader");
+
+        var contentError = "Unable to read and parse Api Schema file";
+
+        using StreamReader reader = new(GetStream(fileNamePattern, ".json"));
+        var jsonContent = reader.ReadToEnd();
+
+        JsonNode? jsonNodeFromFile = JsonNode.Parse(jsonContent);
+        if (jsonNodeFromFile == null)
+        {
+            _logger.LogCritical(contentError);
+            throw new InvalidOperationException(contentError);
+        }
+
+        return new Lazy<JsonNode>(jsonNodeFromFile);
     }
 
     public Lazy<Stream> LoadXsdContent(string fileName)

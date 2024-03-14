@@ -31,7 +31,7 @@ public class DependenciesModuleTests
                 return JsonNode.Parse(json)!;
             });
 
-        A.CallTo(() => contentProvider.LoadJsonContent(A<string>.Ignored, null)).Returns(_dependencyJson);
+        A.CallTo(() => contentProvider.LoadJsonContent(A<string>.Ignored)).Returns(_dependencyJson);
 
         var httpContext = A.Fake<HttpContext>();
 

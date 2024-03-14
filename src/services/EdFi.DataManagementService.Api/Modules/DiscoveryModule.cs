@@ -20,16 +20,14 @@ public class DiscoveryModule : IModule
     internal async Task GetApiDetails(
         HttpContext httpContext,
         IVersionProvider versionProvider,
-        IDomainModelProvider domainModelProvider,
+        IDataModelProvider dataModelProvider,
         IOptions<AppSettings> appSettings
     )
     {
-        var dataModels = domainModelProvider.GetDataModels().ToArray();
+        var dataModels = dataModelProvider.GetDataModels().ToArray();
 
         var result = new DiscoveryApiDetails(
             version: versionProvider.Version,
-            informationalVersion: versionProvider.InformationalVersion,
-            build: versionProvider.Build,
             suite: versionProvider.Suite,
             dataModels,
             GetUrlsByName()
@@ -53,9 +51,7 @@ public class DiscoveryModule : IModule
 
 public record DiscoveryApiDetails(
     string version,
-    string informationalVersion,
-    string build,
     string suite,
     DataModel[] dataModels,
-    Dictionary<string, string> Urls
+    Dictionary<string, string> urls
 );
