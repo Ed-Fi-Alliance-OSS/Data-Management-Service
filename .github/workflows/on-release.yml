@@ -1,0 +1,76 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+name: On Release
+on:
+  release:
+    types:
+      - released
+
+env:
+  ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+  ARTIFACTS_FEED_URL: ${{ vars.AZURE_ARTIFACTS_FEED_URL }}
+  ARTIFACTS_PACKAGES_URL: ${{ vars.ARTIFACTS_PACKAGES_URL }}
+  ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+
+jobs:
+  delete-pre-releases:
+    name: Delete Unnecessary Pre-Releases
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Delete other pre-releases and their tags
+        shell: pwsh
+        run: |
+          $release = "${{ github.ref_name }}"
+          $repo = "${{ github.repository }}"
+          $token = "${{ secrets.GITHUB_TOKEN }}"
+
+          $page = 1
+          $release_list = @()
+
+          Do {
+
+            $url = "https://api.github.com/repos/$repo/releases?per_page=100&page=$page"
+            $gh_headers = @{
+                "Accept"        = "application/vnd.github+json"
+                "Authorization" = "Bearer $token"
+            }
+
+            $release_list = Invoke-RestMethod $url -Headers $gh_headers
+
+            $release_list | ForEach-Object {
+                if ($_.tag_name -like "Pre-Release-*" -and $_.prerelease) {
+                    "Deleting pre-release $($_.tag_name)" | Write-Output
+                    Invoke-RestMethod -Method Delete -Uri $_.url -Headers $gh_headers
+                }
+            }
+
+            $page += 1
+          } While ($release_list.count -gt 0)
+
+  promote-azure-artifact:
+    name: Promote Azure Artifact
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Promote Package
+        shell: pwsh
+        run: |
+          $arguments = @{
+            FeedsURL    = "${{ env.ARTIFACTS_FEED_URL }}"
+            PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
+            Username    = "${{ env.ARTIFACTS_USERNAME }}"
+            View        = "release"
+            ReleaseRef  = "${{ github.ref_name }}"
+            Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
+          }
+
+          Import-Module ./github-builder.psm1
+          Invoke-Promote @arguments

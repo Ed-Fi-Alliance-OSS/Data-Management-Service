@@ -18,8 +18,6 @@ env:
 jobs:
   create-pre-releases:
     name: Create Pre-Releases
-    # Was not successful filtering out alpha in on.push.tags, so try filtering at the job level
-    if: "! contains(github.ref_name, 'alpha')"
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -37,17 +35,13 @@ jobs:
       - name: Set Version Numbers
         id: versions
         run: |
-          $apiPrefix = "v"
-
-          # Install the MinVer CLI tool
-          &dotnet tool install --global minver-cli
-
-          "dms-api=$($apiPrefix)$(minver -t $apiPrefix)" >> $env:GITHUB_OUTPUT
+          Import-Module ./github-builder.psm1
+          Get-VersionNumber
 
       - name: Create Dms API Pre-Release
         run: |
-          $version = "${{ steps.versions.outputs.dms-api }}"
-          $tag = $version -replace "v","Pre-Release-v"
+          $version = "${{ steps.versions.outputs.dms-semver }}"
+          $tag = $version -replace "v","pre-"
 
           $body = @{
             tag_name = "$tag"
