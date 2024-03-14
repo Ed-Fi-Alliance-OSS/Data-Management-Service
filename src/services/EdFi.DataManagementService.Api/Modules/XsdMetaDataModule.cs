@@ -10,10 +10,14 @@ using EdFi.DataManagementService.Api.Infrastructure.Extensions;
 
 namespace EdFi.DataManagementService.Api.Modules;
 
-public class XsdMetaDataModule : IModule
+public partial class XsdMetaDataModule : IModule
 {
-    private readonly Regex PathExpressionRegex = new(@"\/(?<section>[^/]+)\/files?");
-    private readonly Regex FilePathExpressionRegex = new(@"\/(?<section>[^/]+)\/(?<fileName>[^/]+).xsd?");
+    [GeneratedRegex(@"\/(?<section>[^/]+)\/files?")]
+    private static partial Regex PathExpressionRegex();
+
+    [GeneratedRegex(@"\/(?<section>[^/]+)\/(?<fileName>[^/]+).xsd?")]
+    private static partial Regex FilePathExpressionRegex();
+
     private readonly string ErrorResourcePath = "Invalid resource path";
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
@@ -49,7 +53,7 @@ public class XsdMetaDataModule : IModule
     )
     {
         var request = httpContext.Request;
-        Match match = PathExpressionRegex.Match(request.Path);
+        Match match = PathExpressionRegex().Match(request.Path);
         if (!match.Success)
         {
             httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
@@ -77,7 +81,7 @@ public class XsdMetaDataModule : IModule
     internal IResult GetXsdMetaDataFileContent(HttpContext httpContext, IContentProvider contentProvider)
     {
         var request = httpContext.Request;
-        Match match = FilePathExpressionRegex.Match(request.Path);
+        Match match = FilePathExpressionRegex().Match(request.Path);
         if (!match.Success)
         {
             return Results.NotFound(ErrorResourcePath);

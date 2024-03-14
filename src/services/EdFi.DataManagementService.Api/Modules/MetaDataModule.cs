@@ -11,9 +11,11 @@ using EdFi.DataManagementService.Api.Infrastructure.Extensions;
 
 namespace EdFi.DataManagementService.Api.Modules;
 
-public class MetaDataModule : IModule
+public partial class MetaDataModule : IModule
 {
-    private readonly Regex PathExpressionRegex = new(@"\/(?<section>[^/]+)\/swagger.json?");
+    [GeneratedRegex(@"\/(?<section>[^/]+)\/swagger.json?")]
+    private static partial Regex PathExpression();
+
     private readonly string[] Sections = ["Resources", "Descriptors"];
     private readonly string ErrorResourcePath = "Invalid resource path";
 
@@ -38,7 +40,7 @@ public class MetaDataModule : IModule
     internal async Task GetSectionMetaData(HttpContext httpContext, IContentProvider contentProvider)
     {
         var request = httpContext.Request;
-        Match match = PathExpressionRegex.Match(request.Path);
+        Match match = PathExpression().Match(request.Path);
         if (!match.Success)
         {
             httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
