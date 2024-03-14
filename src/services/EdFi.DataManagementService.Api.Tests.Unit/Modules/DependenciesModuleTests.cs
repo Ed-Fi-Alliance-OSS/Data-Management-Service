@@ -49,7 +49,7 @@ public class DependenciesModuleTests
         using var client = factory.CreateClient();
 
         // Act
-        var response = await client.GetAsync("/metadata/data/dependencies");
+        var response = await client.GetAsync("/metadata/dependencies");
         var content = await response.Content.ReadAsStringAsync();
 
         var jsonContent = JsonNode.Parse(content);

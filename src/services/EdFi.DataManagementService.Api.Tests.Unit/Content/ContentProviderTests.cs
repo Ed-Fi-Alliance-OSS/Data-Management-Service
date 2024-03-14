@@ -30,7 +30,7 @@ public class ContentProviderTests
 
         A.CallTo(() => _assembly.GetManifestResourceNames()).Returns(resources);
 
-        A.CallTo(() => _assemblyProvider.GetAssemby(A<Type>.Ignored)).Returns(_assembly);
+        A.CallTo(() => _assemblyProvider.GetAssemblyByType(A<Type>.Ignored)).Returns(_assembly);
         _logger = A.Fake<ILogger<ContentProvider>>();
     }
 
@@ -69,22 +69,26 @@ public class ContentProviderTests
     {
         // Arrange
         var expectedHost = "http://local:5000";
-        var content = """{"openapi":"3.0.1", "info":"descriptors","servers":[{"url":"HOST_URL/data/v3"}]}""";
+        var expectedOauthUrl = "http://local:5000/Oauth";
+        var content =
+            """{"openapi":"3.0.1", "info":"descriptors","servers":[{"url":"HOST_URL/data/v3"}],"oauth":[{"url":"HOST_URL/oauth/token"}]}""";
         MemoryStream contentStream = new(Encoding.UTF8.GetBytes(content.ToString()));
 
         A.CallTo(() => _assembly!.GetManifestResourceStream(A<string>.Ignored)).Returns(contentStream);
         var contentProvider = new ContentProvider(_logger!, _assemblyProvider!);
 
         // Act
-        var lazyResponse = contentProvider.LoadJsonContent("file", expectedHost);
+        var lazyResponse = contentProvider.LoadJsonContent("file", expectedHost, expectedOauthUrl);
         var response = lazyResponse.Value;
         var openApi = response?["openapi"]?.GetValue<string>();
         var serverUrl = response?["servers"]?.AsArray()?[0]?["url"]?.GetValue<string>();
+        var oauthUrl = response?["oauth"]?.AsArray()?[0]?["url"]?.GetValue<string>();
 
         // Assert
         response.Should().NotBeNull();
         openApi.Should().Be("3.0.1");
-        serverUrl.Should().Be($"{expectedHost}/data/v3");
+        serverUrl.Should().Be($"{expectedHost}/data");
+        oauthUrl.Should().Be(expectedOauthUrl);
     }
 
     [Test]
@@ -94,7 +98,7 @@ public class ContentProviderTests
         var contentProvider = new ContentProvider(_logger!, _assemblyProvider!);
 
         // Act
-        Action action = () => contentProvider.LoadJsonContent("not-exists", string.Empty);
+        Action action = () => contentProvider.LoadJsonContent("not-exists", string.Empty, string.Empty);
 
         // Assert
         action.Should().Throw<InvalidOperationException>().WithMessage("not-exists not found");
@@ -108,7 +112,7 @@ public class ContentProviderTests
         var contentProvider = new ContentProvider(_logger!, _assemblyProvider!);
 
         // Act
-        Action action = () => contentProvider.LoadJsonContent("file1", string.Empty);
+        Action action = () => contentProvider.LoadJsonContent("file1", string.Empty, string.Empty);
 
         // Assert
         action.Should().Throw<InvalidOperationException>().WithMessage("Couldn't load file1.json");

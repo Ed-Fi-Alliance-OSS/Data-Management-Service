@@ -56,7 +56,9 @@ public class MetaDataModuleTests
                 return JsonNode.Parse(json)!;
             });
 
-        A.CallTo(() => contentProvider.LoadJsonContent(A<string>.Ignored, A<string>.Ignored))
+        A.CallTo(
+                () => contentProvider.LoadJsonContent(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)
+            )
             .Returns(_resourcesJson);
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -97,7 +99,9 @@ public class MetaDataModuleTests
                 return JsonNode.Parse(json)!;
             });
 
-        A.CallTo(() => contentProvider.LoadJsonContent(A<string>.Ignored, A<string>.Ignored))
+        A.CallTo(
+                () => contentProvider.LoadJsonContent(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)
+            )
             .Returns(_descriptorsJson);
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>

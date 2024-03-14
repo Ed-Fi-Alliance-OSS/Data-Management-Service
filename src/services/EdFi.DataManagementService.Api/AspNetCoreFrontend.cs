@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Api.Core;
 using EdFi.DataManagementService.Api.Core.Middleware;
 using EdFi.DataManagementService.Api.Core.Model;
+using EdFi.DataManagementService.Api.Infrastructure.Extensions;
 
 namespace EdFi.DataManagementService.Api
 {
@@ -31,6 +32,12 @@ namespace EdFi.DataManagementService.Api
         }
 
         /// <summary>
+        /// Path segment value will be refined before passing over to core.
+        /// This property value will be set from the front-end module.
+        /// </summary>
+        public static string? PathSegmentToRefine { get; set; }
+
+        /// <summary>
         /// ASP.NET Core entry point for API POST requests to DMS
         /// </summary>
         public static async Task<IResult> Upsert(HttpRequest request, ICoreFacade coreFacade)
@@ -41,7 +48,7 @@ namespace EdFi.DataManagementService.Api
                 new(
                     Method: RequestMethod.POST,
                     Body: body,
-                    Path: request.Path,
+                    Path: request.RefinedPath(PathSegmentToRefine),
                     TraceId: new(request.HttpContext.TraceIdentifier)
                 );
             FrontendResponse frontendResponse = await coreFacade.Upsert(frontendRequest);
@@ -58,7 +65,7 @@ namespace EdFi.DataManagementService.Api
                 new(
                     Method: RequestMethod.GET,
                     Body: null,
-                    Path: request.Path,
+                    Path: request.RefinedPath(PathSegmentToRefine),
                     TraceId: new(request.HttpContext.TraceIdentifier)
                 );
             FrontendResponse frontendResponse = await coreFacade.GetById(frontendRequest);
@@ -77,7 +84,7 @@ namespace EdFi.DataManagementService.Api
                 new(
                     Method: RequestMethod.PUT,
                     Body: body,
-                    Path: request.Path,
+                    Path: request.RefinedPath(PathSegmentToRefine),
                     TraceId: new(request.HttpContext.TraceIdentifier)
                 );
             FrontendResponse frontendResponse = await coreFacade.UpdateById(frontendRequest);
@@ -94,7 +101,7 @@ namespace EdFi.DataManagementService.Api
                 new(
                     Method: RequestMethod.DELETE,
                     Body: null,
-                    Path: request.Path,
+                    Path: request.RefinedPath(PathSegmentToRefine),
                     TraceId: new(request.HttpContext.TraceIdentifier)
                 );
             FrontendResponse frontendResponse = await coreFacade.DeleteById(frontendRequest);

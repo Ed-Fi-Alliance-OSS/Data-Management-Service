@@ -14,7 +14,7 @@ public interface IAssemblyProvider
     /// </summary>
     /// <param name="assemblyType"></param>
     /// <returns></returns>
-    Assembly GetAssemby(Type assemblyType);
+    Assembly GetAssemblyByType(Type assemblyType);
 }
 
 public class AssemblyProvider : IAssemblyProvider
@@ -26,7 +26,7 @@ public class AssemblyProvider : IAssemblyProvider
         _logger = logger;
     }
 
-    public Assembly GetAssemby(Type assemblyType)
+    public Assembly GetAssemblyByType(Type assemblyType)
     {
         var assembly = Assembly.GetAssembly(assemblyType);
         if (assembly == null)

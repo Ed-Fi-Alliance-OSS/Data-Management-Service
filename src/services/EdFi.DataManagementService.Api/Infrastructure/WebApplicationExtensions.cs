@@ -5,7 +5,6 @@
 
 using System.Reflection;
 using EdFi.DataManagementService.Api.Modules;
-using static EdFi.DataManagementService.Api.AspNetCoreFrontend;
 
 namespace EdFi.DataManagementService.Api.Infrastructure;
 
@@ -33,11 +32,5 @@ public static class WebApplicationExtensions
                 routeBuilder.MapEndpoints(endpoints);
             }
         });
-        application.MapGet("/ping", () => Results.Ok(DateTime.Now));
-
-        application.MapPost("/{**catchAll}", Upsert);
-        application.MapGet("/{**catchAll}", GetById);
-        application.MapPut("/{**catchAll}", UpdateById);
-        application.MapDelete("/{**catchAll}", DeleteById);
     }
 }

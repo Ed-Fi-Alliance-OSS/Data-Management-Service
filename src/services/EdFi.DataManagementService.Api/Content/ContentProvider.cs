@@ -3,7 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using Json.Path;
 
 namespace EdFi.DataManagementService.Api.Content;
 
@@ -14,8 +16,9 @@ public interface IContentProvider
     /// </summary>
     /// <param name="fileNamePattern"></param>
     /// <param name="hostUrl"></param>
+    /// <param name="oAuthUrl"></param>
     /// <returns></returns>
-    Lazy<JsonNode> LoadJsonContent(string fileNamePattern, string hostUrl);
+    Lazy<JsonNode> LoadJsonContent(string fileNamePattern, string hostUrl, string oAuthUrl);
 
     /// <summary>
     /// Loads and parses the json file content.
@@ -58,7 +61,7 @@ public class ContentProvider : IContentProvider
     public IEnumerable<string> Files(string fileNamePattern, string fileExtension)
     {
         var files = new List<string>();
-        var assembly = _assemblyProvider.GetAssemby(_type);
+        var assembly = _assemblyProvider.GetAssemblyByType(_type);
         foreach (string resourceName in assembly.GetManifestResourceNames())
         {
             if (resourceName.Contains(fileNamePattern) && resourceName.EndsWith(fileExtension))
@@ -70,34 +73,26 @@ public class ContentProvider : IContentProvider
         return files;
     }
 
-    public Lazy<JsonNode> LoadJsonContent(string fileNamePattern, string hostUrl)
+    public Lazy<JsonNode> LoadJsonContent(string fileNamePattern, string hostUrl, string oAuthUrl)
     {
         var jsonNodeFromFile = LoadJsonContent(fileNamePattern).Value;
 
-        if (!string.IsNullOrEmpty(hostUrl))
-        {
-            ReplaceHostUrl(jsonNodeFromFile);
-        }
+        jsonNodeFromFile = ReplaceString(jsonNodeFromFile, $"{hostUrl}/data", oAuthUrl);
 
-        return new Lazy<JsonNode>(jsonNodeFromFile);
+        return new Lazy<JsonNode>(jsonNodeFromFile!);
 
-        void ReplaceHostUrl(JsonNode? jsonNodeFromFile)
+        JsonNode? ReplaceString(JsonNode jsonNodeFromFile, string hostUrl, string OauthUrl)
         {
-            var servers = jsonNodeFromFile?["servers"]?.AsArray();
-            if (servers != null)
+            var stringValue = JsonSerializer.Serialize(jsonNodeFromFile);
+            if (!string.IsNullOrEmpty(hostUrl))
             {
-                foreach (var server in servers)
-                {
-                    if (server != null)
-                    {
-                        var url = server["url"];
-                        if (url != null)
-                        {
-                            server["url"] = url.GetValue<string>().Replace("HOST_URL", hostUrl);
-                        }
-                    }
-                }
+                stringValue = stringValue.Replace("HOST_URL/data/v3", hostUrl);
             }
+            if (!string.IsNullOrEmpty(OauthUrl))
+            {
+                stringValue = stringValue.Replace("HOST_URL/oauth/token", OauthUrl);
+            }
+            return JsonNode.Parse(stringValue);
         }
     }
 
@@ -128,7 +123,7 @@ public class ContentProvider : IContentProvider
 
     private Stream GetStream(string fileNamePattern, string fileExtension)
     {
-        var assembly = _assemblyProvider.GetAssemby(_type);
+        var assembly = _assemblyProvider.GetAssemblyByType(_type);
         var resourceName = assembly
             .GetManifestResourceNames()
             .SingleOrDefault(str => str.Contains(fileNamePattern) && str.EndsWith(fileExtension));

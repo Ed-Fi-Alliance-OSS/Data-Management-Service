@@ -6,8 +6,10 @@
 
 using System.Net;
 using System.Text.RegularExpressions;
+using EdFi.DataManagementService.Api.Configuration;
 using EdFi.DataManagementService.Api.Content;
 using EdFi.DataManagementService.Api.Infrastructure.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Api.Modules;
 
@@ -37,7 +39,11 @@ public partial class MetaDataModule : IModule
         await httpContext.Response.WriteAsSerializedJsonAsync(sections);
     }
 
-    internal async Task GetSectionMetaData(HttpContext httpContext, IContentProvider contentProvider)
+    internal async Task GetSectionMetaData(
+        HttpContext httpContext,
+        IContentProvider contentProvider,
+        IOptions<AppSettings> options
+    )
     {
         var request = httpContext.Request;
         Match match = PathExpression().Match(request.Path);
@@ -49,6 +55,7 @@ public partial class MetaDataModule : IModule
 
         string section = match.Groups["section"].Value.ToLower();
         string? rootUrl = request.RootUrl();
+        string oAuthUrl = options.Value.AuthenticationService;
         if (
             Array.Exists(
                 Sections,
@@ -56,7 +63,7 @@ public partial class MetaDataModule : IModule
             )
         )
         {
-            var content = contentProvider.LoadJsonContent(section, rootUrl);
+            var content = contentProvider.LoadJsonContent(section, rootUrl, oAuthUrl);
             await httpContext.Response.WriteAsSerializedJsonAsync(content);
         }
         else

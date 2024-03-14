@@ -20,6 +20,16 @@ public static class HttpRequestResponseExtensions
         return $"{rootUrl}{httpRequest.Path}";
     }
 
+    public static string RefinedPath(this HttpRequest httpRequest, string? pathSegmentToRemove)
+    {
+        var path = httpRequest.Path.Value;
+        if (path != null && pathSegmentToRemove != null && path.Contains(pathSegmentToRemove))
+        {
+            path = path.Replace(pathSegmentToRemove, "");
+        }
+        return path!;
+    }
+
     public static async Task WriteAsSerializedJsonAsync<TValue>(this HttpResponse response, TValue value)
     {
         var options = new JsonSerializerOptions { WriteIndented = true };

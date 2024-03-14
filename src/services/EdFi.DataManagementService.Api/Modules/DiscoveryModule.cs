@@ -39,7 +39,7 @@ public class DiscoveryModule : IModule
         {
             var urlsByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var rootUrl = httpContext.Request.RootUrl();
-            urlsByName["dependencies"] = $"{rootUrl}/metadata/data/dependencies";
+            urlsByName["dependencies"] = $"{rootUrl}/metadata/dependencies";
             urlsByName["openApiMetadata"] = $"{rootUrl}/metadata";
             urlsByName["oauth"] = appSettings.Value.AuthenticationService ?? string.Empty;
             urlsByName["dataManagementApi"] = $"{rootUrl}/data/";
