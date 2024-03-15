@@ -3,12 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-namespace EdFi.DataManagementService.Api.Configuration
+namespace EdFi.DataManagementService.Api.Modules
 {
-    public class AppSettings
+    public interface IModule
     {
-        public int BeginAllowedSchoolYear { get; set; }
-        public int EndAllowedSchoolYear { get; set; }
-        public required string AuthenticationService { get; set; }
+        void MapEndpoints(IEndpointRouteBuilder endpoints);
     }
 }

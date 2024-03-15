@@ -26,8 +26,8 @@ public class RateLimitTests
         using var client = factory.CreateClient();
 
         // Act
-        var response1 = await client.GetAsync("/api/ping");
-        var response2 = await client.GetAsync("/api/ping");
+        var response1 = await client.GetAsync("/ping");
+        var response2 = await client.GetAsync("/ping");
 
         // Assert
         response1.StatusCode.Should().Be(HttpStatusCode.OK);

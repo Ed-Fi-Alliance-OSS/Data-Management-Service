@@ -27,7 +27,7 @@ public class ApiSchemaFileLoader : IApiSchemaProvider
             Assembly.GetAssembly(typeof(EdFi.ApiSchema.Marker))
             ?? throw new InvalidOperationException("Could not load the ApiSchema library");
 
-        var resourceName = assembly.GetManifestResourceNames().Single(str => str.EndsWith(".json"));
+        var resourceName = assembly.GetManifestResourceNames().Single(str => str.EndsWith("ApiSchema.json"));
         using Stream stream =
             assembly.GetManifestResourceStream(resourceName)
             ?? throw new InvalidOperationException("Could not load ApiSchema resource");

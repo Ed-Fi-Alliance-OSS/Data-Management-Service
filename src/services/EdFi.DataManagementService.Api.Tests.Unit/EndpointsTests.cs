@@ -22,7 +22,7 @@ public class EndpointsTests
         var expectedDate = DateTime.Now.ToString("yyyy-MM-dd");
 
         // Act
-        var response = await client.GetAsync("/api/ping");
+        var response = await client.GetAsync("/ping");
         var content = await response.Content.ReadAsStringAsync();
 
         // Assert
