@@ -37,9 +37,9 @@ public partial class XsdMetaDataModule : IModule
             sections.Add(
                 new XsdMetaDataSectionInfo(
                     description: $"Core schema ({model.name}) files for the data model",
-                    name: model.name,
+                    name: model.name.ToLower(),
                     version: model.version,
-                    files: $"{baseUrl}/{model.name}/files"
+                    files: $"{baseUrl}/{model.name.ToLower()}/files"
                 )
             );
         }

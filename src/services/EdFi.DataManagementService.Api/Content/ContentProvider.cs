@@ -81,7 +81,7 @@ public class ContentProvider : IContentProvider
 
         return new Lazy<JsonNode>(jsonNodeFromFile!);
 
-        JsonNode? ReplaceString(JsonNode jsonNodeFromFile, string hostUrl, string OauthUrl)
+        static JsonNode? ReplaceString(JsonNode jsonNodeFromFile, string hostUrl, string OauthUrl)
         {
             var stringValue = JsonSerializer.Serialize(jsonNodeFromFile);
             if (!string.IsNullOrEmpty(hostUrl))
@@ -100,7 +100,11 @@ public class ContentProvider : IContentProvider
     {
         _logger.LogDebug("Entering Json FileLoader");
 
-        var contentError = "Unable to read and parse Api Schema file";
+        var contentError = $"Unable to read and parse {fileNamePattern}.json";
+
+        fileNamePattern = fileNamePattern.StartsWith("discovery")
+            ? $"{fileNamePattern}-spec"
+            : fileNamePattern;
 
         using StreamReader reader = new(GetStream(fileNamePattern, ".json"));
         var jsonContent = reader.ReadToEnd();
