@@ -53,7 +53,7 @@ public class DiscoveryModuleTests
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         apiDetails.Should().NotBeNull();
         apiDetails?.urls.Count.Should().Be(5);
-        apiDetails?.suite.Should().Be("DMS");
+        apiDetails?.applicationName.Should().Be("DMS");
         apiDetails?.dataModels.Should().NotBeNull();
         apiDetails?.dataModels.Count().Should().Be(1);
         apiDetails?.dataModels.First().name.Should().Be("Ed-Fi");

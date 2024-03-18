@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Api.Content;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -18,8 +19,58 @@ namespace EdFi.DataManagementService.Api.Tests.Unit.Modules;
 [TestFixture]
 public class MetaDataModuleTests
 {
+    [TestFixture]
+    public class When_getting_the_base_metadata_endpoint
+    {
+        private JsonNode? _jsonContent;
+        private HttpResponseMessage? _response;
+
+        [SetUp]
+        public void SetUp()
+        {
+            // Arrange
+            using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+            });
+            using var client = factory.CreateClient();
+
+            // Act
+            _response = client.GetAsync("/metadata").GetAwaiter().GetResult();
+            var content = _response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            _jsonContent = JsonNode.Parse(content) ?? throw new Exception("JSON parsing failed");
+        }
+
+        [Test]
+        public void Then_it_responds_with_status_OK()
+        {
+            _response!.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public void Then_the_body_contains_the_dependencies_url()
+        {
+            _jsonContent?["dependencies"]?.ToString().Should().Be("http://localhost/metadata/dependencies");
+        }
+
+        [Test]
+        public void Then_the_body_contains_the_specifications_url()
+        {
+            _jsonContent
+                ?["specifiations"]?.ToString()
+                .Should()
+                .Be("http://localhost/metadata/specifications");
+        }
+
+        [Test]
+        public void Then_the_body_contains_the_xsdFiles_url()
+        {
+            _jsonContent?["discovery"]?.ToString().Should().Be("http://localhost/metadata/xsdFiles");
+        }
+    }
+
     [Test]
-    public async Task MetaData_Endpoint_Returns_Section_List()
+    public async Task MetaData_Endpoint_Returns_Specifications_List()
     {
         // Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -29,18 +80,20 @@ public class MetaDataModuleTests
         using var client = factory.CreateClient();
 
         // Act
-        var response = await client.GetAsync("/metadata/");
+        var response = await client.GetAsync("/metadata/specifications");
         var content = await response.Content.ReadAsStringAsync();
 
         var jsonContent = JsonNode.Parse(content);
         var section1 = jsonContent?[0]?["name"]?.GetValue<string>();
         var section2 = jsonContent?[1]?["name"]?.GetValue<string>();
+        var section3 = jsonContent?[2]?["name"]?.GetValue<string>();
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         jsonContent.Should().NotBeNull();
-        section1.Should().Contain("Resources");
-        section2.Should().Contain("Descriptors");
+        section1.Should().Contain("resources");
+        section2.Should().Contain("descriptors");
+        section3.Should().Contain("discovery");
     }
 
     [Test]
@@ -48,13 +101,10 @@ public class MetaDataModuleTests
     {
         // Arrange
         var contentProvider = A.Fake<IContentProvider>();
-        Lazy<JsonNode> _resourcesJson =
-            new(() =>
-            {
-                var json =
-                    """{"openapi":"3.0.1", "info":"resources","servers":[{"url":"http://localhost:5000/data/v3"}]}""";
-                return JsonNode.Parse(json)!;
-            });
+
+        var json =
+            """{"openapi":"3.0.1", "info":"resources","servers":[{"url":"http://localhost:5000/data/v3"}]}""";
+        JsonNode _resourcesJson = JsonNode.Parse(json)!;
 
         A.CallTo(
                 () => contentProvider.LoadJsonContent(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)
@@ -74,11 +124,11 @@ public class MetaDataModuleTests
         using var client = factory.CreateClient();
 
         // Act
-        var response = await client.GetAsync("/metadata/resources/swagger.json");
+        var response = await client.GetAsync("/metadata/specifications/resources-spec.json");
         var content = await response.Content.ReadAsStringAsync();
 
         var jsonContent = JsonNode.Parse(content);
-        var sectionInfo = jsonContent?["Value"]?["info"]?.GetValue<string>();
+        var sectionInfo = jsonContent?["info"]?.GetValue<string>();
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -91,13 +141,9 @@ public class MetaDataModuleTests
     {
         // Arrange
         var contentProvider = A.Fake<IContentProvider>();
-        Lazy<JsonNode> _descriptorsJson =
-            new(() =>
-            {
-                var json =
-                    """{"openapi":"3.0.1", "info":"descriptors","servers":[{"url":"http://localhost:5000/data/v3"}]}""";
-                return JsonNode.Parse(json)!;
-            });
+        var json =
+            """{"openapi":"3.0.1", "info":"descriptors","servers":[{"url":"http://localhost:5000/data/v3"}]}""";
+        JsonNode _descriptorsJson = JsonNode.Parse(json)!;
 
         A.CallTo(
                 () => contentProvider.LoadJsonContent(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)
@@ -117,11 +163,11 @@ public class MetaDataModuleTests
         using var client = factory.CreateClient();
 
         // Act
-        var response = await client.GetAsync("/metadata/descriptors/swagger.json");
+        var response = await client.GetAsync("/metadata/specifications/descriptors-spec.json");
         var content = await response.Content.ReadAsStringAsync();
 
         var jsonContent = JsonNode.Parse(content);
-        var sectionInfo = jsonContent?["Value"]?["info"]?.GetValue<string>();
+        var sectionInfo = jsonContent?["info"]?.GetValue<string>();
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -146,5 +192,44 @@ public class MetaDataModuleTests
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         content.Should().Contain("Invalid resource");
+    }
+
+    [Test]
+    public async Task Metadata_Returns_Dependencies()
+    {
+        // Arrange
+        var contentProvider = A.Fake<IContentProvider>();
+
+        var json = """[{"name": "dependency1"},{"name": "dependency2"}]""";
+        JsonNode _dependencyJson = JsonNode.Parse(json)!;
+
+        A.CallTo(() => contentProvider.LoadJsonContent(A<string>.Ignored)).Returns(_dependencyJson);
+
+        var httpContext = A.Fake<HttpContext>();
+
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection.AddTransient((x) => contentProvider);
+                    collection.AddTransient(x => httpContext);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/metadata/dependencies");
+        var content = await response.Content.ReadAsStringAsync();
+
+        var jsonContent = JsonNode.Parse(content);
+        var name = jsonContent?[0]?["name"]?.GetValue<string>();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        jsonContent.Should().NotBeNull();
+        name.Should().Be("dependency1");
     }
 }
