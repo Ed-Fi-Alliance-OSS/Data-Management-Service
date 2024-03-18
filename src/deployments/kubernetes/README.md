@@ -19,11 +19,11 @@ Invoke-Expression` in PowerShell
 management service image: `docker build -t
 local/edfi-data-management-service:latest .`
 
-> [!WARNING] The [deployment
-> file](./data-management-service-deployment.yaml#L21) has a policy of Never
-> pull, which means that will use the locally built image instead of trying to
-> pull the image from Docker Hub which is the default behavior, remove once the
-> image is published to the registry.
+> [!WARNING]
+> The [deployment file](./data-management-service-deployment.yaml#L21) has a
+> policy of Never pull, which means that will use the locally built image instead of
+> trying to pull the image from Docker Hub which is the default behavior, remove
+> once the image is published to the registry.
 
 * Set the terminal in the */deployments/kubernetes* folder.
 * Create an app-secret.yaml file with a encrypted password, see
