@@ -78,8 +78,7 @@ public class ContentProviderTests
         var contentProvider = new ContentProvider(_logger!, _assemblyProvider!);
 
         // Act
-        var lazyResponse = contentProvider.LoadJsonContent("file", expectedHost, expectedOauthUrl);
-        var response = lazyResponse.Value;
+        var response = contentProvider.LoadJsonContent("file", expectedHost, expectedOauthUrl);
         var openApi = response?["openapi"]?.GetValue<string>();
         var serverUrl = response?["servers"]?.AsArray()?[0]?["url"]?.GetValue<string>();
         var oauthUrl = response?["oauth"]?.AsArray()?[0]?["url"]?.GetValue<string>();

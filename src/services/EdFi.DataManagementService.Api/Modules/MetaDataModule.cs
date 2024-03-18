@@ -15,16 +15,37 @@ namespace EdFi.DataManagementService.Api.Modules;
 
 public partial class MetaDataModule : IModule
 {
-    [GeneratedRegex(@"\/(?<section>[^/]+)\/swagger.json?")]
+    [GeneratedRegex(@"specifications\/(?<section>[^-]+)-spec.json?")]
     private static partial Regex PathExpression();
 
-    private readonly string[] Sections = ["Resources", "Descriptors"];
+    private readonly string[] Sections = ["resources", "descriptors", "discovery"];
     private readonly string ErrorResourcePath = "Invalid resource path";
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/metadata", GetSections);
-        endpoints.MapGet("/metadata/{section}/swagger.json", GetSectionMetaData);
+        endpoints.MapGet("/metadata", GetMetadata);
+        endpoints.MapGet("/metadata/dependencies", GetDependencies);
+        endpoints.MapGet("/metadata/specifications", GetSections);
+        endpoints.MapGet("/metadata/specifications/{section}-spec.json", GetSectionMetaData);
+    }
+
+    internal async Task GetMetadata(HttpContext httpContext)
+    {
+        var baseUrl = httpContext.Request.UrlWithPathSegment();
+        var content = new
+        {
+            dependencies = $"{baseUrl}/dependencies",
+            specifications = $"{baseUrl}/specifications",
+            xsdFiles = $"{baseUrl}/xsdMetadata"
+        };
+
+        await httpContext.Response.WriteAsJsonAsync(content);
+    }
+
+    internal async Task GetDependencies(HttpContext httpContext, IContentProvider contentProvider)
+    {
+        var content = contentProvider.LoadJsonContent("dependencies");
+        await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
 
     internal async Task GetSections(HttpContext httpContext)
@@ -33,7 +54,9 @@ public partial class MetaDataModule : IModule
         List<RouteInformation> sections = [];
         foreach (var section in Sections)
         {
-            sections.Add(new RouteInformation(section, $"{baseUrl}/{section.ToLower()}/swagger.json"));
+            sections.Add(
+                new RouteInformation(section, $"{baseUrl}/{section.ToLower()}-spec.json", string.Empty)
+            );
         }
 
         await httpContext.Response.WriteAsSerializedJsonAsync(sections);
@@ -51,6 +74,7 @@ public partial class MetaDataModule : IModule
         {
             httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
             await httpContext.Response.WriteAsync(ErrorResourcePath);
+            return;
         }
 
         string section = match.Groups["section"].Value.ToLower();
@@ -74,4 +98,4 @@ public partial class MetaDataModule : IModule
     }
 }
 
-public record RouteInformation(string name, string endpointUri);
+public record RouteInformation(string name, string endpointUri, string prefix);

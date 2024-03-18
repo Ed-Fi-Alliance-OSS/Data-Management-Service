@@ -16,8 +16,7 @@ public static class HttpRequestResponseExtensions
 
     public static string UrlWithPathSegment(this HttpRequest httpRequest)
     {
-        var rootUrl = $"{httpRequest.Scheme}://{httpRequest.Host}{httpRequest.PathBase}";
-        return $"{rootUrl}{httpRequest.Path}";
+        return $"{httpRequest.RootUrl()}{httpRequest.Path}".TrimEnd('/');
     }
 
     public static string RefinedPath(this HttpRequest httpRequest, string? pathSegmentToRemove)
