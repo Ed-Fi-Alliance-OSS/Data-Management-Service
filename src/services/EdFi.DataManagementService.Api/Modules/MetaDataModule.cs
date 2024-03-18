@@ -44,7 +44,7 @@ public partial class MetaDataModule : IModule
 
     internal async Task GetDependencies(HttpContext httpContext, IContentProvider contentProvider)
     {
-        var content = contentProvider.LoadJsonContent("dependencies").Value;
+        var content = contentProvider.LoadJsonContent("dependencies");
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
 
