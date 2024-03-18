@@ -61,11 +61,13 @@ Copy the URL and connect to the Data Management Service.
 | `kubectl exec -it POD_NAME -- psql -U postgres` | Execute a command in a pod       |
 | `kubectl logs POD_NAME`                         | Get the log information of a pod |
 
-> [!NOTE] In Kubernetes you can reference another pod by IP address or by
-> hostname, where the host name is the name of the pod.
+> [!NOTE]
+> In Kubernetes you can reference another pod by IP address or by hostname,
+> where the host name is the name of the pod.
 
-> [!IMPORTANT] At the moment, the PostgreSQL infrastructure is only for demo
-> purposes and does not connect to the Data Management Service.
+> [!IMPORTANT]
+> At the moment, the postgres infrastructure is only for demo purposes and does not connect
+> to the Data Management Service.
 
 ## File Description
 
