@@ -28,6 +28,7 @@ public static class WebApplicationBuilderExtensions
         webAppBuilder.Services.AddTransient<IVersionProvider, VersionProvider>();
         webAppBuilder.Services.AddTransient<IDataModelProvider, DataModelProvider>();
         webAppBuilder.Services.AddTransient<IAssemblyProvider, AssemblyProvider>();
+        webAppBuilder.Services.AddTransient<IApiSchemaTranslator, ApiSchemaTranslator>();
 
         webAppBuilder.Services.Configure<AppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"));
 
