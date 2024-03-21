@@ -25,7 +25,7 @@ public class DiscoveryModuleTests
         // Arrange
         var versionProvider = A.Fake<IVersionProvider>();
         A.CallTo(() => versionProvider.Version).Returns("1.0");
-        A.CallTo(() => versionProvider.Suite).Returns("DMS");
+        A.CallTo(() => versionProvider.ApplicationName).Returns("DMS");
 
         var expectedDataModel = new DataModel("Ed-Fi", "5.0.0", "Ed-Fi data standard 5.0.0");
         var dataModelProvider = A.Fake<IDataModelProvider>();
@@ -53,7 +53,7 @@ public class DiscoveryModuleTests
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         apiDetails.Should().NotBeNull();
         apiDetails?.urls.Count.Should().Be(5);
-        apiDetails?.suite.Should().Be("DMS");
+        apiDetails?.applicationName.Should().Be("DMS");
         apiDetails?.dataModels.Should().NotBeNull();
         apiDetails?.dataModels.Count().Should().Be(1);
         apiDetails?.dataModels.First().name.Should().Be("Ed-Fi");

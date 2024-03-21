@@ -12,21 +12,23 @@ For local development, you need to use
   environment.
 * Set the docker environment inside minikube:
 
-`eval $(minikube docker-env)` for Unix shells or
-`minikube docker-env | Invoke-Expression` in PowerShell
+`eval $(minikube docker-env)` for Unix shells or `minikube docker-env |
+Invoke-Expression` in PowerShell
 
-* From the location of the [Dockerfile](src\Dockerfile), Build the data management service image:
-`docker build -t local/edfi-data-management-service:latest .`
+* From the location of the [Dockerfile](src\Dockerfile), Build the data
+management service image: `docker build -t
+local/edfi-data-management-service:latest .`
 
 > [!WARNING]
-> The [deployment file](./data-management-service-deployment.yaml#L21) has a policy
-> of Never pull, which means that will use the locally built image instead of trying
-> to pull the image from Docker Hub which is the default behavior, remove
+> The [deployment file](./data-management-service-deployment.yaml#L21) has a
+> policy of Never pull, which means that will use the locally built image instead of
+> trying to pull the image from Docker Hub which is the default behavior, remove
 > once the image is published to the registry.
 
 * Set the terminal in the */deployments/kubernetes* folder.
-* Create an app-secret.yaml file with a encrypted password, see [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/)
-  for more information.
+* Create an app-secret.yaml file with a encrypted password, see
+  [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/) for more
+  information.
 * Run `kubectl apply -f .` to apply all files.
 * After done, inspect with `kubectl get pods`, and verify that all pods have
   status **RUNNING** (This can take a couple of minutes).
@@ -41,8 +43,8 @@ This container has the type LoadBalancer, meaning that this is the entry point
 for the load balancer provider.
 
 To test this in the local environment, we need to open *tunnel* between the
-local network and the Kubernetes cluster. To do so, run
-`minikube service data-management-service --url`.
+local network and the Kubernetes cluster. To do so, run `minikube service
+data-management-service --url`.
 
 Copy the URL and connect to the Data Management Service.
 
@@ -69,9 +71,38 @@ Copy the URL and connect to the Data Management Service.
 
 ## File Description
 
-The folder includes a series of YAML files to handle the Kubernetes Setup, this includes:
+The folder includes a series of YAML files to handle the Kubernetes Setup, this
+includes:
 
-* Data Management Service and Deployment: Building and deployment of Data Management Service pod
-* Postgres Service, Deployment and Persistent Volume Claim: Building, deployment and volumes for Postgres pod.
+* Data Management Service and Deployment: Building and deployment of Data
+  Management Service pod
+* Postgres Service, Deployment and Persistent Volume Claim: Building, deployment
+  and volumes for Postgres pod.
 * Config Map: Environment variables
 * Secrets: Encrypted secret values example.
+
+## Troubleshooting
+
+### Network has an untrusted certificate
+
+If you are running this on a corporate network with an untrusted certificate,
+then:
+
+1. Get a copy of the certificate in PEM format (typically a file ending in
+   `.pem`, `.crt`, or `.cer`).
+2. Copy that to `~/.minikube/certs` (Linxu) or
+   `c:\users\<YOUR-USER>\.minikube\certs` (Windows).
+3. If you previously started minikube, then `minikube delete`.
+4. Run `minikube start --embed-certs`.
+
+### Warning Message About Docker Context
+
+If you get a message from `minikube` stating: `Unable to resolve the current
+Docker CLI context "default"`:
+
+1. `docker context list`
+2. If Docker Desktop is running under a context called `desktop-linux`, then run
+   `docker context use desktop-linux`.
+3. Otherwise, reconnect to whatever other named instance is there (likely
+   "default"): `docker context use default`.
+4. Delete the minikube instance and start over.

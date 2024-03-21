@@ -28,7 +28,7 @@ public class DiscoveryModule : IModule
 
         var result = new DiscoveryApiDetails(
             version: versionProvider.Version,
-            suite: versionProvider.Suite,
+            applicationName: versionProvider.ApplicationName,
             dataModels,
             GetUrlsByName()
         );
@@ -40,9 +40,9 @@ public class DiscoveryModule : IModule
             var urlsByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var rootUrl = httpContext.Request.RootUrl();
             urlsByName["dependencies"] = $"{rootUrl}/metadata/dependencies";
-            urlsByName["openApiMetadata"] = $"{rootUrl}/metadata";
+            urlsByName["openApiMetadata"] = $"{rootUrl}/metadata/specifications";
             urlsByName["oauth"] = appSettings.Value.AuthenticationService ?? string.Empty;
-            urlsByName["dataManagementApi"] = $"{rootUrl}/data/";
+            urlsByName["dataManagementApi"] = $"{rootUrl}/data";
             urlsByName["xsdMetadata"] = $"{rootUrl}/metadata/xsd";
             return urlsByName;
         }
@@ -51,7 +51,7 @@ public class DiscoveryModule : IModule
 
 public record DiscoveryApiDetails(
     string version,
-    string suite,
+    string applicationName,
     DataModel[] dataModels,
     Dictionary<string, string> urls
 );

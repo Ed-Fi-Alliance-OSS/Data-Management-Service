@@ -27,7 +27,7 @@ public class XsdMetaDataModuleTests
     public void Setup()
     {
         var expectededfiModel = new DataModel("Ed-Fi", "5.0.0", "Ed-Fi data standard 5.0.0");
-        var expectedtpdmModel = new DataModel("Tpdm", "1.0.0", "Tpdm data standard 1.0.0");
+        var expectedtpdmModel = new DataModel("Tpdm", "1.0.0", "TPDM data standard 1.0.0");
 
         _dataModelProvider = A.Fake<IDataModelProvider>();
         A.CallTo(() => _dataModelProvider.GetDataModels())
@@ -66,8 +66,8 @@ public class XsdMetaDataModuleTests
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         jsonContent.Should().NotBeNull();
-        section1.Should().Contain("Ed-Fi");
-        section2.Should().Contain("Tpdm");
+        section1.Should().Contain("ed-fi");
+        section2.Should().Contain("tpdm");
     }
 
     [Test]

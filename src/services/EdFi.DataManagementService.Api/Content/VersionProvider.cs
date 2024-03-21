@@ -11,14 +11,14 @@ public interface IVersionProvider
 {
     string Version { get; }
 
-    string Suite { get; }
+    string ApplicationName { get; }
 }
 
 public class VersionProvider : IVersionProvider
 {
-    public string Version => $"{FullVersion.Major}.{FullVersion.Minor}";
+    public string Version => $"{FullVersion.Major}.{FullVersion.Minor}.{FullVersion.MinorRevision}";
 
-    public string Suite => "Ed-Fi Alliance Data Management Service";
+    public string ApplicationName => "Ed-Fi Alliance Data Management Service";
 
     private static Version FullVersion
     {
@@ -26,7 +26,7 @@ public class VersionProvider : IVersionProvider
         {
             var version =
                 (Assembly.GetEntryAssembly()?.GetName().Version)
-                ?? throw new Exception("Error while retrieving assembly version");
+                ?? throw new InvalidOperationException("Unable to retrieve assembly version");
             return version;
         }
     }
