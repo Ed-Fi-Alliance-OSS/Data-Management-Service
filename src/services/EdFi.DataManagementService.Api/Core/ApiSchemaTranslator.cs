@@ -3,9 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Api.Core.ApiSchema;
+using Microsoft.OpenApi;
+using Microsoft.OpenApi.Extensions;
 using Microsoft.OpenApi.Models;
 using static System.Text.Json.JsonNamingPolicy;
 
@@ -13,7 +14,7 @@ namespace EdFi.DataManagementService.Api.Core
 {
     public interface IApiSchemaTranslator
     {
-        JsonNode? TranslateToSwagger(string hostUrl, string basePath);
+        JsonNode? TranslateToSwagger(string hostUrl, string basePath, bool forDescriptor = false);
     }
 
     public class ApiSchemaTranslator : IApiSchemaTranslator
@@ -27,14 +28,12 @@ namespace EdFi.DataManagementService.Api.Core
             _apiSchemaProvider = apiSchemaProvider;
         }
 
-        private IList<OpenApiServer> GenerateServers(string host, string basePath)
-        {
-            return (host == null && basePath == null)
-                ? new List<OpenApiServer>()
+        private IList<OpenApiServer> GenerateServers(string host, string basePath) =>
+            (host == null && basePath == null)
+                ? []
                 : new List<OpenApiServer> { new OpenApiServer { Url = $"{host}{basePath}" } };
-        }
 
-        public JsonNode? TranslateToSwagger(string hostUrl, string basePath)
+        public JsonNode? TranslateToSwagger(string hostUrl, string basePath, bool forDescriptor = false)
         {
             _logger.LogDebug("Entering Json ApiSchemaTranslator");
 
@@ -130,33 +129,48 @@ namespace EdFi.DataManagementService.Api.Core
                     }
                 };
 
-                foreach (var resourceSchema in resourceSchemas.Take(20))
+                foreach (var resourceSchema in resourceSchemas)
                 {
                     var schemaProperties = new Dictionary<string, OpenApiSchema>();
-                    var operationParameters = operationCommonParameters;
+                    var operationParameters = new List<OpenApiParameter>();
+                    operationParameters.AddRange(operationCommonParameters);
 
                     var resouceSchemaValue = resourceSchema.Value?.AsObject();
                     if (resouceSchemaValue != null)
                     {
-                        var resourceName = resouceSchemaValue["resourceName"]?.GetValue<string>();
-#pragma warning disable S1481 // Unused local variables should be removed
+                        var resourceName = resouceSchemaValue.GetPropertyName();
                         var isDescriptor = resouceSchemaValue["isDescriptor"]?.GetValue<bool>();
-                        if (isDescriptor != null && isDescriptor == false)
+
+                        var openApiSchema = new OpenApiSchema();
+
+                        if (isDescriptor != null && isDescriptor == forDescriptor)
                         {
-#pragma warning restore S1481 // Unused local variables should be removed
-#pragma warning disable S125
-                            //var jsonSchemaForQuery = resouceSchemaValue.SelectNodeFromPath(
-                            //    "$.jsonSchemaForInsert",
-                            //    _logger
-
-                            // Sections of code should not be commented out
-                            //);
-
-                            var jsonSchemaForQuery = resouceSchemaValue["jsonSchemaForInsert"];
-#pragma warning restore S125 // Sections of code should not be commented out
-                            if (jsonSchemaForQuery != null)
+                            var jsonSchemaForResource = resouceSchemaValue["jsonSchemaForInsert"];
+                            if (jsonSchemaForResource != null)
                             {
-                                var propertiesObject = jsonSchemaForQuery["properties"]?.AsObject().ToArray();
+                                // Schema definition
+                                var elementType = jsonSchemaForResource["type"];
+                                openApiSchema.Type =
+                                    elementType != null ? elementType.GetValue<string>() : string.Empty;
+                                var required = jsonSchemaForResource["required"]?.AsArray();
+                                var requiredList = new HashSet<string>();
+                                if (required != null)
+                                {
+                                    foreach (var requiredItem in required)
+                                    {
+                                        var value =
+                                            requiredItem != null ? requiredItem.GetValue<string>() : null;
+                                        if (value != null)
+                                        {
+                                            requiredList.Add(value);
+                                        }
+                                    }
+                                    openApiSchema.Required = requiredList;
+                                }
+
+                                var propertiesObject = jsonSchemaForResource["properties"]
+                                    ?.AsObject()
+                                    .ToArray();
                                 var properties = propertiesObject
                                     ?.Where(x => x.Value != null)
                                     .Select(x => x.Value)
@@ -165,7 +179,22 @@ namespace EdFi.DataManagementService.Api.Core
                                 {
                                     foreach (var property in properties)
                                     {
-                                        if (property != null)
+                                        var type = property?["type"]?.GetValue<string>().ToLower();
+
+                                        // Set operation parameters
+                                        var documentPathMappings = resouceSchemaValue["documentPathsMapping"]
+                                            ?.AsObject()
+                                            .ToArray();
+                                        var isThereInDocMappings = Array.Exists(
+                                            documentPathMappings!,
+                                            (x) =>
+                                                x.Key.Equals(
+                                                    property?.GetPropertyName(),
+                                                    StringComparison.InvariantCultureIgnoreCase
+                                                )
+                                        );
+
+                                        if (property != null && type != "object" && isThereInDocMappings)
                                         {
                                             operationParameters.Add(
                                                 new OpenApiParameter
@@ -175,7 +204,7 @@ namespace EdFi.DataManagementService.Api.Core
                                                     Description = property["description"]?.GetValue<string>(),
                                                     Schema = new OpenApiSchema()
                                                     {
-                                                        Type = property["type"]?.GetValue<string>(),
+                                                        Type = type,
                                                         MaxLength =
                                                             property["maxLength"] == null
                                                                 ? null
@@ -192,12 +221,41 @@ namespace EdFi.DataManagementService.Api.Core
                                                 }
                                             );
                                         }
+
+                                        // Set schema properties
+                                        if (property != null)
+                                        {
+                                            var propertyName = property.GetPropertyName();
+                                            schemaProperties.Add(
+                                                propertyName,
+                                                new OpenApiSchema
+                                                {
+                                                    Type = property["type"]?.GetValue<string>(),
+                                                    MaxLength =
+                                                        property["maxLength"] == null
+                                                            ? null
+                                                            : property["maxLength"]?.GetValue<int>(),
+                                                    MinLength =
+                                                        property["minLength"] == null
+                                                            ? null
+                                                            : property["minLength"]?.GetValue<int>(),
+                                                    Format =
+                                                        property["format"] == null
+                                                            ? string.Empty
+                                                            : property["format"]?.GetValue<string>(),
+                                                    Description =
+                                                        property["description"] == null
+                                                            ? string.Empty
+                                                            : property["description"]?.GetValue<string>()
+                                                }
+                                            );
+                                        }
                                     }
+                                    openApiSchema.Properties = schemaProperties;
                                 }
                             }
                             if (resourceName != null)
                             {
-                                var updatedResourceName = CamelCase.ConvertName(resourceName);
                                 var operations = new Dictionary<OperationType, OpenApiOperation>
                                 {
                                     {
@@ -206,95 +264,40 @@ namespace EdFi.DataManagementService.Api.Core
                                         {
                                             Tags = new List<OpenApiTag>
                                             {
-                                                new() { Name = updatedResourceName }
+                                                new() { Name = $"{resourceName}" }
                                             },
-                                            OperationId = $"get{updatedResourceName}",
+                                            OperationId = $"get{resourceName}",
                                             Summary =
                                                 "Retrieves specific resources using the resource's property values (using the \\\"Get\\\" pattern).",
                                             Description =
                                                 "This GET operation provides access to resources using the \"Get\" search pattern.  The values of any properties of the resource that are specified will be used to return all matching results (if it exists).",
-                                            Parameters = operationParameters
+                                            Parameters = operationParameters,
+                                            Responses = new OpenApiResponses()
+                                            {
+                                                {
+                                                    "200",
+                                                    new OpenApiResponse
+                                                    {
+                                                        Description =
+                                                            "The requested resource was successfully retrieved.",
+                                                        Content = { }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 };
                                 paths.Add(
-                                    $"/{name}/{updatedResourceName}",
+                                    $"/{name}/{resourceName}",
                                     new OpenApiPathItem() { Operations = operations }
                                 );
-#pragma warning disable S125 // Sections of code should not be commented out
-                                //var jsonSchemaForInsert = resouceSchemaValue.SelectNodeFromPath(
-                                //    "jsonSchemaForInsert",
-                                //    _logger
-
-
-                                //);
-                                var openApiSchema = new OpenApiSchema();
-#pragma warning restore S125 // Sections of code should not be commented out
-                                var jsonSchemaForInsert = resouceSchemaValue["jsonSchemaForInsert"];
-                                if (jsonSchemaForInsert != null)
-                                {
-                                    var elementType = jsonSchemaForInsert["type"];
-                                    openApiSchema.Type =
-                                        elementType != null ? elementType.GetValue<string>() : string.Empty;
-                                    var required = jsonSchemaForInsert["required"]?.AsArray();
-                                    var requiredList = new HashSet<string>();
-                                    if (required != null)
-                                    {
-                                        foreach (var requiredItem in required)
-                                        {
-                                            var value =
-                                                requiredItem != null ? requiredItem.GetValue<string>() : null;
-                                            if (value != null)
-                                            {
-                                                requiredList.Add(value);
-                                            }
-                                        }
-                                        openApiSchema.Required = requiredList;
-                                    }
-                                    var propertiesObject = jsonSchemaForInsert["properties"]
-                                        ?.AsObject()
-                                        .ToArray();
-                                    var properties = propertiesObject
-                                        ?.Where(x => x.Value != null)
-                                        .Select(x => x.Value)
-                                        .ToList();
-                                    if (properties != null && properties.Any())
-                                    {
-                                        foreach (var property in properties)
-                                        {
-                                            if (property != null)
-                                            {
-                                                var propertyName = property.GetPropertyName();
-                                                schemaProperties.Add(
-                                                    propertyName,
-                                                    new OpenApiSchema
-                                                    {
-                                                        Type = property["type"]?.GetValue<string>(),
-                                                        MaxLength =
-                                                            property["maxLength"] == null
-                                                                ? null
-                                                                : property["maxLength"]?.GetValue<int>(),
-                                                        MinLength =
-                                                            property["minLength"] == null
-                                                                ? null
-                                                                : property["minLength"]?.GetValue<int>(),
-                                                        Format =
-                                                            property["format"] == null
-                                                                ? string.Empty
-                                                                : property["format"]?.GetValue<string>(),
-                                                        Description =
-                                                            property["description"] == null
-                                                                ? string.Empty
-                                                                : property["description"]?.GetValue<string>()
-                                                    }
-                                                );
-                                            }
-                                        }
-                                        openApiSchema.Properties = schemaProperties;
-                                    }
-                                }
-                                components.Schemas.Add($"edFi_{updatedResourceName}", openApiSchema);
                             }
+
+                            var updatedResourceName = resouceSchemaValue["resourceName"]?.GetValue<string>();
+                            components.Schemas.Add(
+                                $"edFi_{CamelCase.ConvertName(updatedResourceName!)}",
+                                openApiSchema
+                            );
                         }
                     }
                 }
@@ -313,7 +316,8 @@ namespace EdFi.DataManagementService.Api.Core
                     Components = components
                 };
             }
-            return JsonNode.Parse(JsonSerializer.Serialize(swaggerDoc));
+            var json = swaggerDoc.SerializeAsJson(OpenApiSpecVersion.OpenApi3_0);
+            return JsonNode.Parse(json);
         }
     }
 }

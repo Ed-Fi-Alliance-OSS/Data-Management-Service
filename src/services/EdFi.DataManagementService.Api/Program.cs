@@ -22,7 +22,8 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI(c =>
     {
-        c.SwaggerEndpoint("/v1/resources-spec.json", "Your API v1");
+        c.SwaggerEndpoint("/v1/resources/swagger.json", "Resources");
+        c.SwaggerEndpoint("/v1/descriptors/swagger.json", "Descriptors");
     });
 }
 

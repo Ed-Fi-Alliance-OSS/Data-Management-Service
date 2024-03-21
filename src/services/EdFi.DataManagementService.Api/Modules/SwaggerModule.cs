@@ -5,10 +5,8 @@
 
 
 using System.Net;
-using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Api.Configuration;
-using EdFi.DataManagementService.Api.Content;
 using EdFi.DataManagementService.Api.Core;
 using EdFi.DataManagementService.Api.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
@@ -17,15 +15,14 @@ namespace EdFi.DataManagementService.Api.Modules
 {
     public partial class SwaggerModule : IModule
     {
-        [GeneratedRegex(@"v1\/(?<section>[^-]+)-spec.json?")]
+        [GeneratedRegex(@"v1\/(?<section>[^/]+)/swagger.json?")]
         private static partial Regex PathExpression();
 
-        private readonly string[] Sections = ["resources", "descriptors", "discovery"];
         private readonly string ErrorResourcePath = "Invalid resource path";
 
         public void MapEndpoints(IEndpointRouteBuilder endpoints)
         {
-            endpoints.MapGet("/v1/{section}-spec.json", GetMetaDataDocument);
+            endpoints.MapGet("/v1/{section}/swagger.json", GetMetaDataDocument);
         }
 
         internal async Task GetMetaDataDocument(
@@ -45,25 +42,15 @@ namespace EdFi.DataManagementService.Api.Modules
 
             string section = match.Groups["section"].Value.ToLower();
             string? rootUrl = request.RootUrl();
-            if (
-                Array.Exists(
-                    Sections,
-                    x => x.ToLowerInvariant().Equals(section, StringComparison.InvariantCultureIgnoreCase)
-                )
-            )
+
+            var content = section.ToLowerInvariant() switch
             {
-                var content = translator.TranslateToSwagger(rootUrl, "/data");
-                if (content != null)
-                {
-                    content["openapi"] = "3.0.1";
-                }
-                await httpContext.Response.WriteAsSerializedJsonAsync(content);
-            }
-            else
-            {
-                httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
-                await httpContext.Response.WriteAsync(ErrorResourcePath);
-            }
+                "resources" => translator.TranslateToSwagger(rootUrl, "/data"),
+                "descriptors" => translator.TranslateToSwagger(rootUrl, "/data", true),
+                _ => throw new Exception(ErrorResourcePath)
+            };
+
+            await httpContext.Response.WriteAsSerializedJsonAsync(content);
         }
     }
 }
