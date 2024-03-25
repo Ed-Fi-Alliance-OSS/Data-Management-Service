@@ -13,7 +13,7 @@ env:
   ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
   ARTIFACTS_FEED_URL: "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json"
   VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
-  MANIFEST_FILE: "manifest.spdx.json"
+  MANIFEST_FILE: "_manifest/spdx_2.2/manifest.spdx.json"
   PACKAGE_NAME: "EdFi.DataManagementService"
   REF: ${{ github.ref_name }}
 
@@ -86,7 +86,7 @@ jobs:
           $packageName = "${{ env.PACKAGE_NAME }}"
           $version = "${{ needs.pack.outputs.dms-version }}"
 
-          (Resolve-Path ("./$($packageName).$($version).nupkg")).Path | Out-File -FilePath buildfilelist.txt
+          Get-ChildItem -Include "$packageName.*.nupkg" -Recurse | ForEach-Object { $_.FullName } > buildfilelist.txt
 
           dotnet tool install --global Microsoft.Sbom.DotNetTool
 
