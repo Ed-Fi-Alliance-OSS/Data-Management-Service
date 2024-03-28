@@ -1,5 +1,7 @@
 # Data-Management-Service
 
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/badge)](https://securityscorecards.dev/viewer/?uri=github.com/Ed-Fi-Alliance-OSS/Data-Management-Service)
+
 Code and design documentation for the Ed-Fi Data Management Service, successor
 to the Ed-Fi ODS/API.
 
