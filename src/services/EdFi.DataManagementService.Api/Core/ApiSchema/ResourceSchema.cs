@@ -130,6 +130,24 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
         return JsonSchemaForUpdate;
     }
 
+    private readonly Lazy<IEnumerable<EqualityConstraint>> _equalityConstraints =
+        new(() =>
+        {
+            var equalityConstraintsJsonArray = _resourceSchemaNode["equalityConstraints"]?.AsArray()
+                                               ?? throw new InvalidOperationException("Expected equalityConstraints to be on ResourceSchema, invalid ApiSchema");
+
+            return equalityConstraintsJsonArray.Select(x =>
+                {
+                    var sourceJsonPath = new JsonPath(x!["sourceJsonPath"]!.GetValue<string>());
+                    var targetJsonPath = new JsonPath(x!["targetJsonPath"]!.GetValue<string>());
+
+                    return new EqualityConstraint(sourceJsonPath, targetJsonPath);
+                }
+                );
+        });
+
+    public IEnumerable<EqualityConstraint> EqualityConstraints => _equalityConstraints.Value;
+
     /// <summary>
     /// A list of the MetaEd property fullnames for each property that is part of the identity
     /// for this resource, in lexical order

@@ -24,6 +24,7 @@ public static class WebApplicationBuilderExtensions
         webAppBuilder.Services.AddSingleton<IDocumentStoreRepository, SuccessDocumentStoreRepository>();
         webAppBuilder.Services.AddTransient<IDocumentValidator, DocumentValidator>();
         webAppBuilder.Services.AddTransient<ISchemaValidator, SchemaValidator>();
+        webAppBuilder.Services.AddTransient<IEqualityConstraintValidator, EqualityConstraintValidator>();
         webAppBuilder.Services.AddTransient<IContentProvider, ContentProvider>();
         webAppBuilder.Services.AddTransient<IVersionProvider, VersionProvider>();
         webAppBuilder.Services.AddTransient<IDataModelProvider, DataModelProvider>();

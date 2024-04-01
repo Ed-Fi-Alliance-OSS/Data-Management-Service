@@ -20,6 +20,7 @@ public class CoreFacade(
     IApiSchemaProvider _apiSchemaProvider,
     IDocumentStoreRepository _documentStoreRepository,
     IDocumentValidator _documentValidator,
+    IEqualityConstraintValidator _equalityConstraintValidator,
     ILogger<CoreFacade> _logger
 ) : ICoreFacade
 {
@@ -36,6 +37,7 @@ public class CoreFacade(
                         new ParsePathMiddleware(_logger),
                         new ValidateEndpointMiddleware(_logger),
                         new ValidateDocumentMiddleware(_logger, _documentValidator),
+                        new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
                         new ExtractDocumentInfoMiddleware(_logger),
                         new BuildResourceInfoMiddleware(_logger),
                         new UpsertHandler(_documentStoreRepository, _logger)
@@ -74,6 +76,7 @@ public class CoreFacade(
                         new ParsePathMiddleware(_logger),
                         new ValidateEndpointMiddleware(_logger),
                         new ValidateDocumentMiddleware(_logger, _documentValidator),
+                        new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
                         new ExtractDocumentInfoMiddleware(_logger),
                         new BuildResourceInfoMiddleware(_logger),
                         new UpdateByIdHandler(_documentStoreRepository, _logger)
