@@ -14,9 +14,9 @@ public class CoreModule : IModule
         var pathSegment = "/data";
         PathSegmentToRefine = pathSegment;
 
-        endpoints.MapPost("{pathSegment}/{**catchAll}", Upsert);
-        endpoints.MapGet("{pathSegment}/{**catchAll}", GetById);
-        endpoints.MapPut("{pathSegment}/{**catchAll}", UpdateById);
-        endpoints.MapDelete("{pathSegment}/{**catchAll}", DeleteById);
+        endpoints.MapPost("{pathSegment}/{**catchAll}", Upsert).RequireAuthorization();
+        endpoints.MapGet("{pathSegment}/{**catchAll}", GetById).RequireAuthorization();
+        endpoints.MapPut("{pathSegment}/{**catchAll}", UpdateById).RequireAuthorization();
+        endpoints.MapDelete("{pathSegment}/{**catchAll}", DeleteById).RequireAuthorization();
     }
 }
