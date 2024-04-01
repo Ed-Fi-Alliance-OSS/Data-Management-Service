@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
@@ -12,11 +12,13 @@
     <Content Include="EdFi.DataManagementService.Api.nuspec" CopyToPublishDirectory="Always" CopyToOutputDirectory="Never" />
     <PackageReference Include="EdFi.ApiSchema" Version="5.0.0-alpha-8" />
     <PackageReference Include="Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic" Version="4.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.3" />
     <PackageReference Include="Microsoft.CodeAnalysis" Version="4.8.0" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle" Version="4.8.0">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="7.5.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="Serilog" Version="3.1.1" />
     <PackageReference Include="Serilog.Extensions.Logging" Version="8.0.0" />
@@ -29,6 +31,7 @@
     </PackageReference>
     <PackageReference Include="JsonSchema.Net" Version="6.0.3" />
     <PackageReference Include="JsonPath.Net" Version="1.0.0" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="7.5.0" />
   </ItemGroup>
 
 </Project>

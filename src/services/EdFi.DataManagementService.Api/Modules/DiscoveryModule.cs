@@ -41,7 +41,7 @@ public class DiscoveryModule : IModule
             var rootUrl = httpContext.Request.RootUrl();
             urlsByName["dependencies"] = $"{rootUrl}/metadata/dependencies";
             urlsByName["openApiMetadata"] = $"{rootUrl}/metadata/specifications";
-            urlsByName["oauth"] = appSettings.Value.AuthenticationService ?? string.Empty;
+            urlsByName["oauth"] = appSettings.Value.Authentication.Authority ?? string.Empty;
             urlsByName["dataManagementApi"] = $"{rootUrl}/data";
             urlsByName["xsdMetadata"] = $"{rootUrl}/metadata/xsd";
             return urlsByName;
