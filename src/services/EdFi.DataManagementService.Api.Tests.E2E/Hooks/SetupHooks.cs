@@ -15,20 +15,24 @@ public class SetupHooks
     private static IConfiguration? _configuration;
 
     [BeforeTestRun]
-    public static async Task BeforeTestRun(PlaywrightContext context, ContainerSetup containers, TestLogger logger)
+    public static async Task BeforeTestRun(
+        PlaywrightContext context,
+        ContainerSetup containers,
+        TestLogger logger
+    )
     {
         try
         {
             _configuration ??= new ConfigurationBuilder()
-                    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-                    .Build();
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                .Build();
 
             bool.TryParse(_configuration["useTestContainers"], out bool useTestContainers);
 
             if (useTestContainers)
             {
                 logger.log.Debug("Using TestContainers to set environment");
-                context.ApiUrl = await containers.SetupDataManagement();
+                context.ApiUrl = await containers.SetupDataManagement(_configuration);
             }
             else
             {

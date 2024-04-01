@@ -19,10 +19,8 @@ public class PlaywrightContext
     {
         var playwright = await Playwright.CreateAsync();
 
-        _requestContext = playwright.APIRequest.NewContextAsync(new APIRequestNewContextOptions
-        {
-            BaseURL = ApiUrl,
-            IgnoreHTTPSErrors = true
-        });
+        _requestContext = playwright.APIRequest.NewContextAsync(
+            new APIRequestNewContextOptions { BaseURL = ApiUrl, IgnoreHTTPSErrors = true }
+        );
     }
 }
