@@ -38,11 +38,11 @@ public class ContainerSetup
             .WithImage(imageName)
             .WithEnvironment(environmentList)
             .WithPortBinding(8080)
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(8080)))
             .Build();
 
         await dockerImage.StartAsync();
-        var logs = await dockerImage.GetLogsAsync();
-        _logger.log.Information(imageName, logs);
+        _logger.log.Information("ContainerStatus", dockerImage.Health);
 
         return new UriBuilder(
             Uri.UriSchemeHttp,
