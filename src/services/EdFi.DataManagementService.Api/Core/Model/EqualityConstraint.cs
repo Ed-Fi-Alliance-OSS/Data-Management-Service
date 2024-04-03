@@ -9,13 +9,6 @@ namespace EdFi.DataManagementService.Api.Core.Model
     /// A pair of JsonPaths, the value of which must be equal in an Ed-Fi API JSON document
     /// </summary>
     public record EqualityConstraint(
-        /// <summary>
-        /// 
-        /// </summary>
         JsonPath SourceJsonPath,
-
-        /// <summary>
-        /// 
-        /// </summary>
         JsonPath TargetJsonPath);
 }

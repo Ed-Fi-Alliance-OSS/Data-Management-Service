@@ -24,7 +24,7 @@ public class EqualityConstraintValidator : IEqualityConstraintValidator
     public IEnumerable<string> Validate(JsonNode? documentBody, IEnumerable<EqualityConstraint> equalityConstraints)
     {
         var errors = new List<string>();
-        foreach (EqualityConstraint equalityConstraint in equalityConstraints)
+        foreach (var equalityConstraint in equalityConstraints)
         {
 
             var sourcePath = Json.Path.JsonPath.Parse(equalityConstraint.SourceJsonPath.Value);
@@ -32,16 +32,6 @@ public class EqualityConstraintValidator : IEqualityConstraintValidator
 
             var sourcePathResult = sourcePath.Evaluate(documentBody);
             var targetPathResult = targetPath.Evaluate(documentBody);
-
-            if (sourcePathResult.Error != null)
-            {
-                errors.Add($"Constraint failure: {sourcePathResult.Error}");
-            }
-
-            if (targetPathResult.Error != null)
-            {
-                errors.Add($"Constraint failure: {targetPathResult.Error}");
-            }
 
             var sourceValues = sourcePathResult.Matches!.Select(s => s.Value);
             var targetValues = targetPathResult.Matches!.Select(t => t.Value);
@@ -55,7 +45,6 @@ public class EqualityConstraintValidator : IEqualityConstraintValidator
             {
                 return !nodes.Any() || nodes.All(n => n!.ToString().Equals(nodes[0]!.ToString()));
             }
-
         }
 
         return errors;

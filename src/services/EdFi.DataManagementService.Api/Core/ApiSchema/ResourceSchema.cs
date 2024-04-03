@@ -146,6 +146,9 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
                 );
         });
 
+    /// <summary>
+    /// A list of EqualityConstraints to be applied to a resource document. An EqualityConstraint is a source/target JsonPath pair.
+    /// </summary>
     public IEnumerable<EqualityConstraint> EqualityConstraints => _equalityConstraints.Value;
 
     /// <summary>
