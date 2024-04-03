@@ -79,7 +79,7 @@ public partial class MetaDataModule : IModule
 
         string section = match.Groups["section"].Value.ToLower();
         string? rootUrl = request.RootUrl();
-        string oAuthUrl = options.Value.Authentication.Authority;
+        string oAuthUrl = options.Value.AuthenticationService;
         if (
             Array.Exists(
                 Sections,

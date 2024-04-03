@@ -12,8 +12,6 @@ using EdFi.DataManagementService.Api.Content;
 using EdFi.DataManagementService.Api.Core;
 using EdFi.DataManagementService.Api.Core.ApiSchema;
 using EdFi.DataManagementService.Api.Core.Validation;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
 using Serilog;
 
 namespace EdFi.DataManagementService.Api.Infrastructure;
@@ -32,27 +30,6 @@ public static class WebApplicationBuilderExtensions
         webAppBuilder.Services.AddTransient<IVersionProvider, VersionProvider>();
         webAppBuilder.Services.AddTransient<IDataModelProvider, DataModelProvider>();
         webAppBuilder.Services.AddTransient<IAssemblyProvider, AssemblyProvider>();
-
-        var issuer = webAppBuilder.Configuration.GetValue<string>("AppSettings:Authentication:Issuer");
-        var authority = webAppBuilder.Configuration.GetValue<string>("AppSettings:Authentication:Authority");
-        var signingKeyValue = webAppBuilder.Configuration.GetValue<string>(
-            "AppSettings:Authentication:SigningKey"
-        );
-        webAppBuilder
-            .Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-            .AddJwtBearer(options =>
-            {
-                options.Authority = authority;
-                options.TokenValidationParameters = new TokenValidationParameters
-                {
-                    ValidateLifetime = true,
-                    ValidateAudience = false,
-                    ValidIssuer = issuer,
-                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKeyValue!))
-                };
-                options.RequireHttpsMetadata = false;
-            });
-        webAppBuilder.Services.AddAuthorization();
 
         webAppBuilder.Services.Configure<AppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"));
 

@@ -12,8 +12,6 @@ var app = builder.Build();
 
 app.UseMiddleware<LoggingMiddleware>();
 app.UseRouting();
-app.UseAuthentication();
-app.UseAuthorization();
 app.UseRateLimiter();
 app.MapRouteEndpoints();
 

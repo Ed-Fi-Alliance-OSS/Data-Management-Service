@@ -17,26 +17,13 @@ public class ContainerSetup
         _logger = logger;
     }
 
-    public async Task<string> SetupDataManagement(IConfiguration configuration)
+    public async Task<string> SetupDataManagement()
     {
         string imageName = "local/edfi-data-management-service";
-
-        // Environment variables
-        var issuer = configuration.GetValue<string>("AppSettings:Authentication:Issuer");
-        var authority = configuration.GetValue<string>("AppSettings:Authentication:Authority");
-        var signingKeyValue = configuration.GetValue<string>("AppSettings:Authentication:SigningKey");
-
-        var environmentList = new Dictionary<string, string>
-        {
-            { "AppSettings__Authentication__SigningKey", signingKeyValue! },
-            { "AppSettings__Authentication__Authority", authority! },
-            { "AppSettings__Authentication__Issuer", issuer! }
-        };
 
         // Image needs to be previously built
         var dockerImage = new ContainerBuilder()
             .WithImage(imageName)
-            .WithEnvironment(environmentList)
             .WithPortBinding(8080)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(8080)))
             .Build();
