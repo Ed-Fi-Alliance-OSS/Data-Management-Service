@@ -10,6 +10,11 @@ using EdFi.DataManagementService.Core.Pipeline;
 
 namespace EdFi.DataManagementService.Api.Core.Middleware;
 
+/// <summary>
+/// Validates equality constraints for a JSON document. These constraints come from implicit and explicit merges in the MetaEd model.
+/// </summary>
+/// <param name="_logger"></param>
+/// <param name="_equalityConstraintValidator"></param>
 public class ValidateEqualityConstraintMiddleware(ILogger _logger, IEqualityConstraintValidator _equalityConstraintValidator) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
@@ -17,7 +22,7 @@ public class ValidateEqualityConstraintMiddleware(ILogger _logger, IEqualityCons
         _logger.LogDebug("Entering ValidateEqualityConstraintMiddleware- {TraceId}", context.FrontendRequest.TraceId);
 
         var validatorContext = new ValidatorContext(context.ResourceSchema, context.FrontendRequest.Method);
-        var errors = _equalityConstraintValidator.Validate(context.FrontendRequest.Body, validatorContext)?.ToArray();
+        var errors = _equalityConstraintValidator.Validate(context.FrontendRequest.Body, validatorContext.ResourceJsonSchema.EqualityConstraints)?.ToArray();
 
         if (errors == null || errors.Length == 0)
         {

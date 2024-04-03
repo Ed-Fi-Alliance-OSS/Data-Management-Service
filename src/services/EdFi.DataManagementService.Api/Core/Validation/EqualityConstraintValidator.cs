@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Api.Core.ApiSchema.Extensions;
 using EdFi.DataManagementService.Api.Core.Model;
 
 namespace EdFi.DataManagementService.Api.Core.Validation;
@@ -15,17 +14,17 @@ public interface IEqualityConstraintValidator
     /// Validates the equality constraints defined in MetaEd model are correct for the given API body.
     /// </summary>
     /// <param name="documentBody"></param>
-    /// <param name="validatorContext"></param>
+    /// <param name="equalityConstraints"></param>
     /// <returns>Returns a list of validation failure messages.</returns>
-    IEnumerable<string>? Validate(JsonNode? documentBody, ValidatorContext validatorContext);
+    IEnumerable<string>? Validate(JsonNode? documentBody, IEnumerable<EqualityConstraint> equalityConstraints);
 }
 
 public class EqualityConstraintValidator : IEqualityConstraintValidator
 {
-    public IEnumerable<string>? Validate(JsonNode? documentBody, ValidatorContext validatorContext)
+    public IEnumerable<string> Validate(JsonNode? documentBody, IEnumerable<EqualityConstraint> equalityConstraints)
     {
         var errors = new List<string>();
-        foreach (EqualityConstraint equalityConstraint in validatorContext.ResourceJsonSchema.EqualityConstraints)
+        foreach (EqualityConstraint equalityConstraint in equalityConstraints)
         {
 
             var sourcePath = Json.Path.JsonPath.Parse(equalityConstraint.SourceJsonPath.Value);
@@ -49,7 +48,7 @@ public class EqualityConstraintValidator : IEqualityConstraintValidator
 
             if (!AllEqual(sourceValues.Concat(targetValues).ToList()))
             {
-                errors.Add($"Constraint failure: document paths {equalityConstraint.SourceJsonPath} and ${equalityConstraint.TargetJsonPath} must have the same values");
+                errors.Add($"Constraint failure: document paths {equalityConstraint.SourceJsonPath.Value} and {equalityConstraint.TargetJsonPath.Value} must have the same values");
             }
 
             bool AllEqual(IList<JsonNode?> nodes)

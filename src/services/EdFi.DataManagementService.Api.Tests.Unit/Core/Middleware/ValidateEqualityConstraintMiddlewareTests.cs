@@ -10,7 +10,6 @@ using EdFi.DataManagementService.Api.Core.Model;
 using EdFi.DataManagementService.Api.Core.Validation;
 using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
-using Json.Schema;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
@@ -25,35 +24,6 @@ public class ValidateEqualityConstraintMiddlewareTests
 
     public static ApiSchemaDocument SchemaDocument()
     {
-        var builder = new JsonSchemaBuilder();
-        builder.Title("Ed-Fi.BellSchedule");
-        builder.Description("This entity represents the schedule of class period meeting times");
-        builder.Schema("https://json-schema.org/draft/2020-12/schema");
-        builder.AdditionalProperties(false);
-        builder
-            .Properties(
-                ("bellScheduleName", new JsonSchemaBuilder().Type(SchemaValueType.String).MinLength(1).MaxLength(60)),
-                ("totalInstructionalTime", new JsonSchemaBuilder().Type(SchemaValueType.Integer)),
-                ("classPeriods", new JsonSchemaBuilder().Type(SchemaValueType.Array)
-                    .Items(new JsonSchemaBuilder().Type(SchemaValueType.Object)
-                        .Properties(
-                            ("classPeriodReference", new JsonSchemaBuilder().Type(SchemaValueType.Object)
-                                .Properties(
-                                    ("classPeriodName", new JsonSchemaBuilder().Type(SchemaValueType.String).MinLength(1).MaxLength(60)),
-                                    ("schoolId", new JsonSchemaBuilder().Type(SchemaValueType.Integer))
-                                )
-                            )
-                        )
-                    )
-                ),
-                ("schoolReference", new JsonSchemaBuilder().Type(SchemaValueType.Object)
-                        .Properties(
-                            ("schoolId", new JsonSchemaBuilder().Type(SchemaValueType.Integer))
-                    )
-                )
-            )
-            .Required("bellScheduleName", "classPeriods", "schoolReference");
-
         var equalityConstraints = new EqualityConstraint[]
         {
             new(new JsonPath("$.classPeriods[*].classPeriodReference.schoolId"),
@@ -63,7 +33,6 @@ public class ValidateEqualityConstraintMiddlewareTests
         return new ApiSchemaBuilder()
             .WithStartProject()
             .WithStartResource("BellSchedule")
-            .WithJsonSchemaForInsert(builder.Build()!)
             .WithEqualityConstraints(equalityConstraints)
             .WithEndResource()
             .WithEndProject()
@@ -145,9 +114,68 @@ public class ValidateEqualityConstraintMiddlewareTests
         }
 
         [Test]
-        public void It_has_a_response()
+        public void It_provides_no_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_invalid_body_with_not_equal_school_ids : ValidateEqualityConstraintMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var jsonData = """
+
+                           {
+                               "schoolReference": {
+                                 "schoolId": 1
+                               },
+                               "bellScheduleName": "Test Schedule",
+                               "totalInstructionalTime": 325,
+                               "classPeriods": [
+                                 {
+                                   "classPeriodReference": {
+                                     "classPeriodName": "01 - Traditional",
+                                     "schoolId": 2
+                                   }
+                                 },
+                                 {
+                                   "classPeriodReference": {
+                                     "classPeriodName": "02 - Traditional",
+                                     "schoolId": 2
+                                   }
+                                 }
+                               ],
+                               "dates": [],
+                               "gradeLevels": []
+                             }
+
+                           """;
+            var frontEndRequest = new FrontendRequest(
+                RequestMethod.POST,
+                "ed-fi/schools",
+                Body: JsonNode.Parse(jsonData),
+                new TraceId("traceId")
+            );
+            _context = Context(frontEndRequest);
+            await Middleware().Execute(_context, Next());
+        }
+
+        [Test]
+        public void It_returns_status_400()
+        {
+            _context?.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_returns_message_body_with_failures()
+        {
+            _context?.FrontendResponse.Body.Should().Contain("Data validation failed");
+            _context?.FrontendResponse.Body.Should().Contain("Constraint failure: document paths $.classPeriods[*].classPeriodReference.schoolId and $.schoolReference.schoolId must have the same values");
         }
     }
 }
