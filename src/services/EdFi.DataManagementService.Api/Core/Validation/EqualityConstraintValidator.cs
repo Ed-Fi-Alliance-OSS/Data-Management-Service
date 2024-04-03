@@ -12,11 +12,11 @@ namespace EdFi.DataManagementService.Api.Core.Validation;
 public interface IEqualityConstraintValidator
 {
     /// <summary>
-    /// 
+    /// Validates the equality constraints defined in MetaEd model are correct for the given API body.
     /// </summary>
     /// <param name="documentBody"></param>
     /// <param name="validatorContext"></param>
-    /// <returns></returns>
+    /// <returns>Returns a list of validation failure messages.</returns>
     IEnumerable<string>? Validate(JsonNode? documentBody, ValidatorContext validatorContext);
 }
 
@@ -24,42 +24,39 @@ public class EqualityConstraintValidator : IEqualityConstraintValidator
 {
     public IEnumerable<string>? Validate(JsonNode? documentBody, ValidatorContext validatorContext)
     {
-        var formatValidationResult = documentBody.ValidateJsonFormat();
-
-        if (formatValidationResult != null && formatValidationResult.Any())
-        {
-            return formatValidationResult;
-        }
-
         var errors = new List<string>();
         foreach (EqualityConstraint equalityConstraint in validatorContext.ResourceJsonSchema.EqualityConstraints)
         {
-            var sourcePathString = equalityConstraint.SourceJsonPath.Value;
-            var targetPathString = equalityConstraint.TargetJsonPath.Value;
 
-            var sourcePath = Json.Path.JsonPath.Parse(sourcePathString);
-            var targetPath = Json.Path.JsonPath.Parse(targetPathString);
+            var sourcePath = Json.Path.JsonPath.Parse(equalityConstraint.SourceJsonPath.Value);
+            var targetPath = Json.Path.JsonPath.Parse(equalityConstraint.TargetJsonPath.Value);
 
             var sourcePathResult = sourcePath.Evaluate(documentBody);
             var targetPathResult = targetPath.Evaluate(documentBody);
 
-            var sourceMatches = sourcePathResult.Matches?.ToList();
-            var targetMatches = targetPathResult.Matches?.ToList();
-
             if (sourcePathResult.Error != null)
             {
-                errors.Add(sourcePathResult.Error);
+                errors.Add($"Constraint failure: {sourcePathResult.Error}");
             }
 
             if (targetPathResult.Error != null)
             {
-                errors.Add(targetPathResult.Error);
+                errors.Add($"Constraint failure: {targetPathResult.Error}");
             }
 
-            if (sourceMatches != null && targetMatches != null)
+            var sourceValues = sourcePathResult.Matches!.Select(s => s.Value);
+            var targetValues = targetPathResult.Matches!.Select(t => t.Value);
+
+            if (!AllEqual(sourceValues.Concat(targetValues).ToList()))
             {
-                errors.Add("BLA");
+                errors.Add($"Constraint failure: document paths {equalityConstraint.SourceJsonPath} and ${equalityConstraint.TargetJsonPath} must have the same values");
             }
+
+            bool AllEqual(IList<JsonNode?> nodes)
+            {
+                return !nodes.Any() || nodes.All(n => n!.ToString().Equals(nodes[0]!.ToString()));
+            }
+
         }
 
         return errors;
