@@ -8,20 +8,16 @@ using Serilog;
 using Serilog.Core;
 
 namespace EdFi.DataManagementService.Api.Tests.E2E.Management;
+
 public class TestLogger : IDisposable
 {
-
     public Logger log;
 
     public TestLogger()
     {
-        var configuration = new ConfigurationBuilder()
-            .AddJsonFile("appsettings.json")
-            .Build();
+        var configuration = new ConfigurationBuilder().AddJsonFile("appsettings.json").Build();
 
-        log = new LoggerConfiguration()
-            .ReadFrom.Configuration(configuration)
-            .CreateLogger();
+        log = new LoggerConfiguration().ReadFrom.Configuration(configuration).CreateLogger();
     }
 
     public void Dispose()
@@ -29,4 +25,3 @@ public class TestLogger : IDisposable
         log.Dispose();
     }
 }
-

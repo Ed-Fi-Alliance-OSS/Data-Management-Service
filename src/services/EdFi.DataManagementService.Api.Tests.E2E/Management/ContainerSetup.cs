@@ -4,19 +4,11 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using DotNet.Testcontainers.Builders;
-using Microsoft.Extensions.Configuration;
 
 namespace EdFi.DataManagementService.Api.Tests.E2E.Management;
 
 public class ContainerSetup
 {
-    private readonly TestLogger _logger;
-
-    public ContainerSetup(TestLogger logger)
-    {
-        _logger = logger;
-    }
-
     public async Task<string> SetupDataManagement()
     {
         string imageName = "local/edfi-data-management-service";
@@ -29,7 +21,6 @@ public class ContainerSetup
             .Build();
 
         await dockerImage.StartAsync();
-        _logger.log.Information("ContainerStatus", dockerImage.Health);
 
         return new UriBuilder(
             Uri.UriSchemeHttp,

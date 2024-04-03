@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
-using System.Text;
 using System.Threading.RateLimiting;
 using EdFi.DataManagementService.Api.Backend;
 using EdFi.DataManagementService.Api.Configuration;
