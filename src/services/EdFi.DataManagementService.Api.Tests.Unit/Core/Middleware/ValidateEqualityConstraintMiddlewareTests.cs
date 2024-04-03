@@ -105,7 +105,7 @@ public class ValidateEqualityConstraintMiddlewareTests
                              """;
             var frontEndRequest = new FrontendRequest(
                 RequestMethod.POST,
-                "ed-fi/schools",
+                "ed-fi/bellschedules",
                 Body: JsonNode.Parse(jsonData),
                 new TraceId("traceId")
             );
@@ -157,7 +157,7 @@ public class ValidateEqualityConstraintMiddlewareTests
                            """;
             var frontEndRequest = new FrontendRequest(
                 RequestMethod.POST,
-                "ed-fi/schools",
+                "ed-fi/bellschedules",
                 Body: JsonNode.Parse(jsonData),
                 new TraceId("traceId")
             );
