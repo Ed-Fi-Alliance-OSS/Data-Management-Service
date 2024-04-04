@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Api.Core.Model;
 
@@ -33,8 +34,11 @@ public class EqualityConstraintValidator : IEqualityConstraintValidator
             var sourcePathResult = sourcePath.Evaluate(documentBody);
             var targetPathResult = targetPath.Evaluate(documentBody);
 
-            var sourceValues = sourcePathResult.Matches!.Select(s => s.Value);
-            var targetValues = targetPathResult.Matches!.Select(t => t.Value);
+            Trace.Assert(sourcePathResult.Matches != null, "Evaluation of sourcePathResult.Matches resulted in unexpected null");
+            Trace.Assert(targetPathResult.Matches != null, "Evaluation of targetPathResult.Matches resulted in unexpected null");
+
+            var sourceValues = sourcePathResult.Matches.Select(s => s.Value);
+            var targetValues = targetPathResult.Matches.Select(t => t.Value);
 
             if (!AllEqual(sourceValues.Concat(targetValues).ToList()))
             {
@@ -43,7 +47,7 @@ public class EqualityConstraintValidator : IEqualityConstraintValidator
 
             bool AllEqual(IList<JsonNode?> nodes)
             {
-                return !nodes.Any() || nodes.All(n => n!.ToString().Equals(nodes[0]!.ToString()));
+                return nodes.All(n => JsonNode.DeepEquals(nodes[0], n));
             }
         }
 
