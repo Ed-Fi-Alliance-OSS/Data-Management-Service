@@ -27,7 +27,6 @@ public class EqualityConstraintValidator : IEqualityConstraintValidator
         var errors = new List<string>();
         foreach (var equalityConstraint in equalityConstraints)
         {
-
             var sourcePath = Json.Path.JsonPath.Parse(equalityConstraint.SourceJsonPath.Value);
             var targetPath = Json.Path.JsonPath.Parse(equalityConstraint.TargetJsonPath.Value);
 

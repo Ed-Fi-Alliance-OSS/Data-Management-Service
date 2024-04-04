@@ -146,7 +146,7 @@ public class ValidateEqualityConstraintMiddlewareTests
                                  {
                                    "classPeriodReference": {
                                      "classPeriodName": "02 - Traditional",
-                                     "schoolId": null
+                                     "schoolId": 2
                                    }
                                  }
                                ],

@@ -37,7 +37,7 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
         new(() =>
         {
             return _resourceSchemaNode["isSchoolYearEnumeration"]?.GetValue<bool>()
-                ?? throw new InvalidOperationException(
+                   ?? throw new InvalidOperationException(
                     "Expected isSchoolYearEnumeration to be on ResourceSchema, invalid ApiSchema"
                 );
         });
@@ -134,7 +134,9 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
         new(() =>
         {
             var equalityConstraintsJsonArray = _resourceSchemaNode["equalityConstraints"]?.AsArray()
-                                               ?? throw new InvalidOperationException("Expected equalityConstraints to be on ResourceSchema, invalid ApiSchema");
+                                               ?? throw new InvalidOperationException(
+                                                   "Expected equalityConstraints to be on ResourceSchema, invalid ApiSchema"
+                                                );
 
             return equalityConstraintsJsonArray.Select(x =>
                 {
@@ -143,7 +145,7 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
 
                     return new EqualityConstraint(sourceJsonPath, targetJsonPath);
                 }
-                );
+            );
         });
 
     /// <summary>

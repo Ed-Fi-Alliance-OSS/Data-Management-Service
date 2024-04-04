@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Net;
 using EdFi.DataManagementService.Api.Tests.E2E.Management;
 using FluentAssertions;
 using Microsoft.Playwright;
@@ -16,83 +15,23 @@ public class EqualityConstraintValidationStepDefinitions(PlaywrightContext _play
 {
     private IAPIResponse _apiResponse = null!;
 
-    [Given("a post to the bellschedules endpoint where the referenced school id and all class period school ids match")]
-    public async Task GivenAPostToTheBellschedulesEndpointWhereTheReferencedSchoolIdAndAllClassPeriodSchoolIdsMatch()
+    [When("sending a POST request to {string} with body")]
+    public async Task WhenSendingAPOSTRequestToWithBody(string url, string body)
     {
-        const string ValidBellScheduleJson = """
-
-                                       {
-                                           "schoolReference": {
-                                             "schoolId": 255901001
-                                           },
-                                           "bellScheduleName": "Test Schedule",
-                                           "totalInstructionalTime": 325,
-                                           "classPeriods": [
-                                             {
-                                               "classPeriodReference": {
-                                                 "classPeriodName": "01 - Traditional",
-                                                 "schoolId": 255901001
-                                               }
-                                             },
-                                             {
-                                               "classPeriodReference": {
-                                                 "classPeriodName": "02 - Traditional",
-                                                 "schoolId": 255901001
-                                               }
-                                             }
-                                           ],
-                                           "dates": [],
-                                           "gradeLevels": []
-                                         }
-
-                                       """;
-
-        _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync("ed-fi/bellschedules", new() { Data = ValidBellScheduleJson })!;
+        _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
     }
 
-    [Then("receive created response")]
-    public void ThenReceiveCreatedResponse()
+    [Then("the response code is {int}")]
+    public void ThenTheResponseCodeIs(int response)
     {
-        _apiResponse.Status.Should().Be((int)HttpStatusCode.Created);
+        _apiResponse.Status.Should().Be(response);
     }
 
-    [Given("a post to the bellschedules endpoint where the referenced school id and all class period school ids do not match")]
-    public async Task GivenAPostToTheBellschedulesEndpointWhereTheReferencedSchoolIdAndAllClassPeriodSchoolIdsDoNotMatch()
+    [Then("the response body is")]
+    public async Task ThenTheResponseBodyIs(string responseBody)
     {
-        const string InvalidBellScheduleJson = """
-
-                                             {
-                                                 "schoolReference": {
-                                                   "schoolId": 1
-                                                 },
-                                                 "bellScheduleName": "Test Schedule",
-                                                 "totalInstructionalTime": 325,
-                                                 "classPeriods": [
-                                                   {
-                                                     "classPeriodReference": {
-                                                       "classPeriodName": "01 - Traditional",
-                                                       "schoolId": 2
-                                                     }
-                                                   },
-                                                   {
-                                                     "classPeriodReference": {
-                                                       "classPeriodName": "02 - Traditional",
-                                                       "schoolId": 2
-                                                     }
-                                                   }
-                                                 ],
-                                                 "dates": [],
-                                                 "gradeLevels": []
-                                               }
-
-                                             """;
-
-        _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync("ed-fi/bellschedules", new() { Data = InvalidBellScheduleJson })!;
+        string content = await _apiResponse.TextAsync();
+        content.Should().Be(responseBody);
     }
 
-    [Then("receive bad request response")]
-    public void ThenReceiveBadRequestResponse()
-    {
-        _apiResponse.Status.Should().Be((int)HttpStatusCode.BadRequest);
-    }
 }

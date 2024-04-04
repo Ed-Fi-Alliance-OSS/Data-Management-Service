@@ -35,8 +35,13 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features
         public virtual async System.Threading.Tasks.Task FeatureSetupAsync()
         {
             testRunner = Reqnroll.TestRunnerManager.GetTestRunnerForAssembly(null, NUnit.Framework.TestContext.CurrentContext.WorkerId);
-            Reqnroll.FeatureInfo featureInfo = new Reqnroll.FeatureInfo(new System.Globalization.CultureInfo("en-US"), "Features", "Equality Constraint Validation", "    Equality constraints on the resource describe values that must be equal when " +
-                    "posting a resource.", ProgrammingLanguage.CSharp, featureTags);
+            Reqnroll.FeatureInfo featureInfo = new Reqnroll.FeatureInfo(new System.Globalization.CultureInfo("en-US"), "Features", "Equality Constraint Validation", @"    Equality constraints on the resource describe values that must be equal when posting a resource. An example of an equalityConstraint on bellSchedule:
+    ""equalityConstraints"": [
+        {
+            ""sourceJsonPath"": ""$.classPeriods[*].classPeriodReference.schoolId"",
+            ""targetJsonPath"": ""$.schoolReference.schoolId""
+        }
+    ]", ProgrammingLanguage.CSharp, featureTags);
             await testRunner.OnFeatureStartAsync(featureInfo);
         }
         
@@ -75,13 +80,13 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features
         }
         
         [NUnit.Framework.TestAttribute()]
-        [NUnit.Framework.DescriptionAttribute("Post a valid bell schedule")]
-        public async System.Threading.Tasks.Task PostAValidBellSchedule()
+        [NUnit.Framework.DescriptionAttribute("Post a valid bell schedule no equality constraint violations.")]
+        public async System.Threading.Tasks.Task PostAValidBellScheduleNoEqualityConstraintViolations_()
         {
             string[] tagsOfScenario = ((string[])(null));
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
-            Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Post a valid bell schedule", null, tagsOfScenario, argumentsOfScenario, featureTags);
-#line 4
+            Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Post a valid bell schedule no equality constraint violations.", null, tagsOfScenario, argumentsOfScenario, featureTags);
+#line 10
 this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
@@ -91,25 +96,46 @@ this.ScenarioInitialize(scenarioInfo);
             else
             {
                 await this.ScenarioStartAsync();
-#line 5
-    await testRunner.GivenAsync("a post to the bellschedules endpoint where the referenced school id and all class" +
-                        " period school ids match", ((string)(null)), ((Reqnroll.Table)(null)), "Given ");
+#line 11
+    await testRunner.WhenAsync("sending a POST request to \"ed-fi/bellschedules\" with body", @"{
+    ""schoolReference"": {
+        ""schoolId"": 255901001
+    },
+    ""bellScheduleName"": ""Test Schedule"",
+    ""totalInstructionalTime"": 325,
+    ""classPeriods"": [
+        {
+        ""classPeriodReference"": {
+            ""classPeriodName"": ""01 - Traditional"",
+            ""schoolId"": 255901001
+        }
+        },
+        {
+        ""classPeriodReference"": {
+            ""classPeriodName"": ""02 - Traditional"",
+            ""schoolId"": 255901001
+        }
+        }
+    ],
+    ""dates"": [],
+    ""gradeLevels"": []
+    }", ((Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 6
-    await testRunner.ThenAsync("receive created response", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
+#line 37
+    await testRunner.ThenAsync("the response code is 201", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
         }
         
         [NUnit.Framework.TestAttribute()]
-        [NUnit.Framework.DescriptionAttribute("Post an invalid bell schedule")]
-        public async System.Threading.Tasks.Task PostAnInvalidBellSchedule()
+        [NUnit.Framework.DescriptionAttribute("Post an invalid bell schedule with equality constraint violations.")]
+        public async System.Threading.Tasks.Task PostAnInvalidBellScheduleWithEqualityConstraintViolations_()
         {
             string[] tagsOfScenario = ((string[])(null));
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
-            Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Post an invalid bell schedule", null, tagsOfScenario, argumentsOfScenario, featureTags);
-#line 8
+            Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Post an invalid bell schedule with equality constraint violations.", null, tagsOfScenario, argumentsOfScenario, featureTags);
+#line 39
 this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
@@ -119,12 +145,36 @@ this.ScenarioInitialize(scenarioInfo);
             else
             {
                 await this.ScenarioStartAsync();
-#line 9
-    await testRunner.GivenAsync("a post to the bellschedules endpoint where the referenced school id and all class" +
-                        " period school ids do not match", ((string)(null)), ((Reqnroll.Table)(null)), "Given ");
+#line 40
+    await testRunner.WhenAsync("sending a POST request to \"ed-fi/bellschedules\" with body", @"{
+    ""schoolReference"": {
+        ""schoolId"": 255901001
+    },
+    ""bellScheduleName"": ""Test Schedule"",
+    ""totalInstructionalTime"": 325,
+    ""classPeriods"": [
+        {
+        ""classPeriodReference"": {
+            ""classPeriodName"": ""01 - Traditional"",
+            ""schoolId"": 1
+        }
+        },
+        {
+        ""classPeriodReference"": {
+            ""classPeriodName"": ""02 - Traditional"",
+            ""schoolId"": 1
+        }
+        }
+    ],
+    ""dates"": [],
+    ""gradeLevels"": []
+    }", ((Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 10
-    await testRunner.ThenAsync("receive bad request response", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
+#line 66
+    await testRunner.ThenAsync("the response code is 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
+#line hidden
+#line 67
+        await testRunner.AndAsync("the response body is", @"{""detail"":""Data validation failed. See errors for details."",""type"":""urn:dms:bad-request:data"",""title"":""Data Validation Error"",""status"":400,""correlationId"":null,""validationErrors"":null,""errors"":[""Constraint failure: document paths $.classPeriods[*].classPeriodReference.schoolId and $.schoolReference.schoolId must have the same values""]}", ((Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
