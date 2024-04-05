@@ -1,0 +1,231 @@
+{
+    "projectSchemas": {
+        "ed-fi": {
+            "projectName": "Ed-Fi",
+            "projectVersion": "5.0.0",
+            "isExtensionProject": false,
+            "description": "The Ed-Fi Data Model 5.0",
+            "caseInsensitiveEndpointNameMapping": {
+                "noresourcenames": "noResourceNames",
+                "noisschoolyearenumerations": "noIsSchoolYearEnumerations",
+                "noisdescriptors": "noIsDescriptors",
+                "noallowidentityupdates": "noAllowIdentityUpdates"
+            },
+            "resourceSchemas": {
+                "noResourceNames": {
+                    "isDescriptor": false,
+                    "isSchoolYearEnumeration": false,
+                    "allowIdentityUpdates": false,
+                    "jsonSchemaForInsert": {
+                        "$schema": "https://json-schema.org/draft/2020-12/schema",
+                        "title": "Ed-Fi.NoResourceName",
+                        "type": "object",
+                        "properties": {
+                            "property1": {
+                                "type": "string",
+                                "minLength": 5,
+                                "maxLength": 80
+                            },
+                            "property2": {
+                                "type": "string",
+                                "format": "date"
+                            }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                            "property1",
+                            "property2"
+                        ]
+                    },
+                    "equalityConstraints": [],
+                    "identityFullnames": [
+                        "property1"
+                    ],
+                    "documentPathsMapping": {
+                        "property1": {
+                            "paths": {
+                                "property1": "$.property1"
+                            },
+                            "pathOrder": [
+                                "property1"
+                            ],
+                            "isReference": false
+                        },
+                        "property2": {
+                            "paths": {
+                                "property2": "$.property2"
+                            },
+                            "pathOrder": [
+                                "property2"
+                            ],
+                            "isReference": false
+                        }
+                    },
+                    "identityPathOrder": [
+                        "property1"
+                    ],
+                    "isSubclass": false
+                },
+                "noIsSchoolYearEnumerations": {
+                    "resourceName": "NoIsSchoolYearEnumeration",
+                    "isDescriptor": false,
+                    "allowIdentityUpdates": false,
+                    "jsonSchemaForInsert": {
+                        "$schema": "https://json-schema.org/draft/2020-12/schema",
+                        "title": "Ed-Fi.NoIsSchoolYearEnumeration",
+                        "type": "object",
+                        "properties": {
+                            "property1": {
+                                "type": "string",
+                                "minLength": 5,
+                                "maxLength": 80
+                            },
+                            "property2": {
+                                "type": "string"
+                            }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                            "property1",
+                            "property2"
+                        ]
+                    },
+                    "equalityConstraints": [],
+                    "identityFullnames": [
+                        "property1"
+                    ],
+                    "documentPathsMapping": {
+                        "property1": {
+                            "paths": {
+                                "property1": "$.property1"
+                            },
+                            "pathOrder": [
+                                "property1"
+                            ],
+                            "isReference": false
+                        },
+                        "property2": {
+                            "paths": {
+                                "property2": "$.property2"
+                            },
+                            "pathOrder": [
+                                "property2"
+                            ],
+                            "isReference": false
+                        }
+                    },
+                    "identityPathOrder": [
+                        "property1"
+                    ],
+                    "isSubclass": false
+                },
+                "noIsDescriptors": {
+                    "resourceName": "noIsDescriptor",
+                    "isSchoolYearEnumeration": false,
+                    "allowIdentityUpdates": false,
+                    "jsonSchemaForInsert": {
+                        "$schema": "https://json-schema.org/draft/2020-12/schema",
+                        "title": "Ed-Fi.NoIsDescriptor",
+                        "type": "object",
+                        "properties": {
+                            "property1": {
+                                "type": "string",
+                                "minLength": 5,
+                                "maxLength": 80
+                            },
+                            "property2": {
+                                "type": "string"
+                            }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                            "property1",
+                            "property2"
+                        ]
+                    },
+                    "equalityConstraints": [],
+                    "identityFullnames": [
+                        "property1"
+                    ],
+                    "documentPathsMapping": {
+                        "property1": {
+                            "paths": {
+                                "property1": "$.property1"
+                            },
+                            "pathOrder": [
+                                "property1"
+                            ],
+                            "isReference": false
+                        },
+                        "property2": {
+                            "paths": {
+                                "property2": "$.property2"
+                            },
+                            "pathOrder": [
+                                "property2"
+                            ],
+                            "isReference": false
+                        }
+                    },
+                    "identityPathOrder": [
+                        "property1"
+                    ],
+                    "isSubclass": false
+                },
+                "noAllowIdentityUpdates": {
+                    "resourceName": "noAllowIdentityUpdate",
+                    "isSchoolYearEnumeration": false,
+                    "allowIdentityUpdates": false,
+                    "jsonSchemaForInsert": {
+                        "$schema": "https://json-schema.org/draft/2020-12/schema",
+                        "title": "Ed-Fi.NoAllowIdentityUpdate",
+                        "type": "object",
+                        "properties": {
+                            "property1": {
+                                "type": "string",
+                                "minLength": 5,
+                                "maxLength": 80
+                            },
+                            "property2": {
+                                "type": "string"
+                            }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                            "property1",
+                            "property2"
+                        ]
+                    },
+                    "equalityConstraints": [],
+                    "identityFullnames": [
+                        "property1"
+                    ],
+                    "documentPathsMapping": {
+                        "property1": {
+                            "paths": {
+                                "property1": "$.property1"
+                            },
+                            "pathOrder": [
+                                "property1"
+                            ],
+                            "isReference": false
+                        },
+                        "property2": {
+                            "paths": {
+                                "property2": "$.property2"
+                            },
+                            "pathOrder": [
+                                "property2"
+                            ],
+                            "isReference": false
+                        }
+                    },
+                    "identityPathOrder": [
+                        "property1"
+                    ],
+                    "isSubclass": false
+                }
+            }
+        }
+    }
+}

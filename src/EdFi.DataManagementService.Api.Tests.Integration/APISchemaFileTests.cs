@@ -4,13 +4,15 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Api.Core.ApiSchema;
+using FakeItEasy;
 using FluentAssertions;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Moq;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Api.Tests.Integration;
@@ -18,40 +20,99 @@ namespace EdFi.DataManagementService.Api.Tests.Integration;
 [TestFixture]
 public class APISchemaFileTests
 {
+    private JsonNode? _schemaContent;
+    private IApiSchemaProvider _apiSchemaProvider;
+    private StringContent _jsonContent;
+    private Action<IWebHostBuilder> _webHostBuilder;
+
     [SetUp]
     public void Setup()
     {
+        _schemaContent = JsonContentProvider.ReadContent("FakeSchemaContent.json");
+        _apiSchemaProvider = A.Fake<IApiSchemaProvider>();
+        A.CallTo(() => _apiSchemaProvider.ApiSchemaRootNode).Returns(_schemaContent!);
+
+        _jsonContent = new(
+            JsonSerializer.Serialize(new { property1 = "property1", property2 = "property2", }),
+            Encoding.UTF8,
+            "application/json"
+        );
+        _webHostBuilder = (builder) =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection.AddTransient((x) => _apiSchemaProvider);
+                }
+            );
+        };
     }
 
     [Test]
-    public async Task WrongJSONObject()
+    public async Task Should_throw_error_when_no_resourcename_element()
     {
-        await using var factory = new CustomWebApplicationFactory(services =>
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
-            //The goal here is to replace the ApiSchemaFileLoader Singleton from
-            //the available service, but this is not working and it's not mocking the expected class.
-            services.Replace(ServiceDescriptor.Scoped(_ =>
-            {
-                var jsonObject = new JsonObject
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
                 {
-                    ["name1"] = "value1",
-                    ["name2"] = 2
-                };
-
-                var mock = new Mock<ApiSchemaFileLoader>();
-                mock.Setup(m => m.ApiSchemaRootNode).Returns(jsonObject);
-
-                return mock.Object;
-            }));
+                    collection.AddTransient((x) => _apiSchemaProvider);
+                }
+            );
         });
-        var client = factory.CreateClient();
-        var response = await client.GetAsync("/ping");
+
+        using var client = factory.CreateClient();
+        var response = await client.GetAsync("/data/ed-fi/noresourcenames");
 
         var content = await response.Content.ReadAsStringAsync();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+    }
 
+    [Test]
+    public async Task Should_throw_error_when_no_isshoolyearenumeration_element()
+    {
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(_webHostBuilder);
 
+        using StringContent jsonContent = _jsonContent;
+
+        using var client = factory.CreateClient();
+        var response = await client.PostAsync("/data/ed-fi/noIsSchoolYearEnumerations", jsonContent);
+
+        var content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+    }
+
+    [Test]
+    public async Task Should_throw_error_when_no_isdescriptor_element()
+    {
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(_webHostBuilder);
+
+        using var client = factory.CreateClient();
+        var response = await client.GetAsync("/data/ed-fi/noIsDescriptors");
+
+        var content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+    }
+
+    [Test]
+    public async Task Should_throw_error_when_no_allowidentityupdates_element()
+    {
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(_webHostBuilder);
+
+        using var client = factory.CreateClient();
+        var response = await client.GetAsync("/data/ed-fi/noallowidentityupdates");
+
+        var content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
     }
 }
