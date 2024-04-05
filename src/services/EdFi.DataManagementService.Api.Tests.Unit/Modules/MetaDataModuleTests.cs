@@ -191,7 +191,6 @@ public class MetaDataModuleTests
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        content.Should().Contain("Invalid resource");
     }
 
     [Test]

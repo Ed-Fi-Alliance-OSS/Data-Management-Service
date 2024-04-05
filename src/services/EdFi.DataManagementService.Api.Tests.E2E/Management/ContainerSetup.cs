@@ -12,16 +12,20 @@ public class ContainerSetup
     public async Task<string> SetupDataManagement()
     {
         string imageName = "local/edfi-data-management-service";
+
         // Image needs to be previously built
         var dockerImage = new ContainerBuilder()
             .WithImage(imageName)
             .WithPortBinding(8080)
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(8080)))
             .Build();
 
         await dockerImage.StartAsync();
 
-        return new UriBuilder(Uri.UriSchemeHttp, dockerImage.Hostname, dockerImage.GetMappedPublicPort(8080)).ToString();
-
-
+        return new UriBuilder(
+            Uri.UriSchemeHttp,
+            dockerImage.Hostname,
+            dockerImage.GetMappedPublicPort(8080)
+        ).ToString();
     }
 }

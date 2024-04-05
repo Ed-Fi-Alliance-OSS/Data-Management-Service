@@ -11,12 +11,11 @@ public class CoreModule : IModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        var pathSegment = "/data";
-        PathSegmentToRefine = pathSegment;
+        PathSegmentToRefine = "/data";
 
-        endpoints.MapPost("{pathSegment}/{**catchAll}", Upsert);
-        endpoints.MapGet("{pathSegment}/{**catchAll}", GetById);
-        endpoints.MapPut("{pathSegment}/{**catchAll}", UpdateById);
-        endpoints.MapDelete("{pathSegment}/{**catchAll}", DeleteById);
+        endpoints.MapPost("/data/{**catchAll}", Upsert);
+        endpoints.MapGet("/data/{**catchAll}", GetById);
+        endpoints.MapPut("/data/{**catchAll}", UpdateById);
+        endpoints.MapDelete("/data/{**catchAll}", DeleteById);
     }
 }

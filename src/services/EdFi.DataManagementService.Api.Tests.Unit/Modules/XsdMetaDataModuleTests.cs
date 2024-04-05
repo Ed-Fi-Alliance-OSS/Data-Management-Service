@@ -115,7 +115,6 @@ public class XsdMetaDataModuleTests
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        content.Should().Contain("Invalid resource");
     }
 
     [Test]
@@ -141,7 +140,6 @@ public class XsdMetaDataModuleTests
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        content.Should().Contain("Invalid resource");
     }
 
     [Test]
@@ -209,6 +207,5 @@ public class XsdMetaDataModuleTests
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        content.Should().Contain("Invalid resource");
     }
 }
