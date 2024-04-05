@@ -5,6 +5,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Api.Core.ApiSchema;
+using EdFi.DataManagementService.Api.Core.Model;
 using Json.Schema;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -347,6 +348,27 @@ public class ApiSchemaBuilder
             ["pathOrder"] = new JsonArray(paths.Select(x => JsonValue.Create(x.Key)).ToArray()),
             ["paths"] = new JsonObject(paths)
         };
+
+        return this;
+    }
+
+    public ApiSchemaBuilder WithEqualityConstraints(EqualityConstraint[] equalityConstraints)
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentResourceNode["equalityConstraints"] = new JsonArray(
+            equalityConstraints.Select(x => new JsonObject
+            {
+                ["sourceJsonPath"] = x.SourceJsonPath.Value,
+                ["targetJsonPath"] = x.TargetJsonPath.Value
+            }).ToArray());
 
         return this;
     }

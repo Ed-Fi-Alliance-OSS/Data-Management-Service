@@ -8,6 +8,5 @@ updates:
   - package-ecosystem: nuget
     directory: src/
     target-branch: dependabot-updates
-    versioning-strategy: auto
     schedule:
       interval: weekly
