@@ -8,7 +8,7 @@ Feature: Equality Constraint Validation
     ]
 
 Scenario: Post a valid bell schedule no equality constraint violations.
-    When sending a POST request to "ed-fi/bellschedules" with body
+    When sending a POST request to "data/ed-fi/bellschedules" with body
             """
             {
                 "schoolReference": {
@@ -37,7 +37,7 @@ Scenario: Post a valid bell schedule no equality constraint violations.
     Then the response code is 201
 
 Scenario: Post an invalid bell schedule with equality constraint violations.
-    When sending a POST request to "ed-fi/bellschedules" with body
+    When sending a POST request to "data/ed-fi/bellschedules" with body
             """
             {
                 "schoolReference": {
