@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Api.Core.ApiSchema.Extensions;
 using Json.Schema;
@@ -37,6 +38,23 @@ public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentVali
         var resourceSchemaValidator = schemaValidator.GetSchema(validatorContext);
         var results = resourceSchemaValidator.Evaluate(documentBody, validatorEvaluationOptions);
 
+        var additionalProperties = results.Details.Where(r =>
+            r.EvaluationPath.Segments.Any() && r.EvaluationPath.Segments[^1] == "additionalProperties"
+        );
+
+        var instancePointers = additionalProperties.Select(a => a.EvaluationPath);
+        Trace.Assert(documentBody != null);
+        Trace.Assert(instancePointers.Any());
+
+        JsonObject jsonObject = documentBody.AsObject();
+
+        foreach (var additionalProperty in additionalProperties)
+        {
+            var prunedJsonObject = jsonObject.RemoveProperty(additionalProperty.InstanceLocation.Segments);
+            documentBody = JsonNode.Parse(prunedJsonObject.ToJsonString());
+        }
+
+        results = resourceSchemaValidator.Evaluate(documentBody, validatorEvaluationOptions);
         return PruneValidationErrors(results);
 
         List<string>? PruneValidationErrors(EvaluationResults results)
@@ -72,5 +90,27 @@ public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentVali
                 .Where(x => !x.Contains("All values fail against the false schema"))
                 .ToList();
         }
+    }
+}
+
+public static class JsonObjectExtensions
+{
+    public static JsonObject RemoveProperty(
+        this JsonObject jsonObject,
+        Json.Pointer.PointerSegment[] segments
+    )
+    {
+        if (segments.Length == 0)
+            return jsonObject;
+        if (segments.Length == 1)
+        {
+            jsonObject.Remove(segments[0].Value);
+            return jsonObject;
+        }
+
+        var node = jsonObject[segments[0].Value]!;
+        var nodeObj = node.AsObject();
+        nodeObj.RemoveProperty(segments.Skip(1).ToArray());
+        return jsonObject;
     }
 }
