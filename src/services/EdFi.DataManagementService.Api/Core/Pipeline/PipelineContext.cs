@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -16,7 +16,11 @@ public class PipelineContext(FrontendRequest _frontendRequest)
     /// <summary>
     /// An API request sent from the frontend to be processed
     /// </summary>
-    public FrontendRequest FrontendRequest => _frontendRequest;
+    public FrontendRequest FrontendRequest
+    {
+        get => _frontendRequest;
+        set => _frontendRequest = value;
+    }
 
     /// <summary>
     /// The important parts of the request URL path in object form

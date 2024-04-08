@@ -147,21 +147,15 @@ public class ValidateDocumentMiddlewareTests
         }
 
         [Test]
-        public void It_has_a_response()
+        public void It_should_not_have_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
         }
 
         [Test]
-        public void It_returns_status_400()
+        public void It_returns_status_503()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(400);
-        }
-
-        [Test]
-        public void It_returns_message_body_with_overpost_validation_error()
-        {
-            _context?.FrontendResponse.Body.Should().Contain("propertyOverPost : Overpost");
+            _context?.FrontendResponse.StatusCode.Should().Be(503);
         }
     }
 
@@ -187,21 +181,15 @@ public class ValidateDocumentMiddlewareTests
         }
 
         [Test]
-        public void It_has_a_response()
+        public void It_should_not_have_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
         }
 
         [Test]
-        public void It_returns_status_400()
+        public void It_returns_status_503()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(400);
-        }
-
-        [Test]
-        public void It_returns_message_body_with_overpost_validation_error()
-        {
-            _context?.FrontendResponse.Body.Should().Contain("propertyOverPost : Overpost");
+            _context?.FrontendResponse.StatusCode.Should().Be(503);
         }
     }
 

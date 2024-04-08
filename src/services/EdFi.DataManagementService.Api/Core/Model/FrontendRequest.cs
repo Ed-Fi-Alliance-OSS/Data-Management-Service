@@ -16,22 +16,17 @@ public record FrontendRequest(
     /// The request method from a Tanager frontend - GET, POST, PUT, DELETE
     /// </summary>
     RequestMethod Method,
-
     /// <summary>
     /// The URL path in the form /namespace/resource and optionally /resourceId
     /// The path must not include query parameters
     /// </summary>
     string Path,
-
     /// <summary>
     /// Request body provided by the frontend service as a JsonNode, or null if there is no body
     /// </summary>
     JsonNode? Body,
-
     /// <summary>
     /// A request identifier provided by the frontend service, used for log tracing
     /// </summary>
     TraceId TraceId
 );
-
-
