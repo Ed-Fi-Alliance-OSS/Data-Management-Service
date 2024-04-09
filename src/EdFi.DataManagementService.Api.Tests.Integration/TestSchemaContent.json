@@ -18,7 +18,8 @@
                 "nosuperclassresourcenames": "noSuperclassResourceNames",
                 "nosuperclassprojectnames": "noSuperclassProjectNames",
                 "nosuperclassidentitydocumentkeys": "noSuperclassIdentityDocumentKeys",
-                "nosubclassidentitydocumentkeys": "noSubclassIdentityDocumentKeys"
+                "nosubclassidentitydocumentkeys": "noSubclassIdentityDocumentKeys",
+                "nodocumentpathsmappings": "noDocumentPathsMappings"
             },
             "resourceSchemas": {
                 "noResourceNames": {
@@ -546,6 +547,36 @@
                     "superclassResourceName": "SuperClassResource",
                     "subclassIdentityDocumentKey": "noSuperclassIdentityDocumentKeysId",
                     "subclassType": "domainEntity"
+                },
+                "noDocumentPathsMappings": {
+                    "resourceName": "NoDocumentPathsMapping",
+                    "isDescriptor": false,
+                    "isSchoolYearEnumeration": false,
+                    "allowIdentityUpdates": false,
+                    "jsonSchemaForInsert": {
+                        "$schema": "https://json-schema.org/draft/2020-12/schema",
+                        "title": "Ed-Fi.NoDocumentPathsMapping",
+                        "type": "object",
+                        "properties": {
+                            "property1": {
+                                "type": "string",
+                                "minLength": 5,
+                                "maxLength": 80
+                            }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                            "property1"
+                        ]
+                    },
+                    "equalityConstraints": [],
+                    "identityFullnames": [
+                        "property1"
+                    ],
+                    "identityPathOrder": [
+                        "property1"
+                    ],
+                    "isSubclass": false
                 }
             }
         }

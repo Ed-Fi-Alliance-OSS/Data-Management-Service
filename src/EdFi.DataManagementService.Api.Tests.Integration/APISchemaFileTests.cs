@@ -253,4 +253,20 @@ public class APISchemaFileTests
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
     }
+
+    [Test]
+    public async Task Should_throw_error_when_no_documentpathsmapping_element()
+    {
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(_webHostBuilder);
+        using StringContent jsonContent = _jsonContent;
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.PostAsync("/data/ed-fi/nodocumentpathsmappings", jsonContent);
+        var content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+    }
 }

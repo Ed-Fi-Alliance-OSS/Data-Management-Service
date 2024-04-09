@@ -206,7 +206,7 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
         foreach (string identityFullName in IdentityFullnames)
         {
             JsonNode identityPathsNode =
-                _resourceSchemaNode["documentPathsMapping"]![identityFullName]
+                _resourceSchemaNode["documentPathsMapping"]?[identityFullName]
                 ?? throw new InvalidOperationException(
                     $"Expected {identityFullName} to be in documentPathsMapping, invalid ApiSchema"
                 );
@@ -272,19 +272,19 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
         string subclassType =
             _resourceSchemaNode["subclassType"]?.GetValue<string>()
             ?? throw new InvalidOperationException(
-                "Expected subclassType to be in documentPathsMapping, invalid ApiSchema"
+                "Expected subclassType to be on ResourceSchema, invalid ApiSchema"
             );
 
         string superclassResourceName =
             _resourceSchemaNode["superclassResourceName"]?.GetValue<string>()
             ?? throw new InvalidOperationException(
-                "Expected superclassResourceName to be in documentPathsMapping, invalid ApiSchema"
+                "Expected superclassResourceName to be on ResourceSchema, invalid ApiSchema"
             );
 
         string superclassProjectName =
             _resourceSchemaNode["superclassProjectName"]?.GetValue<string>()
             ?? throw new InvalidOperationException(
-                "Expected superclassProjectName to be in documentPathsMapping, invalid ApiSchema"
+                "Expected superclassProjectName to be on ResourceSchema, invalid ApiSchema"
             );
 
         // Associations do not rename the identity fields in MetaEd, so the DocumentIdentity portion is the same
@@ -303,13 +303,13 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
         string subclassIdentityDocumentKey =
             _resourceSchemaNode["subclassIdentityDocumentKey"]?.GetValue<string>()
             ?? throw new InvalidOperationException(
-                "Expected subclassIdentityDocumentKey to be in documentPathsMapping, invalid ApiSchema"
+                "Expected subclassIdentityDocumentKey to be on ResourceSchema, invalid ApiSchema"
             );
 
         string superclassIdentityDocumentKey =
             _resourceSchemaNode["superclassIdentityDocumentKey"]?.GetValue<string>()
             ?? throw new InvalidOperationException(
-                "Expected superclassIdentityDocumentKey to be in documentPathsMapping, invalid ApiSchema"
+                "Expected superclassIdentityDocumentKey to be on ResourceSchema, invalid ApiSchema"
             );
 
         DocumentIdentity superclassIdentity = documentIdentity.IdentityRename(
