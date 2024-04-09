@@ -17,7 +17,8 @@
                 "nosubclasstypes": "noSubClassTypes",
                 "nosuperclassresourcenames": "noSuperclassResourceNames",
                 "nosuperclassprojectnames": "noSuperclassProjectNames",
-                "nosuperclassidentitydocumentkeys": "noSuperclassIdentityDocumentKeys"
+                "nosuperclassidentitydocumentkeys": "noSuperclassIdentityDocumentKeys",
+                "nosubclassidentitydocumentkeys": "noSubclassIdentityDocumentKeys"
             },
             "resourceSchemas": {
                 "noResourceNames": {
@@ -457,13 +458,13 @@
                     "subclassType": "domainEntity"
                 },
                 "noSubclassIdentityDocumentKeys": {
-                    "resourceName": "SubclassIdentityDocumentKey",
+                    "resourceName": "NoSubclassIdentityDocumentKey",
                     "isDescriptor": false,
                     "isSchoolYearEnumeration": false,
                     "allowIdentityUpdates": false,
                     "jsonSchemaForInsert": {
                         "$schema": "https://json-schema.org/draft/2020-12/schema",
-                        "title": "Ed-Fi.SubclassIdentityDocumentKey",
+                        "title": "Ed-Fi.NoSubclassIdentityDocumentKey",
                         "type": "object",
                         "properties": {
                             "property1": {

@@ -28,12 +28,12 @@ public class APISchemaFileTests
     [SetUp]
     public void Setup()
     {
-        _schemaContent = JsonContentProvider.ReadContent("FakeSchemaContent.json");
+        _schemaContent = JsonContentProvider.ReadContent("TestSchemaContent.json");
         _apiSchemaProvider = A.Fake<IApiSchemaProvider>();
         A.CallTo(() => _apiSchemaProvider.ApiSchemaRootNode).Returns(_schemaContent!);
 
         _jsonContent = new(
-            JsonSerializer.Serialize(new { property1 = "property1", property2 = "property2" }),
+            JsonSerializer.Serialize(new { property1 = "property1" }),
             Encoding.UTF8,
             "application/json"
         );
@@ -52,11 +52,12 @@ public class APISchemaFileTests
     [Test]
     public async Task Should_throw_error_when_no_resourcename_element()
     {
+        // Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(_webHostBuilder);
-
         using var client = factory.CreateClient();
-        var response = await client.GetAsync("/data/ed-fi/noresourcenames");
 
+        // Act
+        var response = await client.GetAsync("/data/ed-fi/noresourcenames");
         var content = await response.Content.ReadAsStringAsync();
 
         // Assert
@@ -66,13 +67,13 @@ public class APISchemaFileTests
     [Test]
     public async Task Should_throw_error_when_no_isshoolyearenumeration_element()
     {
+        // Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(_webHostBuilder);
-
         using StringContent jsonContent = _jsonContent;
-
         using var client = factory.CreateClient();
-        var response = await client.PostAsync("/data/ed-fi/noIsSchoolYearEnumerations", jsonContent);
 
+        // Act
+        var response = await client.PostAsync("/data/ed-fi/noIsSchoolYearEnumerations", jsonContent);
         var content = await response.Content.ReadAsStringAsync();
 
         // Assert
@@ -82,11 +83,12 @@ public class APISchemaFileTests
     [Test]
     public async Task Should_throw_error_when_no_isdescriptor_element()
     {
+        // Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(_webHostBuilder);
-
         using var client = factory.CreateClient();
-        var response = await client.GetAsync("/data/ed-fi/noIsDescriptors");
 
+        // Act
+        var response = await client.GetAsync("/data/ed-fi/noIsDescriptors");
         var content = await response.Content.ReadAsStringAsync();
 
         // Assert
@@ -96,11 +98,12 @@ public class APISchemaFileTests
     [Test]
     public async Task Should_throw_error_when_no_allowidentityupdates_element()
     {
+        // Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(_webHostBuilder);
-
         using var client = factory.CreateClient();
-        var response = await client.GetAsync("/data/ed-fi/noallowidentityupdates");
 
+        // Act
+        var response = await client.GetAsync("/data/ed-fi/noallowidentityupdates");
         var content = await response.Content.ReadAsStringAsync();
 
         // Assert
@@ -110,13 +113,13 @@ public class APISchemaFileTests
     [Test]
     public async Task Should_throw_error_when_no_jsonschemaforinsert_element()
     {
+        // Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(_webHostBuilder);
-
         using StringContent jsonContent = _jsonContent;
-
         using var client = factory.CreateClient();
-        var response = await client.PostAsync("/data/ed-fi/noJsonSchemaForInserts", jsonContent);
 
+        // Act
+        var response = await client.PostAsync("/data/ed-fi/noJsonSchemaForInserts", jsonContent);
         var content = await response.Content.ReadAsStringAsync();
 
         // Assert
@@ -126,13 +129,13 @@ public class APISchemaFileTests
     [Test]
     public async Task Should_throw_error_when_no_identityfullnames_element()
     {
+        // Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(_webHostBuilder);
-
         using StringContent jsonContent = _jsonContent;
-
         using var client = factory.CreateClient();
-        var response = await client.PostAsync("/data/ed-fi/noidentityfullnames", jsonContent);
 
+        // Act
+        var response = await client.PostAsync("/data/ed-fi/noidentityfullnames", jsonContent);
         var content = await response.Content.ReadAsStringAsync();
 
         // Assert
@@ -142,13 +145,13 @@ public class APISchemaFileTests
     [Test]
     public async Task Should_throw_error_when_no_identitypathorder_element()
     {
+        // Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(_webHostBuilder);
-
         using StringContent jsonContent = _jsonContent;
-
         using var client = factory.CreateClient();
-        var response = await client.PostAsync("/data/ed-fi/noidentitypathorders", jsonContent);
 
+        // Act
+        var response = await client.PostAsync("/data/ed-fi/noidentitypathorders", jsonContent);
         var content = await response.Content.ReadAsStringAsync();
 
         // Assert
@@ -158,13 +161,13 @@ public class APISchemaFileTests
     [Test]
     public async Task Should_throw_error_when_no_issubclass_element()
     {
+        // Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(_webHostBuilder);
-
         using StringContent jsonContent = _jsonContent;
-
         using var client = factory.CreateClient();
-        var response = await client.PostAsync("/data/ed-fi/noIsSubclasses", jsonContent);
 
+        // Act
+        var response = await client.PostAsync("/data/ed-fi/noIsSubclasses", jsonContent);
         var content = await response.Content.ReadAsStringAsync();
 
         // Assert
@@ -174,13 +177,77 @@ public class APISchemaFileTests
     [Test]
     public async Task Should_throw_error_when_no_nosubclasstype_element()
     {
+        // Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(_webHostBuilder);
-
         using StringContent jsonContent = _jsonContent;
-
         using var client = factory.CreateClient();
-        var response = await client.PostAsync("/data/ed-fi/noSubClassTypes", jsonContent);
 
+        // Act
+        var response = await client.PostAsync("/data/ed-fi/noSubClassTypes", jsonContent);
+        var content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+    }
+
+    [Test]
+    public async Task Should_throw_error_when_no_superclassresourcename_element()
+    {
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(_webHostBuilder);
+        using StringContent jsonContent = _jsonContent;
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.PostAsync("/data/ed-fi/nosuperclassresourcenames", jsonContent);
+        var content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+    }
+
+    [Test]
+    public async Task Should_throw_error_when_no_superclassprojectnames_element()
+    {
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(_webHostBuilder);
+        using StringContent jsonContent = _jsonContent;
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.PostAsync("/data/ed-fi/nosuperclassprojectnames", jsonContent);
+        var content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+    }
+
+    [Test]
+    public async Task Should_throw_error_when_no_superclassidentitydocumentkey_element()
+    {
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(_webHostBuilder);
+        using StringContent jsonContent = _jsonContent;
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.PostAsync("/data/ed-fi/nosuperclassidentitydocumentkeys", jsonContent);
+        var content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+    }
+
+    [Test]
+    public async Task Should_throw_error_when_no_subclassidentitydocumentkey_element()
+    {
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(_webHostBuilder);
+        using StringContent jsonContent = _jsonContent;
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.PostAsync("/data/ed-fi/noSubclassIdentityDocumentKeys", jsonContent);
         var content = await response.Content.ReadAsStringAsync();
 
         // Assert

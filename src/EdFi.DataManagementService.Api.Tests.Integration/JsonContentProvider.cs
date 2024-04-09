@@ -11,6 +11,6 @@ public static class JsonContentProvider
 {
     public static JsonNode? ReadContent(string fileName)
     {
-        return JsonNode.Parse(File.ReadAllText(Path.Combine("TestInputFiles", fileName)));
+        return JsonNode.Parse(File.ReadAllText(fileName));
     }
 }
