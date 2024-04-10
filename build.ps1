@@ -251,7 +251,7 @@ function PushPackage {
     }
 
     if($DryRun){
-        Write-Information "Dry run enabled, not pushing package."
+        Write-Info "Dry run enabled, not pushing package."
     } else {
         Write-Success ("Pushing $PackageFile to $EdFiNuGetFeed")
 

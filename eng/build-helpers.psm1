@@ -80,7 +80,7 @@ function Write-Success($message){
 }
 
 #Output message using the Yellow text color
-function Write-Information($message){
+function Write-Info($message){
     Write-MessageColorOutput YELLOW $message
 }
 
