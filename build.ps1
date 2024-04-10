@@ -251,9 +251,9 @@ function PushPackage {
     }
 
     if($DryRun){
-        Write-ColorOutput YELLOW ("Dry run enabled, not pushing package.")
+        Write-Information "Dry run enabled, not pushing package."
     } else {
-        Write-ColorOutput GREEN ("Pushing $PackageFile to $EdFiNuGetFeed")
+        Write-Success ("Pushing $PackageFile to $EdFiNuGetFeed")
 
         dotnet nuget push $PackageFile --api-key $NuGetApiKey --source $EdFiNuGetFeed
     }

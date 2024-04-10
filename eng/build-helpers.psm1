@@ -16,7 +16,7 @@ function Invoke-RegenerateFile {
 
     if ($new_content -ne $oldContent) {
         $relative_path = Resolve-Path -Relative $Path
-        Write-ColorOutput CYAN "Generating $relative_path"
+        Write-Command "Generating $relative_path"
         [System.IO.File]::WriteAllText($Path, $NewContent, [System.Text.Encoding]::UTF8)
     }
 }
@@ -43,8 +43,8 @@ function Invoke-Step {
 
     $command = $block.ToString().Trim()
 
-    Write-ColorOutput WHITE ""
-    Write-ColorOutput CYAN $command
+    Write-NewLine
+    Write-Command $command
 
     &$block
 }
@@ -57,21 +57,41 @@ function Invoke-Main {
 
     try {
         &$MainBlock
-        Write-ColorOutput WHITE ""
-        Write-ColorOutput GREEN "Build Succeeded"
+        Write-NewLine
+        Write-Success "Build Succeeded"
         exit 0
     } catch [Exception] {
-        Write-ColorOutput WHITE ""
+        Write-NewLine
         Write-Error $_.Exception.Message
-        Write-ColorOutput WHITE ""
+        Write-NewLine
         Write-Error "Build Failed"
         exit 1
     }
 }
 
+#Output message using the Cyan text color
+function Write-Command($message){
+    Write-MessageColorOutput CYAN $message
+}
+
+#Output message using the Green text color
+function Write-Success($message){
+    Write-MessageColorOutput GREEN $message
+}
+
+#Output message using the Yellow text color
+function Write-Information($message){
+    Write-MessageColorOutput YELLOW $message
+}
+
+#Will add a new line
+function Write-NewLine(){
+    Write-MessageColorOutput WHITE "`n"
+}
+
 # Specify one of the following enumerator names
 # Black, DarkBlue, DarkGreen, DarkCyan, DarkRed, DarkMagenta, DarkYellow, Gray, DarkGray, Blue, Green, Cyan, Red, Magenta, Yellow, White"
-function Write-ColorOutput($ForegroundColor)
+function Write-MessageColorOutput($ForegroundColor)
 {
     # save the current color
     $fc = $host.UI.RawUI.ForegroundColor
