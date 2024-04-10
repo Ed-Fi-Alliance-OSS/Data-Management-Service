@@ -20,6 +20,14 @@ namespace EdFi.DataManagementService.Api.Tests.Integration;
 [TestFixture]
 public class APISchemaFileTests
 {
+    /// <summary>
+    /// APISchemaFileTests contain tests to cover all errors that may arise from the "ResourceSchema.cs" file due to invalid resource schemas.
+    /// Within the "InvalidResourceSchemas.json" file, we have curated a collection of resource schemas representing various invalid use cases.
+    /// On the frontend layer, there is no observable difference. The "CoreLoggingMiddleware" is to catch specific errors and consistently throw an
+    /// "Internal server error." However, the specific error will be logged.Through these various tests,
+    /// we are ensuring that invalid resource schemas are appropriately captured and throws error.
+    /// </summary>
+
     [TestFixture]
     public class Given_an_ApiSchema_file_with_invalid_resourceschemas
     {
@@ -56,6 +64,7 @@ public class APISchemaFileTests
         public class Should_respond_with_internal_server_error_for_a_GET_request
             : Given_an_ApiSchema_file_with_invalid_resourceschemas
         {
+            // "resourceName" element does not exist on resource schema.
             [Test]
             public async Task When_no_resourcename_element()
             {
@@ -73,6 +82,7 @@ public class APISchemaFileTests
                 response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             }
 
+            // "isDescriptor" element does not exist on resource schema.
             [Test]
             public async Task When_no_isdescriptor_element()
             {
@@ -90,6 +100,7 @@ public class APISchemaFileTests
                 response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             }
 
+            // "allowIdentityUpdates" element does not exist on resource schema.
             [Test]
             public async Task When_no_allowidentityupdates_element()
             {
@@ -112,6 +123,7 @@ public class APISchemaFileTests
         public class Should_respond_with_internal_server_error_for_a_POST_request
             : Given_an_ApiSchema_file_with_invalid_resourceschemas
         {
+            // "isShoolyearEnumeration" element does not exist on resource schema.
             [Test]
             public async Task When_no_isshoolyearenumeration_element()
             {
@@ -130,6 +142,7 @@ public class APISchemaFileTests
                 response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             }
 
+            // "jsonSchemaForInsert" element does not exist on resource schema.
             [Test]
             public async Task When_no_jsonschemaforinsert_element()
             {
@@ -148,6 +161,7 @@ public class APISchemaFileTests
                 response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             }
 
+            // "identityFullnames" element does not exist on resource schema.
             [Test]
             public async Task When_no_identityfullnames_element()
             {
@@ -166,6 +180,7 @@ public class APISchemaFileTests
                 response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             }
 
+            // "identityPathOrder" element does not exist on resource schema.
             [Test]
             public async Task When_no_identitypathorder_element()
             {
@@ -184,6 +199,7 @@ public class APISchemaFileTests
                 response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             }
 
+            // "isSubclass" element does not exist on resource schema.
             [Test]
             public async Task When_no_issubclass_element()
             {
@@ -202,8 +218,9 @@ public class APISchemaFileTests
                 response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             }
 
+            // "subclassType" element does not exist on resource schema.
             [Test]
-            public async Task When_no_nosubclasstype_element()
+            public async Task When_no_subclasstype_element()
             {
                 // Arrange
                 await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(
@@ -220,6 +237,7 @@ public class APISchemaFileTests
                 response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             }
 
+            // "superClassResourceName" element does not exist on resource schema.
             [Test]
             public async Task When_no_superclassresourcename_element()
             {
@@ -238,8 +256,9 @@ public class APISchemaFileTests
                 response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             }
 
+            // "superclassProjectName" element does not exist on resource schema.
             [Test]
-            public async Task When_no_superclassprojectnames_element()
+            public async Task When_no_superclassprojectname_element()
             {
                 // Arrange
                 await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(
@@ -256,6 +275,7 @@ public class APISchemaFileTests
                 response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             }
 
+            // "superclassIdentityDocumentKey" element does not exist on resource schema.
             [Test]
             public async Task When_no_superclassidentitydocumentkey_element()
             {
@@ -277,6 +297,7 @@ public class APISchemaFileTests
                 response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             }
 
+            // "subclassIdentityDocumentKey" element does not exist on resource schema.
             [Test]
             public async Task When_no_subclassidentitydocumentkey_element()
             {
@@ -298,6 +319,7 @@ public class APISchemaFileTests
                 response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             }
 
+            // documentPathsMapping element does not exist on resource schema.
             [Test]
             public async Task When_no_documentpathsmapping_element()
             {
