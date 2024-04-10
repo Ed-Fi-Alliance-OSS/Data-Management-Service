@@ -402,3 +402,6 @@ FodyWeavers.xsd
 # Kubernetes
 app-secret.yml
 app-secret.yaml
+
+# Mac OS
+.DS_Store

@@ -16,7 +16,7 @@ function Invoke-RegenerateFile {
 
     if ($new_content -ne $oldContent) {
         $relative_path = Resolve-Path -Relative $Path
-        Write-Host "Generating $relative_path"
+        Write-ColorOutput CYAN "Generating $relative_path"
         [System.IO.File]::WriteAllText($Path, $NewContent, [System.Text.Encoding]::UTF8)
     }
 }
@@ -43,8 +43,8 @@ function Invoke-Step {
 
     $command = $block.ToString().Trim()
 
-    Write-Host
-    Write-Host $command -fore CYAN
+    Write-ColorOutput WHITE ""
+    Write-ColorOutput CYAN $command
 
     &$block
 }
@@ -57,16 +57,38 @@ function Invoke-Main {
 
     try {
         &$MainBlock
-        Write-Host
-        Write-Host "Build Succeeded" -fore GREEN
+        Write-ColorOutput WHITE ""
+        Write-ColorOutput GREEN "Build Succeeded"
         exit 0
     } catch [Exception] {
-        Write-Host
+        Write-ColorOutput WHITE ""
         Write-Error $_.Exception.Message
-        Write-Host
+        Write-ColorOutput WHITE ""
         Write-Error "Build Failed"
         exit 1
     }
+}
+
+# Specify one of the following enumerator names
+# Black, DarkBlue, DarkGreen, DarkCyan, DarkRed, DarkMagenta, DarkYellow, Gray, DarkGray, Blue, Green, Cyan, Red, Magenta, Yellow, White"
+function Write-ColorOutput($ForegroundColor)
+{
+    # save the current color
+    $fc = $host.UI.RawUI.ForegroundColor
+
+    # set the new color
+    $host.UI.RawUI.ForegroundColor = $ForegroundColor
+
+    # output
+    if ($args) {
+        Write-Output $args
+    }
+    else {
+        $input | Write-Output
+    }
+
+    # restore the original color
+    $host.UI.RawUI.ForegroundColor = $fc
 }
 
 Export-ModuleMember -Function *
