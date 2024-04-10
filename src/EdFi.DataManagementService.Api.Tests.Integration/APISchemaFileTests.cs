@@ -28,7 +28,7 @@ public class APISchemaFileTests
     [SetUp]
     public void Setup()
     {
-        _schemaContent = JsonContentProvider.ReadContent("TestSchemaContent.json");
+        _schemaContent = JsonContentProvider.ReadContent("InvalidResourceSchemas.json");
         _apiSchemaProvider = A.Fake<IApiSchemaProvider>();
         A.CallTo(() => _apiSchemaProvider.ApiSchemaRootNode).Returns(_schemaContent!);
 
