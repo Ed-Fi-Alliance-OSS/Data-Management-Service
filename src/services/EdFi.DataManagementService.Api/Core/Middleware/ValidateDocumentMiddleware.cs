@@ -23,18 +23,11 @@ public class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _doc
 
         var validatorContext = new ValidatorContext(context.ResourceSchema, context.FrontendRequest.Method);
 
-        // First check for basic JSON errors
-        var jsonErrors = _documentValidator.ValidateJsonFormat(context.FrontendRequest.Body);
-        if (jsonErrors != null && jsonErrors.Any())
-        {
-            SendFailureResponse(context, jsonErrors.ToArray());
-        }
-
         // Evaluate schema
         var evaluationResult = _documentValidator.Evaluate(context.FrontendRequest.Body, validatorContext);
 
         if (
-            _documentValidator.PruneOverPostedData(
+            _documentValidator.PruneOverpostedData(
                 context.FrontendRequest.Body,
                 evaluationResult,
                 out JsonNode? prunedBody
@@ -48,9 +41,9 @@ public class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _doc
             };
         }
 
-        var errors = _documentValidator.Validate(context.FrontendRequest.Body, validatorContext)?.ToArray();
+        var errors = _documentValidator.Validate(context.FrontendRequest.Body, validatorContext).ToArray();
 
-        if (errors == null || errors.Length == 0)
+        if (errors.Length == 0)
         {
             await next();
         }

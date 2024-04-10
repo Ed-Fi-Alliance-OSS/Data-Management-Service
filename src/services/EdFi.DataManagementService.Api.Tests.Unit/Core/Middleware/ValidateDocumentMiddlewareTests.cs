@@ -126,7 +126,7 @@ public class ValidateDocumentMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_a_request_with_not_existing_property : ValidateDocumentMiddlewareTests
+    public class Given_a_request_with_overposted_property : ValidateDocumentMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -151,16 +151,10 @@ public class ValidateDocumentMiddlewareTests
         {
             _context?.FrontendResponse.Should().Be(No.FrontendResponse);
         }
-
-        [Test]
-        public void It_returns_status_503()
-        {
-            _context?.FrontendResponse.StatusCode.Should().Be(503);
-        }
     }
 
     [TestFixture]
-    public class Given_a_request_with_not_existing_nested_property : ValidateDocumentMiddlewareTests
+    public class Given_a_request_with_overposted_nested_property : ValidateDocumentMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -184,12 +178,6 @@ public class ValidateDocumentMiddlewareTests
         public void It_should_not_have_response()
         {
             _context?.FrontendResponse.Should().Be(No.FrontendResponse);
-        }
-
-        [Test]
-        public void It_returns_status_503()
-        {
-            _context?.FrontendResponse.StatusCode.Should().Be(503);
         }
     }
 
