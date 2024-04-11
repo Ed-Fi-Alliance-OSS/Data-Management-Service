@@ -6,6 +6,7 @@
 using System.Diagnostics;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Api.Core.ApiSchema.Extensions;
+using EdFi.DataManagementService.Core.Pipeline;
 using Json.Schema;
 
 namespace EdFi.DataManagementService.Api.Core.Validation;
@@ -13,79 +14,19 @@ namespace EdFi.DataManagementService.Api.Core.Validation;
 public interface IDocumentValidator
 {
     /// <summary>
-    /// Evaluates a document body against a JSON schema
-    /// </summary>
-    /// <param name="documentBody"></param>
-    /// <param name="validatorContext"></param>
-    /// <returns></returns>
-    EvaluationResults Evaluate(JsonNode? documentBody, ValidatorContext validatorContext);
-
-    /// <summary>
-    /// Prunes over posted data from the document body in constructs where "additionalProperties" = false.
-    /// </summary>
-    /// <param name="documentBody">The posted document body with potentially over posted properties</param>
-    /// <param name="evaluationResults">The results from evaluating the body against a JSON schema</param>
-    /// <param name="prunedDocumentBody">Out parameter after being pruned of additional properties</param>
-    /// <returns>Value indicating whether additional properties were found</returns>
-    bool PruneOverpostedData(
-        JsonNode? documentBody,
-        EvaluationResults evaluationResults,
-        out JsonNode? prunedDocumentBody
-    );
-
-    /// <summary>
     /// Validates a document body against a JSON Schema
     /// </summary>
-    /// <param name="documentBody"></param>
+    /// <param name="context"></param>
     /// <param name="validatorContext"></param>
     /// <returns></returns>
-    IEnumerable<string> Validate(JsonNode? documentBody, ValidatorContext validatorContext);
+    IEnumerable<string> Validate(PipelineContext context, ValidatorContext validatorContext);
 }
 
 public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentValidator
 {
-    public EvaluationResults Evaluate(JsonNode? documentBody, ValidatorContext validatorContext)
+    public IEnumerable<string> Validate(PipelineContext context, ValidatorContext validatorContext)
     {
-        EvaluationOptions validatorEvaluationOptions =
-            new() { OutputFormat = OutputFormat.List, RequireFormatValidation = true };
-
-        var resourceSchemaValidator = schemaValidator.GetSchema(validatorContext);
-        return resourceSchemaValidator.Evaluate(documentBody, validatorEvaluationOptions);
-    }
-
-    public bool PruneOverpostedData(
-        JsonNode? documentBody,
-        EvaluationResults evaluationResults,
-        out JsonNode? prunedDocumentBody
-    )
-    {
-        Trace.Assert(documentBody != null, "Null document body failure");
-        prunedDocumentBody = documentBody;
-
-        var additionalProperties = evaluationResults
-            .Details.Where(r =>
-                r.EvaluationPath.Segments.Any() && r.EvaluationPath.Segments[^1] == "additionalProperties"
-            )
-            .ToList();
-
-        if (additionalProperties.Count == 0)
-            return false;
-
-        foreach (var additionalProperty in additionalProperties)
-        {
-            JsonObject jsonObject = documentBody.AsObject();
-            var prunedJsonObject = jsonObject.RemoveProperty(additionalProperty.InstanceLocation.Segments);
-            documentBody = JsonNode.Parse(prunedJsonObject.ToJsonString());
-            Trace.Assert(documentBody != null);
-        }
-
-        prunedDocumentBody = documentBody;
-        return true;
-    }
-
-    public IEnumerable<string> Validate(JsonNode? documentBody, ValidatorContext validatorContext)
-    {
-        var formatValidationResult = documentBody.ValidateJsonFormat();
+        var formatValidationResult = context.FrontendRequest.Body.ValidateJsonFormat();
 
         if (formatValidationResult != null && formatValidationResult.Any())
         {
@@ -96,9 +37,58 @@ public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentVali
             new() { OutputFormat = OutputFormat.List, RequireFormatValidation = true };
 
         var resourceSchemaValidator = schemaValidator.GetSchema(validatorContext);
-        var results = resourceSchemaValidator.Evaluate(documentBody, validatorEvaluationOptions);
+        var results = resourceSchemaValidator.Evaluate(
+            context.FrontendRequest.Body,
+            validatorEvaluationOptions
+        );
+
+        if (PruneOverpostedData(context.FrontendRequest.Body, results, out JsonNode? prunedBody))
+        {
+            // Used pruned body for the remainder of pipeline
+            context.FrontendRequest = context.FrontendRequest with
+            {
+                Body = prunedBody
+            };
+
+            results = resourceSchemaValidator.Evaluate(
+                context.FrontendRequest.Body,
+                validatorEvaluationOptions
+            );
+        }
 
         return PruneValidationErrors(results);
+
+        bool PruneOverpostedData(
+            JsonNode? documentBody,
+            EvaluationResults evaluationResults,
+            out JsonNode? prunedDocumentBody
+        )
+        {
+            Trace.Assert(documentBody != null, "Null document body failure");
+            prunedDocumentBody = documentBody;
+
+            var additionalProperties = evaluationResults
+                .Details.Where(r =>
+                    r.EvaluationPath.Segments.Any() && r.EvaluationPath.Segments[^1] == "additionalProperties"
+                )
+                .ToList();
+
+            if (additionalProperties.Count == 0)
+                return false;
+
+            foreach (var additionalProperty in additionalProperties)
+            {
+                JsonObject jsonObject = documentBody.AsObject();
+                var prunedJsonObject = jsonObject.RemoveProperty(
+                    additionalProperty.InstanceLocation.Segments
+                );
+                documentBody = JsonNode.Parse(prunedJsonObject.ToJsonString());
+                Trace.Assert(documentBody != null);
+            }
+
+            prunedDocumentBody = documentBody;
+            return true;
+        }
 
         List<string> PruneValidationErrors(EvaluationResults results)
         {
@@ -111,21 +101,11 @@ public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentVali
                 {
                     propertyName = $"{detail.InstanceLocation.Segments[^1].Value} : ";
                 }
-                if (detail.HasErrors)
+                if (detail.Errors != null && detail.Errors.Any())
                 {
-                    if (detail.Errors != null && detail.Errors.Any())
+                    foreach (var error in detail.Errors)
                     {
-                        foreach (var error in detail.Errors)
-                        {
-                            validationErrors.Add($"{propertyName}{error.Value}");
-                        }
-                    }
-                    if (
-                        detail.EvaluationPath.Segments.Any()
-                        && detail.EvaluationPath.Segments[^1] == "additionalProperties"
-                    )
-                    {
-                        validationErrors.Add($"{propertyName}Overpost");
+                        validationErrors.Add($"{propertyName}{error.Value}");
                     }
                 }
             }
