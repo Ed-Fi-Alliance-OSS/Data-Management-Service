@@ -124,6 +124,20 @@ public static class JsonHelperExtensions
     }
 
     /// <summary>
+    /// Helper to get value from json node. Throws if the node does not exist.
+    /// </summary>
+    public static T SelectNodeValue<T>(this JsonNode jsonNode, string jsonPathString)
+    {
+        var resourceName = jsonNode["resourceName"];
+        var errorMessage =
+            $"Expected {jsonPathString} to be in ResourceSchema for {resourceName}, invalid ApiSchema";
+
+        JsonValue? resultNode =
+            jsonNode[jsonPathString]?.AsValue() ?? throw new InvalidOperationException(errorMessage);
+        return resultNode.GetValue<T>();
+    }
+
+    /// <summary>
     /// Helper to validate basic json format.Throws if validation fails
     /// </summary>
     public static IEnumerable<string>? ValidateJsonFormat(this JsonNode? jsonNode)
