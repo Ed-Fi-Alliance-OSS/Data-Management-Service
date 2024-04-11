@@ -253,7 +253,7 @@ function PushPackage {
     if($DryRun){
         Write-Info "Dry run enabled, not pushing package."
     } else {
-        Write-Success ("Pushing $PackageFile to $EdFiNuGetFeed")
+        Write-Info ("Pushing $PackageFile to $EdFiNuGetFeed")
 
         dotnet nuget push $PackageFile --api-key $NuGetApiKey --source $EdFiNuGetFeed
     }

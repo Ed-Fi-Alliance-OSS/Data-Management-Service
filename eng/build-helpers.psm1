@@ -69,30 +69,53 @@ function Invoke-Main {
     }
 }
 
-#Output message using the Cyan text color
+<#
+    .DESCRIPTION
+    Display a command and its arguments on the console
+#>
 function Write-Command($message){
     Write-MessageColorOutput CYAN $message
 }
 
-#Output message using the Green text color
+<#
+    .DESCRIPTION
+    Display a command and its arguments on the console
+#>
 function Write-Success($message){
     Write-MessageColorOutput GREEN $message
 }
 
-#Output message using the Yellow text color
+<#
+    .DESCRIPTION
+    Display a command and its arguments on the console
+#>
 function Write-Info($message){
     Write-MessageColorOutput YELLOW $message
 }
 
-#Will add a new line
+<#
+    .DESCRIPTION
+    Add a new break line in the console
+#>
 function Write-NewLine(){
     Write-MessageColorOutput WHITE "`n"
 }
 
-# Specify one of the following enumerator names
-# Black, DarkBlue, DarkGreen, DarkCyan, DarkRed, DarkMagenta, DarkYellow, Gray, DarkGray, Blue, Green, Cyan, Red, Magenta, Yellow, White"
-function Write-MessageColorOutput($ForegroundColor)
+<#
+    .DESCRIPTION
+    Writes a message to the output with a specified text color.
+#>
+function Write-MessageColorOutput
 {
+    param(
+        [ValidateSet("Black","DarkBlue","DarkGreen","DarkCyan","DarkRed","DarkMagenta",
+        "DarkYellow","Gray","DarkGray","Blue","Green","Cyan","Red","Magenta","Yellow","White",
+        ErrorMessage="Please specify a valid color name from the list.",
+        IgnoreCase=$true)]
+        [String]
+        $ForegroundColor
+    )
+
     # save the current color
     $fc = $host.UI.RawUI.ForegroundColor
 
