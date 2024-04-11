@@ -42,12 +42,14 @@ public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentVali
             validatorEvaluationOptions
         );
 
-        if (PruneOverpostedData(context.FrontendRequest.Body, results, out JsonNode? prunedBody))
+        var pruneResult = PruneOverpostedData(context.FrontendRequest.Body, results);
+
+        if (pruneResult is PruneResult.Pruned pruned)
         {
             // Used pruned body for the remainder of pipeline
             context.FrontendRequest = context.FrontendRequest with
             {
-                Body = prunedBody
+                Body = pruned.prunedDocumentBody
             };
 
             results = resourceSchemaValidator.Evaluate(
@@ -58,14 +60,10 @@ public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentVali
 
         return PruneValidationErrors(results);
 
-        bool PruneOverpostedData(
-            JsonNode? documentBody,
-            EvaluationResults evaluationResults,
-            out JsonNode? prunedDocumentBody
-        )
+        PruneResult PruneOverpostedData(JsonNode? documentBody, EvaluationResults evaluationResults)
         {
-            Trace.Assert(documentBody != null, "Null document body failure");
-            prunedDocumentBody = documentBody;
+            if (documentBody == null)
+                return new PruneResult.NotPruned();
 
             var additionalProperties = evaluationResults
                 .Details.Where(r =>
@@ -74,7 +72,7 @@ public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentVali
                 .ToList();
 
             if (additionalProperties.Count == 0)
-                return false;
+                return new PruneResult.NotPruned();
 
             foreach (var additionalProperty in additionalProperties)
             {
@@ -82,12 +80,12 @@ public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentVali
                 var prunedJsonObject = jsonObject.RemoveProperty(
                     additionalProperty.InstanceLocation.Segments
                 );
-                documentBody = JsonNode.Parse(prunedJsonObject.ToJsonString());
-                Trace.Assert(documentBody != null);
+                var prunedDocumentBody = JsonNode.Parse(prunedJsonObject.ToJsonString());
+                Trace.Assert(prunedDocumentBody != null, "Unexpected null after parsing pruned object");
+                documentBody = prunedDocumentBody;
             }
 
-            prunedDocumentBody = documentBody;
-            return true;
+            return new PruneResult.Pruned(documentBody);
         }
 
         List<string> PruneValidationErrors(EvaluationResults results)
@@ -114,6 +112,17 @@ public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentVali
                 .ToList();
         }
     }
+}
+
+/// <summary>
+/// The result of pruning "additionalProperties" aka overposted data from a JsonNode.
+/// If none were found, result should be NotPruned. Otherwise, Pruned with the pruneDocumentBody
+/// </summary>
+internal abstract record PruneResult
+{
+    public record NotPruned() : PruneResult;
+
+    public record Pruned(JsonNode prunedDocumentBody) : PruneResult;
 }
 
 internal static class JsonObjectExtensions
