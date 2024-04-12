@@ -52,13 +52,14 @@ public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentVali
                 Body = pruned.prunedDocumentBody
             };
 
+            // Now re-evaluate the pruned body
             results = resourceSchemaValidator.Evaluate(
                 context.FrontendRequest.Body,
                 validatorEvaluationOptions
             );
         }
 
-        return PruneValidationErrors(results);
+        return ValidationErrorsFrom(results);
 
         PruneResult PruneOverpostedData(JsonNode? documentBody, EvaluationResults evaluationResults)
         {
@@ -88,7 +89,7 @@ public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentVali
             return new PruneResult.Pruned(documentBody);
         }
 
-        List<string> PruneValidationErrors(EvaluationResults results)
+        List<string> ValidationErrorsFrom(EvaluationResults results)
         {
             var validationErrors = new List<string>();
             foreach (var detail in results.Details)
