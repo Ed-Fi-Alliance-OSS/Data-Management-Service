@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Api.Core.ApiSchema.Extensions;
 using Json.Schema;
 
@@ -17,18 +18,18 @@ public interface IDocumentValidator
     /// <param name="documentBody"></param>
     /// <param name="validatorContext"></param>
     /// <returns></returns>
-    IEnumerable<string>? Validate(JsonNode? documentBody, ValidatorContext validatorContext);
+    (string[]?, Dictionary<string, string[]>?) Validate(JsonNode? documentBody, ValidatorContext validatorContext);
 }
 
 public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentValidator
 {
-    public IEnumerable<string>? Validate(JsonNode? documentBody, ValidatorContext validatorContext)
+    public (string[]?, Dictionary<string, string[]>?) Validate(JsonNode? documentBody, ValidatorContext validatorContext)
     {
         var formatValidationResult = documentBody.ValidateJsonFormat();
 
         if (formatValidationResult != null && formatValidationResult.Any())
         {
-            return formatValidationResult;
+            return (formatValidationResult.ToArray(), null); //errors
         }
 
         EvaluationOptions? validatorEvaluationOptions =
@@ -37,11 +38,13 @@ public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentVali
         var resourceSchemaValidator = schemaValidator.GetSchema(validatorContext);
         var results = resourceSchemaValidator.Evaluate(documentBody, validatorEvaluationOptions);
 
-        return PruneValidationErrors(results);
+        return (null, PruneValidationErrors(results)); //validationErrors
 
-        List<string>? PruneValidationErrors(EvaluationResults results)
+        Dictionary<string, string[]> PruneValidationErrors(EvaluationResults results)
         {
-            var validationErrors = new List<string>();
+            Regex regex = new Regex("\"([^\"]*)\"");
+            var validationErrors = new Dictionary<string, string[]>();
+            var detailValidationError = new List<string>();
             foreach (var detail in results.Details)
             {
                 var propertyName = string.Empty;
@@ -56,7 +59,13 @@ public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentVali
                     {
                         foreach (var error in detail.Errors)
                         {
-                            validationErrors.Add($"{propertyName}{error.Value}");
+                            MatchCollection matches = regex.Matches(error.Value);
+                            foreach (Match match in matches)
+                            {
+                                propertyName = match.Groups[1].Value;
+                            }
+                            detailValidationError.Add($"{propertyName}{error.Value}");
+                            validationErrors.Add(propertyName, detailValidationError.ToArray());
                         }
                     }
                     if (
@@ -64,13 +73,18 @@ public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentVali
                         && detail.EvaluationPath.Segments[^1] == "additionalProperties"
                     )
                     {
-                        validationErrors.Add($"{propertyName}Overpost");
+                        detailValidationError.Add($"{propertyName}Overpost");
                     }
                 }
             }
-            return validationErrors
-                .Where(x => !x.Contains("All values fail against the false schema"))
-                .ToList();
+            return validationErrors;
         }
+    }
+
+    public Dictionary<string, string[]>? ValidateFormat(JsonNode? documentBody, ValidatorContext validatorContext)
+    {
+        var result = new Dictionary<string, string[]>();
+
+        return result;
     }
 }

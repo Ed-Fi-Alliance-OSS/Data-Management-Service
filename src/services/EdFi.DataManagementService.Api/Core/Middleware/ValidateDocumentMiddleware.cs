@@ -21,9 +21,10 @@ public class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _doc
         _logger.LogDebug("Entering ValidateDocumentMiddleware- {TraceId}", context.FrontendRequest.TraceId);
 
         var validatorContext = new ValidatorContext(context.ResourceSchema, context.FrontendRequest.Method);
-        var errors = _documentValidator.Validate(context.FrontendRequest.Body, validatorContext)?.ToArray();
+        var (errors, validationErrors) = _documentValidator.Validate(context.FrontendRequest.Body, validatorContext);
 
-        if (errors == null || errors.Length == 0)
+        if ((errors == null || errors.ToArray().Length == 0) &&
+            (validationErrors == null || validationErrors.Count == 0))
         {
             await next();
         }
@@ -31,7 +32,7 @@ public class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _doc
         {
             var failureResponse = FailureResponse.ForDataValidation(
                 "Data validation failed. See errors for details.",
-                null,
+                validationErrors,
                 errors
             );
 
