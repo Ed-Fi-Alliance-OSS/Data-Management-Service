@@ -21,9 +21,10 @@ public class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _doc
         _logger.LogDebug("Entering ValidateDocumentMiddleware- {TraceId}", context.FrontendRequest.TraceId);
 
         var validatorContext = new ValidatorContext(context.ResourceSchema, context.FrontendRequest.Method);
-        var errors = _documentValidator.Validate(context.FrontendRequest.Body, validatorContext)?.ToArray();
 
-        if (errors == null || errors.Length == 0)
+        var errors = _documentValidator.Validate(context, validatorContext).ToArray();
+
+        if (errors.Length == 0)
         {
             await next();
         }
@@ -46,7 +47,6 @@ public class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _doc
                 StatusCode: failureResponse.status,
                 Body: JsonSerializer.Serialize(failureResponse)
             );
-            return;
         }
     }
 }
