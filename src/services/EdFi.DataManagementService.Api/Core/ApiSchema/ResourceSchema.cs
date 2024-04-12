@@ -37,7 +37,7 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
         new(() =>
         {
             return _resourceSchemaNode["isSchoolYearEnumeration"]?.GetValue<bool>()
-                   ?? throw new InvalidOperationException(
+                ?? throw new InvalidOperationException(
                     "Expected isSchoolYearEnumeration to be on ResourceSchema, invalid ApiSchema"
                 );
         });
@@ -133,19 +133,19 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
     private readonly Lazy<IEnumerable<EqualityConstraint>> _equalityConstraints =
         new(() =>
         {
-            var equalityConstraintsJsonArray = _resourceSchemaNode["equalityConstraints"]?.AsArray()
-                                               ?? throw new InvalidOperationException(
-                                                   "Expected equalityConstraints to be on ResourceSchema, invalid ApiSchema"
-                                                );
+            var equalityConstraintsJsonArray =
+                _resourceSchemaNode["equalityConstraints"]?.AsArray()
+                ?? throw new InvalidOperationException(
+                    "Expected equalityConstraints to be on ResourceSchema, invalid ApiSchema"
+                );
 
             return equalityConstraintsJsonArray.Select(x =>
-                {
-                    var sourceJsonPath = new JsonPath(x!["sourceJsonPath"]!.GetValue<string>());
-                    var targetJsonPath = new JsonPath(x!["targetJsonPath"]!.GetValue<string>());
+            {
+                var sourceJsonPath = new JsonPath(x!["sourceJsonPath"]!.GetValue<string>());
+                var targetJsonPath = new JsonPath(x!["targetJsonPath"]!.GetValue<string>());
 
-                    return new EqualityConstraint(sourceJsonPath, targetJsonPath);
-                }
-            );
+                return new EqualityConstraint(sourceJsonPath, targetJsonPath);
+            });
         });
 
     /// <summary>
@@ -206,7 +206,7 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
         foreach (string identityFullName in IdentityFullnames)
         {
             JsonNode identityPathsNode =
-                _resourceSchemaNode["documentPathsMapping"]![identityFullName]
+                _resourceSchemaNode["documentPathsMapping"]?[identityFullName]
                 ?? throw new InvalidOperationException(
                     $"Expected {identityFullName} to be in documentPathsMapping, invalid ApiSchema"
                 );
@@ -257,11 +257,7 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
     /// </summary>
     public SuperclassIdentity? DeriveSuperclassIdentityFrom(DocumentIdentity documentIdentity)
     {
-        bool isSubclass =
-            _resourceSchemaNode["isSubclass"]?.GetValue<bool>()
-            ?? throw new InvalidOperationException(
-                "Expected isSubclass to be in resourceSchema, invalid ApiSchema"
-            );
+        bool isSubclass = _resourceSchemaNode.SelectNodeValue<bool>("isSubclass");
 
         // Only applies to subclasses
         if (!isSubclass)
@@ -269,23 +265,11 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
             return null;
         }
 
-        string subclassType =
-            _resourceSchemaNode["subclassType"]?.GetValue<string>()
-            ?? throw new InvalidOperationException(
-                "Expected subclassType to be in documentPathsMapping, invalid ApiSchema"
-            );
+        string subclassType = _resourceSchemaNode.SelectNodeValue<string>("subclassType");
 
-        string superclassResourceName =
-            _resourceSchemaNode["superclassResourceName"]?.GetValue<string>()
-            ?? throw new InvalidOperationException(
-                "Expected superclassResourceName to be in documentPathsMapping, invalid ApiSchema"
-            );
+        string superclassResourceName = _resourceSchemaNode.SelectNodeValue<string>("superclassResourceName");
 
-        string superclassProjectName =
-            _resourceSchemaNode["superclassProjectName"]?.GetValue<string>()
-            ?? throw new InvalidOperationException(
-                "Expected superclassProjectName to be in documentPathsMapping, invalid ApiSchema"
-            );
+        string superclassProjectName = _resourceSchemaNode.SelectNodeValue<string>("superclassProjectName");
 
         // Associations do not rename the identity fields in MetaEd, so the DocumentIdentity portion is the same
         if (subclassType == "association")
@@ -300,17 +284,13 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
             );
         }
 
-        string subclassIdentityDocumentKey =
-            _resourceSchemaNode["subclassIdentityDocumentKey"]?.GetValue<string>()
-            ?? throw new InvalidOperationException(
-                "Expected subclassIdentityDocumentKey to be in documentPathsMapping, invalid ApiSchema"
-            );
+        string subclassIdentityDocumentKey = _resourceSchemaNode.SelectNodeValue<string>(
+            "subclassIdentityDocumentKey"
+        );
 
-        string superclassIdentityDocumentKey =
-            _resourceSchemaNode["superclassIdentityDocumentKey"]?.GetValue<string>()
-            ?? throw new InvalidOperationException(
-                "Expected superclassIdentityDocumentKey to be in documentPathsMapping, invalid ApiSchema"
-            );
+        string superclassIdentityDocumentKey = _resourceSchemaNode.SelectNodeValue<string>(
+            "superclassIdentityDocumentKey"
+        );
 
         DocumentIdentity superclassIdentity = documentIdentity.IdentityRename(
             new(subclassIdentityDocumentKey),

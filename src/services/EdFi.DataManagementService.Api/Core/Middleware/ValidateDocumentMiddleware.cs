@@ -47,7 +47,6 @@ public class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _doc
                 StatusCode: failureResponse.status,
                 Body: JsonSerializer.Serialize(failureResponse)
             );
-            return;
         }
     }
 }
