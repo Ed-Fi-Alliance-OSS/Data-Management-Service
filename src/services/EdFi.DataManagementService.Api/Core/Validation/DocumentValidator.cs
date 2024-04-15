@@ -20,18 +20,18 @@ public interface IDocumentValidator
     /// <param name="context"></param>
     /// <param name="validatorContext"></param>
     /// <returns></returns>
-    IEnumerable<string> Validate(PipelineContext context, ValidatorContext validatorContext);
+    (string[], Dictionary<string, string[]>) Validate(PipelineContext context, ValidatorContext validatorContext);
 }
 
 public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentValidator
 {
-    public IEnumerable<string> Validate(PipelineContext context, ValidatorContext validatorContext)
+    public (string[], Dictionary<string, string[]>) Validate(PipelineContext context, ValidatorContext validatorContext)
     {
         var formatValidationResult = context.FrontendRequest.Body.ValidateJsonFormat();
 
         if (formatValidationResult != null && formatValidationResult.Any())
         {
-            return (formatValidationResult.ToArray(), null); //errors
+            return (formatValidationResult.ToArray(), new Dictionary<string, string[]>());
         }
 
         EvaluationOptions validatorEvaluationOptions =
@@ -60,7 +60,7 @@ public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentVali
             );
         }
 
-        return ValidationErrorsFrom(results);
+        return (new List<string>().ToArray(), ValidationErrorsFrom(results));
 
         PruneResult PruneOverpostedData(JsonNode? documentBody, EvaluationResults evaluationResults)
         {
@@ -90,11 +90,10 @@ public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentVali
             return new PruneResult.Pruned(documentBody);
         }
 
-        List<string> ValidationErrorsFrom(EvaluationResults results)
+        Dictionary<string, string[]> ValidationErrorsFrom(EvaluationResults results)
         {
-            Regex regex = new Regex("\"([^\"]*)\"");
             var validationErrors = new Dictionary<string, string[]>();
-            var detailValidationError = new List<string>();
+            var val = new List<string>();
             foreach (var detail in results.Details)
             {
                 var propertyName = string.Empty;
@@ -107,13 +106,12 @@ public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentVali
                 {
                     foreach (var error in detail.Errors)
                     {
-                        validationErrors.Add($"{propertyName}{error.Value}");
+                        val.Add($"{propertyName}{error.Value}");
+                        validationErrors.Add(propertyName, val.ToArray());
                     }
                 }
             }
-            return validationErrors
-                .Where(x => !x.Contains("All values fail against the false schema"))
-                .ToList();
+            return validationErrors;
         }
     }
 }

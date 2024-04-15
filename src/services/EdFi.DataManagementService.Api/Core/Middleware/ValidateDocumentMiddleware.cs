@@ -7,6 +7,7 @@ using System.Text.Json;
 using EdFi.DataManagementService.Api.Core.Response;
 using EdFi.DataManagementService.Api.Core.Validation;
 using EdFi.DataManagementService.Core.Pipeline;
+using Microsoft.CodeAnalysis;
 
 namespace EdFi.DataManagementService.Api.Core.Middleware;
 
@@ -21,17 +22,16 @@ public class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _doc
         _logger.LogDebug("Entering ValidateDocumentMiddleware- {TraceId}", context.FrontendRequest.TraceId);
 
         var validatorContext = new ValidatorContext(context.ResourceSchema, context.FrontendRequest.Method);
-        var (errors, validationErrors) = _documentValidator.Validate(context.FrontendRequest.Body, validatorContext);
+        var (errors, validationErrors) = _documentValidator.Validate(context, validatorContext);
 
-        if ((errors == null || errors.ToArray().Length == 0) &&
-            (validationErrors == null || validationErrors.Count == 0))
+        if (errors.Length == 0 && validationErrors.Count == 0)
         {
             await next();
         }
         else
         {
             var failureResponse = FailureResponse.ForDataValidation(
-                "Data validation failed. See errors for details.",
+                "Data validation failed. See " + (validationErrors.Count > 0 ? "validationErrors" : "errors") + " for details.",
                 validationErrors,
                 errors
             );

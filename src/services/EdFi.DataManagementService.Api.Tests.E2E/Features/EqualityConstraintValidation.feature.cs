@@ -97,7 +97,7 @@ this.ScenarioInitialize(scenarioInfo);
             {
                 await this.ScenarioStartAsync();
 #line 11
-    await testRunner.WhenAsync("sending a POST request to \"ed-fi/bellschedules\" with body", @"{
+    await testRunner.WhenAsync("sending a POST request to \"data/ed-fi/bellschedules\" with body", @"{
     ""schoolReference"": {
         ""schoolId"": 255901001
     },
@@ -146,7 +146,7 @@ this.ScenarioInitialize(scenarioInfo);
             {
                 await this.ScenarioStartAsync();
 #line 40
-    await testRunner.WhenAsync("sending a POST request to \"ed-fi/bellschedules\" with body", @"{
+    await testRunner.WhenAsync("sending a POST request to \"data/ed-fi/bellschedules\" with body", @"{
     ""schoolReference"": {
         ""schoolId"": 255901001
     },
