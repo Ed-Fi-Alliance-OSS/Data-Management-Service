@@ -7,7 +7,6 @@ using System.Text.Json;
 using EdFi.DataManagementService.Api.Core.Response;
 using EdFi.DataManagementService.Api.Core.Validation;
 using EdFi.DataManagementService.Core.Pipeline;
-using Microsoft.CodeAnalysis;
 
 namespace EdFi.DataManagementService.Api.Core.Middleware;
 

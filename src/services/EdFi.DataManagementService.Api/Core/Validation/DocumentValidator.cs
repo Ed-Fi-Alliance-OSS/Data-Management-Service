@@ -5,7 +5,6 @@
 
 using System.Diagnostics;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Api.Core.ApiSchema.Extensions;
 using EdFi.DataManagementService.Core.Pipeline;
 using Json.Schema;

@@ -1,5 +1,5 @@
 Feature: ValidationErrors
-    POST or PUT a request that has an invalid payload.
+    POST a request that has an invalid payload.
 
 Scenario: Post an empty request object
  When sending a POST request to "data/ed-fi/schools" with body
