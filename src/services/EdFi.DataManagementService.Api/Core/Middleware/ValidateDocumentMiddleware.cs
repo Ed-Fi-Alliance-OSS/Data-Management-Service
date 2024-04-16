@@ -3,7 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Unicode;
 using EdFi.DataManagementService.Api.Core.Response;
 using EdFi.DataManagementService.Api.Core.Validation;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -55,9 +57,14 @@ public class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _doc
                 context.FrontendRequest.TraceId
             );
 
+            var options = new JsonSerializerOptions
+            {
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            };
+
             context.FrontendResponse = new(
                 StatusCode: failureResponse.status,
-                Body: JsonSerializer.Serialize(failureResponse)
+                Body: JsonSerializer.Serialize(failureResponse, options)
             );
         }
     }
