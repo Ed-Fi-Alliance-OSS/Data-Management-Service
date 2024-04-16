@@ -5,7 +5,6 @@
 
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using System.Text.Unicode;
 using EdFi.DataManagementService.Api.Core.Response;
 using EdFi.DataManagementService.Api.Core.Validation;
 using EdFi.DataManagementService.Core.Pipeline;
