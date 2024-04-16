@@ -2,7 +2,6 @@
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
-using System.Reflection;
 using System.Text.Json.Nodes;
 
 namespace EdFi.DataManagementService.Api.Core.ApiSchema;
@@ -21,18 +20,7 @@ public class ApiSchemaFileLoader : IApiSchemaProvider
 
     public ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger)
     {
-        _logger.LogDebug("Entering ApiSchemaFileLoader");
-
-        var assembly =
-            Assembly.GetAssembly(typeof(EdFi.ApiSchema.Marker))
-            ?? throw new InvalidOperationException("Could not load the ApiSchema library");
-
-        var resourceName = assembly.GetManifestResourceNames().Single(str => str.EndsWith("ApiSchema.json"));
-        using Stream stream =
-            assembly.GetManifestResourceStream(resourceName)
-            ?? throw new InvalidOperationException("Could not load ApiSchema resource");
-        using StreamReader reader = new(stream);
-        var jsonContent = reader.ReadToEnd();
+        var jsonContent = File.ReadAllText("/home/brad/work/tanager/Data-Management-Service/src/services/EdFi.DataManagementService.Api/ds-5.0-api-schema-authoritative.json");
 
         JsonNode? rootNodeFromFile = JsonNode.Parse(jsonContent);
         if (rootNodeFromFile == null)

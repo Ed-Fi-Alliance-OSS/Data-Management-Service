@@ -6,7 +6,7 @@
 namespace EdFi.DataManagementService.Api.Core.Model;
 
 /// <summary>
-/// A simple tuple containing the DocumentObjectKey and corresponding document value
+/// A simple tuple containing the identity JsonPath and corresponding document value
 /// that makes up part of a document identity.
 /// </summary>
-public record DocumentIdentityElement(DocumentObjectKey DocumentObjectKey, string DocumentValue);
+public record DocumentIdentityElement(JsonPath IdentityJsonPath, string IdentityValue);

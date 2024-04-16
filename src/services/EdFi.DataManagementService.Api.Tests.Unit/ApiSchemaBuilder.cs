@@ -115,8 +115,7 @@ public class ApiSchemaBuilder
             ["allowIdentityUpdates"] = allowIdentityUpdates,
             ["documentPathsMapping"] = new JsonObject(),
             ["equalityConstraints"] = new JsonArray(),
-            ["identityFullnames"] = new JsonArray(),
-            ["identityPathOrder"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray(),
             ["isDescriptor"] = isDescriptor,
             ["isSchoolYearEnumeration"] = isSchoolYearEnumeration,
             ["isSubclass"] = isSubclass,
@@ -136,8 +135,7 @@ public class ApiSchemaBuilder
     /// </summary>
     public ApiSchemaBuilder WithSuperclassInformation(
         string subclassType,
-        string subclassIdentityDocumentKey,
-        string superclassIdentityDocumentKey,
+        string superclassIdentityJsonPath,
         string superclassResourceName,
         string superclassProjectName = "Ed-Fi"
     )
@@ -152,9 +150,8 @@ public class ApiSchemaBuilder
         }
 
         _currentResourceNode["isSubclass"] = true;
-        _currentResourceNode["subclassIdentityDocumentKey"] = subclassIdentityDocumentKey;
+        _currentResourceNode["superclassIdentityJsonPath"] = superclassIdentityJsonPath;
         _currentResourceNode["subclassType"] = subclassType;
-        _currentResourceNode["superclassIdentityDocumentKey"] = superclassIdentityDocumentKey;
         _currentResourceNode["superclassProjectName"] = superclassProjectName;
         _currentResourceNode["superclassResourceName"] = superclassResourceName;
 
@@ -162,9 +159,9 @@ public class ApiSchemaBuilder
     }
 
     /// <summary>
-    /// Adds an identityFullnames section to a resource
+    /// Adds an identityJsonPaths section to a resource
     /// </summary>
-    public ApiSchemaBuilder WithIdentityFullnames(string[] identityFullnames)
+    public ApiSchemaBuilder WithIdentityJsonPaths(string[] identityJsonPaths)
     {
         if (_currentProjectNode == null)
         {
@@ -175,29 +172,8 @@ public class ApiSchemaBuilder
             throw new InvalidOperationException();
         }
 
-        _currentResourceNode["identityFullnames"] = new JsonArray(
-            identityFullnames.Select(x => JsonValue.Create(x)).ToArray()
-        );
-
-        return this;
-    }
-
-    /// <summary>
-    /// Adds an identityPathOrder section to a resource
-    /// </summary>
-    public ApiSchemaBuilder WithIdentityPathOrder(string[] identityPathOrder)
-    {
-        if (_currentProjectNode == null)
-        {
-            throw new InvalidOperationException();
-        }
-        if (_currentResourceNode == null)
-        {
-            throw new InvalidOperationException();
-        }
-
-        _currentResourceNode["identityPathOrder"] = new JsonArray(
-            identityPathOrder.Select(x => JsonValue.Create(x)).ToArray()
+        _currentResourceNode["identityJsonPaths"] = new JsonArray(
+            identityJsonPaths.Select(x => JsonValue.Create(x)).ToArray()
         );
 
         return this;
@@ -251,15 +227,10 @@ public class ApiSchemaBuilder
     ///
     /// "OfficialAttendancePeriod": {
     ///   "isReference": false,
-    ///   "pathOrder": [
-    ///     "officialAttendancePeriod"
-    ///   ],
-    ///   "paths": {
-    ///     "officialAttendancePeriod": "$.officialAttendancePeriod"
-    ///   }
+    ///   "path": "$.officialAttendancePeriod"
     /// },
     /// </summary>
-    public ApiSchemaBuilder WithDocumentPathScalar(string pathFullName, string documentKey, string jsonPath)
+    public ApiSchemaBuilder WithDocumentPathScalar(string pathFullName, string jsonPath)
     {
         if (_currentProjectNode == null)
         {
@@ -277,8 +248,7 @@ public class ApiSchemaBuilder
         _currentDocumentPathsMappingNode[pathFullName] = new JsonObject
         {
             ["isReference"] = false,
-            ["pathOrder"] = new JsonArray(documentKey),
-            ["paths"] = new JsonObject { [documentKey] = jsonPath }
+            ["path"] = jsonPath
         };
 
         return this;
@@ -291,10 +261,10 @@ public class ApiSchemaBuilder
     /// Example for parameters: (
     ///   "CourseOffering",
     ///   [
-    ///       new ("localCourseCode", "$.courseOfferingReference.localCourseCode"),
-    ///       new ("schoolId", "$.courseOfferingReference.schoolId"),
-    ///       new ("schoolYear", "$.courseOfferingReference.schoolYear"),
-    ///       new ("sessionName", "$.courseOfferingReference.sessionName")
+    ///       new ("$.localCourseCode", "$.courseOfferingReference.localCourseCode"),
+    ///       new ("$.schoolReference.schoolId", "$.courseOfferingReference.schoolId"),
+    ///       new ("$.sessionReference.schoolYear", "$.courseOfferingReference.schoolYear"),
+    ///       new ("$.sessionReference.sessionName", "$.courseOfferingReference.sessionName")
     ///   ]
     /// )
     ///
@@ -303,25 +273,31 @@ public class ApiSchemaBuilder
     ///  "CourseOffering": {
     ///    "isDescriptor": false,
     ///    "isReference": true,
-    ///    "pathOrder": [
-    ///      "localCourseCode",
-    ///      "schoolId",
-    ///      "schoolYear",
-    ///      "sessionName"
-    ///    ],
-    ///    "paths": {
-    ///      "localCourseCode": "$.courseOfferingReference.localCourseCode",
-    ///      "schoolId": "$.courseOfferingReference.schoolId",
-    ///      "schoolYear": "$.courseOfferingReference.schoolYear",
-    ///      "sessionName": "$.courseOfferingReference.sessionName"
-    ///    },
     ///    "projectName": "Ed-Fi",
-    ///    "resourceName": "CourseOffering"
-    ///  },
+    ///      "referenceJsonPaths": [
+    ///        {
+    ///          "identityJsonPath": "$.localCourseCode",
+    ///          "referenceJsonPath": "$.courseOfferingReference.localCourseCode"
+    ///        },
+    ///        {
+    ///          "identityJsonPath": "$.schoolReference.schoolId",
+    ///          "referenceJsonPath": "$.courseOfferingReference.schoolId"
+    ///        },
+    ///        {
+    ///          "identityJsonPath": "$.sessionReference.schoolYear",
+    ///          "referenceJsonPath": "$.courseOfferingReference.schoolYear"
+    ///        },
+    ///        {
+    ///          "identityJsonPath": "$.sessionReference.sessionName",
+    ///          "referenceJsonPath": "$.courseOfferingReference.sessionName"
+    ///        }
+    ///      ],
+    ///      "resourceName": "CourseOffering"
+    ///    },
     /// </summary>
     public ApiSchemaBuilder WithDocumentPathReference(
         string pathFullName,
-        KeyValuePair<string, JsonNode?>[] paths,
+        KeyValuePair<string, string>[] referenceJsonPaths,
         bool isDescriptor = false,
         string referenceProjectName = "Ed-Fi"
     )
@@ -345,8 +321,15 @@ public class ApiSchemaBuilder
             ["isDescriptor"] = isDescriptor,
             ["projectName"] = referenceProjectName,
             ["resourceName"] = pathFullName,
-            ["pathOrder"] = new JsonArray(paths.Select(x => JsonValue.Create(x.Key)).ToArray()),
-            ["paths"] = new JsonObject(paths)
+            ["referenceJsonPaths"] = new JsonArray(
+                referenceJsonPaths
+                    .Select(x => new JsonObject
+                    {
+                        ["identityJsonPath"] = x.Key,
+                        ["referenceJsonPath"] = x.Value
+                    })
+                    .ToArray()
+            )
         };
 
         return this;
@@ -364,17 +347,20 @@ public class ApiSchemaBuilder
         }
 
         _currentResourceNode["equalityConstraints"] = new JsonArray(
-            equalityConstraints.Select(x => new JsonObject
-            {
-                ["sourceJsonPath"] = x.SourceJsonPath.Value,
-                ["targetJsonPath"] = x.TargetJsonPath.Value
-            }).ToArray());
+            equalityConstraints
+                .Select(x => new JsonObject
+                {
+                    ["sourceJsonPath"] = x.SourceJsonPath.Value,
+                    ["targetJsonPath"] = x.TargetJsonPath.Value
+                })
+                .ToArray()
+        );
 
         return this;
     }
 
     /// <summary>
-    /// End a document paths mapping definition. 
+    /// End a document paths mapping definition.
     /// </summary>
     public ApiSchemaBuilder WithEndDocumentPathsMapping()
     {
