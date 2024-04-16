@@ -13,7 +13,8 @@ namespace EdFi.DataManagementService.Api.Core.Model;
 /// </summary>
 public class DescriptorDocument(JsonNode _document)
 {
-    private static readonly DocumentObjectKey _descriptorKey = new("descriptor");
+    // A hardcoded identity path for all descriptor document identities
+    public static readonly JsonPath DescriptorIdentityPath = new("$");
 
     /// <summary>
     /// Creates a new DocumentIdentity from the DescriptorDocument
@@ -34,7 +35,7 @@ public class DescriptorDocument(JsonNode _document)
 
         DocumentIdentityElement[] descriptorElement =
         [
-            new(DocumentObjectKey: _descriptorKey, DocumentValue: $"{namespaceName}#{codeValue}")
+            new(IdentityJsonPath: DescriptorIdentityPath, IdentityValue: $"{namespaceName}#{codeValue}")
         ];
         return new DocumentIdentity(descriptorElement);
     }

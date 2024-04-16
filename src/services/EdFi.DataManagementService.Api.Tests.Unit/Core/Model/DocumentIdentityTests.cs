@@ -20,11 +20,8 @@ public class DocumentIdentityTests
         [SetUp]
         public void Setup()
         {
-            DocumentIdentity documentIdentity = new([new(new("schoolId"), "123")]);
-            superclassIdentity = documentIdentity.IdentityRename(
-                new("schoolId"),
-                new("educationOrganizationId")
-            );
+            DocumentIdentity documentIdentity = new([new(new("$.schoolId"), "123")]);
+            superclassIdentity = documentIdentity.IdentityRename(new("$.educationOrganizationId"));
         }
 
         [Test]
@@ -32,8 +29,8 @@ public class DocumentIdentityTests
         {
             var superclassIdentityElements = superclassIdentity!.DocumentIdentityElements;
             superclassIdentityElements.Should().HaveCount(1);
-            superclassIdentityElements[0].DocumentObjectKey.Value.Should().Be("educationOrganizationId");
-            superclassIdentityElements[0].DocumentValue.Should().Be("123");
+            superclassIdentityElements[0].IdentityJsonPath.Value.Should().Be("$.educationOrganizationId");
+            superclassIdentityElements[0].IdentityValue.Should().Be("123");
         }
     }
 
@@ -45,7 +42,7 @@ public class DocumentIdentityTests
         [SetUp]
         public void Setup()
         {
-            DocumentIdentity documentIdentity = new([new(new("schoolId"), "123")]);
+            DocumentIdentity documentIdentity = new([new(new("$.schoolId"), "123")]);
             BaseResourceInfo resourceInfo = new(new("Ed-Fi"), new("School"), false);
             referentialId = documentIdentity.ToReferentialId(resourceInfo);
         }
@@ -53,7 +50,7 @@ public class DocumentIdentityTests
         [Test]
         public void It_has_the_correct_referentialId()
         {
-            referentialId.Value.ToString().Should().Be("d8768d4d-d84f-5ca3-9334-261bea957260");
+            referentialId.Value.ToString().Should().Be("05374602-2715-517e-8f08-56f877843b57");
         }
     }
 
@@ -68,11 +65,11 @@ public class DocumentIdentityTests
             DocumentIdentity documentIdentity =
                 new(
                     [
-                        new(new("localCourseCode"), "abc"),
-                        new(new("schoolId"), "123"),
-                        new(new("schoolYear"), "2030"),
-                        new(new("sectionIdentifier"), "sectionId"),
-                        new(new("sessionName"), "d")
+                        new(new("$.localCourseCode"), "abc"),
+                        new(new("$.schoolReference.schoolId"), "123"),
+                        new(new("$.sessionReference.schoolYear"), "2030"),
+                        new(new("$.sectionIdentifier"), "sectionId"),
+                        new(new("$.sessionReference.sessionName"), "d")
                     ]
                 );
             BaseResourceInfo resourceInfo = new(new("Ed-Fi"), new("Section"), false);
@@ -82,7 +79,7 @@ public class DocumentIdentityTests
         [Test]
         public void It_has_the_correct_referentialId()
         {
-            referentialId.Value.ToString().Should().Be("83cc06fa-6049-565a-97d9-5bf36458519c");
+            referentialId.Value.ToString().Should().Be("9bb7c8d3-7154-5952-9ff3-1766185ca40e");
         }
     }
 }

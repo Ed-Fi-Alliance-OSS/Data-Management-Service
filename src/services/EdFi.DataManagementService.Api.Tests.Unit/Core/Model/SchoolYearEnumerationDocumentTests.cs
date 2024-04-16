@@ -39,8 +39,8 @@ public class SchoolYearEnumerationDocumentTests
         {
             var identity = document!.ToDocumentIdentity();
             identity.DocumentIdentityElements.Should().HaveCount(1);
-            identity.DocumentIdentityElements[0].DocumentObjectKey.Value.Should().Be("schoolYear");
-            identity.DocumentIdentityElements[0].DocumentValue.Should().Be("2030");
+            identity.DocumentIdentityElements[0].IdentityJsonPath.Value.Should().Be("$.schoolYear");
+            identity.DocumentIdentityElements[0].IdentityValue.Should().Be("2030");
         }
 
         [Test]
@@ -51,10 +51,10 @@ public class SchoolYearEnumerationDocumentTests
             documentInfo.DescriptorReferences.Should().BeEmpty();
             documentInfo.SuperclassIdentity.Should().BeNull();
 
-            var identity = document!.ToDocumentIdentity();
+            var identity = documentInfo.DocumentIdentity;
             identity.DocumentIdentityElements.Should().HaveCount(1);
-            identity.DocumentIdentityElements[0].DocumentObjectKey.Value.Should().Be("schoolYear");
-            identity.DocumentIdentityElements[0].DocumentValue.Should().Be("2030");
+            identity.DocumentIdentityElements[0].IdentityJsonPath.Value.Should().Be("$.schoolYear");
+            identity.DocumentIdentityElements[0].IdentityValue.Should().Be("2030");
         }
     }
 }
