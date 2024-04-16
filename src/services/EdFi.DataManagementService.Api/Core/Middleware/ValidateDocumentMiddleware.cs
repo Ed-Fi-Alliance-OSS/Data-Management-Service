@@ -29,11 +29,24 @@ public class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _doc
         }
         else
         {
-            var failureResponse = FailureResponse.ForDataValidation(
-                "Data validation failed. See " + (validationErrors.Count > 0 ? "validationErrors" : "errors") + " for details.",
-                validationErrors,
-                errors
-            );
+            FailureResponse failureResponse;
+
+            if (errors.Length > 0)
+            {
+                failureResponse = FailureResponse.ForBadRequest(
+                    "The request could not be processed. See 'errors' for details.",
+                    validationErrors,
+                    errors
+                );
+            }
+            else
+            {
+                failureResponse = FailureResponse.ForDataValidation(
+                    "Data validation failed. See 'validationErrors' for details.",
+                    validationErrors,
+                    errors
+                );
+            }
 
             _logger.LogDebug(
                 "'{Status}'.'{EndpointName}' - {TraceId}",

@@ -8,7 +8,7 @@ Scenario: Post an empty request object
  Then the response code is 400
     And the response body is
 """
-{"detail":"Data validation failed. See errors for details.","type":"urn:dms:bad-request:data","title":"Data Validation Error","status":400,"correlationId":null,"validationErrors":{},"errors":["A non-empty request body is required."]}
+{"detail":"The request could not be processed. See \u0027errors\u0027 for details.","type":"urn:ed-fi:api:bad-request","title":"Bad Request","status":400,"correlationId":null,"validationErrors":{},"errors":["A non-empty request body is required."]}
 """
 
 Scenario: Post an invalid body for academicWeeks when weekIdentifier length should be at least 5 characters
@@ -27,7 +27,7 @@ Scenario: Post an invalid body for academicWeeks when weekIdentifier length shou
  	Then the response code is 400
     And the response body is
 """
-{"detail":"Data validation failed. See validationErrors for details.","type":"urn:dms:bad-request:data","title":"Data Validation Error","status":400,"correlationId":null,"validationErrors":{"weekIdentifier : ":["weekIdentifier : Value should be at least 5 characters"]},"errors":[]}
+{"detail":"Data validation failed. See \u0027validationErrors\u0027 for details.","type":"urn:ed-fi:api:bad-request:data","title":"Data Validation Failed","status":400,"correlationId":null,"validationErrors":{"weekIdentifier : ":["weekIdentifier : Value should be at least 5 characters"]},"errors":[]}
 """
 
 Scenario: Post an invalid body for academicWeeks missing schoolid for schoolReference and totalInstructionalDays
@@ -44,7 +44,7 @@ Scenario: Post an invalid body for academicWeeks missing schoolid for schoolRefe
 	Then the response code is 400
     And the response body is
 """
-{"detail":"Data validation failed. See validationErrors for details.","type":"urn:dms:bad-request:data","title":"Data Validation Error","status":400,"correlationId":null,"validationErrors":{"":["Required properties [\u0022totalInstructionalDays\u0022] are not present"],"schoolReference : ":["Required properties [\u0022totalInstructionalDays\u0022] are not present","schoolReference : Required properties [\u0022schoolId\u0022] are not present"]},"errors":[]}
+{"detail":"Data validation failed. See \u0027validationErrors\u0027 for details.","type":"urn:ed-fi:api:bad-request:data","title":"Data Validation Failed","status":400,"correlationId":null,"validationErrors":{"":["Required properties [\u0022totalInstructionalDays\u0022] are not present"],"schoolReference : ":["Required properties [\u0022totalInstructionalDays\u0022] are not present","schoolReference : Required properties [\u0022schoolId\u0022] are not present"]},"errors":[]}
 """
 
 Scenario: Post a valid Descriptor

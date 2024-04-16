@@ -44,7 +44,7 @@ public record FailureResponse(
     string[]? errors
 )
 {
-    private const string BaseTypePrefix = "urn:dms";
+    private const string BaseTypePrefix = "urn:ed-fi:api";
     private const string BadRequestTypePrefix = $"{BaseTypePrefix}:bad-request";
     private const string DataValidationTypePrefix = $"{BadRequestTypePrefix}:data";
 
@@ -56,7 +56,7 @@ public record FailureResponse(
         new(
             detail: Detail,
             type: DataValidationTypePrefix,
-            title: "Data Validation Error",
+            title: "Data Validation Failed",
             status: 400,
             correlationId: null,
             validationErrors: ValidationErrors,

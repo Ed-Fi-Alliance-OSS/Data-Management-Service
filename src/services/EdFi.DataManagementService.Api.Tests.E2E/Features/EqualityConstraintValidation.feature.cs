@@ -174,7 +174,7 @@ this.ScenarioInitialize(scenarioInfo);
     await testRunner.ThenAsync("the response code is 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 67
-        await testRunner.AndAsync("the response body is", @"{""detail"":""Data validation failed. See errors for details."",""type"":""urn:dms:bad-request:data"",""title"":""Data Validation Error"",""status"":400,""correlationId"":null,""validationErrors"":null,""errors"":[""Constraint failure: document paths $.classPeriods[*].classPeriodReference.schoolId and $.schoolReference.schoolId must have the same values""]}", ((Reqnroll.Table)(null)), "And ");
+        await testRunner.AndAsync("the response body is", @"{""detail"":""The request could not be processed. See \u0027errors\u0027 for details."",""type"":""urn:ed-fi:api:bad-request"",""title"":""Bad Request"",""status"":400,""correlationId"":null,""validationErrors"":null,""errors"":[""Constraint failure: document paths $.classPeriods[*].classPeriodReference.schoolId and $.schoolReference.schoolId must have the same values""]}", ((Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();

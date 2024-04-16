@@ -30,8 +30,8 @@ public class ValidateEqualityConstraintMiddleware(ILogger _logger, IEqualityCons
         }
         else
         {
-            var failureResponse = FailureResponse.ForDataValidation(
-                "Data validation failed. See errors for details.",
+            var failureResponse = FailureResponse.ForBadRequest(
+                "The request could not be processed. See 'errors' for details.",
                 null,
                 errors
             );
