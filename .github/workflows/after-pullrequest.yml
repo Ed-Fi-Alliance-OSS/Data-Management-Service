@@ -10,6 +10,10 @@ on:
       - "On Pull Request"
     types:
       - completed
+  #Testing on dispatch
+  workflow_dispatch:
+
+permissions: read-all
 
 jobs:
   report-test-results:
