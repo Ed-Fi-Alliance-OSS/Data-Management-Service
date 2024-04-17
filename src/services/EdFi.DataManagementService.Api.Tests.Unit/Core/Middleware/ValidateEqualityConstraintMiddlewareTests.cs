@@ -174,7 +174,7 @@ public class ValidateEqualityConstraintMiddlewareTests
         [Test]
         public void It_returns_message_body_with_failures()
         {
-            _context?.FrontendResponse.Body.Should().Contain("Data validation failed");
+            _context?.FrontendResponse.Body.Should().Contain("Bad Request");
             _context?.FrontendResponse.Body.Should().Contain("Constraint failure: document paths $.classPeriods[*].classPeriodReference.schoolId and $.schoolReference.schoolId must have the same values");
         }
     }

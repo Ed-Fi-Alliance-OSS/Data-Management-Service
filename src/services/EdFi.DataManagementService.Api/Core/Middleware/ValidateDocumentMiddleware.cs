@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using EdFi.DataManagementService.Api.Core.Response;
 using EdFi.DataManagementService.Api.Core.Validation;
@@ -21,20 +22,32 @@ public class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _doc
         _logger.LogDebug("Entering ValidateDocumentMiddleware- {TraceId}", context.FrontendRequest.TraceId);
 
         var validatorContext = new ValidatorContext(context.ResourceSchema, context.FrontendRequest.Method);
+        var (errors, validationErrors) = _documentValidator.Validate(context, validatorContext);
 
-        var errors = _documentValidator.Validate(context, validatorContext).ToArray();
-
-        if (errors.Length == 0)
+        if (errors.Length == 0 && validationErrors.Count == 0)
         {
             await next();
         }
         else
         {
-            var failureResponse = FailureResponse.ForDataValidation(
-                "Data validation failed. See errors for details.",
-                null,
-                errors
-            );
+            FailureResponse failureResponse;
+
+            if (errors.Length > 0)
+            {
+                failureResponse = FailureResponse.ForBadRequest(
+                    "The request could not be processed. See 'errors' for details.",
+                    validationErrors,
+                    errors
+                );
+            }
+            else
+            {
+                failureResponse = FailureResponse.ForDataValidation(
+                    "Data validation failed. See 'validationErrors' for details.",
+                    validationErrors,
+                    errors
+                );
+            }
 
             _logger.LogDebug(
                 "'{Status}'.'{EndpointName}' - {TraceId}",
@@ -43,9 +56,14 @@ public class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _doc
                 context.FrontendRequest.TraceId
             );
 
+            var options = new JsonSerializerOptions
+            {
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            };
+
             context.FrontendResponse = new(
                 StatusCode: failureResponse.status,
-                Body: JsonSerializer.Serialize(failureResponse)
+                Body: JsonSerializer.Serialize(failureResponse, options)
             );
         }
     }

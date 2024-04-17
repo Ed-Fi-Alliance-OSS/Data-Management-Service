@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using EdFi.DataManagementService.Api.Core.Response;
 using EdFi.DataManagementService.Api.Core.Validation;
@@ -30,8 +31,8 @@ public class ValidateEqualityConstraintMiddleware(ILogger _logger, IEqualityCons
         }
         else
         {
-            var failureResponse = FailureResponse.ForDataValidation(
-                "Data validation failed. See errors for details.",
+            var failureResponse = FailureResponse.ForBadRequest(
+                "The request could not be processed. See 'errors' for details.",
                 null,
                 errors
             );
@@ -43,9 +44,14 @@ public class ValidateEqualityConstraintMiddleware(ILogger _logger, IEqualityCons
                 context.FrontendRequest.TraceId
             );
 
+            var options = new JsonSerializerOptions
+            {
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            };
+
             context.FrontendResponse = new(
                 StatusCode: failureResponse.status,
-                Body: JsonSerializer.Serialize(failureResponse)
+                Body: JsonSerializer.Serialize(failureResponse, options)
             );
             return;
         }

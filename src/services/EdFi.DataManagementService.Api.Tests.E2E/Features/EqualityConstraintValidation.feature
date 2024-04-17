@@ -66,5 +66,5 @@ Scenario: Post an invalid bell schedule with equality constraint violations.
     Then the response code is 400
         And the response body is
 """
-{"detail":"Data validation failed. See errors for details.","type":"urn:dms:bad-request:data","title":"Data Validation Error","status":400,"correlationId":null,"validationErrors":null,"errors":["Constraint failure: document paths $.classPeriods[*].classPeriodReference.schoolId and $.schoolReference.schoolId must have the same values"]}
+{"detail":"The request could not be processed. See 'errors' for details.","type":"urn:ed-fi:api:bad-request","title":"Bad Request","status":400,"correlationId":null,"validationErrors":null,"errors":["Constraint failure: document paths $.classPeriods[*].classPeriodReference.schoolId and $.schoolReference.schoolId must have the same values"]}
 """
