@@ -161,9 +161,9 @@ public class APISchemaFileTests
                 response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             }
 
-            // "identityFullnames" element does not exist on resource schema.
+            // "identityjsonpaths" element does not exist on resource schema.
             [Test]
-            public async Task When_no_identityfullnames_element()
+            public async Task When_no_identityjsonpaths_element()
             {
                 // Arrange
                 await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(
@@ -173,16 +173,16 @@ public class APISchemaFileTests
                 using var client = factory.CreateClient();
 
                 // Act
-                var response = await client.PostAsync("/data/ed-fi/noidentityfullnames", jsonContent);
+                var response = await client.PostAsync("/data/ed-fi/noidentityjsonpaths", jsonContent);
                 var content = await response.Content.ReadAsStringAsync();
 
                 // Assert
                 response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             }
 
-            // "identityPathOrder" element does not exist on resource schema.
+            // "equalityconstraints" element does not exist on resource schema.
             [Test]
-            public async Task When_no_identitypathorder_element()
+            public async Task When_no_equalityconstraints_element()
             {
                 // Arrange
                 await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(
@@ -192,7 +192,7 @@ public class APISchemaFileTests
                 using var client = factory.CreateClient();
 
                 // Act
-                var response = await client.PostAsync("/data/ed-fi/noidentitypathorders", jsonContent);
+                var response = await client.PostAsync("/data/ed-fi/noequalityconstraints", jsonContent);
                 var content = await response.Content.ReadAsStringAsync();
 
                 // Assert
@@ -313,25 +313,6 @@ public class APISchemaFileTests
                     "/data/ed-fi/noSubclassIdentityDocumentKeys",
                     jsonContent
                 );
-                var content = await response.Content.ReadAsStringAsync();
-
-                // Assert
-                response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-            }
-
-            // documentPathsMapping element does not exist on resource schema.
-            [Test]
-            public async Task When_no_documentpathsmapping_element()
-            {
-                // Arrange
-                await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(
-                    _webHostBuilder
-                );
-                using StringContent jsonContent = _jsonContent;
-                using var client = factory.CreateClient();
-
-                // Act
-                var response = await client.PostAsync("/data/ed-fi/nodocumentpathsmappings", jsonContent);
                 var content = await response.Content.ReadAsStringAsync();
 
                 // Assert
