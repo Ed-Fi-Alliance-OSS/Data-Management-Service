@@ -26,19 +26,24 @@ public class ExtractDocumentIdentityTests
             ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("Section")
-                .WithIdentityFullnames(["SectionIdentifier", "CourseOffering"])
-                .WithIdentityPathOrder(
-                    ["localCourseCode", "schoolId", "schoolYear", "sectionIdentifier", "sessionName"]
+                .WithIdentityJsonPaths(
+                    [
+                        "$.courseOfferingReference.localCourseCode",
+                        "$.courseOfferingReference.schoolId",
+                        "$.courseOfferingReference.schoolYear",
+                        "$.courseOfferingReference.sessionName",
+                        "$.sectionIdentifier"
+                    ]
                 )
                 .WithStartDocumentPathsMapping()
-                .WithDocumentPathScalar("SectionIdentifier", "sectionIdentifier", "$.sectionIdentifier")
+                .WithDocumentPathScalar("SectionIdentifier", "$.sectionIdentifier")
                 .WithDocumentPathReference(
                     "CourseOffering",
                     [
-                        new("localCourseCode", "$.courseOfferingReference.localCourseCode"),
-                        new("schoolId", "$.courseOfferingReference.schoolId"),
-                        new("schoolYear", "$.courseOfferingReference.schoolYear"),
-                        new("sessionName", "$.courseOfferingReference.sessionName")
+                        new("$.localCourseCode", "$.courseOfferingReference.localCourseCode"),
+                        new("$.schoolReference.schoolId", "$.courseOfferingReference.schoolId"),
+                        new("$.sessionReference.schoolYear", "$.courseOfferingReference.schoolYear"),
+                        new("$.sessionReference.sessionName", "$.courseOfferingReference.sessionName")
                     ]
                 )
                 .WithEndDocumentPathsMapping()
@@ -71,20 +76,29 @@ public class ExtractDocumentIdentityTests
             documentIdentity!.DocumentIdentityElements.Should().HaveCount(5);
             documentIdentity!
                 .DocumentIdentityElements[0]
-                .DocumentObjectKey.Value.Should()
-                .Be("localCourseCode");
-            documentIdentity!.DocumentIdentityElements[0].DocumentValue.Should().Be("abc");
-            documentIdentity!.DocumentIdentityElements[1].DocumentObjectKey.Value.Should().Be("schoolId");
-            documentIdentity!.DocumentIdentityElements[1].DocumentValue.Should().Be("123");
-            documentIdentity!.DocumentIdentityElements[2].DocumentObjectKey.Value.Should().Be("schoolYear");
-            documentIdentity!.DocumentIdentityElements[2].DocumentValue.Should().Be("2030");
+                .IdentityJsonPath.Value.Should()
+                .Be("$.courseOfferingReference.localCourseCode");
+            documentIdentity!.DocumentIdentityElements[0].IdentityValue.Should().Be("abc");
+            documentIdentity!
+                .DocumentIdentityElements[1]
+                .IdentityJsonPath.Value.Should()
+                .Be("$.courseOfferingReference.schoolId");
+            documentIdentity!.DocumentIdentityElements[1].IdentityValue.Should().Be("123");
+            documentIdentity!
+                .DocumentIdentityElements[2]
+                .IdentityJsonPath.Value.Should()
+                .Be("$.courseOfferingReference.schoolYear");
+            documentIdentity!.DocumentIdentityElements[2].IdentityValue.Should().Be("2030");
             documentIdentity!
                 .DocumentIdentityElements[3]
-                .DocumentObjectKey.Value.Should()
-                .Be("sectionIdentifier");
-            documentIdentity!.DocumentIdentityElements[3].DocumentValue.Should().Be("sectionId");
-            documentIdentity!.DocumentIdentityElements[4].DocumentObjectKey.Value.Should().Be("sessionName");
-            documentIdentity!.DocumentIdentityElements[4].DocumentValue.Should().Be("d");
+                .IdentityJsonPath.Value.Should()
+                .Be("$.courseOfferingReference.sessionName");
+            documentIdentity!.DocumentIdentityElements[3].IdentityValue.Should().Be("d");
+            documentIdentity!
+                .DocumentIdentityElements[4]
+                .IdentityJsonPath.Value.Should()
+                .Be("$.sectionIdentifier");
+            documentIdentity!.DocumentIdentityElements[4].IdentityValue.Should().Be("sectionId");
         }
     }
 
@@ -100,14 +114,14 @@ public class ExtractDocumentIdentityTests
             ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("StaffEducationOrganizationAssignmentAssociation")
-                .WithIdentityFullnames(["StaffClassification"])
-                .WithIdentityPathOrder(["staffClassificationDescriptor"])
+                .WithIdentityJsonPaths(["$.staffClassificationDescriptor"])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathReference(
                     "StaffClassification",
-                    [new("staffClassificationDescriptor", "$.staffClassificationDescriptor")],
+                    [new(DescriptorDocument.DescriptorIdentityPath.Value, "$.staffClassificationDescriptor")],
                     true
                 )
+                .WithDocumentPathScalar("EndDate", "$.endDate")
                 .WithEndDocumentPathsMapping()
                 .WithEndResource()
                 .WithEndProject()
@@ -136,11 +150,11 @@ public class ExtractDocumentIdentityTests
             documentIdentity!.DocumentIdentityElements.Should().HaveCount(1);
             documentIdentity!
                 .DocumentIdentityElements[0]
-                .DocumentObjectKey.Value.Should()
-                .Be("staffClassificationDescriptor");
+                .IdentityJsonPath.Value.Should()
+                .Be("$.staffClassificationDescriptor");
             documentIdentity!
                 .DocumentIdentityElements[0]
-                .DocumentValue.Should()
+                .IdentityValue.Should()
                 .Be("uri://ed-fi.org/StaffClassificationDescriptor#Kindergarten Teacher");
         }
     }
@@ -157,10 +171,10 @@ public class ExtractDocumentIdentityTests
             ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("GradingPeriod")
-                .WithIdentityFullnames(["SchoolYear"])
-                .WithIdentityPathOrder(["schoolYear"])
+                .WithIdentityJsonPaths(["$.schoolYearTypeReference.schoolYear"])
                 .WithStartDocumentPathsMapping()
-                .WithDocumentPathScalar("SchoolYear", "schoolYear", "$.schoolYearTypeReference.schoolYear")
+                .WithDocumentPathScalar("SchoolYear", "$.schoolYearTypeReference.schoolYear")
+                .WithDocumentPathScalar("EndDate", "$.endDate")
                 .WithEndDocumentPathsMapping()
                 .WithEndResource()
                 .WithEndProject()
@@ -186,8 +200,11 @@ public class ExtractDocumentIdentityTests
         public void It_has_extracted_the_identity()
         {
             documentIdentity!.DocumentIdentityElements.Should().HaveCount(1);
-            documentIdentity!.DocumentIdentityElements[0].DocumentObjectKey.Value.Should().Be("schoolYear");
-            documentIdentity!.DocumentIdentityElements[0].DocumentValue.Should().Be("2030");
+            documentIdentity!
+                .DocumentIdentityElements[0]
+                .IdentityJsonPath.Value.Should()
+                .Be("$.schoolYearTypeReference.schoolYear");
+            documentIdentity!.DocumentIdentityElements[0].IdentityValue.Should().Be("2030");
         }
     }
 }

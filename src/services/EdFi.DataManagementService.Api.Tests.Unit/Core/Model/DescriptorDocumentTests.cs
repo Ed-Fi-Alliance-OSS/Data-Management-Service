@@ -40,10 +40,13 @@ public class DescriptorDocumentTests
         {
             var descriptorIdentity = descriptorDocument!.ToDocumentIdentity();
             descriptorIdentity.DocumentIdentityElements.Should().HaveCount(1);
-            descriptorIdentity.DocumentIdentityElements[0].DocumentObjectKey.Value.Should().Be("descriptor");
             descriptorIdentity
                 .DocumentIdentityElements[0]
-                .DocumentValue.Should()
+                .IdentityJsonPath.Should()
+                .Be(DescriptorDocument.DescriptorIdentityPath);
+            descriptorIdentity
+                .DocumentIdentityElements[0]
+                .IdentityValue.Should()
                 .Be("uri://ed-fi.org/AcademicSubjectDescriptor#English");
         }
 
@@ -57,10 +60,13 @@ public class DescriptorDocumentTests
 
             var descriptorIdentity = documentInfo.DocumentIdentity;
             descriptorIdentity.DocumentIdentityElements.Should().HaveCount(1);
-            descriptorIdentity.DocumentIdentityElements[0].DocumentObjectKey.Value.Should().Be("descriptor");
             descriptorIdentity
                 .DocumentIdentityElements[0]
-                .DocumentValue.Should()
+                .IdentityJsonPath.Should()
+                .Be(DescriptorDocument.DescriptorIdentityPath);
+            descriptorIdentity
+                .DocumentIdentityElements[0]
+                .IdentityValue.Should()
                 .Be("uri://ed-fi.org/AcademicSubjectDescriptor#English");
         }
     }

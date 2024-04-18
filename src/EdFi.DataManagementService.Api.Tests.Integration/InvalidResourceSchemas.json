@@ -11,8 +11,8 @@
                 "noisdescriptors": "noIsDescriptors",
                 "noallowidentityupdates": "noAllowIdentityUpdates",
                 "nojsonschemaforinserts": "noJsonSchemaForInserts",
-                "noidentityfullnames": "noIdentityFullnames",
-                "noidentitypathorders": "noIdentityPathOrders",
+                "noidentityjsonpaths": "noIdentityJsonPaths",
+                "noequalityconstraints": "noEqualityConstraints",
                 "noissubclasses": "noIsSubclasses",
                 "nosubclasstypes": "noSubClassTypes",
                 "nosuperclassresourcenames": "noSuperclassResourceNames",
@@ -43,9 +43,6 @@
                         ]
                     },
                     "equalityConstraints": [],
-                    "identityFullnames": [
-                        "property1"
-                    ],
                     "documentPathsMapping": {
                         "property1": {
                             "paths": {
@@ -57,8 +54,8 @@
                             "isReference": false
                         }
                     },
-                    "identityPathOrder": [
-                        "property1"
+                    "identityJsonPaths": [
+                        "$.property1"
                     ],
                     "isSubclass": false
                 },
@@ -83,9 +80,6 @@
                         ]
                     },
                     "equalityConstraints": [],
-                    "identityFullnames": [
-                        "property1"
-                    ],
                     "documentPathsMapping": {
                         "property1": {
                             "paths": {
@@ -97,8 +91,8 @@
                             "isReference": false
                         }
                     },
-                    "identityPathOrder": [
-                        "property1"
+                    "identityJsonPaths": [
+                        "$.property1"
                     ],
                     "isSubclass": false
                 },
@@ -123,9 +117,6 @@
                         ]
                     },
                     "equalityConstraints": [],
-                    "identityFullnames": [
-                        "property1"
-                    ],
                     "documentPathsMapping": {
                         "property1": {
                             "paths": {
@@ -137,8 +128,8 @@
                             "isReference": false
                         }
                     },
-                    "identityPathOrder": [
-                        "property1"
+                    "identityJsonPaths": [
+                        "$.property1"
                     ],
                     "isSubclass": false
                 },
@@ -163,9 +154,6 @@
                         ]
                     },
                     "equalityConstraints": [],
-                    "identityFullnames": [
-                        "property1"
-                    ],
                     "documentPathsMapping": {
                         "property1": {
                             "paths": {
@@ -177,8 +165,8 @@
                             "isReference": false
                         }
                     },
-                    "identityPathOrder": [
-                        "property1"
+                    "identityJsonPaths": [
+                        "$.property1"
                     ],
                     "isSubclass": false
                 },
@@ -188,9 +176,6 @@
                     "isSchoolYearEnumeration": false,
                     "allowIdentityUpdates": false,
                     "equalityConstraints": [],
-                    "identityFullnames": [
-                        "property1"
-                    ],
                     "documentPathsMapping": {
                         "property1": {
                             "paths": {
@@ -202,19 +187,19 @@
                             "isReference": false
                         }
                     },
-                    "identityPathOrder": [
-                        "property1"
+                    "identityJsonPaths": [
+                        "$.property1"
                     ],
                     "isSubclass": false
                 },
-                "noIdentityFullnames": {
-                    "resourceName": "NoIdentityFullname",
+                "noIdentityJsonPaths": {
+                    "resourceName": "NoIdentityJsonPath",
                     "isDescriptor": false,
                     "isSchoolYearEnumeration": false,
                     "allowIdentityUpdates": false,
                     "jsonSchemaForInsert": {
                         "$schema": "https://json-schema.org/draft/2020-12/schema",
-                        "title": "Ed-Fi.NoIdentityFullname",
+                        "title": "Ed-Fi.NoIdentityJsonPath",
                         "type": "object",
                         "properties": {
                             "property1": {
@@ -240,19 +225,16 @@
                             "isReference": false
                         }
                     },
-                    "identityPathOrder": [
-                        "property1"
-                    ],
                     "isSubclass": false
                 },
-                "noIdentityPathOrders": {
-                    "resourceName": "NoIdentityPathOrder",
+                "noEqualityConstraints": {
+                    "resourceName": "NoEqualityConstraint",
                     "isDescriptor": false,
                     "isSchoolYearEnumeration": false,
                     "allowIdentityUpdates": false,
                     "jsonSchemaForInsert": {
                         "$schema": "https://json-schema.org/draft/2020-12/schema",
-                        "title": "Ed-Fi.NoIdentityPathOrder",
+                        "title": "Ed-Fi.NoEqualityConstraint",
                         "type": "object",
                         "properties": {
                             "property1": {
@@ -266,10 +248,6 @@
                             "property1"
                         ]
                     },
-                    "equalityConstraints": [],
-                    "identityFullnames": [
-                        "property1"
-                    ],
                     "documentPathsMapping": {
                         "property1": {
                             "paths": {
@@ -281,6 +259,9 @@
                             "isReference": false
                         }
                     },
+                    "identityJsonPaths": [
+                        "$.property1"
+                    ],
                     "isSubclass": false
                 },
                 "noIsSubclasses": {
@@ -305,9 +286,6 @@
                         ]
                     },
                     "equalityConstraints": [],
-                    "identityFullnames": [
-                        "property1"
-                    ],
                     "documentPathsMapping": {
                         "property1": {
                             "paths": {
@@ -319,8 +297,8 @@
                             "isReference": false
                         }
                     },
-                    "identityPathOrder": [
-                        "property1"
+                    "identityJsonPaths": [
+                        "$.property1"
                     ]
                 },
                 "noSubClassTypes": {
@@ -345,9 +323,6 @@
                         ]
                     },
                     "equalityConstraints": [],
-                    "identityFullnames": [
-                        "property1"
-                    ],
                     "documentPathsMapping": {
                         "property1": {
                             "paths": {
@@ -359,8 +334,8 @@
                             "isReference": false
                         }
                     },
-                    "identityPathOrder": [
-                        "property1"
+                    "identityJsonPaths": [
+                        "$.property1"
                     ],
                     "isSubclass": true,
                     "superclassProjectName": "Ed-Fi",
@@ -390,9 +365,6 @@
                         ]
                     },
                     "equalityConstraints": [],
-                    "identityFullnames": [
-                        "property1"
-                    ],
                     "documentPathsMapping": {
                         "property1": {
                             "paths": {
@@ -404,8 +376,8 @@
                             "isReference": false
                         }
                     },
-                    "identityPathOrder": [
-                        "property1"
+                    "identityJsonPaths": [
+                        "$.property1"
                     ],
                     "isSubclass": true,
                     "superclassProjectName": "Ed-Fi",
@@ -435,9 +407,6 @@
                         ]
                     },
                     "equalityConstraints": [],
-                    "identityFullnames": [
-                        "property1"
-                    ],
                     "documentPathsMapping": {
                         "property1": {
                             "paths": {
@@ -449,8 +418,8 @@
                             "isReference": false
                         }
                     },
-                    "identityPathOrder": [
-                        "property1"
+                    "identityJsonPaths": [
+                        "$.property1"
                     ],
                     "isSubclass": true,
                     "superclassResourceName": "SuperClassResource",
@@ -480,9 +449,6 @@
                         ]
                     },
                     "equalityConstraints": [],
-                    "identityFullnames": [
-                        "property1"
-                    ],
                     "documentPathsMapping": {
                         "property1": {
                             "paths": {
@@ -494,8 +460,8 @@
                             "isReference": false
                         }
                     },
-                    "identityPathOrder": [
-                        "property1"
+                    "identityJsonPaths": [
+                        "$.property1"
                     ],
                     "isSubclass": true,
                     "superclassProjectName": "Ed-Fi",
@@ -525,9 +491,6 @@
                         ]
                     },
                     "equalityConstraints": [],
-                    "identityFullnames": [
-                        "property1"
-                    ],
                     "documentPathsMapping": {
                         "property1": {
                             "paths": {
@@ -539,8 +502,8 @@
                             "isReference": false
                         }
                     },
-                    "identityPathOrder": [
-                        "property1"
+                    "identityJsonPaths": [
+                        "$.property1"
                     ],
                     "isSubclass": true,
                     "superclassProjectName": "Ed-Fi",
@@ -570,11 +533,8 @@
                         ]
                     },
                     "equalityConstraints": [],
-                    "identityFullnames": [
-                        "property1"
-                    ],
-                    "identityPathOrder": [
-                        "property1"
+                    "identityJsonPaths": [
+                        "$.property1"
                     ],
                     "isSubclass": false
                 }

@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Api.Core.ApiSchema.Extensions;
 using EdFi.DataManagementService.Api.Core.ApiSchema.Model;
@@ -107,15 +106,6 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
     /// </summary>
     public JsonNode JsonSchemaForUpdate => _jsonSchemaForUpdate.Value;
 
-    private readonly Lazy<IEnumerable<string>> _identityFullnames =
-        new(() =>
-        {
-            return _resourceSchemaNode["identityFullnames"]?.AsArray().GetValues<string>()
-                ?? throw new InvalidOperationException(
-                    "Expected identityFullnames to be on ResourceSchema, invalid ApiSchema"
-                );
-        });
-
     /// <summary>
     /// Returns request method specific JSONSchema
     /// </summary>
@@ -153,27 +143,22 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
     /// </summary>
     public IEnumerable<EqualityConstraint> EqualityConstraints => _equalityConstraints.Value;
 
-    /// <summary>
-    /// A list of the MetaEd property fullnames for each property that is part of the identity
-    /// for this resource, in lexical order
-    /// </summary>
-    public IEnumerable<string> IdentityFullnames => _identityFullnames.Value;
-
-    private readonly Lazy<IEnumerable<string>> _identityPathOrder =
+    private readonly Lazy<IEnumerable<JsonPath>> _identityJsonPaths =
         new(() =>
         {
-            return _resourceSchemaNode["identityPathOrder"]?.AsArray().GetValues<string>()
+            return _resourceSchemaNode["identityJsonPaths"]
+                    ?.AsArray()
+                    .GetValues<string>()
+                    .Select(x => new JsonPath(x))
                 ?? throw new InvalidOperationException(
-                    "Expected identityPathOrder to be on ResourceSchema, invalid ApiSchema"
+                    "Expected identityJsonPaths to be on ResourceSchema, invalid ApiSchema"
                 );
         });
 
     /// <summary>
-    ///
-    /// A list of the DocumentObjectKey paths that are part of the identity for this resource, in lexical order.
-    /// Duplicates due to key unification are removed.
+    /// An ordered list of the JsonPaths that are part of the identity for this resource,
     /// </summary>
-    public IEnumerable<string> IdentityPathOrder => _identityPathOrder.Value;
+    public IEnumerable<JsonPath> IdentityJsonPaths => _identityJsonPaths.Value;
 
     /// <summary>
     /// Takes an API JSON body for the resource and extracts the document identity information from the JSON body.
@@ -192,58 +177,15 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
             return new SchoolYearEnumerationDocument(documentBody).ToDocumentIdentity();
         }
 
-        /**
-        * An intermediate object containing the individual DocumentPaths for each property
-        * that is part of the identity for this resource. Any duplicate path DocumentObjectKeys
-        * will overwrite another, but this should be fine because a prior Equality Constraint
-        * check will enforce that the document values are equal regardless of the path that wins.
-        *
-        * For example, a document may have two schoolId entries in different locations as part of
-        * the document identity. Both must be the same value.
-        */
-        Dictionary<string, JsonPath> identityDocumentPaths = [];
-
-        foreach (string identityFullName in IdentityFullnames)
-        {
-            JsonNode identityPathsNode =
-                _resourceSchemaNode["documentPathsMapping"]?[identityFullName]
-                ?? throw new InvalidOperationException(
-                    $"Expected {identityFullName} to be in documentPathsMapping, invalid ApiSchema"
-                );
-
-            DocumentPaths? identityPaths = identityPathsNode["isReference"]?.GetValue<bool>() switch
-            {
-                true => identityPathsNode.Deserialize<ReferencePaths>(),
-                false => identityPathsNode.Deserialize<ScalarPaths>(),
-                null => null
-            };
-
-            if (identityPaths == null)
-            {
-                throw new InvalidOperationException(
-                    $"Expected proper document paths for {identityFullName}, invalid ApiSchema"
-                );
-            }
-
-            foreach (var (documentObjectKey, jsonPath) in identityPaths.paths)
-            {
-                identityDocumentPaths[documentObjectKey] = new(jsonPath);
-            }
-        }
-
         // Build up documentIdentity in order
-        List<DocumentIdentityElement> documentIdentityElements = [];
-        foreach (string documentKey in IdentityPathOrder)
-        {
-            JsonPath documentJsonPath = identityDocumentPaths[documentKey];
-            string documentValue = documentBody.SelectRequiredNodeFromPathCoerceToString(
-                documentJsonPath.Value,
-                _logger
-            );
-            documentIdentityElements.Add(new(new(documentKey), documentValue));
-        }
+        IEnumerable<DocumentIdentityElement> documentIdentityElements = IdentityJsonPaths.Select(
+            identityJsonPath => new DocumentIdentityElement(
+                identityJsonPath,
+                documentBody.SelectRequiredNodeFromPathCoerceToString(identityJsonPath.Value, _logger)
+            )
+        );
 
-        return new DocumentIdentity(documentIdentityElements);
+        return new DocumentIdentity(documentIdentityElements.ToList());
     }
 
     /// <summary>
@@ -284,17 +226,12 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
             );
         }
 
-        string subclassIdentityDocumentKey = _resourceSchemaNode.SelectNodeValue<string>(
-            "subclassIdentityDocumentKey"
-        );
-
-        string superclassIdentityDocumentKey = _resourceSchemaNode.SelectNodeValue<string>(
-            "superclassIdentityDocumentKey"
+        string superclassIdentityJsonPath = _resourceSchemaNode.SelectNodeValue<string>(
+            "superclassIdentityJsonPath"
         );
 
         DocumentIdentity superclassIdentity = documentIdentity.IdentityRename(
-            new(subclassIdentityDocumentKey),
-            new(superclassIdentityDocumentKey)
+            new(superclassIdentityJsonPath)
         );
 
         return new(

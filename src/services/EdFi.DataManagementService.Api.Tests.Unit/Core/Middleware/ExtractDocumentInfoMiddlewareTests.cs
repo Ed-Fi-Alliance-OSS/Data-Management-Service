@@ -35,15 +35,13 @@ public class ExtractDocumentInfoMiddlewareTests
             ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("School")
-                .WithIdentityFullnames(["SchoolId"])
-                .WithIdentityPathOrder(["schoolId"])
+                .WithIdentityJsonPaths(["$.schoolId"])
                 .WithStartDocumentPathsMapping()
-                .WithDocumentPathScalar("SchoolId", "schoolId", "$.schoolId")
+                .WithDocumentPathScalar("SchoolId", "$.schoolId")
                 .WithEndDocumentPathsMapping()
                 .WithSuperclassInformation(
                     subclassType: "domainEntity",
-                    subclassIdentityDocumentKey: "schoolId",
-                    superclassIdentityDocumentKey: "educationOrganizationId",
+                    superclassIdentityJsonPath: "$.educationOrganizationId",
                     superclassResourceName: "EducationOrganization"
                 )
                 .WithEndResource()
@@ -100,8 +98,8 @@ public class ExtractDocumentInfoMiddlewareTests
         {
             var identityElements = context.DocumentInfo.DocumentIdentity.DocumentIdentityElements;
             identityElements.Should().HaveCount(1);
-            identityElements[0].DocumentObjectKey.Value.Should().Be("schoolId");
-            identityElements[0].DocumentValue.Should().Be("123");
+            identityElements[0].IdentityJsonPath.Value.Should().Be("$.schoolId");
+            identityElements[0].IdentityValue.Should().Be("123");
         }
 
         public void It_has_derived_the_superclass_identity()
@@ -112,8 +110,8 @@ public class ExtractDocumentInfoMiddlewareTests
                 .DocumentIdentity
                 .DocumentIdentityElements;
             superclassIdentityElements.Should().HaveCount(1);
-            superclassIdentityElements[0].DocumentObjectKey.Value.Should().Be("educationOrganizationId");
-            superclassIdentityElements[0].DocumentValue.Should().Be("123");
+            superclassIdentityElements[0].IdentityJsonPath.Value.Should().Be("$.educationOrganizationId");
+            superclassIdentityElements[0].IdentityValue.Should().Be("123");
         }
 
         [Test]

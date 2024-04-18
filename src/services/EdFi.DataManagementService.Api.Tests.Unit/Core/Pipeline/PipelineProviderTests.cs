@@ -3,15 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Api.Core.ApiSchema;
-using EdFi.DataManagementService.Api.Core.Middleware;
 using EdFi.DataManagementService.Api.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
-using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
-using static EdFi.DataManagementService.Api.Tests.Unit.TestHelper;
 
 namespace EdFi.DataManagementService.Api.Tests.Unit.Core.Middleware;
 

@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Api.Core.Model;
 /// </summary>
 public record SchoolYearEnumerationDocument(JsonNode _document)
 {
-    private static readonly DocumentObjectKey _schoolYearKey = new("schoolYear");
+    private static readonly JsonPath _identityJsonPath = new("$.schoolYear");
 
     /// <summary>
     /// Creates a new DocumentIdentity from the SchoolYearEnumerationDocument
@@ -29,7 +29,7 @@ public record SchoolYearEnumerationDocument(JsonNode _document)
 
         DocumentIdentityElement[] schoolYearEnumerationElement =
         [
-            new(DocumentObjectKey: _schoolYearKey, DocumentValue: schoolYearNode.ToString())
+            new(IdentityJsonPath: _identityJsonPath, IdentityValue: schoolYearNode.ToString())
         ];
         return new DocumentIdentity(schoolYearEnumerationElement);
     }

@@ -33,7 +33,7 @@ public record DocumentIdentity(IList<DocumentIdentityElement> _documentIdentityE
     /// For a DocumentIdentity with a single element, returns a new DocumentIdentity with the
     /// element DocumentObjectKey replaced with a new DocumentObjectKey.
     /// </summary>
-    public DocumentIdentity IdentityRename(DocumentObjectKey originalKey, DocumentObjectKey replacementKey)
+    public DocumentIdentity IdentityRename(JsonPath superclassIdentityJsonPath)
     {
         if (_documentIdentityElements.Count != 1)
         {
@@ -42,18 +42,11 @@ public record DocumentIdentity(IList<DocumentIdentityElement> _documentIdentityE
             );
         }
 
-        if (_documentIdentityElements[0].DocumentObjectKey != originalKey)
-        {
-            throw new InvalidOperationException(
-                "DocumentIdentity rename attempt with wrong original key name, invalid ApiSchema"
-            );
-        }
-
         DocumentIdentityElement[] newElementList =
         [
             _documentIdentityElements[0] with
             {
-                DocumentObjectKey = replacementKey
+                IdentityJsonPath = superclassIdentityJsonPath
             }
         ];
         return new(newElementList.ToList());
@@ -76,7 +69,7 @@ public record DocumentIdentity(IList<DocumentIdentityElement> _documentIdentityE
             "#",
             _documentIdentityElements.Select(
                 (DocumentIdentityElement element) =>
-                    $"${element.DocumentObjectKey.Value}=${element.DocumentValue}"
+                    $"${element.IdentityJsonPath.Value}=${element.IdentityValue}"
             )
         );
     }
