@@ -15,6 +15,8 @@ env:
   ARTIFACTS_PACKAGES_URL: ${{ vars.ARTIFACTS_PACKAGES_URL }}
   ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
 
+permissions: read-all
+
 jobs:
   delete-pre-releases:
     name: Delete Unnecessary Pre-Releases
