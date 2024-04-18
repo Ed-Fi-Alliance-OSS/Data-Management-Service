@@ -10,7 +10,6 @@ on:
       - main
     tags:
       - "v*.*.*"
-  workflow_dispatch:
 
 env:
   API_URL: https://api.github.com/repos/${{ github.repository }}
