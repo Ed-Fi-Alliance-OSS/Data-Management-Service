@@ -17,10 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event.workflow_run.conclusion != 'skipped'
 
-    permissions:
-      checks: write
-      pull-requests: write
-      actions: read
+    permissions: read-all
       # only needed for private repository
       # contents: read
       # issues: read

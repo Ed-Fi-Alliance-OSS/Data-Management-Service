@@ -18,6 +18,8 @@ env:
   DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
   IMAGE_NAME: dms
 
+permissions: read-all
+
 jobs:
   docker-lint:
     runs-on: ubuntu-latest

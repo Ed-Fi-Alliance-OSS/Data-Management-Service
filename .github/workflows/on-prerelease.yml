@@ -17,6 +17,8 @@ env:
   PACKAGE_NAME: "EdFi.DataManagementService"
   REF: ${{ github.ref_name }}
 
+permissions: read-all
+
 jobs:
   pack:
     name: Build and Pack
