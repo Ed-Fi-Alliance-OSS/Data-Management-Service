@@ -112,7 +112,7 @@ Feature: School Year Reference Validation
   Scenario: Handling the array with two valid cohorts
     Verify that the API correctly processes the request when both CohortYears are valid.
     Given 2 valid CohortYears
-    When sending a POST request to "/ed-fi/xxxxxxx" with body
+    When sending a POST request to "/ed-fi/studentEducationOrganizationAssociations" with body
     """
     {
         "educationOrganizationReference": {
