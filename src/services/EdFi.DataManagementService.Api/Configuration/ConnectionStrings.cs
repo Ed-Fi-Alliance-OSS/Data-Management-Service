@@ -5,7 +5,19 @@
 
 namespace EdFi.DataManagementService.Api.Configuration;
 
-public class ConnectionStrings
+public class ConnectionStrings : IValidateConfiguration
 {
     public required string DatabaseConnection { get; set; }
+
+    public IEnumerable<string> GetCriticalErrors()
+    {
+        List<string> errors = [];
+
+        if (DatabaseConnection == null)
+        {
+            errors.Add("Missing required ConnectionStrings value: DatabaseConnection");
+        }
+
+        return errors;
+    }
 }

@@ -10,4 +10,16 @@ public class AppSettings
     public int BeginAllowedSchoolYear { get; set; }
     public int EndAllowedSchoolYear { get; set; }
     public required string AuthenticationService { get; set; }
+
+    public IEnumerable<string> GetCriticalErrors()
+    {
+        List<string> errors = [];
+
+        if (AuthenticationService == null)
+        {
+            errors.Add("Missing required AppSettings value: AuthenticationService");
+        }
+
+        return errors;
+    }
 }
