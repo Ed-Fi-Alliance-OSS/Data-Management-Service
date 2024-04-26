@@ -19,6 +19,8 @@
 
 ## SOURCE CODE
 *.bat  text eol=crlf
+*.feature text eol=lf
+*.feature.cs text eol=lf
 
 ## GRAPHICS
 *.ai   binary
