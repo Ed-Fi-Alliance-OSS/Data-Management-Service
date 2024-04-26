@@ -3,21 +3,21 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using Microsoft.Extensions.Options;
+
 namespace EdFi.DataManagementService.Api.Configuration;
 
-public class ConnectionStrings : IValidateConfiguration
+public class ConnectionStrings
 {
     public required string DatabaseConnection { get; set; }
+}
 
-    public IEnumerable<string> GetCriticalErrors()
+public class ConnectionStringsValidator : IValidateOptions<ConnectionStrings>
+{
+    public ValidateOptionsResult Validate(string? name, ConnectionStrings options)
     {
-        List<string> errors = [];
-
-        if (DatabaseConnection == null)
-        {
-            errors.Add("Missing required ConnectionStrings value: DatabaseConnection");
-        }
-
-        return errors;
+        return options.DatabaseConnection == null
+            ? ValidateOptionsResult.Fail("Missing required ConnectionStrings value: DatabaseConnection")
+            : ValidateOptionsResult.Success;
     }
 }

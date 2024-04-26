@@ -25,18 +25,17 @@ app.Run();
 
 void InjectInvalidConfigurationMiddleware(WebApplication app)
 {
-    List<string> errors = [];
-
-    var appSettings = app.Services.GetRequiredService<IOptions<AppSettings>>();
-    var connectionStrings = app.Services.GetRequiredService<IOptions<ConnectionStrings>>();
-
-    errors.AddRange(appSettings.Value.GetCriticalErrors());
-    errors.AddRange(connectionStrings.Value.GetCriticalErrors());
-
-
-    if (errors.Any())
+    try
     {
-        app.UseMiddleware<InvalidConfigurationMiddleware>(errors);
+        // Accessing IOptions<T> forces validation
+#pragma warning disable S1481 // Unused local variables should be removed
+        var appSettings = app.Services.GetRequiredService<IOptions<AppSettings>>().Value;
+        var connectionStrings = app.Services.GetRequiredService<IOptions<ConnectionStrings>>().Value;
+#pragma warning restore S1481 // Unused local variables should be removed
+    }
+    catch (OptionsValidationException ex)
+    {
+        app.UseMiddleware<InvalidConfigurationMiddleware>(ex.Failures);
     }
 }
 

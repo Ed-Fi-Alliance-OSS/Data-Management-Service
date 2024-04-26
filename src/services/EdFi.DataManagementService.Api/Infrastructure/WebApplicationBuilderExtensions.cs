@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Api.Content;
 using EdFi.DataManagementService.Api.Core;
 using EdFi.DataManagementService.Api.Core.ApiSchema;
 using EdFi.DataManagementService.Api.Core.Validation;
+using Microsoft.Extensions.Options;
 using Serilog;
 
 namespace EdFi.DataManagementService.Api.Infrastructure;
@@ -31,7 +32,10 @@ public static class WebApplicationBuilderExtensions
         webAppBuilder.Services.AddTransient<IAssemblyProvider, AssemblyProvider>();
 
         webAppBuilder.Services.Configure<AppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"));
+        webAppBuilder.Services.AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>();
+
         webAppBuilder.Services.Configure<ConnectionStrings>(webAppBuilder.Configuration.GetSection("ConnectionStrings"));
+        webAppBuilder.Services.AddSingleton<IValidateOptions<ConnectionStrings>, ConnectionStringsValidator>();
 
         if (webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
         {
