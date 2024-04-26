@@ -13,8 +13,7 @@ Feature: School Year Reference Validation
   """
 
   @Ignore @StudentEducationOrganizationAssociation
-  Scenario: Post valid request using a existing year and make sure response is correctly
-    Given a existing school year
+  Scenario: Try creating a resource using a valid school year
     When sending a POST request to "/ed-fi/studentSectionAssociation" with body
     """
         {
@@ -31,13 +30,13 @@ Feature: School Year Reference Validation
         }
         }
     """
-    Then the response code is 200
+    Then the response code is 201
     And the response body is
     """
     """
 
   @Ignore @StudentEducationOrganizationAssociation
-  Scenario: Post invalid request using a non existing year and make sure to receive an appropiate error message
+  Scenario: Try creating a resource using an invalid school year
     When sending a POST request to "/ed-fi/studentSectionAssociation" with body
     """
         {
@@ -54,7 +53,7 @@ Feature: School Year Reference Validation
         }
         }
     """
-    Then the response code is 404
+    Then the response code is 400
 
   #Course Offering / School Year
   @Ignore
@@ -78,7 +77,7 @@ Feature: School Year Reference Validation
         }
         }
     """
-    Then the response code is 200
+    Then the response code is 201
     And the response body is
     """
     """
@@ -106,12 +105,12 @@ Feature: School Year Reference Validation
     Then the response code is 400
 
 
-  #The cohort year scenario is interesting because it is testing a situation where a resource has a collection of SchoolYear references.
-  #The StudentEducationOrganizationAssociation has this collection, via CohortYears.
+  """
+  The cohort year scenario is interesting because it is testing a situation where a resource has a collection of SchoolYear references.
+  The StudentEducationOrganizationAssociation has this collection, via CohortYears.
+  """
   @Ignore
   Scenario: Handling the array with two valid cohorts
-    Verify that the API correctly processes the request when both CohortYears are valid.
-    Given 2 valid CohortYears
     When sending a POST request to "/ed-fi/studentEducationOrganizationAssociations" with body
     """
     {
@@ -143,8 +142,6 @@ Feature: School Year Reference Validation
 
   @Ignore
   Scenario: Handling the array with 2 cohorts (1st valid / 2nd invalid)
-    Ensure clients can not post when 1 of the CohortYears is invalid
-    Given 2 CohortYears invalid and valid
     When sending a POST request to "/ed-fi/studentEducationOrganizationAssociations" with body
     """
     {
@@ -176,8 +173,6 @@ Feature: School Year Reference Validation
 
   @Ignore
   Scenario: Handling the array with 2 cohorts (1st invalid / 2nd valid)
-    Ensure clients can not post when 1 of the CohortYears is invalid
-    Given 2 CohortYears valid and invalid
     When sending a POST request to "/ed-fi/studentEducationOrganizationAssociations" with body
     """
     {
