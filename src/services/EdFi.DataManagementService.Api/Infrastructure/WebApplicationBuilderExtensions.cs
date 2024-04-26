@@ -31,6 +31,7 @@ public static class WebApplicationBuilderExtensions
         webAppBuilder.Services.AddTransient<IAssemblyProvider, AssemblyProvider>();
 
         webAppBuilder.Services.Configure<AppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"));
+        webAppBuilder.Services.Configure<ConnectionStrings>(webAppBuilder.Configuration.GetSection("ConnectionStrings"));
 
         if (webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
         {

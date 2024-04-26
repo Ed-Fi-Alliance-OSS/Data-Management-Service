@@ -5,9 +5,7 @@
 
 namespace EdFi.DataManagementService.Api.Configuration;
 
-public class AppSettings
+public class ConnectionStrings
 {
-    public int BeginAllowedSchoolYear { get; set; }
-    public int EndAllowedSchoolYear { get; set; }
-    public required string AuthenticationService { get; set; }
+    public required string DatabaseConnection { get; set; }
 }
