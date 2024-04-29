@@ -1,0 +1,375 @@
+{
+  "projectNameMapping": {
+    "Ed-Fi": "ed-fi"
+  },
+  "projectSchemas": {
+    "ed-fi": {
+      "abstractResources": {
+        "EducationOrganization": {
+          "identityJsonPaths": [
+            "$.educationOrganizationId"
+          ]
+        },
+        "GeneralStudentProgramAssociation": {
+          "identityJsonPaths": [
+            "beginDate",
+            "educationOrganizationReference.educationOrganizationId",
+            "$.programReference.educationOrganizationId",
+            "$.programReference.programName",
+            "$.programReference.programTypeDescriptor",
+            "$.studentReference.studentUniqueId"
+          ]
+        }
+      },
+      "caseInsensitiveEndpointNameMapping": {
+        "absenceeventcategorydescriptors": "absenceEventCategoryDescriptors",
+        "academicsubjectdescriptors": "academicSubjectDescriptors",
+        "academicweeks": "academicWeeks",
+        "accountabilityratings": "accountabilityRatings"
+      },
+      "description": "The Ed-Fi Data Standard v5.0",
+      "isExtensionProject": false,
+      "projectName": "Ed-Fi",
+      "projectVersion": "5.0.0",
+      "resourceNameMapping": {
+        "AbsenceEventCategory": "absenceEventCategoryDescriptors",
+        "AcademicSubject": "academicSubjectDescriptors",
+        "AcademicWeek": "academicWeeks",
+        "AccountabilityRating": "accountabilityRatings"
+      },
+      "resourceSchemas": {
+        "absenceEventCategoryDescriptors": {
+          "allowIdentityUpdates": false,
+          "documentPathsMapping": {
+          },
+          "equalityConstraints": [
+          ],
+          "identityJsonPaths": [
+          ],
+          "isDescriptor": true,
+          "isSchoolYearEnumeration": false,
+          "isSubclass": false,
+          "jsonSchemaForInsert": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "description": "An Ed-Fi Descriptor",
+            "properties": {
+              "codeValue": {
+                "description": "The descriptor code value",
+                "type": "string"
+              },
+              "description": {
+                "description": "The descriptor description",
+                "type": "string"
+              },
+              "effectiveBeginDate": {
+                "description": "The descriptor effective begin date",
+                "format": "date",
+                "type": "string"
+              },
+              "effectiveEndDate": {
+                "description": "The descriptor effective end date",
+                "format": "date",
+                "type": "string"
+              },
+              "namespace": {
+                "description": "The descriptor namespace as a URI",
+                "type": "string"
+              }
+            },
+            "required": [
+              "namespace",
+              "codeValue",
+              "shortDescription"
+            ],
+            "title": "EdFi.Descriptor",
+            "type": "object"
+          },
+          "resourceName": "AbsenceEventCategoryDescriptor"
+        },
+        "academicSubjectDescriptors": {
+          "allowIdentityUpdates": false,
+          "documentPathsMapping": {
+          },
+          "equalityConstraints": [
+          ],
+          "identityJsonPaths": [
+          ],
+          "isDescriptor": true,
+          "isSchoolYearEnumeration": false,
+          "isSubclass": false,
+          "jsonSchemaForInsert": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "description": "An Ed-Fi Descriptor",
+            "properties": {
+              "codeValue": {
+                "description": "The descriptor code value",
+                "type": "string"
+              },
+              "description": {
+                "description": "The descriptor description",
+                "type": "string"
+              },
+              "effectiveBeginDate": {
+                "description": "The descriptor effective begin date",
+                "format": "date",
+                "type": "string"
+              },
+              "effectiveEndDate": {
+                "description": "The descriptor effective end date",
+                "format": "date",
+                "type": "string"
+              },
+              "namespace": {
+                "description": "The descriptor namespace as a URI",
+                "type": "string"
+              },
+              "shortDescription": {
+                "description": "The descriptor short description",
+                "type": "string"
+              }
+            },
+            "required": [
+              "namespace",
+              "codeValue",
+              "shortDescription"
+            ],
+            "title": "EdFi.Descriptor"
+          },
+          "resourceName": "AcademicSubjectDescriptor"
+        },
+        "academicWeeks": {
+          "allowIdentityUpdates": false,
+          "documentPathsMapping": {
+            "BeginDate": {
+              "isReference": false,
+              "path": "$.beginDate"
+            },
+            "EndDate": {
+              "isReference": false,
+              "path": "$.endDate"
+            },
+            "School": {
+              "isDescriptor": false,
+              "isReference": true,
+              "projectName": "Ed-Fi",
+              "referenceJsonPaths": [
+                {
+                  "identityJsonPath": "$.schoolId",
+                  "referenceJsonPath": "$.schoolReference.schoolId"
+                }
+              ],
+              "resourceName": "School"
+            },
+            "TotalInstructionalDays": {
+              "isReference": false,
+              "path": "$.totalInstructionalDays"
+            },
+            "WeekIdentifier": {
+              "isReference": false,
+              "path": "$.weekIdentifier"
+            }
+          },
+          "equalityConstraints": [
+          ],
+          "identityJsonPaths": [
+            "$.schoolReference.schoolId",
+            "$.weekIdentifier"
+          ],
+          "isDescriptor": false,
+          "isSchoolYearEnumeration": false,
+          "isSubclass": false,
+          "jsonSchemaForInsert": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "description": "This entity represents the academic weeks for a school year, optionally captured to support analyses.",
+            "properties": {
+              "_ext": {
+                "additionalProperties": true,
+                "description": "optional extension collection",
+                "properties": {
+                },
+                "type": "object"
+              },
+              "beginDate": {
+                "description": "The start date for the academic week.",
+                "format": "date",
+                "type": "string"
+              },
+              "endDate": {
+                "description": "The end date for the academic week.",
+                "format": "date",
+                "type": "string"
+              },
+              "schoolReference": {
+                "additionalProperties": false,
+                "properties": {
+                  "schoolId": {
+                    "description": "The identifier assigned to a school.",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "schoolId"
+                ],
+                "type": "object"
+              },
+              "totalInstructionalDays": {
+                "description": "The total instructional days during the academic week.",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "weekIdentifier": {
+                "description": "The school label for the week.",
+                "maxLength": 80,
+                "minLength": 5,
+                "type": "string"
+              }
+            },
+            "required": [
+              "schoolReference",
+              "weekIdentifier",
+              "beginDate",
+              "endDate",
+              "totalInstructionalDays"
+            ],
+            "title": "Ed-Fi.AcademicWeek",
+            "type": "object"
+          },
+          "resourceName": "AcademicWeek"
+        },
+        "accountabilityRatings": {
+          "allowIdentityUpdates": false,
+          "documentPathsMapping": {
+            "EducationOrganization": {
+              "isDescriptor": false,
+              "isReference": true,
+              "projectName": "Ed-Fi",
+              "referenceJsonPaths": [
+                {
+                  "identityJsonPath": "$.educationOrganizationId",
+                  "referenceJsonPath": "$.educationOrganizationReference.educationOrganizationId"
+                }
+              ],
+              "resourceName": "EducationOrganization"
+            },
+            "Rating": {
+              "isReference": false,
+              "path": "$.rating"
+            },
+            "RatingDate": {
+              "isReference": false,
+              "path": "$.ratingDate"
+            },
+            "RatingOrganization": {
+              "isReference": false,
+              "path": "$.ratingOrganization"
+            },
+            "RatingProgram": {
+              "isReference": false,
+              "path": "$.ratingProgram"
+            },
+            "RatingTitle": {
+              "isReference": false,
+              "path": "$.ratingTitle"
+            },
+            "SchoolYear": {
+              "isReference": false,
+              "path": "$.schoolYearTypeReference.schoolYear"
+            }
+          },
+          "equalityConstraints": [
+          ],
+          "identityJsonPaths": [
+            "$.educationOrganizationReference.educationOrganizationId",
+            "$.ratingTitle",
+            "$.schoolYearTypeReference.schoolYear"
+          ],
+          "isDescriptor": false,
+          "isSchoolYearEnumeration": false,
+          "isSubclass": true,
+          "jsonSchemaForInsert": {
+            "additionalProperties": false,
+            "description": "An accountability rating for a school or district.",
+            "properties": {
+              "_ext": {
+                "additionalProperties": true,
+                "description": "optional extension collection",
+                "properties": {
+                },
+                "type": "object"
+              },
+              "educationOrganizationReference": {
+                "additionalProperties": false,
+                "properties": {
+                  "educationOrganizationId": {
+                    "description": "The identifier assigned to an education organization.",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "educationOrganizationId"
+                ],
+                "type": "object"
+              },
+              "rating": {
+                "description": "An accountability rating level, designation, or assessment.",
+                "maxLength": 35,
+                "minLength": 1,
+                "type": "string"
+              },
+              "ratingDate": {
+                "description": "The date the rating was awarded.",
+                "format": "date",
+                "type": "string"
+              },
+              "ratingOrganization": {
+                "description": "The organization that assessed the rating.",
+                "maxLength": 35,
+                "minLength": 1,
+                "type": "string"
+              },
+              "ratingProgram": {
+                "description": "The program associated with the accountability rating (e.g., NCLB, AEIS).",
+                "maxLength": 30,
+                "minLength": 1,
+                "type": "string"
+              },
+              "ratingTitle": {
+                "description": "The title of the rating.",
+                "maxLength": 60,
+                "minLength": 1,
+                "type": "string"
+              },
+              "schoolYearTypeReference": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "additionalProperties": false,
+                "description": "A school year enumeration",
+                "properties": {
+                  "schoolYear": {
+                    "description": "A school year between 1900 and 2100",
+                    "maximum": 2100,
+                    "minimum": 1900,
+                    "type": "integer"
+                  }
+                },
+                "title": "EdFi.SchoolYearType",
+                "type": "object"
+              }
+            },
+            "required": [
+              "educationOrganizationReference",
+              "ratingTitle",
+              "rating",
+              "schoolYearTypeReference"
+            ],
+            "title": "Ed-Fi.AccountabilityRating",
+            "type": "object"
+          },
+          "resourceName": "AccountabilityRating"
+        }
+      }
+    }
+  }
+}
