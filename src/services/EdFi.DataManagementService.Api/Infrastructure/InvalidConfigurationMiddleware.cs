@@ -7,7 +7,9 @@ namespace EdFi.DataManagementService.Api.Infrastructure;
 
 public class InvalidConfigurationMiddleware(RequestDelegate next, List<string> errors)
 {
-    public async Task Invoke(HttpContext context, ILogger<LoggingMiddleware> logger)
+    public RequestDelegate Next { get; } = next;
+
+    public Task Invoke(HttpContext context, ILogger<LoggingMiddleware> logger)
     {
         foreach (var error in errors)
         {
@@ -15,6 +17,6 @@ public class InvalidConfigurationMiddleware(RequestDelegate next, List<string> e
         }
 
         context.Response.StatusCode = 500;
-        await next(context);
+        return Task.CompletedTask;
     }
 }

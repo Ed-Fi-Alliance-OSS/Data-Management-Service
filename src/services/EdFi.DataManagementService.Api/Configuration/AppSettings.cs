@@ -18,7 +18,7 @@ public class AppSettingsValidator : IValidateOptions<AppSettings>
 {
     public ValidateOptionsResult Validate(string? name, AppSettings options)
     {
-        return options.AuthenticationService == null
+        return string.IsNullOrWhiteSpace(options.AuthenticationService)
             ? ValidateOptionsResult.Fail("Missing required AppSettings value: AuthenticationService")
             : ValidateOptionsResult.Success;
     }

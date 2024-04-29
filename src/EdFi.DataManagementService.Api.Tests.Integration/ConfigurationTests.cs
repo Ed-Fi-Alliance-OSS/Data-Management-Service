@@ -43,7 +43,7 @@ public class ConfigurationTests
         }
 
         [TestFixture]
-        public class Should_respond_with_internal_server_error_when_missing_authentication_service
+        public class When_requesting_any_endpoint_Should_return_InternalServerError
             : Given_a_configuration_with_invalid_app_settings
         {
             [Test]
@@ -54,9 +54,11 @@ public class ConfigurationTests
 
                 // Act
                 var response = await client.GetAsync("/");
+                var content = await response.Content.ReadAsStringAsync();
 
                 // Assert
                 response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+                content.Should().Be(string.Empty);
             }
         }
     }
@@ -90,7 +92,7 @@ public class ConfigurationTests
         }
 
         [TestFixture]
-        public class Should_respond_with_internal_server_error_when_missing_database_connection
+        public class When_requesting_any_endpoint_Should_return_InternalServerError
             : Given_a_configuration_with_invalid_connection_strings
         {
             [Test]
@@ -101,9 +103,11 @@ public class ConfigurationTests
 
                 // Act
                 var response = await client.GetAsync("/");
+                var content = await response.Content.ReadAsStringAsync();
 
                 // Assert
                 response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+                content.Should().Be(string.Empty);
             }
         }
     }

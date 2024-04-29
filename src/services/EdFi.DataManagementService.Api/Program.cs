@@ -28,10 +28,8 @@ void InjectInvalidConfigurationMiddleware(WebApplication app)
     try
     {
         // Accessing IOptions<T> forces validation
-#pragma warning disable S1481 // Unused local variables should be removed
-        var appSettings = app.Services.GetRequiredService<IOptions<AppSettings>>().Value;
-        var connectionStrings = app.Services.GetRequiredService<IOptions<ConnectionStrings>>().Value;
-#pragma warning restore S1481 // Unused local variables should be removed
+        _ = app.Services.GetRequiredService<IOptions<AppSettings>>().Value;
+        _ = app.Services.GetRequiredService<IOptions<ConnectionStrings>>().Value;
     }
     catch (OptionsValidationException ex)
     {

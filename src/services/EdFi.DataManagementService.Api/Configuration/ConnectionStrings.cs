@@ -16,7 +16,7 @@ public class ConnectionStringsValidator : IValidateOptions<ConnectionStrings>
 {
     public ValidateOptionsResult Validate(string? name, ConnectionStrings options)
     {
-        return options.DatabaseConnection == null
+        return string.IsNullOrWhiteSpace(options.DatabaseConnection)
             ? ValidateOptionsResult.Fail("Missing required ConnectionStrings value: DatabaseConnection")
             : ValidateOptionsResult.Success;
     }
