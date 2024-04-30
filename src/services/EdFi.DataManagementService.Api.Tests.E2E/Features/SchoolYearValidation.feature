@@ -136,15 +136,15 @@ Feature: School Year Reference Validation
         },
         "cohortYears": [
             {
-            "cohortYearTypeDescriptor": "string",
-            "termDescriptor": "string",
+            "cohortYearTypeDescriptor": "First grade",
+            "termDescriptor": "Spring Semester",
             "schoolYearTypeReference": {
                 "schoolYear": 2022
             }
             },
             {
-            "cohortYearTypeDescriptor": "string",
-            "termDescriptor": "string",
+            "cohortYearTypeDescriptor": "First grade",
+            "termDescriptor": "Spring Semester",
             "schoolYearTypeReference": {
                 "schoolYear": 2023
             }
@@ -167,15 +167,15 @@ Feature: School Year Reference Validation
         },
         "cohortYears": [
             {
-            "cohortYearTypeDescriptor": "string",
-            "termDescriptor": "string",
+            "cohortYearTypeDescriptor": "First grade",
+            "termDescriptor": "Spring Semester",
             "schoolYearTypeReference": {
                 "schoolYear": 2022
             }
             },
             {
-            "cohortYearTypeDescriptor": "string",
-            "termDescriptor": "string",
+            "cohortYearTypeDescriptor": "First grade",
+            "termDescriptor": "Spring Semester",
             "schoolYearTypeReference": {
                 "schoolYear": 2099
             }
@@ -199,15 +199,15 @@ Feature: School Year Reference Validation
         },
         "cohortYears": [
             {
-            "cohortYearTypeDescriptor": "string",
-            "termDescriptor": "string",
+            "cohortYearTypeDescriptor": "First grade",
+            "termDescriptor": "Spring Semester",
             "schoolYearTypeReference": {
                 "schoolYear": 2029
             }
             },
             {
-            "cohortYearTypeDescriptor": "string",
-            "termDescriptor": "string",
+            "cohortYearTypeDescriptor": "First grade",
+            "termDescriptor": "Spring Semester",
             "schoolYearTypeReference": {
                 "schoolYear": 2022
             }
@@ -234,15 +234,15 @@ Feature: School Year Reference Validation
         },
         "cohortYears": [
             {
-            "cohortYearTypeDescriptor": "string",
-            "termDescriptor": "string",
+            "cohortYearTypeDescriptor": "First grade",
+            "termDescriptor": "Spring Semester",
             "schoolYearTypeReference": {
                 "schoolYear": 2022
             }
             },
             {
-            "cohortYearTypeDescriptor": "string",
-            "termDescriptor": "string",
+            "cohortYearTypeDescriptor": "First grade",
+            "termDescriptor": "Spring Semester",
             "schoolYearTypeReference": {
                 "schoolYear": 2022
             }
