@@ -12,48 +12,59 @@ Feature: School Year Reference Validation
   createSection(localCourseCode, schoolId, schoolYear, sessionName, sectionIdentifier)
   """
 
-  @Ignore @StudentEducationOrganizationAssociation
+  Background:
+    Given a created student with "<studentUniqueId>"
+    And a created school with "<schoolId>"
+    And a created Course with "<courseCode>" "schoolId"
+    And a created Session with "<schooldID>" "<schoolYear>" "<sessionName>"
+    And a created Course Offering with "<localCourseCode>" "<courseCode>" "<schoolId>" "<schoolYear>" "<sessionName>"
+    And a created Section with "<localCourseCode>" "<schoolId>" "<schoolYear>" "<sessionName>" "<sectionIdentifier>"
+
+  @Ignore
   Scenario: Try creating a resource using a valid school year
     When sending a POST request to "/ed-fi/studentSectionAssociation" with body
     """
         {
-        "beginDate": "2024-04-25",
-        "sectionReference": {
-            "localCourseCode": "string",
-            "schoolId": 0,
-            "schoolYear": 0,
-            "sectionIdentifier": "string",
-            "sessionName": "string",
-        },
-        "studentReference": {
-            "studentUniqueId": "string",
-        }
+            "beginDate": "2024-04-25",
+            "sectionReference": {
+                "localCourseCode": "ART-1",
+                "schoolId": 255901001,
+                "schoolYear": 2024,
+                "sectionIdentifier": "25590100107Trad322ART112011",
+                "sessionName": "2021-2022 Fall Semester",
+            },
+            "studentReference": {
+                "studentUniqueId": "604822",
+            }
         }
     """
     Then the response code is 201
-    And the response body is
-    """
-    """
 
-  @Ignore @StudentEducationOrganizationAssociation
+  @Ignore
   Scenario: Try creating a resource using an invalid school year
     When sending a POST request to "/ed-fi/studentSectionAssociation" with body
     """
         {
-        "beginDate": "2024-04-25",
-        "sectionReference": {
-            "localCourseCode": "string",
-            "schoolId": 0,
-            "schoolYear": 0,
-            "sectionIdentifier": "string",
-            "sessionName": "string",
-        },
-        "studentReference": {
-            "studentUniqueId": "string",
-        }
+            "beginDate": "2024-04-25",
+            "sectionReference": {
+                "localCourseCode": "ART-1",
+                "schoolId": 255901001,
+                "schoolYear": 2029,
+                "sectionIdentifier": "25590100107Trad322ART112011",
+                "sessionName": "2021-2022 Fall Semester",
+            },
+            "studentReference": {
+                "studentUniqueId": "604822",
+            }
         }
     """
-    Then the response code is 400
+    Then the response code is 409
+    And the response body is
+    """
+        {
+            "message": "The value supplied for the related 'section' resource does not exist.",
+        }
+    """
 
   #Course Offering / School Year
   @Ignore
@@ -62,47 +73,50 @@ Feature: School Year Reference Validation
     When sending a POST request to "/ed-fi/courseOfferings" with body
     """
         {
-        "localCourseCode": "string",
-        "courseReference": {
-            "courseCode": "string",
-            "educationOrganizationId": 0
-        },
-        "schoolReference": {
-            "schoolId": 0
-        },
-        "sessionReference": {
-            "schoolId": 0,
-            "schoolYear": 0,
-            "sessionName": "string"
-        }
+            "localCourseCode": "ALG-1",
+            "courseReference": {
+                "courseCode": "ALG-1",
+                "educationOrganizationId": 255901001
+            },
+            "schoolReference": {
+                "schoolId": 255901001
+            },
+            "sessionReference": {
+                "schoolId": 255901001,
+                "schoolYear": 2022,
+                "sessionName": "2021-2022 Spring Semester"
+            }
         }
     """
     Then the response code is 201
-    And the response body is
-    """
-    """
 
   @Ignore
   Scenario: Post a valid request using a non existing CourseOffering and API will handle this correctly
     When sending a POST request to "/ed-fi/courseOfferings" with body
     """
         {
-        "localCourseCode": "string",
+        "localCourseCode": "ALG-1",
         "courseReference": {
-            "courseCode": "string",
-            "educationOrganizationId": 0
+            "courseCode": "ALG-1",
+            "educationOrganizationId": 255901001
         },
         "schoolReference": {
-            "schoolId": 0
+            "schoolId": 255901001
         },
         "sessionReference": {
-            "schoolId": 0,
-            "schoolYear": 0,
-            "sessionName": "string"
+            "schoolId": 255901001,
+            "schoolYear": 2022,
+            "sessionName": "2021-2022 Spring Semester"
         }
         }
     """
-    Then the response code is 400
+    Then the response code is 409
+    And the response body is
+    """
+        {
+            "message": "The value supplied for the related 'section' resource does not exist.",
+        }
+    """
 
 
   """
@@ -115,24 +129,24 @@ Feature: School Year Reference Validation
     """
     {
         "educationOrganizationReference": {
-            "educationOrganizationId": 0
+            "educationOrganizationId": 255901
         },
         "studentReference": {
-            "studentUniqueId": "string"
+            "studentUniqueId": "604824"
         },
         "cohortYears": [
             {
             "cohortYearTypeDescriptor": "string",
             "termDescriptor": "string",
             "schoolYearTypeReference": {
-                "schoolYear": 0
+                "schoolYear": 2022
             }
             },
             {
             "cohortYearTypeDescriptor": "string",
             "termDescriptor": "string",
             "schoolYearTypeReference": {
-                "schoolYear": 0
+                "schoolYear": 2023
             }
             }
         ]
@@ -146,24 +160,24 @@ Feature: School Year Reference Validation
     """
     {
         "educationOrganizationReference": {
-            "educationOrganizationId": 0
+            "educationOrganizationId": 255901
         },
         "studentReference": {
-            "studentUniqueId": "string"
+            "studentUniqueId": "604824"
         },
         "cohortYears": [
             {
             "cohortYearTypeDescriptor": "string",
             "termDescriptor": "string",
             "schoolYearTypeReference": {
-                "schoolYear": 0
+                "schoolYear": 2022
             }
             },
             {
             "cohortYearTypeDescriptor": "string",
             "termDescriptor": "string",
             "schoolYearTypeReference": {
-                "schoolYear": 0
+                "schoolYear": 2099
             }
             }
         ]
@@ -173,31 +187,79 @@ Feature: School Year Reference Validation
 
   @Ignore
   Scenario: Handling the array with 2 cohorts (1st invalid / 2nd valid)
+    #TODO Add the correct value in the cohorYearTypeDescription field
     When sending a POST request to "/ed-fi/studentEducationOrganizationAssociations" with body
     """
     {
         "educationOrganizationReference": {
-            "educationOrganizationId": 0
+            "educationOrganizationId": 255901
         },
         "studentReference": {
-            "studentUniqueId": "string"
+            "studentUniqueId": "604824"
         },
         "cohortYears": [
             {
             "cohortYearTypeDescriptor": "string",
             "termDescriptor": "string",
             "schoolYearTypeReference": {
-                "schoolYear": 0
+                "schoolYear": 2029
             }
             },
             {
             "cohortYearTypeDescriptor": "string",
             "termDescriptor": "string",
             "schoolYearTypeReference": {
-                "schoolYear": 0
+                "schoolYear": 2022
             }
             }
         ]
     }
     """
     Then the response code is 400
+    And the response body is
+    """
+    """
+
+  @Ignore
+  Scenario: Handling the array with 2 duplicate cohorts
+    #TODO Add the correct value in the cohorYearTypeDescription field
+    When sending a POST request to "/ed-fi/studentEducationOrganizationAssociations" with body
+    """
+    {
+        "educationOrganizationReference": {
+            "educationOrganizationId": 255901
+        },
+        "studentReference": {
+            "studentUniqueId": "604824"
+        },
+        "cohortYears": [
+            {
+            "cohortYearTypeDescriptor": "string",
+            "termDescriptor": "string",
+            "schoolYearTypeReference": {
+                "schoolYear": 2022
+            }
+            },
+            {
+            "cohortYearTypeDescriptor": "string",
+            "termDescriptor": "string",
+            "schoolYearTypeReference": {
+                "schoolYear": 2022
+            }
+            }
+        ]
+    }
+    """
+    Then the response code is 400
+    And the response body is
+    """
+        {
+        "message": "The request is invalid.",
+        "correlationId": "bf73f2df-d19c-40c1-b6e4-d7ba294f9fd6",
+        "modelState": {
+            "request.StudentEducationOrganizationAssociationCohortYears": [
+            "The 2nd item of the StudentEducationOrganizationAssociationCohortYears collection is a duplicate."
+            ]
+        }
+        }
+    """
