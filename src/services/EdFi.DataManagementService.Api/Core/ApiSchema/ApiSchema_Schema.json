@@ -271,79 +271,79 @@
                                 "isReference": {
                                     "type": "boolean"
                                 }
-                            }
-                        }
-                    },
-                    "required": [ "isReference" ],
-                    "if": {
-                        "properties": {
-                            "isReference": { "const": true }
-                        },
-                        "required": [ "isReference" ]
-                    },
-                    "then": {
-                        "properties": {
-                            "isDescriptor": {
-                                "type": "boolean"
                             },
-                            "projectName": {
-                                "type": "string"
+                            "required": [ "isReference" ],
+                            "if": {
+                                "properties": {
+                                    "isReference": { "const": true }
+                                },
+                                "required": [ "isReference" ]
                             },
-                            "resourceName": {
-                                "type": "string"
-                            }
-                        },
-                        "required": [
-                            "isDescriptor",
-                            "projectName",
-                            "resourceName"
-                        ],
-                        "if": {
-                            "properties": {
-                                "isDescriptor": { "const": true }
-                            }
-                        },
-                        "then": {
-                            "properties": {
-                                "path": {
-                                    "$ref": "#/definitions/JsonPath"
-                                }
-                            },
-                            "required": [
-                                "path"
-                            ]
-                        },
-                        "else": {
-                            "properties": {
-                                "referenceJsonPaths": {
-                                    "type": "array",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "identityJsonPath": {
-                                                "$ref": "#/definitions/JsonPath"
-                                            },
-                                            "referenceJsonPath": {
-                                                "$ref": "#/definitions/JsonPath"
+                            "then": {
+                                "properties": {
+                                    "isDescriptor": {
+                                        "type": "boolean"
+                                    },
+                                    "projectName": {
+                                        "type": "string"
+                                    },
+                                    "resourceName": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "isDescriptor",
+                                    "projectName",
+                                    "resourceName"
+                                ],
+                                "if": {
+                                    "properties": {
+                                        "isDescriptor": { "const": true }
+                                    }
+                                },
+                                "then": {
+                                    "properties": {
+                                        "path": {
+                                            "$ref": "#/definitions/JsonPath"
+                                        }
+                                    },
+                                    "required": [
+                                        "path"
+                                    ]
+                                },
+                                "else": {
+                                    "properties": {
+                                        "referenceJsonPaths": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "identityJsonPath": {
+                                                        "$ref": "#/definitions/JsonPath"
+                                                    },
+                                                    "referenceJsonPath": {
+                                                        "$ref": "#/definitions/JsonPath"
+                                                    }
+                                                }
                                             }
                                         }
-                                    }
+                                    },
+                                    "required": [
+                                        "referenceJsonPaths"
+                                    ]
                                 }
                             },
-                            "required": [
-                                "referenceJsonPaths"
-                            ]
-                        }
-                    },
-                    "else": {
-                        "properties": {
-                            "path": {
-                                "$ref": "#/definitions/JsonPath"
+                            "else": {
+                                "properties": {
+                                    "path": {
+                                        "$ref": "#/definitions/JsonPath"
+                                    }
+                                },
+                                "required": [
+                                    "path"
+                                ]
                             }
-                        },
-                        "required": [
-                            "path"
-                        ]
+                        }
                     }
                 },
                 "equalityConstraints": {
