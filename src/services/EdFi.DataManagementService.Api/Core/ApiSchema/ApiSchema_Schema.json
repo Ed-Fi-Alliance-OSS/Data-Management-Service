@@ -1,42 +1,56 @@
 {
-  "type": "object",
-  "properties": {
-    "projectNameMapping": {
-      "$ref": "#/definitions/ProjectNameMapping"
-    },
-    "projectSchemas": {
-      "$ref": "#/definitions/ProjectSchemas"
-    }
-  },
-  "required": [
-    "projectNameMapping",
-    "projectSchemas"
-  ],
-    "definitions": {
-        "ProjectNameMapping": {
+    "type": "object",
+    "properties": {
+        "projectNameMapping": {
             "type": "object",
-            "properties": {
-                "Ed-Fi": {
+            "patternProperties": {
+                "^.*$": {
                     "type": "string"
                 }
-            }
+            },
+            "additionalProperties": false
         },
+        "projectSchemas": {
+            "type": "object",
+            "patternProperties": {
+                "^.*$": {
+                    "$ref": "#/definitions/ProjectSchemas"
+                }
+            },
+            "additionalProperties": false
+        }
+    },
+    "required": [
+        "projectNameMapping",
+        "projectSchemas"
+    ],
+    "definitions": {
         "ProjectSchemas": {
             "type": "object",
             "properties": {
-                "ed-fi": {
-                    "$ref": "#/definitions/EdFi"
-                }
-            }
-        },
-        "EdFi": {
-            "type": "object",
-            "properties": {
                 "abstractResources": {
-                    "$ref": "#/definitions/AbstractResources"
+                    "type": "object",
+                    "patternProperties": {
+                        "^.*$": {
+                            "type": "object",
+                            "properties": {
+                                "identityJsonPaths": {
+                                    "$ref": "#/definitions/JsonPaths"
+                                }
+                            },
+                            "additionalProperties": false
+                        }
+                    },
+                    "additionalProperties": false
                 },
                 "caseInsensitiveEndpointNameMapping": {
-                    "$ref": "#/definitions/CaseInsensitiveEndpointNameMapping"
+                    "type": "object",
+                    "patternProperties": {
+                        "^[a-z0-9]+$": {
+                            "type": "string"
+                        }
+                    },
+                    "additionalProperties": false
                 },
                 "description": {
                     "type": "string"
@@ -51,7 +65,13 @@
                     "type": "string"
                 },
                 "resourceNameMapping": {
-                    "$ref": "#/definitions/ResourceNameMapping"
+                    "type": "object",
+                    "patternProperties": {
+                        "^[A-Za-z0-9]+$": {
+                            "type": "string"
+                        }
+                    },
+                    "additionalProperties": false
                 },
                 "resourceSchemas": {
                     "$ref": "#/definitions/ResourceSchemas"
@@ -66,26 +86,8 @@
                 "projectVersion",
                 "resourceNameMapping",
                 "resourceSchemas"
-            ]
-        },
-        "AbstractResources": {
-            "type": "object",
-            "properties": {
-                "EducationOrganization": {
-                    "$ref": "#/definitions/AbstractResource"
-                },
-                "GeneralStudentProgramAssociation": {
-                    "$ref": "#/definitions/AbstractResource"
-                }
-            }
-        },
-        "AbstractResource": {
-            "type": "object",
-            "properties": {
-                "identityJsonPaths": {
-                    "$ref": "#/definitions/JsonPaths"
-                }
-            }
+            ],
+            "additionalProperties": false
         },
         "JsonPaths": {
             "type": "array",
@@ -95,353 +97,114 @@
         },
         "JsonPath": {
             "type": "string",
-            "pattern": "^\\$\\.[A-Za-z.]+$"
-        },
-        "CaseInsensitiveEndpointNameMapping": {
-            "type": "object",
-            "patternProperties": {
-                "^[a-z]+$": {
-                    "type": "string"
-                }
-            }
-        },
-        "ResourceNameMapping": {
-            "type": "object",
-            "patternProperties": {
-                "^[A-Za-z]+$": {
-                    "type": "string"
-                }
-            }
+            "pattern": "^\\$\\."
         },
         "ResourceSchemas": {
             "type": "object",
             "patternProperties": {
-                "^[A-Za-z]+Descriptors+$": {
-                    "$ref": "#/definitions/Descriptors"
-                },
-                "^((?!Descriptors)[A-Za-z])*$": {
-                    "$ref": "#/definitions/Resources"
-                }
-            }
-        },
-        "Descriptors": {
-            "type": "object",
-            "properties": {
-                "allowIdentityUpdates": {
-                    "type": "boolean"
-                },
-                "documentPathsMapping": {
-                    "type": "object"
-                },
-                "equalityConstraints": {
-                    "type": "array",
-                    "items": {}
-                },
-                "identityJsonPaths": {
-                    "$ref": "#/definitions/JsonPaths"
-                },
-                "isDescriptor": {
-                    "type": "boolean"
-                },
-                "isSchoolYearEnumeration": {
-                    "type": "boolean"
-                },
-                "isSubclass": {
-                    "type": "boolean"
-                },
-                "jsonSchemaForInsert": {
+                "^[A-Za-z0-9]+$": {
                     "type": "object",
                     "properties": {
-                        "$schema": {
-                            "type": "string"
-                        },
-                        "additionalProperties": {
+                        "allowIdentityUpdates": {
                             "type": "boolean"
                         },
-                        "description": {
-                            "type": "string"
+                        "documentPathsMapping": {
+                            "$ref": "#/definitions/DocumentPathsMapping"
                         },
-                        "properties": {
-                            "$ref": "#/definitions/DescriptorProperties"
-                        },
-                        "required": {
+                        "equalityConstraints": {
                             "type": "array",
-                            "items": {
-                                "type": "string"
-                            }
+                            "items": {}
                         },
-                        "title": {
+                        "identityJsonPaths": {
+                            "$ref": "#/definitions/JsonPaths"
+                        },
+                        "isDescriptor": {
+                            "type": "boolean"
+                        },
+                        "isSchoolYearEnumeration": {
+                            "type": "boolean"
+                        },
+                        "isSubclass": {
+                            "type": "boolean"
+                        },
+                        "jsonSchemaForInsert": {
+                            "type": "object"
+                        },
+                        "resourceName": {
                             "type": "string"
                         },
-                        "type": {
+                        "subclassType": {
+                            "type": "string"
+                        },
+                        "superclassIdentityJsonPath": {
+                            "type": "string"
+                        },
+                        "superclassProjectName": {
+                            "type": "string"
+                        },
+                        "superclassResourceName": {
                             "type": "string"
                         }
                     },
                     "required": [
-                        "$schema",
-                        "additionalProperties",
-                        "description",
-                        "properties",
-                        "required",
-                        "title",
-                        "type"
+                        "allowIdentityUpdates",
+                        "documentPathsMapping",
+                        "equalityConstraints",
+                        "identityJsonPaths",
+                        "isDescriptor",
+                        "isSchoolYearEnumeration",
+                        "isSubclass",
+                        "jsonSchemaForInsert",
+                        "resourceName"
                     ]
-                },
-                "resourceName": {
-                    "type": "string"
                 }
             },
-            "required": [
-                "allowIdentityUpdates",
-                "documentPathsMapping",
-                "equalityConstraints",
-                "identityJsonPaths",
-                "isDescriptor",
-                "isSchoolYearEnumeration",
-                "isSubclass",
-                "jsonSchemaForInsert",
-                "resourceName"
-            ]
+            "additionalProperties": false
         },
-        "DescriptionAndType": {
+        "DocumentPathsMapping": {
             "type": "object",
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "type": {
-                    "type": "string"
-                }
-            }
-        },
-        "EffectiveDate": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "format": {
-                    "type": "string"
-                },
-                "type": {
-                    "type": "string"
-                }
-            }
-        },
-        "DescriptorProperties": {
-            "type": "object",
-            "properties": {
-                "codeValue": {
-                    "$ref": "#/definitions/DescriptionAndType"
-                },
-                "description": {
-                    "$ref": "#/definitions/DescriptionAndType"
-                },
-                "effectiveBeginDate": {
-                    "$ref": "#/definitions/EffectiveDate"
-                },
-                "effectiveEndDate": {
-                    "$ref": "#/definitions/EffectiveDate"
-                },
-                "namespace": {
-                    "$ref": "#/definitions/DescriptionAndType"
-                },
-                "shortDescription": {
-                    "$ref": "#/definitions/DescriptionAndType"
-                }
-            },
-            "required": [
-                "codeValue",
-                "namespace",
-                "shortDescription"
-            ]
-        },
-        "Resources": {
-            "type": "object",
-            "properties": {
-                "allowIdentityUpdates": {
-                    "type": "boolean"
-                },
-                "documentPathsMapping": {
+            "patternProperties": {
+                "^[A-Za-z0-9\\.]+$": {
                     "type": "object",
-                    "patternProperties": {
-                        "^[A-Za-z]+$": {
-                            "type": "object",
-                            "properties": {
-                                "isReference": {
-                                    "type": "boolean"
-                                }
-                            },
-                            "required": [ "isReference" ],
-                            "if": {
+                    "properties": {
+                        "isReference": {
+                            "type": "boolean"
+                        },
+                        "isDescriptor": {
+                            "type": "boolean"
+                        },
+                        "projectName": {
+                            "type": "string"
+                        },
+                        "resourceName": {
+                            "type": "string"
+                        },
+                        "path": {
+                            "$ref": "#/definitions/JsonPath"
+                        },
+                        "referenceJsonPaths": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
                                 "properties": {
-                                    "isReference": { "const": true }
-                                },
-                                "required": [ "isReference" ]
-                            },
-                            "then": {
-                                "properties": {
-                                    "isDescriptor": {
-                                        "type": "boolean"
+                                    "identityJsonPath": {
+                                        "$ref": "#/definitions/JsonPath"
                                     },
-                                    "projectName": {
-                                        "type": "string"
-                                    },
-                                    "resourceName": {
-                                        "type": "string"
-                                    }
-                                },
-                                "required": [
-                                    "isDescriptor",
-                                    "projectName",
-                                    "resourceName"
-                                ],
-                                "if": {
-                                    "properties": {
-                                        "isDescriptor": { "const": true }
-                                    }
-                                },
-                                "then": {
-                                    "properties": {
-                                        "path": {
-                                            "$ref": "#/definitions/JsonPath"
-                                        }
-                                    },
-                                    "required": [
-                                        "path"
-                                    ]
-                                },
-                                "else": {
-                                    "properties": {
-                                        "referenceJsonPaths": {
-                                            "type": "array",
-                                            "items": {
-                                                "type": "object",
-                                                "properties": {
-                                                    "identityJsonPath": {
-                                                        "$ref": "#/definitions/JsonPath"
-                                                    },
-                                                    "referenceJsonPath": {
-                                                        "$ref": "#/definitions/JsonPath"
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    },
-                                    "required": [
-                                        "referenceJsonPaths"
-                                    ]
-                                }
-                            },
-                            "else": {
-                                "properties": {
-                                    "path": {
+                                    "referenceJsonPath": {
                                         "$ref": "#/definitions/JsonPath"
                                     }
                                 },
-                                "required": [
-                                    "path"
-                                ]
+                                "additionalProperties": false
                             }
-                        }
-                    }
-                },
-                "equalityConstraints": {
-                    "type": "array",
-                    "items": {}
-                },
-                "identityJsonPaths": {
-                    "$ref": "#/definitions/JsonPaths"
-                },
-                "isDescriptor": {
-                    "type": "boolean"
-                },
-                "isSchoolYearEnumeration": {
-                    "type": "boolean"
-                },
-                "isSubclass": {
-                    "type": "boolean"
-                },
-                "jsonSchemaForInsert": {
-                    "type": "object",
-                    "properties": {
-                        "$schema": {
-                            "type": "string"
-                        },
-                        "additionalProperties": {
-                            "type": "boolean"
-                        },
-                        "description": {
-                            "type": "string"
-                        },
-                        "properties": {
-                            "type": "object"
-                        },
-                        "required": {
-                            "type": "array",
-                            "items": {
-                                "type": "string"
-                            }
-                        },
-                        "title": {
-                            "type": "string"
-                        },
-                        "type": {
-                            "type": "string"
                         }
                     },
                     "required": [
-                        "$schema",
-                        "additionalProperties",
-                        "description",
-                        "properties",
-                        "required",
-                        "title",
-                        "type"
-                    ]
-                },
-                "resourceName": {
-                    "type": "string"
-                },
-                "subclassType": {
-                    "type": "string"
-                },
-                "superclassIdentityJsonPath": {
-                    "type": "string"
-                },
-                "superclassProjectName": {
-                    "type": "string"
-                },
-                "superclassResourceName": {
-                    "type": "string"
+                        "isReference"
+                    ],
+                    "additionalProperties": false
                 }
             },
-            "required": [
-                "allowIdentityUpdates",
-                "documentPathsMapping",
-                "equalityConstraints",
-                "identityJsonPaths",
-                "isDescriptor",
-                "isSchoolYearEnumeration",
-                "isSubclass",
-                "jsonSchemaForInsert",
-                "resourceName"
-            ],
-            "if": {
-                "properties": {
-                    "isSubclass": {
-                        "const": true
-                    }
-                }
-            },
-            "then": {
-                "required": [
-                    "subclassType",
-                    "superclassIdentityJsonPath",
-                    "superclassProjectName",
-                    "superclassResourceName"
-                ]
-            }
+            "additionalProperties": false
         }
     }
 }
