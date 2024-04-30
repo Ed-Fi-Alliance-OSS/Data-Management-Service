@@ -1,0 +1,71 @@
+Feature: Query Strings handling for GET requests
+
+  @ignore
+  Scenario: Ensure that schools return the total count
+    Given there are no students
+    When sending a GET request to "/ed-fi/schools?totalCount=true"  
+            """
+            """
+    Then there is a response header with "totalCount" equals to 0
+
+  @ignore
+  Scenario: Ensure that schools return the total count
+    Given there are students
+    When sending a GET request to "/ed-fi/schools?totalCount=true" 
+            """
+            """
+    Then there is a response header with "totalCount" equals to the expected number
+
+  @ignore
+  Scenario: Ensure that schools return the total count
+    Given there are students
+    When sending a GET request to "/ed-fi/schools?totalCount=false" 
+            """
+            """
+    Then it shoudl respond with 200
+    And header "totalCount" is not present
+
+  @ignore
+  Scenario: Ensure that schools return the total count
+    Given there are students
+    When sending a GET request to "/ed-fi/schools" 
+            """
+            """
+    Then it should respond with 200
+    And header "totalCount" is not present
+
+
+  @ignore
+  Scenario: Ensure clients can GET information changing the casing of the query value to be all lowercase
+    When sending a GET request to "/ed-fi/schools?nameOfInstitution=ut austin college of education graduate" 
+            """
+            """
+    Then it should respond with 200
+    And "nameOfInstitution" value is correct
+
+  @ignore
+  Scenario: Ensure clients can GET information changing the casing of the query value to be all uppercase
+    When sending a GET request to "/ed-fi/schools?nameOfInstitution=UT AUSTIN COLLEGE OF EDUCATION GRADUATE" 
+            """
+            """
+    Then it should respond with 200
+    And "nameOfInstitution" value is correct
+
+
+  @ignore
+  Scenario: Ensure clients can GET information 
+    When sending a GET request to "/ed-fi/schools?totalCount=true&limit=25" 
+    ##And "totalCount" 
+            """
+            """
+    Then getting less than the "totalCount"
+    And the total of subsets of the result
+
+
+
+
+
+
+    
+
+  
