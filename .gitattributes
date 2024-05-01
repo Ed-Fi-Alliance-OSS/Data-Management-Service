@@ -19,6 +19,7 @@
 
 ## SOURCE CODE
 *.bat  text eol=crlf
+*.feature.cs text eol=crlf
 
 ## GRAPHICS
 *.ai   binary
@@ -91,4 +92,3 @@
 
 ## OTHER
 *.xlsx  binary
-*.feature.cs  binary
