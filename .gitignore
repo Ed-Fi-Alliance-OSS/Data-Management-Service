@@ -405,6 +405,3 @@ app-secret.yaml
 
 # Mac OS
 .DS_Store
-
-# Reqnroll classes
-*.feature.cs
