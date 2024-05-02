@@ -37,7 +37,7 @@ public class ApiSchemaValidator : IApiSchemaValidator
         EvaluationOptions validatorEvaluationOptions =
             new() { OutputFormat = OutputFormat.List, RequireFormatValidation = true };
 
-        string schemaContent = File.ReadAllText(@"Core\ApiSchema\ApiSchema_Schema.json");
+        string schemaContent = File.ReadAllText(Path.Combine("Core", "ApiSchema", "ApiSchema_Schema.json"));
         var schema = JsonSchema.FromText(schemaContent);
 
         var results = schema.Evaluate(apiSchemaContent, validatorEvaluationOptions);
