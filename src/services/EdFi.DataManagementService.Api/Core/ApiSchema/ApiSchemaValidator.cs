@@ -10,12 +10,12 @@ using Json.Schema;
 namespace EdFi.DataManagementService.Api.Core.ApiSchema;
 
 /// <summary>
-/// Provides an ApiSchema as parsed JSON
+/// Validator for Api Schema
 /// </summary>
 public interface IApiSchemaValidator
 {
     /// <summary>
-    /// Validates A body against a JSON Schema
+    /// Validates Api Schema against Schema
     /// </summary>
     /// <param name="context"></param>
     /// <param name="validatorContext"></param>
