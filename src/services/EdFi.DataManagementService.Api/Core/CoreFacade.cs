@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Api.Backend;
 using EdFi.DataManagementService.Api.Core.ApiSchema;
 using EdFi.DataManagementService.Api.Core.Handler;
 using EdFi.DataManagementService.Api.Core.Middleware;
@@ -18,6 +19,7 @@ namespace EdFi.DataManagementService.Api.Core;
 /// </summary>
 public class CoreFacade(
     IApiSchemaProvider _apiSchemaProvider,
+    IApiSchemaValidator _apiSchemaValidator,
     IDocumentStoreRepository _documentStoreRepository,
     IDocumentValidator _documentValidator,
     IEqualityConstraintValidator _equalityConstraintValidator,
@@ -33,7 +35,7 @@ public class CoreFacade(
                 new(
                     [
                         new CoreLoggingMiddleware(_logger),
-                        new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
+                        new ProvideApiSchemaMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
                         new ParsePathMiddleware(_logger),
                         new ValidateEndpointMiddleware(_logger),
                         new ValidateDocumentMiddleware(_logger, _documentValidator),
@@ -54,7 +56,7 @@ public class CoreFacade(
                 new(
                     [
                         new CoreLoggingMiddleware(_logger),
-                        new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
+                        new ProvideApiSchemaMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
                         new ParsePathMiddleware(_logger),
                         new ValidateEndpointMiddleware(_logger),
                         new BuildResourceInfoMiddleware(_logger),
@@ -72,7 +74,7 @@ public class CoreFacade(
                 new(
                     [
                         new CoreLoggingMiddleware(_logger),
-                        new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
+                        new ProvideApiSchemaMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
                         new ParsePathMiddleware(_logger),
                         new ValidateEndpointMiddleware(_logger),
                         new ValidateDocumentMiddleware(_logger, _documentValidator),
@@ -93,7 +95,7 @@ public class CoreFacade(
                 new(
                     [
                         new CoreLoggingMiddleware(_logger),
-                        new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
+                        new ProvideApiSchemaMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
                         new ParsePathMiddleware(_logger),
                         new ValidateEndpointMiddleware(_logger),
                         new BuildResourceInfoMiddleware(_logger),
