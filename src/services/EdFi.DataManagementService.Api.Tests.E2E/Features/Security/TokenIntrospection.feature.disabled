@@ -116,6 +116,7 @@ Feature: JWT Token Introspection
              When sending a DELETE request with a token to "/ed-fi/academicWeeks/replaceWithAMoreRealisticId"
              Then it should respond with 401
 
+    Rule: Resource API accepts a valid token
         Scenario: Accept a Resource endpoint GET request where the token is valid
             Given a JSON web token with
                   | issuer           | expiresAt  |
@@ -130,6 +131,7 @@ Feature: JWT Token Introspection
                   | http://localhost | 2014699317 |
                   # 2014699317 is in the year 2033
              When sending a POST request with a token to "/ed-fi/academicWeeks"
+             # The request is missing a body; getting a 400 instead of a 401 proves that the token was accepted
              Then it should respond with 400
 
         Scenario: Accept a Resource endpoint PUT request where the token is valid
@@ -138,6 +140,7 @@ Feature: JWT Token Introspection
                   | http://localhost | 2014699317 |
                   # 2014699317 is in the year 2033
              When sending a PUT request with a token to "/ed-fi/academicWeeks/replaceWithAMoreRealisticId"
+             # The URL is invalid; getting a 404 instead of a 401 proves that the token was accepted
              Then it should respond with 404
 
         Scenario: Accept a Resource endpoint DELETE request where the token is valid
@@ -146,6 +149,7 @@ Feature: JWT Token Introspection
                   | http://localhost | 2014699317 |
                   # 2014699317 is in the year 2033
              When sending a DELETE request with a token to "/ed-fi/academicWeeks/replaceWithAMoreRealisticId"
+             # The URL is invalid; getting a 404 instead of a 401 proves that the token was accepted
              Then it should respond with 404
 
         # TODO: consider covering sscenarios where the token _signature_ is
