@@ -23,6 +23,7 @@ RUN dotnet publish -c Release -o out
 FROM mcr.microsoft.com/dotnet/aspnet:8.0.2-jammy-chiseled@sha256:cb35170c5c4687e42749a4f3538e6667cd682493466cc1535d8579befc23e077 AS runtime
 WORKDIR /app
 COPY --from=build /app/out/*.dll ./
+COPY --from=build /app/out/Core/ApiSchema/*.json ./Core/ApiSchema/
 COPY --from=build /app/out/*.pdb ./
 COPY --from=build /app/out/appsettings.json ./
 COPY --from=build /app/out/*runtimeconfig.json ./

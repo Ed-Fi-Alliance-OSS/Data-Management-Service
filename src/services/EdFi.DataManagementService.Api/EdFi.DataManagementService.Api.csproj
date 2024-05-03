@@ -7,10 +7,8 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
-
   <ItemGroup>
     <None Include="EdFi.DataManagementService.Api.nuspec" CopyToPublishDirectory="Always" CopyToOutputDirectory="Never" />
-    <None Include="Core\ApiSchema\ApiSchema_Schema.json" CopyToPublishDirectory="Always" CopyToOutputDirectory="Never" />
     <PackageReference Include="EdFi.ApiSchema" Version="5.0.0-alpha.10" />
     <PackageReference Include="Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic" Version="4.0.0" />
     <PackageReference Include="Microsoft.CodeAnalysis" Version="4.8.0" />

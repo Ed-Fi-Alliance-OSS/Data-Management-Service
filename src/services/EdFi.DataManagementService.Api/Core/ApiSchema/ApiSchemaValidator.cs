@@ -17,8 +17,7 @@ public interface IApiSchemaValidator
     /// <summary>
     /// Validates Api Schema against Schema
     /// </summary>
-    /// <param name="context"></param>
-    /// <param name="validatorContext"></param>
+    /// <param name="apiSchemaContent"></param>
     /// <returns></returns>
     Dictionary<string, List<string>> Validate(JsonNode? apiSchemaContent);
 }
