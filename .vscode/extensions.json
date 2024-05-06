@@ -6,6 +6,8 @@
       "ms-vscode.powershell",
       "streetsidesoftware.code-spell-checker",
       "ms-dotnettools.csdevkit",
-      "humao.rest-client"
+      "humao.rest-client",
+      "blodwynn.featurehighlight",
+      "siarheikuchuk.gherkin-beautifier-vs-code-plugin"
     ]
 }
