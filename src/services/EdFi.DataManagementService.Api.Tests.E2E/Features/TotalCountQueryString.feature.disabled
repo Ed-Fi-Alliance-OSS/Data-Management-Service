@@ -184,3 +184,13 @@ Feature: Query Strings handling for GET requests
                 },
             }
             """
+
+  
+  @ignore
+  Scenario: Ensure clients can GET information when filtering with limits and properties
+    Given these schools exist:
+            | schoolId     | nameOfInstitution                               | 
+            | 5            | School with max edorgId value                   | 
+            | 6            | UT Austin College of Education Under Graduate   |
+    When sending a GET request to "/ed-fi/schools?limit=2" using values as
+
