@@ -22,9 +22,9 @@ Feature: Query Strings handling for GET requests
   @ignore
   Scenario: Ensure that schools return the total count
     Given these schools exist:
-            | schoolId     | nameOfInstitution                    | gradeLevels                                                            | educationOrganizationCategories      |
-            | 5            | School with max edorgId value        | [ "Postsecondary" ]                                                    | [ "School" ]                         |
-            | 255901001    | Grand Bend High School               | [ "Tenth grade", "Ninth grade", "Eleventh grade", "Twelfth grade" ]    | [ "School" ]                         |
+            | schoolId     | nameOfInstitution                    | gradeLevels                 | educationOrganizationCategories      |
+            | 5            | School with max edorgId value        | [ "Postsecondary" ]         | [ "School" ]                         |
+            | 255901001    | Grand Bend High School               | [ "Tenth grade" ]           | [ "School" ]                         |
     When sending a GET request to "/ed-fi/schools?totalCount=false" 
             """
             """
@@ -34,9 +34,9 @@ Feature: Query Strings handling for GET requests
   @ignore
   Scenario: Ensure that schools return the total count
     Given these schools exist:
-            | schoolId     | nameOfInstitution                    | gradeLevels                                                            | educationOrganizationCategories      |
-            | 5            | School with max edorgId value        | [ "Postsecondary" ]                                                    | [ "School" ]                         |
-            | 255901001    | Grand Bend High School               | [ "Tenth grade", "Ninth grade", "Eleventh grade", "Twelfth grade" ]    | [ "School" ]                         |
+            | schoolId     | nameOfInstitution                    | gradeLevels                  | educationOrganizationCategories      |
+            | 5            | School with max edorgId value        | [ "Postsecondary" ]          | [ "School" ]                         |
+            | 255901001    | Grand Bend High School               | [ "Tenth grade" ]            | [ "School" ]                         |
     When sending a GET request to "/ed-fi/schools" 
             """
             """
@@ -47,8 +47,8 @@ Feature: Query Strings handling for GET requests
   @ignore
   Scenario: Ensure clients can GET information changing the casing of the query value to be all lowercase
     Given this school exists:
-            | schoolId     | nameOfInstitution                    |                                                          | educationOrganizationCategories      |
-            | 5            | School with max edorgId value        |
+            | schoolId     | nameOfInstitution                    | gradeLevels                   | educationOrganizationCategories      |
+            | 5            | School with max edorgId value        | [ "Postsecondary" ]           | [ "School" ]                         |
     When sending a GET request to "/ed-fi/schools?nameOfInstitution=ut+austin+college+of+education+graduate" 
             """
             """
@@ -58,8 +58,8 @@ Feature: Query Strings handling for GET requests
   @ignore
   Scenario: Ensure clients can GET information changing the casing of the query value to be all uppercase
     Given a school exists:
-            | schoolId     | nameOfInstitution                                    |                                                          | educationOrganizationCategories      |
-            | 6            | UT Austin College of Education Under Graduate        |
+            | schoolId     | nameOfInstitution                                    | gradeLevels               | educationOrganizationCategories      |
+            | 6            | UT Austin College of Education Under Graduate        | [ "Postsecondary" ]       | [ "Educator Preparation Provider" ]  |
     When sending a GET request to "/ed-fi/schools?nameOfInstitution=UT+AUSTIN+COLLEGE+OF+EDUCATION+UNDER+GRADUATE" 
             """
             """
