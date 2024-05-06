@@ -8,35 +8,15 @@ using EdFi.DataManagementService.Core.Pipeline;
 
 namespace EdFi.DataManagementService.Api.Core.Middleware;
 
-public class ProvideApiSchemaMiddleware(
-    IApiSchemaProvider _apiSchemaProvider,
-    IApiSchemaValidator _apiSchemaValidator,
-    ILogger _logger
-) : IPipelineStep
+public class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider, ILogger _logger)
+    : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         _logger.LogDebug("Entering ProvideApiSchemaMiddleware- {TraceId}", context.FrontendRequest.TraceId);
 
         var document = _apiSchemaProvider.ApiSchemaRootNode;
-        var validationErrors = _apiSchemaValidator.Validate(document);
-
-        if (validationErrors.Any())
-        {
-            foreach (var validationError in validationErrors)
-            {
-                _logger.LogCritical($"Path:{validationError.Key}, Errors: {validationError.Value}");
-            }
-
-            context.FrontendResponse = context.FrontendResponse = new(
-                StatusCode: 500,
-                Body: "Api Schema file has validation errors."
-            );
-        }
-        else
-        {
-            context.ApiSchemaDocument = new ApiSchemaDocument(document, _logger);
-            await next();
-        }
+        context.ApiSchemaDocument = new ApiSchemaDocument(document, _logger);
+        await next();
     }
 }

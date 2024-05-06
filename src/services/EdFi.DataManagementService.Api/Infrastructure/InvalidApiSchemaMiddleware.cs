@@ -5,15 +5,21 @@
 
 namespace EdFi.DataManagementService.Api.Infrastructure;
 
-public class InvalidConfigurationMiddleware(RequestDelegate next, List<string> errors)
+public class InvalidApiSchemaMiddleware(
+    RequestDelegate next,
+    Dictionary<string, List<string>> validationErrors
+)
 {
     public RequestDelegate Next { get; } = next;
 
-    public Task Invoke(HttpContext context, ILogger<InvalidConfigurationMiddleware> logger)
+    public Task Invoke(HttpContext context, ILogger<InvalidApiSchemaMiddleware> logger)
     {
-        foreach (var error in errors)
+        if (validationErrors.Any())
         {
-            logger.LogCritical(error);
+            foreach (var validationError in validationErrors)
+            {
+                logger.LogCritical($"Path:{validationError.Key}, Errors: {validationError.Value}");
+            }
         }
 
         context.Response.StatusCode = 500;
