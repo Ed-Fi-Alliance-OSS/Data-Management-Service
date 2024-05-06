@@ -164,7 +164,7 @@ Feature: Query Strings handling for GET requests
   ##I need a few more details on this scenario
   @ignore
   Scenario: Ensure clients can't GET information when querying with filter and offset using limit without offset
-    Given 5 schools exist:
+    Given these schools exist:
             | schoolId     | nameOfInstitution                               | 
             | 5            | School with max edorgId value                   | 
             | 6            | UT Austin College of Education Under Graduate   |
@@ -184,11 +184,3 @@ Feature: Query Strings handling for GET requests
                 },
             }
             """
-
-
-
-
-
-    
-
-  
