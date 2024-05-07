@@ -24,6 +24,7 @@ public static class WebApplicationBuilderExtensions
     public static void AddServices(this WebApplicationBuilder webAppBuilder)
     {
         webAppBuilder.Services.AddSingleton<IApiSchemaProvider, ApiSchemaFileLoader>();
+        webAppBuilder.Services.AddTransient<IApiSchemaSchemaProvider, ApiSchemaSchemaProvider>();
         webAppBuilder.Services.AddSingleton<IApiSchemaValidator, ApiSchemaValidator>();
         webAppBuilder.Services.AddSingleton<ICoreFacade, CoreFacade>();
         webAppBuilder.Services.AddSingleton<IDocumentStoreRepository, SuccessDocumentStoreRepository>();
@@ -38,8 +39,13 @@ public static class WebApplicationBuilderExtensions
         webAppBuilder.Services.Configure<AppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"));
         webAppBuilder.Services.AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>();
 
-        webAppBuilder.Services.Configure<ConnectionStrings>(webAppBuilder.Configuration.GetSection("ConnectionStrings"));
-        webAppBuilder.Services.AddSingleton<IValidateOptions<ConnectionStrings>, ConnectionStringsValidator>();
+        webAppBuilder.Services.Configure<ConnectionStrings>(
+            webAppBuilder.Configuration.GetSection("ConnectionStrings")
+        );
+        webAppBuilder.Services.AddSingleton<
+            IValidateOptions<ConnectionStrings>,
+            ConnectionStringsValidator
+        >();
 
         if (webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
         {

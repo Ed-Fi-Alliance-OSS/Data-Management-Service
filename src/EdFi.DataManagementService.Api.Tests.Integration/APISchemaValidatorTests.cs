@@ -11,6 +11,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Api.Tests.Integration;
@@ -29,15 +30,17 @@ public class APISchemaValidatorTests
         [SetUp]
         public void Setup()
         {
-            var _apiSchemaRootNode =
+            var apiSchemaRootNode =
                 JsonNode.Parse(
                     "{\"projectSchemas\": { \"ed-fi\": {\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{}} } }"
                 ) ?? new JsonObject();
 
             _apiSchemaProvider = A.Fake<IApiSchemaProvider>();
-            A.CallTo(() => _apiSchemaProvider.ApiSchemaRootNode).Returns(_apiSchemaRootNode!);
+            A.CallTo(() => _apiSchemaProvider.ApiSchemaRootNode).Returns(apiSchemaRootNode!);
 
-            _apiSchemaValidator = new ApiSchemaValidator();
+            var logger = A.Fake<ILogger<ApiSchemaSchemaProvider>>();
+
+            _apiSchemaValidator = new ApiSchemaValidator(new ApiSchemaSchemaProvider(logger));
 
             _webHostBuilder = (builder) =>
             {
@@ -100,7 +103,7 @@ public class APISchemaValidatorTests
         }
 
         [TestFixture]
-        public class When_requesting_resource_endpoint_Should_return_InternalServerError
+        public class When_requesting_students_endpoint_Should_return_InternalServerError
             : Given_a_invalid_api_schema_file
         {
             [Test]
@@ -111,6 +114,26 @@ public class APISchemaValidatorTests
 
                 // Act
                 var response = await client.GetAsync("/data/ed-fi/students");
+                var content = await response.Content.ReadAsStringAsync();
+
+                // Assert
+                response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+                content.Should().Be(string.Empty);
+            }
+        }
+
+        [TestFixture]
+        public class When_requesting_schools_endpoint_Should_return_InternalServerError
+            : Given_a_invalid_api_schema_file
+        {
+            [Test]
+            public async Task When_api_schema_with_validation_errors()
+            {
+                // Arrange
+                using var client = _factory.CreateClient();
+
+                // Act
+                var response = await client.GetAsync("/data/ed-fi/schools");
                 var content = await response.Content.ReadAsStringAsync();
 
                 // Assert

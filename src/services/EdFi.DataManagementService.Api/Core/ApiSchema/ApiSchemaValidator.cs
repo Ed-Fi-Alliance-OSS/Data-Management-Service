@@ -19,12 +19,12 @@ public interface IApiSchemaValidator
     /// </summary>
     /// <param name="apiSchemaContent"></param>
     /// <returns></returns>
-    Dictionary<string, List<string>> Validate(JsonNode? apiSchemaContent);
+    Lazy<Dictionary<string, List<string>>> Validate(JsonNode? apiSchemaContent);
 }
 
-public class ApiSchemaValidator : IApiSchemaValidator
+public class ApiSchemaValidator(IApiSchemaSchemaProvider _apiSchemaSchemaProvider) : IApiSchemaValidator
 {
-    public Dictionary<string, List<string>> Validate(JsonNode? apiSchemaContent)
+    public Lazy<Dictionary<string, List<string>>> Validate(JsonNode? apiSchemaContent)
     {
         var validationErrors = new Dictionary<string, List<string>>();
         var formatValidationResult = apiSchemaContent.ValidateJsonFormat();
@@ -36,17 +36,21 @@ public class ApiSchemaValidator : IApiSchemaValidator
         EvaluationOptions validatorEvaluationOptions =
             new() { OutputFormat = OutputFormat.List, RequireFormatValidation = true };
 
-        string schemaContent = File.ReadAllText(Path.Combine("Core", "ApiSchema", "ApiSchema_Schema.json"));
-        var schema = JsonSchema.FromText(schemaContent);
+        var schema = _apiSchemaSchemaProvider.ApiSchemaSchema;
 
         var results = schema.Evaluate(apiSchemaContent, validatorEvaluationOptions);
-        return ValidationErrorsFrom(results);
+        ValidationErrorsFrom(results);
 
-        Dictionary<string, List<string>> ValidationErrorsFrom(EvaluationResults results)
+        return new Lazy<Dictionary<string, List<string>>>(() =>
+        {
+            return validationErrors;
+        });
+
+        void ValidationErrorsFrom(EvaluationResults results)
         {
             foreach (var detail in results.Details)
             {
-                var propertyPathAndName = "$";
+                var propertyPathAndName = "$.";
 
                 if (detail.InstanceLocation != null && detail.InstanceLocation.Segments.Length != 0)
                 {
@@ -62,7 +66,6 @@ public class ApiSchemaValidator : IApiSchemaValidator
                     validationErrors.Add(propertyPathAndName, errors);
                 }
             }
-            return validationErrors;
         }
     }
 }

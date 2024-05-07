@@ -13,7 +13,6 @@ builder.AddServices();
 var app = builder.Build();
 
 app.UseMiddleware<LoggingMiddleware>();
-
 app.UseValidationErrorsHandlingMiddleware();
 if (!InjectInvalidConfigurationMiddleware(app))
 {

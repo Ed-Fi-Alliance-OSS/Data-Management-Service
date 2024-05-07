@@ -63,7 +63,7 @@ public static class WebApplicationExtensions
         var apiSchema = apiSchemaProvider.ApiSchemaRootNode;
 
         var validator = app.Services.GetRequiredService<IApiSchemaValidator>();
-        var validationErrors = validator.Validate(apiSchema);
+        var validationErrors = validator.Validate(apiSchema).Value;
         if (validationErrors.Any())
         {
             app.UseMiddleware<InvalidApiSchemaMiddleware>(validationErrors);

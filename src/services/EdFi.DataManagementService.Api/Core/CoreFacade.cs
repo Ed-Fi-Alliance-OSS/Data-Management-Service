@@ -19,6 +19,7 @@ namespace EdFi.DataManagementService.Api.Core;
 /// </summary>
 public class CoreFacade(
     IApiSchemaProvider _apiSchemaProvider,
+    IApiSchemaValidator _apiSchemaValidator,
     IDocumentStoreRepository _documentStoreRepository,
     IDocumentValidator _documentValidator,
     IEqualityConstraintValidator _equalityConstraintValidator,
@@ -34,6 +35,7 @@ public class CoreFacade(
                 new(
                     [
                         new CoreLoggingMiddleware(_logger),
+                        new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
                         new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                         new ParsePathMiddleware(_logger),
                         new ValidateEndpointMiddleware(_logger),
@@ -55,6 +57,7 @@ public class CoreFacade(
                 new(
                     [
                         new CoreLoggingMiddleware(_logger),
+                        new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
                         new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                         new ParsePathMiddleware(_logger),
                         new ValidateEndpointMiddleware(_logger),
@@ -73,6 +76,7 @@ public class CoreFacade(
                 new(
                     [
                         new CoreLoggingMiddleware(_logger),
+                        new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
                         new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                         new ParsePathMiddleware(_logger),
                         new ValidateEndpointMiddleware(_logger),
@@ -94,6 +98,7 @@ public class CoreFacade(
                 new(
                     [
                         new CoreLoggingMiddleware(_logger),
+                        new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
                         new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                         new ParsePathMiddleware(_logger),
                         new ValidateEndpointMiddleware(_logger),
