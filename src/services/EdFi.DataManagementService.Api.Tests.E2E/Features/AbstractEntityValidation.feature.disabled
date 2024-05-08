@@ -1,19 +1,31 @@
-Feature: Client cannot POST an abstract entity
-  Ensure that clients cannot POST an abstract entity
+Feature: Reject client requests for abstract entities
 
   @ignore
-  Scenario: Validation of an Abstract Entity
-    Clients cannot POST to the Education Organization abstract entity
-    When sending a POST request to "/ed-fi/educationOrganization" with body
+  Scenario: Ensure that clients cannot POST an abstract entity (Education Organizations)
+    
+    When sending a POST request to "/ed-fi/educationOrganizations" with body
             """
             """
     Then it should respond with 404
 
   @ignore
-  Scenario: Ensure that clients cannot POST an abstract entity (Student Program Association)
-    Clients cannot POST to the Student Program Association abstract entity
-    When sending a POST request to "/ed-fi/studentProgramAssociations" with body
+  Scenario: Ensure that clients cannot POST an abstract entity (General Student Program Association)
+
+    When sending a POST request to "/ed-fi/generalStudentProgramAssociations" with body
             """
             """
     Then the response code is 404
 
+  @ignore
+  Scenario: Ensure that clients cannot GET an abstract entity (Education Organizations)
+    
+    When sending a GET request to "/ed-fi/educationOrganizations"   
+    
+    Then it should respond with 404
+
+  @ignore
+  Scenario: Ensure that clients cannot GET an abstract entity (Student Program Association)
+
+    When sending a GET request to "/ed-fi/generalStudentProgramAssociations"     
+    
+    Then the response code is 404

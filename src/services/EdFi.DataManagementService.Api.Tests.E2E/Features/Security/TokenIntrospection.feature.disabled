@@ -1,0 +1,156 @@
+# This is a rough draft feature for future use. Will likely need modification
+# once we have determined more about how system interaction will work between
+# the DMS and the OAuth provider.
+
+Feature: JWT Token Introspection
+    Other than the Discovery endpoint, all HTTP requests against DMS endpoints
+    require a JSON Web Token (JWT) for authorizating the request. The DMS will
+    perform self-inspection to confirm the validity of the token, rather than
+    querying the OAuth provider.
+
+        Background:
+        # This might not be necessary - only keep it if other .feature files
+        # are somehow bypassing token authorization. # Might need to provide
+        # additional information here about # the allowed issuer and key
+        # information for validating the signature.
+            Given the Data Management Service must receive a token issued by "http://localhost"
+
+    Rule: Discovery API does not require an authorization token
+        Scenario: Accept root endpoint requests that do not contain a token
+             When sending a GET request without headers to "/"
+             Then it should respond with 200
+
+        Scenario: Accept dependencies endpoint requests that do not contain a token
+             When sending a GET request without headers to "/metadata/dependencies"
+             Then it should respond with 200
+
+        Scenario: Accept OpenAPI specifications endpoint requests that do not contain a token
+             When sending a GET request without headers to "/metadata/specifications"
+             Then it should respond with 200
+
+        Scenario: Accept XSD endpoint requests that do not contain a token
+             When sending a GET request without headers to "/metadata/xsd"
+             Then it should respond with 200
+
+        # NOTE: deliberately skipping the OpenAPI and XSD files because of their large size
+
+    Rule: Resource API does not accept requests without a token
+        Scenario: Reject a Resource endpoint GET request that does not contain a token
+             When sending a GET request without headers to "/ed-fi/academicWeeks"
+             Then it should respond with 401
+
+        Scenario: Reject a Resource endpoint POST request that does not contain a token
+             When sending a POST request without headers to "/ed-fi/academicWeeks"
+             Then it should respond with 401
+
+        Scenario: Reject a Resource endpoint PUT request that does not contain a token
+             When sending a PUT request without headers to "/ed-fi/academicWeeks/replaceWithAMoreRealisticId"
+             Then it should respond with 401
+
+        Scenario: Reject a Resource endpoint DELETE request that does not contain a token
+             When sending a DELETE request without headers to "/ed-fi/academicWeeks/replaceWithAMoreRealisticId"
+             Then it should respond with 401
+
+    Rule: Resource API does not accept requests with an invalid token
+        Scenario: Reject a Resource endpoint GET request where the token is from the wrong issuer
+            Given a JSON web token with
+                  | issuer              | expiresAt  |
+                  | https://example.com | 2014699317 |
+                  # 2014699317 is in the year 2033
+             When sending a GET request with a token to "/ed-fi/academicWeeks"
+             Then it should respond with 401
+
+        Scenario: Reject a Resource endpoint POST request where the token is from the wrong issuer
+            Given a JSON web token with
+                  | issuer              | expiresAt  |
+                  | https://example.com | 2014699317 |
+                  # 2014699317 is in the year 2033
+             When sending a POST request with a token to "/ed-fi/academicWeeks"
+             Then it should respond with 401
+
+        Scenario: Reject a Resource endpoint PUT request where the token is from the wrong issuer
+            Given a JSON web token with
+                  | issuer              | expiresAt  |
+                  | https://example.com | 2014699317 |
+                  # 2014699317 is in the year 2033
+             When sending a PUT request with a token to "/ed-fi/academicWeeks/replaceWithAMoreRealisticId"
+             Then it should respond with 401
+
+        Scenario: Reject a Resource endpoint DELETE request where the token is from the wrong issuer
+            Given a JSON web token with
+                  | issuer              | expiresAt  |
+                  | https://example.com | 2014699317 |
+                  # 2014699317 is in the year 2033
+             When sending a DELETE request with a token to "/ed-fi/academicWeeks/replaceWithAMoreRealisticId"
+             Then it should respond with 401
+
+        Scenario: Reject a Resource endpoint GET request where the token is expired
+            Given a JSON web token with
+                  | issuer           | expiresAt  |
+                  | http://localhost | 1683076917 |
+                  # 1683076917 is in the year 2023
+             When sending a GET request with a token to "/ed-fi/academicWeeks"
+             Then it should respond with 401
+
+        Scenario: Reject a Resource endpoint POST request where the token is expired
+            Given a JSON web token with
+                  | issuer           | expiresAt  |
+                  | http://localhost | 1683076917 |
+                  # 1683076917 is in the year 2023
+             When sending a POST request with a token to "/ed-fi/academicWeeks"
+             Then it should respond with 401
+
+        Scenario: Reject a Resource endpoint PUT request where the token is expired
+            Given a JSON web token with
+                  | issuer           | expiresAt  |
+                  | http://localhost | 1683076917 |
+                  # 1683076917 is in the year 2023
+             When sending a PUT request with a token to "/ed-fi/academicWeeks/replaceWithAMoreRealisticId"
+             Then it should respond with 401
+
+        Scenario: Reject a Resource endpoint DELETE request where the token is expired
+            Given a JSON web token with
+                  | issuer           | expiresAt  |
+                  | http://localhost | 2014699317 |
+                  # 2014699317 is in the year 2033
+             When sending a DELETE request with a token to "/ed-fi/academicWeeks/replaceWithAMoreRealisticId"
+             Then it should respond with 401
+
+    Rule: Resource API accepts a valid token
+        Scenario: Accept a Resource endpoint GET request where the token is valid
+            Given a JSON web token with
+                  | issuer           | expiresAt  |
+                  | http://localhost | 2014699317 |
+                  # 2014699317 is in the year 2033
+             When sending a GET request with a token to "/ed-fi/academicWeeks"
+             Then it should respond with 200
+
+        Scenario: Accept a Resource endpoint POST request where the token is valid
+            Given a JSON web token with
+                  | issuer           | expiresAt  |
+                  | http://localhost | 2014699317 |
+                  # 2014699317 is in the year 2033
+             When sending a POST request with a token to "/ed-fi/academicWeeks"
+             # The request is missing a body; getting a 400 instead of a 401 proves that the token was accepted
+             Then it should respond with 400
+
+        Scenario: Accept a Resource endpoint PUT request where the token is valid
+            Given a JSON web token with
+                  | issuer           | expiresAt  |
+                  | http://localhost | 2014699317 |
+                  # 2014699317 is in the year 2033
+             When sending a PUT request with a token to "/ed-fi/academicWeeks/replaceWithAMoreRealisticId"
+             # The URL is invalid; getting a 404 instead of a 401 proves that the token was accepted
+             Then it should respond with 404
+
+        Scenario: Accept a Resource endpoint DELETE request where the token is valid
+            Given a JSON web token with
+                  | issuer           | expiresAt  |
+                  | http://localhost | 2014699317 |
+                  # 2014699317 is in the year 2033
+             When sending a DELETE request with a token to "/ed-fi/academicWeeks/replaceWithAMoreRealisticId"
+             # The URL is invalid; getting a 404 instead of a 401 proves that the token was accepted
+             Then it should respond with 404
+
+        # TODO: consider covering sscenarios where the token _signature_ is
+        # missing or invalid. In practical terms, that might mean entering hard-coded token strings
