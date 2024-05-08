@@ -17,6 +17,7 @@ public class ContainerSetup
         var dockerImage = new ContainerBuilder()
             .WithImage(imageName)
             .WithPortBinding(8080)
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilContainerIsHealthy())
             .Build();
 
         await dockerImage.StartAsync();
