@@ -217,7 +217,7 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_returns_message_body_with_required_validation_error()
         {
-            _context?.FrontendResponse.Body.Should().Contain("Required properties");
+            _context?.FrontendResponse.Body.Should().Contain("is required");
             _context?.FrontendResponse.Body.Should().Contain("schoolId");
         }
     }
@@ -299,7 +299,7 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_returns_message_body_with_required_validation_error()
         {
-            _context?.FrontendResponse.Body.Should().Contain("Required properties");
+            _context?.FrontendResponse.Body.Should().Contain("is required");
             _context?.FrontendResponse.Body.Should().Contain("id");
         }
     }

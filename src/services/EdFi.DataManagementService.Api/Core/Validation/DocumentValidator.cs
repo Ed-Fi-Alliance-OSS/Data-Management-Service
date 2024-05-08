@@ -5,6 +5,7 @@
 
 using System.Diagnostics;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Api.Core.ApiSchema.Extensions;
 using EdFi.DataManagementService.Core.Pipeline;
 using Json.Schema;
@@ -92,7 +93,6 @@ public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentVali
         Dictionary<string, string[]> ValidationErrorsFrom(EvaluationResults results)
         {
             var validationErrors = new Dictionary<string, string[]>();
-            var val = new List<string>();
             foreach (var detail in results.Details)
             {
                 var propertyName = string.Empty;
@@ -103,15 +103,52 @@ public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentVali
                 }
                 if (detail.Errors != null && detail.Errors.Any())
                 {
-                    foreach (var error in detail.Errors)
+                    foreach (var error in detail.Errors.Select(x => x.Value))
                     {
-                        val.Add($"{propertyName}{error.Value}");
-                        validationErrors.Add(propertyName, val.ToArray());
+                        var splitErrors = SplitErrorDetail(error, propertyName);
+
+                        foreach (var splitError in splitErrors)
+                        {
+                            if (validationErrors.ContainsKey(splitError.Key))
+                            {
+                                var existingErrors = validationErrors[splitError.Key].ToList();
+                                existingErrors.AddRange(splitError.Value);
+                                validationErrors[splitError.Key] = existingErrors.ToArray();
+                            }
+                            else
+                            {
+                                validationErrors.Add(splitError.Key, splitError.Value);
+                            }
+                        }
                     }
                 }
             }
             return validationErrors;
         }
+    }
+
+    private static Dictionary<string, string[]> SplitErrorDetail(string error, string propertyName)
+    {
+        var validations = new Dictionary<string, string[]>();
+        if (error.Contains("[") && error.Contains("]"))
+        {
+            MatchCollection hits = Regex.Matches(error, "\"([^\"]*)\"");
+
+            foreach (var hit in hits.Select(hit => hit.Groups))
+            {
+                var value = new List<string>();
+                value.Add($"{hit[1].Value} is required.");
+                var aditional = propertyName == string.Empty ? "" : propertyName.Replace(":", "").TrimEnd() + ".";
+                validations.Add("$." + aditional + hit[1].Value, value.ToArray());
+            }
+        }
+        else
+        {
+            var value = new List<string>();
+            value.Add($"{propertyName}{error}");
+            validations.Add("$." + propertyName, value.ToArray());
+        }
+        return validations;
     }
 }
 

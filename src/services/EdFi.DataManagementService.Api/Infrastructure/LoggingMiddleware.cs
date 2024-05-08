@@ -4,7 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Text.Encodings.Web;
 using System.Text.Json;
+using EdFi.DataManagementService.Api.Core.Response;
 
 namespace EdFi.DataManagementService.Api.Infrastructure;
 
@@ -41,20 +43,33 @@ public class LoggingMiddleware(RequestDelegate next)
                 )
             );
 
+            FailureResponse failureResponse;
+
+            var validationErrors = new Dictionary<string, string[]>();
+
+            var value = new List<string>
+            {
+                ex.Message
+            };
+            validationErrors.Add("$.", value.ToArray());
+
+            failureResponse = FailureResponse.ForDataValidation(
+                "Data validation failed. See 'validationErrors' for details.",
+                validationErrors,
+                new List<string>().ToArray()
+            );
+
+            var options = new JsonSerializerOptions
+            {
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            };
+
             var response = context.Response;
             if (!response.HasStarted)
             {
                 response.ContentType = "application/json";
-                response.StatusCode = (int)HttpStatusCode.InternalServerError;
-                await response.WriteAsync(
-                    JsonSerializer.Serialize(
-                        new
-                        {
-                            message = "The server encountered an unexpected condition that prevented it from fulfilling the request.",
-                            traceId = context.TraceIdentifier
-                        }
-                    )
-                );
+                response.StatusCode = (int)HttpStatusCode.BadRequest;
+                await response.WriteAsync(JsonSerializer.Serialize(failureResponse, options));
             }
         }
     }
