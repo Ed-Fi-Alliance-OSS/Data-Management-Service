@@ -58,3 +58,84 @@ Scenario: Post a valid Descriptor
   """
   Then the response code is 201
 
+Scenario: Post an invalid body for academicWeeks missing more than one required field
+  When sending a POST request to "data/ed-fi/academicWeeks" with body
+  """
+  {
+    "_weekIdentifier": "abcdef",
+    "_schoolReference": {
+        "schoolId": 255901001
+    },
+    "_beginDate": "2024-04-04",
+    "_endDate": "2024-04-04",
+    "_totalInstructionalDays": 300
+  }
+  """
+  Then the response code is 400
+    And the response body is
+"""
+{"detail":"Data validation failed. See 'validationErrors' for details.","type":"urn:ed-fi:api:bad-request:data","title":"Data Validation Failed","status":400,"correlationId":null,"validationErrors":{"$.schoolReference":["schoolReference is required."],"$.weekIdentifier":["weekIdentifier is required."],"$.beginDate":["beginDate is required."],"$.endDate":["endDate is required."],"$.totalInstructionalDays":["totalInstructionalDays is required."]},"errors":[]}
+"""
+
+Scenario: Post an invalid body for academicWeeks missing a required field in a nested object schoolid for schoolReference
+  When sending a POST request to "data/ed-fi/academicWeeks" with body
+  """
+  {
+    "weekIdentifier": "abcdef",
+    "schoolReference": {
+        "_schoolId": 255901001
+    },
+    "beginDate": "2024-04-04",
+    "endDate": "2024-04-04",
+    "totalInstructionalDays": 300
+  }
+  """
+  Then the response code is 400
+    And the response body is
+"""
+{"detail":"Data validation failed. See 'validationErrors' for details.","type":"urn:ed-fi:api:bad-request:data","title":"Data Validation Failed","status":400,"correlationId":null,"validationErrors":{"$.schoolReference.schoolId":["schoolId is required."]},"errors":[]}
+"""
+
+Scenario: Post an invalid body for academicWeeks missing a comma before beginDate
+  When sending a POST request to "data/ed-fi/academicWeeks" with body
+  """
+  {
+    "weekIdentifier": "abcdef",
+    "schoolReference": {
+        "schoolId": 255901001
+    }
+    "beginDate": "2024-04-04",
+    "endDate": "2024-04-04",
+    "totalInstructionalDays": 300
+  }
+  """
+  Then the response code is 400
+    And the response body is
+"""
+{"detail":"Data validation failed. See 'validationErrors' for details.","type":"urn:ed-fi:api:bad-request:data","title":"Data Validation Failed","status":400,"correlationId":null,"validationErrors":{"$.":["'\"' is invalid after a value. Expected either ',', '}', or ']'. LineNumber: 5 | BytePositionInLine: 2."]},"errors":[]}
+"""
+
+Scenario: Post an invalid body for courseOfferings missing a two required fields for a nested object CourseReference and also schoolReference
+  When sending a POST request to "data/ed-fi/courseOfferings" with body
+  """
+  {
+    "localCourseCode": "1",
+    "courseReference": {
+        "_courseCode": "1",
+        "_educationOrganizationId": 1
+    },
+     "_schoolReference": {
+        "schoolId": 255901001
+    },
+    "sessionReference": {
+        "schoolId": 255901001,
+        "schoolYear": 2022,
+        "sessionName": "Test"
+    }
+}
+  """
+  Then the response code is 400
+    And the response body is
+"""
+{"detail":"Data validation failed. See 'validationErrors' for details.","type":"urn:ed-fi:api:bad-request:data","title":"Data Validation Failed","status":400,"correlationId":null,"validationErrors":{"$.schoolReference":["schoolReference is required."],"$.courseReference.courseCode":["courseCode is required."],"$.courseReference.educationOrganizationId":["educationOrganizationId is required."]},"errors":[]}
+"""
