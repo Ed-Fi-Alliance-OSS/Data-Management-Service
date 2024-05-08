@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <None Remove="appsettings.json" />
+    <None Remove="Features\SchoolYearValidation.feature.disabled" />
   </ItemGroup>
 
   <ItemGroup>
@@ -61,7 +62,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Features\" />
+    <ReqnrollFeatureFiles Include="Features\SchoolYearValidation.feature.disabled" />
   </ItemGroup>
 
 </Project>
