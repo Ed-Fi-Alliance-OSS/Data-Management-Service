@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
@@ -32,9 +32,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Database.Mssql\EdFi.DataManagementService.Backend.Mssql.csproj" />
-    <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Database.Postgresql\EdFi.DataManagementService.Backend.Postgresql.csproj" />
-    <ProjectReference Include="..\..\EdFi.DataManagementService.Backend\EdFi.DataManagementService.Backend.csproj" />
+    <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend\EdFi.DataManagementService.Backend.csproj" />
+    <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Mssql\EdFi.DataManagementService.Backend.Mssql.csproj" />
+    <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Postgresql\EdFi.DataManagementService.Backend.Postgresql.csproj" />
   </ItemGroup>
 
 </Project>

@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Api.Configuration;
 using EdFi.DataManagementService.Api.Infrastructure;
 using EdFi.DataManagementService.Backend.Deploy;
+using Humanizer;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -15,7 +16,7 @@ var app = builder.Build();
 
 app.UseMiddleware<LoggingMiddleware>();
 
-if (InjectInvalidConfigurationMiddleware(app))
+if (!InjectInvalidConfigurationMiddleware(app))
 {
     InitializeDatabase(app);
 }
@@ -38,9 +39,9 @@ bool InjectInvalidConfigurationMiddleware(WebApplication app)
     catch (OptionsValidationException ex)
     {
         app.UseMiddleware<InvalidConfigurationMiddleware>(ex.Failures);
-        return false;
+        return true;
     }
-    return true;
+    return false;
 }
 
 void InitializeDatabase(WebApplication app)
