@@ -11,20 +11,21 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Deploy;
 
 public class DatabaseDeploy : IDatabaseDeploy
 {
-    public void DeployDatabase(string connectionString)
+    public DatabaseDeployResult DeployDatabase(string connectionString)
     {
         EnsureDatabase.For.PostgresqlDatabase(connectionString);
 
         var upgrader = DeployChanges.To
             .PostgresqlDatabase(connectionString)
             .WithScriptsEmbeddedInAssembly(Assembly.GetExecutingAssembly())
-            .LogToConsole()
+            .LogScriptOutput()
+            .LogToAutodetectedLog()
             .Build();
 
         var result = upgrader.PerformUpgrade();
-        if (!result.Successful)
-        {
-            throw new Exception();
-        }
+
+        return result.Successful
+            ? new DatabaseDeployResult.DatabaseDeploySuccess()
+            : new DatabaseDeployResult.DatabaseDeployFailure(result.Error);
     }
 }

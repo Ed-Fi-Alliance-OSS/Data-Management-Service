@@ -43,7 +43,12 @@ void InitializeDatabase(WebApplication app)
 {
     if (app.Services.GetRequiredService<IOptions<AppSettings>>().Value.DeployDatabaseOnStartup)
     {
-        app.Services.GetRequiredService<IDatabaseDeploy>().DeployDatabase(app.Services.GetRequiredService<IOptions<ConnectionStrings>>().Value.DatabaseConnection);
+        var result = app.Services.GetRequiredService<IDatabaseDeploy>().DeployDatabase(app.Services.GetRequiredService<IOptions<ConnectionStrings>>().Value.DatabaseConnection);
+        if (result is DatabaseDeployResult.DatabaseDeployFailure failure)
+        {
+            app.Logger.LogCritical("Database Deploy Failure");
+            throw failure.Error;
+        }
     }
 }
 

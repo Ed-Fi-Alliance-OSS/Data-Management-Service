@@ -5,7 +5,10 @@
 
 namespace EdFi.DataManagementService.Backend.Deploy;
 
+/// <summary>
+/// Creates and initialized a DataManagementService database
+/// </summary>
 public interface IDatabaseDeploy
 {
-    void DeployDatabase(string connectionString);
+    DatabaseDeployResult DeployDatabase(string connectionString);
 }
