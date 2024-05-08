@@ -133,7 +133,7 @@ this.ScenarioInitialize(scenarioInfo);
   await testRunner.ThenAsync("the response code is 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 28
-    await testRunner.AndAsync("the response body is", @"{""detail"":""Data validation failed. See 'validationErrors' for details."",""type"":""urn:ed-fi:api:bad-request:data"",""title"":""Data Validation Failed"",""status"":400,""correlationId"":null,""validationErrors"":{""weekIdentifier : "":[""weekIdentifier : Value should be at least 5 characters""]},""errors"":[]}", ((Reqnroll.Table)(null)), "And ");
+    await testRunner.AndAsync("the response body is", @"{""detail"":""Data validation failed. See 'validationErrors' for details."",""type"":""urn:ed-fi:api:bad-request:data"",""title"":""Data Validation Failed"",""status"":400,""correlationId"":null,""validationErrors"":{""$.weekIdentifier : "":[""weekIdentifier : Value should be at least 5 characters""]},""errors"":[]}", ((Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
@@ -166,7 +166,7 @@ this.ScenarioInitialize(scenarioInfo);
  await testRunner.ThenAsync("the response code is 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 45
-    await testRunner.AndAsync("the response body is", @"{""detail"":""Data validation failed. See 'validationErrors' for details."",""type"":""urn:ed-fi:api:bad-request:data"",""title"":""Data Validation Failed"",""status"":400,""correlationId"":null,""validationErrors"":{"""":[""Required properties [\""totalInstructionalDays\""] are not present""],""schoolReference : "":[""Required properties [\""totalInstructionalDays\""] are not present"",""schoolReference : Required properties [\""schoolId\""] are not present""]},""errors"":[]}", ((Reqnroll.Table)(null)), "And ");
+    await testRunner.AndAsync("the response body is", @"{""detail"":""Data validation failed. See 'validationErrors' for details."",""type"":""urn:ed-fi:api:bad-request:data"",""title"":""Data Validation Failed"",""status"":400,""correlationId"":null,""validationErrors"":{""$.totalInstructionalDays"":[""totalInstructionalDays is required.""],""$.schoolReference.schoolId"":[""schoolId is required.""]},""errors"":[]}", ((Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
