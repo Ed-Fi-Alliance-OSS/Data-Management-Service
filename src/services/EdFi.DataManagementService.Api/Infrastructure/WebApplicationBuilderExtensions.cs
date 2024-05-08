@@ -11,6 +11,8 @@ using EdFi.DataManagementService.Api.Content;
 using EdFi.DataManagementService.Api.Core;
 using EdFi.DataManagementService.Api.Core.ApiSchema;
 using EdFi.DataManagementService.Api.Core.Validation;
+using EdFi.DataManagementService.Backend.Deploy;
+using Microsoft.CodeAnalysis.Options;
 using Microsoft.Extensions.Options;
 using Serilog;
 
@@ -42,6 +44,7 @@ public static class WebApplicationBuilderExtensions
             ConfigureRateLimit(webAppBuilder);
         }
         ConfigureLogging();
+        ConfigureDatabase();
 
         void ConfigureLogging()
         {
@@ -51,6 +54,18 @@ public static class WebApplicationBuilderExtensions
                 .CreateLogger();
             webAppBuilder.Logging.ClearProviders();
             webAppBuilder.Logging.AddSerilog(logger);
+        }
+
+        void ConfigureDatabase()
+        {
+            if (webAppBuilder.Configuration.GetSection("AppSettings:DatabaseEngine").Value == "postgresql")
+            {
+                webAppBuilder.Services.AddSingleton<IDatabaseDeploy, DataManagementService.Backend.Postgresql.Deploy.DatabaseDeploy>();
+            }
+            else
+            {
+                webAppBuilder.Services.AddSingleton<IDatabaseDeploy, DataManagementService.Backend.Mssql.Deploy.DatabaseDeploy>();
+            }
         }
     }
 

@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Api.Configuration;
 using EdFi.DataManagementService.Api.Infrastructure;
+using EdFi.DataManagementService.Backend.Deploy;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -15,13 +16,14 @@ var app = builder.Build();
 app.UseMiddleware<LoggingMiddleware>();
 
 InjectInvalidConfigurationMiddleware(app);
+InitializeDatabase(app);
 
 app.UseRouting();
 app.UseRateLimiter();
 app.MapRouteEndpoints();
 
 app.Run();
-
+return;
 
 void InjectInvalidConfigurationMiddleware(WebApplication app)
 {
@@ -34,6 +36,14 @@ void InjectInvalidConfigurationMiddleware(WebApplication app)
     catch (OptionsValidationException ex)
     {
         app.UseMiddleware<InvalidConfigurationMiddleware>(ex.Failures);
+    }
+}
+
+void InitializeDatabase(WebApplication app)
+{
+    if (app.Services.GetRequiredService<IOptions<AppSettings>>().Value.DeployDatabaseOnStartup)
+    {
+        app.Services.GetRequiredService<IDatabaseDeploy>().DeployDatabase(app.Services.GetRequiredService<IOptions<ConnectionStrings>>().Value.DatabaseConnection);
     }
 }
 
