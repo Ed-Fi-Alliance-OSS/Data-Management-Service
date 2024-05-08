@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Api.Core.Middleware;
+using Microsoft.Extensions.Primitives;
 
 namespace EdFi.DataManagementService.Api.Core.Model;
 
@@ -25,6 +26,10 @@ public record FrontendRequest(
     /// Request body provided by the frontend service as a JsonNode, or null if there is no body
     /// </summary>
     JsonNode? Body,
+    /// <summary>
+    /// Query parameters provided by the frontend service as a dictionary.
+    /// </summary>
+    Dictionary<string, StringValues> QueryParameters,
     /// <summary>
     /// A request identifier provided by the frontend service, used for log tracing
     /// </summary>

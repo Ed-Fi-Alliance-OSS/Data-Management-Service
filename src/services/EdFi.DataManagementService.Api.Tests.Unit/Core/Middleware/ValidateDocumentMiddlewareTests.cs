@@ -100,6 +100,7 @@ public class ValidateDocumentMiddlewareTests
                 RequestMethod.POST,
                 "ed-fi/schools",
                 Body: null,
+                QueryParameters: [],
                 new TraceId("traceId")
             );
             _context = Context(frontEndRequest);
@@ -140,6 +141,7 @@ public class ValidateDocumentMiddlewareTests
                 RequestMethod.POST,
                 "ed-fi/schools",
                 Body: JsonNode.Parse(jsonData),
+                QueryParameters: [],
                 new TraceId("traceId")
             );
             _context = Context(frontEndRequest);
@@ -168,6 +170,7 @@ public class ValidateDocumentMiddlewareTests
                 RequestMethod.POST,
                 "ed-fi/schools",
                 Body: JsonNode.Parse(jsonData),
+                QueryParameters: [],
                 new TraceId("traceId")
             );
             _context = Context(frontEndRequest);
@@ -196,6 +199,7 @@ public class ValidateDocumentMiddlewareTests
                 RequestMethod.POST,
                 "ed-fi/schools",
                 Body: JsonNode.Parse(jsonData),
+                QueryParameters: [],
                 new TraceId("traceId")
             );
             _context = Context(frontEndRequest);
@@ -237,6 +241,7 @@ public class ValidateDocumentMiddlewareTests
                 RequestMethod.POST,
                 "ed-fi/schools",
                 Body: JsonNode.Parse(jsonData),
+                QueryParameters: [],
                 new TraceId("traceId")
             );
             _context = Context(frontEndRequest);
@@ -278,6 +283,7 @@ public class ValidateDocumentMiddlewareTests
                 RequestMethod.PUT,
                 "ed-fi/schools",
                 Body: JsonNode.Parse(jsonData),
+                QueryParameters: [],
                 new TraceId("traceId")
             );
             _context = Context(frontEndRequest);

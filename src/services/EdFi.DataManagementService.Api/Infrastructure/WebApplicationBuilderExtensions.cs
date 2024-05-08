@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Api.Configuration;
 using EdFi.DataManagementService.Api.Content;
 using EdFi.DataManagementService.Api.Core;
 using EdFi.DataManagementService.Api.Core.ApiSchema;
+using EdFi.DataManagementService.Api.Core.Backend;
 using EdFi.DataManagementService.Api.Core.Validation;
 using EdFi.DataManagementService.Backend.Deploy;
 using Microsoft.CodeAnalysis.Options;

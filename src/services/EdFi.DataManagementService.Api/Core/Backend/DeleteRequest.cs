@@ -4,7 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 using EdFi.DataManagementService.Api.Core.Model;
 
-namespace EdFi.DataManagementService.Api.Backend;
+namespace EdFi.DataManagementService.Api.Core.Backend;
 
 /// <summary>
 /// A delete request to a document repository

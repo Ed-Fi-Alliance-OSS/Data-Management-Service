@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Api.Core.Backend;
 using EdFi.DataManagementService.Api.Core.Model;
 
 namespace EdFi.DataManagementService.Api.Backend;
@@ -11,7 +12,7 @@ namespace EdFi.DataManagementService.Api.Backend;
 /// A document store repository that does nothing but return success
 /// </summary>
 public class SuccessDocumentStoreRepository(ILogger<SuccessDocumentStoreRepository> _logger)
-    : IDocumentStoreRepository
+    : IDocumentStoreRepository, IQueryHandler
 {
     public async Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)
     {
@@ -53,5 +54,19 @@ public class SuccessDocumentStoreRepository(ILogger<SuccessDocumentStoreReposito
             deleteRequest.TraceId
         );
         return await Task.FromResult<DeleteResult>(new DeleteResult.DeleteSuccess());
+    }
+
+    public async Task<QueryResult> QueryDocuments(QueryRequest queryRequest)
+    {
+        _logger.LogWarning(
+            "QueryDocuments(): Backend repository has been configured to always report success - {TraceId}",
+            queryRequest.TraceId
+        );
+        return await Task.FromResult<QueryResult>(
+            new QueryResult.QuerySuccess(
+                TotalCount: 0,
+                EdfiDocs: []
+            )
+        );
     }
 }

@@ -49,6 +49,7 @@ namespace EdFi.DataManagementService.Api
                     Method: RequestMethod.POST,
                     Body: body,
                     Path: request.RefinedPath(PathSegmentToRefine),
+                    QueryParameters: request.Query.ToDictionary(),
                     TraceId: new(request.HttpContext.TraceIdentifier)
                 );
             FrontendResponse frontendResponse = await coreFacade.Upsert(frontendRequest);
@@ -66,6 +67,7 @@ namespace EdFi.DataManagementService.Api
                     Method: RequestMethod.GET,
                     Body: null,
                     Path: request.RefinedPath(PathSegmentToRefine),
+                    QueryParameters: request.Query.ToDictionary(),
                     TraceId: new(request.HttpContext.TraceIdentifier)
                 );
             FrontendResponse frontendResponse = await coreFacade.GetById(frontendRequest);
@@ -85,6 +87,7 @@ namespace EdFi.DataManagementService.Api
                     Method: RequestMethod.PUT,
                     Body: body,
                     Path: request.RefinedPath(PathSegmentToRefine),
+                    QueryParameters: request.Query.ToDictionary(),
                     TraceId: new(request.HttpContext.TraceIdentifier)
                 );
             FrontendResponse frontendResponse = await coreFacade.UpdateById(frontendRequest);
@@ -102,6 +105,7 @@ namespace EdFi.DataManagementService.Api
                     Method: RequestMethod.DELETE,
                     Body: null,
                     Path: request.RefinedPath(PathSegmentToRefine),
+                    QueryParameters: request.Query.ToDictionary(),
                     TraceId: new(request.HttpContext.TraceIdentifier)
                 );
             FrontendResponse frontendResponse = await coreFacade.DeleteById(frontendRequest);
