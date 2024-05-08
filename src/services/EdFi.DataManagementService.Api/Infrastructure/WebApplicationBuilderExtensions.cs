@@ -58,7 +58,7 @@ public static class WebApplicationBuilderExtensions
 
         void ConfigureDatabase()
         {
-            if (webAppBuilder.Configuration.GetSection("AppSettings:DatabaseEngine").Value == "postgresql")
+            if (string.Equals(webAppBuilder.Configuration.GetSection("AppSettings:DatabaseEngine").Value, "postgresql", StringComparison.OrdinalIgnoreCase))
             {
                 webAppBuilder.Services.AddSingleton<IDatabaseDeploy, DataManagementService.Backend.Postgresql.Deploy.DatabaseDeploy>();
             }
