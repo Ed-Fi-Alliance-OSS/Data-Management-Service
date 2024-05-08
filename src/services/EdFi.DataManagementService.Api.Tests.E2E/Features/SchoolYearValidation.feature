@@ -80,6 +80,52 @@ Feature: School Year Reference Validation
                       }
                   """
 
+        @Ignore
+        Scenario: Validating Session POST with a valid school year
+             When sending a POST request to "/ed-fi/session" with body
+                  """
+                      {
+                        "schoolReference": {
+                            "schoolId": 255901001
+                        },
+                        "schoolYearTypeReference": {
+                            "schoolYear": 2023
+                        },
+                        "sessionName": "2021-2022 Fall Semester",
+                        "beginDate": "2021-08-23",
+                        "endDate": "2021-12-17",
+                        "termDescriptor": "uri://ed-fi.org/TermDescriptor#Fall Semester",
+                        "totalInstructionalDays": 81,
+                        }
+                  """
+             Then the response code is 201
+
+        @Ignore
+        Scenario: Validating Session POST with a  non existing school year
+             When sending a POST request to "/ed-fi/session" with body
+                  """
+                      {
+                        "schoolReference": {
+                            "schoolId": 255901001
+                        },
+                        "schoolYearTypeReference": {
+                            "schoolYear": 3099
+                        },
+                        "sessionName": "2021-2022 Fall Semester",
+                        "beginDate": "2021-08-23",
+                        "endDate": "2021-12-17",
+                        "termDescriptor": "uri://ed-fi.org/TermDescriptor#Fall Semester",
+                        "totalInstructionalDays": 81,
+                        }
+                  """
+             Then the response code is 409
+              And the response body is
+                  """
+                      {
+                          "message": "The value supplied for the related 'schoolYearType' resource does not exist.",
+                      }
+                  """
+
   #Course Offering / School Year
         @Ignore
         Scenario: Post a valid request using an existing CourseOffering
@@ -136,6 +182,7 @@ Feature: School Year Reference Validation
                   The cohort year scenario is interesting because it is testing a situation where a resource has a collection of SchoolYear references.
                   The StudentEducationOrganizationAssociation has this collection, via CohortYears.
                   """
+
         @Ignore
         Scenario: Handling the array with two valid cohorts
              When sending a POST request to "/ed-fi/studentEducationOrganizationAssociations" with body
