@@ -23,7 +23,6 @@
 
   <ItemGroup>
     <None Remove="appsettings.json" />
-    <None Remove="Features\SchoolYearValidation.feature.disabled" />
   </ItemGroup>
 
   <ItemGroup>
@@ -59,10 +58,6 @@
 
   <ItemGroup>
     <Using Include="NUnit.Framework" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ReqnrollFeatureFiles Include="Features\SchoolYearValidation.feature.disabled" />
   </ItemGroup>
 
 </Project>
