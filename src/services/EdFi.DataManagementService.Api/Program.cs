@@ -15,8 +15,10 @@ var app = builder.Build();
 
 app.UseMiddleware<LoggingMiddleware>();
 
-InjectInvalidConfigurationMiddleware(app);
-InitializeDatabase(app);
+if (InjectInvalidConfigurationMiddleware(app))
+{
+    InitializeDatabase(app);
+}
 
 app.UseRouting();
 app.UseRateLimiter();
@@ -25,7 +27,7 @@ app.MapRouteEndpoints();
 app.Run();
 return;
 
-void InjectInvalidConfigurationMiddleware(WebApplication app)
+bool InjectInvalidConfigurationMiddleware(WebApplication app)
 {
     try
     {
@@ -36,7 +38,9 @@ void InjectInvalidConfigurationMiddleware(WebApplication app)
     catch (OptionsValidationException ex)
     {
         app.UseMiddleware<InvalidConfigurationMiddleware>(ex.Failures);
+        return false;
     }
+    return true;
 }
 
 void InitializeDatabase(WebApplication app)
