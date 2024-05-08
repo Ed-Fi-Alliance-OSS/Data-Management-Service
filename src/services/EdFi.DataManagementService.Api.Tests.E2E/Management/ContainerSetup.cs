@@ -14,11 +14,7 @@ public class ContainerSetup
         string imageName = "local/edfi-data-management-service";
 
         // Image needs to be previously built
-        var dockerImage = new ContainerBuilder()
-            .WithImage(imageName)
-            .WithPortBinding(8080)
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilContainerIsHealthy())
-            .Build();
+        var dockerImage = new ContainerBuilder().WithImage(imageName).WithPortBinding(8080).Build();
 
         await dockerImage.StartAsync();
 
