@@ -16,11 +16,7 @@ COPY EdFi.DataManagementService-Docker.sln ./
 COPY nuget.config .
 RUN dotnet restore
 
-COPY services/EdFi.DataManagementService.Api ./services/EdFi.DataManagementService.Api
-COPY backend/EdFi.DataManagementService.Backend ./backend/EdFi.DataManagementService.Backend
-COPY backend/EdFi.DataManagementService.Backend.Mssql ./backend/EdFi.DataManagementService.Backend.Mssql
-COPY backend/EdFi.DataManagementService.Backend.Postgresql ./backend/EdFi.DataManagementService.Backend.Postgresql
-COPY .editorconfig .
+COPY . .
 
 RUN dotnet publish -c Release -o out
 
