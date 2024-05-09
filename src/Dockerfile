@@ -9,12 +9,14 @@ ENV ASPNETCORE_HTTP_PORTS=8080
 
 WORKDIR /app
 COPY services/EdFi.DataManagementService.Api/*.csproj ./services/EdFi.DataManagementService.Api/
+COPY backend/EdFi.DataManagementService.Backend/*.csproj ./backend/EdFi.DataManagementService.Backend/
+COPY backend/EdFi.DataManagementService.Backend.Mssql/*.csproj ./backend/EdFi.DataManagementService.Backend.Mssql/
+COPY backend/EdFi.DataManagementService.Backend.Postgresql/*.csproj ./backend/EdFi.DataManagementService.Backend.Postgresql/
 COPY EdFi.DataManagementService-Docker.sln ./
 COPY nuget.config .
 RUN dotnet restore
 
-COPY services/EdFi.DataManagementService.Api ./services/EdFi.DataManagementService.Api
-COPY .editorconfig .
+COPY . .
 
 RUN dotnet publish -c Release -o out
 
