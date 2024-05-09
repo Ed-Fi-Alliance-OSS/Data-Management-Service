@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "EdFi.DataManagementService.Backend.Installer": {
+      "commandName": "Project",
+      "commandLineArgs": "postgresql\r\nhost=localhost;port=5432;username=postgres;database=EdFi.DataManagementService;"
+    }
+  }
+}
