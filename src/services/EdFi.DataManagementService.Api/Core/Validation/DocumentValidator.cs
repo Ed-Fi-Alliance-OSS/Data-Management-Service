@@ -127,12 +127,14 @@ public class DocumentValidator(ISchemaValidator schemaValidator) : IDocumentVali
         }
     }
 
+    private static readonly Regex _propertyRegex = new Regex("\"([^\"]*)\"", RegexOptions.Compiled);
+
     private static Dictionary<string, string[]> SplitErrorDetail(string error, string propertyName)
     {
         var validations = new Dictionary<string, string[]>();
         if (error.Contains("[") && error.Contains("]"))
         {
-            MatchCollection hits = Regex.Matches(error, "\"([^\"]*)\"");
+            MatchCollection hits = _propertyRegex.Matches(error);
 
             foreach (var hit in hits.Select(hit => hit.Groups))
             {
