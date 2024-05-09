@@ -12,14 +12,24 @@ public class AppSettings
     public int BeginAllowedSchoolYear { get; set; }
     public int EndAllowedSchoolYear { get; set; }
     public required string AuthenticationService { get; set; }
+    public required string DatabaseEngine { get; set; }
+    public bool DeployDatabaseOnStartup { get; set; }
 }
 
 public class AppSettingsValidator : IValidateOptions<AppSettings>
 {
     public ValidateOptionsResult Validate(string? name, AppSettings options)
     {
-        return string.IsNullOrWhiteSpace(options.AuthenticationService)
-            ? ValidateOptionsResult.Fail("Missing required AppSettings value: AuthenticationService")
-            : ValidateOptionsResult.Success;
+        if (string.IsNullOrWhiteSpace(options.AuthenticationService))
+        {
+            return ValidateOptionsResult.Fail("Missing required AppSettings value: AuthenticationService");
+        }
+
+        if (string.IsNullOrWhiteSpace(options.DatabaseEngine))
+        {
+            return ValidateOptionsResult.Fail("Missing required AppSettings value: DatabaseEngine");
+        }
+
+        return ValidateOptionsResult.Success;
     }
 }

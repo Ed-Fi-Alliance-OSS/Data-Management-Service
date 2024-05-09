@@ -1,0 +1,6 @@
+# .dockerignore
+
+Tests*
+*/Tests*
+*/*/Tests*
+EdFi.DataManagementService.sln
