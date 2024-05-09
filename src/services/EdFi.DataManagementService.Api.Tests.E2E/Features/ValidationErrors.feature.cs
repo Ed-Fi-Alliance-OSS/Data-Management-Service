@@ -125,9 +125,9 @@ this.ScenarioInitialize(scenarioInfo);
             {
                 await this.ScenarioStartAsync();
 #line 15
- await testRunner.WhenAsync("sending a POST request to \"data/ed-fi/academicWeeks\" with body", "{\r\n \"weekIdentifier\": \"one\",\r\n \"schoolReference\": {\r\n   \"schoolId\": 17012391\r\n }," +
-                        "\r\n \"beginDate\": \"2023-09-11\",\r\n \"endDate\": \"2023-09-11\",\r\n \"totalInstructionalDa" +
-                        "ys\": 300\r\n}", ((Reqnroll.Table)(null)), "When ");
+ await testRunner.WhenAsync("sending a POST request to \"data/ed-fi/academicWeeks\" with body", "{\n \"weekIdentifier\": \"one\",\n \"schoolReference\": {\n   \"schoolId\": 17012391\n },\n \"b" +
+                        "eginDate\": \"2023-09-11\",\n \"endDate\": \"2023-09-11\",\n \"totalInstructionalDays\": 30" +
+                        "0\n}", ((Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 27
   await testRunner.ThenAsync("the response code is 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
@@ -159,8 +159,8 @@ this.ScenarioInitialize(scenarioInfo);
             {
                 await this.ScenarioStartAsync();
 #line 34
-  await testRunner.WhenAsync("sending a POST request to \"data/ed-fi/academicWeeks\" with body", "{\r\n  \"weekIdentifier\": \"seven\",\r\n  \"schoolReference\": {\r\n  },\r\n  \"beginDate\": \"20" +
-                        "23-09-11\",\r\n  \"endDate\": \"2023-09-11\"\r\n}", ((Reqnroll.Table)(null)), "When ");
+  await testRunner.WhenAsync("sending a POST request to \"data/ed-fi/academicWeeks\" with body", "{\n  \"weekIdentifier\": \"seven\",\n  \"schoolReference\": {\n  },\n  \"beginDate\": \"2023-0" +
+                        "9-11\",\n  \"endDate\": \"2023-09-11\"\n}", ((Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 44
  await testRunner.ThenAsync("the response code is 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
@@ -190,8 +190,8 @@ this.ScenarioInitialize(scenarioInfo);
             {
                 await this.ScenarioStartAsync();
 #line 51
-  await testRunner.WhenAsync("sending a POST request to \"data/ed-fi/absenceEventCategoryDescriptors\" with body", "{\r\n  \"codeValue\": \"Sample\",\r\n  \"shortDescription\": \"Bereavement\",\r\n  \"namespace\":" +
-                        " \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\"\r\n}", ((Reqnroll.Table)(null)), "When ");
+  await testRunner.WhenAsync("sending a POST request to \"data/ed-fi/absenceEventCategoryDescriptors\" with body", "{\n  \"codeValue\": \"Sample\",\n  \"shortDescription\": \"Bereavement\",\n  \"namespace\": \"u" +
+                        "ri://ed-fi.org/AbsenceEventCategoryDescriptor\"\n}", ((Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 59
   await testRunner.ThenAsync("the response code is 201", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");

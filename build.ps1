@@ -140,7 +140,7 @@ function RunTests {
         $Filter
     )
 
-    $testAssemblyPath = "$servicesRoot/$Filter/bin/$Configuration/"
+    $testAssemblyPath = "$solutionRoot/*/$Filter/bin/$Configuration/"
     $testAssemblies = Get-ChildItem -Path $testAssemblyPath -Filter "$Filter.dll" -Recurse
 
     if ($testAssemblies.Length -eq 0) {
