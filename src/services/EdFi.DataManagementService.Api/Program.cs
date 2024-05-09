@@ -6,7 +6,6 @@
 using EdFi.DataManagementService.Api.Configuration;
 using EdFi.DataManagementService.Api.Infrastructure;
 using EdFi.DataManagementService.Backend.Deploy;
-using Humanizer;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
