@@ -13,7 +13,6 @@ using EdFi.DataManagementService.Api.Core.ApiSchema;
 using EdFi.DataManagementService.Api.Core.Backend;
 using EdFi.DataManagementService.Api.Core.Validation;
 using EdFi.DataManagementService.Backend.Deploy;
-using Microsoft.CodeAnalysis.Options;
 using Microsoft.Extensions.Options;
 using Serilog;
 
@@ -24,6 +23,8 @@ public static class WebApplicationBuilderExtensions
     public static void AddServices(this WebApplicationBuilder webAppBuilder)
     {
         webAppBuilder.Services.AddSingleton<IApiSchemaProvider, ApiSchemaFileLoader>();
+        webAppBuilder.Services.AddSingleton<IApiSchemaSchemaProvider, ApiSchemaSchemaProvider>();
+        webAppBuilder.Services.AddSingleton<IApiSchemaValidator, ApiSchemaValidator>();
         webAppBuilder.Services.AddSingleton<ICoreFacade, CoreFacade>();
         webAppBuilder.Services.AddSingleton<IDocumentStoreRepository, SuccessDocumentStoreRepository>();
         webAppBuilder.Services.AddTransient<IDocumentValidator, DocumentValidator>();
@@ -64,13 +65,25 @@ public static class WebApplicationBuilderExtensions
 
         void ConfigureDatabase()
         {
-            if (string.Equals(webAppBuilder.Configuration.GetSection("AppSettings:DatabaseEngine").Value, "postgresql", StringComparison.OrdinalIgnoreCase))
+            if (
+                string.Equals(
+                    webAppBuilder.Configuration.GetSection("AppSettings:DatabaseEngine").Value,
+                    "postgresql",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
             {
-                webAppBuilder.Services.AddSingleton<IDatabaseDeploy, DataManagementService.Backend.Postgresql.Deploy.DatabaseDeploy>();
+                webAppBuilder.Services.AddSingleton<
+                    IDatabaseDeploy,
+                    DataManagementService.Backend.Postgresql.Deploy.DatabaseDeploy
+                >();
             }
             else
             {
-                webAppBuilder.Services.AddSingleton<IDatabaseDeploy, DataManagementService.Backend.Mssql.Deploy.DatabaseDeploy>();
+                webAppBuilder.Services.AddSingleton<
+                    IDatabaseDeploy,
+                    DataManagementService.Backend.Mssql.Deploy.DatabaseDeploy
+                >();
             }
         }
     }
