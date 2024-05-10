@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Api.Core.ApiSchema;
 using EdFi.DataManagementService.Api.Core.Middleware;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Primitives;
 
 namespace EdFi.DataManagementService.Api.Core.Model;
 
@@ -72,7 +73,7 @@ public static class No
     /// The null object for FrontendRequest
     /// </summary>
     public static readonly FrontendRequest FrontendRequest =
-        new(Method: RequestMethod.POST, Body: "{}", Path: "", TraceId: new(""));
+        new(Method: RequestMethod.POST, Body: "{}", Path: "", QueryParameters: [], TraceId: new(""));
 
     /// <summary>
     /// The null object for FrontendResponse

@@ -4,13 +4,13 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Api.Backend;
+using EdFi.DataManagementService.Api.Core.Backend;
 using EdFi.DataManagementService.Api.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
-using static EdFi.DataManagementService.Api.Backend.GetResult;
+using static EdFi.DataManagementService.Api.Core.Backend.GetResult;
 using static EdFi.DataManagementService.Api.Tests.Unit.TestHelper;
 
 namespace EdFi.DataManagementService.Api.Core.Handler;

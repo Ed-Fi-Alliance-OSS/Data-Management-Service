@@ -3,13 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Api.Backend;
+using EdFi.DataManagementService.Api.Core.Backend;
 using EdFi.DataManagementService.Api.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
-using static EdFi.DataManagementService.Api.Backend.UpsertResult;
+using static EdFi.DataManagementService.Api.Core.Backend.UpsertResult;
 using static EdFi.DataManagementService.Api.Tests.Unit.TestHelper;
 
 namespace EdFi.DataManagementService.Api.Core.Handler;

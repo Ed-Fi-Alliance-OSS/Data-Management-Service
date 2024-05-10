@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Api.Core.ApiSchema.Extensions;
 using EdFi.DataManagementService.Api.Core.ApiSchema.Model;
@@ -160,6 +161,59 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
     /// </summary>
     public IEnumerable<JsonPath> IdentityJsonPaths => _identityJsonPaths.Value;
 
+    private readonly Lazy<IEnumerable<DocumentPath>> _documentPaths =
+        new(() =>
+        {
+            JsonNode documentPathsMapping =
+                _resourceSchemaNode["documentPathsMapping"]
+                ?? throw new InvalidOperationException(
+                    "Expected documentPathsMapping to be on ResourceSchema, invalid ApiSchema"
+                );
+            return documentPathsMapping
+                .AsObject()
+                .AsEnumerable()
+                .Select(documentPathsMappingElement => new DocumentPath(
+                    documentPathsMappingElement.Value ?? throw new InvalidOperationException()
+                ));
+        });
+
+    /// <summary>
+    /// The list of DocumentPaths for this resource.
+    ///
+    /// For example, a partial documentPathsMapping for a BellSchedule document looks like:
+    ///
+    /// "documentPathsMapping": {
+    ///   "EndTime": {
+    ///     "isReference": false,
+    ///     "path": "$.endTime"
+    ///   },
+    ///   "GradeLevelDescriptor": {
+    ///     "isDescriptor": true,
+    ///     "isReference": true,
+    ///     "path": "$.gradeLevels[*].gradeLevelDescriptor",
+    ///     "projectName": "Ed-Fi",
+    ///     "resourceName": "GradeLevelDescriptor"
+    ///   },
+    ///   "School": {
+    ///     "isDescriptor": false,
+    ///     "isReference": true,
+    ///     "projectName": "Ed-Fi",
+    ///     "referenceJsonPaths": [
+    ///       {
+    ///         "identityJsonPath": "$.schoolId",
+    ///         "referenceJsonPath": "$.schoolReference.schoolId"
+    ///       }
+    ///     ],
+    ///     "resourceName": "School"
+    ///   }
+    /// }
+    ///
+    /// The list of DocumentPaths would be the object values of the keys "EndTime", "GradeLevelDescriptor"
+    /// and "School".
+    /// </summary>
+
+    public IEnumerable<DocumentPath> DocumentPaths => _documentPaths.Value;
+
     /// <summary>
     /// Takes an API JSON body for the resource and extracts the document identity information from the JSON body.
     /// </summary>
@@ -260,9 +314,69 @@ public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
     /// </summary>
     public DocumentReference[] ExtractDocumentReferences(JsonNode documentBody)
     {
-        // DMS-35
+        _logger.LogDebug("ExtractDocumentReferences");
 
-        return [];
+        List<DocumentReference> result = [];
+
+        foreach (DocumentPath documentPath in DocumentPaths)
+        {
+            if (!documentPath.IsReference)
+                continue;
+            if (documentPath.IsDescriptor)
+                continue;
+
+            // Extract the reference values from the document
+            IntermediateReferenceElement[] intermediateReferenceElements = documentPath
+                .ReferenceJsonPathsElements.Select(
+                    referenceJsonPathsElement => new IntermediateReferenceElement(
+                        referenceJsonPathsElement.IdentityJsonPath,
+                        documentBody
+                            .SelectNodesFromArrayPathCoerceToStrings(
+                                referenceJsonPathsElement.ReferenceJsonPath.Value,
+                                _logger
+                            )
+                            .ToArray()
+                    )
+                )
+                .ToArray();
+
+            // If a JsonPath selection had no results, we can assume an optional reference wasn't there
+            if (Array.Exists(intermediateReferenceElements, x => x.ValueSlice.Length == 0))
+                continue;
+
+            int valueSliceLength = intermediateReferenceElements[0].ValueSlice.Length;
+
+            // Number of document values from resolved JsonPaths should all be the same, otherwise something is very wrong
+            Trace.Assert(
+                Array.TrueForAll(intermediateReferenceElements, x => x.ValueSlice.Length == valueSliceLength),
+                "Length of document value slices are not equal"
+            );
+
+            BaseResourceInfo resourceInfo =
+                new(documentPath.ProjectName, documentPath.ResourceName, documentPath.IsDescriptor);
+
+            // Reorient intermediateReferenceElements into actual DocumentReferences
+            for (var index = 0; index < valueSliceLength; index += 1)
+            {
+                List<DocumentIdentityElement> documentIdentityElements = [];
+
+                foreach (
+                    IntermediateReferenceElement intermediateReferenceElement in intermediateReferenceElements
+                )
+                {
+                    documentIdentityElements.Add(
+                        new(
+                            intermediateReferenceElement.IdentityJsonPath,
+                            intermediateReferenceElement.ValueSlice[index]
+                        )
+                    );
+                }
+
+                result.Add(new(resourceInfo, new(documentIdentityElements)));
+            }
+        }
+
+        return result.ToArray();
     }
 
     /// <summary>

@@ -57,6 +57,65 @@ public static class JsonHelperExtensions
     }
 
     /// <summary>
+    /// Helper to go from an array JSONPath selection directly to the selected JsonNodes.
+    /// Returns an empty array if none are selected.
+    /// </summary>
+    public static IEnumerable<JsonNode> SelectNodesFromArrayPath(
+        this JsonNode jsonNode,
+        string jsonPathString,
+        ILogger logger
+    )
+    {
+        try
+        {
+            JsonPath? jsonPath = JsonPath.Parse(jsonPathString);
+            if (jsonPath == null)
+            {
+                logger.LogError("Malformed JSONPath string '{jsonPathString}'", jsonPathString);
+                throw new InvalidOperationException($"Malformed JSONPath string '{jsonPathString}'");
+            }
+
+            PathResult? result = jsonPath.Evaluate(jsonNode);
+
+            if (result.Matches == null)
+            {
+                logger.LogError("Malformed JSONPath string '{jsonPathString}'", jsonPathString);
+                throw new InvalidOperationException($"Unexpected Json.Path error for '{jsonPathString}'");
+            }
+
+            return result.Matches.Select(x =>
+                x.Value
+                ?? throw new InvalidOperationException(
+                    $"Unexpected Json.Path error for '{jsonPathString}': returned null for JsonNode"
+                )
+            );
+        }
+        catch (PathParseException)
+        {
+            throw new InvalidOperationException($"Unexpected Json.Path error for '{jsonPathString}'");
+        }
+    }
+
+    /// <summary>
+    /// Helper to go from an array JSONPath selection directly to a string array regardless of the JSON type
+    /// Returns empty array if the values do not exist.
+    /// </summary>
+    public static IEnumerable<string> SelectNodesFromArrayPathCoerceToStrings(
+        this JsonNode jsonNode,
+        string jsonPathString,
+        ILogger logger
+    )
+    {
+        IEnumerable<JsonNode> jsonNodes = SelectNodesFromArrayPath(jsonNode, jsonPathString, logger);
+        return jsonNodes.Select(jsonNode =>
+        {
+            JsonValue result =
+                jsonNode.AsValue() ?? throw new InvalidOperationException("Unexpected JSONPath value error");
+            return result.ToString();
+        });
+    }
+
+    /// <summary>
     /// Helper to go from a scalar JSONPath selection directly to the selected JsonNode.
     /// Throws if the value does not exist
     /// </summary>
@@ -84,7 +143,7 @@ public static class JsonHelperExtensions
             return default;
 
         JsonValue? resultNode =
-            selectedNode!.AsValue() ?? throw new InvalidOperationException("Unexpected JSONPath value error");
+            selectedNode.AsValue() ?? throw new InvalidOperationException("Unexpected JSONPath value error");
         return resultNode.GetValue<T>();
     }
 
@@ -103,7 +162,7 @@ public static class JsonHelperExtensions
             ?? throw new InvalidOperationException("Unexpected JSONPath value error");
 
         JsonValue resultNode =
-            selectedNode!.AsValue() ?? throw new InvalidOperationException("Unexpected JSONPath value error");
+            selectedNode.AsValue() ?? throw new InvalidOperationException("Unexpected JSONPath value error");
         return resultNode.ToString();
     }
 

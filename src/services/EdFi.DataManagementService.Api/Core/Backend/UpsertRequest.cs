@@ -5,7 +5,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Api.Core.Model;
 
-namespace EdFi.DataManagementService.Api.Backend;
+namespace EdFi.DataManagementService.Api.Core.Backend;
 
 /// <summary>
 /// An upsert request to a document repository

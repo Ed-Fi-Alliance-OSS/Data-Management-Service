@@ -4,12 +4,12 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Api.Core.ApiSchema;
-using EdFi.DataManagementService.Api.Backend;
 using EdFi.DataManagementService.Api.Core.Handler;
 using EdFi.DataManagementService.Api.Core.Middleware;
 using EdFi.DataManagementService.Api.Core.Model;
 using EdFi.DataManagementService.Api.Core.Validation;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Api.Core.Backend;
 
 namespace EdFi.DataManagementService.Api.Core;
 

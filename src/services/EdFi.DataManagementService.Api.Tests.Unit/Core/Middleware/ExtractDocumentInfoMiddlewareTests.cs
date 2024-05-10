@@ -70,6 +70,7 @@ public class ExtractDocumentInfoMiddlewareTests
                         }
 """
                     )!,
+                    QueryParameters: [],
                     Path: "/ed-fi/schools",
                     TraceId: new("123")
                 )
