@@ -24,8 +24,6 @@ public static class WebApplicationBuilderExtensions
     public static void AddServices(this WebApplicationBuilder webAppBuilder)
     {
         webAppBuilder.Services.AddSingleton<IApiSchemaProvider, ApiSchemaFileLoader>();
-        webAppBuilder.Services.AddTransient<IApiSchemaSchemaProvider, ApiSchemaSchemaProvider>();
-        webAppBuilder.Services.AddSingleton<IApiSchemaValidator, ApiSchemaValidator>();
         webAppBuilder.Services.AddSingleton<ICoreFacade, CoreFacade>();
         webAppBuilder.Services.AddSingleton<IDocumentStoreRepository, SuccessDocumentStoreRepository>();
         webAppBuilder.Services.AddTransient<IDocumentValidator, DocumentValidator>();

@@ -40,7 +40,6 @@ public static class WebApplicationExtensions
     public static void UseValidationErrorsHandlingMiddleware(this WebApplication application)
     {
         InjectInvalidConfigurationMiddleware(application);
-        InjectInvalidApiSchemaMiddleware(application);
     }
 
     private static void InjectInvalidConfigurationMiddleware(WebApplication app)
@@ -54,19 +53,6 @@ public static class WebApplicationExtensions
         catch (OptionsValidationException ex)
         {
             app.UseMiddleware<InvalidConfigurationMiddleware>(ex.Failures);
-        }
-    }
-
-    private static void InjectInvalidApiSchemaMiddleware(WebApplication app)
-    {
-        var apiSchemaProvider = app.Services.GetRequiredService<IApiSchemaProvider>();
-        var apiSchema = apiSchemaProvider.ApiSchemaRootNode;
-
-        var validator = app.Services.GetRequiredService<IApiSchemaValidator>();
-        var validationErrors = validator.Validate(apiSchema).Value;
-        if (validationErrors.Any())
-        {
-            app.UseMiddleware<InvalidApiSchemaMiddleware>(validationErrors);
         }
     }
 }

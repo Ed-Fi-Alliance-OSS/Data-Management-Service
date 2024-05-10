@@ -63,46 +63,6 @@ public class APISchemaValidatorTests
         }
 
         [TestFixture]
-        public class When_requesting_discovery_endpoint_Should_return_InternalServerError
-            : Given_a_invalid_api_schema_file
-        {
-            [Test]
-            public async Task When_api_schema_with_validation_errors()
-            {
-                // Arrange
-                using var client = _factory.CreateClient();
-
-                // Act
-                var response = await client.GetAsync("/");
-                var content = await response.Content.ReadAsStringAsync();
-
-                // Assert
-                response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-                content.Should().Be(string.Empty);
-            }
-        }
-
-        [TestFixture]
-        public class When_requesting_metadata_endpoint_Should_return_InternalServerError
-            : Given_a_invalid_api_schema_file
-        {
-            [Test]
-            public async Task When_api_schema_with_validation_errors()
-            {
-                // Arrange
-                using var client = _factory.CreateClient();
-
-                // Act
-                var response = await client.GetAsync("/metadata");
-                var content = await response.Content.ReadAsStringAsync();
-
-                // Assert
-                response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-                content.Should().Be(string.Empty);
-            }
-        }
-
-        [TestFixture]
         public class When_requesting_students_endpoint_Should_return_InternalServerError
             : Given_a_invalid_api_schema_file
         {
