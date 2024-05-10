@@ -1,6 +1,6 @@
 # This is a rough draft feature for future use.
 @ignore
-Feature: Resources Create Operation validations
+Feature: Resources "Create" Operation validations
 
         Background:
             Given the Data Management Service must receive a token issued by "http://localhost"
@@ -16,6 +16,9 @@ Feature: Resources Create Operation validations
                   | shortDescription | Sick Leave                                     |
              Then it should respond with 201
               And the record can be retrieved with a GET request
+              # TODO: when writing the step definition,
+              # be sure to validate that the response matches the original payload,
+              # except for the addition of the 'id' field
 
         @ignore
         Scenario: Verify error handling with POST using invalid data

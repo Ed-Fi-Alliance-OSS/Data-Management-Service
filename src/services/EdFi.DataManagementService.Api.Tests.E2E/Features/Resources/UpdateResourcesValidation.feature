@@ -1,13 +1,17 @@
 # This is a rough draft feature for future use.
 @ignore
-Feature: Resources "Update Operation" Validations
+Feature: Resources "Update" Operation validations
 
         Background:
-    # This might not be necessary - only keep it if other .feature files
-    # are somehow bypassing token authorization. # Might need to provide
-    # additional information here about # the allowed issuer and key
-    # information for validating the signature.
             Given the Data Management Service must receive a token issued by "http://localhost"
+              And user is already authorized
+              And request made to "/ed-fi/absenceEventCategoryDescriptors" with
+                  | setting          | value                                          |
+                  | codeValue        | Sick Leave                                     |
+                  | description      | Sick Leave                                     |
+                  | namespace        | uri://ed-fi.org/AbsenceEventCategoryDescriptor |
+                  | shortDescription | Sick Leave                                     |
+             Then it should respond with 201
 
         @ignore
         Scenario: Verify that existing resources can be updated succesfully
