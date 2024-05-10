@@ -26,8 +26,10 @@ public class ValidateEqualityConstraintMiddlewareTests
     {
         var equalityConstraints = new EqualityConstraint[]
         {
-            new(new JsonPath("$.classPeriods[*].classPeriodReference.schoolId"),
-                new JsonPath("$.schoolReference.schoolId"))
+            new(
+                new JsonPath("$.classPeriods[*].classPeriodReference.schoolId"),
+                new JsonPath("$.schoolReference.schoolId")
+            )
         };
 
         return new ApiSchemaBuilder()
@@ -78,35 +80,36 @@ public class ValidateEqualityConstraintMiddlewareTests
         {
             var jsonData = """
 
-                             {
-                                 "schoolReference": {
-                                   "schoolId": 255901001
-                                 },
-                                 "bellScheduleName": "Test Schedule",
-                                 "totalInstructionalTime": 325,
-                                 "classPeriods": [
-                                   {
-                                     "classPeriodReference": {
-                                       "classPeriodName": "01 - Traditional",
-                                       "schoolId": 255901001
-                                     }
-                                   },
-                                   {
-                                     "classPeriodReference": {
-                                       "classPeriodName": "02 - Traditional",
-                                       "schoolId": 255901001
-                                     }
-                                   }
-                                 ],
-                                 "dates": [],
-                                 "gradeLevels": []
-                               }
+                {
+                    "schoolReference": {
+                      "schoolId": 255901001
+                    },
+                    "bellScheduleName": "Test Schedule",
+                    "totalInstructionalTime": 325,
+                    "classPeriods": [
+                      {
+                        "classPeriodReference": {
+                          "classPeriodName": "01 - Traditional",
+                          "schoolId": 255901001
+                        }
+                      },
+                      {
+                        "classPeriodReference": {
+                          "classPeriodName": "02 - Traditional",
+                          "schoolId": 255901001
+                        }
+                      }
+                    ],
+                    "dates": [],
+                    "gradeLevels": []
+                  }
 
-                             """;
+                """;
             var frontEndRequest = new FrontendRequest(
                 RequestMethod.POST,
                 "ed-fi/bellschedules",
                 Body: JsonNode.Parse(jsonData),
+                QueryParameters: [],
                 new TraceId("traceId")
             );
             _context = Context(frontEndRequest);
@@ -130,35 +133,36 @@ public class ValidateEqualityConstraintMiddlewareTests
         {
             var jsonData = """
 
-                           {
-                               "schoolReference": {
-                                 "schoolId": 1
-                               },
-                               "bellScheduleName": "Test Schedule",
-                               "totalInstructionalTime": 325,
-                               "classPeriods": [
-                                 {
-                                   "classPeriodReference": {
-                                     "classPeriodName": "01 - Traditional",
-                                     "schoolId": 2
-                                   }
-                                 },
-                                 {
-                                   "classPeriodReference": {
-                                     "classPeriodName": "02 - Traditional",
-                                     "schoolId": 2
-                                   }
-                                 }
-                               ],
-                               "dates": [],
-                               "gradeLevels": []
-                             }
+                {
+                    "schoolReference": {
+                      "schoolId": 1
+                    },
+                    "bellScheduleName": "Test Schedule",
+                    "totalInstructionalTime": 325,
+                    "classPeriods": [
+                      {
+                        "classPeriodReference": {
+                          "classPeriodName": "01 - Traditional",
+                          "schoolId": 2
+                        }
+                      },
+                      {
+                        "classPeriodReference": {
+                          "classPeriodName": "02 - Traditional",
+                          "schoolId": 2
+                        }
+                      }
+                    ],
+                    "dates": [],
+                    "gradeLevels": []
+                  }
 
-                           """;
+                """;
             var frontEndRequest = new FrontendRequest(
                 RequestMethod.POST,
                 "ed-fi/bellschedules",
                 Body: JsonNode.Parse(jsonData),
+                QueryParameters: [],
                 new TraceId("traceId")
             );
             _context = Context(frontEndRequest);
@@ -175,7 +179,11 @@ public class ValidateEqualityConstraintMiddlewareTests
         public void It_returns_message_body_with_failures()
         {
             _context?.FrontendResponse.Body.Should().Contain("Bad Request");
-            _context?.FrontendResponse.Body.Should().Contain("Constraint failure: document paths $.classPeriods[*].classPeriodReference.schoolId and $.schoolReference.schoolId must have the same values");
+            _context
+                ?.FrontendResponse.Body.Should()
+                .Contain(
+                    "Constraint failure: document paths $.classPeriods[*].classPeriodReference.schoolId and $.schoolReference.schoolId must have the same values"
+                );
         }
     }
 }

@@ -30,7 +30,7 @@ public class ParsePathMiddlewareTests
         public async Task Setup()
         {
             FrontendRequest frontendRequest =
-                new(Method: RequestMethod.POST, Body: "{}", Path: "", TraceId: new(""));
+                new(Method: RequestMethod.POST, Body: "{}", Path: "", QueryParameters: [], TraceId: new(""));
             _context = new(frontendRequest);
             await Middleware().Execute(_context, NullNext);
         }
@@ -57,7 +57,13 @@ public class ParsePathMiddlewareTests
         public async Task Setup()
         {
             FrontendRequest frontendRequest =
-                new(Method: RequestMethod.POST, Body: "{}", Path: "badpath", TraceId: new(""));
+                new(
+                    Method: RequestMethod.POST,
+                    Body: "{}",
+                    Path: "badpath",
+                    QueryParameters: [],
+                    TraceId: new("")
+                );
             _context = new(frontendRequest);
             await Middleware().Execute(_context, NullNext);
         }
@@ -84,7 +90,13 @@ public class ParsePathMiddlewareTests
         public async Task Setup()
         {
             FrontendRequest frontendRequest =
-                new(Method: RequestMethod.POST, Body: "{}", Path: "/ed-fi/endpointName", TraceId: new(""));
+                new(
+                    Method: RequestMethod.POST,
+                    Body: "{}",
+                    Path: "/ed-fi/endpointName",
+                    QueryParameters: [],
+                    TraceId: new("")
+                );
             _context = new(frontendRequest);
             await Middleware().Execute(_context, NullNext);
         }
@@ -119,6 +131,7 @@ public class ParsePathMiddlewareTests
                     Method: RequestMethod.POST,
                     Body: "{}",
                     Path: $"/ed-fi/endpointName/{documentUuid}",
+                    QueryParameters: [],
                     TraceId: new("")
                 );
             _context = new(frontendRequest);
@@ -155,6 +168,7 @@ public class ParsePathMiddlewareTests
                     Method: RequestMethod.POST,
                     Body: "{}",
                     Path: "/ed-fi/endpointName/invalidId",
+                    QueryParameters: [],
                     TraceId: new("")
                 );
             _context = new(frontendRequest);

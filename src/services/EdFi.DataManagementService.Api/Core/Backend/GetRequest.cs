@@ -5,7 +5,7 @@
 
 using EdFi.DataManagementService.Api.Core.Model;
 
-namespace EdFi.DataManagementService.Api.Backend;
+namespace EdFi.DataManagementService.Api.Core.Backend;
 
 /// <summary>
 /// A get request to a document repository

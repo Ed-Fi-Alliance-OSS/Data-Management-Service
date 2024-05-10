@@ -4,9 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Api.Backend;
+using EdFi.DataManagementService.Api.Core.Backend;
 using EdFi.DataManagementService.Core.Pipeline;
-using static EdFi.DataManagementService.Api.Backend.UpsertResult;
+using static EdFi.DataManagementService.Api.Core.Backend.UpsertResult;
 
 namespace EdFi.DataManagementService.Api.Core.Handler;
 

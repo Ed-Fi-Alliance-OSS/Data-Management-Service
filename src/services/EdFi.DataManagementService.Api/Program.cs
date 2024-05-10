@@ -47,7 +47,11 @@ void InitializeDatabase(WebApplication app)
 {
     if (app.Services.GetRequiredService<IOptions<AppSettings>>().Value.DeployDatabaseOnStartup)
     {
-        var result = app.Services.GetRequiredService<IDatabaseDeploy>().DeployDatabase(app.Services.GetRequiredService<IOptions<ConnectionStrings>>().Value.DatabaseConnection);
+        var result = app
+            .Services.GetRequiredService<IDatabaseDeploy>()
+            .DeployDatabase(
+                app.Services.GetRequiredService<IOptions<ConnectionStrings>>().Value.DatabaseConnection
+            );
         if (result is DatabaseDeployResult.DatabaseDeployFailure failure)
         {
             app.Logger.LogCritical("Database Deploy Failure");
@@ -55,7 +59,6 @@ void InitializeDatabase(WebApplication app)
         }
     }
 }
-
 
 public partial class Program
 {

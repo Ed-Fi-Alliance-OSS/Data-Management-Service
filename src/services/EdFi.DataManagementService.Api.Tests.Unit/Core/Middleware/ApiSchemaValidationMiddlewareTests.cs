@@ -8,7 +8,9 @@ using EdFi.DataManagementService.Api.Core.ApiSchema;
 using EdFi.DataManagementService.Api.Core.Middleware;
 using EdFi.DataManagementService.Api.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Api.Tests.Unit.TestHelper;
@@ -16,20 +18,22 @@ using static EdFi.DataManagementService.Api.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Api.Tests.Unit.Core.Middleware;
 
 [TestFixture]
-public class ProvideApiSchemaMiddlewareTests
+public class ApiSchemaValidationMiddlewareTests
 {
     public static IPipelineStep ProvideMiddleware(IApiSchemaProvider provider)
     {
-        return new ProvideApiSchemaMiddleware(provider, NullLogger.Instance);
+        var logger = A.Fake<ILogger<ApiSchemaSchemaProvider>>();
+        var apiValidator = new ApiSchemaValidator(new ApiSchemaSchemaProvider(logger));
+        return new ApiSchemaValidationMiddleware(provider, apiValidator, NullLogger.Instance);
     }
 
     [TestFixture]
-    public class Given_an_api_schema_provider_is_injected : ParsePathMiddlewareTests
+    public class Given_an_api_schema_with_validation_errors : ApiSchemaValidationMiddlewareTests
     {
         private readonly PipelineContext _context = No.PipelineContext();
         private static readonly JsonNode _apiSchemaRootNode =
             JsonNode.Parse(
-                "{\"projectNameMapping\":{}, \"projectSchemas\": { \"ed-fi\": {\"abstractResources\":{},\"caseInsensitiveEndpointNameMapping\":{},\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{}} } }"
+                "{ \"projectSchemas\": { \"ed-fi\": {\"abstractResources\":{},\"caseInsensitiveEndpointNameMapping\":{},\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{}} } }"
             ) ?? new JsonObject();
 
         public class Provider : IApiSchemaProvider
@@ -44,13 +48,21 @@ public class ProvideApiSchemaMiddlewareTests
         }
 
         [Test]
-        public void It_has_the_root_node_from_the_provider()
+        public void It_has_a_response()
         {
-            _context
-                .ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi"))
-                ?.ToString()
-                .Should()
-                .Contain("abstractResources");
+            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+        }
+
+        [Test]
+        public void It_returns_status_500()
+        {
+            _context?.FrontendResponse.StatusCode.Should().Be(500);
+        }
+
+        [Test]
+        public void It_returns_empty_body()
+        {
+            _context?.FrontendResponse.Body.Should().BeEmpty();
         }
     }
 }
