@@ -15,8 +15,8 @@ public class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider, I
     {
         _logger.LogDebug("Entering ProvideApiSchemaMiddleware- {TraceId}", context.FrontendRequest.TraceId);
 
-        var document = _apiSchemaProvider.ApiSchemaRootNode;
-        context.ApiSchemaDocument = new ApiSchemaDocument(document, _logger);
+        context.ApiSchemaDocument = new ApiSchemaDocument(_apiSchemaProvider.ApiSchemaRootNode, _logger);
+
         await next();
     }
 }

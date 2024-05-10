@@ -5,6 +5,8 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Api.Core.ApiSchema.Extensions;
+using EdFi.DataManagementService.Api.Core.Model;
+using EdFi.DataManagementService.Api.Core.Response;
 using Json.Schema;
 
 namespace EdFi.DataManagementService.Api.Core.ApiSchema;
@@ -19,18 +21,20 @@ public interface IApiSchemaValidator
     /// </summary>
     /// <param name="apiSchemaContent"></param>
     /// <returns></returns>
-    Lazy<Dictionary<string, List<string>>> Validate(JsonNode? apiSchemaContent);
+    Lazy<List<SchemaValidationFailure>> Validate(JsonNode? apiSchemaContent);
 }
 
 public class ApiSchemaValidator(IApiSchemaSchemaProvider _apiSchemaSchemaProvider) : IApiSchemaValidator
 {
-    public Lazy<Dictionary<string, List<string>>> Validate(JsonNode? apiSchemaContent)
+    public Lazy<List<SchemaValidationFailure>> Validate(JsonNode? apiSchemaContent)
     {
-        var validationErrors = new Dictionary<string, List<string>>();
+        var validationErrors = new List<SchemaValidationFailure>();
         var formatValidationResult = apiSchemaContent.ValidateJsonFormat();
         if (formatValidationResult != null && formatValidationResult.Any())
         {
-            validationErrors.Add("Schema format errors: ", formatValidationResult.ToList());
+            validationErrors.Add(
+                new SchemaValidationFailure(new JsonPath(""), formatValidationResult.ToList())
+            );
         }
 
         EvaluationOptions validatorEvaluationOptions =
@@ -41,7 +45,7 @@ public class ApiSchemaValidator(IApiSchemaSchemaProvider _apiSchemaSchemaProvide
         var results = schema.Evaluate(apiSchemaContent, validatorEvaluationOptions);
         ValidationErrorsFrom(results);
 
-        return new Lazy<Dictionary<string, List<string>>>(() =>
+        return new Lazy<List<SchemaValidationFailure>>(() =>
         {
             return validationErrors;
         });
@@ -63,7 +67,9 @@ public class ApiSchemaValidator(IApiSchemaSchemaProvider _apiSchemaSchemaProvide
                     {
                         errors.Add(error.Value);
                     }
-                    validationErrors.Add(propertyPathAndName, errors);
+                    validationErrors.Add(
+                        new SchemaValidationFailure(new JsonPath(propertyPathAndName), errors)
+                    );
                 }
             }
         }

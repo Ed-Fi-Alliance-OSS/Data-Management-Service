@@ -34,10 +34,10 @@ public class ApiSchemaValidatorTests
             response.Count().Should().Be(1);
             response.First().Should().NotBeNull();
 
-            response.First().Value.Count().Should().Be(1);
-            response.First().Value[0].Should().Contain("Required properties");
-            response.First().Value[0].Should().Contain("projectNameMapping");
-            response.First().Value[0].Should().Contain("projectSchemas");
+            response.First().FailureMessages.Count().Should().Be(1);
+            response.First().FailureMessages[0].Should().Contain("Required properties");
+            response.First().FailureMessages[0].Should().Contain("projectNameMapping");
+            response.First().FailureMessages[0].Should().Contain("projectSchemas");
         }
     }
 
@@ -57,10 +57,10 @@ public class ApiSchemaValidatorTests
             response.Count().Should().Be(1);
             response.First().Should().NotBeNull();
 
-            response.First().Value.Count().Should().Be(1);
-            response.First().Value[0].Should().Contain("Required properties");
-            response.First().Value[0].Should().Contain("abstractResources");
-            response.First().Value[0].Should().Contain("caseInsensitiveEndpointNameMapping");
+            response.First().FailureMessages.Count().Should().Be(1);
+            response.First().FailureMessages[0].Should().Contain("Required properties");
+            response.First().FailureMessages[0].Should().Contain("abstractResources");
+            response.First().FailureMessages[0].Should().Contain("caseInsensitiveEndpointNameMapping");
         }
     }
 
@@ -80,11 +80,11 @@ public class ApiSchemaValidatorTests
             response.Count().Should().Be(1);
             response.First().Should().NotBeNull();
 
-            response.First().Value.Count().Should().Be(1);
-            response.First().Key.Should().Contain("educationOrg.identityJsonPaths");
+            response.First().FailureMessages.Count().Should().Be(1);
+            response.First().FailurePath.Value.Should().Contain("educationOrg.identityJsonPaths");
             response
                 .First()
-                .Value[0]
+                .FailureMessages[0]
                 .Should()
                 .Contain("The string value is not a match for the indicated regular expression");
         }
@@ -109,12 +109,12 @@ public class ApiSchemaValidatorTests
             response.Count().Should().Be(1);
             response.First().Should().NotBeNull();
 
-            response.First().Value.Count().Should().Be(1);
-            response.First().Key.Should().Contain("ed-fi.resourceSchemas.Students");
-            response.First().Value[0].Should().Contain("Required properties");
-            response.First().Value[0].Should().Contain("isSchoolYearEnumeration");
-            response.First().Value[0].Should().Contain("equalityConstraints");
-            response.First().Value[0].Should().Contain("isSubclass");
+            response.First().FailureMessages.Count().Should().Be(1);
+            response.First().FailurePath.Value.Should().Contain("ed-fi.resourceSchemas.Students");
+            response.First().FailureMessages[0].Should().Contain("Required properties");
+            response.First().FailureMessages[0].Should().Contain("isSchoolYearEnumeration");
+            response.First().FailureMessages[0].Should().Contain("equalityConstraints");
+            response.First().FailureMessages[0].Should().Contain("isSubclass");
         }
     }
 
@@ -138,13 +138,13 @@ public class ApiSchemaValidatorTests
             response.Count().Should().Be(1);
             response.First().Should().NotBeNull();
 
-            response.First().Value.Count().Should().Be(1);
+            response.First().FailureMessages.Count().Should().Be(1);
             response
                 .First()
-                .Key.Should()
+                .FailurePath.Value.Should()
                 .Contain("ed-fi.resourceSchemas.Students.documentPathsMapping.begindate");
-            response.First().Value[0].Should().Contain("Required properties");
-            response.First().Value[0].Should().Contain("isReference");
+            response.First().FailureMessages[0].Should().Contain("Required properties");
+            response.First().FailureMessages[0].Should().Contain("isReference");
         }
     }
 
