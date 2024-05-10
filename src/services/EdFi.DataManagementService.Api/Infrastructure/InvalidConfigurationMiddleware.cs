@@ -9,7 +9,7 @@ public class InvalidConfigurationMiddleware(RequestDelegate next, List<string> e
 {
     public RequestDelegate Next { get; } = next;
 
-    public Task Invoke(HttpContext context, ILogger<LoggingMiddleware> logger)
+    public Task Invoke(HttpContext context, ILogger<InvalidConfigurationMiddleware> logger)
     {
         foreach (var error in errors)
         {

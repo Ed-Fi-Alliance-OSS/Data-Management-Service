@@ -24,15 +24,14 @@ public class ConfigurationTests
         {
             _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
-                builder.ConfigureAppConfiguration((context, configuration) =>
-                {
-                    configuration.AddInMemoryCollection(
-                        new Dictionary<string, string?>
-                        {
-                            ["AppSettings:AuthenticationService"] = null,
-                        }
-                    );
-                });
+                builder.ConfigureAppConfiguration(
+                    (context, configuration) =>
+                    {
+                        configuration.AddInMemoryCollection(
+                            new Dictionary<string, string?> { ["AppSettings:AuthenticationService"] = null, }
+                        );
+                    }
+                );
             });
         }
 
@@ -73,15 +72,17 @@ public class ConfigurationTests
         {
             _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
-                builder.ConfigureAppConfiguration((context, configuration) =>
-                {
-                    configuration.AddInMemoryCollection(
-                        new Dictionary<string, string?>
-                        {
-                            ["ConnectionStrings:DatabaseConnection"] = null,
-                        }
-                    );
-                });
+                builder.ConfigureAppConfiguration(
+                    (context, configuration) =>
+                    {
+                        configuration.AddInMemoryCollection(
+                            new Dictionary<string, string?>
+                            {
+                                ["ConnectionStrings:DatabaseConnection"] = null,
+                            }
+                        );
+                    }
+                );
             });
         }
 
@@ -96,7 +97,7 @@ public class ConfigurationTests
             : Given_a_configuration_with_invalid_connection_strings
         {
             [Test]
-            public async Task When_no_authentication_service()
+            public async Task When_no_valid_connection_strings()
             {
                 // Arrange
                 using var client = _factory.CreateClient();
