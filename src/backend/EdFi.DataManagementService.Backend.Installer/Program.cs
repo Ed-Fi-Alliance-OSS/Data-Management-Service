@@ -17,9 +17,9 @@ public class Program
             case "mssql":
                 new Mssql.Deploy.DatabaseDeploy().DeployDatabase(args[1]);
                 break;
+            default:
+                throw new NotImplementedException();
         }
-
-        throw new NotImplementedException();
     }
 }
 
