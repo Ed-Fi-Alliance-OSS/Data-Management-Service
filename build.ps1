@@ -97,7 +97,7 @@ function Restore {
     Invoke-Execute { dotnet restore $defaultSolution }
 }
 
-function SetAdminApiAssemblyInfo {
+function SetDMSAssemblyInfo {
     Invoke-Execute {
         $assembly_version = $DMSVersion
 
@@ -140,7 +140,7 @@ function RunTests {
         $Filter
     )
 
-    $testAssemblyPath = "$servicesRoot/$Filter/bin/$Configuration/"
+    $testAssemblyPath = "$solutionRoot/*/$Filter/bin/$Configuration/"
     $testAssemblies = Get-ChildItem -Path $testAssemblyPath -Filter "$Filter.dll" -Recurse
 
     if ($testAssemblies.Length -eq 0) {
@@ -211,7 +211,7 @@ function Invoke-Build {
 function Invoke-SetAssemblyInfo {
     Write-Output "Setting Assembly Information"
 
-    Invoke-Step { SetAdminApiAssemblyInfo }
+    Invoke-Step { SetDMSAssemblyInfo }
 }
 
 function Invoke-Publish {

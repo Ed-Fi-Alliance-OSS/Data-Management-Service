@@ -3,9 +3,21 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.4.33122.133
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "services", "services", "{22F7EF40-C77C-4AF0-8C1E-500EA6B85496}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "backend", "backend", "{75AE8F7B-B980-48AE-8518-073830FA6471}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Api", "services\EdFi.DataManagementService.Api\EdFi.DataManagementService.Api.csproj", "{7414BD00-0951-498D-81BF-09920D49DB60}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Backend", "backend\EdFi.DataManagementService.Backend\EdFi.DataManagementService.Backend.csproj", "{82EA8DF4-4DDB-4944-AF0D-60B7C784FB30}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Backend.Mssql", "backend\EdFi.DataManagementService.Backend.Mssql\EdFi.DataManagementService.Backend.Mssql.csproj", "{0146B374-35C4-4191-9D09-3CDDC4ABCA2F}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Backend.Postgresql", "backend\EdFi.DataManagementService.Backend.Postgresql\EdFi.DataManagementService.Backend.Postgresql.csproj", "{3B8DB16B-0A35-4565-B8CA-73DE662424BC}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "frontend", "frontend", "{5B7BB270-905C-4D2F-BD3C-3374707FE1E3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.Frontend.AspNetCore", "frontend\EdFi.DataManagementService.Frontend.AspNetCore\EdFi.DataManagementService.Frontend.AspNetCore.csproj", "{53914CA2-E0E6-4D84-8899-D9C5CE40AA76}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "core", "core", "{71E181BF-2E72-45F2-9DAD-6B1D18FAD164}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.Core", "core\EdFi.DataManagementService.Core\EdFi.DataManagementService.Core.csproj", "{AF9E2120-206E-4318-8A2B-2DB798D39C4D}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -13,16 +25,36 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{7414BD00-0951-498D-81BF-09920D49DB60}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{7414BD00-0951-498D-81BF-09920D49DB60}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{7414BD00-0951-498D-81BF-09920D49DB60}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{7414BD00-0951-498D-81BF-09920D49DB60}.Release|Any CPU.Build.0 = Release|Any CPU
+		{82EA8DF4-4DDB-4944-AF0D-60B7C784FB30}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{82EA8DF4-4DDB-4944-AF0D-60B7C784FB30}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{82EA8DF4-4DDB-4944-AF0D-60B7C784FB30}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{82EA8DF4-4DDB-4944-AF0D-60B7C784FB30}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0146B374-35C4-4191-9D09-3CDDC4ABCA2F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0146B374-35C4-4191-9D09-3CDDC4ABCA2F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0146B374-35C4-4191-9D09-3CDDC4ABCA2F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0146B374-35C4-4191-9D09-3CDDC4ABCA2F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3B8DB16B-0A35-4565-B8CA-73DE662424BC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3B8DB16B-0A35-4565-B8CA-73DE662424BC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3B8DB16B-0A35-4565-B8CA-73DE662424BC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3B8DB16B-0A35-4565-B8CA-73DE662424BC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{53914CA2-E0E6-4D84-8899-D9C5CE40AA76}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{53914CA2-E0E6-4D84-8899-D9C5CE40AA76}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{53914CA2-E0E6-4D84-8899-D9C5CE40AA76}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{53914CA2-E0E6-4D84-8899-D9C5CE40AA76}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AF9E2120-206E-4318-8A2B-2DB798D39C4D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AF9E2120-206E-4318-8A2B-2DB798D39C4D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AF9E2120-206E-4318-8A2B-2DB798D39C4D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AF9E2120-206E-4318-8A2B-2DB798D39C4D}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
-		{7414BD00-0951-498D-81BF-09920D49DB60} = {22F7EF40-C77C-4AF0-8C1E-500EA6B85496}
+		{82EA8DF4-4DDB-4944-AF0D-60B7C784FB30} = {75AE8F7B-B980-48AE-8518-073830FA6471}
+		{0146B374-35C4-4191-9D09-3CDDC4ABCA2F} = {75AE8F7B-B980-48AE-8518-073830FA6471}
+		{3B8DB16B-0A35-4565-B8CA-73DE662424BC} = {75AE8F7B-B980-48AE-8518-073830FA6471}
+		{53914CA2-E0E6-4D84-8899-D9C5CE40AA76} = {5B7BB270-905C-4D2F-BD3C-3374707FE1E3}
+		{AF9E2120-206E-4318-8A2B-2DB798D39C4D} = {71E181BF-2E72-45F2-9DAD-6B1D18FAD164}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {CAB3D5DE-BC6C-44FD-831C-9C7BE3935343}
