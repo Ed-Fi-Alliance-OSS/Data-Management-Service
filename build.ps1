@@ -97,7 +97,7 @@ function Restore {
     Invoke-Execute { dotnet restore $defaultSolution }
 }
 
-function SetAdminApiAssemblyInfo {
+function SetDMSAssemblyInfo {
     Invoke-Execute {
         $assembly_version = $DMSVersion
 
@@ -211,7 +211,7 @@ function Invoke-Build {
 function Invoke-SetAssemblyInfo {
     Write-Output "Setting Assembly Information"
 
-    Invoke-Step { SetAdminApiAssemblyInfo }
+    Invoke-Step { SetDMSAssemblyInfo }
 }
 
 function Invoke-Publish {
