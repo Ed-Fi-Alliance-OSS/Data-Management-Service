@@ -41,6 +41,12 @@ public class MetadataModuleTests
             _jsonContent = JsonNode.Parse(content) ?? throw new Exception("JSON parsing failed");
         }
 
+        [TearDownAttribute]
+        public void TearDownAttribute()
+        {
+            _response?.Dispose();
+        }
+
         [Test]
         public void Then_it_responds_with_status_OK()
         {
