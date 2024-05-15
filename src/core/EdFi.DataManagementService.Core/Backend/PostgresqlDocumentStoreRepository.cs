@@ -11,7 +11,7 @@ using Npgsql;
 
 namespace EdFi.DataManagementService.Core.Backend;
 
-public class PostgresqlDocumentStoreRepository(ILogger<PostgresqlDocumentStoreRepository> _logger, string _connectionString = "host=localhost;port=5432;username=postgres;database=EdFi.DataManagementService;pooling=true;minimum pool size=10;maximum pool size=50;Application Name=EdFi.DataManagementService")
+public class PostgresqlDocumentStoreRepository(ILogger<PostgresqlDocumentStoreRepository> _logger, string _connectionString)
     : IDocumentStoreRepository, IQueryHandler
 {
     public async Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)
@@ -25,9 +25,11 @@ public class PostgresqlDocumentStoreRepository(ILogger<PostgresqlDocumentStoreRe
         using (var conn = new NpgsqlConnection(_connectionString))
         {
             conn.Open();
+            var documentuuid = Guid.NewGuid().ToString().Replace("-", "");
             var command =
-                "INSERT INTO public.documents(id, document_partition_key, document_uuid, resource_name, edfi_doc) VALUES (1, 1, 'abc', 'test', 'fake');";
-            await conn.ExecuteAsync(command);
+                $"INSERT INTO public.documents(document_partition_key, document_uuid, resource_name, edfi_doc) VALUES (1, '${documentuuid}', 'test', 'fake');";
+            var result = await conn.ExecuteAsync(command);
+            _logger.LogInformation(result.ToString());
         }
         return await Task.FromResult<UpsertResult>(new UpsertResult.InsertSuccess());
     }

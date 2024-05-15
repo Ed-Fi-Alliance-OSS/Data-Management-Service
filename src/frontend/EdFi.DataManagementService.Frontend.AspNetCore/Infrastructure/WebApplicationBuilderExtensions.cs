@@ -18,7 +18,7 @@ public static class WebApplicationBuilderExtensions
 {
     public static void AddServices(this WebApplicationBuilder webAppBuilder)
     {
-        webAppBuilder.Services.AddDmsDefaultConfiguration();
+        webAppBuilder.Services.AddDmsDefaultConfiguration(webAppBuilder.Configuration.GetSection("ConnectionStrings:DatabaseConnection").Value ?? string.Empty);
 
         webAppBuilder.Services.AddTransient<IContentProvider, ContentProvider>();
         webAppBuilder.Services.AddTransient<IVersionProvider, VersionProvider>();
