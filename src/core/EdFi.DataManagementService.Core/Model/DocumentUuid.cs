@@ -6,4 +6,18 @@
 namespace EdFi.DataManagementService.Core.Model;
 
 // A string type branded as a DocumentUuid, which is a UUID that identifies a document
-public record struct DocumentUuid(string Value);
+public record struct DocumentUuid(string Value)
+{
+    public readonly int ToPartitionKey()
+    {
+        return Math.Abs(GetHashCode() % 16);
+    }
+}
+
+public static class DocumentUuidGenerator
+{
+    public static DocumentUuid Generate()
+    {
+        return new(Guid.NewGuid().ToString("N"));
+    }
+}

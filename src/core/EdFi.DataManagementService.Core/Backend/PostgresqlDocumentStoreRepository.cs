@@ -16,22 +16,23 @@ public class PostgresqlDocumentStoreRepository(ILogger<PostgresqlDocumentStoreRe
 {
     public async Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)
     {
-        _logger.LogInformation(_connectionString);
-        _logger.LogWarning(
-            "UpsertDocument(): Backend repository has been configured to always report success - {TraceId}",
-            upsertRequest.TraceId
-        );
+        _logger.LogDebug("Entering UpsertDocument - {TraceId}", upsertRequest.TraceId);
 
-        using (var conn = new NpgsqlConnection(_connectionString))
+        await using (var conn = new NpgsqlConnection(_connectionString))
         {
             conn.Open();
-            var documentuuid = Guid.NewGuid().ToString().Replace("-", "");
+            var documentUuid = DocumentUuidGenerator.Generate();
             var command =
-                $"INSERT INTO public.documents(document_partition_key, document_uuid, resource_name, edfi_doc) VALUES (1, '${documentuuid}', 'test', 'fake');";
-            var result = await conn.ExecuteAsync(command);
-            _logger.LogInformation(result.ToString());
+                $"INSERT INTO public.documents(document_partition_key, document_uuid, resource_name, edfi_doc) " +
+                $"VALUES ({documentUuid.ToPartitionKey()}, '{documentUuid.Value}', '{upsertRequest.ResourceInfo.ResourceName.Value}', '{upsertRequest.EdfiDoc}');";
+            if (await conn.ExecuteAsync(command) == 1)
+            {
+                return await Task.FromResult<UpsertResult>(new UpsertResult.InsertSuccess());
+            }
         }
-        return await Task.FromResult<UpsertResult>(new UpsertResult.InsertSuccess());
+
+        _logger.LogError("Unknown Error - {TraceId}", upsertRequest.TraceId);
+        return await Task.FromResult<UpsertResult>(new UpsertResult.UnknownFailure("Unknown Failure"));
     }
 
     public async Task<GetResult> GetDocumentById(GetRequest getRequest)
