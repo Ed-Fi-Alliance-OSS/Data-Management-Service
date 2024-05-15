@@ -73,7 +73,7 @@ Feature: Resources "Create" Operation validations
                         "shortDescription": "Wrong Value"
                     }
                   """
-             Then it should respond with 403
+             Then it should respond with 400
               And the response body is
                   """
                     {
@@ -121,7 +121,7 @@ Feature: Resources "Create" Operation validations
 
         @ignore
         Scenario: Verify POST of existing record without changes
-             Give a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+             Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "Sick Lave",
@@ -158,7 +158,7 @@ Feature: Resources "Create" Operation validations
         @ignore
         Scenario: Verify error handling when resource ID is included in body on POST
             # The id value should be replaced with the resource created in the Background section
-             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors/" with
                   """
                     {
                         "id": "{id}",
