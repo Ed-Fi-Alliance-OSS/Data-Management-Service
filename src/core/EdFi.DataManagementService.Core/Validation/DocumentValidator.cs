@@ -6,8 +6,9 @@
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Api.Core.ApiSchema.Extensions;
-using EdFi.DataManagementService.Core.Pipeline;
+using System.Text.RegularExpressions;
+using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.Model;
 using Json.Schema;
 
 namespace EdFi.DataManagementService.Core.Validation;
@@ -106,11 +107,9 @@ public class DocumentValidator() : IDocumentValidator
         Dictionary<string, string[]> ValidationErrorsFrom(EvaluationResults results)
         {
             var validationErrors = new Dictionary<string, string[]>();
-            var val = new List<string>();
             foreach (var detail in results.Details)
             {
                 var propertyName = string.Empty;
-
                 if (detail.InstanceLocation != null && detail.InstanceLocation.Segments.Length != 0)
                 {
                     propertyName = $"{detail.InstanceLocation.Segments[^1].Value} : ";

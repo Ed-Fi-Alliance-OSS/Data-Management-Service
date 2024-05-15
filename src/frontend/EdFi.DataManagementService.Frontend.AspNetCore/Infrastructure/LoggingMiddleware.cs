@@ -6,7 +6,7 @@
 using System.Net;
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using EdFi.DataManagementService.Api.Core.Response;
+using EdFi.DataManagementService.Core.Response;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 
