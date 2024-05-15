@@ -5,6 +5,8 @@
 
 using System.Net;
 using System.Text.RegularExpressions;
+using EdFi.DataManagementService.Core;
+using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 
@@ -27,19 +29,19 @@ public partial class XsdMetadataEndpointModule : IEndpointModule
         endpoints.MapGet("/metadata/xsd/{section}/{fileName}.xsd", GetXsdMetadataFileContent);
     }
 
-    internal async Task GetSections(HttpContext httpContext, IDataModelProvider dataModelProvider)
+    internal async Task GetSections(HttpContext httpContext, ICoreFacade coreFacade)
     {
         var baseUrl = httpContext.Request.UrlWithPathSegment();
         List<XsdMetaDataSectionInfo> sections = [];
 
-        foreach (var model in dataModelProvider.GetDataModels())
+        foreach (DataModelInfo dataModelInfo in coreFacade.GetDataModelInfo())
         {
             sections.Add(
                 new XsdMetaDataSectionInfo(
-                    description: $"Core schema ({model.name}) files for the data model",
-                    name: model.name.ToLower(),
-                    version: model.version,
-                    files: $"{baseUrl}/{model.name.ToLower()}/files"
+                    description: $"Core schema ({dataModelInfo.ProjectName}) files for the data model",
+                    name: dataModelInfo.ProjectName.ToLower(),
+                    version: dataModelInfo.ProjectVersion,
+                    files: $"{baseUrl}/{dataModelInfo.ProjectName.ToLower()}/files"
                 )
             );
         }
@@ -49,7 +51,7 @@ public partial class XsdMetadataEndpointModule : IEndpointModule
     internal async Task GetXsdMetadataFiles(
         HttpContext httpContext,
         IContentProvider contentProvider,
-        IDataModelProvider dataModelProvider
+        ICoreFacade coreFacade
     )
     {
         var request = httpContext.Request;
@@ -61,9 +63,9 @@ public partial class XsdMetadataEndpointModule : IEndpointModule
         }
 
         string section = match.Groups["section"].Value;
-        var dataModels = dataModelProvider.GetDataModels();
+        IList<DataModelInfo> dataModelInfos = coreFacade.GetDataModelInfo();
 
-        if (dataModels.Any(x => x.name.Equals(section, StringComparison.InvariantCultureIgnoreCase)))
+        if (dataModelInfos.Any(x => x.ProjectName.Equals(section, StringComparison.InvariantCultureIgnoreCase)))
         {
             var baseUrl = httpContext.Request.UrlWithPathSegment().Replace("files", "");
             var withFullPath = new List<string>();

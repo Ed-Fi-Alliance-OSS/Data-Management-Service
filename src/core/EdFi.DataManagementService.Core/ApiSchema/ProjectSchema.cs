@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Core.ApiSchema;
 /// <summary>
 /// Provides information from the ProjectSchema portion of an ApiSchema.json document
 /// </summary>
-public class ProjectSchema(JsonNode _projectSchemaNode, ILogger _logger)
+internal class ProjectSchema(JsonNode _projectSchemaNode, ILogger _logger)
 {
     private readonly Lazy<MetaEdProjectName> _projectName =
         new(() =>

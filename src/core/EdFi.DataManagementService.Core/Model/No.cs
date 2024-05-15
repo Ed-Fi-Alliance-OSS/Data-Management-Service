@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Core.Model;
 /// <summary>
 /// Null objects to avoid nullable types when null is irrelevant
 /// </summary>
-public static class No
+internal static class No
 {
     /// <summary>
     /// The null object for ApiSchemaDocument

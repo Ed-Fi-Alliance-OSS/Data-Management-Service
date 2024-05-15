@@ -16,7 +16,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [TestFixture]
 public class ParsePathMiddlewareTests
 {
-    public static IPipelineStep Middleware()
+    internal static IPipelineStep Middleware()
     {
         return new ParsePathMiddleware(NullLogger.Instance);
     }

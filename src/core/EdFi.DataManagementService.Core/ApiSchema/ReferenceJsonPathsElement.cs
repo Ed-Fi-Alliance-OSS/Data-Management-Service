@@ -31,7 +31,7 @@ namespace EdFi.DataManagementService.Core.ApiSchema
     /// In this example, each array element is a ReferenceJsonPathsElement
     ///
     /// </summary>
-    public record ReferenceJsonPathsElement(
+    internal record ReferenceJsonPathsElement(
         /// <summary>
         /// The JsonPath to the identity value in the document being referenced
         /// </summary>

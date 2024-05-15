@@ -3,21 +3,22 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using Microsoft.Extensions.Logging;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
-using EdFi.DataManagementService.Core.Validation;
 using EdFi.DataManagementService.Core.Pipeline;
-using EdFi.DataManagementService.Core.Backend;
+using EdFi.DataManagementService.Core.Validation;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core;
 
 /// <summary>
 /// The DMS core facade.
 /// </summary>
-public class CoreFacade(
+internal class CoreFacade(
     IApiSchemaProvider _apiSchemaProvider,
     IApiSchemaValidator _apiSchemaValidator,
     IDocumentStoreRepository _documentStoreRepository,
@@ -146,5 +147,37 @@ public class CoreFacade(
         PipelineContext pipelineContext = new(frontendRequest, RequestMethod.DELETE);
         await _deleteByIdSteps.Value.Run(pipelineContext);
         return pipelineContext.FrontendResponse;
+    }
+
+    /// <summary>
+    /// DMS entry point for data model information from ApiSchema.json
+    /// </summary>
+    public IList<DataModelInfo> GetDataModelInfo()
+    {
+        JsonNode schema = _apiSchemaProvider.ApiSchemaRootNode;
+
+        KeyValuePair<string, JsonNode?>[]? projectSchemas = schema["projectSchemas"]?.AsObject().ToArray();
+        if (projectSchemas == null || projectSchemas.Length == 0)
+        {
+            string errorMessage = "No projectSchemas found, ApiSchema.json is invalid";
+            _logger.LogCritical(errorMessage);
+            throw new InvalidOperationException(errorMessage);
+        }
+
+        IList<DataModelInfo> result = [];
+        List<JsonNode> projectSchemaNodes = projectSchemas
+            .Where(x => x.Value != null)
+            .Select(x => x.Value ?? new JsonObject())
+            .ToList();
+
+        foreach (JsonNode projectSchemaNode in projectSchemaNodes)
+        {
+            var projectName = projectSchemaNode?["projectName"]?.GetValue<string>() ?? string.Empty;
+            var projectVersion = projectSchemaNode?["projectVersion"]?.GetValue<string>() ?? string.Empty;
+            var description = projectSchemaNode?["description"]?.GetValue<string>() ?? string.Empty;
+
+            result.Add(new DataModelInfo(projectName, projectVersion, description));
+        }
+        return result;
     }
 }

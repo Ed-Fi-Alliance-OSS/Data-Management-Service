@@ -18,7 +18,7 @@ namespace EdFi.DataManagementService.Core.Pipeline;
 /// Pipeline steps MUST NOT maintain object state, as object state would persist across
 /// requests.
 /// </summary>
-public interface IPipelineStep
+internal interface IPipelineStep
 {
     Task Execute(PipelineContext context, Func<Task> next);
 }

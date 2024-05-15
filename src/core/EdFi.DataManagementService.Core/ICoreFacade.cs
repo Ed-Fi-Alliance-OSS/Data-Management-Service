@@ -34,4 +34,9 @@ public interface ICoreFacade
     /// DMS entry point for all API DELETE requests, which are "by id"
     /// </summary>
     public Task<FrontendResponse> DeleteById(FrontendRequest frontendRequest);
+
+    /// <summary>
+    /// DMS entry point for data model information from ApiSchema.json
+    /// </summary>
+    public IList<DataModelInfo> GetDataModelInfo();
 }

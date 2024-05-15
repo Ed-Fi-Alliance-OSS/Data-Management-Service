@@ -3,13 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core;
+using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
-
 
 public class DiscoveryEndpointModule : IEndpointModule
 {
@@ -18,19 +19,21 @@ public class DiscoveryEndpointModule : IEndpointModule
         endpoints.MapGet("/", GetApiDetails);
     }
 
-    internal async Task GetApiDetails(
+    private async Task GetApiDetails(
         HttpContext httpContext,
         IVersionProvider versionProvider,
-        IDataModelProvider dataModelProvider,
+        ICoreFacade coreFacade,
         IOptions<AppSettings> appSettings
     )
     {
-        var dataModels = dataModelProvider.GetDataModels().ToArray();
+        IList<DataModelInfo> dataModelInfos = coreFacade.GetDataModelInfo();
 
         var result = new DiscoveryApiDetails(
             version: versionProvider.Version,
             applicationName: versionProvider.ApplicationName,
-            dataModels,
+            dataModelInfos
+                .Select(x => new DataModel(x.ProjectName, x.ProjectVersion, x.Description))
+                .ToArray(),
             GetUrlsByName()
         );
 
@@ -49,6 +52,8 @@ public class DiscoveryEndpointModule : IEndpointModule
         }
     }
 }
+
+public record DataModel(string name, string version, string informationalVersion);
 
 public record DiscoveryApiDetails(
     string version,

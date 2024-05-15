@@ -6,7 +6,6 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Model;
-using EdFi.DataManagementService.Core.Tests.Shared;
 using FluentAssertions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
@@ -16,7 +15,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.ApiSchema;
 [TestFixture]
 public class ExtractDocumentReferencesTests
 {
-    public static ApiSchemaDocument BuildApiSchemaDocument()
+    internal static ApiSchemaDocument BuildApiSchemaDocument()
     {
         return new ApiSchemaBuilder()
             .WithStartProject()

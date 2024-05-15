@@ -34,7 +34,7 @@ public class PipelineProviderTests
 
         private static bool wasExecuted = false;
 
-        public class PipelineStep : IPipelineStep
+        internal class PipelineStep : IPipelineStep
         {
             public async Task Execute(PipelineContext context, Func<Task> next)
             {
@@ -64,7 +64,7 @@ public class PipelineProviderTests
 
         private static List<int> executionOrder = [];
 
-        public class PipelineStep(int order) : IPipelineStep
+        internal class PipelineStep(int order) : IPipelineStep
         {
             public async Task Execute(PipelineContext context, Func<Task> next)
             {
@@ -96,7 +96,7 @@ public class PipelineProviderTests
 
         private static List<int> executionOrder = [];
 
-        public class NextingPipelineStep(int order) : IPipelineStep
+        internal class NextingPipelineStep(int order) : IPipelineStep
         {
             public async Task Execute(PipelineContext context, Func<Task> next)
             {
@@ -105,7 +105,7 @@ public class PipelineProviderTests
             }
         }
 
-        public class NonNextingPipelineStep(int order) : IPipelineStep
+        internal class NonNextingPipelineStep(int order) : IPipelineStep
         {
             public Task Execute(PipelineContext context, Func<Task> next)
             {

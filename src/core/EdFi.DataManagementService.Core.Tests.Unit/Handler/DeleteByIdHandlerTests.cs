@@ -18,7 +18,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 [TestFixture]
 public class DeleteByIdHandlerTests
 {
-    public static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
+    internal static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
     {
         return new DeleteByIdHandler(documentStoreRepository, NullLogger.Instance);
     }
@@ -26,7 +26,7 @@ public class DeleteByIdHandlerTests
     [TestFixture]
     public class Given_a_repository_that_returns_success : DeleteByIdHandlerTests
     {
-        public class Repository : NotImplementedDocumentStoreRepository
+        internal class Repository : NotImplementedDocumentStoreRepository
         {
             public override Task<DeleteResult> DeleteDocumentById(DeleteRequest deleteRequest)
             {
@@ -54,7 +54,7 @@ public class DeleteByIdHandlerTests
     [TestFixture]
     public class Given_a_repository_that_returns_failure_not_exists : DeleteByIdHandlerTests
     {
-        public class Repository : NotImplementedDocumentStoreRepository
+        internal class Repository : NotImplementedDocumentStoreRepository
         {
             public override Task<DeleteResult> DeleteDocumentById(DeleteRequest deleteRequest)
             {
@@ -82,7 +82,7 @@ public class DeleteByIdHandlerTests
     [TestFixture]
     public class Given_a_repository_that_returns_failure_reference : DeleteByIdHandlerTests
     {
-        public class Repository : NotImplementedDocumentStoreRepository
+        internal class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly string ResponseBody = "ReferencingDocumentInfo";
 
@@ -112,7 +112,7 @@ public class DeleteByIdHandlerTests
     [TestFixture]
     public class Given_a_repository_that_returns_failure_write_conflict : DeleteByIdHandlerTests
     {
-        public class Repository : NotImplementedDocumentStoreRepository
+        internal class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly string ResponseBody = "FailureMessage";
 
@@ -142,7 +142,7 @@ public class DeleteByIdHandlerTests
     [TestFixture]
     public class Given_a_repository_that_returns_unknown_failure : DeleteByIdHandlerTests
     {
-        public class Repository : NotImplementedDocumentStoreRepository
+        internal class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly string ResponseBody = "FailureMessage";
 

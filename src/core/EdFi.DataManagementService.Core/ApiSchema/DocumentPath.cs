@@ -33,7 +33,7 @@ namespace EdFi.DataManagementService.Core.ApiSchema;
 /// Here, a DocumentPath object would represent the document object value whose key is "School"
 ///
 /// </summary>
-public class DocumentPath(JsonNode _documentPathsNode)
+internal class DocumentPath(JsonNode _documentPathsNode)
 {
     private readonly Lazy<bool> _isDescriptor =
         new(() =>

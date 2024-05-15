@@ -9,7 +9,6 @@ using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Validation;
 using EdFi.DataManagementService.Core.Pipeline;
-using EdFi.DataManagementService.Core.Tests.Shared;
 using FluentAssertions;
 using Json.Schema;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -24,7 +23,7 @@ public class ValidateDocumentMiddlewareTests
         return () => Task.CompletedTask;
     }
 
-    public static ApiSchemaDocument SchemaDocument()
+    internal static ApiSchemaDocument SchemaDocument()
     {
         var builder = new JsonSchemaBuilder();
         builder.Title("Ed-Fi.School");
@@ -58,13 +57,13 @@ public class ValidateDocumentMiddlewareTests
             .ToApiSchemaDocument();
     }
 
-    public static IPipelineStep Middleware()
+    internal static IPipelineStep Middleware()
     {
         var documentValidator = new DocumentValidator();
         return new ValidateDocumentMiddleware(NullLogger.Instance, documentValidator);
     }
 
-    public PipelineContext Context(FrontendRequest frontendRequest, RequestMethod method)
+    internal PipelineContext Context(FrontendRequest frontendRequest, RequestMethod method)
     {
         PipelineContext _context =
             new(frontendRequest, method)
@@ -99,7 +98,7 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: null,
                 QueryParameters: [],
-                new TraceId("traceId")
+                "traceId"
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());
@@ -139,7 +138,7 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: JsonNode.Parse(jsonData),
                 QueryParameters: [],
-                new TraceId("traceId")
+               "traceId"
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());
@@ -167,7 +166,7 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: JsonNode.Parse(jsonData),
                 QueryParameters: [],
-                new TraceId("traceId")
+                "traceId"
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());
@@ -195,7 +194,7 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: JsonNode.Parse(jsonData),
                 QueryParameters: [],
-                new TraceId("traceId")
+                "traceId"
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());
@@ -236,7 +235,7 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: JsonNode.Parse(jsonData),
                 QueryParameters: [],
-                new TraceId("traceId")
+                "traceId"
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());
@@ -277,7 +276,7 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: JsonNode.Parse(jsonData),
                 QueryParameters: [],
-                new TraceId("traceId")
+                "traceId"
             );
             _context = Context(frontEndRequest, RequestMethod.PUT);
             await Middleware().Execute(_context, Next());

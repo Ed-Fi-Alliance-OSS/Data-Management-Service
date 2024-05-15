@@ -11,7 +11,7 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// <summary>
 /// Builds the ResourceInfo to pass to the backends
 /// </summary>
-public class BuildResourceInfoMiddleware(ILogger _logger) : IPipelineStep
+internal class BuildResourceInfoMiddleware(ILogger _logger) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {

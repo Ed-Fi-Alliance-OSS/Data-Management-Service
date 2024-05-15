@@ -19,7 +19,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 [TestFixture]
 public class GetByIdHandlerTests
 {
-    public static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
+    internal static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
     {
         return new GetByIdHandler(documentStoreRepository, NullLogger.Instance);
     }
@@ -27,7 +27,7 @@ public class GetByIdHandlerTests
     [TestFixture]
     public class Given_a_repository_that_returns_success : GetByIdHandlerTests
     {
-        public class Repository : NotImplementedDocumentStoreRepository
+        internal class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly string ResponseBody = "{}";
 
@@ -59,7 +59,7 @@ public class GetByIdHandlerTests
     [TestFixture]
     public class Given_a_repository_that_returns_failure_not_exists : GetByIdHandlerTests
     {
-        public class Repository : NotImplementedDocumentStoreRepository
+        internal class Repository : NotImplementedDocumentStoreRepository
         {
             public override Task<GetResult> GetDocumentById(GetRequest deleteRequest)
             {
@@ -87,7 +87,7 @@ public class GetByIdHandlerTests
     [TestFixture]
     public class Given_a_repository_that_returns_unknown_failure : GetByIdHandlerTests
     {
-        public class Repository : NotImplementedDocumentStoreRepository
+        internal class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly string ResponseBody = "FailureMessage";
 

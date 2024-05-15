@@ -4,12 +4,12 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.ApiSchema;
 using Json.Schema;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace EdFi.DataManagementService.Core.Tests.Shared;
+namespace EdFi.DataManagementService.Core.Tests.Unit;
 
 /// <summary>
 /// This class provides a fluent interface for building an ApiSchema suitable for unit testing,
@@ -52,7 +52,7 @@ public class ApiSchemaBuilder
     /// <summary>
     /// Returns an ApiSchemaDocument for the current api schema state
     /// </summary>
-    public ApiSchemaDocument ToApiSchemaDocument()
+    internal ApiSchemaDocument ToApiSchemaDocument()
     {
         return new ApiSchemaDocument(RootNode, NullLogger.Instance);
     }

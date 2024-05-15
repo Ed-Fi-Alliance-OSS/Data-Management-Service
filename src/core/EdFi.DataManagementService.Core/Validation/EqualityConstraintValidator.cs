@@ -9,7 +9,7 @@ using EdFi.DataManagementService.Core.Model;
 
 namespace EdFi.DataManagementService.Core.Validation;
 
-public interface IEqualityConstraintValidator
+internal interface IEqualityConstraintValidator
 {
     /// <summary>
     /// Validates the equality constraints defined in MetaEd model are correct for the given API body.
@@ -20,7 +20,7 @@ public interface IEqualityConstraintValidator
     string[] Validate(JsonNode? documentBody, IEnumerable<EqualityConstraint> equalityConstraints);
 }
 
-public class EqualityConstraintValidator : IEqualityConstraintValidator
+internal class EqualityConstraintValidator : IEqualityConstraintValidator
 {
     public string[] Validate(JsonNode? documentBody, IEnumerable<EqualityConstraint> equalityConstraints)
     {
