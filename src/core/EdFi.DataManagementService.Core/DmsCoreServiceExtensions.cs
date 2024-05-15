@@ -25,7 +25,7 @@ public static class DmsCoreServiceExtensions
             .AddSingleton<IApiSchemaSchemaProvider, ApiSchemaSchemaProvider>()
             .AddSingleton<IApiSchemaValidator, ApiSchemaValidator>()
             .AddSingleton<ICoreFacade, CoreFacade>()
-            .AddSingleton<IDocumentStoreRepository, SuccessDocumentStoreRepository>()
+            .AddSingleton<IDocumentStoreRepository, PostgresqlDocumentStoreRepository>()
             .AddTransient<IDocumentValidator, DocumentValidator>()
             .AddTransient<IEqualityConstraintValidator, EqualityConstraintValidator>();
 
