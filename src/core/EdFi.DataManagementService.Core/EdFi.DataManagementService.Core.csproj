@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
@@ -9,6 +9,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Content Include="EdFi.DataManagementService.Core.nuspec" CopyToPublishDirectory="Always" CopyToOutputDirectory="Never" />
+    <PackageReference Include="Dapper" Version="2.1.35" />
     <PackageReference Include="EdFi.ApiSchema" Version="5.0.0-alpha.10" />
     <PackageReference Include="Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic" Version="4.0.0" />
     <PackageReference Include="Microsoft.CodeAnalysis" Version="4.8.0" />
