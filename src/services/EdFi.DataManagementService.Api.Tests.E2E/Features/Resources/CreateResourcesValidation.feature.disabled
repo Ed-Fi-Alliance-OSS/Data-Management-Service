@@ -20,6 +20,13 @@ Feature: Resources "Create" Operation validations
                     }
                   """
              Then it should respond with 201
+              And the response headers includes
+              #replace header {id} with the correct value
+                  """
+                    {
+                        "location": "ed-fi/absenceEventCategoryDescriptors/{id}",
+                    }
+                  """
               And the record can be retrieved with a GET request
                             # TODO: when writing the step definition,
                             # be sure to validate that the response matches the original payload,
@@ -114,15 +121,23 @@ Feature: Resources "Create" Operation validations
 
         @ignore
         Scenario: Verify POST of existing record without changes
-                          #an existing record to
+             Give a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+                  """
+                    {
+                        "codeValue": "Sick Lave",
+                        "description": "Sick Leave",
+                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                        "shortDescription": "Sick Leave"
+                    }
+                  """
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
-                             "codeValue": "Sick Lave",
-                             "description": "Sick Leave",
-                             "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                             "shortDescription": "Sick Leave"
-                         }
+                        "codeValue": "Sick Lave",
+                        "description": "Sick Leave",
+                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                        "shortDescription": "Sick Leave"
+                    }
                   """
              Then it should respond with 200
               And the record can be retrieved with a GET request

@@ -26,21 +26,18 @@ Feature: Resources "Read" Operation validations
         @ignore
         Scenario: Verify retrieving a single resource by ID
         # Replace Endpoint with the required value, this is just an example to make sure Descriptors are working fine
-             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/16435704274945eeae6c6c45b281aad3"
-             Then it should respond with 200
-
-        @ignore
-        Scenario: Verify response contains expected data
-        # Replace Endpoint with the required value, this is just an example to make sure Descriptors are working fine
-             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/16435704274945eeae6c6c45b281aad3"
+             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 200
               And the response body is
                   """
                     {
+                        "id": "{id}"
                         "codeValue": "Jury duty",
                         "description": "Jury duty",
                         "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
                         "shortDescription": "Jury duty"
+                        "_etag": "5250182869515346067",
+                        "_lastModifiedDate": "2024-04-25T23:38:28.7958163Z"
                     }
                   """
 
@@ -50,7 +47,8 @@ Feature: Resources "Read" Operation validations
              Then it should respond with 404
 
         @ignore
-        Scenario: Verify empty array when there are not records on GET All
+        Scenario: Verify array records content on GET All
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors"
              Then it should respond with 200
-              And total of records should be "0"
+              And total of records should be greather than "0"
+              And the record with ID {id} should exist

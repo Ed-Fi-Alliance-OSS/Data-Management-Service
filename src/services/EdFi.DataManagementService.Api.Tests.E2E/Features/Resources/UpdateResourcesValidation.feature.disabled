@@ -21,7 +21,7 @@ Feature: Resources "Update" Operation validations
         @ignore
         Scenario: Verify that existing resources can be updated successfully
             # The id value should be replaced with the resource created in the Background section
-             When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/<id>" with
+             When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
                     {
                         "codeValue": "Sick Leave",
@@ -35,7 +35,7 @@ Feature: Resources "Update" Operation validations
         @ignore
         Scenario: Verify updating a resource with valid data
              # The id value should be replaced with the resource created in the Background section
-             When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/<id>" with
+             When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
                     {
                         "codeValue": "Sick Leave",
@@ -58,9 +58,34 @@ Feature: Resources "Update" Operation validations
                   """
 
         @ignore
+        Scenario: Verify updating a non existing resource with valid data
+             # The id value should be replaced with a non existing resource
+             When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
+                  """
+                    {
+                        "id": {id},
+                        "codeValue": "Sick Leave",
+                        "description": "Sick Leave Edited",
+                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                        "shortDescription": "Sick Leave"
+                    }
+                  """
+             Then it should respond with 404
+              And the response body is
+                  """
+                    {
+                        "detail": "Resource to update was not found.",
+                        "type": "urn:ed-fi:api:not-found",
+                        "title": "Not Found",
+                        "status": 404,
+                        "correlationId": null
+                    }
+                  """
+
+        @ignore
         Scenario: Verify error handling updating a resource with invalid data
             # The id value should be replaced with the resource created in the Background section
-             When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/<id>" with
+             When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
                     {
                         "codeValue": "Sick Leave",
@@ -84,7 +109,7 @@ Feature: Resources "Update" Operation validations
         @ignore
         Scenario: Verify that response contains the updated resource ID and data
             # The id value should be replaced with the resource created in the Background section
-             When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/<id>" with
+             When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
                     {
                         "codeValue": "Sick Leave",
@@ -94,19 +119,18 @@ Feature: Resources "Update" Operation validations
                     }
                   """
              Then it should respond with 204
-                  | location |  |
               And the response headers includes
-              #replace header <id> with the correct value
+              #replace header {id} with the correct value
                   """
                     {
-                        "location": "ed-fi/absenceEventCategoryDescriptors/<id>",
+                        "location": "ed-fi/absenceEventCategoryDescriptors/{id}",
                     }
                   """
 
         @ignore
         Scenario: Verify error handling when updating a resource with empty body
              # The id value should be replaced with the resource created in the Background section
-             When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/<id>" with
+             When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
                     {
                     }
@@ -137,7 +161,7 @@ Feature: Resources "Update" Operation validations
         @ignore
         Scenario: Verify error handling when resource ID is different in body on PUT
              # The id value should be replaced with the resource created in the Background section
-             When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/<id>" with
+             When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
                     {
                         "id": <id_different_from_original_resource>,
@@ -167,7 +191,7 @@ Feature: Resources "Update" Operation validations
         @ignore
         Scenario: Verify error handling when resource ID is not included in body on PUT
             # The id value should be replaced with the resource created in the Background section
-             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors/<id>" with
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
                     {
                         "id": "",
@@ -188,7 +212,7 @@ Feature: Resources "Update" Operation validations
                         "correlationId": null,
                         "validationErrors": {
                             "$.id": [
-                            "Error converting value \"\" to type 'System.Guid'. Path 'id', line 2, position 32."
+                            "Error converting value \\"\\" to type 'System.Guid'. Path 'id', line 2, position 32."
                             ]
                         }
                     }
@@ -197,10 +221,10 @@ Feature: Resources "Update" Operation validations
         @ignore
         Scenario: Verify error handling when resource ID is included in body on POST
             # The id value should be replaced with the resource created in the Background section
-             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors/<id>" with
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
                     {
-                        "id": "<id>",
+                        "id": "{id}",
                         "codeValue": "Sick Leave",
                         "description": "Sick Leave Edited",
                         "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
