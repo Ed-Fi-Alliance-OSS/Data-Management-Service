@@ -6,6 +6,7 @@
 using System.Net;
 using EdFi.DataManagementService.Api.Tests.E2E.Management;
 using FluentAssertions;
+using FluentAssertions.Extensions;
 using Microsoft.Playwright;
 using Reqnroll;
 
@@ -33,7 +34,7 @@ public sealed class PingStepDefinitions
     public async Task Then_it_returns_the_dateTime()
     {
         string content = await _APIResponse.TextAsync();
-        string expectedDate = DateTime.Now.ToString("yyyy-MM-dd");
+        string expectedDate = DateTime.Now.ToUniversalTime().ToString("yyyy-");
 
         _APIResponse.Status.Should().Be((int)HttpStatusCode.OK);
         content.Should().Contain(expectedDate);

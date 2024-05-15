@@ -70,5 +70,44 @@
         "exclude": [
             "css", "json", "xml", "config", "plaintext", "markdown", "batch"
         ]
-    }
+    },
+    "cSpell.words": [
+        "abstractresource",
+        "allowidentityupdates",
+        "begindate",
+        "decapitalizer",
+        "documentpathsmapping",
+        "equalityconstraints",
+        "identityjsonpaths",
+        "isdescriptor",
+        "isshoolyearenumeration",
+        "issubclass",
+        "jsonschemaforinsert",
+        "noallowidentityupdates",
+        "nodocumentpathsmappings",
+        "noequalityconstraints",
+        "noidentityjsonpaths",
+        "noisdescriptors",
+        "noisschoolyearenumerations",
+        "noissubclasses",
+        "nojsonschemaforinserts",
+        "noresourcenames",
+        "nosubclassidentitydocumentkeys",
+        "nosubclasstypes",
+        "nosuperclassidentitydocumentkeys",
+        "nosuperclassprojectnames",
+        "nosuperclassresourcenames",
+        "openapi",
+        "pluralizer",
+        "resourcename",
+        "resourceschema",
+        "resourceschemas",
+        "Shoolyear",
+        "subclassidentitydocumentkey",
+        "subclasstype",
+        "superclassidentitydocumentkey",
+        "superclassprojectname",
+        "superclassresourcename",
+        "TPDM"
+    ]
 }
