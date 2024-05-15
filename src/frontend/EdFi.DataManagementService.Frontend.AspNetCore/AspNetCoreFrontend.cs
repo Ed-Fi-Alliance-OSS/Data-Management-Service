@@ -47,9 +47,9 @@ public static class AspNetCoreFrontend
     /// <summary>
     /// Takes an HttpRequest and returns a unique trace identifier
     /// </summary>
-    private static TraceId ExtractTraceIdFrom(HttpRequest request)
+    private static string ExtractTraceIdFrom(HttpRequest request)
     {
-        return new(request.HttpContext.TraceIdentifier);
+        return request.HttpContext.TraceIdentifier;
     }
 
     /// <summary>

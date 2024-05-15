@@ -18,7 +18,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 [TestFixture]
 public class UpsertHandlerTests
 {
-    public static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
+    internal static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
     {
         return new UpsertHandler(documentStoreRepository, NullLogger.Instance);
     }
@@ -26,7 +26,7 @@ public class UpsertHandlerTests
     [TestFixture]
     public class Given_a_repository_that_returns_success : UpsertHandlerTests
     {
-        public class Repository : NotImplementedDocumentStoreRepository
+        internal class Repository : NotImplementedDocumentStoreRepository
         {
             public override Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)
             {
@@ -54,7 +54,7 @@ public class UpsertHandlerTests
     [TestFixture]
     public class Given_a_repository_that_returns_failure_reference : UpsertHandlerTests
     {
-        public class Repository : NotImplementedDocumentStoreRepository
+        internal class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly string ResponseBody = "ReferencingDocumentInfo";
 
@@ -84,7 +84,7 @@ public class UpsertHandlerTests
     [TestFixture]
     public class Given_a_repository_that_returns_failure_identity_conflict : UpsertHandlerTests
     {
-        public class Repository : NotImplementedDocumentStoreRepository
+        internal class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly string ResponseBody = "FailureMessage";
 
@@ -114,7 +114,7 @@ public class UpsertHandlerTests
     [TestFixture]
     public class Given_a_repository_that_returns_failure_write_conflict : UpsertHandlerTests
     {
-        public class Repository : NotImplementedDocumentStoreRepository
+        internal class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly string ResponseBody = "FailureMessage";
 
@@ -144,7 +144,7 @@ public class UpsertHandlerTests
     [TestFixture]
     public class Given_a_repository_that_returns_unknown_failure : UpsertHandlerTests
     {
-        public class Repository : NotImplementedDocumentStoreRepository
+        internal class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly string ResponseBody = "FailureMessage";
 

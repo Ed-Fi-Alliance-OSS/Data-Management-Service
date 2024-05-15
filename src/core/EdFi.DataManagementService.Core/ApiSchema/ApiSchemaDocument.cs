@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Core.ApiSchema;
 /// <summary>
 /// Provides information from a loaded ApiSchema.json document
 /// </summary>
-public class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
+internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
 {
     /// <summary>
     /// Finds the ProjectSchema that represents the given ProjectNamespace. Returns null if not found.

@@ -14,7 +14,7 @@ namespace EdFi.DataManagementService.Core.ApiSchema;
 /// <summary>
 /// Validator for Api Schema
 /// </summary>
-public interface IApiSchemaValidator
+internal interface IApiSchemaValidator
 {
     /// <summary>
     /// Validates Api Schema against Schema
@@ -24,7 +24,7 @@ public interface IApiSchemaValidator
     Lazy<List<SchemaValidationFailure>> Validate(JsonNode apiSchemaContent);
 }
 
-public class ApiSchemaValidator(IApiSchemaSchemaProvider _apiSchemaSchemaProvider) : IApiSchemaValidator
+internal class ApiSchemaValidator(IApiSchemaSchemaProvider _apiSchemaSchemaProvider) : IApiSchemaValidator
 {
     public Lazy<List<SchemaValidationFailure>> Validate(JsonNode apiSchemaContent)
     {

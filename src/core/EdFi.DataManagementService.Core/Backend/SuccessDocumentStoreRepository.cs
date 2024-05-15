@@ -11,7 +11,7 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// <summary>
 /// A document store repository that does nothing but return success
 /// </summary>
-public class SuccessDocumentStoreRepository(ILogger<SuccessDocumentStoreRepository> _logger)
+internal class SuccessDocumentStoreRepository(ILogger<SuccessDocumentStoreRepository> _logger)
     : IDocumentStoreRepository, IQueryHandler
 {
     public async Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)

@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Core.Handler;
 /// <summary>
 /// Handles a get by id request that has made it through the middleware pipeline steps.
 /// </summary>
-public class GetByIdHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger)
+internal class GetByIdHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger)
     : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
@@ -24,7 +24,7 @@ public class GetByIdHandler(IDocumentStoreRepository _documentStoreRepository, I
             new(
                 DocumentUuid: context.PathComponents.DocumentUuid,
                 ResourceInfo: context.ResourceInfo,
-                TraceId: context.FrontendRequest.TraceId
+                TraceId: new(context.FrontendRequest.TraceId)
             )
         );
 

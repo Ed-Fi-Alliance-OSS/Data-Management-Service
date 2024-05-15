@@ -12,7 +12,7 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// <summary>
 /// Extracts identity and reference information from a valid JSON document
 /// </summary>
-public partial class ExtractDocumentInfoMiddleware(ILogger _logger) : IPipelineStep
+internal partial class ExtractDocumentInfoMiddleware(ILogger _logger) : IPipelineStep
 {
     /// <summary>
     /// Builds a DocumentInfo using the various extractors on a document body

@@ -7,4 +7,4 @@ using EdFi.DataManagementService.Core.Model;
 
 namespace EdFi.DataManagementService.Core.Response;
 
-public record SchemaValidationFailure(JsonPath FailurePath, List<string> FailureMessages);
+internal record SchemaValidationFailure(JsonPath FailurePath, List<string> FailureMessages);

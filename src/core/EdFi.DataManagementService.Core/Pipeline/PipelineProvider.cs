@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Core.Pipeline;
 /// Create pipeline steps in execution order with constructor.
 /// Run the pipeline steps with Run().
 /// </summary>
-public class PipelineProvider(List<IPipelineStep> _steps)
+internal class PipelineProvider(List<IPipelineStep> _steps)
 {
     /// <summary>
     /// Runs the step at the given index, if there is one. (If not, we are at the end.)

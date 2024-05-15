@@ -3,25 +3,22 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Core.ApiSchema.Model;
-
 namespace EdFi.DataManagementService.Core.Model;
 
 /// <summary>
-/// The important parts of the request URL in object form
+/// An API request sent from the frontend to be processed
 /// </summary>
-
-internal record PathComponents(
+public record DataModelInfo(
     /// <summary>
-    /// Project namespace, all lowercased
+    /// The project name for this data model
     /// </summary>
-    ProjectNamespace ProjectNamespace,
+    string ProjectName,
     /// <summary>
-    /// Endpoint name, which is always decapitalized and plural
+    /// The project version for this data model, in SemVer format
     /// </summary>
-    EndpointName EndpointName,
+    string ProjectVersion,
     /// <summary>
-    /// The optional resource identifier, which is a document uuid
+    /// The description of this data model
     /// </summary>
-    DocumentUuid DocumentUuid
+    string Description
 );

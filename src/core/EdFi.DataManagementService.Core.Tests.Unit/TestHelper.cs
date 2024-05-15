@@ -19,7 +19,7 @@ public static class TestHelper
     /// <summary>
     /// Builds a ResourceSchema for the given endpointName on the given apiSchemaDocument
     /// </summary>
-    public static ResourceSchema BuildResourceSchema(
+    internal static ResourceSchema BuildResourceSchema(
         ApiSchemaDocument apiSchemaDocument,
         string endpointName,
         string projectNamespace = "ed-fi"

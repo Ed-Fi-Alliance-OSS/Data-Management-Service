@@ -18,7 +18,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [TestFixture]
 public class ApiSchemaValidationMiddlewareTests
 {
-    public static IPipelineStep ProvideMiddleware(IApiSchemaProvider provider)
+    internal static IPipelineStep ProvideMiddleware(IApiSchemaProvider provider)
     {
         var apiValidator = new ApiSchemaValidator(new ApiSchemaSchemaProvider(NullLogger<ApiSchemaSchemaProvider>.Instance));
         return new ApiSchemaValidationMiddleware(provider, apiValidator, NullLogger.Instance);

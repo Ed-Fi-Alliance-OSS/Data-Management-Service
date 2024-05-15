@@ -7,7 +7,6 @@ using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
-using EdFi.DataManagementService.Core.Tests.Shared;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -21,7 +20,7 @@ public class ValidateEndpointMiddlewareTests
         return () => Task.CompletedTask;
     }
 
-    public static ApiSchemaDocument SchemaDocument()
+    internal static ApiSchemaDocument SchemaDocument()
     {
         return new ApiSchemaBuilder()
             .WithStartProject("Ed-Fi", "5.0.0")
@@ -31,7 +30,7 @@ public class ValidateEndpointMiddlewareTests
             .ToApiSchemaDocument();
     }
 
-    public static IPipelineStep Middleware()
+    internal static IPipelineStep Middleware()
     {
         return new ValidateEndpointMiddleware(NullLogger.Instance);
     }

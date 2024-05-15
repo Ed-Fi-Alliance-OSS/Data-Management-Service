@@ -14,7 +14,7 @@ namespace EdFi.DataManagementService.Core.Handler;
 /// <summary>
 /// Handles an upsert request that has made it through the middleware pipeline steps.
 /// </summary>
-public class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger) : IPipelineStep
+internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
@@ -27,7 +27,7 @@ public class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, IL
                 DocumentInfo: context.DocumentInfo,
                 EdfiDoc: new JsonObject(),
                 validateDocumentReferencesExist: false,
-                TraceId: context.FrontendRequest.TraceId
+                TraceId: new(context.FrontendRequest.TraceId)
             )
         );
 

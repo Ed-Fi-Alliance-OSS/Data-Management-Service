@@ -10,7 +10,7 @@ using EdFi.DataManagementService.Core.Pipeline;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
-public class ApiSchemaValidationMiddleware(
+internal class ApiSchemaValidationMiddleware(
     IApiSchemaProvider _apiSchemaProvider,
     IApiSchemaValidator _apiSchemaValidator,
     ILogger _logger

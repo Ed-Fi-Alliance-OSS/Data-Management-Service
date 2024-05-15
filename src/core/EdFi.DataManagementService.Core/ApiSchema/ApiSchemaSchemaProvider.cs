@@ -12,7 +12,7 @@ namespace EdFi.DataManagementService.Core.ApiSchema;
 /// <summary>
 /// Api schema schema provider
 /// </summary>
-public interface IApiSchemaSchemaProvider
+internal interface IApiSchemaSchemaProvider
 {
     /// <summary>
     /// Provides ApiSchema schema
@@ -23,7 +23,7 @@ public interface IApiSchemaSchemaProvider
 /// <summary>
 /// Loads and parses Api schema schema json
 /// </summary>
-public class ApiSchemaSchemaProvider(ILogger<ApiSchemaSchemaProvider> _logger) : IApiSchemaSchemaProvider
+internal class ApiSchemaSchemaProvider(ILogger<ApiSchemaSchemaProvider> _logger) : IApiSchemaSchemaProvider
 {
     private readonly Lazy<JsonSchema> _apiSchemaSchema =
         new(() =>

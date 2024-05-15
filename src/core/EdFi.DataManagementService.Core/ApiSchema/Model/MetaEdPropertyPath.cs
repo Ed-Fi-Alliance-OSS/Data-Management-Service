@@ -10,4 +10,4 @@ namespace EdFi.DataManagementService.Core.ApiSchema.Model;
 /// denoting a path from a starting entity through other entities. Role names on a property
 /// are expressed by prefix on the property name. Most commonly used as a merge directive path.
 /// </summary>
-public record struct MetaEdPropertyPath(string Value);
+internal record struct MetaEdPropertyPath(string Value);

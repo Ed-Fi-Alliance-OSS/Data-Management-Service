@@ -5,6 +5,8 @@
 
 using System.Net;
 using System.Text.Json;
+using EdFi.DataManagementService.Core;
+using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 using FakeItEasy;
@@ -27,9 +29,9 @@ public class DiscoveryModuleTests
         A.CallTo(() => versionProvider.Version).Returns("1.0");
         A.CallTo(() => versionProvider.ApplicationName).Returns("DMS");
 
-        var expectedDataModel = new DataModel("Ed-Fi", "5.0.0", "Ed-Fi data standard 5.0.0");
-        var dataModelProvider = A.Fake<IDataModelProvider>();
-        A.CallTo(() => dataModelProvider.GetDataModels()).Returns(new[] { expectedDataModel });
+        var expectedDataModelInfo = new DataModelInfo("Ed-Fi", "5.0.0", "Ed-Fi data standard 5.0.0");
+        var coreFacade = A.Fake<ICoreFacade>();
+        A.CallTo(() => coreFacade.GetDataModelInfo()).Returns(new[] { expectedDataModelInfo });
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -38,7 +40,7 @@ public class DiscoveryModuleTests
                 (collection) =>
                 {
                     collection.AddTransient((x) => versionProvider);
-                    collection.AddTransient((x) => dataModelProvider);
+                    collection.AddTransient((x) => coreFacade);
                 }
             );
         });

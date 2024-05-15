@@ -15,7 +15,7 @@ namespace EdFi.DataManagementService.Core.ApiSchema;
 /// <summary>
 /// Provides information from the ResourceSchema portion of an ApiSchema.json document
 /// </summary>
-public class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
+internal class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
 {
     private readonly Lazy<MetaEdResourceName> _resourceName =
         new(() =>

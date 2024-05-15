@@ -12,4 +12,4 @@ namespace EdFi.DataManagementService.Core.ApiSchema.Model;
 ///
 /// Note that EndpointNames coming from a URL are not required to be properly capitalized.
 /// </summary>
-public record struct EndpointName(string Value);
+internal record struct EndpointName(string Value);

@@ -9,7 +9,7 @@ using Json.Path;
 
 namespace EdFi.DataManagementService.Core.ApiSchema.Extensions;
 
-public static class JsonHelperExtensions
+internal static class JsonHelperExtensions
 {
     /// <summary>
     /// Helper to go from a scalar JSONPath selection directly to the selected JsonNode,
