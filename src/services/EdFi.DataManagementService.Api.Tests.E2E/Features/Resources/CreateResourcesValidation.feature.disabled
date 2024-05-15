@@ -154,3 +154,31 @@ Feature: Resources "Create" Operation validations
                     }
                   """
              Then it should respond with 200
+
+        @ignore
+        Scenario: Verify error handling when resource ID is included in body on POST
+            # The id value should be replaced with the resource created in the Background section
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
+                  """
+                    {
+                        "id": "{id}",
+                        "codeValue": "Sick Leave",
+                        "description": "Sick Leave Edited",
+                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                        "shortDescription": "Sick Leave"
+                    }
+                  """
+             Then it should respond with 400
+              And the response message body is
+                  """
+                    {
+                        "detail": "The request data was constructed incorrectly.",
+                        "type": "urn:ed-fi:api:bad-request:data",
+                        "title": "Data Validation Failed",
+                        "status": 400,
+                        "correlationId": null,
+                        "errors": [
+                            "Resource identifiers cannot be assigned by the client. The 'id' property should not be included in the request body."
+                        ]
+                    }
+                  """

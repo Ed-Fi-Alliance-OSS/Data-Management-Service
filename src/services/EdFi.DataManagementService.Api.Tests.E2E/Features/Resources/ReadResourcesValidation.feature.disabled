@@ -34,6 +34,8 @@ Feature: Resources "Read" Operation validations
                         "id": "{id}"
                         "codeValue": "Jury duty",
                         "description": "Jury duty",
+                        "effectiveBeginDate": "2024-05-14",
+                        "effectiveEndDate": "2024-05-14",
                         "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
                         "shortDescription": "Jury duty"
                         "_etag": "5250182869515346067",
