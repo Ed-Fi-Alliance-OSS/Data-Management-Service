@@ -8,7 +8,6 @@ using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
-using EdFi.DataManagementService.Core.Tests.Shared;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -19,7 +18,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [TestFixture]
 public class ExtractDocumentInfoMiddlewareTests
 {
-    public static IPipelineStep BuildMiddleware()
+    internal static IPipelineStep BuildMiddleware()
     {
         return new ExtractDocumentInfoMiddleware(NullLogger.Instance);
     }

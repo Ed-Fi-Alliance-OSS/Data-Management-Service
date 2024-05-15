@@ -9,7 +9,7 @@ using EdFi.DataManagementService.Core.Pipeline;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
-public class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider, ILogger _logger)
+internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider, ILogger _logger)
     : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)

@@ -5,7 +5,7 @@
 
 namespace EdFi.DataManagementService.Core.Model;
 
-public enum RequestMethod
+internal enum RequestMethod
 {
     POST,
     GET,

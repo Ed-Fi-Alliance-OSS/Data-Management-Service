@@ -12,7 +12,7 @@ namespace EdFi.DataManagementService.Core.ApiSchema;
 /// <summary>
 /// Loads and parses the ApiSchema.json from a file.
 /// </summary>
-public class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger) : IApiSchemaProvider
+internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger) : IApiSchemaProvider
 {
     private readonly Lazy<JsonNode> _apiSchemaRootNode =
         new(() =>

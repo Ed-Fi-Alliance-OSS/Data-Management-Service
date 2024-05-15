@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Core.Handler;
 /// <summary>
 /// Handles a delete request that has made it through the middleware pipeline steps.
 /// </summary>
-public class DeleteByIdHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger)
+internal class DeleteByIdHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger)
     : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
@@ -25,7 +25,7 @@ public class DeleteByIdHandler(IDocumentStoreRepository _documentStoreRepository
                 DocumentUuid: context.PathComponents.DocumentUuid,
                 ResourceInfo: context.ResourceInfo,
                 validateNoReferencesToDocument: false,
-                TraceId: context.FrontendRequest.TraceId
+                TraceId: new(context.FrontendRequest.TraceId)
             )
         );
 

@@ -7,11 +7,8 @@ using System.Net;
 using System.Threading.RateLimiting;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
-using EdFi.DataManagementService.Core;
-using EdFi.DataManagementService.Core.ApiSchema;
-using EdFi.DataManagementService.Core.Backend;
-using EdFi.DataManagementService.Core.Validation;
 using EdFi.DataManagementService.Backend.Deploy;
+using static EdFi.DataManagementService.Core.DmsCoreServiceExtensions;
 using Microsoft.Extensions.Options;
 using Serilog;
 
@@ -21,16 +18,10 @@ public static class WebApplicationBuilderExtensions
 {
     public static void AddServices(this WebApplicationBuilder webAppBuilder)
     {
-        webAppBuilder.Services.AddSingleton<IApiSchemaProvider, ApiSchemaFileLoader>();
-        webAppBuilder.Services.AddSingleton<IApiSchemaSchemaProvider, ApiSchemaSchemaProvider>();
-        webAppBuilder.Services.AddSingleton<IApiSchemaValidator, ApiSchemaValidator>();
-        webAppBuilder.Services.AddSingleton<ICoreFacade, CoreFacade>();
-        webAppBuilder.Services.AddSingleton<IDocumentStoreRepository, SuccessDocumentStoreRepository>();
-        webAppBuilder.Services.AddTransient<IDocumentValidator, DocumentValidator>();
-        webAppBuilder.Services.AddTransient<IEqualityConstraintValidator, EqualityConstraintValidator>();
+        webAppBuilder.Services.AddDmsDefaultConfiguration();
+
         webAppBuilder.Services.AddTransient<IContentProvider, ContentProvider>();
         webAppBuilder.Services.AddTransient<IVersionProvider, VersionProvider>();
-        webAppBuilder.Services.AddTransient<IDataModelProvider, DataModelProvider>();
         webAppBuilder.Services.AddTransient<IAssemblyProvider, AssemblyProvider>();
 
         webAppBuilder.Services.Configure<AppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"));

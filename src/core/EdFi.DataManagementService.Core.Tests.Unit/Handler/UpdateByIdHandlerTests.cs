@@ -18,7 +18,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 [TestFixture]
 public class UpdateByIdHandlerTests
 {
-    public static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
+    internal static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
     {
         return new UpdateByIdHandler(documentStoreRepository, NullLogger.Instance);
     }
@@ -26,7 +26,7 @@ public class UpdateByIdHandlerTests
     [TestFixture]
     public class Given_a_repository_that_returns_success : UpdateByIdHandlerTests
     {
-        public class Repository : NotImplementedDocumentStoreRepository
+        internal class Repository : NotImplementedDocumentStoreRepository
         {
             public override Task<UpdateResult> UpdateDocumentById(UpdateRequest updateRequest)
             {
@@ -54,7 +54,7 @@ public class UpdateByIdHandlerTests
     [TestFixture]
     public class Given_a_repository_that_returns_failure_not_exists : UpdateByIdHandlerTests
     {
-        public class Repository : NotImplementedDocumentStoreRepository
+        internal class Repository : NotImplementedDocumentStoreRepository
         {
             public override Task<UpdateResult> UpdateDocumentById(UpdateRequest updateRequest)
             {
@@ -82,7 +82,7 @@ public class UpdateByIdHandlerTests
     [TestFixture]
     public class Given_a_repository_that_returns_failure_reference : UpdateByIdHandlerTests
     {
-        public class Repository : NotImplementedDocumentStoreRepository
+        internal class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly string ResponseBody = "ReferencingDocumentInfo";
 
@@ -112,7 +112,7 @@ public class UpdateByIdHandlerTests
     [TestFixture]
     public class Given_a_repository_that_returns_failure_identity_conflict : UpdateByIdHandlerTests
     {
-        public class Repository : NotImplementedDocumentStoreRepository
+        internal class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly string ResponseBody = "FailureMessage";
 
@@ -142,7 +142,7 @@ public class UpdateByIdHandlerTests
     [TestFixture]
     public class Given_a_repository_that_returns_failure_write_conflict : UpdateByIdHandlerTests
     {
-        public class Repository : NotImplementedDocumentStoreRepository
+        internal class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly string ResponseBody = "FailureMessage";
 
@@ -172,7 +172,7 @@ public class UpdateByIdHandlerTests
     [TestFixture]
     public class Given_a_repository_that_returns_failure_immutable_identity : UpdateByIdHandlerTests
     {
-        public class Repository : NotImplementedDocumentStoreRepository
+        internal class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly string ResponseBody = "FailureMessage";
 
@@ -202,7 +202,7 @@ public class UpdateByIdHandlerTests
     [TestFixture]
     public class Given_a_repository_that_returns_failure_cascade_required : UpdateByIdHandlerTests
     {
-        public class Repository : NotImplementedDocumentStoreRepository
+        internal class Repository : NotImplementedDocumentStoreRepository
         {
             public override Task<UpdateResult> UpdateDocumentById(UpdateRequest updateRequest)
             {
@@ -230,7 +230,7 @@ public class UpdateByIdHandlerTests
     [TestFixture]
     public class Given_a_repository_that_returns_unknown_failure : UpdateByIdHandlerTests
     {
-        public class Repository : NotImplementedDocumentStoreRepository
+        internal class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly string ResponseBody = "FailureMessage";
 

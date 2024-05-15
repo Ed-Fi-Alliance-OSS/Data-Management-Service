@@ -28,7 +28,7 @@ public class APISchemaFileTests
     [TestFixture]
     public class Given_an_ApiSchema_file_with_invalid_resourceschemas
     {
-        public static CoreFacade BuildCoreFacade(IApiSchemaProvider apiSchemaProvider)
+        internal static CoreFacade BuildCoreFacade(IApiSchemaProvider apiSchemaProvider)
         {
             return new CoreFacade(
                 apiSchemaProvider,
@@ -42,7 +42,7 @@ public class APISchemaFileTests
             );
         }
 
-        public IApiSchemaProvider? apiSchemaProvider;
+        internal IApiSchemaProvider? apiSchemaProvider;
 
         [SetUp]
         public void Setup()

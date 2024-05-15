@@ -13,7 +13,7 @@ using Json.Schema;
 
 namespace EdFi.DataManagementService.Core.Validation;
 
-public interface IDocumentValidator
+internal interface IDocumentValidator
 {
     /// <summary>
     /// Validates a document body against a JSON Schema
@@ -28,7 +28,7 @@ public interface IDocumentValidator
     );
 }
 
-public class DocumentValidator() : IDocumentValidator
+internal class DocumentValidator() : IDocumentValidator
 {
     private static JsonSchema GetSchema(ResourceSchema resourceSchema, RequestMethod method)
     {

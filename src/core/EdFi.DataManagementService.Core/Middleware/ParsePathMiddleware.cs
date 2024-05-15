@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// Parses and validates the path from the frontend is well formed. Adds PathComponents
 /// to the context if it is.
 /// </summary>
-public partial class ParsePathMiddleware(ILogger _logger) : IPipelineStep
+internal partial class ParsePathMiddleware(ILogger _logger) : IPipelineStep
 {
     // Matches all of the following sample expressions:
     // /ed-fi/sections

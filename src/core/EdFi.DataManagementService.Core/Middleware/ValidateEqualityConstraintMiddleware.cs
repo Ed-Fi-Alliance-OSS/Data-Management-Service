@@ -17,7 +17,7 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// </summary>
 /// <param name="_logger"></param>
 /// <param name="_equalityConstraintValidator"></param>
-public class ValidateEqualityConstraintMiddleware(ILogger _logger, IEqualityConstraintValidator _equalityConstraintValidator) : IPipelineStep
+internal class ValidateEqualityConstraintMiddleware(ILogger _logger, IEqualityConstraintValidator _equalityConstraintValidator) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {

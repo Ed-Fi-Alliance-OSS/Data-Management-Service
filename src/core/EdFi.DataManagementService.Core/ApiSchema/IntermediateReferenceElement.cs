@@ -47,7 +47,7 @@ namespace EdFi.DataManagementService.Core.ApiSchema
     /// in an intermediate orientation.
     ////
     /// </summary>
-    public record IntermediateReferenceElement(
+    internal record IntermediateReferenceElement(
         /// <summary>
         /// The JsonPath to the identity value in the document being referenced
         /// </summary>

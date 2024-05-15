@@ -7,7 +7,7 @@ using EdFi.DataManagementService.Core.Backend;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
-public abstract class NotImplementedDocumentStoreRepository : IDocumentStoreRepository, IQueryHandler
+internal abstract class NotImplementedDocumentStoreRepository : IDocumentStoreRepository, IQueryHandler
 {
     public virtual Task<DeleteResult> DeleteDocumentById(DeleteRequest deleteRequest)
     {

@@ -5,9 +5,8 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
-using FakeItEasy;
 using FluentAssertions;
-using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.ApiSchema;
@@ -19,7 +18,7 @@ public class ApiSchemaValidatorTests
     [SetUp]
     public void Setup()
     {
-        var logger = A.Fake<ILogger<ApiSchemaSchemaProvider>>();
+        var logger = NullLogger<ApiSchemaSchemaProvider>.Instance;
         _validator = new ApiSchemaValidator(new ApiSchemaSchemaProvider(logger));
     }
 

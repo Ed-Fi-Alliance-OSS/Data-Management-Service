@@ -12,7 +12,7 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// <summary>
 /// Logs requests and responses, and converts exceptions to 500s
 /// </summary>
-public class CoreLoggingMiddleware(ILogger _logger) : IPipelineStep
+internal class CoreLoggingMiddleware(ILogger _logger) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
