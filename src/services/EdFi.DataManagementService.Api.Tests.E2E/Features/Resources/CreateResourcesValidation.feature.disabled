@@ -1,0 +1,141 @@
+# This is a rough draft feature for future use.
+@ignore
+Feature: Resources "Create" Operation validations
+
+        Background:
+            Given the Data Management Service must receive a token issued by "http://localhost"
+              And user is already authorized
+
+        @ignore
+        Scenario: Verify new resource can be created successfully
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+                  """
+                    {
+                        "codeValue": "Sick Leave",
+                        "description": "Sick Leave",
+                        "effectiveBeginDate": "2024-05-14",
+                        "effectiveEndDate": "2024-05-14",
+                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                        "shortDescription": "Sick Leave"
+                    }
+                  """
+             Then it should respond with 201
+              And the record can be retrieved with a GET request
+                            # TODO: when writing the step definition,
+                            # be sure to validate that the response matches the original payload,
+                            # except for the addition of the 'id' field
+
+        @ignore
+        Scenario: Verify error handling with POST using invalid data
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+                  """
+                    {
+                        "codeValue": "",
+                        "description": "Wrong Value",
+                        "effectiveBeginDate": "2024-05-14",
+                        "effectiveEndDate": "2024-05-14",
+                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                        "shortDescription": "Wrong Value"
+                    }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                    {
+                        "detail": "Data validation failed. See 'validationErrors' for details.",
+                        "type": "urn:ed-fi:api:bad-request:data",
+                        "title": "Data Validation Failed",
+                        "status": 400,
+                        "correlationId": null,
+                        "validationErrors": {
+                        "$.codeValue": [
+                            "CodeValue is required and should not be left empty."
+                        ]
+                  }
+                    }
+                  """
+
+        @ignore
+        Scenario: Verify error handling with POST using invalid data Forbidden
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+                  """
+                    {
+                        "codeValue": "",
+                        "description": "Wrong Value",
+                        "namespace": "uri://.org/wrong",
+                        "shortDescription": "Wrong Value"
+                    }
+                  """
+             Then it should respond with 403
+              And the response body is
+                  """
+                    {
+                        "detail": "Data validation failed. See 'validationErrors' for details.",
+                        "type": "urn:ed-fi:api:bad-request:data",
+                        "title": "Data Validation Failed",
+                        "status": 400,
+                        "correlationId": null,
+                        "validationErrors": {
+                        "$.codeValue": [
+                                "CodeValue is required and should not be left empty."
+                            ]
+                        }
+                    }
+                  """
+        @ignore
+        Scenario: Verify error handling with POST using empty body
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+                  """
+                    {
+                    }
+                  """
+             Then it should respond with 403
+              And the response body is
+                  """
+                    {
+                        "detail": "Data validation failed. See 'validationErrors' for details.",
+                        "type": "urn:ed-fi:api:bad-request:data",
+                        "title": "Data Validation Failed",
+                        "status": 400,
+                        "correlationId": null,
+                        "validationErrors": {
+                            "$.codeValue": [
+                                "CodeValue is required."
+                                ],
+                            "$.namespace": [
+                                "Namespace is required."
+                                ],
+                            "$.shortDescription": [
+                                "ShortDescription is required."
+                                ]
+                        }
+                    }
+                  """
+
+        @ignore
+        Scenario: Verify POST of existing record without changes
+                          #an existing record to
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+                  """
+                    {
+                             "codeValue": "Sick Lave",
+                             "description": "Sick Leave",
+                             "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                             "shortDescription": "Sick Leave"
+                         }
+                  """
+             Then it should respond with 200
+              And the record can be retrieved with a GET request
+
+        @ignore
+        Scenario: Verify POST of existing record (change non-key field) works
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+                  """
+                    {
+                        "codeValue": "Sick Lave",
+                        "description": "Sick Leave Edit",
+                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                        "shortDescription": "Sick Leave"
+                    }
+                  """
+             Then it should respond with 200
