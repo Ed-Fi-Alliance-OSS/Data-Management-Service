@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Pipeline;
 using static EdFi.DataManagementService.Core.Backend.UpsertResult;
+using EdFi.DataManagementService.Core.Model;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
@@ -20,19 +21,23 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
     {
         _logger.LogDebug("Entering UpsertHandler - {TraceId}", context.FrontendRequest.TraceId);
 
+        // A document uuid that will be assigned if this is a new document
+        DocumentUuid candidateDocumentUuid = new(Guid.NewGuid().ToString());
+
         UpsertResult result = await _documentStoreRepository.UpsertDocument(
             new(
                 ReferentialId: new(Guid.Empty),
                 ResourceInfo: context.ResourceInfo,
                 DocumentInfo: context.DocumentInfo,
-                EdfiDoc: new JsonObject(),
+                EdfiDoc: context.FrontendRequest.Body ?? new JsonObject(),
                 validateDocumentReferencesExist: false,
-                TraceId: new(context.FrontendRequest.TraceId)
+                TraceId: new(context.FrontendRequest.TraceId),
+                DocumentUuid: candidateDocumentUuid
             )
         );
 
         _logger.LogDebug(
-            "Document store UpsertDocument returned {UpsetResult}- {TraceId}",
+            "Document store UpsertDocument returned {UpsertResult}- {TraceId}",
             result.GetType().FullName,
             context.FrontendRequest.TraceId
         );

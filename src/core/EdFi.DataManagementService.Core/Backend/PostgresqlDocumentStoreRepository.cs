@@ -3,17 +3,27 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Core.Model;
 using System.Text.Json.Nodes;
 using Dapper;
+using EdFi.DataManagementService.Core.Model;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace EdFi.DataManagementService.Core.Backend;
 
-public class PostgresqlDocumentStoreRepository(ILogger<PostgresqlDocumentStoreRepository> _logger, string _connectionString)
-    : IDocumentStoreRepository, IQueryHandler
+public class PostgresqlDocumentStoreRepository(
+    ILogger<PostgresqlDocumentStoreRepository> _logger,
+    string _connectionString
+) : IDocumentStoreRepository, IQueryHandler
 {
+    // Returns an integer in the range 0..15 from the last byte of a DocumentUuid
+    private static int PartitionKeyFor(DocumentUuid documentUuid)
+    {
+        Guid asGuid = Guid.Parse(documentUuid.Value);
+        byte lastByte = asGuid.ToByteArray()[^1];
+        return lastByte % 16;
+    }
+
     public async Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)
     {
         _logger.LogDebug("Entering UpsertDocument - {TraceId}", upsertRequest.TraceId);
@@ -21,33 +31,54 @@ public class PostgresqlDocumentStoreRepository(ILogger<PostgresqlDocumentStoreRe
         await using (var conn = new NpgsqlConnection(_connectionString))
         {
             conn.Open();
-            var documentUuid = DocumentUuidGenerator.Generate();
             var command =
-                $"INSERT INTO public.documents(document_partition_key, document_uuid, resource_name, edfi_doc) " +
-                $"VALUES ({documentUuid.ToPartitionKey()}, '{documentUuid.Value}', '{upsertRequest.ResourceInfo.ResourceName.Value}', '{upsertRequest.EdfiDoc}');";
+                $"INSERT INTO public.documents(document_partition_key, document_uuid, resource_name, edfi_doc) "
+                + $"VALUES ({PartitionKeyFor(upsertRequest.DocumentUuid)}, '{upsertRequest.DocumentUuid.Value}', '{upsertRequest.ResourceInfo.ResourceName.Value}', '{upsertRequest.EdfiDoc.ToJsonString()}');";
             if (await conn.ExecuteAsync(command) == 1)
             {
-                return await Task.FromResult<UpsertResult>(new UpsertResult.InsertSuccess());
+                _logger.LogDebug("Insert Success: New Document UUID {DocumentUuid}", upsertRequest.DocumentUuid.Value);
+                return new UpsertResult.InsertSuccess(upsertRequest.DocumentUuid);
             }
         }
 
         _logger.LogError("Unknown Error - {TraceId}", upsertRequest.TraceId);
-        return await Task.FromResult<UpsertResult>(new UpsertResult.UnknownFailure("Unknown Failure"));
+        return new UpsertResult.UnknownFailure("Unknown Failure");
     }
 
     public async Task<GetResult> GetDocumentById(GetRequest getRequest)
     {
-        _logger.LogWarning(
-            "GetDocumentById(): Backend repository has been configured to always report success - {TraceId}",
-            getRequest.TraceId
-        );
-        return await Task.FromResult<GetResult>(
-            new GetResult.GetSuccess(
-                DocumentUuid: No.DocumentUuid,
-                EdfiDoc: new JsonObject(),
-                LastModifiedDate: DateTime.Now
-            )
-        );
+        _logger.LogDebug("Entering GetDocumentById - {TraceId}", getRequest.TraceId);
+
+        try
+        {
+            await using var dataSource = NpgsqlDataSource.Create(_connectionString);
+            await using var command = dataSource.CreateCommand(
+                $"SELECT edfi_doc FROM public.documents WHERE document_partition_key = {PartitionKeyFor(getRequest.DocumentUuid)} AND document_uuid = '{getRequest.DocumentUuid.Value}';"
+            );
+            await using var reader = await command.ExecuteReaderAsync();
+
+            if (!reader.HasRows)
+            {
+                return new GetResult.GetFailureNotExists();
+            }
+
+            // Assumes only one row returned
+            await reader.ReadAsync();
+            JsonNode? edfiDoc = JsonNode.Parse(reader.GetString(0));
+
+            if (edfiDoc == null)
+            {
+                return new GetResult.UnknownFailure("Unknown Failure");
+            }
+
+            // TODO: Documents table needs a last modified datetime
+            return new GetResult.GetSuccess(getRequest.DocumentUuid, edfiDoc, DateTime.Now);
+        }
+        catch
+        {
+            _logger.LogError("Unknown Error - {TraceId}", getRequest.TraceId);
+            return new GetResult.UnknownFailure("Unknown Failure");
+        }
     }
 
     public async Task<UpdateResult> UpdateDocumentById(UpdateRequest updateRequest)
@@ -74,11 +105,6 @@ public class PostgresqlDocumentStoreRepository(ILogger<PostgresqlDocumentStoreRe
             "QueryDocuments(): Backend repository has been configured to always report success - {TraceId}",
             queryRequest.TraceId
         );
-        return await Task.FromResult<QueryResult>(
-            new QueryResult.QuerySuccess(
-                TotalCount: 0,
-                EdfiDocs: []
-            )
-        );
+        return await Task.FromResult<QueryResult>(new QueryResult.QuerySuccess(TotalCount: 0, EdfiDocs: []));
     }
 }

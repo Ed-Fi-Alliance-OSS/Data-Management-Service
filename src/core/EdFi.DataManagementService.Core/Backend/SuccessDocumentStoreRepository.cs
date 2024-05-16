@@ -3,8 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Text.Json.Nodes;
-using Microsoft.Extensions.Logging;
 using EdFi.DataManagementService.Core.Model;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Backend;
 
@@ -12,7 +12,8 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// A document store repository that does nothing but return success
 /// </summary>
 internal class SuccessDocumentStoreRepository(ILogger<SuccessDocumentStoreRepository> _logger)
-    : IDocumentStoreRepository, IQueryHandler
+    : IDocumentStoreRepository,
+        IQueryHandler
 {
     public async Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)
     {
@@ -20,7 +21,9 @@ internal class SuccessDocumentStoreRepository(ILogger<SuccessDocumentStoreReposi
             "UpsertDocument(): Backend repository has been configured to always report success - {TraceId}",
             upsertRequest.TraceId
         );
-        return await Task.FromResult<UpsertResult>(new UpsertResult.InsertSuccess());
+        return await Task.FromResult<UpsertResult>(
+            new UpsertResult.InsertSuccess(new("00000000-0000-4000-8000-000000000000"))
+        );
     }
 
     public async Task<GetResult> GetDocumentById(GetRequest getRequest)
@@ -62,11 +65,6 @@ internal class SuccessDocumentStoreRepository(ILogger<SuccessDocumentStoreReposi
             "QueryDocuments(): Backend repository has been configured to always report success - {TraceId}",
             queryRequest.TraceId
         );
-        return await Task.FromResult<QueryResult>(
-            new QueryResult.QuerySuccess(
-                TotalCount: 0,
-                EdfiDocs: []
-            )
-        );
+        return await Task.FromResult<QueryResult>(new QueryResult.QuerySuccess(TotalCount: 0, EdfiDocs: []));
     }
 }
