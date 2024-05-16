@@ -23,7 +23,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\EdFi.DataManagementService.Frontend.AspNetCore\EdFi.DataManagementService.Frontend.AspNetCore.csproj" />
-    <ProjectReference Include="..\..\core\EdFi.DataManagementService.Core.Tests.Shared\EdFi.DataManagementService.Core.Tests.Shared.csproj" />
   </ItemGroup>
 
 </Project>

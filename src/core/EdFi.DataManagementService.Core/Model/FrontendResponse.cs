@@ -10,4 +10,5 @@ namespace EdFi.DataManagementService.Core.Model;
 /// </summary>
 /// <param name="StatusCode">The HTTP status code to return</param>
 /// <param name="Body">The body to return as a string, or null if there is no body to return</param>
-public record FrontendResponse(int StatusCode, string? Body);
+/// <param name="Headers">A dictionary of response headers to return</param>
+public record FrontendResponse(int StatusCode, string? Body, Dictionary<string, string> Headers);

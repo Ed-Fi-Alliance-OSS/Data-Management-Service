@@ -42,7 +42,7 @@ internal class ApiSchemaValidationMiddleware(
 
         if (SchemaValidationFailures.Any())
         {
-            context.FrontendResponse = new(StatusCode: 500, Body: string.Empty);
+            context.FrontendResponse = new(StatusCode: 500, Body: string.Empty, Headers: []);
         }
         else
         {

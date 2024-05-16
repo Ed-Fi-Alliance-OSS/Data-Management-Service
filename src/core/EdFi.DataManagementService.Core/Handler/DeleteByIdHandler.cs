@@ -37,12 +37,12 @@ internal class DeleteByIdHandler(IDocumentStoreRepository _documentStoreReposito
 
         context.FrontendResponse = result switch
         {
-            DeleteSuccess => new(StatusCode: 200, Body: null),
-            DeleteFailureNotExists => new(StatusCode: 404, Body: null),
-            DeleteFailureReference failure => new(StatusCode: 409, Body: failure.ReferencingDocumentInfo),
-            DeleteFailureWriteConflict failure => new(StatusCode: 409, Body: failure.FailureMessage),
-            UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage),
-            _ => new(StatusCode: 500, Body: "Unknown DeleteResult")
+            DeleteSuccess => new(StatusCode: 200, Body: null, Headers: []),
+            DeleteFailureNotExists => new(StatusCode: 404, Body: null, Headers: []),
+            DeleteFailureReference failure => new(StatusCode: 409, Body: failure.ReferencingDocumentInfo, Headers: []),
+            DeleteFailureWriteConflict failure => new(StatusCode: 409, Body: failure.FailureMessage, Headers: []),
+            UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage, Headers: []),
+            _ => new(StatusCode: 500, Body: "Unknown DeleteResult", Headers: [])
         };
     }
 }

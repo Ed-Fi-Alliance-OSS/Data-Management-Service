@@ -41,16 +41,16 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
 
         context.FrontendResponse = result switch
         {
-            UpdateSuccess => new(StatusCode: 204, Body: null),
-            UpdateFailureNotExists => new(StatusCode: 404, Body: null),
-            UpdateFailureReference failure => new(StatusCode: 409, Body: failure.ReferencingDocumentInfo),
+            UpdateSuccess => new(StatusCode: 204, Body: null, Headers: []),
+            UpdateFailureNotExists => new(StatusCode: 404, Body: null, Headers: []),
+            UpdateFailureReference failure => new(StatusCode: 409, Body: failure.ReferencingDocumentInfo, Headers: []),
             UpdateFailureIdentityConflict failure
-                => new(StatusCode: 400, Body: failure.ReferencingDocumentInfo),
-            UpdateFailureWriteConflict failure => new(StatusCode: 409, Body: failure.FailureMessage),
-            UpdateFailureImmutableIdentity failure => new(StatusCode: 409, Body: failure.FailureMessage),
-            UpdateFailureCascadeRequired => new(StatusCode: 400, Body: null),
-            UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage),
-            _ => new(StatusCode: 500, Body: "Unknown UpdateResult")
+                => new(StatusCode: 400, Body: failure.ReferencingDocumentInfo, Headers: []),
+            UpdateFailureWriteConflict failure => new(StatusCode: 409, Body: failure.FailureMessage, Headers: []),
+            UpdateFailureImmutableIdentity failure => new(StatusCode: 409, Body: failure.FailureMessage, Headers: []),
+            UpdateFailureCascadeRequired => new(StatusCode: 400, Body: null, Headers: []),
+            UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage, Headers: []),
+            _ => new(StatusCode: 500, Body: "Unknown UpdateResult", Headers: [])
         };
     }
 }
