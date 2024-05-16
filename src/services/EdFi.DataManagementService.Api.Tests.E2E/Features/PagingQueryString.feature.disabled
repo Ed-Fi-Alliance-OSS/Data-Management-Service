@@ -1,106 +1,91 @@
 Feature: Paging Support for GET requests for Ed-Fi Resources
 
-  
-  @ignore
-  Scenario: Ensure clients can't GET information when filtering using invalid values
-    When sending a GET request to "/ed-fi/schools?limit=<Value>"
-             """
-             """
-    Then it should respond with 400
-    And response message includes
-             | The value '<Value>' is not valid for Limit. |
-    Examples:
-            | Value                        |
-            | -1                           |
-            | 'zero'                       |
-            | '5; select * from users'     |
-            | '0)'                         |
-            | '1%27'                       | 
+        Background:
+            Given 5 schools exist:
+                  | schoolId  | nameOfInstitution                             | gradeLevels         | educationOrganizationCategories     |
+                  | 5         | School with max edorgId value                 | [ "Postsecondary" ] | [ "School" ]                        |
+                  | 6         | UT Austin College of Education Under Graduate | [ "Postsecondary" ] | [ "Educator Preparation Provider" ] |
+                  | 7         | UT Austin Extended Campus                     | [ "Postsecondary" ] | [ "Educator Preparation Provider" ] |
+                  | 255901001 | Grand Bend High School                        | [ "Tenth grade" ]   | [ "School" ]                        |
+                  | 255901044 | Grand Bend Middle School                      | [ "Seventh grade" ] | [ "School" ]                        |
 
-  
-  @ignore
-  Scenario: Ensure clients can get information when filtering by limit and and a valid offset 
-    Given 5 schools exist:
-            | schoolId   | nameOfInstitution                             | gradeLevels               | educationOrganizationCategories          |
-            | 5          | School with max edorgId value                 | [ "Postsecondary" ]       | [ "School" ]                             |
-            | 6          | UT Austin College of Education Under Graduate | [ "Postsecondary" ]       | [ "Educator Preparation Provider" ]      |
-            | 7          | UT Austin Extended Campus                     | [ "Postsecondary" ]       | [ "Educator Preparation Provider" ]      | 
-            | 255901001 | Grand Bend High School                         | [ "Tenth grade" ]         | [ "School" ]                             |
-            | 255901044 | Grand Bend Middle School                       | [ "Seventh grade" ]       | [ "School" ]                             | 
-          
-    When sending a GET request to "/ed-fi/schools?offset=3&limit=5"
-            """
-            """
-    Then it should respond with status 200
-    And the response array contains 2 items
-            #| schoolId   | nameOfInstitution             | gradeLevels               | educationOrganizationCategories          |
-            #| 255901001  | Grand Bend High School        | [ "Tenth grade" ]         | [ "School" ]                             |
-            #| 255901044  | Grand Bend Middle School      | [ "Seventh grade" ]       | [ "School" ]                             | 
-  
-  
-  @ignore
-  Scenario: Ensure clients can get information when filtering by limit and offset greater than the total
-    Given 5 schools exist:
-            | schoolId   | nameOfInstitution                             | gradeLevels               | educationOrganizationCategories          |
-            | 5          | School with max edorgId value                 | [ "Postsecondary" ]       | [ "School" ]                             |
-            | 6          | UT Austin College of Education Under Graduate | [ "Postsecondary" ]       | [ "Educator Preparation Provider" ]      |
-            | 7          | UT Austin Extended Campus                     | [ "Postsecondary" ]       | [ "Educator Preparation Provider" ]      | 
-            | 255901001 | Grand Bend High School                         | [ "Tenth grade" ]         | [ "School" ]                             |
-            | 255901044 | Grand Bend Middle School                       | [ "Seventh grade" ]       | [ "School" ]                             | 
-    When sending a GET request to "/ed-fi/schools?offset=6&limit=5"
-            """
-            """
-    Then it should respond with status 200
-    And response array contains 0 items
+        @ignore
+        Scenario: Ensure clients can't GET information when filtering using invalid limit
+             When sending a GET request to "/ed-fi/schools?limit=<Value>"
+             Then it should respond with 400
+              And response body is
+                  """
+                  {
+                      "detail": "The limit parameter was incorrect.",
+                      "type": "urn:ed-fi:api:bad-request:parameter",
+                      "title": "Parameter Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "errors": [
+                      "Limit must be omitted or set to a value between 0 and 500."
+                      ]
+                  }
+                  """
+        Examples:
+                  | Value                    |
+                  | -1                       |
+                  | 'zero'                   |
+                  | '5; select * from users' |
+                  | '0)'                     |
+                  | '1%27'                   |
 
-  @ignore
-  Scenario: Ensure clients can't GET information when filtering by limit and offset using invalid values
-    When sending a GET request to "/ed-fi/schools?limit=-6&offset=<Value>" 
-            
-    Then it should respond with 400
-    And response body contains
-            | Limit must be omitted or set to a value between 0 and 500.     |
-    Examples:
-            | Value                        |
-            | -1                           |
-            | 'zero'                       |
-            | '5; select * from users'     |
-            | '0)'                         |
-            | '1%27'                       |           
 
-  ##I need a few more details on this scenario
-  @ignore
-  Scenario: Ensure clients can't GET information when querying using an offset without providing any limit in the query string
-    Given these schools exist:
-            | schoolId   | nameOfInstitution                             | gradeLevels               | educationOrganizationCategories          |
-            | 5          | School with max edorgId value                 | [ "Postsecondary" ]       | [ "School" ]                             |
-            | 6          | UT Austin College of Education Under Graduate | [ "Postsecondary" ]       | [ "Educator Preparation Provider" ]      |        
-    When sending a GET request to "/ed-fi/schools?offset=1" 
-            """
-            """
-    Then it should respond with 400
-    And response body is
-            """
-            {
-                "error": "The request is invalid.",
-                "modelState": {
-                      "limit": [
-                            "Limit must be provided when using offset",
-                      ],
-                      "offset": [],
-                },
-            }
-            """
+        @ignore
+        Scenario: Ensure clients can get information when filtering by limit and and a valid offset
+            Given these values are set for limit and offset
+                  | limit | offset |
+                  | 5     | 3      |
+             When sending a GET request to "/ed-fi/schools?offset=<offset>&limit=<limit>"
+             Then it should respond with status 200
+              And the response array contains 2 items
 
-  
-  @ignore
-  Scenario: Ensure clients can GET information when filtering with limits and properties
-    Given these schools exist:
-            | schoolId   | nameOfInstitution                             | gradeLevels               | educationOrganizationCategories          |
-            | 5          | School with max edorgId value                 | [ "Postsecondary" ]       | [ "School" ]                             |
-            | 6          | UT Austin College of Education Under Graduate | [ "Postsecondary" ]       | [ "Educator Preparation Provider" ]      | 
-    When sending a GET request to "/ed-fi/schools?nameOfInstitution=UT+Austin+College+of+Education+Under+Graduate&limit=2" 
-            """
-            """
-    Then it should respond with 200
-    And response contains 1 item
+
+        @ignore
+        Scenario: Ensure clients can get information when filtering by limit and offset greater than the total
+             When sending a GET request to "/ed-fi/schools?offset=<offset>&limit=<limit>"
+             Then it should respond with status 200
+              And response array contains 0 items
+        Examples:
+                  | limit | offset |
+                  | 5     | 6      |
+
+        @ignore
+        Scenario: Ensure clients can't GET information when filtering by limit and offset using invalid offset
+             When sending a GET request to "/ed-fi/schools?limit=-6&offset=<Value>"
+             Then it should respond with 400
+              And response body contains
+                  | Limit must be omitted or set to a value between 0 and 500. |
+        Examples:
+                  | Value                    |
+                  | -1                       |
+                  | 'zero'                   |
+                  | '5; select * from users' |
+                  | '0)'                     |
+                  | '1%27'                   |
+
+##I need a few more details on this scenario
+        @ignore
+        Scenario: Ensure clients can't GET information when querying using an offset without providing any limit in the query string
+            Given these schools exist:
+                  | schoolId | nameOfInstitution                             | gradeLevels         | educationOrganizationCategories     |
+                  | 5        | School with max edorgId value                 | [ "Postsecondary" ] | [ "School" ]                        |
+                  | 6        | UT Austin College of Education Under Graduate | [ "Postsecondary" ] | [ "Educator Preparation Provider" ] |
+             When sending a GET request to "/ed-fi/schools?offset=1"
+             Then it should respond with 200
+              And response body contains 2 records
+
+
+        @ignore
+        Scenario: Ensure clients can GET information when filtering with limits and properties
+            Given these schools exist:
+                  | schoolId | nameOfInstitution                             | gradeLevels         | educationOrganizationCategories     |
+                  | 5        | School with max edorgId value                 | [ "Postsecondary" ] | [ "School" ]                        |
+                  | 6        | UT Austin College of Education Under Graduate | [ "Postsecondary" ] | [ "Educator Preparation Provider" ] |
+             When sending a GET request to "/ed-fi/schools?nameOfInstitution=UT+Austin+College+of+Education+Under+Graduate&limit=2"
+             Then it should respond with 200
+              And response contains 1 item
