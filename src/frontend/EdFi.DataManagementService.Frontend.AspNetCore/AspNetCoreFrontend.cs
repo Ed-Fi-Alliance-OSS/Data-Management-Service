@@ -55,53 +55,75 @@ public static class AspNetCoreFrontend
     /// <summary>
     /// Converts an AspNetCore HttpRequest to a DMS FrontendRequest
     /// </summary>
-    private static async Task<FrontendRequest> FromHttpRequest(HttpRequest request)
+    private static async Task<FrontendRequest> FromHttpRequest(HttpRequest HttpRequest)
     {
         return new(
-            Body: await ExtractJsonBodyFrom(request),
-            Path: ExtractPathFrom(request),
-            QueryParameters: request.Query.ToDictionary(x => x.Key, x => x.Value[^1] ?? ""),
-            TraceId: ExtractTraceIdFrom(request)
+            Body: await ExtractJsonBodyFrom(HttpRequest),
+            Path: ExtractPathFrom(HttpRequest),
+            QueryParameters: HttpRequest.Query.ToDictionary(x => x.Key, x => x.Value[^1] ?? ""),
+            TraceId: ExtractTraceIdFrom(HttpRequest)
         );
     }
 
     /// <summary>
     /// Converts a DMS FrontendResponse to an AspNetCore IResult
     /// </summary>
-    private static IResult ToResult(FrontendResponse frontendResponse)
+    private static IResult ToResult(FrontendResponse frontendResponse, HttpResponse httpResponse)
     {
-        return Results.Content(statusCode: frontendResponse.StatusCode, content: frontendResponse.Body);
+        foreach (var header in frontendResponse.Headers)
+        {
+            httpResponse.Headers.Append(header.Key, header.Value);
+        }
+
+        return Results.Content(
+            statusCode: frontendResponse.StatusCode,
+            content: frontendResponse.Body,
+            contentType: "application/json",
+            contentEncoding: System.Text.Encoding.UTF8
+        );
     }
 
     /// <summary>
     /// ASP.NET Core entry point for API POST requests to DMS
     /// </summary>
-    public static async Task<IResult> Upsert(HttpRequest request, ICoreFacade coreFacade)
+    public static async Task<IResult> Upsert(HttpContext httpContext, ICoreFacade coreFacade)
     {
-        return ToResult(await coreFacade.Upsert(await FromHttpRequest(request)));
+        return ToResult(
+            await coreFacade.Upsert(await FromHttpRequest(httpContext.Request)),
+            httpContext.Response
+        );
     }
 
     /// <summary>
     /// ASP.NET Core entry point for all API GET by id requests to DMS
     /// </summary>
-    public static async Task<IResult> GetById(HttpRequest request, ICoreFacade coreFacade)
+    public static async Task<IResult> GetById(HttpContext httpContext, ICoreFacade coreFacade)
     {
-        return ToResult(await coreFacade.GetById(await FromHttpRequest(request)));
+        return ToResult(
+            await coreFacade.GetById(await FromHttpRequest(httpContext.Request)),
+            httpContext.Response
+        );
     }
 
     /// <summary>
     /// ASP.NET Core entry point for all API PUT requests to DMS, which are "by id"
     /// </summary>
-    public static async Task<IResult> UpdateById(HttpRequest request, ICoreFacade coreFacade)
+    public static async Task<IResult> UpdateById(HttpContext httpContext, ICoreFacade coreFacade)
     {
-        return ToResult(await coreFacade.UpdateById(await FromHttpRequest(request)));
+        return ToResult(
+            await coreFacade.UpdateById(await FromHttpRequest(httpContext.Request)),
+            httpContext.Response
+        );
     }
 
     /// <summary>
     /// ASP.NET Core entry point for all API DELETE requests to DMS, which are "by id"
     /// </summary>
-    public static async Task<IResult> DeleteById(HttpRequest request, ICoreFacade coreFacade)
+    public static async Task<IResult> DeleteById(HttpContext httpContext, ICoreFacade coreFacade)
     {
-        return ToResult(await coreFacade.DeleteById(await FromHttpRequest(request)));
+        return ToResult(
+            await coreFacade.DeleteById(await FromHttpRequest(httpContext.Request)),
+            httpContext.Response
+        );
     }
 }

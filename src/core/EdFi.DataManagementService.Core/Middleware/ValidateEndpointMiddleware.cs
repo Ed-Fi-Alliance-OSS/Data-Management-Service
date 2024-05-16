@@ -30,7 +30,8 @@ internal class ValidateEndpointMiddleware(ILogger _logger) : IPipelineStep
             );
             context.FrontendResponse = new(
                 StatusCode: 404,
-                Body: $"Invalid resource '{context.PathComponents.EndpointName}'."
+                Body: $"Invalid resource '{context.PathComponents.EndpointName}'.",
+                Headers: []
             );
             return;
         }
@@ -50,7 +51,8 @@ internal class ValidateEndpointMiddleware(ILogger _logger) : IPipelineStep
             );
             context.FrontendResponse = new(
                 StatusCode: 404,
-                Body: $"Invalid resource '{context.PathComponents.EndpointName}'."
+                Body: $"Invalid resource '{context.PathComponents.EndpointName}'.",
+                Headers: []
             );
             return;
         }

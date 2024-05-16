@@ -3,20 +3,27 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using Microsoft.Extensions.Logging;
+using System.Net.Http.Headers;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Backend;
-using EdFi.DataManagementService.Core.Pipeline;
-using static EdFi.DataManagementService.Core.Backend.UpsertResult;
 using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.Pipeline;
+using Microsoft.Extensions.Logging;
+using static EdFi.DataManagementService.Core.Backend.UpsertResult;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
 /// <summary>
 /// Handles an upsert request that has made it through the middleware pipeline steps.
 /// </summary>
-internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger) : IPipelineStep
+internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger)
+    : IPipelineStep
 {
+    private static string ToResourcePath(PathComponents p, DocumentUuid u)
+    {
+        return $"/{p.ProjectNamespace.Value}/{p.EndpointName.Value}/{u.Value}";
+    }
+
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         _logger.LogDebug("Entering UpsertHandler - {TraceId}", context.FrontendRequest.TraceId);
@@ -44,14 +51,41 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
 
         context.FrontendResponse = result switch
         {
-            InsertSuccess => new(StatusCode: 201, Body: null),
-            UpdateSuccess => new(StatusCode: 200, Body: null),
-            UpsertFailureReference failure => new(StatusCode: 409, Body: failure.ReferencingDocumentInfo),
+            InsertSuccess
+                => new(
+                    StatusCode: 201,
+                    Body: null,
+                    Headers: new()
+                    {
+                        {
+                            "Location",
+                            ToResourcePath(context.PathComponents, ((InsertSuccess)result).NewDocumentUuid)
+                        }
+                    }
+                ),
+            UpdateSuccess
+                => new(
+                    StatusCode: 200,
+                    Body: null,
+                    Headers: new()
+                    {
+                        {
+                            "Location",
+                            ToResourcePath(
+                                context.PathComponents,
+                                ((UpdateSuccess)result).ExistingDocumentUuid
+                            )
+                        }
+                    }
+                ),
+            UpsertFailureReference failure
+                => new(StatusCode: 409, Body: failure.ReferencingDocumentInfo, Headers: []),
             UpsertFailureIdentityConflict failure
-                => new(StatusCode: 400, Body: failure.ReferencingDocumentInfo),
-            UpsertFailureWriteConflict failure => new(StatusCode: 409, Body: failure.FailureMessage),
-            UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage),
-            _ => new(StatusCode: 500, Body: "Unknown UpsertResult")
+                => new(StatusCode: 400, Body: failure.ReferencingDocumentInfo, Headers: []),
+            UpsertFailureWriteConflict failure
+                => new(StatusCode: 409, Body: failure.FailureMessage, Headers: []),
+            UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage, Headers: []),
+            _ => new(StatusCode: 500, Body: "Unknown UpsertResult", Headers: [])
         };
     }
 }

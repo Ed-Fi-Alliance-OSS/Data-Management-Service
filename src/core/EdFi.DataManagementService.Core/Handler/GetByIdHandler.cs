@@ -36,10 +36,10 @@ internal class GetByIdHandler(IDocumentStoreRepository _documentStoreRepository,
 
         context.FrontendResponse = result switch
         {
-            GetSuccess success => new(StatusCode: 200, Body: success.EdfiDoc.ToString()),
-            GetFailureNotExists => new(StatusCode: 404, Body: null),
-            UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage),
-            _ => new(StatusCode: 500, Body: "Unknown GetResult")
+            GetSuccess success => new(StatusCode: 200, Body: success.EdfiDoc.ToString(), Headers: []),
+            GetFailureNotExists => new(StatusCode: 404, Body: null, Headers: []),
+            UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage, Headers: []),
+            _ => new(StatusCode: 500, Body: "Unknown GetResult", Headers: [])
         };
     }
 }

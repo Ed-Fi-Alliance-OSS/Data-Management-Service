@@ -63,7 +63,8 @@ internal class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _d
 
             context.FrontendResponse = new(
                 StatusCode: failureResponse.status,
-                Body: JsonSerializer.Serialize(failureResponse, options)
+                Body: JsonSerializer.Serialize(failureResponse, options),
+                Headers: []
             );
         }
     }

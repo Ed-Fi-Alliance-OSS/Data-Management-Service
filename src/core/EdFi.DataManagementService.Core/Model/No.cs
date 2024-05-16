@@ -76,7 +76,7 @@ internal static class No
     /// <summary>
     /// The null object for FrontendResponse
     /// </summary>
-    public static readonly FrontendResponse FrontendResponse = new(StatusCode: 503, Body: "");
+    public static readonly FrontendResponse FrontendResponse = new(StatusCode: 503, Body: "", Headers: []);
 
     /// <summary>
     /// A constructor of a PipelineContext initialized with null objects
