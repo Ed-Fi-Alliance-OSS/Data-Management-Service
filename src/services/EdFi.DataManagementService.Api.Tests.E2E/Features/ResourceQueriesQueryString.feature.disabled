@@ -4,44 +4,27 @@ Feature: Query String handling for GET requests for Resource Queries
             Given a school exists
                   | schoolId  | nameOfInstitution      | gradeLevels       | educationOrganizationCategories |
                   | 255901001 | Grand Bend High School | [ "Tenth grade" ] | [ "School" ]                    |
+              And there is a valid AcademicWeek
+                  | weekIdentifier | beginDate  | endDate    | totalInstructionalDays |
+                  | Week One       | 2024-05-15 | 2024-05-15 | 2                      |
 
         @ignore
         Scenario: Ensure clients can GET information when querying by valid date
-            Given there is a valid AcademicWeek using a valid BeginDate
-                  | weekIdentifier | beginDate  | endDate    | totalInstructionalDays |
-                  | Week One       | 2024-05-15 | 2024-05-15 | 2                      |
-             When sending a GET request to "/ed-fi/academicWeeks?beginDate=2024-04-09"
+             When sending a GET request to "/ed-fi/academicWeeks?beginDate={beginDate}"
              Then it should respond with 200
               And response contains "weekIdentifier: "string" "
 
         @ignore
         Scenario: Ensure clients can't GET information when querying by invalid date
-            Given there is a valid AcademicWeek using an invalid BeginDate
-                  | weekIdentifier | beginDate | endDate    | totalInstructionalDays |
-                  | 2024-05-15     | -04-09    | 2024-04-09 | 0                      |
-             When sending a GET request to "/ed-fi/academicWeeks?beginDate=<beginDate>"
+             When sending a GET request to "/ed-fi/academicWeeks?beginDate=024-04-09"
              Then it should respond with 400
               And response body
                   """
-                  {
-                      "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data",
-                      "title": "Data Validation Failed",
-                      "status": 400,
-                      "correlationId": null,
-                      "validationErrors": {
-                          "$.beginDate": [
-                          "The value '<beginDate>' is not valid for BeginDate."
-                          ]
-                      }
-                  }
+                  {"detail":"Data validation failed. See 'validationErrors' for details.","type":"urn:ed-fi:api:bad-request:data","title":"Data Validation Failed","status":400,"correlationId":null,"validationErrors":{"$.beginDate":["The value '<beginDate>' is not valid for BeginDate."]}}
                   """
 
         @ignore
         Scenario: Ensure clients can GET information when querying by date out of specified dates
-            Given there is an unspecified Begin date
-                  | weekIdentifier | beginDate  | endDate    | totalInstructionalDays |
-                  | string         | 2027-04-09 | 2027-04-09 | 0                      |
              When sending a GET request to "/ed-fi/academicWeeks?beginDate=1970-04-09"
              Then it should respond with 200
               And response body is an empty array
@@ -51,25 +34,25 @@ Feature: Query String handling for GET requests for Resource Queries
             Given there is an invalid Begin date
                   | weekIdentifier | beginDate  | endDate    | totalInstructionalDays |
                   | string         | 2024-04-09 | 2024-04-09 | 0                      |
-             When sending a GET request to "/ed-fi/academicWeeks?beginDate=<beginDate>&endDate=<endDate>"
+             When sending a GET request to "/ed-fi/academicWeeks?beginDate={beginDate}&endDate={endDate}"
              Then it should respond with 200
               And response body is an empty array
 
         @ignore
         Scenario: Ensure clients can GET information when querying by string identifier
-            Given there is a valid Begin date
-                  | weekIdentifier | beginDate  | endDate    | totalInstructionalDays |
-                  | string         | 2024-04-09 | 2024-04-09 | 0                      |
-             When sending a GET request to "/ed-fi/academicWeeks?weekIdentifier=<weekIdentifier>"
+             When sending a GET request to "/ed-fi/academicWeeks?weekIdentifier=Week+One"
              Then it should respond with 200
-              And response body contains ""weekIdentifier": "string""
+              And response body contains
+                  """
+                  {"weekIdentifier": "Week One"}
+                  """
 
 
         @ignore
         Scenario: Ensure clients can GET information when querying by integer identifier
-            Given there is an invalid Begin date
-                  | weekIdentifier | beginDate  | endDate    | totalInstructionalDays |
-                  | Week test 1    | 2024-05-13 | 2024-05-13 | 1                      |
-             When sending a GET request to "/ed-fi/academicWeeks?weekIdentifier=<totalInstructionalDays>"
+             When sending a GET request to "/ed-fi/academicWeeks?totalInstructionalDays=2"
              Then it should respond with 200
-              And response body contains ""totalInstructionalDays": 0,"
+              And response body contains
+                  """
+                  {"totalInstructionalDays": 2}
+                  """
