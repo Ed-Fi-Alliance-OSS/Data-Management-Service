@@ -8,19 +8,46 @@ using EdFi.DataManagementService.Core.Model;
 namespace EdFi.DataManagementService.Core.Backend;
 
 /// <summary>
-/// An upsert request to a document repository
+/// An upsert request to a document repository. This extends UpdateRequest because
+/// sometimes upserts are actually updates.
 /// </summary>
-/// <param name="ReferentialId">The ReferentialId of the document to upsert</param>
-/// <param name="ResourceInfo">The ResourceInfo for the resource being upserted</param>
-/// <param name="DocumentInfo">The DocumentInfo for the document being upserted</param>
-/// <param name="EdfiDoc">The document to upsert</param>
-/// <param name="validateDocumentReferencesExist">If true, validates that all references in the document exist</param>
-/// <param name="TraceId">The request TraceId</param>
 public record UpsertRequest(
+    /// <summary>
+    /// The ReferentialId of the document to upsert
+    /// </summary>
     ReferentialId ReferentialId,
+    /// <summary>
+    /// The ResourceInfo of the document to upsert
+    /// </summary>
     ResourceInfo ResourceInfo,
+    /// <summary>
+    /// The DocumentInfo of the document to upsert
+    /// </summary>
     DocumentInfo DocumentInfo,
+    /// <summary>
+    /// The EdfiDoc of the document to upsert, as a JsonNode
+    /// </summary>
     JsonNode EdfiDoc,
+    /// <summary>
+    /// If true, validates that all references in the document exist
+    /// </summary>
     bool validateDocumentReferencesExist,
-    TraceId TraceId
-);
+    /// <summary>
+    /// The request TraceId
+    /// </summary>
+    TraceId TraceId,
+    /// <summary>
+    /// A candidate DocumentUuid of the document to upsert, used only
+    /// if the upsert happens as an insert
+    /// </summary>
+    DocumentUuid DocumentUuid
+)
+    : UpdateRequest(
+        ReferentialId,
+        ResourceInfo,
+        DocumentInfo,
+        EdfiDoc,
+        validateDocumentReferencesExist,
+        TraceId,
+        DocumentUuid
+    );

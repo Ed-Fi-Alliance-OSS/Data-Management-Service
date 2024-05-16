@@ -2,6 +2,8 @@
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
+using EdFi.DataManagementService.Core.Model;
+
 namespace EdFi.DataManagementService.Core.Backend;
 
 /// <summary>
@@ -12,12 +14,14 @@ public record UpsertResult
     /// <summary>
     /// A successful upsert request that took the form of an insert
     /// </summary>
-    public record InsertSuccess() : UpsertResult();
+    /// <param name="NewDocumentUuid">The DocumentUuid of the new document</param>
+    public record InsertSuccess(DocumentUuid NewDocumentUuid) : UpsertResult();
 
     /// <summary>
     /// A successful upsert request that took the form of an update
     /// </summary>
-    public record UpdateSuccess() : UpsertResult();
+    /// <param name="ExistingDocumentUuid">The DocumentUuid of the existing document</param>
+    public record UpdateSuccess(DocumentUuid ExistingDocumentUuid) : UpsertResult();
 
     /// <summary>
     /// A failure because referenced documents in the upserted document do not exist
