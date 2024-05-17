@@ -8,7 +8,7 @@ namespace EdFi.DataManagementService.Core.Response;
 /// <summary>
 /// Provides human-readable summary of the failure responses
 /// </summary>
-public record FailureResponse(
+internal record FailureResponse(
     /// <summary>
     /// A human-readable explanation specific to this occurrence of the problem.
     /// </summary>

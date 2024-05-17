@@ -53,23 +53,33 @@ internal class DocumentValidator() : IDocumentValidator
 
         var resourceSchemaValidator = GetSchema(resourceSchema, method);
         var results = resourceSchemaValidator.Evaluate(
-            frontendRequest.Body,
+             JsonNode.Parse(frontendRequest.Body),
             validatorEvaluationOptions
         );
 
-        var pruneResult = PruneOverpostedData(frontendRequest.Body, results);
+        var pruneResult = PruneOverpostedData(JsonNode.Parse(frontendRequest.Body), results);
 
         if (pruneResult is PruneResult.Pruned pruned)
         {
+            string stringValue = String.Empty;
+            if (pruned.prunedDocumentBody is JsonValue jsonValue)
+            {
+                stringValue = jsonValue.GetValue<string>();
+            }
+            else
+            {
+                stringValue = pruned.prunedDocumentBody.ToJsonString();
+            }
+
             // Used pruned body for the remainder of pipeline
             frontendRequest = frontendRequest with
             {
-                Body = pruned.prunedDocumentBody
+                Body = stringValue
             };
 
             // Now re-evaluate the pruned body
             results = resourceSchemaValidator.Evaluate(
-                frontendRequest.Body,
+                JsonNode.Parse(frontendRequest.Body),
                 validatorEvaluationOptions
             );
         }

@@ -107,7 +107,7 @@ public class ValidateEqualityConstraintMiddlewareTests
                 """;
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/bellschedules",
-                Body: JsonNode.Parse(jsonData),
+                Body: jsonData,
                 QueryParameters: [],
                 "traceId"
             );
@@ -159,7 +159,7 @@ public class ValidateEqualityConstraintMiddlewareTests
                 """;
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/bellschedules",
-                Body: JsonNode.Parse(jsonData),
+                Body: jsonData,
                 QueryParameters: [],
                 "traceId"
             );

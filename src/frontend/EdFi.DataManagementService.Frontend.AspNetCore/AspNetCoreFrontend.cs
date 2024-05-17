@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
@@ -32,7 +31,7 @@ public static class AspNetCoreFrontend
     /// <summary>
     /// Takes an HttpRequest and returns a deserialized request body
     /// </summary>
-    private static async Task<JsonNode?> ExtractJsonBodyFrom(HttpRequest request)
+    private static async Task<string?> ExtractJsonBodyFrom(HttpRequest request)
     {
         using Stream body = request.Body;
         using StreamReader bodyReader = new(body);
@@ -41,7 +40,7 @@ public static class AspNetCoreFrontend
         if (string.IsNullOrEmpty(requestBodyString))
             return null;
 
-        return JsonNode.Parse(requestBodyString);
+        return requestBodyString;
     }
 
     /// <summary>

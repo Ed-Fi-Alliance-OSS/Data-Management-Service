@@ -25,7 +25,7 @@ internal partial class ExtractDocumentInfoMiddleware(ILogger _logger) : IPipelin
         );
 
         Debug.Assert(context.FrontendRequest.Body != null, "Body was null, pipeline config invalid");
-        JsonNode documentBody = context.FrontendRequest.Body;
+        JsonNode documentBody = JsonNode.Parse(context.FrontendRequest.Body) ?? new JsonObject();
 
         var (documentIdentity, superclassIdentity) = context.ResourceSchema.ExtractIdentities(documentBody);
 

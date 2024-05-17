@@ -62,13 +62,7 @@ public class ExtractDocumentInfoMiddlewareTests
 
             context = new(
                 new(
-                    Body: JsonNode.Parse(
-                        """
-                        {
-                            "schoolId": "123"
-                        }
-"""
-                    )!,
+                    Body: """{"schoolId": "123"}"""!,
                     QueryParameters: [],
                     Path: "/ed-fi/schools",
                     TraceId: new("123")

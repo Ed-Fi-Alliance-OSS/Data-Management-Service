@@ -3,9 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Encodings.Web;
 using System.Text.Json;
-using Microsoft.Extensions.Logging;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Response;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
@@ -36,16 +38,31 @@ internal class CoreLoggingMiddleware(ILogger _logger) : IPipelineStep
                 )
             );
 
+            FailureResponse failureResponse;
+
+            var validationErrors = new Dictionary<string, string[]>();
+
+            var value = new List<string>
+            {
+                ex.Message
+            };
+            validationErrors.Add("$.", value.ToArray());
+
+            failureResponse = FailureResponse.ForDataValidation(
+                "Data validation failed. See 'validationErrors' for details.",
+                validationErrors,
+                new List<string>().ToArray()
+            );
+
+            var options = new JsonSerializerOptions
+            {
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            };
+
             // Replace the frontend response (if any) with a 500 error
             context.FrontendResponse = new(
-                StatusCode: 500,
-                JsonSerializer.Serialize(
-                    new
-                    {
-                        message = "The server encountered an unexpected condition that prevented it from fulfilling the request.",
-                        traceId = context.FrontendRequest.TraceId
-                    }
-                )
+                StatusCode: 400,
+                JsonSerializer.Serialize(failureResponse, options)
             );
         }
     }
