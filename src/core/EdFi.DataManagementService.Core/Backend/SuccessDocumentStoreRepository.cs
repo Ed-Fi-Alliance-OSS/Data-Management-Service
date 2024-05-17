@@ -22,7 +22,7 @@ internal class SuccessDocumentStoreRepository(ILogger<SuccessDocumentStoreReposi
             upsertRequest.TraceId
         );
         return await Task.FromResult<UpsertResult>(
-            new UpsertResult.InsertSuccess(new("00000000-0000-4000-8000-000000000000"))
+            new UpsertResult.InsertSuccess(upsertRequest.DocumentUuid)
         );
     }
 
