@@ -5,7 +5,6 @@
 
 using System.Text.Json.Nodes;
 using Dapper;
-using EdFi.DataManagementService.Core.Model;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -14,16 +13,8 @@ namespace EdFi.DataManagementService.Core.Backend;
 public class PostgresqlDocumentStoreRepository(
     ILogger<PostgresqlDocumentStoreRepository> _logger,
     string _connectionString
-) : IDocumentStoreRepository, IQueryHandler
+) : PartitionedRepository, IDocumentStoreRepository, IQueryHandler
 {
-    // Returns an integer in the range 0..15 from the last byte of a DocumentUuid
-    private static int PartitionKeyFor(DocumentUuid documentUuid)
-    {
-        Guid asGuid = Guid.Parse(documentUuid.Value);
-        byte lastByte = asGuid.ToByteArray()[^1];
-        return lastByte % 16;
-    }
-
     public async Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)
     {
         _logger.LogDebug("Entering UpsertDocument - {TraceId}", upsertRequest.TraceId);
@@ -118,7 +109,10 @@ public class PostgresqlDocumentStoreRepository(
                 case 1:
                     return await Task.FromResult<UpdateResult>(new UpdateResult.UpdateSuccess());
                 case 0:
-                    return await Task.FromResult<UpdateResult>(new UpdateResult.UpdateFailureNotExists());
+                    {
+                        _logger.LogError("Error: Record to update does not exist - {TraceId}", updateRequest.TraceId);
+                        return await Task.FromResult<UpdateResult>(new UpdateResult.UpdateFailureNotExists());
+                    }
                 default:
                     {
                         _logger.LogError("Unknown Error - {TraceId}", updateRequest.TraceId);
