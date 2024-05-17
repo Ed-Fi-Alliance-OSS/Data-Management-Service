@@ -11,4 +11,7 @@ namespace EdFi.DataManagementService.Core.Model;
 /// <param name="StatusCode">The HTTP status code to return</param>
 /// <param name="Body">The body to return as a string, or null if there is no body to return</param>
 /// <param name="Headers">A dictionary of response headers to return</param>
-public record FrontendResponse(int StatusCode, string? Body, Dictionary<string, string> Headers);
+/// <param name="LocationHeaderPath">The path portion of a Location header URL for the response,
+///     or null if there is no Location header for the response. Always begins with a forward-slash.
+///     There will never be a Location entry in the Headers dictionary if this is not null.</param>
+public record FrontendResponse(int StatusCode, string? Body, Dictionary<string, string> Headers, string? LocationHeaderPath = null);

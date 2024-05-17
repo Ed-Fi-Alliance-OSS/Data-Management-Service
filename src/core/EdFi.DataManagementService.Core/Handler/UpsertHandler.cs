@@ -54,28 +54,21 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
                 => new(
                     StatusCode: 201,
                     Body: null,
-                    Headers: new()
-                    {
-                        {
-                            "Location",
-                            ToResourcePath(context.PathComponents, ((InsertSuccess)result).NewDocumentUuid)
-                        }
-                    }
+                    Headers: [],
+                    LocationHeaderPath: ToResourcePath(
+                        context.PathComponents,
+                        ((InsertSuccess)result).NewDocumentUuid
+                    )
                 ),
             UpdateSuccess
                 => new(
                     StatusCode: 200,
                     Body: null,
-                    Headers: new()
-                    {
-                        {
-                            "Location",
-                            ToResourcePath(
-                                context.PathComponents,
-                                ((UpdateSuccess)result).ExistingDocumentUuid
-                            )
-                        }
-                    }
+                    Headers: [],
+                    LocationHeaderPath: ToResourcePath(
+                        context.PathComponents,
+                        ((UpdateSuccess)result).ExistingDocumentUuid
+                    )
                 ),
             UpsertFailureReference failure
                 => new(StatusCode: 409, Body: failure.ReferencingDocumentInfo, Headers: []),
