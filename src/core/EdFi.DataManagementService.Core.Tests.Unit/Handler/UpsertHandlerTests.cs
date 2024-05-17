@@ -30,7 +30,7 @@ public class UpsertHandlerTests
         {
             public override Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)
             {
-                return Task.FromResult<UpsertResult>(new UpdateSuccess(new DocumentUuid(Guid.NewGuid().ToString())));
+                return Task.FromResult<UpsertResult>(new UpdateSuccess(upsertRequest.DocumentUuid));
             }
         }
 
@@ -48,6 +48,8 @@ public class UpsertHandlerTests
         {
             context.FrontendResponse.StatusCode.Should().Be(200);
             context.FrontendResponse.Body.Should().BeNull();
+            context.FrontendResponse.Headers.Count.Should().Be(1);
+            context.FrontendResponse.Headers["Location"].Should().NotBeNullOrEmpty();
         }
     }
 
@@ -78,6 +80,7 @@ public class UpsertHandlerTests
         {
             context.FrontendResponse.StatusCode.Should().Be(409);
             context.FrontendResponse.Body.Should().Be(Repository.ResponseBody);
+            context.FrontendResponse.Headers.Should().BeEmpty();
         }
     }
 
@@ -108,6 +111,7 @@ public class UpsertHandlerTests
         {
             context.FrontendResponse.StatusCode.Should().Be(400);
             context.FrontendResponse.Body.Should().Be(Repository.ResponseBody);
+            context.FrontendResponse.Headers.Should().BeEmpty();
         }
     }
 
@@ -138,6 +142,7 @@ public class UpsertHandlerTests
         {
             context.FrontendResponse.StatusCode.Should().Be(409);
             context.FrontendResponse.Body.Should().Be(Repository.ResponseBody);
+            context.FrontendResponse.Headers.Should().BeEmpty();
         }
     }
 
@@ -168,6 +173,7 @@ public class UpsertHandlerTests
         {
             context.FrontendResponse.StatusCode.Should().Be(500);
             context.FrontendResponse.Body.Should().Be(Repository.ResponseBody);
+            context.FrontendResponse.Headers.Should().BeEmpty();
         }
     }
 }
