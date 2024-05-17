@@ -3,8 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Pipeline;
 using static EdFi.DataManagementService.Core.Backend.UpdateResult;
@@ -20,6 +20,7 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         _logger.LogDebug("Entering UpdateByIdHandler - {TraceId}", context.FrontendRequest.TraceId);
+        Trace.Assert(context.FrontendRequest.Body != null, "Unexpected null Body on Frontend Request from PUT");
 
         UpdateResult result = await _documentStoreRepository.UpdateDocumentById(
             new(
@@ -27,7 +28,7 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
                 DocumentUuid: context.PathComponents.DocumentUuid,
                 ResourceInfo: context.ResourceInfo,
                 DocumentInfo: context.DocumentInfo,
-                EdfiDoc: new JsonObject(),
+                EdfiDoc: context.FrontendRequest.Body,
                 validateDocumentReferencesExist: false,
                 TraceId: new(context.FrontendRequest.TraceId)
             )
