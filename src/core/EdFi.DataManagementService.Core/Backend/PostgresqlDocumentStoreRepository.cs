@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-using Dapper;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -19,32 +18,40 @@ public class PostgresqlDocumentStoreRepository(
     {
         _logger.LogDebug("Entering UpsertDocument - {TraceId}", upsertRequest.TraceId);
 
-        await using (var conn = new NpgsqlConnection(_connectionString))
+        try
         {
-            conn.Open();
-            var command =
+            await using var conn = new NpgsqlConnection(_connectionString);
+            await conn.OpenAsync();
+
+            await using var cmd = new NpgsqlCommand(
                 $"INSERT INTO public.documents(document_partition_key, document_uuid, resource_name, edfi_doc) "
-                + $"VALUES (@document_partition_key, @document_uuid, @resource_name, @edfi_doc);";
-            if (
-                await conn.ExecuteAsync(
-                    command,
-                    new
-                    {
-                        document_partition_key = PartitionKeyFor(upsertRequest.DocumentUuid),
-                        document_uuid = upsertRequest.DocumentUuid.Value,
-                        resource_name = upsertRequest.ResourceInfo.ResourceName.Value,
-                        edfi_doc = upsertRequest.EdfiDoc.ToJsonString()
-                    }
-                ) == 1
+                + $"VALUES (@document_partition_key, @document_uuid, @resource_name, @edfi_doc);",
+                conn
             )
+            {
+                Parameters =
+                {
+                    new("document_partition_key", PartitionKeyFor(upsertRequest.DocumentUuid)),
+                    new("document_uuid", upsertRequest.DocumentUuid.Value),
+                    new("resource_name", upsertRequest.ResourceInfo.ResourceName.Value),
+                    new("edfi_doc", upsertRequest.EdfiDoc.ToJsonString())
+                }
+            };
+
+            if (await cmd.ExecuteNonQueryAsync() == 1)
             {
                 _logger.LogDebug("Insert Success - {TraceId}", upsertRequest.TraceId);
                 return new UpsertResult.InsertSuccess(upsertRequest.DocumentUuid);
             }
-        }
 
-        _logger.LogError("Unknown Error - {TraceId}", upsertRequest.TraceId);
-        return new UpsertResult.UnknownFailure("Unknown Failure");
+            _logger.LogError("Unknown Error - {TraceId}", upsertRequest.TraceId);
+            return new UpsertResult.UnknownFailure("Unknown Failure");
+        }
+        catch
+        {
+            _logger.LogError("Unknown Error - {TraceId}", upsertRequest.TraceId);
+            return new UpsertResult.UnknownFailure("Unknown Failure");
+        }
     }
 
     public async Task<GetResult> GetDocumentById(GetRequest getRequest)
@@ -86,40 +93,52 @@ public class PostgresqlDocumentStoreRepository(
     public async Task<UpdateResult> UpdateDocumentById(UpdateRequest updateRequest)
     {
         _logger.LogDebug("Entering UpdateDocumentById - {TraceId}", updateRequest.TraceId);
-        await using (var conn = new NpgsqlConnection(_connectionString))
+
+        try
         {
-            conn.Open();
-            var command =
+            await using var conn = new NpgsqlConnection(_connectionString);
+            await conn.OpenAsync();
+
+            await using var cmd = new NpgsqlCommand(
                 $"UPDATE public.documents "
                 + $"SET edfi_doc = @edfi_doc "
-                + $"WHERE document_partition_key = @document_partition_key AND document_uuid = @document_uuid;";
-
-            var result = await conn.ExecuteAsync(
-                command,
-                new
+                + $"WHERE document_partition_key = @document_partition_key AND document_uuid = @document_uuid;",
+                conn
+            )
+            {
+                Parameters =
                 {
-                    document_partition_key = PartitionKeyFor(updateRequest.DocumentUuid),
-                    document_uuid = updateRequest.DocumentUuid.Value,
-                    edfi_doc = updateRequest.EdfiDoc.ToJsonString()
+                    new("document_partition_key", PartitionKeyFor(updateRequest.DocumentUuid)),
+                    new("document_uuid", updateRequest.DocumentUuid.Value),
+                    new("edfi_doc", updateRequest.EdfiDoc.ToJsonString())
                 }
-            );
+            };
+
+            var result = await cmd.ExecuteNonQueryAsync();
 
             switch (result)
             {
                 case 1:
                     return await Task.FromResult<UpdateResult>(new UpdateResult.UpdateSuccess());
                 case 0:
-                    {
-                        _logger.LogError("Error: Record to update does not exist - {TraceId}", updateRequest.TraceId);
-                        return await Task.FromResult<UpdateResult>(new UpdateResult.UpdateFailureNotExists());
-                    }
+                    _logger.LogError(
+                        "Error: Record to update does not exist - {TraceId}",
+                        updateRequest.TraceId
+                    );
+                    return await Task.FromResult<UpdateResult>(new UpdateResult.UpdateFailureNotExists());
                 default:
-                    {
-                        _logger.LogError("Unknown Error - {TraceId}", updateRequest.TraceId);
-                        return await Task.FromResult<UpdateResult>(
-                            new UpdateResult.UnknownFailure("Unknown Failure"));
-                    }
+                    _logger.LogError("Unknown Error - {TraceId}", updateRequest.TraceId);
+                    return await Task.FromResult<UpdateResult>(
+                        new UpdateResult.UnknownFailure("Unknown Failure")
+                    );
             }
+        }
+        catch
+        {
+            _logger.LogError("Unknown Error - {TraceId}", updateRequest.TraceId);
+            return await Task.FromResult<UpdateResult>(
+                new UpdateResult.UnknownFailure("Unknown Failure")
+            );
         }
     }
 
