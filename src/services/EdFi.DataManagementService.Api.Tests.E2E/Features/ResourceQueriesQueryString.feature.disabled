@@ -30,13 +30,19 @@ Feature: Query String handling for GET requests for Resource Queries
         Scenario: Ensure clients can GET information when querying by date out of specified dates
              When sending a GET request to "/ed-fi/academicWeeks?beginDate=1970-04-09"
              Then it should respond with 200
-              And response body is an empty array
+              And response body is
+              """
+              {[]}
+              """
 
         @ignore
         Scenario: Ensure clients can GET information when querying by begin date and end date that are not part of the data
              When sending a GET request to "/ed-fi/academicWeeks?beginDate=2024-05-20&endDate=2024-05-20"
              Then it should respond with 200
-              And response body is an empty array
+              And response body is
+              """
+              {[]}
+              """
 
         @ignore
         Scenario: Ensure clients can GET information when querying by string identifier
