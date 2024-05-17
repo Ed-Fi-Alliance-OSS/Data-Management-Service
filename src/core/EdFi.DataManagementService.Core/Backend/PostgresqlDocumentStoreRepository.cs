@@ -33,10 +33,21 @@ public class PostgresqlDocumentStoreRepository(
             conn.Open();
             var command =
                 $"INSERT INTO public.documents(document_partition_key, document_uuid, resource_name, edfi_doc) "
-                + $"VALUES ({PartitionKeyFor(upsertRequest.DocumentUuid)}, '{upsertRequest.DocumentUuid.Value}', '{upsertRequest.ResourceInfo.ResourceName.Value}', '{upsertRequest.EdfiDoc.ToJsonString()}');";
-            if (await conn.ExecuteAsync(command) == 1)
+                + $"VALUES (@document_partition_key, @document_uuid, @resource_name, @edfi_doc);";
+            if (
+                await conn.ExecuteAsync(
+                    command,
+                    new
+                    {
+                        document_partition_key = PartitionKeyFor(upsertRequest.DocumentUuid),
+                        document_uuid = upsertRequest.DocumentUuid.Value,
+                        resource_name = upsertRequest.ResourceInfo.ResourceName.Value,
+                        edfi_doc = upsertRequest.EdfiDoc.ToJsonString()
+                    }
+                ) == 1
+            )
             {
-                _logger.LogDebug("Insert Success: New Document UUID {DocumentUuid}", upsertRequest.DocumentUuid.Value);
+                _logger.LogDebug("Insert Success - {TraceId}", upsertRequest.TraceId);
                 return new UpsertResult.InsertSuccess(upsertRequest.DocumentUuid);
             }
         }
@@ -83,11 +94,39 @@ public class PostgresqlDocumentStoreRepository(
 
     public async Task<UpdateResult> UpdateDocumentById(UpdateRequest updateRequest)
     {
-        _logger.LogWarning(
-            "UpdateDocumentById(): Backend repository has been configured to always report success - {TraceId}",
-            updateRequest.TraceId
-        );
-        return await Task.FromResult<UpdateResult>(new UpdateResult.UpdateSuccess());
+        _logger.LogDebug("Entering UpdateDocumentById - {TraceId}", updateRequest.TraceId);
+        await using (var conn = new NpgsqlConnection(_connectionString))
+        {
+            conn.Open();
+            var command =
+                $"UPDATE public.documents "
+                + $"SET edfi_doc = @edfi_doc "
+                + $"WHERE document_partition_key = @document_partition_key AND document_uuid = @document_uuid;";
+
+            var result = await conn.ExecuteAsync(
+                command,
+                new
+                {
+                    document_partition_key = PartitionKeyFor(updateRequest.DocumentUuid),
+                    document_uuid = updateRequest.DocumentUuid.Value,
+                    edfi_doc = updateRequest.EdfiDoc.ToJsonString()
+                }
+            );
+
+            switch (result)
+            {
+                case 1:
+                    return await Task.FromResult<UpdateResult>(new UpdateResult.UpdateSuccess());
+                case 0:
+                    return await Task.FromResult<UpdateResult>(new UpdateResult.UpdateFailureNotExists());
+                default:
+                    {
+                        _logger.LogError("Unknown Error - {TraceId}", updateRequest.TraceId);
+                        return await Task.FromResult<UpdateResult>(
+                            new UpdateResult.UnknownFailure("Unknown Failure"));
+                    }
+            }
+        }
     }
 
     public async Task<DeleteResult> DeleteDocumentById(DeleteRequest deleteRequest)

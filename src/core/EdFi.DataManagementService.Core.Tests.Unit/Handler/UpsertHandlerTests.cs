@@ -30,7 +30,7 @@ public class UpsertHandlerTests
         {
             public override Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)
             {
-                return Task.FromResult<UpsertResult>(new UpdateSuccess(new("123")));
+                return Task.FromResult<UpsertResult>(new UpdateSuccess(new DocumentUuid(Guid.NewGuid().ToString())));
             }
         }
 
