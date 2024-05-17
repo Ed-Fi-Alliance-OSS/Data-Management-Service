@@ -48,8 +48,8 @@ public class UpsertHandlerTests
         {
             context.FrontendResponse.StatusCode.Should().Be(200);
             context.FrontendResponse.Body.Should().BeNull();
-            context.FrontendResponse.Headers.Count.Should().Be(1);
-            context.FrontendResponse.Headers["Location"].Should().NotBeNullOrEmpty();
+            context.FrontendResponse.Headers.Count.Should().Be(0);
+            context.FrontendResponse.LocationHeaderPath.Should().NotBeNullOrEmpty();
         }
     }
 
@@ -81,6 +81,7 @@ public class UpsertHandlerTests
             context.FrontendResponse.StatusCode.Should().Be(409);
             context.FrontendResponse.Body.Should().Be(Repository.ResponseBody);
             context.FrontendResponse.Headers.Should().BeEmpty();
+            context.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }
     }
 
@@ -112,6 +113,7 @@ public class UpsertHandlerTests
             context.FrontendResponse.StatusCode.Should().Be(400);
             context.FrontendResponse.Body.Should().Be(Repository.ResponseBody);
             context.FrontendResponse.Headers.Should().BeEmpty();
+            context.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }
     }
 
@@ -143,6 +145,7 @@ public class UpsertHandlerTests
             context.FrontendResponse.StatusCode.Should().Be(409);
             context.FrontendResponse.Body.Should().Be(Repository.ResponseBody);
             context.FrontendResponse.Headers.Should().BeEmpty();
+            context.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }
     }
 
@@ -174,6 +177,7 @@ public class UpsertHandlerTests
             context.FrontendResponse.StatusCode.Should().Be(500);
             context.FrontendResponse.Body.Should().Be(Repository.ResponseBody);
             context.FrontendResponse.Headers.Should().BeEmpty();
+            context.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }
     }
 }
