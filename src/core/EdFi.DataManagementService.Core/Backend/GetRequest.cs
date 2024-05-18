@@ -3,7 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Backend;
 
@@ -13,4 +14,5 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// <param name="DocumentUuid">The document UUID to get</param>
 /// <param name="ResourceInfo">The ResourceInfo for the resource being retrieved</param>
 /// <param name="TraceId">The request TraceId</param>
-public record GetRequest(DocumentUuid DocumentUuid, ResourceInfo ResourceInfo, TraceId TraceId);
+internal record GetRequest(IDocumentUuid DocumentUuid, IResourceInfo ResourceInfo, ITraceId TraceId)
+    : IGetRequest;

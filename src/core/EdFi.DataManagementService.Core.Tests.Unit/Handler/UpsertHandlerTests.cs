@@ -4,13 +4,15 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.Backend;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
-using static EdFi.DataManagementService.Core.Backend.UpsertResult;
+using static EdFi.DataManagementService.Core.External.Backend.UpsertResult;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
@@ -28,7 +30,7 @@ public class UpsertHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public override Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
                 return Task.FromResult<UpsertResult>(new UpdateSuccess(upsertRequest.DocumentUuid));
             }
@@ -60,7 +62,7 @@ public class UpsertHandlerTests
         {
             public static readonly string ResponseBody = "ReferencingDocumentInfo";
 
-            public override Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
                 return Task.FromResult<UpsertResult>(new UpsertFailureReference(ResponseBody));
             }
@@ -92,7 +94,7 @@ public class UpsertHandlerTests
         {
             public static readonly string ResponseBody = "FailureMessage";
 
-            public override Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
                 return Task.FromResult<UpsertResult>(new UpsertFailureIdentityConflict(ResponseBody));
             }
@@ -124,7 +126,7 @@ public class UpsertHandlerTests
         {
             public static readonly string ResponseBody = "FailureMessage";
 
-            public override Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
                 return Task.FromResult<UpsertResult>(new UpsertFailureWriteConflict(ResponseBody));
             }
@@ -156,7 +158,7 @@ public class UpsertHandlerTests
         {
             public static readonly string ResponseBody = "FailureMessage";
 
-            public override Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
                 return Task.FromResult<UpsertResult>(new UnknownFailure(ResponseBody));
             }

@@ -6,6 +6,7 @@
 using System.Net;
 using System.Text.Json;
 using EdFi.DataManagementService.Core;
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
@@ -30,8 +31,8 @@ public class DiscoveryModuleTests
         A.CallTo(() => versionProvider.ApplicationName).Returns("DMS");
 
         var expectedDataModelInfo = new DataModelInfo("Ed-Fi", "5.0.0", "Ed-Fi data standard 5.0.0");
-        var coreFacade = A.Fake<ICoreFacade>();
-        A.CallTo(() => coreFacade.GetDataModelInfo()).Returns(new[] { expectedDataModelInfo });
+        var apiService = A.Fake<IApiService>();
+        A.CallTo(() => apiService.GetDataModelInfo()).Returns([expectedDataModelInfo]);
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -40,7 +41,7 @@ public class DiscoveryModuleTests
                 (collection) =>
                 {
                     collection.AddTransient((x) => versionProvider);
-                    collection.AddTransient((x) => coreFacade);
+                    collection.AddTransient((x) => apiService);
                 }
             );
         });

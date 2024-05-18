@@ -5,12 +5,14 @@
 
 using System.Net;
 using System.Threading.RateLimiting;
+using EdFi.DataManagementService.Backend.Deploy;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
-using EdFi.DataManagementService.Backend.Deploy;
-using static EdFi.DataManagementService.Core.DmsCoreServiceExtensions;
 using Microsoft.Extensions.Options;
 using Serilog;
+using static EdFi.DataManagementService.Backend.Postgresql.PostgresqlBackendServiceExtensions;
+using static EdFi.DataManagementService.Core.DmsCoreServiceExtensions;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 
@@ -18,22 +20,19 @@ public static class WebApplicationBuilderExtensions
 {
     public static void AddServices(this WebApplicationBuilder webAppBuilder)
     {
-        webAppBuilder.Services.AddDmsDefaultConfiguration(webAppBuilder.Configuration.GetSection("ConnectionStrings:DatabaseConnection").Value ?? string.Empty);
-
-        webAppBuilder.Services.AddTransient<IContentProvider, ContentProvider>();
-        webAppBuilder.Services.AddTransient<IVersionProvider, VersionProvider>();
-        webAppBuilder.Services.AddTransient<IAssemblyProvider, AssemblyProvider>();
-
-        webAppBuilder.Services.Configure<AppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"));
-        webAppBuilder.Services.AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>();
-
-        webAppBuilder.Services.Configure<ConnectionStrings>(
-            webAppBuilder.Configuration.GetSection("ConnectionStrings")
-        );
-        webAppBuilder.Services.AddSingleton<
-            IValidateOptions<ConnectionStrings>,
-            ConnectionStringsValidator
-        >();
+        webAppBuilder
+            .Services.AddDmsDefaultConfiguration()
+            .AddPostgresqlBackend(
+                webAppBuilder.Configuration.GetSection("ConnectionStrings:DatabaseConnection").Value
+                    ?? string.Empty
+            )
+            .AddTransient<IContentProvider, ContentProvider>()
+            .AddTransient<IVersionProvider, VersionProvider>()
+            .AddTransient<IAssemblyProvider, AssemblyProvider>()
+            .Configure<AppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"))
+            .AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>()
+            .Configure<ConnectionStrings>(webAppBuilder.Configuration.GetSection("ConnectionStrings"))
+            .AddSingleton<IValidateOptions<ConnectionStrings>, ConnectionStringsValidator>();
 
         if (webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
         {
@@ -64,15 +63,12 @@ public static class WebApplicationBuilderExtensions
             {
                 webAppBuilder.Services.AddSingleton<
                     IDatabaseDeploy,
-                    DataManagementService.Backend.Postgresql.Deploy.DatabaseDeploy
+                    Backend.Postgresql.Deploy.DatabaseDeploy
                 >();
             }
             else
             {
-                webAppBuilder.Services.AddSingleton<
-                    IDatabaseDeploy,
-                    DataManagementService.Backend.Mssql.Deploy.DatabaseDeploy
-                >();
+                webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Mssql.Deploy.DatabaseDeploy>();
             }
         }
     }

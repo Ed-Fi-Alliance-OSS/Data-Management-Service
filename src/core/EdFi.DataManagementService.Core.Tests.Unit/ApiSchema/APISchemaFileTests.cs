@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Validation;
 using FakeItEasy;
@@ -28,9 +29,9 @@ public class APISchemaFileTests
     [TestFixture]
     public class Given_an_ApiSchema_file_with_invalid_resourceschemas
     {
-        internal static CoreFacade BuildCoreFacade(IApiSchemaProvider apiSchemaProvider)
+        internal static ApiService BuildCoreFacade(IApiSchemaProvider apiSchemaProvider)
         {
-            return new CoreFacade(
+            return new ApiService(
                 apiSchemaProvider,
                 new ApiSchemaValidator(
                     new ApiSchemaSchemaProvider(NullLogger<ApiSchemaSchemaProvider>.Instance)
@@ -38,7 +39,7 @@ public class APISchemaFileTests
                 new SuccessDocumentStoreRepository(NullLogger<SuccessDocumentStoreRepository>.Instance),
                 new DocumentValidator(),
                 new EqualityConstraintValidator(),
-                NullLogger<CoreFacade>.Instance
+                NullLogger<ApiService>.Instance
             );
         }
 
@@ -61,11 +62,11 @@ public class APISchemaFileTests
             public async Task When_no_resourcename_element()
             {
                 // Arrange
-                CoreFacade coreFacade = BuildCoreFacade(apiSchemaProvider!);
-                FrontendRequest request = new(new("/ed-fi/noresourcenames/123"), null, [], new(""));
+                ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
+                FrontendRequest request = new(new("/ed-fi/noresourcenames/123"), null, [], new TraceId(""));
 
                 // Act
-                FrontendResponse response = await coreFacade.GetById(request);
+                IFrontendResponse response = await apiService.GetById(request);
 
                 // Assert
                 response.StatusCode.Should().Be(500);
@@ -76,11 +77,11 @@ public class APISchemaFileTests
             public async Task When_no_isdescriptor_element()
             {
                 // Arrange
-                CoreFacade coreFacade = BuildCoreFacade(apiSchemaProvider!);
-                FrontendRequest request = new(new("/ed-fi/noIsDescriptors/123"), null, [], new(""));
+                ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
+                FrontendRequest request = new(new("/ed-fi/noIsDescriptors/123"), null, [], new TraceId(""));
 
                 // Act
-                FrontendResponse response = await coreFacade.GetById(request);
+                IFrontendResponse response = await apiService.GetById(request);
 
                 // Assert
                 response.StatusCode.Should().Be(500);
@@ -91,11 +92,11 @@ public class APISchemaFileTests
             public async Task When_no_allowidentityupdates_element()
             {
                 // Arrange
-                CoreFacade coreFacade = BuildCoreFacade(apiSchemaProvider!);
-                FrontendRequest request = new(new("/ed-fi/noallowidentityupdates/123"), null, [], new(""));
+                ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
+                FrontendRequest request = new(new("/ed-fi/noallowidentityupdates/123"), null, [], new TraceId(""));
 
                 // Act
-                FrontendResponse response = await coreFacade.GetById(request);
+                IFrontendResponse response = await apiService.GetById(request);
 
                 // Assert
                 response.StatusCode.Should().Be(500);
@@ -111,12 +112,12 @@ public class APISchemaFileTests
             public async Task When_no_isshoolyearenumeration_element()
             {
                 // Arrange
-                CoreFacade coreFacade = BuildCoreFacade(apiSchemaProvider!);
+                ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
                 FrontendRequest request =
-                    new(new("/ed-fi/noIsSchoolYearEnumerations/123"), null, [], new(""));
+                    new(new("/ed-fi/noIsSchoolYearEnumerations/123"), null, [], new TraceId(""));
 
                 // Act
-                FrontendResponse response = await coreFacade.GetById(request);
+                IFrontendResponse response = await apiService.GetById(request);
 
                 // Assert
                 response.StatusCode.Should().Be(500);
@@ -127,11 +128,11 @@ public class APISchemaFileTests
             public async Task When_no_jsonschemaforinsert_element()
             {
                 // Arrange
-                CoreFacade coreFacade = BuildCoreFacade(apiSchemaProvider!);
-                FrontendRequest request = new(new("/ed-fi/noJsonSchemaForInserts/123"), null, [], new(""));
+                ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
+                FrontendRequest request = new(new("/ed-fi/noJsonSchemaForInserts/123"), null, [], new TraceId(""));
 
                 // Act
-                FrontendResponse response = await coreFacade.GetById(request);
+                IFrontendResponse response = await apiService.GetById(request);
 
                 // Assert
                 response.StatusCode.Should().Be(500);
@@ -142,11 +143,11 @@ public class APISchemaFileTests
             public async Task When_no_identityjsonpaths_element()
             {
                 // Arrange
-                CoreFacade coreFacade = BuildCoreFacade(apiSchemaProvider!);
-                FrontendRequest request = new(new("/ed-fi/noidentityjsonpaths/123"), null, [], new(""));
+                ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
+                FrontendRequest request = new(new("/ed-fi/noidentityjsonpaths/123"), null, [], new TraceId(""));
 
                 // Act
-                FrontendResponse response = await coreFacade.GetById(request);
+                IFrontendResponse response = await apiService.GetById(request);
 
                 // Assert
                 response.StatusCode.Should().Be(500);
@@ -157,11 +158,11 @@ public class APISchemaFileTests
             public async Task When_no_equalityconstraints_element()
             {
                 // Arrange
-                CoreFacade coreFacade = BuildCoreFacade(apiSchemaProvider!);
-                FrontendRequest request = new(new("/ed-fi/noequalityconstraints/123"), null, [], new(""));
+                ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
+                FrontendRequest request = new(new("/ed-fi/noequalityconstraints/123"), null, [], new TraceId(""));
 
                 // Act
-                FrontendResponse response = await coreFacade.GetById(request);
+                IFrontendResponse response = await apiService.GetById(request);
 
                 // Assert
                 response.StatusCode.Should().Be(500);
@@ -172,11 +173,11 @@ public class APISchemaFileTests
             public async Task When_no_issubclass_element()
             {
                 // Arrange
-                CoreFacade coreFacade = BuildCoreFacade(apiSchemaProvider!);
-                FrontendRequest request = new(new("/ed-fi/noIsSubclasses/123"), null, [], new(""));
+                ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
+                FrontendRequest request = new(new("/ed-fi/noIsSubclasses/123"), null, [], new TraceId(""));
 
                 // Act
-                FrontendResponse response = await coreFacade.GetById(request);
+                IFrontendResponse response = await apiService.GetById(request);
 
                 // Assert
                 response.StatusCode.Should().Be(500);
@@ -187,11 +188,11 @@ public class APISchemaFileTests
             public async Task When_no_subclasstype_element()
             {
                 // Arrange
-                CoreFacade coreFacade = BuildCoreFacade(apiSchemaProvider!);
-                FrontendRequest request = new(new("/ed-fi/noSubClassTypes/123"), null, [], new(""));
+                ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
+                FrontendRequest request = new(new("/ed-fi/noSubClassTypes/123"), null, [], new TraceId(""));
 
                 // Act
-                FrontendResponse response = await coreFacade.GetById(request);
+                IFrontendResponse response = await apiService.GetById(request);
 
                 // Assert
                 response.StatusCode.Should().Be(500);
@@ -202,11 +203,11 @@ public class APISchemaFileTests
             public async Task When_no_superclassresourcename_element()
             {
                 // Arrange
-                CoreFacade coreFacade = BuildCoreFacade(apiSchemaProvider!);
-                FrontendRequest request = new(new("/ed-fi/nosuperclassresourcenames/123"), null, [], new(""));
+                ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
+                FrontendRequest request = new(new("/ed-fi/nosuperclassresourcenames/123"), null, [], new TraceId(""));
 
                 // Act
-                FrontendResponse response = await coreFacade.GetById(request);
+                IFrontendResponse response = await apiService.GetById(request);
 
                 // Assert
                 response.StatusCode.Should().Be(500);
@@ -217,11 +218,11 @@ public class APISchemaFileTests
             public async Task When_no_superclassprojectname_element()
             {
                 // Arrange
-                CoreFacade coreFacade = BuildCoreFacade(apiSchemaProvider!);
-                FrontendRequest request = new(new("/ed-fi/nosuperclassprojectnames/123"), null, [], new(""));
+                ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
+                FrontendRequest request = new(new("/ed-fi/nosuperclassprojectnames/123"), null, [], new TraceId(""));
 
                 // Act
-                FrontendResponse response = await coreFacade.GetById(request);
+                IFrontendResponse response = await apiService.GetById(request);
 
                 // Assert
                 response.StatusCode.Should().Be(500);
@@ -232,12 +233,12 @@ public class APISchemaFileTests
             public async Task When_no_superclassidentitydocumentkey_element()
             {
                 // Arrange
-                CoreFacade coreFacade = BuildCoreFacade(apiSchemaProvider!);
+                ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
                 FrontendRequest request =
-                    new(new("/ed-fi/nosuperclassidentitydocumentkeys/123"), null, [], new(""));
+                    new(new("/ed-fi/nosuperclassidentitydocumentkeys/123"), null, [], new TraceId(""));
 
                 // Act
-                FrontendResponse response = await coreFacade.GetById(request);
+                IFrontendResponse response = await apiService.GetById(request);
 
                 // Assert
                 response.StatusCode.Should().Be(500);
@@ -248,12 +249,12 @@ public class APISchemaFileTests
             public async Task When_no_subclassidentitydocumentkey_element()
             {
                 // Arrange
-                CoreFacade coreFacade = BuildCoreFacade(apiSchemaProvider!);
+                ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
                 FrontendRequest request =
-                    new(new("/ed-fi/noSubclassIdentityDocumentKeys/123"), null, [], new(""));
+                    new(new("/ed-fi/noSubclassIdentityDocumentKeys/123"), null, [], new TraceId(""));
 
                 // Act
-                FrontendResponse response = await coreFacade.GetById(request);
+                IFrontendResponse response = await apiService.GetById(request);
 
                 // Assert
                 response.StatusCode.Should().Be(500);

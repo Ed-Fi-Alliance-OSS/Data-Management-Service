@@ -4,9 +4,11 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using Microsoft.Extensions.Logging;
-using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Pipeline;
-using static EdFi.DataManagementService.Core.Backend.DeleteResult;
+using static EdFi.DataManagementService.Core.External.Backend.DeleteResult;
+using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.Backend;
+using EdFi.DataManagementService.Core.External.Backend;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
@@ -21,11 +23,11 @@ internal class DeleteByIdHandler(IDocumentStoreRepository _documentStoreReposito
         _logger.LogDebug("Entering DeleteByIdHandler - {TraceId}", context.FrontendRequest.TraceId);
 
         DeleteResult result = await _documentStoreRepository.DeleteDocumentById(
-            new(
+            new DeleteRequest(
                 DocumentUuid: context.PathComponents.DocumentUuid,
                 ResourceInfo: context.ResourceInfo,
                 validateNoReferencesToDocument: false,
-                TraceId: new(context.FrontendRequest.TraceId)
+                TraceId: context.FrontendRequest.TraceId
             )
         );
 

@@ -7,7 +7,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Core;
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using FakeItEasy;
@@ -22,7 +22,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 [TestFixture]
 public class XsdMetaDataModuleTests
 {
-    private ICoreFacade? _coreFacade;
+    private IApiService? _apiService;
     private IContentProvider? _contentProvider;
 
     [SetUp]
@@ -31,8 +31,8 @@ public class XsdMetaDataModuleTests
         var expectededfiModel = new DataModelInfo("Ed-Fi", "5.0.0", "Ed-Fi data standard 5.0.0");
         var expectedtpdmModel = new DataModelInfo("Tpdm", "1.0.0", "TPDM data standard 1.0.0");
 
-        _coreFacade = A.Fake<ICoreFacade>();
-        A.CallTo(() => _coreFacade.GetDataModelInfo())
+        _apiService = A.Fake<IApiService>();
+        A.CallTo(() => _apiService.GetDataModelInfo())
             .Returns(new[] { expectededfiModel, expectedtpdmModel });
 
         var files = new List<string> { "file1.xsd", "file2.xsd", "file3.xsd" };
@@ -51,7 +51,7 @@ public class XsdMetaDataModuleTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((x) => _coreFacade!);
+                    collection.AddTransient((x) => _apiService!);
                 }
             );
         });
@@ -82,7 +82,7 @@ public class XsdMetaDataModuleTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((x) => _coreFacade!);
+                    collection.AddTransient((x) => _apiService!);
                     collection.AddTransient((x) => _contentProvider!);
                 }
             );
@@ -129,7 +129,7 @@ public class XsdMetaDataModuleTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((x) => _coreFacade!);
+                    collection.AddTransient((x) => _apiService!);
                     collection.AddTransient((x) => _contentProvider!);
                 }
             );
@@ -167,7 +167,7 @@ public class XsdMetaDataModuleTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((x) => _coreFacade!);
+                    collection.AddTransient((x) => _apiService!);
                     collection.AddTransient((x) => _contentProvider!);
                 }
             );
@@ -196,7 +196,7 @@ public class XsdMetaDataModuleTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((x) => _coreFacade!);
+                    collection.AddTransient((x) => _apiService!);
                     collection.AddTransient((x) => _contentProvider!);
                 }
             );

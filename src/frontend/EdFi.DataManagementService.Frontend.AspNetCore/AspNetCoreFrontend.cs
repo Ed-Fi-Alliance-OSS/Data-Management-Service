@@ -4,7 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Core;
+using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 
@@ -33,9 +34,9 @@ public static class AspNetCoreFrontend
     /// <summary>
     /// Takes an HttpRequest and returns a unique trace identifier
     /// </summary>
-    private static string ExtractTraceIdFrom(HttpRequest request)
+    private static TraceId ExtractTraceIdFrom(HttpRequest request)
     {
-        return request.HttpContext.TraceIdentifier;
+        return new TraceId(request.HttpContext.TraceIdentifier);
     }
 
     /// <summary>
@@ -55,7 +56,7 @@ public static class AspNetCoreFrontend
     /// Converts a DMS FrontendResponse to an AspNetCore IResult
     /// </summary>
     private static IResult ToResult(
-        FrontendResponse frontendResponse,
+        IFrontendResponse frontendResponse,
         HttpContext httpContext,
         string dmsPath
     )
@@ -85,12 +86,12 @@ public static class AspNetCoreFrontend
     /// ASP.NET Core entry point for API POST requests to DMS
     /// </summary>
     /// <param name="httpContext">The HttpContext for the request</param>
-    /// <param name="coreFacade">The injected DMS core facade</param>
+    /// <param name="apiService">The injected DMS core facade</param>
     /// <param name="dmsPath">The portion of the request path relevant to DMS</param>
-    public static async Task<IResult> Upsert(HttpContext httpContext, ICoreFacade coreFacade, string dmsPath)
+    public static async Task<IResult> Upsert(HttpContext httpContext, IApiService apiService, string dmsPath)
     {
         return ToResult(
-            await coreFacade.Upsert(await FromRequest(httpContext.Request, dmsPath)),
+            await apiService.Upsert(await FromRequest(httpContext.Request, dmsPath)),
             httpContext,
             dmsPath
         );
@@ -99,10 +100,10 @@ public static class AspNetCoreFrontend
     /// <summary>
     /// ASP.NET Core entry point for all API GET by id requests to DMS
     /// </summary>
-    public static async Task<IResult> GetById(HttpContext httpContext, ICoreFacade coreFacade, string dmsPath)
+    public static async Task<IResult> GetById(HttpContext httpContext, IApiService apiService, string dmsPath)
     {
         return ToResult(
-            await coreFacade.GetById(await FromRequest(httpContext.Request, dmsPath)),
+            await apiService.GetById(await FromRequest(httpContext.Request, dmsPath)),
             httpContext,
             dmsPath
         );
@@ -113,12 +114,12 @@ public static class AspNetCoreFrontend
     /// </summary>
     public static async Task<IResult> UpdateById(
         HttpContext httpContext,
-        ICoreFacade coreFacade,
+        IApiService apiService,
         string dmsPath
     )
     {
         return ToResult(
-            await coreFacade.UpdateById(await FromRequest(httpContext.Request, dmsPath)),
+            await apiService.UpdateById(await FromRequest(httpContext.Request, dmsPath)),
             httpContext,
             dmsPath
         );
@@ -129,12 +130,12 @@ public static class AspNetCoreFrontend
     /// </summary>
     public static async Task<IResult> DeleteById(
         HttpContext httpContext,
-        ICoreFacade coreFacade,
+        IApiService apiService,
         string dmsPath
     )
     {
         return ToResult(
-            await coreFacade.DeleteById(await FromRequest(httpContext.Request, dmsPath)),
+            await apiService.DeleteById(await FromRequest(httpContext.Request, dmsPath)),
             httpContext,
             dmsPath
         );
