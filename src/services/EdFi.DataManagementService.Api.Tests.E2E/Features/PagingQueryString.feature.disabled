@@ -1,13 +1,13 @@
 Feature: Paging Support for GET requests for Ed-Fi Resources
 
         Background:
-            Given 5 schools exist:
-                  | schoolId  | nameOfInstitution                             | gradeLevels         | educationOrganizationCategories     |
-                  | 5         | School with max edorgId value                 | [ "Postsecondary" ] | [ "School" ]                        |
-                  | 6         | UT Austin College of Education Under Graduate | [ "Postsecondary" ] | [ "Educator Preparation Provider" ] |
-                  | 7         | UT Austin Extended Campus                     | [ "Postsecondary" ] | [ "Educator Preparation Provider" ] |
-                  | 255901001 | Grand Bend High School                        | [ "Tenth grade" ]   | [ "School" ]                        |
-                  | 255901044 | Grand Bend Middle School                      | [ "Seventh grade" ] | [ "School" ]                        |
+            Given these schools:
+                  | schoolId | nameOfInstitution | gradeLevels         | educationOrganizationCategories     |
+                  | 1        | School 1          | [ "Postsecondary" ] | [ "Educator Preparation Provider" ] |
+                  | 2        | School 2          | [ "Tenth grade" ]   | [ "School" ]                        |
+                  | 3        | School 3          | [ "Seventh grade" ] | [ "School" ]                        |
+                  | 5        | School 5          | [ "Postsecondary" ] | [ "School" ]                        |
+                  | 6        | School 6          | [ "Postsecondary" ] | [ "Educator Preparation Provider" ] |
 
         @ignore
         Scenario: Ensure clients can't GET information when filtering using invalid limit
@@ -15,7 +15,14 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
              Then it should respond with 400
               And response body is
                   """
-                  {"detail": "The limit parameter was incorrect.","type": "urn:ed-fi:api:bad-request:parameter","title": "Parameter Validation Failed","status": 400,"correlationId": null,"errors": ["Limit must be omitted or set to a value between 0 and 500."]}
+                  {
+                    "detail": "The limit parameter was incorrect.",
+                    "type": "urn:ed-fi:api:bad-request:parameter",
+                    "title": "Parameter Validation Failed",
+                    "status": 400,
+                    "correlationId": null,
+                    "errors": ["Limit must be omitted or set to a value between 0 and 500."]
+                  }
                   """
         Examples:
                   | Value                    |
@@ -31,8 +38,36 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
              Then it should respond with status 200
               And the response body is
                   """
-                  [{"id":"56f9effc3c7f44f496fd8d6783dd9360","localEducationAgencyReference":{"localEducationAgencyId":255901,"link":{"rel":"LocalEducationAgency","href":"/ed-fi/localEducationAgencies/c56eb48bf55d412fb831a9bda879aa93"}},"schoolId":255901001,"nameOfInstitution":"Grand Bend High School","operationalStatusDescriptor":"uri://ed-fi.org/OperationalStatusDescriptor#Active","shortNameOfInstitution":"GBHS","webSite":"http://www.GBISD.edu/GBHS/","administrativeFundingControlDescriptor":"uri://ed-fi.org/AdministrativeFundingControlDescriptor#Public School","charterStatusDescriptor":"uri://ed-fi.org/CharterStatusDescriptor#Not a Charter School","schoolTypeDescriptor":"uri://ed-fi.org/SchoolTypeDescriptor#Regular","titleIPartASchoolDesignationDescriptor":"uri://ed-fi.org/TitleIPartASchoolDesignationDescriptor#Not A Title I School","addresses":[{"addressTypeDescriptor":"uri://ed-fi.org/AddressTypeDescriptor#Mailing","city":"Grand Bend","postalCode":"73334-2035","stateAbbreviationDescriptor":"uri://ed-fi.org/StateAbbreviationDescriptor#TX","streetNumberName":"P.O. Box 2035","nameOfCounty":"Williston","periods":[]},{"addressTypeDescriptor":"uri://ed-fi.org/AddressTypeDescriptor#Physical","city":"Grand Bend","postalCode":"73334","stateAbbreviationDescriptor":"uri://ed-fi.org/StateAbbreviationDescriptor#TX","streetNumberName":"456 Elm Street","nameOfCounty":"Williston","periods":[]}],"educationOrganizationCategories":[{"educationOrganizationCategoryDescriptor":"uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"}],"identificationCodes":[{"educationOrganizationIdentificationSystemDescriptor":"uri://ed-fi.org/EducationOrganizationIdentificationSystemDescriptor#SEA","identificationCode":"255901001"}],"indicators":[{"indicatorDescriptor":"uri://gbisd.edu/IndicatorDescriptor#Retention Rate","indicatorGroupDescriptor":"uri://gbisd.edu/IndicatorGroupDescriptor#Staff Indicator","indicatorLevelDescriptor":"uri://gbisd.edu/IndicatorLevelDescriptor#High Retention","indicatorValue":"90","periods":[{"beginDate":"2021-08-29","endDate":"2022-06-30"}]}],"institutionTelephones":[{"institutionTelephoneNumberTypeDescriptor":"uri://ed-fi.org/InstitutionTelephoneNumberTypeDescriptor#Fax","telephoneNumber":"(950) 393-3156"},{"institutionTelephoneNumberTypeDescriptor":"uri://ed-fi.org/InstitutionTelephoneNumberTypeDescriptor#Main","telephoneNumber":"(950) 325-9465"}],"internationalAddresses":[],"schoolCategories":[{"schoolCategoryDescriptor":"uri://ed-fi.org/SchoolCategoryDescriptor#High School"}],"gradeLevels":[{"gradeLevelDescriptor":"uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"},{"gradeLevelDescriptor":"uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade"},{"gradeLevelDescriptor":"uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"},{"gradeLevelDescriptor":"uri://ed-fi.org/GradeLevelDescriptor#Twelfth grade"}],"_etag":"5250169243758884128","_lastModifiedDate":"2024-04-10T05:08:53.1496224Z"},
-                  {"id":"bf6fe4eac42b496d84f5ff97f4f6323b","localEducationAgencyReference":{"localEducationAgencyId":255901,"link":{"rel":"LocalEducationAgency","href":"/ed-fi/localEducationAgencies/c56eb48bf55d412fb831a9bda879aa93"}},"schoolId":255901044,"nameOfInstitution":"Grand Bend Middle School","operationalStatusDescriptor":"uri://ed-fi.org/OperationalStatusDescriptor#Active","shortNameOfInstitution":"GBMS","webSite":"http://www.GBISD.edu/GBMS/","administrativeFundingControlDescriptor":"uri://ed-fi.org/AdministrativeFundingControlDescriptor#Public School","charterStatusDescriptor":"uri://ed-fi.org/CharterStatusDescriptor#Not a Charter School","schoolTypeDescriptor":"uri://ed-fi.org/SchoolTypeDescriptor#Regular","titleIPartASchoolDesignationDescriptor":"uri://ed-fi.org/TitleIPartASchoolDesignationDescriptor#Not A Title I School","addresses":[{"addressTypeDescriptor":"uri://ed-fi.org/AddressTypeDescriptor#Mailing","city":"Grand Bend","postalCode":"73334-3393","stateAbbreviationDescriptor":"uri://ed-fi.org/StateAbbreviationDescriptor#TX","streetNumberName":"P.O. Box 3393","nameOfCounty":"Williston","periods":[]},{"addressTypeDescriptor":"uri://ed-fi.org/AddressTypeDescriptor#Physical","city":"Grand Bend","postalCode":"73334","stateAbbreviationDescriptor":"uri://ed-fi.org/StateAbbreviationDescriptor#TX","streetNumberName":"9993 Space Blvd.","nameOfCounty":"Williston","periods":[]}],"educationOrganizationCategories":[{"educationOrganizationCategoryDescriptor":"uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"}],"identificationCodes":[{"educationOrganizationIdentificationSystemDescriptor":"uri://ed-fi.org/EducationOrganizationIdentificationSystemDescriptor#SEA","identificationCode":"255901044"}],"indicators":[{"indicatorDescriptor":"uri://gbisd.edu/IndicatorDescriptor#Retention Rate","indicatorGroupDescriptor":"uri://gbisd.edu/IndicatorGroupDescriptor#Staff Indicator","indicatorLevelDescriptor":"uri://gbisd.edu/IndicatorLevelDescriptor#Medium Retention","indicatorValue":"87","periods":[{"beginDate":"2021-08-29","endDate":"2022-06-30"}]}],"institutionTelephones":[{"institutionTelephoneNumberTypeDescriptor":"uri://ed-fi.org/InstitutionTelephoneNumberTypeDescriptor#Fax","telephoneNumber":"(950) 366-9374"},{"institutionTelephoneNumberTypeDescriptor":"uri://ed-fi.org/InstitutionTelephoneNumberTypeDescriptor#Main","telephoneNumber":"(950) 325-3164"}],"internationalAddresses":[],"schoolCategories":[{"schoolCategoryDescriptor":"uri://ed-fi.org/SchoolCategoryDescriptor#Middle School"}],"gradeLevels":[{"gradeLevelDescriptor":"uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"},{"gradeLevelDescriptor":"uri://ed-fi.org/GradeLevelDescriptor#Seventh grade"},{"gradeLevelDescriptor":"uri://ed-fi.org/GradeLevelDescriptor#Eighth grade"}],"_etag":"5250169243759022586","_lastModifiedDate":"2024-04-10T05:08:53.1634682Z"}]
+                    [
+                        {
+                            "schoolId": 5,
+                            "nameOfInstitution": "School 5",
+                            "educationOrganizationCategories": [
+                            {
+                                "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                            }
+                            ],
+                            "gradeLevels": [
+                            {
+                                "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
+                            }
+                            ]
+                        },
+                        {
+                            "schoolId": 6,
+                            "nameOfInstitution": "School 6",
+                            "educationOrganizationCategories": [
+                            {
+                                "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"
+                            }
+                            ],
+                            "gradeLevels": [
+                            {
+                                "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
+                            }
+                            ]
+                        }
+                    ]
                   """
 
         @ignore
@@ -50,7 +85,14 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
              Then it should respond with 400
               And response body is
                   """
-                  {"detail": "The offset parameter was incorrect.","type": "urn:ed-fi:api:bad-request:parameter","title": "Parameter Validation Failed","status": 400,"correlationId": null,"errors": ["Offset must be omitted or set to a value between 0 and 500."]}
+                  {
+                    "detail": "The offset parameter was incorrect.",
+                    "type": "urn:ed-fi:api:bad-request:parameter",
+                    "title": "Parameter Validation Failed",
+                    "status": 400,
+                    "correlationId": null,
+                    "errors": ["Offset must be omitted or set to a value between 0 and 500."]
+                  }
                   """
         Examples:
                   | Value                    |
@@ -62,26 +104,48 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
 
         @ignore
         Scenario: Ensure clients can GET information when querying using an offset without providing any limit in the query string
-            Given these schools exist:
-                  | schoolId | nameOfInstitution                             | gradeLevels         | educationOrganizationCategories     |
-                  | 5        | School with max edorgId value                 | [ "Postsecondary" ] | [ "School" ]                        |
-                  | 6        | UT Austin College of Education Under Graduate | [ "Postsecondary" ] | [ "Educator Preparation Provider" ] |
-             When sending a GET request to "/ed-fi/schools?offset=1"
+             When sending a GET request to "/ed-fi/schools?offset=4"
              Then it should respond with 200
               And response body is
                   """
-                  {"id":"f24dc237b73741b4a778ce403906d8f9","schoolId":6,"nameOfInstitution":"UT Austin College of Education Under Graduate","addresses":[{"addressTypeDescriptor":"uri://ed-fi.org/AddressTypeDescriptor#Physical","city":"Austin","postalCode":"78712","stateAbbreviationDescriptor":"uri://ed-fi.org/StateAbbreviationDescriptor#TX","streetNumberName":"1912 Speedway Stop D5000","nameOfCounty":"Travis","periods":[]}],"educationOrganizationCategories":[{"educationOrganizationCategoryDescriptor":"uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"}],"identificationCodes":[],"indicators":[],"institutionTelephones":[],"internationalAddresses":[],"_ext":{"tpdm":{"postSecondaryInstitutionReference":{"postSecondaryInstitutionId":6000203,"link":{"rel":"PostSecondaryInstitution","href":"/ed-fi/postSecondaryInstitutions/02f5fec829834b7691db381ff5f61ff1"}}}},"schoolCategories":[],"gradeLevels":[{"gradeLevelDescriptor":"uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"}],"_etag":"5250169253470311260","_lastModifiedDate":"2024-04-10T05:25:04.2923356Z"}
+                    [
+                        {
+                            "schoolId": 6,
+                            "nameOfInstitution": "School 6",
+                            "educationOrganizationCategories": [
+                            {
+                                "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"
+                            }
+                            ],
+                            "gradeLevels": [
+                            {
+                                "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
+                            }
+                            ]
+                        }
+                    ]
                   """
 
         @ignore
         Scenario: Ensure clients can GET information when filtering with limits and properties
-            Given these schools exist:
-                  | schoolId | nameOfInstitution                             | gradeLevels         | educationOrganizationCategories     |
-                  | 5        | School with max edorgId value                 | [ "Postsecondary" ] | [ "School" ]                        |
-                  | 6        | UT Austin College of Education Under Graduate | [ "Postsecondary" ] | [ "Educator Preparation Provider" ] |
-             When sending a GET request to "/ed-fi/schools?nameOfInstitution=UT+Austin+College+of+Education+Under+Graduate&limit=2"
+             When sending a GET request to "/ed-fi/schools?nameOfInstitution=School+5&limit=2"
              Then it should respond with 200
               And response body is
                   """
-                  {"id":"f24dc237b73741b4a778ce403906d8f9","schoolId":6,"nameOfInstitution":"UT Austin College of Education Under Graduate","addresses":[{"addressTypeDescriptor":"uri://ed-fi.org/AddressTypeDescriptor#Physical","city":"Austin","postalCode":"78712","stateAbbreviationDescriptor":"uri://ed-fi.org/StateAbbreviationDescriptor#TX","streetNumberName":"1912 Speedway Stop D5000","nameOfCounty":"Travis","periods":[]}],"educationOrganizationCategories":[{"educationOrganizationCategoryDescriptor":"uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"}],"identificationCodes":[],"indicators":[],"institutionTelephones":[],"internationalAddresses":[],"_ext":{"tpdm":{"postSecondaryInstitutionReference":{"postSecondaryInstitutionId":6000203,"link":{"rel":"PostSecondaryInstitution","href":"/ed-fi/postSecondaryInstitutions/02f5fec829834b7691db381ff5f61ff1"}}}},"schoolCategories":[],"gradeLevels":[{"gradeLevelDescriptor":"uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"}],"_etag":"5250169253470311260","_lastModifiedDate":"2024-04-10T05:25:04.2923356Z"}
+                    [
+                        {
+                            "schoolId": 5,
+                            "nameOfInstitution": "School 5",
+                            "educationOrganizationCategories": [
+                            {
+                                "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                            }
+                            ],
+                            "gradeLevels": [
+                            {
+                                "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
+                            }
+                            ]
+                        }
+                    ]
                   """
