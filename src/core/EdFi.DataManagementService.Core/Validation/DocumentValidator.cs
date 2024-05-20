@@ -53,7 +53,7 @@ internal class DocumentValidator() : IDocumentValidator
 
         var resourceSchemaValidator = GetSchema(resourceSchema, method);
         var results = resourceSchemaValidator.Evaluate(
-             JsonNode.Parse(frontendRequest.Body),
+            JsonNode.Parse(frontendRequest.Body),
             validatorEvaluationOptions
         );
 
@@ -61,7 +61,7 @@ internal class DocumentValidator() : IDocumentValidator
 
         if (pruneResult is PruneResult.Pruned pruned)
         {
-            string stringValue = String.Empty;
+            string? stringValue;
             if (pruned.prunedDocumentBody is JsonValue jsonValue)
             {
                 stringValue = jsonValue.GetValue<string>();
