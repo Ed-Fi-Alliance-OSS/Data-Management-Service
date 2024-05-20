@@ -13,6 +13,8 @@ public class PlaywrightContext
 
     public string ApiUrl { get; set; } = "http://localhost:5198";
 
+    public string Database { get; set; } = "";
+
     public IAPIRequestContext? ApiRequestContext => _requestContext?.GetAwaiter().GetResult();
 
     public void Dispose()

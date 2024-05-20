@@ -28,4 +28,32 @@ public class ContainerSetup
             dockerImage.GetMappedPublicPort(8080)
         ).ToString();
     }
+
+    public async Task<string> SetupDataBase(string engine)
+    {
+        string imageName = string.Empty;
+        ushort port = 0;
+
+        if (engine == "postgresql")
+        {
+            imageName = "local/edfi-data-management-postgresql";
+            port = 5432;
+        }
+
+        var dockerImage = new ContainerBuilder()
+            .WithImage(imageName)
+            .WithPortBinding(port, port)
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(port))
+            .Build();
+
+        await dockerImage.StartAsync();
+
+        var result = new UriBuilder(
+            Uri.UriSchemeHttp,
+            dockerImage.Hostname,
+            dockerImage.GetMappedPublicPort(5432)
+            ).ToString();
+
+        return result;
+    }
 }

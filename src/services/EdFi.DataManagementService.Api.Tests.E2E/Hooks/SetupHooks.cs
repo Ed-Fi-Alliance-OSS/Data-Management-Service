@@ -39,6 +39,13 @@ public class SetupHooks
                 logger.log.Debug("Using local environment, verify that it's correctly set.");
             }
 
+            string? dbEngine = _configuration["DatabaseEngine"];
+
+            if (dbEngine != null)
+            {
+                context.Database = await containers.SetupDataBase(dbEngine);
+            }
+
             await context.CreateApiContext();
         }
         catch (Exception exception)
