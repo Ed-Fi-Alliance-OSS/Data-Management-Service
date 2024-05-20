@@ -33,17 +33,17 @@ public class SetupHooks
             {
                 logger.log.Debug("Using TestContainers to set environment");
                 context.ApiUrl = await containers.SetupDataManagement();
+
+                string? dbEngine = _configuration["DatabaseEngine"];
+
+                if (dbEngine != null)
+                {
+                    context.Database = await containers.SetupDataBase(dbEngine);
+                }
             }
             else
             {
                 logger.log.Debug("Using local environment, verify that it's correctly set.");
-            }
-
-            string? dbEngine = _configuration["DatabaseEngine"];
-
-            if (dbEngine != null)
-            {
-                context.Database = await containers.SetupDataBase(dbEngine);
             }
 
             await context.CreateApiContext();
