@@ -4,6 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core;
+using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
@@ -22,11 +24,11 @@ public class DiscoveryEndpointModule : IEndpointModule
     private async Task GetApiDetails(
         HttpContext httpContext,
         IVersionProvider versionProvider,
-        ICoreFacade coreFacade,
+        IApiService apiService,
         IOptions<AppSettings> appSettings
     )
     {
-        IList<DataModelInfo> dataModelInfos = coreFacade.GetDataModelInfo();
+        IList<IDataModelInfo> dataModelInfos = apiService.GetDataModelInfo();
 
         var result = new DiscoveryApiDetails(
             version: versionProvider.Version,

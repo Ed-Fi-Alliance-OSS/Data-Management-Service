@@ -4,10 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.ApiSchema;
-using EdFi.DataManagementService.Core.Backend;
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Validation;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core;
 
@@ -19,14 +18,13 @@ public static class DmsCoreServiceExtensions
     /// <summary>
     /// The DMS default service configuration
     /// </summary>
-    public static IServiceCollection AddDmsDefaultConfiguration(this IServiceCollection services, string databaseConnectionString)
+    public static IServiceCollection AddDmsDefaultConfiguration(this IServiceCollection services)
     {
         services
             .AddSingleton<IApiSchemaProvider, ApiSchemaFileLoader>()
             .AddSingleton<IApiSchemaSchemaProvider, ApiSchemaSchemaProvider>()
             .AddSingleton<IApiSchemaValidator, ApiSchemaValidator>()
-            .AddSingleton<ICoreFacade, CoreFacade>()
-            .AddSingleton<IDocumentStoreRepository>(x => new PostgresqlDocumentStoreRepository(x.GetRequiredService<ILogger<PostgresqlDocumentStoreRepository>>(), databaseConnectionString))
+            .AddSingleton<IApiService, ApiService>()
             .AddTransient<IDocumentValidator, DocumentValidator>()
             .AddTransient<IEqualityConstraintValidator, EqualityConstraintValidator>();
 

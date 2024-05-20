@@ -4,8 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-
-namespace EdFi.DataManagementService.Core.Model;
+namespace EdFi.DataManagementService.Core.External.Model;
 
 /// <summary>
 /// An API request sent from the frontend to be processed
@@ -27,5 +26,5 @@ public record FrontendRequest(
     /// <summary>
     /// A request identifier provided by the frontend service, used for log tracing
     /// </summary>
-    string TraceId
+    ITraceId TraceId
 );

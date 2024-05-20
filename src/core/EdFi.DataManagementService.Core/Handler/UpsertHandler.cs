@@ -5,10 +5,13 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Backend;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
-using static EdFi.DataManagementService.Core.Backend.UpsertResult;
+using static EdFi.DataManagementService.Core.External.Backend.UpsertResult;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
@@ -18,7 +21,7 @@ namespace EdFi.DataManagementService.Core.Handler;
 internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger)
     : IPipelineStep
 {
-    private static string ToResourcePath(PathComponents p, DocumentUuid u)
+    private static string ToResourcePath(PathComponents p, IDocumentUuid u)
     {
         return $"/{p.ProjectNamespace.Value}/{p.EndpointName.Value}/{u.Value}";
     }
@@ -31,13 +34,13 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
         DocumentUuid candidateDocumentUuid = new(Guid.NewGuid().ToString());
 
         UpsertResult result = await _documentStoreRepository.UpsertDocument(
-            new(
-                ReferentialId: new(Guid.Empty),
+            new UpsertRequest(
+                ReferentialId: new ReferentialId(Guid.Empty),
                 ResourceInfo: context.ResourceInfo,
                 DocumentInfo: context.DocumentInfo,
                 EdfiDoc: context.FrontendRequest.Body ?? new JsonObject(),
                 validateDocumentReferencesExist: false,
-                TraceId: new(context.FrontendRequest.TraceId),
+                TraceId: context.FrontendRequest.TraceId,
                 DocumentUuid: candidateDocumentUuid
             )
         );

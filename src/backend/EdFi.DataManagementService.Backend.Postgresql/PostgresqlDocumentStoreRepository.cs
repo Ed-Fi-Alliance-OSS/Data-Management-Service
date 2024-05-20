@@ -4,17 +4,19 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Interface;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
-namespace EdFi.DataManagementService.Core.Backend;
+namespace EdFi.DataManagementService.Backend.Postgresql;
 
 public class PostgresqlDocumentStoreRepository(
     ILogger<PostgresqlDocumentStoreRepository> _logger,
     string _connectionString
 ) : PartitionedRepository, IDocumentStoreRepository, IQueryHandler
 {
-    public async Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)
+    public async Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
     {
         _logger.LogDebug("Entering UpsertDocument - {TraceId}", upsertRequest.TraceId);
 
@@ -54,7 +56,7 @@ public class PostgresqlDocumentStoreRepository(
         }
     }
 
-    public async Task<GetResult> GetDocumentById(GetRequest getRequest)
+    public async Task<GetResult> GetDocumentById(IGetRequest getRequest)
     {
         _logger.LogDebug("Entering GetDocumentById - {TraceId}", getRequest.TraceId);
 
@@ -90,7 +92,7 @@ public class PostgresqlDocumentStoreRepository(
         }
     }
 
-    public async Task<UpdateResult> UpdateDocumentById(UpdateRequest updateRequest)
+    public async Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
     {
         _logger.LogDebug("Entering UpdateDocumentById - {TraceId}", updateRequest.TraceId);
 
@@ -142,7 +144,7 @@ public class PostgresqlDocumentStoreRepository(
         }
     }
 
-    public async Task<DeleteResult> DeleteDocumentById(DeleteRequest deleteRequest)
+    public async Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
     {
         _logger.LogWarning(
             "DeleteDocumentById(): Backend repository has been configured to always report success  - {TraceId}",
@@ -151,7 +153,7 @@ public class PostgresqlDocumentStoreRepository(
         return await Task.FromResult<DeleteResult>(new DeleteResult.DeleteSuccess());
     }
 
-    public async Task<QueryResult> QueryDocuments(QueryRequest queryRequest)
+    public async Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
     {
         _logger.LogWarning(
             "QueryDocuments(): Backend repository has been configured to always report success - {TraceId}",

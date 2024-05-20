@@ -6,6 +6,8 @@
 using System.Net;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core;
+using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
@@ -29,12 +31,12 @@ public partial class XsdMetadataEndpointModule : IEndpointModule
         endpoints.MapGet("/metadata/xsd/{section}/{fileName}.xsd", GetXsdMetadataFileContent);
     }
 
-    internal async Task GetSections(HttpContext httpContext, ICoreFacade coreFacade)
+    internal async Task GetSections(HttpContext httpContext, IApiService apiService)
     {
         var baseUrl = httpContext.Request.UrlWithPathSegment();
         List<XsdMetaDataSectionInfo> sections = [];
 
-        foreach (DataModelInfo dataModelInfo in coreFacade.GetDataModelInfo())
+        foreach (IDataModelInfo dataModelInfo in apiService.GetDataModelInfo())
         {
             sections.Add(
                 new XsdMetaDataSectionInfo(
@@ -51,7 +53,7 @@ public partial class XsdMetadataEndpointModule : IEndpointModule
     internal async Task GetXsdMetadataFiles(
         HttpContext httpContext,
         IContentProvider contentProvider,
-        ICoreFacade coreFacade
+        IApiService apiService
     )
     {
         var request = httpContext.Request;
@@ -63,7 +65,7 @@ public partial class XsdMetadataEndpointModule : IEndpointModule
         }
 
         string section = match.Groups["section"].Value;
-        IList<DataModelInfo> dataModelInfos = coreFacade.GetDataModelInfo();
+        IList<IDataModelInfo> dataModelInfos = apiService.GetDataModelInfo();
 
         if (dataModelInfos.Any(x => x.ProjectName.Equals(section, StringComparison.InvariantCultureIgnoreCase)))
         {

@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using EdFi.DataManagementService.Core.ApiSchema.Extensions;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.ApiSchema;
 
@@ -232,7 +233,7 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
         }
 
         // Build up documentIdentity in order
-        IEnumerable<DocumentIdentityElement> documentIdentityElements = IdentityJsonPaths.Select(
+        IEnumerable<IDocumentIdentityElement> documentIdentityElements = IdentityJsonPaths.Select(
             identityJsonPath => new DocumentIdentityElement(
                 identityJsonPath,
                 documentBody.SelectRequiredNodeFromPathCoerceToString(identityJsonPath.Value, _logger)
@@ -271,9 +272,9 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
         if (subclassType == "association")
         {
             return new(
-                ResourceInfo: new(
-                    ResourceName: new(superclassResourceName),
-                    ProjectName: new(superclassProjectName),
+                ResourceInfo: new BaseResourceInfo(
+                    ResourceName: new MetaEdResourceName(superclassResourceName),
+                    ProjectName: new MetaEdProjectName(superclassProjectName),
                     IsDescriptor: false
                 ),
                 DocumentIdentity: documentIdentity
@@ -289,9 +290,9 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
         );
 
         return new(
-            ResourceInfo: new(
-                ResourceName: new(superclassResourceName),
-                ProjectName: new(superclassProjectName),
+            ResourceInfo: new BaseResourceInfo(
+                ResourceName: new MetaEdResourceName(superclassResourceName),
+                ProjectName: new MetaEdProjectName(superclassProjectName),
                 IsDescriptor: false
             ),
             DocumentIdentity: superclassIdentity
@@ -358,21 +359,21 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
             // Reorient intermediateReferenceElements into actual DocumentReferences
             for (var index = 0; index < valueSliceLength; index += 1)
             {
-                List<DocumentIdentityElement> documentIdentityElements = [];
+                List<IDocumentIdentityElement> documentIdentityElements = [];
 
                 foreach (
                     IntermediateReferenceElement intermediateReferenceElement in intermediateReferenceElements
                 )
                 {
                     documentIdentityElements.Add(
-                        new(
+                        new DocumentIdentityElement(
                             intermediateReferenceElement.IdentityJsonPath,
                             intermediateReferenceElement.ValueSlice[index]
                         )
                     );
                 }
 
-                result.Add(new(resourceInfo, new(documentIdentityElements)));
+                result.Add(new(resourceInfo, new DocumentIdentity(documentIdentityElements)));
             }
         }
 

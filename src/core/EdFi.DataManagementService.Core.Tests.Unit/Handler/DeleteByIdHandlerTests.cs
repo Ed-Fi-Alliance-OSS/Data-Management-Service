@@ -4,13 +4,15 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.Backend;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
-using static EdFi.DataManagementService.Core.Backend.DeleteResult;
+using static EdFi.DataManagementService.Core.External.Backend.DeleteResult;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
@@ -28,7 +30,7 @@ public class DeleteByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public override Task<DeleteResult> DeleteDocumentById(DeleteRequest deleteRequest)
+            public override Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
             {
                 return Task.FromResult<DeleteResult>(new DeleteSuccess());
             }
@@ -56,7 +58,7 @@ public class DeleteByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public override Task<DeleteResult> DeleteDocumentById(DeleteRequest deleteRequest)
+            public override Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
             {
                 return Task.FromResult<DeleteResult>(new DeleteFailureNotExists());
             }
@@ -86,7 +88,7 @@ public class DeleteByIdHandlerTests
         {
             public static readonly string ResponseBody = "ReferencingDocumentInfo";
 
-            public override Task<DeleteResult> DeleteDocumentById(DeleteRequest deleteRequest)
+            public override Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
             {
                 return Task.FromResult<DeleteResult>(new DeleteFailureReference(ResponseBody));
             }
@@ -116,7 +118,7 @@ public class DeleteByIdHandlerTests
         {
             public static readonly string ResponseBody = "FailureMessage";
 
-            public override Task<DeleteResult> DeleteDocumentById(DeleteRequest deleteRequest)
+            public override Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
             {
                 return Task.FromResult<DeleteResult>(new DeleteFailureWriteConflict(ResponseBody));
             }
@@ -146,7 +148,7 @@ public class DeleteByIdHandlerTests
         {
             public static readonly string ResponseBody = "FailureMessage";
 
-            public override Task<DeleteResult> DeleteDocumentById(DeleteRequest deleteRequest)
+            public override Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
             {
                 return Task.FromResult<DeleteResult>(new UnknownFailure(ResponseBody));
             }

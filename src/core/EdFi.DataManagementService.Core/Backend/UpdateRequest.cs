@@ -3,26 +3,27 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Backend;
 
 /// <summary>
 /// An update request to a document repository
 /// </summary>
-public record UpdateRequest(
+internal record UpdateRequest(
     /// <summary>
     /// The ReferentialId of the document to update
     /// </summary>
-    ReferentialId ReferentialId,
+    IReferentialId ReferentialId,
     /// <summary>
     /// The ResourceInfo of the document to update
     /// </summary>
-    ResourceInfo ResourceInfo,
+    IResourceInfo ResourceInfo,
     /// <summary>
     /// The DocumentInfo of the document to update
     /// </summary>
-    DocumentInfo DocumentInfo,
+    IDocumentInfo DocumentInfo,
     /// <summary>
     /// The EdfiDoc of the document to update, as a JsonNode
     /// </summary>
@@ -34,9 +35,9 @@ public record UpdateRequest(
     /// <summary>
     /// The request TraceId
     /// </summary>
-    TraceId TraceId,
+    ITraceId TraceId,
     /// <summary>
     /// The DocumentUuid of the document to update
     /// </summary>
-    DocumentUuid DocumentUuid
-);
+    IDocumentUuid DocumentUuid
+) : IUpdateRequest;

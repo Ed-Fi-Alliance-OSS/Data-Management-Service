@@ -9,7 +9,7 @@ namespace EdFi.DataManagementService.Core.Model;
 /// DocumentPaths provides JsonPaths to values corresponding to reference
 /// and scalar MetaEd properties in a resource document
 /// </summary>
-public abstract record DocumentPaths(
+internal abstract record DocumentPaths(
     /// <summary>
     /// A mapping of unique DocumentObjectKeys to JsonPaths. This is used as a building block for document identities
     /// and document references, where the JsonPaths can later be turned into the values in a document, and the keys
@@ -38,7 +38,7 @@ public abstract record DocumentPaths(
 /// <summary>
 /// JsonPath information for a reference MetaEd property
 /// </summary>
-public record ReferencePaths(
+internal record ReferencePaths(
     Dictionary<string, string> paths,
     string[] pathOrder,
     bool isReference,
@@ -60,7 +60,7 @@ public record ReferencePaths(
 /// <summary>
 /// A JsonPath for a scalar MetaEd property
 /// </summary>
-public record ScalarPaths(
+internal record ScalarPaths(
     Dictionary<string, string> paths,
     string[] pathOrder,
     bool isReference

@@ -34,6 +34,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\EdFi.DataManagementService.Core.External\EdFi.DataManagementService.Core.External.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="EdFi.DataManagementService.Core.Tests.Unit" />
     <!-- For FakeItEasy unit test proxies-->
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />

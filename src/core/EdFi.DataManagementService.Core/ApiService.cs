@@ -6,6 +6,8 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
+using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
@@ -16,16 +18,16 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DataManagementService.Core;
 
 /// <summary>
-/// The DMS core facade.
+/// The DMS API service.
 /// </summary>
-internal class CoreFacade(
+internal class ApiService(
     IApiSchemaProvider _apiSchemaProvider,
     IApiSchemaValidator _apiSchemaValidator,
     IDocumentStoreRepository _documentStoreRepository,
     IDocumentValidator _documentValidator,
     IEqualityConstraintValidator _equalityConstraintValidator,
-    ILogger<CoreFacade> _logger
-) : ICoreFacade
+    ILogger<ApiService> _logger
+) : IApiService
 {
     /// <summary>
     /// The pipeline steps to satisfy an upsert request
@@ -112,7 +114,7 @@ internal class CoreFacade(
     /// <summary>
     /// DMS entry point for API upsert requests
     /// </summary>
-    public async Task<FrontendResponse> Upsert(FrontendRequest frontendRequest)
+    public async Task<IFrontendResponse> Upsert(FrontendRequest frontendRequest)
     {
         PipelineContext pipelineContext = new(frontendRequest, RequestMethod.POST);
         await _upsertSteps.Value.Run(pipelineContext);
@@ -122,7 +124,7 @@ internal class CoreFacade(
     /// <summary>
     /// DMS entry point for all API GET by id requests
     /// </summary>
-    public async Task<FrontendResponse> GetById(FrontendRequest frontendRequest)
+    public async Task<IFrontendResponse> GetById(FrontendRequest frontendRequest)
     {
         PipelineContext pipelineContext = new(frontendRequest, RequestMethod.GET);
         await _getByIdSteps.Value.Run(pipelineContext);
@@ -132,7 +134,7 @@ internal class CoreFacade(
     /// <summary>
     /// DMS entry point for all API PUT requests, which are "by id"
     /// </summary>
-    public async Task<FrontendResponse> UpdateById(FrontendRequest frontendRequest)
+    public async Task<IFrontendResponse> UpdateById(FrontendRequest frontendRequest)
     {
         PipelineContext pipelineContext = new(frontendRequest, RequestMethod.PUT);
         await _updateSteps.Value.Run(pipelineContext);
@@ -142,7 +144,7 @@ internal class CoreFacade(
     /// <summary>
     /// DMS entry point for all API DELETE requests, which are "by id"
     /// </summary>
-    public async Task<FrontendResponse> DeleteById(FrontendRequest frontendRequest)
+    public async Task<IFrontendResponse> DeleteById(FrontendRequest frontendRequest)
     {
         PipelineContext pipelineContext = new(frontendRequest, RequestMethod.DELETE);
         await _deleteByIdSteps.Value.Run(pipelineContext);
@@ -152,7 +154,7 @@ internal class CoreFacade(
     /// <summary>
     /// DMS entry point for data model information from ApiSchema.json
     /// </summary>
-    public IList<DataModelInfo> GetDataModelInfo()
+    public IList<IDataModelInfo> GetDataModelInfo()
     {
         JsonNode schema = _apiSchemaProvider.ApiSchemaRootNode;
 
@@ -164,7 +166,7 @@ internal class CoreFacade(
             throw new InvalidOperationException(errorMessage);
         }
 
-        IList<DataModelInfo> result = [];
+        IList<IDataModelInfo> result = [];
         List<JsonNode> projectSchemaNodes = projectSchemas
             .Where(x => x.Value != null)
             .Select(x => x.Value ?? new JsonObject())
