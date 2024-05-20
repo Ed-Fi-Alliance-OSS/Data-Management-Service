@@ -13,7 +13,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
         Scenario: Ensure clients can't GET information when filtering using invalid limit
              When sending a GET request to "/ed-fi/schools?limit=<Value>"
              Then it should respond with 400
-              And response body is
+              And the response body is
                   """
                   {
                     "detail": "The limit parameter was incorrect.",
@@ -74,7 +74,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
         Scenario: Ensure clients can get information when filtering by limit and offset greater than the total
              When sending a GET request to "/ed-fi/schools?offset=6&limit=5"
              Then it should respond with status 200
-              And response body is
+              And the response body is
                   """
                   []
                   """
@@ -106,7 +106,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
         Scenario: Ensure clients can GET information when querying using an offset without providing any limit in the query string
              When sending a GET request to "/ed-fi/schools?offset=4"
              Then it should respond with 200
-              And response body is
+              And the response body is
                   """
                     [
                         {
@@ -130,7 +130,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
         Scenario: Ensure clients can GET information when filtering with limits and properties
              When sending a GET request to "/ed-fi/schools?nameOfInstitution=School+5&limit=2"
              Then it should respond with 200
-              And response body is
+              And the response body is
                   """
                     [
                         {
