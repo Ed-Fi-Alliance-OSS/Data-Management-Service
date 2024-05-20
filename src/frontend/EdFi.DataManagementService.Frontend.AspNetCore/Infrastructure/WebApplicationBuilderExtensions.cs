@@ -11,7 +11,6 @@ using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using Microsoft.Extensions.Options;
 using Serilog;
-using static EdFi.DataManagementService.Backend.Postgresql.PostgresqlBackendServiceExtensions;
 using static EdFi.DataManagementService.Core.DmsCoreServiceExtensions;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;

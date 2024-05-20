@@ -5,10 +5,8 @@
 
 using System.Net;
 using System.Text.RegularExpressions;
-using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 
