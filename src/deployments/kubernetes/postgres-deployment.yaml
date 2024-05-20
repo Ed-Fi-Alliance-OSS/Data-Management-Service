@@ -18,9 +18,10 @@ spec:
     spec:
       containers:
       - name: postgres-db
-        image: postgres:16.2-alpine3.19@sha256:b89a4e92591810eac1fbce6107485d7c6b9449df51c1ccfcfed514a7fdd69955
+        image: local/edfi-data-management-postgresql:latest
+        imagePullPolicy: Never
         ports:
-            - containerPort: 80
+            - containerPort: 5432
         env:
           - name: POSTGRES_USER
             valueFrom:

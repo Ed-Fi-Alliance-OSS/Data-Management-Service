@@ -1,8 +1,13 @@
 # Data Management System End to End Tests
 
-This is a suite of end to end tests that will cover different scenarios.
+This is a suite of end to end tests that will cover different scenarios. They are run against a local DMS container that must be rebuilt to stay in sync with the codebase.
 
-## Running The Tests
+## Building the DMS container
+
+From the `src` directory, run `docker build -t local/edfi-data-management-service . -f Dockerfile`. This will 
+copy the current DMS solution into the container, build it and start it.
+
+## Running The Tests 
 
 * Run from the Visual Studio Test Explorer.
 * cd into `/src/services` and run `dotnet test EdFi.DataManagementService.Api.Tests.E2E`.

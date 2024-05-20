@@ -11,6 +11,8 @@ on:
     types:
       - completed
 
+permissions: read-all
+
 jobs:
   report-test-results:
     name: Report Test Results
