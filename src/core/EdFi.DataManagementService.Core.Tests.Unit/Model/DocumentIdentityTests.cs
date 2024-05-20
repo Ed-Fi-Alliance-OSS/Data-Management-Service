@@ -16,7 +16,7 @@ public class DocumentIdentityTests
     [TestFixture]
     public class Given_a_school_identity_which_is_a_subclass_of_education_organization : DocumentIdentityTests
     {
-        public DocumentIdentity? superclassIdentity;
+        internal DocumentIdentity? superclassIdentity;
 
         [SetUp]
         public void Setup()
@@ -39,7 +39,7 @@ public class DocumentIdentityTests
     [TestFixture]
     public class Given_the_identity_of_a_resource_with_a_single_identity_element : DocumentIdentityTests
     {
-        public ReferentialId referentialId;
+        internal ReferentialId referentialId;
 
         [SetUp]
         public void Setup()
@@ -59,7 +59,7 @@ public class DocumentIdentityTests
     [TestFixture]
     public class Given_the_identity_of_a_resource_with_multiple_identity_elements : DocumentIdentityTests
     {
-        public ReferentialId referentialId;
+        internal ReferentialId referentialId;
 
         [SetUp]
         public void Setup()

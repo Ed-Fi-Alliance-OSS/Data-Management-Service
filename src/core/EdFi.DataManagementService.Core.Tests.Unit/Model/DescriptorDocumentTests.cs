@@ -16,7 +16,7 @@ public class DescriptorDocumentTests
     [TestFixture]
     public class Given_a_descriptor_document : DescriptorDocumentTests
     {
-        public DescriptorDocument? descriptorDocument;
+        internal DescriptorDocument? descriptorDocument;
 
         [SetUp]
         public void Setup()

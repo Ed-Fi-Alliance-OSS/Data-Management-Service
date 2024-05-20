@@ -8,10 +8,11 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Interface;
-using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using FakeItEasy;
 using FluentAssertions;
+using ImpromptuInterface;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,8 +29,22 @@ public class XsdMetaDataModuleTests
     [SetUp]
     public void Setup()
     {
-        var expectededfiModel = new DataModelInfo("Ed-Fi", "5.0.0", "Ed-Fi data standard 5.0.0");
-        var expectedtpdmModel = new DataModelInfo("Tpdm", "1.0.0", "TPDM data standard 1.0.0");
+        IDataModelInfo expectededfiModel = (
+            new
+            {
+                ProjectName = "Ed-Fi",
+                ProjectVersion = "5.0.0",
+                Description = "Ed-Fi data standard 5.0.0"
+            }
+        ).ActLike<IDataModelInfo>();
+        IDataModelInfo expectedtpdmModel = (
+            new
+            {
+                ProjectName = "Tpdm",
+                ProjectVersion = "1.0.0",
+                Description = "TPDM data standard 1.0.0"
+            }
+        ).ActLike<IDataModelInfo>();
 
         _apiService = A.Fake<IApiService>();
         A.CallTo(() => _apiService.GetDataModelInfo())
