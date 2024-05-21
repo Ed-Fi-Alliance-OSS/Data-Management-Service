@@ -3,8 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Text.Json.Nodes;
-using Microsoft.Extensions.Logging;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Backend;
 
@@ -12,18 +14,21 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// A document store repository that does nothing but return success
 /// </summary>
 internal class SuccessDocumentStoreRepository(ILogger<SuccessDocumentStoreRepository> _logger)
-    : IDocumentStoreRepository, IQueryHandler
+    : IDocumentStoreRepository,
+        IQueryHandler
 {
-    public async Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)
+    public async Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
     {
         _logger.LogWarning(
             "UpsertDocument(): Backend repository has been configured to always report success - {TraceId}",
             upsertRequest.TraceId
         );
-        return await Task.FromResult<UpsertResult>(new UpsertResult.InsertSuccess());
+        return await Task.FromResult<UpsertResult>(
+            new UpsertResult.InsertSuccess(upsertRequest.DocumentUuid)
+        );
     }
 
-    public async Task<GetResult> GetDocumentById(GetRequest getRequest)
+    public async Task<GetResult> GetDocumentById(IGetRequest getRequest)
     {
         _logger.LogWarning(
             "GetDocumentById(): Backend repository has been configured to always report success - {TraceId}",
@@ -38,7 +43,7 @@ internal class SuccessDocumentStoreRepository(ILogger<SuccessDocumentStoreReposi
         );
     }
 
-    public async Task<UpdateResult> UpdateDocumentById(UpdateRequest updateRequest)
+    public async Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
     {
         _logger.LogWarning(
             "UpdateDocumentById(): Backend repository has been configured to always report success - {TraceId}",
@@ -47,7 +52,7 @@ internal class SuccessDocumentStoreRepository(ILogger<SuccessDocumentStoreReposi
         return await Task.FromResult<UpdateResult>(new UpdateResult.UpdateSuccess());
     }
 
-    public async Task<DeleteResult> DeleteDocumentById(DeleteRequest deleteRequest)
+    public async Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
     {
         _logger.LogWarning(
             "DeleteDocumentById(): Backend repository has been configured to always report success  - {TraceId}",
@@ -56,17 +61,12 @@ internal class SuccessDocumentStoreRepository(ILogger<SuccessDocumentStoreReposi
         return await Task.FromResult<DeleteResult>(new DeleteResult.DeleteSuccess());
     }
 
-    public async Task<QueryResult> QueryDocuments(QueryRequest queryRequest)
+    public async Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
     {
         _logger.LogWarning(
             "QueryDocuments(): Backend repository has been configured to always report success - {TraceId}",
             queryRequest.TraceId
         );
-        return await Task.FromResult<QueryResult>(
-            new QueryResult.QuerySuccess(
-                TotalCount: 0,
-                EdfiDocs: []
-            )
-        );
+        return await Task.FromResult<QueryResult>(new QueryResult.QuerySuccess(TotalCount: 0, EdfiDocs: []));
     }
 }

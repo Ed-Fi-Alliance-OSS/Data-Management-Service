@@ -13,6 +13,7 @@ using FluentAssertions;
 using Json.Schema;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
@@ -98,7 +99,7 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: null,
                 QueryParameters: [],
-                "traceId"
+                new TraceId("traceId")
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());
@@ -138,7 +139,7 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: jsonData,
                 QueryParameters: [],
-               "traceId"
+               new TraceId("traceId")
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());
@@ -166,7 +167,7 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: jsonData,
                 QueryParameters: [],
-                "traceId"
+                new TraceId("traceId")
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());
@@ -194,7 +195,7 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: jsonData,
                 QueryParameters: [],
-                "traceId"
+                new TraceId("traceId")
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());
@@ -235,7 +236,7 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: jsonData,
                 QueryParameters: [],
-                "traceId"
+                new TraceId("traceId")
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());
@@ -276,7 +277,7 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: jsonData,
                 QueryParameters: [],
-                "traceId"
+                new TraceId("traceId")
             );
             _context = Context(frontEndRequest, RequestMethod.PUT);
             await Middleware().Execute(_context, Next());

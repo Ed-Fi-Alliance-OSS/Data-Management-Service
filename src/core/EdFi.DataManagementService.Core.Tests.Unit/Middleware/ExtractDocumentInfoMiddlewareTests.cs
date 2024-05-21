@@ -65,7 +65,7 @@ public class ExtractDocumentInfoMiddlewareTests
                     Body: """{"schoolId": "123"}"""!,
                     QueryParameters: [],
                     Path: "/ed-fi/schools",
-                    TraceId: new("123")
+                    TraceId: new TraceId("123")
                 ),
                 RequestMethod.POST
             )

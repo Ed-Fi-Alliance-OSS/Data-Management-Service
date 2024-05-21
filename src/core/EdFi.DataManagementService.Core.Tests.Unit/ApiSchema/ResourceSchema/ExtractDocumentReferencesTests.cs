@@ -57,7 +57,7 @@ public class ExtractDocumentReferencesTests
     public class Given_extracting_document_references_with_one_as_scalar_and_another_as_collection
         : ExtractDocumentReferencesTests
     {
-        public DocumentReference[] documentReferences = [];
+        internal DocumentReference[] documentReferences = [];
 
         [SetUp]
         public void Setup()
@@ -158,7 +158,7 @@ public class ExtractDocumentReferencesTests
     public class Given_extracting_document_references_with_missing_optional_course_offering_reference_in_body
         : ExtractDocumentReferencesTests
     {
-        public DocumentReference[] documentReferences = [];
+        internal DocumentReference[] documentReferences = [];
 
         [SetUp]
         public void Setup()
@@ -232,7 +232,7 @@ public class ExtractDocumentReferencesTests
     public class Given_extracting_document_references_with_only_single_reference_in_collection_in_body
         : ExtractDocumentReferencesTests
     {
-        public DocumentReference[] documentReferences = [];
+        internal DocumentReference[] documentReferences = [];
 
         [SetUp]
         public void Setup()
@@ -285,7 +285,7 @@ public class ExtractDocumentReferencesTests
     public class Given_extracting_document_references_with_empty_reference_collection_in_body
         : ExtractDocumentReferencesTests
     {
-        public DocumentReference[] documentReferences = [];
+        internal DocumentReference[] documentReferences = [];
 
         [SetUp]
         public void Setup()
@@ -317,7 +317,7 @@ public class ExtractDocumentReferencesTests
     public class Given_extracting_document_references_with_missing_optional_class_period_reference_collection_in_body
         : ExtractDocumentReferencesTests
     {
-        public DocumentReference[] documentReferences = [];
+        internal DocumentReference[] documentReferences = [];
 
         [SetUp]
         public void Setup()
@@ -374,7 +374,7 @@ public class ExtractDocumentReferencesTests
     public class Given_extracting_document_references_with_no_references_in_body
         : ExtractDocumentReferencesTests
     {
-        public DocumentReference[] documentReferences = [];
+        internal DocumentReference[] documentReferences = [];
 
         [SetUp]
         public void Setup()

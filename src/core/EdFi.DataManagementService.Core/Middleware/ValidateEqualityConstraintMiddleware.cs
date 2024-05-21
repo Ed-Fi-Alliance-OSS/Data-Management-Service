@@ -57,7 +57,8 @@ internal class ValidateEqualityConstraintMiddleware(ILogger _logger, IEqualityCo
 
             context.FrontendResponse = new(
                 StatusCode: failureResponse.status,
-                Body: JsonSerializer.Serialize(failureResponse, options)
+                Body: JsonSerializer.Serialize(failureResponse, options),
+                Headers: []
             );
             return;
         }

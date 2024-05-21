@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
 using EdFi.DataManagementService.Core.ApiSchema.Extensions;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.ApiSchema;
 
@@ -26,7 +27,7 @@ internal class ProjectSchema(JsonNode _projectSchemaNode, ILogger _logger)
     /// <summary>
     /// The ProjectName for this ProjectSchema, taken from the projectName
     /// </summary>
-    public MetaEdProjectName ProjectName => _projectName.Value;
+    public IMetaEdProjectName ProjectName => _projectName.Value;
 
     private readonly Lazy<SemVer> _resourceVersion =
         new(() =>
@@ -39,7 +40,7 @@ internal class ProjectSchema(JsonNode _projectSchemaNode, ILogger _logger)
     /// <summary>
     /// The ResourceVersion for this ProjectSchema, taken from the projectVersion
     /// </summary>
-    public SemVer ResourceVersion => _resourceVersion.Value;
+    public ISemVer ResourceVersion => _resourceVersion.Value;
 
     /// <summary>
     /// Finds the ResourceSchemaNode that represents the given REST resource path. Returns null if not found.
