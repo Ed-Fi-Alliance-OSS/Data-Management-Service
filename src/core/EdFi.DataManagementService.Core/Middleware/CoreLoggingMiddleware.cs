@@ -62,7 +62,8 @@ internal class CoreLoggingMiddleware(ILogger _logger) : IPipelineStep
             // Replace the frontend response (if any) with a 500 error
             context.FrontendResponse = new(
                 StatusCode: 400,
-                JsonSerializer.Serialize(failureResponse, options)
+                JsonSerializer.Serialize(failureResponse, options),
+                Headers: []
             );
         }
     }
