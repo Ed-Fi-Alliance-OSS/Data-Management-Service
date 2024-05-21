@@ -16,7 +16,7 @@ public class SchoolYearEnumerationDocumentTests
     [TestFixture]
     public class Given_a_school_year_enumeration_document : SchoolYearEnumerationDocumentTests
     {
-        public SchoolYearEnumerationDocument? document;
+        internal SchoolYearEnumerationDocument? document;
 
         [SetUp]
         public void Setup()

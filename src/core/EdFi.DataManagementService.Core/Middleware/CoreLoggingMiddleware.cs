@@ -39,13 +39,14 @@ internal class CoreLoggingMiddleware(ILogger _logger) : IPipelineStep
             // Replace the frontend response (if any) with a 500 error
             context.FrontendResponse = new(
                 StatusCode: 500,
-                JsonSerializer.Serialize(
+                Body: JsonSerializer.Serialize(
                     new
                     {
                         message = "The server encountered an unexpected condition that prevented it from fulfilling the request.",
                         traceId = context.FrontendRequest.TraceId
                     }
-                )
+                ),
+                Headers: []
             );
         }
     }

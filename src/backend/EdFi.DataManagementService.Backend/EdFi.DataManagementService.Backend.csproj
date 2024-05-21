@@ -20,4 +20,8 @@
         </PackageReference>
     </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\core\EdFi.DataManagementService.Core.External\EdFi.DataManagementService.Core.External.csproj" />
+  </ItemGroup>
+
 </Project>

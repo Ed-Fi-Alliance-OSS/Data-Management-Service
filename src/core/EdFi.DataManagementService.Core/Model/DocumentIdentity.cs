@@ -5,6 +5,7 @@
 
 using System.Collections.Immutable;
 using Be.Vlaanderen.Basisregisters.Generators.Guid;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Model;
 
@@ -16,7 +17,7 @@ namespace EdFi.DataManagementService.Core.Model;
 ///
 /// This can be an array of key-value pairs because many documents have multiple values as part of their identity.
 /// </summary>
-public record DocumentIdentity(IList<DocumentIdentityElement> _documentIdentityElements)
+internal record DocumentIdentity(IList<IDocumentIdentityElement> _documentIdentityElements) : IDocumentIdentity
 {
     /// <summary>
     /// A UUID namespace for generating UUIDv5-compliant deterministic UUIDs per RFC 4122.
@@ -26,7 +27,7 @@ public record DocumentIdentity(IList<DocumentIdentityElement> _documentIdentityE
     /// <summary>
     /// An immutable version of the underlying identity elements, mostly for testability
     /// </summary>
-    public IList<DocumentIdentityElement> DocumentIdentityElements =>
+    public IList<IDocumentIdentityElement> DocumentIdentityElements =>
         _documentIdentityElements.ToImmutableList();
 
     /// <summary>
@@ -42,12 +43,9 @@ public record DocumentIdentity(IList<DocumentIdentityElement> _documentIdentityE
             );
         }
 
-        DocumentIdentityElement[] newElementList =
+        IDocumentIdentityElement[] newElementList =
         [
-            _documentIdentityElements[0] with
-            {
-                IdentityJsonPath = superclassIdentityJsonPath
-            }
+            new DocumentIdentityElement(superclassIdentityJsonPath, _documentIdentityElements[0].IdentityValue)
         ];
         return new(newElementList.ToList());
     }
@@ -68,7 +66,7 @@ public record DocumentIdentity(IList<DocumentIdentityElement> _documentIdentityE
         return string.Join(
             "#",
             _documentIdentityElements.Select(
-                (DocumentIdentityElement element) =>
+                (IDocumentIdentityElement element) =>
                     $"${element.IdentityJsonPath.Value}=${element.IdentityValue}"
             )
         );

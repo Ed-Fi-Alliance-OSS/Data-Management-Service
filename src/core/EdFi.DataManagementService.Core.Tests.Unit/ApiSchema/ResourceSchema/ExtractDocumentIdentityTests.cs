@@ -18,7 +18,7 @@ public class ExtractDocumentIdentityTests
     [TestFixture]
     public class Given_extracting_an_identity_composed_of_several_references : ExtractDocumentIdentityTests
     {
-        public DocumentIdentity? documentIdentity;
+        internal DocumentIdentity? documentIdentity;
 
         [SetUp]
         public void Setup()
@@ -106,7 +106,7 @@ public class ExtractDocumentIdentityTests
     public class Given_extracting_an_identity_that_includes_a_descriptor_reference
         : ExtractDocumentIdentityTests
     {
-        public DocumentIdentity? documentIdentity;
+        internal DocumentIdentity? documentIdentity;
 
         [SetUp]
         public void Setup()
@@ -163,7 +163,7 @@ public class ExtractDocumentIdentityTests
     public class Given_extracting_an_identity_that_includes_a_school_year_reference
         : ExtractDocumentIdentityTests
     {
-        public DocumentIdentity? documentIdentity;
+        internal DocumentIdentity? documentIdentity;
 
         [SetUp]
         public void Setup()

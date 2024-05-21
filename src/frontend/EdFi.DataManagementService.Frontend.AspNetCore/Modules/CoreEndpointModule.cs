@@ -11,11 +11,9 @@ public class CoreEndpointModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        PathSegmentToRefine = "/data";
-
-        endpoints.MapPost("/data/{**catchAll}", Upsert);
-        endpoints.MapGet("/data/{**catchAll}", GetById);
-        endpoints.MapPut("/data/{**catchAll}", UpdateById);
-        endpoints.MapDelete("/data/{**catchAll}", DeleteById);
+        endpoints.MapPost("/data/{**dmsPath}", Upsert);
+        endpoints.MapGet("/data/{**dmsPath}", GetById);
+        endpoints.MapPut("/data/{**dmsPath}", UpdateById);
+        endpoints.MapDelete("/data/{**dmsPath}", DeleteById);
     }
 }

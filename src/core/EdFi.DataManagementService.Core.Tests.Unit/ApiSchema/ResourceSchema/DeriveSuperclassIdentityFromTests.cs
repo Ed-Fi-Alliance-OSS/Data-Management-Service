@@ -19,7 +19,7 @@ public class DeriveSuperclassIdentityFromTests
     public class Given_a_school_which_is_a_subclass_of_education_organization
         : DeriveSuperclassIdentityFromTests
     {
-        public SuperclassIdentity? superclassIdentity;
+        internal SuperclassIdentity? superclassIdentity;
 
         [SetUp]
         public void Setup()
@@ -76,7 +76,7 @@ public class DeriveSuperclassIdentityFromTests
     [TestFixture]
     public class Given_a_section_which_is_not_a_subclass : DeriveSuperclassIdentityFromTests
     {
-        public SuperclassIdentity? superclassIdentity;
+        internal SuperclassIdentity? superclassIdentity;
 
         [SetUp]
         public void Setup()

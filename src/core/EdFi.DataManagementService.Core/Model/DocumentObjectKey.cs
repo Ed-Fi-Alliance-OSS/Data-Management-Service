@@ -8,4 +8,4 @@ namespace EdFi.DataManagementService.Core.Model;
 /// <summary>
 /// A standard JSON document object key
 /// </summary>
-public record DocumentObjectKey(string Value);
+internal record DocumentObjectKey(string Value);
