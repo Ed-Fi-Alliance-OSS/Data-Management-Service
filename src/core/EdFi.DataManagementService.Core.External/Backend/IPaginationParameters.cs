@@ -2,15 +2,21 @@
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
-namespace EdFi.DataManagementService.Core.Backend;
+
+namespace EdFi.DataManagementService.Core.External.Backend;
 
 /// <summary>
-/// The handler DMS Core uses to perform document queries.
+/// The special query parameters used to drive pagination
 /// </summary>
-public interface IQueryHandler
+public interface IPaginationParameters
 {
     /// <summary>
-    /// Entry point for query documents requests
+    /// The pagination limit
     /// </summary>
-    public Task<QueryResult> QueryDocuments(QueryRequest queryRequest);
+    string? limit { get; }
+
+    /// <summary>
+    /// The pagination offset
+    /// </summary>
+    string? offset { get; }
 }

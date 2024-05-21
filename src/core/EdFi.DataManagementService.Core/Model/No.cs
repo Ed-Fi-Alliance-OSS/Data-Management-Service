@@ -7,6 +7,8 @@ using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging.Abstractions;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.ApiSchema.Model;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Model;
 
@@ -49,10 +51,10 @@ internal static class No
     /// </summary>
     public static readonly ResourceInfo ResourceInfo =
         new(
-            ProjectName: new(""),
-            ResourceName: new(""),
+            ProjectName: new MetaEdProjectName(""),
+            ResourceName: new MetaEdResourceName(""),
             IsDescriptor: false,
-            ResourceVersion: new(""),
+            ResourceVersion: new SemVer(""),
             AllowIdentityUpdates: false
         );
 
@@ -61,7 +63,7 @@ internal static class No
     /// </summary>
     public static readonly DocumentInfo DocumentInfo =
         new(
-            DocumentIdentity: new([]),
+            DocumentIdentity: new DocumentIdentity([]),
             DocumentReferences: [],
             DescriptorReferences: [],
             SuperclassIdentity: null
@@ -71,12 +73,12 @@ internal static class No
     /// The null object for FrontendRequest
     /// </summary>
     public static readonly FrontendRequest FrontendRequest =
-        new(Body: "{}", Path: "", QueryParameters: [], TraceId: new(""));
+        new(Body: "{}", Path: "", QueryParameters: [], TraceId: new TraceId(""));
 
     /// <summary>
     /// The null object for FrontendResponse
     /// </summary>
-    public static readonly FrontendResponse FrontendResponse = new(StatusCode: 503, Body: "");
+    public static readonly FrontendResponse FrontendResponse = new(StatusCode: 503, Body: "", Headers: []);
 
     /// <summary>
     /// A constructor of a PipelineContext initialized with null objects

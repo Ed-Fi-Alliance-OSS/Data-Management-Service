@@ -5,13 +5,15 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Backend;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
-using static EdFi.DataManagementService.Core.Backend.GetResult;
+using static EdFi.DataManagementService.Core.External.Backend.GetResult;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
@@ -31,7 +33,7 @@ public class GetByIdHandlerTests
         {
             public static readonly string ResponseBody = "{}";
 
-            public override Task<GetResult> GetDocumentById(GetRequest getRequest)
+            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
             {
                 return Task.FromResult<GetResult>(
                     new GetSuccess(No.DocumentUuid, new JsonObject(), DateTime.Now)
@@ -61,7 +63,7 @@ public class GetByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public override Task<GetResult> GetDocumentById(GetRequest deleteRequest)
+            public override Task<GetResult> GetDocumentById(IGetRequest deleteRequest)
             {
                 return Task.FromResult<GetResult>(new GetFailureNotExists());
             }
@@ -91,7 +93,7 @@ public class GetByIdHandlerTests
         {
             public static readonly string ResponseBody = "FailureMessage";
 
-            public override Task<GetResult> GetDocumentById(GetRequest deleteRequest)
+            public override Task<GetResult> GetDocumentById(IGetRequest deleteRequest)
             {
                 return Task.FromResult<GetResult>(new UnknownFailure(ResponseBody));
             }

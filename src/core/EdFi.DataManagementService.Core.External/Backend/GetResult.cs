@@ -3,9 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.External.Model;
 
-namespace EdFi.DataManagementService.Core.Backend;
+namespace EdFi.DataManagementService.Core.External.Backend;
 
 /// <summary>
 /// A get result from a document repository
@@ -18,7 +18,7 @@ public record GetResult
     /// <param name="DocumentUuid">The DocumentUuid of the document</param>
     /// <param name="EdfiDoc">The document itself</param>
     /// <param name="LastModifiedDate">The date the document was last modified</param>
-    public record GetSuccess(DocumentUuid DocumentUuid, JsonNode EdfiDoc, DateTime LastModifiedDate)
+    public record GetSuccess(IDocumentUuid DocumentUuid, JsonNode EdfiDoc, DateTime LastModifiedDate)
         : GetResult();
 
     /// <summary>

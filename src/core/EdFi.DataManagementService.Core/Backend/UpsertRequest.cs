@@ -3,24 +3,52 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Backend;
 
 /// <summary>
-/// An upsert request to a document repository
+/// An upsert request to a document repository. This extends UpdateRequest because
+/// sometimes upserts are actually updates.
 /// </summary>
-/// <param name="ReferentialId">The ReferentialId of the document to upsert</param>
-/// <param name="ResourceInfo">The ResourceInfo for the resource being upserted</param>
-/// <param name="DocumentInfo">The DocumentInfo for the document being upserted</param>
-/// <param name="EdfiDoc">The document to upsert</param>
-/// <param name="validateDocumentReferencesExist">If true, validates that all references in the document exist</param>
-/// <param name="TraceId">The request TraceId</param>
-public record UpsertRequest(
-    ReferentialId ReferentialId,
-    ResourceInfo ResourceInfo,
-    DocumentInfo DocumentInfo,
+internal record UpsertRequest(
+    /// <summary>
+    /// The ReferentialId of the document to upsert
+    /// </summary>
+    IReferentialId ReferentialId,
+    /// <summary>
+    /// The ResourceInfo of the document to upsert
+    /// </summary>
+    IResourceInfo ResourceInfo,
+    /// <summary>
+    /// The DocumentInfo of the document to upsert
+    /// </summary>
+    IDocumentInfo DocumentInfo,
+    /// <summary>
+    /// The EdfiDoc of the document to upsert, as a JsonNode
+    /// </summary>
     JsonNode EdfiDoc,
+    /// <summary>
+    /// If true, validates that all references in the document exist
+    /// </summary>
     bool validateDocumentReferencesExist,
-    TraceId TraceId
-);
+    /// <summary>
+    /// The request TraceId
+    /// </summary>
+    ITraceId TraceId,
+    /// <summary>
+    /// A candidate DocumentUuid of the document to upsert, used only
+    /// if the upsert happens as an insert
+    /// </summary>
+    IDocumentUuid DocumentUuid
+)
+    : UpdateRequest(
+        ReferentialId,
+        ResourceInfo,
+        DocumentInfo,
+        EdfiDoc,
+        validateDocumentReferencesExist,
+        TraceId,
+        DocumentUuid
+    ), IUpsertRequest;

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -29,7 +30,7 @@ public class ParsePathMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            FrontendRequest frontendRequest = new(Body: "{}", Path: "", QueryParameters: [], TraceId: new(""));
+            FrontendRequest frontendRequest = new(Body: "{}", Path: "", QueryParameters: [], TraceId: new TraceId(""));
             _context = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
         }
@@ -55,7 +56,7 @@ public class ParsePathMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            FrontendRequest frontendRequest = new(Body: "{}", Path: "badpath", QueryParameters: [], TraceId: new(""));
+            FrontendRequest frontendRequest = new(Body: "{}", Path: "badpath", QueryParameters: [], TraceId: new TraceId(""));
             _context = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
         }
@@ -82,7 +83,7 @@ public class ParsePathMiddlewareTests
         public async Task Setup()
         {
             FrontendRequest frontendRequest =
-                new(Body: "{}", Path: "/ed-fi/endpointName", QueryParameters: [], TraceId: new(""));
+                new(Body: "{}", Path: "/ed-fi/endpointName", QueryParameters: [], TraceId: new TraceId(""));
             _context = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
         }
@@ -117,7 +118,7 @@ public class ParsePathMiddlewareTests
                     Body: "{}",
                     Path: $"/ed-fi/endpointName/{documentUuid}",
                     QueryParameters: [],
-                    TraceId: new("")
+                    TraceId: new TraceId("")
                 );
             _context = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -153,7 +154,7 @@ public class ParsePathMiddlewareTests
                     Body: "{}",
                     Path: "/ed-fi/endpointName/invalidId",
                     QueryParameters: [],
-                    TraceId: new("")
+                    TraceId: new TraceId("")
                 );
             _context = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);

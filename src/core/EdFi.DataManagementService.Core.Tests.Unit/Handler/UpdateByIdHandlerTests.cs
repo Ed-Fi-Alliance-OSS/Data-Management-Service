@@ -4,13 +4,15 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.Backend;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
-using static EdFi.DataManagementService.Core.Backend.UpdateResult;
+using static EdFi.DataManagementService.Core.External.Backend.UpdateResult;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
@@ -28,7 +30,7 @@ public class UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public override Task<UpdateResult> UpdateDocumentById(UpdateRequest updateRequest)
+            public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
             {
                 return Task.FromResult<UpdateResult>(new UpdateSuccess());
             }
@@ -56,7 +58,7 @@ public class UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public override Task<UpdateResult> UpdateDocumentById(UpdateRequest updateRequest)
+            public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
             {
                 return Task.FromResult<UpdateResult>(new UpdateFailureNotExists());
             }
@@ -86,7 +88,7 @@ public class UpdateByIdHandlerTests
         {
             public static readonly string ResponseBody = "ReferencingDocumentInfo";
 
-            public override Task<UpdateResult> UpdateDocumentById(UpdateRequest updateRequest)
+            public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
             {
                 return Task.FromResult<UpdateResult>(new UpdateFailureReference(ResponseBody));
             }
@@ -116,7 +118,7 @@ public class UpdateByIdHandlerTests
         {
             public static readonly string ResponseBody = "FailureMessage";
 
-            public override Task<UpdateResult> UpdateDocumentById(UpdateRequest updateRequest)
+            public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
             {
                 return Task.FromResult<UpdateResult>(new UpdateFailureIdentityConflict(ResponseBody));
             }
@@ -146,7 +148,7 @@ public class UpdateByIdHandlerTests
         {
             public static readonly string ResponseBody = "FailureMessage";
 
-            public override Task<UpdateResult> UpdateDocumentById(UpdateRequest updateRequest)
+            public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
             {
                 return Task.FromResult<UpdateResult>(new UpdateFailureWriteConflict(ResponseBody));
             }
@@ -176,7 +178,7 @@ public class UpdateByIdHandlerTests
         {
             public static readonly string ResponseBody = "FailureMessage";
 
-            public override Task<UpdateResult> UpdateDocumentById(UpdateRequest updateRequest)
+            public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
             {
                 return Task.FromResult<UpdateResult>(new UpdateFailureImmutableIdentity(ResponseBody));
             }
@@ -204,7 +206,7 @@ public class UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public override Task<UpdateResult> UpdateDocumentById(UpdateRequest updateRequest)
+            public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
             {
                 return Task.FromResult<UpdateResult>(new UpdateFailureCascadeRequired());
             }
@@ -234,7 +236,7 @@ public class UpdateByIdHandlerTests
         {
             public static readonly string ResponseBody = "FailureMessage";
 
-            public override Task<UpdateResult> UpdateDocumentById(UpdateRequest updateRequest)
+            public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
             {
                 return Task.FromResult<UpdateResult>(new UnknownFailure(ResponseBody));
             }

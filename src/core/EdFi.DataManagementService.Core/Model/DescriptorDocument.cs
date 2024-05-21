@@ -11,7 +11,7 @@ namespace EdFi.DataManagementService.Core.Model;
 /// <summary>
 /// The form of all descriptor documents
 /// </summary>
-public class DescriptorDocument(JsonNode _document)
+internal class DescriptorDocument(JsonNode _document)
 {
     // A hardcoded identity path for all descriptor document identities
     public static readonly JsonPath DescriptorIdentityPath = new("$");

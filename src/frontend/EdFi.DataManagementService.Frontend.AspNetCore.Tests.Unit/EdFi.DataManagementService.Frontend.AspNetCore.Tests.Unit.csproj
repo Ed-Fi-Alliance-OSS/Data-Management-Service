@@ -13,17 +13,17 @@
     <PackageReference Include="Autofac.Extras.FakeItEasy" Version="7.0.0" />
     <PackageReference Include="FakeItEasy" Version="8.2.0" />
     <PackageReference Include="FluentAssertions" Version="6.12.0" />
+    <PackageReference Include="ImpromptuInterface" Version="8.0.4" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.1" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.6.0" />
     <PackageReference Include="coverlet.collector" Version="6.0.0" />
     <PackageReference Include="NUnit" Version="4.1.0" />
-    <PackageReference Include="NUnit.Analyzers" Version="4.2.0"/>
+    <PackageReference Include="NUnit.Analyzers" Version="4.2.0" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.5.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\EdFi.DataManagementService.Frontend.AspNetCore\EdFi.DataManagementService.Frontend.AspNetCore.csproj" />
-    <ProjectReference Include="..\..\core\EdFi.DataManagementService.Core.Tests.Shared\EdFi.DataManagementService.Core.Tests.Shared.csproj" />
   </ItemGroup>
 
 </Project>

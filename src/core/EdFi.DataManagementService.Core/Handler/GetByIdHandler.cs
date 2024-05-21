@@ -4,9 +4,11 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using Microsoft.Extensions.Logging;
-using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Pipeline;
-using static EdFi.DataManagementService.Core.Backend.GetResult;
+using static EdFi.DataManagementService.Core.External.Backend.GetResult;
+using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.Backend;
+using EdFi.DataManagementService.Core.External.Backend;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
@@ -21,10 +23,10 @@ internal class GetByIdHandler(IDocumentStoreRepository _documentStoreRepository,
         _logger.LogDebug("Entering GetByIdHandler - {TraceId}", context.FrontendRequest.TraceId);
 
         GetResult result = await _documentStoreRepository.GetDocumentById(
-            new(
+            new GetRequest(
                 DocumentUuid: context.PathComponents.DocumentUuid,
                 ResourceInfo: context.ResourceInfo,
-                TraceId: new(context.FrontendRequest.TraceId)
+                TraceId: context.FrontendRequest.TraceId
             )
         );
 
@@ -36,10 +38,10 @@ internal class GetByIdHandler(IDocumentStoreRepository _documentStoreRepository,
 
         context.FrontendResponse = result switch
         {
-            GetSuccess success => new(StatusCode: 200, Body: success.EdfiDoc.ToString()),
-            GetFailureNotExists => new(StatusCode: 404, Body: null),
-            UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage),
-            _ => new(StatusCode: 500, Body: "Unknown GetResult")
+            GetSuccess success => new(StatusCode: 200, Body: success.EdfiDoc.ToString(), Headers: []),
+            GetFailureNotExists => new(StatusCode: 404, Body: null, Headers: []),
+            UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage, Headers: []),
+            _ => new(StatusCode: 500, Body: "Unknown GetResult", Headers: [])
         };
     }
 }

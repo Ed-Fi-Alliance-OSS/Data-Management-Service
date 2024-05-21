@@ -4,13 +4,15 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.Backend;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
-using static EdFi.DataManagementService.Core.Backend.UpsertResult;
+using static EdFi.DataManagementService.Core.External.Backend.UpsertResult;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
@@ -28,9 +30,9 @@ public class UpsertHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public override Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
-                return Task.FromResult<UpsertResult>(new UpdateSuccess());
+                return Task.FromResult<UpsertResult>(new UpdateSuccess(upsertRequest.DocumentUuid));
             }
         }
 
@@ -48,6 +50,8 @@ public class UpsertHandlerTests
         {
             context.FrontendResponse.StatusCode.Should().Be(200);
             context.FrontendResponse.Body.Should().BeNull();
+            context.FrontendResponse.Headers.Count.Should().Be(0);
+            context.FrontendResponse.LocationHeaderPath.Should().NotBeNullOrEmpty();
         }
     }
 
@@ -58,7 +62,7 @@ public class UpsertHandlerTests
         {
             public static readonly string ResponseBody = "ReferencingDocumentInfo";
 
-            public override Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
                 return Task.FromResult<UpsertResult>(new UpsertFailureReference(ResponseBody));
             }
@@ -78,6 +82,8 @@ public class UpsertHandlerTests
         {
             context.FrontendResponse.StatusCode.Should().Be(409);
             context.FrontendResponse.Body.Should().Be(Repository.ResponseBody);
+            context.FrontendResponse.Headers.Should().BeEmpty();
+            context.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }
     }
 
@@ -88,7 +94,7 @@ public class UpsertHandlerTests
         {
             public static readonly string ResponseBody = "FailureMessage";
 
-            public override Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
                 return Task.FromResult<UpsertResult>(new UpsertFailureIdentityConflict(ResponseBody));
             }
@@ -108,6 +114,8 @@ public class UpsertHandlerTests
         {
             context.FrontendResponse.StatusCode.Should().Be(400);
             context.FrontendResponse.Body.Should().Be(Repository.ResponseBody);
+            context.FrontendResponse.Headers.Should().BeEmpty();
+            context.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }
     }
 
@@ -118,7 +126,7 @@ public class UpsertHandlerTests
         {
             public static readonly string ResponseBody = "FailureMessage";
 
-            public override Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
                 return Task.FromResult<UpsertResult>(new UpsertFailureWriteConflict(ResponseBody));
             }
@@ -138,6 +146,8 @@ public class UpsertHandlerTests
         {
             context.FrontendResponse.StatusCode.Should().Be(409);
             context.FrontendResponse.Body.Should().Be(Repository.ResponseBody);
+            context.FrontendResponse.Headers.Should().BeEmpty();
+            context.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }
     }
 
@@ -148,7 +158,7 @@ public class UpsertHandlerTests
         {
             public static readonly string ResponseBody = "FailureMessage";
 
-            public override Task<UpsertResult> UpsertDocument(UpsertRequest upsertRequest)
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
                 return Task.FromResult<UpsertResult>(new UnknownFailure(ResponseBody));
             }
@@ -168,6 +178,8 @@ public class UpsertHandlerTests
         {
             context.FrontendResponse.StatusCode.Should().Be(500);
             context.FrontendResponse.Body.Should().Be(Repository.ResponseBody);
+            context.FrontendResponse.Headers.Should().BeEmpty();
+            context.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }
     }
 }

@@ -335,7 +335,7 @@ public class ApiSchemaBuilder
         return this;
     }
 
-    public ApiSchemaBuilder WithEqualityConstraints(EqualityConstraint[] equalityConstraints)
+    internal ApiSchemaBuilder WithEqualityConstraints(EqualityConstraint[] equalityConstraints)
     {
         if (_currentProjectNode == null)
         {
