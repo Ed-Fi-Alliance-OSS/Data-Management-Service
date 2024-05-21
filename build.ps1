@@ -143,9 +143,17 @@ function RunTests {
     $testAssemblyPath = "$solutionRoot/*/$Filter/bin/$Configuration/"
     $testAssemblies = Get-ChildItem -Path $testAssemblyPath -Filter "$Filter.dll" -Recurse
 
+    #project execution
+    #$testAssemblyPath = "$solutionRoot/*/$Filter"
+    #$testAssemblies = Get-ChildItem -Path $testAssemblyPath -Filter "$Filter.csproj" -Recurse
+
     if ($testAssemblies.Length -eq 0) {
         Write-Output "no test assemblies found in $testAssemblyPath"
     }
+
+    Write-Output "Tests Assemblies List"
+    Write-Output $testAssemblies
+    Write-Output "End Tests Assemblies List"
 
     $testAssemblies | ForEach-Object {
         Write-Output "Executing: dotnet test $($_)"
@@ -154,9 +162,13 @@ function RunTests {
         $fileNameNoExt = $fileName.subString(0, $fileName.length-4)
 
         Invoke-Execute {
-            dotnet test $_ `
-                --logger "trx;LogFileName=$testResults/$fileNameNoExt.trx" `
-                --nologo
+            #dotnet test p:CollectCoverage=true $($_) `
+            #   --logger "trx;LogFileName=$testResults/$fileNameNoExt.trx" `
+            #    --nologo
+
+            #Execution with coverage
+            coverlet $($_) `
+                --target dotnet --targetargs "test $($_)" `
         }
     }
 }
