@@ -13,6 +13,10 @@ fi
 
 [ $? -ne 0 ] && exit || echo "Starting PostgreSQL service..."
 
+echo "host    all             all             172.17.0.1/32            trust" >> "$PGDATA/pg_hba.conf"
+
+chown -R postgres:postgres "$PGDATA"
+
 pg_ctl -D "$PGDATA" -o "-c listen_addresses='*'" -w start
 
 [ $? -ne 0 ] && exit || echo "Waiting for PostgreSQL to start..."
