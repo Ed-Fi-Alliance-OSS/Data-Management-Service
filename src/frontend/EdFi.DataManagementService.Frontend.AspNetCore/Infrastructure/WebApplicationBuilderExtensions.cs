@@ -21,10 +21,11 @@ public static class WebApplicationBuilderExtensions
     {
         webAppBuilder
             .Services.AddDmsDefaultConfiguration()
-            .AddPostgresqlBackend(
-                webAppBuilder.Configuration.GetSection("ConnectionStrings:DatabaseConnection").Value
-                    ?? string.Empty
-            )
+            // TODO: Uncomment after DMS-175 allows E2E tests to run against Postgres container
+            //.AddPostgresqlBackend(
+            //    webAppBuilder.Configuration.GetSection("ConnectionStrings:DatabaseConnection").Value
+            //        ?? string.Empty
+            //)
             .AddTransient<IContentProvider, ContentProvider>()
             .AddTransient<IVersionProvider, VersionProvider>()
             .AddTransient<IAssemblyProvider, AssemblyProvider>()
