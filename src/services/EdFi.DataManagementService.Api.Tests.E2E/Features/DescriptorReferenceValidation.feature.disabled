@@ -1,0 +1,82 @@
+Feature: Validate the reference of descriptors when creating reosurces
+
+        Background
+            Given this student exists:
+                  | Id                               | studentUniqueId | birthDate  | firstName | lastSurname |
+                  | fafbbd2024664ee786c05e899fbfe9bc | 604824          | 2010-01-13 | Traci     | Mathews     |
+              And this person exists:
+                  | personId                         | sourceSystemDescriptor |
+                  | 0063560B5AC641DBBCCE4B121C5CA37B | State                  |
+
+
+        @ignore
+        Scenario: User CAN'T create a resource when reference doesn't exist
+             When client sends a POST request to "/ed-fi/localEducationAgencies" with body
+                  """
+                  {
+                        "localEducationAgencyId": 25590100,
+                        "nameOfInstitution": "Grand Institution Test",
+                        "categories": [
+                        {
+                        "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor"
+                        }
+                        ],
+                        "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor"
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {"detail":"Data validation failed. See 'validationErrors' for details.","type":"urn:ed-fi:api:bad-request:data","title":"Data Validation Failed","status":400,"correlationId":null,"validationErrors":{"$.localEducationAgencyCategoryDescriptor":["LocalEducationAgencyCategoryDescriptor value 'uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor' is not a valid value for use as a descriptor (a '#' is expected to delineate the namespace and code value portions)."],"$.categories[0].educationOrganizationCategoryDescriptor":["EducationOrganizationCategoryDescriptor value 'uri://ed-fi.org/EducationOrganizationCategoryDescriptor' is not a valid value for use as a descriptor (a '#' is expected to delineate the namespace and code value portions)."]}}
+                  """
+
+        @ignore
+        Scenario: User can POST a resource when reference exists
+             When client sends a POST request to "/ed-fi/localEducationAgencies" with body
+                  """
+                  {
+                    "localEducationAgencyId": 25590100,
+                    "nameOfInstitution": "Grand Institution Test",
+                    "categories": [
+                        {
+                            "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Education+Service+Center"
+                        }
+                    ],
+                    "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Public+school+district+part+of+a+supervisory+union"
+                  }
+                  """
+             Then it should respond with 201
+
+
+        @ignore
+        Scenario: User can UPDATE a resource when reference exists
+             When client sends a PUT request to "/ed-fi/students/fafbbd2024664ee786c05e899fbfe9bc" with body
+                  """
+                  {
+                    "studentUniqueId": "604824",
+                    "birthDate": "2010-01-13",
+                    "firstName": "Traci",
+                    "lastSurname": "Mathews",
+                    "citizenshipStatusDescriptor": "uri://ed-fi.org/CitizenshipStatusDescriptor#US Citizen"
+                  }
+                  """
+             Then it should respond with 204
+
+
+        @ignore
+        Scenario: User can create a student with invalid data
+             When client sends a POST request to "/ed-fi/students" with body
+                  """
+                  {
+                    "studentUniqueId": "123456789",
+                    "birthDate": "2010-03-25",
+                    "firstName": "Jeff",
+                    "lastSurname": "Test"
+                    "citizenshipStatusDescriptor": "uri://ed-fi.org/CitizenshipStatusDescriptor#Test",
+                    "personReference": {
+                        "personId": "0063560B5AC641DBBCCE4B121C5CA37B",
+                        "sourceSystemDescriptor": "uri://ed-fi.org/SourceSystemDescriptor#State",
+                    }
+                  }
+                  """
+             Then it should respond with 201
