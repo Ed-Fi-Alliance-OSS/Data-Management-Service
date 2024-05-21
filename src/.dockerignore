@@ -1,4 +1,5 @@
-# .dockerignore
+**/bin/
+**/obj/
 
 Tests*
 */Tests*
