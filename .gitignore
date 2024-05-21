@@ -405,3 +405,6 @@ app-secret.yaml
 
 # Mac OS
 .DS_Store
+
+# Coverage
+coveragereport
