@@ -49,9 +49,9 @@ public class PostgresqlDocumentStoreRepository(
             _logger.LogError("Unknown Error - {TraceId}", upsertRequest.TraceId);
             return new UpsertResult.UnknownFailure("Unknown Failure");
         }
-        catch
+        catch (Exception ex)
         {
-            _logger.LogError("Unknown Error - {TraceId}", upsertRequest.TraceId);
+            _logger.LogError(ex, "Unknown Error - {TraceId}", upsertRequest.TraceId);
             return new UpsertResult.UnknownFailure("Unknown Failure");
         }
     }
@@ -85,9 +85,9 @@ public class PostgresqlDocumentStoreRepository(
             // TODO: Documents table needs a last modified datetime
             return new GetResult.GetSuccess(getRequest.DocumentUuid, edfiDoc, DateTime.Now);
         }
-        catch
+        catch (Exception ex)
         {
-            _logger.LogError("Unknown Error - {TraceId}", getRequest.TraceId);
+            _logger.LogError(ex, "Unknown Error - {TraceId}", getRequest.TraceId);
             return new GetResult.UnknownFailure("Unknown Failure");
         }
     }
@@ -135,9 +135,9 @@ public class PostgresqlDocumentStoreRepository(
                     );
             }
         }
-        catch
+        catch (Exception ex)
         {
-            _logger.LogError("Unknown Error - {TraceId}", updateRequest.TraceId);
+            _logger.LogError(ex, "Unknown Error - {TraceId}", updateRequest.TraceId);
             return await Task.FromResult<UpdateResult>(
                 new UpdateResult.UnknownFailure("Unknown Failure")
             );
