@@ -88,6 +88,10 @@ jobs:
       - name: Build
         run: ./build.ps1 Build -Configuration Debug
 
+      - name: Install Coverlet Reference
+        if: success()
+        run: dotnet tool install coverlet.console
+
       - name: Run Unit Tests
         if: success()
         run: ./build.ps1 UnitTest -Configuration Debug
