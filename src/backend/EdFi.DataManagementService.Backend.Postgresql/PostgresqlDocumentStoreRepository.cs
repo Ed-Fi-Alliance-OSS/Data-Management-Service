@@ -26,8 +26,8 @@ public class PostgresqlDocumentStoreRepository(
             await conn.OpenAsync();
 
             await using var cmd = new NpgsqlCommand(
-                $"INSERT INTO public.documents(document_partition_key, document_uuid, resource_name, edfi_doc) "
-                + $"VALUES (@document_partition_key, @document_uuid, @resource_name, @edfi_doc);",
+                @"INSERT INTO public.documents(document_partition_key, document_uuid, resource_name, edfi_doc)
+                    VALUES (@document_partition_key, @document_uuid, @resource_name, @edfi_doc);",
                 conn
             )
             {
@@ -102,9 +102,9 @@ public class PostgresqlDocumentStoreRepository(
             await conn.OpenAsync();
 
             await using var cmd = new NpgsqlCommand(
-                $"UPDATE public.documents "
-                + $"SET edfi_doc = @edfi_doc "
-                + $"WHERE document_partition_key = @document_partition_key AND document_uuid = @document_uuid;",
+                @"UPDATE public.documents
+                    SET edfi_doc = @edfi_doc
+                    WHERE document_partition_key = @document_partition_key AND document_uuid = @document_uuid;",
                 conn
             )
             {
