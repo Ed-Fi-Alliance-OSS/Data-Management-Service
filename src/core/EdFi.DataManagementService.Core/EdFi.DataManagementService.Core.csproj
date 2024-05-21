@@ -30,7 +30,7 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="JsonSchema.Net" Version="6.0.3" />
-    <PackageReference Include="JsonPath.Net" Version="1.0.0" />
+    <PackageReference Include="JsonPath.Net" Version="1.0.5" />
   </ItemGroup>
 
   <ItemGroup>
