@@ -32,14 +32,10 @@ public class SetupHooks
             if (useTestContainers)
             {
                 logger.log.Debug("Using TestContainers to set environment");
+
+                await containers.SetupPostgresBackend();
+                
                 context.ApiUrl = await containers.SetupDataManagement();
-
-                string? dbEngine = _configuration["DatabaseEngine"];
-
-                if (dbEngine != null)
-                {
-                    context.Database = await containers.SetupDataBase(dbEngine);
-                }
             }
             else
             {

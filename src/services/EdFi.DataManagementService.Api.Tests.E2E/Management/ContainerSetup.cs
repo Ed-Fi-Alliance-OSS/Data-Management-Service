@@ -29,16 +29,10 @@ public class ContainerSetup
         ).ToString();
     }
 
-    public async Task<string> SetupDataBase(string engine)
+    public async Task SetupPostgresBackend()
     {
-        string imageName = string.Empty;
-        ushort port = 0;
-
-        if (engine == "postgresql")
-        {
-            imageName = "local/edfi-data-management-postgresql";
-            port = 5432;
-        }
+        string imageName = "local/edfi-data-management-postgresql";
+        ushort port = 5432;
 
         var dockerImage = new ContainerBuilder()
             .WithImage(imageName)
@@ -47,13 +41,5 @@ public class ContainerSetup
             .Build();
 
         await dockerImage.StartAsync();
-
-        var result = new UriBuilder(
-            Uri.UriSchemeHttp,
-            dockerImage.Hostname,
-            dockerImage.GetMappedPublicPort(5432)
-            ).ToString();
-
-        return result;
     }
 }
