@@ -33,8 +33,6 @@ public class SetupHooks
             {
                 logger.log.Debug("Using TestContainers to set environment");
 
-                await containers.SetupPostgresBackend();
-
                 context.ApiUrl = await containers.SetupDataManagement();
             }
             else
