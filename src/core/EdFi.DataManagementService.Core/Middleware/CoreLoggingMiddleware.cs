@@ -27,16 +27,7 @@ internal class CoreLoggingMiddleware(ILogger _logger) : IPipelineStep
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                JsonSerializer.Serialize(
-                    new
-                    {
-                        message = "An uncaught error has occurred",
-                        error = new { ex.Message, ex.StackTrace },
-                        traceId = context.FrontendRequest.TraceId
-                    }
-                )
-            );
+            _logger.LogError(ex, "Unknown Error - {TraceId}", context.FrontendRequest.TraceId);
 
             FailureResponse failureResponse;
 

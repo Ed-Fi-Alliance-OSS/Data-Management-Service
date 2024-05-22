@@ -23,6 +23,7 @@
         * Push: uploads a NuGet package to the NuGet feed.
         * DockerBuild: builds a Docker image from source code
         * DockerRun: runs the Docker image that was built from source code
+        * Run: starts the application
     .EXAMPLE
         .\build.ps1 build -Configuration Release -Version "2.0" -BuildCounter 45
 
@@ -41,7 +42,7 @@
 param(
     # Command to execute, defaults to "Build".
     [string]
-    [ValidateSet("Clean", "Build", "BuildAndPublish", "UnitTest", "E2ETest", "Package", "Push", "DockerBuild", "DockerRun")]
+    [ValidateSet("Clean", "Build", "BuildAndPublish", "UnitTest", "E2ETest", "Package", "Push", "DockerBuild", "DockerRun", "Run")]
     $Command = "Build",
 
     # Assembly and package version number for the Data Management Service. The
@@ -280,6 +281,16 @@ function DockerRun {
     &docker run --rm -p 8080:8080 -d $dockerTagDMS
 }
 
+function Run {
+    Push-Location src
+    try {
+        dotnet run --no-build --no-restore --project ./frontend/EdFi.DataManagementService.Frontend.AspNetCore
+    }
+    finally {
+        Pop-Location
+    }
+}
+
 Invoke-Main {
     if ($IsLocalBuild) {
         $nugetExePath = Install-NugetCli
@@ -299,6 +310,7 @@ Invoke-Main {
         Push { Invoke-PushPackage }
         DockerBuild { Invoke-Step { DockerBuild } }
         DockerRun { Invoke-Step { DockerRun } }
+        Run { Invoke-Step { Run }}
         default { throw "Command '$Command' is not recognized" }
     }
 }

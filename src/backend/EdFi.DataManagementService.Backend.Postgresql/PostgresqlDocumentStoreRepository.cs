@@ -40,18 +40,24 @@ public class PostgresqlDocumentStoreRepository(
                 }
             };
 
-            if (await cmd.ExecuteNonQueryAsync() == 1)
+            int resultCount = await cmd.ExecuteNonQueryAsync();
+            if (resultCount == 1)
             {
-                _logger.LogDebug("Insert Success - {TraceId}", upsertRequest.TraceId);
+                _logger.LogDebug("Upsert success - {TraceId}", upsertRequest.TraceId);
                 return new UpsertResult.InsertSuccess(upsertRequest.DocumentUuid);
             }
 
-            _logger.LogError("Unknown Error - {TraceId}", upsertRequest.TraceId);
+            _logger.LogError(
+                "Upsert result count was {ResultCount} for {DocumentUuid}, cause is unknown - {TraceId}",
+                resultCount,
+                upsertRequest.DocumentUuid,
+                upsertRequest.TraceId
+            );
             return new UpsertResult.UnknownFailure("Unknown Failure");
         }
-        catch
+        catch (Exception ex)
         {
-            _logger.LogError("Unknown Error - {TraceId}", upsertRequest.TraceId);
+            _logger.LogError(ex, "Upsert failed - {TraceId}", upsertRequest.TraceId);
             return new UpsertResult.UnknownFailure("Unknown Failure");
         }
     }
@@ -62,10 +68,22 @@ public class PostgresqlDocumentStoreRepository(
 
         try
         {
-            await using var dataSource = NpgsqlDataSource.Create(_connectionString);
-            await using var command = dataSource.CreateCommand(
-                $"SELECT edfi_doc FROM public.documents WHERE document_partition_key = {PartitionKeyFor(getRequest.DocumentUuid)} AND document_uuid = '{getRequest.DocumentUuid.Value}';"
-            );
+            await using var conn = new NpgsqlConnection(_connectionString);
+            await conn.OpenAsync();
+
+            await using var command = new NpgsqlCommand(
+                @"SELECT edfi_doc FROM public.documents
+                WHERE document_partition_key = @document_partition_key AND document_uuid = @document_uuid;",
+                conn
+            )
+            {
+                Parameters =
+                {
+                    new("document_partition_key", PartitionKeyFor(getRequest.DocumentUuid)),
+                    new("document_uuid", getRequest.DocumentUuid.Value)
+                }
+            };
+
             await using var reader = await command.ExecuteReaderAsync();
 
             if (!reader.HasRows)
@@ -79,15 +97,17 @@ public class PostgresqlDocumentStoreRepository(
 
             if (edfiDoc == null)
             {
-                return new GetResult.UnknownFailure("Unknown Failure");
+                return new GetResult.UnknownFailure(
+                    $"Unable to parse JSON for document {getRequest.DocumentUuid}."
+                );
             }
 
             // TODO: Documents table needs a last modified datetime
             return new GetResult.GetSuccess(getRequest.DocumentUuid, edfiDoc, DateTime.Now);
         }
-        catch
+        catch (Exception ex)
         {
-            _logger.LogError("Unknown Error - {TraceId}", getRequest.TraceId);
+            _logger.LogError(ex, "GetDocumentById failed - {TraceId}", getRequest.TraceId);
             return new GetResult.UnknownFailure("Unknown Failure");
         }
     }
@@ -129,18 +149,21 @@ public class PostgresqlDocumentStoreRepository(
                     );
                     return await Task.FromResult<UpdateResult>(new UpdateResult.UpdateFailureNotExists());
                 default:
-                    _logger.LogError("Unknown Error - {TraceId}", updateRequest.TraceId);
+                    _logger.LogError(
+                        "UpdateDocumentById result count was '{Result}' for {DocumentUuid} - {TraceId}",
+                        result,
+                        updateRequest.DocumentUuid,
+                        updateRequest.TraceId
+                    );
                     return await Task.FromResult<UpdateResult>(
                         new UpdateResult.UnknownFailure("Unknown Failure")
                     );
             }
         }
-        catch
+        catch (Exception ex)
         {
-            _logger.LogError("Unknown Error - {TraceId}", updateRequest.TraceId);
-            return await Task.FromResult<UpdateResult>(
-                new UpdateResult.UnknownFailure("Unknown Failure")
-            );
+            _logger.LogError(ex, "UpdateDocumentById failed - {TraceId}", updateRequest.TraceId);
+            return await Task.FromResult<UpdateResult>(new UpdateResult.UnknownFailure("Unknown Failure"));
         }
     }
 

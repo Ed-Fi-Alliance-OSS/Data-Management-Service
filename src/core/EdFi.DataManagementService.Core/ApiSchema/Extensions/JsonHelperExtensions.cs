@@ -22,7 +22,7 @@ internal static class JsonHelperExtensions
             JsonPath? jsonPath = JsonPath.Parse(jsonPathString);
             if (jsonPath == null)
             {
-                logger.LogError("Malformed JSONPath string '{jsonPathString}'", jsonPathString);
+                logger.LogError("Malformed JSONPath string '{JsonPathString}'", jsonPathString);
                 throw new InvalidOperationException($"Malformed JSONPath string '{jsonPathString}'");
             }
 
@@ -30,7 +30,7 @@ internal static class JsonHelperExtensions
 
             if (result.Matches == null)
             {
-                logger.LogError("Malformed JSONPath string '{jsonPathString}'", jsonPathString);
+                logger.LogError("Malformed JSONPath string '{JsonPathString}'", jsonPathString);
                 throw new InvalidOperationException($"Unexpected Json.Path error for '{jsonPathString}'");
             }
 
@@ -40,7 +40,7 @@ internal static class JsonHelperExtensions
             if (result.Matches.Count != 1)
             {
                 logger.LogError(
-                    "JSONPath string '{jsonPathString}' selected multiple values",
+                    "JSONPath string '{JsonPathString}' selected multiple values",
                     jsonPathString
                 );
                 throw new InvalidOperationException(
@@ -71,7 +71,7 @@ internal static class JsonHelperExtensions
             JsonPath? jsonPath = JsonPath.Parse(jsonPathString);
             if (jsonPath == null)
             {
-                logger.LogError("Malformed JSONPath string '{jsonPathString}'", jsonPathString);
+                logger.LogError("Malformed JSONPath string '{JsonPathString}'", jsonPathString);
                 throw new InvalidOperationException($"Malformed JSONPath string '{jsonPathString}'");
             }
 
@@ -79,7 +79,7 @@ internal static class JsonHelperExtensions
 
             if (result.Matches == null)
             {
-                logger.LogError("Malformed JSONPath string '{jsonPathString}'", jsonPathString);
+                logger.LogError("Malformed JSONPath string '{JsonPathString}'", jsonPathString);
                 throw new InvalidOperationException($"Unexpected Json.Path error for '{jsonPathString}'");
             }
 

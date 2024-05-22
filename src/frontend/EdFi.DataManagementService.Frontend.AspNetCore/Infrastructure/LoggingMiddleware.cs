@@ -30,16 +30,7 @@ public class LoggingMiddleware(RequestDelegate next)
         }
         catch (Exception ex)
         {
-            logger.LogError(
-                JsonSerializer.Serialize(
-                    new
-                    {
-                        message = "An uncaught error has occurred",
-                        error = new { ex.Message, ex.StackTrace },
-                        traceId = context.TraceIdentifier
-                    }
-                )
-            );
+            logger.LogError(ex, "Unknown Error - {TraceId}", context.TraceIdentifier);
 
             var response = context.Response;
             if (!response.HasStarted)
