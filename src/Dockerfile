@@ -13,6 +13,7 @@ COPY backend/EdFi.DataManagementService.Backend.Mssql/*.csproj ./backend/EdFi.Da
 COPY backend/EdFi.DataManagementService.Backend.Postgresql/*.csproj ./backend/EdFi.DataManagementService.Backend.Postgresql/
 COPY frontend/EdFi.DataManagementService.Frontend.AspNetCore/*.csproj ./frontend/EdFi.DataManagementService.Frontend.AspNetCore/
 COPY core/EdFi.DataManagementService.Core/*.csproj ./core/EdFi.DataManagementService.Core/
+COPY core/EdFi.DataManagementService.Core.External/*.csproj ./core/EdFi.DataManagementService.Core.External/
 
 COPY EdFi.DataManagementService-Docker.sln ./
 COPY nuget.config .
