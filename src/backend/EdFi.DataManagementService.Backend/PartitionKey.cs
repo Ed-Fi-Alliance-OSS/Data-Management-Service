@@ -3,9 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-namespace EdFi.DataManagementService.Core.External.Model;
+namespace EdFi.DataManagementService.Backend;
 
 /// <summary>
-/// A string type branded as a traceId, which is a frontend-provided identifier representing a unique request
+/// Database integer partition key as a Branded type
 /// </summary>
-public record struct TraceId(string Value) : ITraceId;
+public record PartitionKey(int Value);

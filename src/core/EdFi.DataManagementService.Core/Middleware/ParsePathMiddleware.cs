@@ -3,11 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Text.RegularExpressions;
-using Microsoft.Extensions.Logging;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
+
+internal record PathInfo(string ProjectNamespace, string EndpointName, string? DocumentUuid);
 
 /// <summary>
 /// Parses and validates the path from the frontend is well formed. Adds PathComponents
@@ -29,7 +32,7 @@ internal partial class ParsePathMiddleware(ILogger _logger) : IPipelineStep
     /// <summary>
     /// Uses a regex to split the path into PathComponents, or return null if the path is invalid
     /// </summary>
-    private static PathComponents? PathComponentsFrom(string path)
+    private static PathInfo? PathInfoFrom(string path)
     {
         Match match = PathExpressionRegex().Match(path);
 
@@ -39,7 +42,7 @@ internal partial class ParsePathMiddleware(ILogger _logger) : IPipelineStep
         }
 
         string documentUuidValue = match.Groups["documentUuid"].Value;
-        DocumentUuid documentUuid = documentUuidValue == "" ? No.DocumentUuid : new(documentUuidValue);
+        string? documentUuid = documentUuidValue == "" ? null : documentUuidValue;
 
         return new(
             ProjectNamespace: new(match.Groups["projectNamespace"].Value.ToLower()),
@@ -49,20 +52,20 @@ internal partial class ParsePathMiddleware(ILogger _logger) : IPipelineStep
     }
 
     /// <summary>
-    /// Check that this is a well formed UUID v4
+    /// Check that this is a well formed UUID v4 string
     /// </summary>
-    private static bool IsDocumentUuidWellFormed(DocumentUuid documentUuid)
+    private static bool IsDocumentUuidWellFormed(string documentUuidString)
     {
-        return Uuid4Regex().IsMatch(documentUuid.Value.ToLower());
+        return Uuid4Regex().IsMatch(documentUuidString.ToLower());
     }
 
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         _logger.LogDebug("Entering ParsePathMiddleware - {TraceId}", context.FrontendRequest.TraceId);
 
-        PathComponents? pathComponents = PathComponentsFrom(context.FrontendRequest.Path);
+        PathInfo? pathInfo = PathInfoFrom(context.FrontendRequest.Path);
 
-        if (pathComponents == null)
+        if (pathInfo == null)
         {
             _logger.LogDebug(
                 "ParsePathMiddleware: Not a valid path - {TraceId}",
@@ -72,12 +75,7 @@ internal partial class ParsePathMiddleware(ILogger _logger) : IPipelineStep
             return;
         }
 
-        context.PathComponents = pathComponents;
-
-        if (
-            pathComponents.DocumentUuid != No.DocumentUuid
-            && !IsDocumentUuidWellFormed(pathComponents.DocumentUuid)
-        )
+        if (pathInfo.DocumentUuid != null && !IsDocumentUuidWellFormed(pathInfo.DocumentUuid))
         {
             _logger.LogDebug(
                 "ParsePathMiddleware: Not a valid document UUID - {TraceId}",
@@ -86,6 +84,10 @@ internal partial class ParsePathMiddleware(ILogger _logger) : IPipelineStep
             context.FrontendResponse = new FrontendResponse(StatusCode: 404, Body: "", Headers: []);
             return;
         }
+
+        DocumentUuid documentUuid = pathInfo.DocumentUuid == null ? No.DocumentUuid : new(new(pathInfo.DocumentUuid));
+
+        context.PathComponents = new(ProjectNamespace: new(pathInfo.ProjectNamespace), EndpointName: new(pathInfo.EndpointName), DocumentUuid: documentUuid);
 
         await next();
     }

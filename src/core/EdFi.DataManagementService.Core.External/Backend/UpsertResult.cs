@@ -15,13 +15,13 @@ public record UpsertResult
     /// A successful upsert request that took the form of an insert
     /// </summary>
     /// <param name="NewDocumentUuid">The DocumentUuid of the new document</param>
-    public record InsertSuccess(IDocumentUuid NewDocumentUuid) : UpsertResult();
+    public record InsertSuccess(DocumentUuid NewDocumentUuid) : UpsertResult();
 
     /// <summary>
     /// A successful upsert request that took the form of an update
     /// </summary>
     /// <param name="ExistingDocumentUuid">The DocumentUuid of the existing document</param>
-    public record UpdateSuccess(IDocumentUuid ExistingDocumentUuid) : UpsertResult();
+    public record UpdateSuccess(DocumentUuid ExistingDocumentUuid) : UpsertResult();
 
     /// <summary>
     /// A failure because referenced documents in the upserted document do not exist

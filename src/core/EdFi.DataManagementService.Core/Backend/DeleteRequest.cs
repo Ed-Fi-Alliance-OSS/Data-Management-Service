@@ -15,7 +15,7 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// <param name="validateNoReferencesToDocument">If true, validates there are no references to the document</param>
 /// <param name="TraceId">The request TraceId</param>
 internal record DeleteRequest(
-    IDocumentUuid DocumentUuid,
+    DocumentUuid DocumentUuid,
     IResourceInfo ResourceInfo,
     bool validateNoReferencesToDocument,
     ITraceId TraceId

@@ -14,11 +14,6 @@ namespace EdFi.DataManagementService.Core.External.Backend;
 public interface IUpsertRequest
 {
     /// <summary>
-    /// The ReferentialId of the document to upsert
-    /// </summary>
-    IReferentialId ReferentialId { get; }
-
-    /// <summary>
     /// The ResourceInfo of the document to upsert
     /// </summary>
     IResourceInfo ResourceInfo { get; }
@@ -34,11 +29,6 @@ public interface IUpsertRequest
     JsonNode EdfiDoc { get; }
 
     /// <summary>
-    /// If true, validates that all references in the document exist
-    /// </summary>
-    bool validateDocumentReferencesExist { get; }
-
-    /// <summary>
     /// The request TraceId
     /// </summary>
     ITraceId TraceId { get; }
@@ -47,5 +37,5 @@ public interface IUpsertRequest
     /// A candidate DocumentUuid of the document to upsert, used only
     /// if the upsert happens as an insert
     /// </summary>
-    IDocumentUuid DocumentUuid { get; }
+    DocumentUuid DocumentUuid { get; }
 }

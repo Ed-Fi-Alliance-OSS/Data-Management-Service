@@ -8,9 +8,9 @@ using EdFi.DataManagementService.Core.External.Model;
 namespace EdFi.DataManagementService.Backend;
 
 /// <summary>
-/// Abstract base class for all repositories that need a consistent way to determine a partition key given a documentUuid
+/// Utility class for repositories that need a consistent way to determine a partition key given a documentUuid
 /// </summary>
-public abstract class PartitionedRepository
+public static class PartitionUtility
 {
     // Returns an integer in the range 0..15 from the last byte of a Guid (e.g. DocumentUuid, ReferentialId)
     private static int PartitionKeyFor(Guid uuid)
@@ -20,13 +20,13 @@ public abstract class PartitionedRepository
     }
 
     // Returns an integer in the range 0..15 from the last byte of a DocumentUuid
-    protected static PartitionKey PartitionKeyFor(DocumentUuid documentUuid)
+    public static PartitionKey PartitionKeyFor(DocumentUuid documentUuid)
     {
         return new(PartitionKeyFor(documentUuid.Value));
     }
 
     // Returns an integer in the range 0..15 from the last byte of a DocumentUuid
-    protected static PartitionKey PartitionKeyFor(ReferentialId referentialId)
+    public static PartitionKey PartitionKeyFor(ReferentialId referentialId)
     {
         return new(PartitionKeyFor(referentialId.Value));
     }

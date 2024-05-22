@@ -14,10 +14,6 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// </summary>
 internal record UpsertRequest(
     /// <summary>
-    /// The ReferentialId of the document to upsert
-    /// </summary>
-    IReferentialId ReferentialId,
-    /// <summary>
     /// The ResourceInfo of the document to upsert
     /// </summary>
     IResourceInfo ResourceInfo,
@@ -30,10 +26,6 @@ internal record UpsertRequest(
     /// </summary>
     JsonNode EdfiDoc,
     /// <summary>
-    /// If true, validates that all references in the document exist
-    /// </summary>
-    bool validateDocumentReferencesExist,
-    /// <summary>
     /// The request TraceId
     /// </summary>
     ITraceId TraceId,
@@ -41,14 +33,13 @@ internal record UpsertRequest(
     /// A candidate DocumentUuid of the document to upsert, used only
     /// if the upsert happens as an insert
     /// </summary>
-    IDocumentUuid DocumentUuid
+    DocumentUuid DocumentUuid
 )
     : UpdateRequest(
-        ReferentialId,
         ResourceInfo,
         DocumentInfo,
         EdfiDoc,
-        validateDocumentReferencesExist,
         TraceId,
         DocumentUuid
-    ), IUpsertRequest;
+    ),
+        IUpsertRequest;

@@ -14,7 +14,7 @@ public interface IDeleteRequest
     /// <summary>
     /// The document UUID to delete
     /// </summary>
-    IDocumentUuid DocumentUuid { get; }
+    DocumentUuid DocumentUuid { get; }
 
     /// <summary>
     /// The ResourceInfo for the resource being deleted
