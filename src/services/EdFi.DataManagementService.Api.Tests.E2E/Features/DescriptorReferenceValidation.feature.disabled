@@ -2,8 +2,8 @@ Feature: Validate the reference of descriptors when creating resources
 
         Background
             Given this student exists:
-                  | Id                               | studentUniqueId | birthDate  | firstName | lastSurname |
-                  | fafbbd2024664ee786c05e899fbfe9bc | 604824          | 2010-01-13 | Traci     | Mathews     |
+                  | studentUniqueId | birthDate  | firstName | lastSurname |
+                  | 604824          | 2010-01-13 | Traci     | Mathews     |
 
 
         @ignore
@@ -12,13 +12,13 @@ Feature: Validate the reference of descriptors when creating resources
                   """
                   {
                         "localEducationAgencyId": 25590100,
-                        "nameOfInstitution": "Grand Institution Test",
+                        "nameOfInstitution": "Grand+Institution+Test",
                         "categories": [
-                        {
-                        "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor"
-                        }
+                            {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Fake"
+                            }
                         ],
-                        "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor"
+                        "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Fake"
                   }
                   """
              Then it should respond with 400
@@ -50,6 +50,7 @@ Feature: Validate the reference of descriptors when creating resources
              When client sends a PUT request to "/ed-fi/students/{id}" with body
                   """
                   {
+                    "id": "{id}"
                     "studentUniqueId": "604824",
                     "birthDate": "2010-01-13",
                     "firstName": "Traci",
@@ -62,9 +63,10 @@ Feature: Validate the reference of descriptors when creating resources
 
         @ignore
         Scenario: User CANNOT update a resource using a descriptor that does not exist
-             When client sends a POST request to "/ed-fi/students/{id}" with body
+             When client sends a PUT request to "/ed-fi/students/{id}" with body
                   """
                   {
+                    "id": "{id}"
                     "studentUniqueId": "123456789",
                     "birthDate": "2010-03-25",
                     "firstName": "Jeff",
@@ -72,7 +74,36 @@ Feature: Validate the reference of descriptors when creating resources
                     "citizenshipStatusDescriptor": "uri://ed-fi.org/CitizenshipStatusDescriptor#Fake",
                   """
              Then it should respond with 400
-              And the response boy is
+              And the response body is
+                  """
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null,
+                    "validationErrors": {
+                        "$.citizenshipStatusDescriptor": [
+                            "CitizenshipStatusDescriptor value 'uri://ed-fi.org/CitizenshipStatusDescriptor#Fake' does not exist."
+                        ]
+                    }
+                  }
+                  """
+
+        @ignore
+        Scenario: User CANNOT create (upsert) a resource using a descriptor that does not exist
+          When client sends a POST request to "/ed-fi/students" with body
+                  """
+                  {
+                    "studentUniqueId": "604824",
+                    "birthDate": "2010-01-13",
+                    "firstName": "Traci",
+                    "lastSurname": "Mathews",
+                    "citizenshipStatusDescriptor": "uri://ed-fi.org/CitizenshipStatusDescriptor#Fake"
+                  }
+                  """
+            Then it should respond with 400
+            And the response body is
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
