@@ -4,8 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
-using Microsoft.Extensions.Logging;
 using EdFi.DataManagementService.Core.Pipeline;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
@@ -25,16 +25,7 @@ internal class CoreLoggingMiddleware(ILogger _logger) : IPipelineStep
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                JsonSerializer.Serialize(
-                    new
-                    {
-                        message = "An uncaught error has occurred",
-                        error = new { ex.Message, ex.StackTrace },
-                        traceId = context.FrontendRequest.TraceId
-                    }
-                )
-            );
+            _logger.LogError(ex, "Unknown Error - {TraceId}", context.FrontendRequest.TraceId);
 
             // Replace the frontend response (if any) with a 500 error
             context.FrontendResponse = new(

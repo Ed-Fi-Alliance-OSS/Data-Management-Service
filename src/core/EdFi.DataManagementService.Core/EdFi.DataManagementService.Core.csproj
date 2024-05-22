@@ -12,7 +12,7 @@
     <PackageReference Include="EdFi.ApiSchema" Version="5.0.0-alpha.10" />
     <PackageReference Include="Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic" Version="4.0.0" />
     <PackageReference Include="Microsoft.CodeAnalysis" Version="4.8.0" />
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle" Version="4.8.0">
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle" Version="4.9.2">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
@@ -25,12 +25,12 @@
     <PackageReference Include="Serilog.Settings.Configuration" Version="8.0.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="5.0.1" />
     <PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />
-    <PackageReference Include="SonarAnalyzer.CSharp" Version="9.19.0.84025">
+    <PackageReference Include="SonarAnalyzer.CSharp" Version="9.25.0.90414">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="JsonSchema.Net" Version="6.0.3" />
-    <PackageReference Include="JsonPath.Net" Version="1.0.0" />
+    <PackageReference Include="JsonPath.Net" Version="1.0.5" />
   </ItemGroup>
 
   <ItemGroup>
