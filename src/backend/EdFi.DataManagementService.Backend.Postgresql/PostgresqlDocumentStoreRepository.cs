@@ -26,17 +26,19 @@ public class PostgresqlDocumentStoreRepository(
             await conn.OpenAsync();
 
             await using var cmd = new NpgsqlCommand(
-                @"INSERT INTO public.documents(document_partition_key, document_uuid, resource_name, edfi_doc)
-                    VALUES (@document_partition_key, @document_uuid, @resource_name, @edfi_doc);",
+                @"INSERT INTO public.Documents(DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, ProjectName, EdfiDoc)
+                    VALUES ($1, $2, $3, $4, $5, $6);",
                 conn
             )
             {
                 Parameters =
                 {
-                    new("document_partition_key", PartitionKeyFor(upsertRequest.DocumentUuid)),
-                    new("document_uuid", upsertRequest.DocumentUuid.Value),
-                    new("resource_name", upsertRequest.ResourceInfo.ResourceName.Value),
-                    new("edfi_doc", upsertRequest.EdfiDoc.ToJsonString())
+                    new() { Value = PartitionKeyFor(upsertRequest.DocumentUuid) },
+                    new() { Value = upsertRequest.DocumentUuid.Value },
+                    new() { Value = upsertRequest.ResourceInfo.ResourceName.Value },
+                    new() { Value = upsertRequest.ResourceInfo.ResourceVersion.Value },
+                    new() { Value = upsertRequest.ResourceInfo.ProjectName.Value },
+                    new() { Value = upsertRequest.EdfiDoc.ToJsonString() },
                 }
             };
 
@@ -68,23 +70,11 @@ public class PostgresqlDocumentStoreRepository(
 
         try
         {
-            await using var conn = new NpgsqlConnection(_connectionString);
-            await conn.OpenAsync();
-
-            await using var command = new NpgsqlCommand(
-                @"SELECT edfi_doc FROM public.documents
-                WHERE document_partition_key = @document_partition_key AND document_uuid = @document_uuid;",
-                conn
-            )
-            {
-                Parameters =
-                {
-                    new("document_partition_key", PartitionKeyFor(getRequest.DocumentUuid)),
-                    new("document_uuid", getRequest.DocumentUuid.Value)
-                }
-            };
-
-            await using var reader = await command.ExecuteReaderAsync();
+            await using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
+            await using NpgsqlCommand cmd = dataSource.CreateCommand(
+                $"SELECT edfi_doc FROM public.Documents WHERE DocumentPartitionKey = {PartitionKeyFor(getRequest.DocumentUuid)} AND DocumentUuid = '{getRequest.DocumentUuid.Value}';"
+            );
+            await using NpgsqlDataReader reader = await cmd.ExecuteReaderAsync();
 
             if (!reader.HasRows)
             {
@@ -123,16 +113,16 @@ public class PostgresqlDocumentStoreRepository(
 
             await using var cmd = new NpgsqlCommand(
                 @"UPDATE public.documents
-                    SET edfi_doc = @edfi_doc
-                    WHERE document_partition_key = @document_partition_key AND document_uuid = @document_uuid;",
+                    SET EdfiDoc = $1
+                    WHERE DocumentPartitionKey = $2 AND DocumentUuid = $3;",
                 conn
             )
             {
                 Parameters =
                 {
-                    new("document_partition_key", PartitionKeyFor(updateRequest.DocumentUuid)),
-                    new("document_uuid", updateRequest.DocumentUuid.Value),
-                    new("edfi_doc", updateRequest.EdfiDoc.ToJsonString())
+                    new() { Value = updateRequest.EdfiDoc.ToJsonString() },
+                    new() { Value = PartitionKeyFor(updateRequest.DocumentUuid) },
+                    new() { Value = updateRequest.DocumentUuid.Value },
                 }
             };
 
@@ -143,8 +133,8 @@ public class PostgresqlDocumentStoreRepository(
                 case 1:
                     return await Task.FromResult<UpdateResult>(new UpdateResult.UpdateSuccess());
                 case 0:
-                    _logger.LogError(
-                        "Error: Record to update does not exist - {TraceId}",
+                    _logger.LogInformation(
+                        "Failure: Record to update does not exist - {TraceId}",
                         updateRequest.TraceId
                     );
                     return await Task.FromResult<UpdateResult>(new UpdateResult.UpdateFailureNotExists());
