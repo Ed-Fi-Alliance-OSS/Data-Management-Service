@@ -11,21 +11,34 @@ public class ContainerSetup
 {
     public async Task<string> SetupDataManagement()
     {
-        string imageName = "local/edfi-data-management-service";
+        var network = new NetworkBuilder().Build();
+
+        string apiImageName = "local/edfi-data-management-service";
+        string dbImageName = "local/edfi-data-management-postgresql";
 
         // Image needs to be previously built
-        var dockerImage = new ContainerBuilder()
-            .WithImage(imageName)
+        var apiContaner = new ContainerBuilder()
+            .WithImage(apiImageName)
             .WithPortBinding(8080)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(8080)))
+            .WithNetwork(network)
             .Build();
 
-        await dockerImage.StartAsync();
+        var dbContainer = new ContainerBuilder()
+        .WithImage(dbImageName)
+        .WithPortBinding(5432, 5432)
+        .WithNetwork(network)
+        .WithNetworkAliases("dmsdb")
+        .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(5432))
+        .Build();
+
+        await network.CreateAsync().ConfigureAwait(false);
+        await Task.WhenAll(apiContaner.StartAsync(), dbContainer.StartAsync()).ConfigureAwait(false);
 
         return new UriBuilder(
             Uri.UriSchemeHttp,
-            dockerImage.Hostname,
-            dockerImage.GetMappedPublicPort(8080)
+            apiContaner.Hostname,
+            apiContaner.GetMappedPublicPort(8080)
         ).ToString();
     }
 }

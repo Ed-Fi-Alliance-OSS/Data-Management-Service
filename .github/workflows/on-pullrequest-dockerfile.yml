@@ -35,7 +35,7 @@ jobs:
       matrix:
         dockerfile:
           [
-            { name: "dms_database", path: "src/backend/Dockerfile" },
+            { name: "dms_database", path: "src/Postgresql.Dockerfile" },
             { name: "dms", path: "src/Dockerfile" }
           ]
     steps:

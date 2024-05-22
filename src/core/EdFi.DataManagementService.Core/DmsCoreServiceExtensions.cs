@@ -22,7 +22,6 @@ public static class DmsCoreServiceExtensions
     public static IServiceCollection AddDmsDefaultConfiguration(this IServiceCollection services)
     {
         services
-            .AddSingleton<IDocumentStoreRepository, SuccessDocumentStoreRepository>()
             .AddSingleton<IApiSchemaProvider, ApiSchemaFileLoader>()
             .AddSingleton<IApiSchemaSchemaProvider, ApiSchemaSchemaProvider>()
             .AddSingleton<IApiSchemaValidator, ApiSchemaValidator>()
