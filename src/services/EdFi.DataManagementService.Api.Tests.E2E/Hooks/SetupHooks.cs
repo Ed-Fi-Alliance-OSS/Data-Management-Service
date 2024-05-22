@@ -32,6 +32,7 @@ public class SetupHooks
             if (useTestContainers)
             {
                 logger.log.Debug("Using TestContainers to set environment");
+
                 context.ApiUrl = await containers.SetupDataManagement();
             }
             else
