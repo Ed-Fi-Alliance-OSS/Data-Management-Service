@@ -21,11 +21,15 @@ if (!ReportInvalidConfiguration(app))
 }
 
 app.UseRouting();
-app.UseRateLimiter();
+
+if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
+{
+    app.UseRateLimiter();
+}
+
 app.MapRouteEndpoints();
 
-app.Run();
-return;
+await app.RunAsync();
 
 /// <summary>
 /// Triggers configuration validation. If configuration is invalid, injects a short-circuit middleware to report.
