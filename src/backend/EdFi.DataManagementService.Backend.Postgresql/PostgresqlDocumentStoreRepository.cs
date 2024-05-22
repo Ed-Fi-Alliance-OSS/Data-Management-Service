@@ -49,9 +49,8 @@ public class PostgresqlDocumentStoreRepository(
             _logger.LogError("Unknown Error - {TraceId}", upsertRequest.TraceId);
             return new UpsertResult.UnknownFailure("Unknown Failure");
         }
-        catch (Exception ex)
+        catch
         {
-            _logger.LogError(ex.Message);
             _logger.LogError("Unknown Error - {TraceId}", upsertRequest.TraceId);
             return new UpsertResult.UnknownFailure("Unknown Failure");
         }
