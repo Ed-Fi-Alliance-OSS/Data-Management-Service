@@ -3,9 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.Deploy;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
-using EdFi.DataManagementService.Backend.Deploy;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -55,15 +55,23 @@ void InitializeDatabase(WebApplication app)
 {
     if (app.Services.GetRequiredService<IOptions<AppSettings>>().Value.DeployDatabaseOnStartup)
     {
-        var result = app
-            .Services.GetRequiredService<IDatabaseDeploy>()
-            .DeployDatabase(
-                app.Services.GetRequiredService<IOptions<ConnectionStrings>>().Value.DatabaseConnection
-            );
-        if (result is DatabaseDeployResult.DatabaseDeployFailure failure)
+        try
         {
-            app.Logger.LogCritical("Database Deploy Failure");
-            throw failure.Error;
+            var result = app
+                .Services.GetRequiredService<IDatabaseDeploy>()
+                .DeployDatabase(
+                    app.Services.GetRequiredService<IOptions<ConnectionStrings>>().Value.DatabaseConnection
+                );
+            if (result is DatabaseDeployResult.DatabaseDeployFailure failure)
+            {
+                app.Logger.LogCritical(failure.Error, "Database Deploy Failure");
+                Environment.Exit(-1);
+            }
+        }
+        catch (Exception ex)
+        {
+            app.Logger.LogCritical(ex, "Database Deploy Failure");
+            Environment.Exit(-1);
         }
     }
 }
