@@ -81,7 +81,7 @@ param(
 $solutionRoot = "$PSScriptRoot/src"
 $defaultSolution = "$solutionRoot/EdFi.DataManagementService.sln"
 $servicesRoot = "$solutionRoot/services"
-$projectName =  "EdFi.DataManagementService.Api"
+$projectName = "EdFi.DataManagementService.Api"
 $packageName = "EdFi.DataManagementService"
 $testResults = "$PSScriptRoot/TestResults"
 
@@ -151,7 +151,7 @@ function RunTests {
         Write-Output "Executing: dotnet test $($_)"
 
         $fileName = Split-Path -Path  $($_) -Leaf
-        $fileNameNoExt = $fileName.subString(0, $fileName.length-4)
+        $fileNameNoExt = $fileName.subString(0, $fileName.length - 4)
 
         Invoke-Execute {
             dotnet test $_ `
@@ -238,26 +238,27 @@ function Invoke-BuildPackage {
 
 function PushPackage {
     Invoke-Execute {
-    if (-not $NuGetApiKey) {
-        throw "Cannot push a NuGet package without providing an API key in the `NuGetApiKey` argument."
-    }
+        if (-not $NuGetApiKey) {
+            throw "Cannot push a NuGet package without providing an API key in the `NuGetApiKey` argument."
+        }
 
-    if (-not $EdFiNuGetFeed) {
-        throw "Cannot push a NuGet package without providing a feed in the `EdFiNuGetFeed` argument."
-    }
+        if (-not $EdFiNuGetFeed) {
+            throw "Cannot push a NuGet package without providing a feed in the `EdFiNuGetFeed` argument."
+        }
 
-    if (-not $PackageFile) {
-        $PackageFile = "$PSScriptRoot/$packageName.$DMSVersion.nupkg"
-    }
+        if (-not $PackageFile) {
+            $PackageFile = "$PSScriptRoot/$packageName.$DMSVersion.nupkg"
+        }
 
-    if($DryRun){
-        Write-Info "Dry run enabled, not pushing package."
-    } else {
-        Write-Info ("Pushing $PackageFile to $EdFiNuGetFeed")
+        if ($DryRun) {
+            Write-Info "Dry run enabled, not pushing package."
+        }
+        else {
+            Write-Info ("Pushing $PackageFile to $EdFiNuGetFeed")
 
-        dotnet nuget push $PackageFile --api-key $NuGetApiKey --source $EdFiNuGetFeed
+            dotnet nuget push $PackageFile --api-key $NuGetApiKey --source $EdFiNuGetFeed
+        }
     }
-  }
 }
 
 function Invoke-PushPackage {
@@ -266,9 +267,12 @@ function Invoke-PushPackage {
 
 $dockerTagBase = "local"
 $dockerTagDMS = "$($dockerTagBase)/edfi-data-management-service"
+$dockerTagPostgresql = "$($dockerTagBase)/edfi-data-management-postgresql"
+
 function DockerBuild {
     Push-Location src/
-    &docker build -t $dockerTagDMS .
+    &docker build -t $dockerTagDMS -f Dockerfile .
+    &docker build -t $dockerTagPostgresql -f Postgresql.Dockerfile .
     Pop-Location
 }
 
@@ -277,8 +281,7 @@ function DockerRun {
 }
 
 Invoke-Main {
-    if($IsLocalBuild)
-    {
+    if ($IsLocalBuild) {
         $nugetExePath = Install-NugetCli
         Set-Alias nuget $nugetExePath -Scope Global -Verbose
     }
