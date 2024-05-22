@@ -12,6 +12,9 @@
     <EmbeddedResource Include="Deploy\Scripts\0001_Create_Documents_Table.sql">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </EmbeddedResource>
+    <EmbeddedResource Include="Deploy\Scripts\0002_Create_Aliases_Table.sql">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </EmbeddedResource>
   </ItemGroup>
 
   <ItemGroup>
