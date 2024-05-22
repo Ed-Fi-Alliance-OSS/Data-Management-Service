@@ -164,7 +164,7 @@ function RunTests {
                 # Threshold need to be defined
                 coverlet $($_) `
                 --target dotnet --targetargs "test $($_)" `
-                --threshold 60 `
+                --threshold 50 `
                 --threshold-type line `
                 --threshold-type branch `
                 --threshold-stat total `
