@@ -25,9 +25,9 @@ public class PostgresqlDocumentStoreRepository(
             await using var conn = new NpgsqlConnection(_connectionString);
             await conn.OpenAsync();
 
-            await using var cmd = new NpgsqlCommand(
+            await using var insertDocumentCmd = new NpgsqlCommand(
                 @"INSERT INTO public.Documents(DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, ProjectName, EdfiDoc)
-                    VALUES ($1, $2, $3, $4, $5, $6);",
+                    VALUES ($1, $2::UUID, $3, $4, $5, $6);",
                 conn
             )
             {
@@ -42,7 +42,7 @@ public class PostgresqlDocumentStoreRepository(
                 }
             };
 
-            int resultCount = await cmd.ExecuteNonQueryAsync();
+            int resultCount = await insertDocumentCmd.ExecuteNonQueryAsync();
             if (resultCount == 1)
             {
                 _logger.LogDebug("Upsert success - {TraceId}", upsertRequest.TraceId);
@@ -70,10 +70,21 @@ public class PostgresqlDocumentStoreRepository(
 
         try
         {
-            await using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(_connectionString);
-            await using NpgsqlCommand cmd = dataSource.CreateCommand(
-                $"SELECT edfi_doc FROM public.Documents WHERE DocumentPartitionKey = {PartitionKeyFor(getRequest.DocumentUuid)} AND DocumentUuid = '{getRequest.DocumentUuid.Value}';"
-            );
+            await using NpgsqlConnection conn = new(_connectionString);
+            await conn.OpenAsync();
+
+            await using NpgsqlCommand cmd = new(
+                @"SELECT EdfiDoc FROM public.Documents WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2::UUID;",
+                conn
+            )
+            {
+                Parameters =
+                {
+                    new() { Value = PartitionKeyFor(getRequest.DocumentUuid) },
+                    new() { Value = getRequest.DocumentUuid.Value },
+                }
+            };
+
             await using NpgsqlDataReader reader = await cmd.ExecuteReaderAsync();
 
             if (!reader.HasRows)
@@ -126,9 +137,9 @@ public class PostgresqlDocumentStoreRepository(
                 }
             };
 
-            var result = await cmd.ExecuteNonQueryAsync();
+            int rowsAffected = await cmd.ExecuteNonQueryAsync();
 
-            switch (result)
+            switch (rowsAffected)
             {
                 case 1:
                     return await Task.FromResult<UpdateResult>(new UpdateResult.UpdateSuccess());
@@ -140,8 +151,8 @@ public class PostgresqlDocumentStoreRepository(
                     return await Task.FromResult<UpdateResult>(new UpdateResult.UpdateFailureNotExists());
                 default:
                     _logger.LogError(
-                        "UpdateDocumentById result count was '{Result}' for {DocumentUuid} - {TraceId}",
-                        result,
+                        "UpdateDocumentById rows affected was '{RowsAffected}' for {DocumentUuid} - {TraceId}",
+                        rowsAffected,
                         updateRequest.DocumentUuid,
                         updateRequest.TraceId
                     );
