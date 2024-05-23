@@ -5,9 +5,5 @@
 
 namespace EdFi.DataManagementService.Core.External.Model;
 
-// A string type branded as a DocumentUuid, which is a UUID that identifies a document.
-// A UUID string is of the form 00000000-0000-4000-8000-000000000000
-public interface IDocumentUuid
-{
-    string Value { get; }
-}
+// A Guid type branded as a DocumentUuid, which is a UUID that identifies a document.
+public record struct DocumentUuid(Guid Value);

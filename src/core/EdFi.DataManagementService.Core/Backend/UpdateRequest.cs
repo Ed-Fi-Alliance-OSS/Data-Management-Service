@@ -15,7 +15,7 @@ internal record UpdateRequest(
     /// <summary>
     /// The ReferentialId of the document to update
     /// </summary>
-    IReferentialId ReferentialId,
+    ReferentialId ReferentialId,
     /// <summary>
     /// The ResourceInfo of the document to update
     /// </summary>
@@ -39,5 +39,5 @@ internal record UpdateRequest(
     /// <summary>
     /// The DocumentUuid of the document to update
     /// </summary>
-    IDocumentUuid DocumentUuid
+    DocumentUuid DocumentUuid
 ) : IUpdateRequest;

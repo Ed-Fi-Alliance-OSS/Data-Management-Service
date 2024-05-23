@@ -16,7 +16,7 @@ public interface IUpsertRequest
     /// <summary>
     /// The ReferentialId of the document to upsert
     /// </summary>
-    IReferentialId ReferentialId { get; }
+    ReferentialId ReferentialId { get; }
 
     /// <summary>
     /// The ResourceInfo of the document to upsert
@@ -47,5 +47,5 @@ public interface IUpsertRequest
     /// A candidate DocumentUuid of the document to upsert, used only
     /// if the upsert happens as an insert
     /// </summary>
-    IDocumentUuid DocumentUuid { get; }
+    DocumentUuid DocumentUuid { get; }
 }

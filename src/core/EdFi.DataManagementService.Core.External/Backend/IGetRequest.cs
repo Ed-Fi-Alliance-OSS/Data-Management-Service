@@ -15,7 +15,7 @@ public interface IGetRequest
     /// <summary>
     /// The document UUID to get
     /// </summary>
-    IDocumentUuid DocumentUuid { get; }
+    DocumentUuid DocumentUuid { get; }
 
     /// <summary>
     /// The ResourceInfo for the resource being retrieved

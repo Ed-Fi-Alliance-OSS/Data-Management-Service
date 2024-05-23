@@ -12,12 +12,23 @@ namespace EdFi.DataManagementService.Backend
     /// </summary>
     public abstract class PartitionedRepository
     {
-        // Returns an integer in the range 0..15 from the last byte of a DocumentUuid
-        protected static int PartitionKeyFor(IDocumentUuid documentUuid)
+        // Returns an integer in the range 0..15 from the last byte of a Guid (e.g. DocumentUuid, ReferentialId)
+        private static int PartitionKeyFor(Guid uuid)
         {
-            Guid asGuid = Guid.Parse(documentUuid.Value);
-            byte lastByte = asGuid.ToByteArray()[^1];
+            byte lastByte = uuid.ToByteArray()[^1];
             return lastByte % 16;
+        }
+
+        // Returns an integer in the range 0..15 from the last byte of a DocumentUuid
+        protected static int PartitionKeyFor(DocumentUuid documentUuid)
+        {
+            return PartitionKeyFor(documentUuid.Value);
+        }
+
+        // Returns an integer in the range 0..15 from the last byte of a DocumentUuid
+        protected static int PartitionKeyFor(ReferentialId referentialId)
+        {
+            return PartitionKeyFor(referentialId.Value);
         }
     }
 }

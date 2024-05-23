@@ -15,7 +15,7 @@ public interface IUpdateRequest
     /// <summary>
     /// The ReferentialId of the document to update
     /// </summary>
-    IReferentialId ReferentialId { get; }
+    ReferentialId ReferentialId { get; }
 
     /// <summary>
     /// The ResourceInfo of the document to update
@@ -45,5 +45,5 @@ public interface IUpdateRequest
     /// <summary>
     /// The DocumentUuid of the document to update
     /// </summary>
-    IDocumentUuid DocumentUuid { get; }
+    DocumentUuid DocumentUuid { get; }
 }

@@ -15,7 +15,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Backend
     {
         private class TestPartitionedRepository : PartitionedRepository
         {
-            public int GetPartition(IDocumentUuid documentUuid)
+            public int GetPartition(DocumentUuid documentUuid)
             {
                 return PartitionKeyFor(documentUuid);
             }
@@ -52,7 +52,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Backend
             public int All_possible_last_bytes_return_correct_partition(char lastByte)
             {
                 return _testPartitionedRepository.GetPartition(
-                    (new { Value = _randomDocumentUuid[..35] + lastByte }).ActLike<IDocumentUuid>()
+                    (new { Value = _randomDocumentUuid[..35] + lastByte }).ActLike<DocumentUuid>()
                 );
             }
         }

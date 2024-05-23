@@ -21,7 +21,7 @@ namespace EdFi.DataManagementService.Core.Handler;
 internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger)
     : IPipelineStep
 {
-    private static string ToResourcePath(PathComponents p, IDocumentUuid u)
+    private static string ToResourcePath(PathComponents p, DocumentUuid u)
     {
         return $"/{p.ProjectNamespace.Value}/{p.EndpointName.Value}/{u.Value}";
     }

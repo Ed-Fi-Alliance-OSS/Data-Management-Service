@@ -16,7 +16,7 @@ internal record UpsertRequest(
     /// <summary>
     /// The ReferentialId of the document to upsert
     /// </summary>
-    IReferentialId ReferentialId,
+    ReferentialId ReferentialId,
     /// <summary>
     /// The ResourceInfo of the document to upsert
     /// </summary>
@@ -41,7 +41,7 @@ internal record UpsertRequest(
     /// A candidate DocumentUuid of the document to upsert, used only
     /// if the upsert happens as an insert
     /// </summary>
-    IDocumentUuid DocumentUuid
+    DocumentUuid DocumentUuid
 )
     : UpdateRequest(
         ReferentialId,

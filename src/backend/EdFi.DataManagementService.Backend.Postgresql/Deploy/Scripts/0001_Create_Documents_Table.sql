@@ -10,7 +10,7 @@ CREATE TABLE Documents (
   ResourceName VARCHAR(256) NOT NULL,
   ResourceVersion VARCHAR(64) NOT NULL,
   ProjectName VARCHAR(256) NOT NULL,
-  EdfiDoc VARCHAR NOT NULL,
+  EdfiDoc JSONB NOT NULL,
   CreatedAt TIMESTAMP NOT NULL DEFAULT NOW(),
   LastModifiedAt TIMESTAMP NOT NULL DEFAULT NOW(),
   PRIMARY KEY (DocumentPartitionKey, Id)
