@@ -7,14 +7,14 @@
 set -e
 set +x
 
-until pg_isready -h 172.17.0.1 -p 5402 -U postgres; do
+until pg_isready -h ${POSTGRES_HOST} -p ${POSTGRES_PORT} -U ${POSTGRES_USER}; do
   echo "Waiting for PostgreSQL to start..."
   sleep 2
 done
 
 echo "PostgreSQL is ready. Install Data Management Service schema."
 
-dotnet Installer/EdFi.DataManagementService.Backend.Installer.dll postgresql "host=172.17.0.1;port=5402;username=postgres;password=P@ssw0rd;database=edfi_datamanagementservice;"
+dotnet Installer/EdFi.DataManagementService.Backend.Installer.dll postgresql "host=${POSTGRES_HOST};port=${POSTGRES_PORT};username=${POSTGRES_USER};password=${POSTGRES_PASSWORD};database=edfi_datamanagementservice;"
 
 dotnet EdFi.DataManagementService.Frontend.AspNetCore.dll
 

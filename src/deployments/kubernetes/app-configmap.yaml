@@ -5,5 +5,5 @@ metadata:
 data:
     postgres-user: postgres
     postgres-host: postgres-service
-    postgres-port: "5432"
+    postgres-port: "5402"
     postgres-dbname: postgres
