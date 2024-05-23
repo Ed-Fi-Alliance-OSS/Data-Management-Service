@@ -5,7 +5,7 @@
 
 using EdFi.DataManagementService.Core.External.Interface;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
 
@@ -23,10 +23,8 @@ public static class PostgresqlBackendServiceExtensions
         string connectionString
     )
     {
-        services.AddSingleton<IDocumentStoreRepository>(x => new PostgresqlDocumentStoreRepository(
-            x.GetRequiredService<ILogger<PostgresqlDocumentStoreRepository>>(),
-            connectionString
-        ));
+        services.AddSingleton((sp) => NpgsqlDataSource.Create(connectionString));
+        services.AddSingleton<IDocumentStoreRepository, PostgresqlDocumentStoreRepository>();
 
         return services;
     }

@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Backend.Postgresql;
 
 public class PostgresqlDocumentStoreRepository(
     ILogger<PostgresqlDocumentStoreRepository> _logger,
-    string _connectionString
+    NpgsqlDataSource _dataSource
 ) : PartitionedRepository, IDocumentStoreRepository, IQueryHandler
 {
     public async Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
@@ -22,8 +22,7 @@ public class PostgresqlDocumentStoreRepository(
 
         try
         {
-            await using var conn = new NpgsqlConnection(_connectionString);
-            await conn.OpenAsync();
+            await using var conn = await _dataSource.OpenConnectionAsync();
 
             await using var insertDocumentCmd = new NpgsqlCommand(
                 @"INSERT INTO public.Documents(DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, ProjectName, EdfiDoc)
@@ -70,20 +69,20 @@ public class PostgresqlDocumentStoreRepository(
 
         try
         {
-            await using NpgsqlConnection conn = new(_connectionString);
-            await conn.OpenAsync();
+            await using var conn = await _dataSource.OpenConnectionAsync();
 
-            await using NpgsqlCommand cmd = new(
-                @"SELECT EdfiDoc FROM public.Documents WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2::UUID;",
-                conn
-            )
-            {
-                Parameters =
+            await using NpgsqlCommand cmd =
+                new(
+                    @"SELECT EdfiDoc FROM public.Documents WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2::UUID;",
+                    conn
+                )
                 {
-                    new() { Value = PartitionKeyFor(getRequest.DocumentUuid) },
-                    new() { Value = getRequest.DocumentUuid.Value },
-                }
-            };
+                    Parameters =
+                    {
+                        new() { Value = PartitionKeyFor(getRequest.DocumentUuid) },
+                        new() { Value = getRequest.DocumentUuid.Value },
+                    }
+                };
 
             await using NpgsqlDataReader reader = await cmd.ExecuteReaderAsync();
 
@@ -119,8 +118,7 @@ public class PostgresqlDocumentStoreRepository(
 
         try
         {
-            await using var conn = new NpgsqlConnection(_connectionString);
-            await conn.OpenAsync();
+            await using var conn = await _dataSource.OpenConnectionAsync();
 
             await using var cmd = new NpgsqlCommand(
                 @"UPDATE public.documents

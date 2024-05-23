@@ -26,6 +26,7 @@
           <PrivateAssets>all</PrivateAssets>
       </PackageReference>
       <PackageReference Include="Npgsql" Version="8.0.3" />
+      <PackageReference Include="Npgsql.DependencyInjection" Version="8.0.3" />
       <PackageReference Include="SonarAnalyzer.CSharp" Version="9.25.0.90414">
           <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
           <PrivateAssets>all</PrivateAssets>
