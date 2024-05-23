@@ -1,12 +1,10 @@
 # This is a rough draft feature for future use.
-@ignore
 Feature: Resources "Create" Operation validations
 
         Background:
             Given the Data Management Service must receive a token issued by "http://localhost"
               And user is already authorized
 
-        @ignore
         Scenario: Verify new resource can be created successfully
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -32,7 +30,6 @@ Feature: Resources "Create" Operation validations
                             # be sure to validate that the response matches the original payload,
                             # except for the addition of the 'id' field
 
-        @ignore
         Scenario: Verify error handling with POST using invalid data
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -62,7 +59,6 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
-        @ignore
         Scenario: Verify error handling with POST using invalid data Forbidden
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -84,7 +80,7 @@ Feature: Resources "Create" Operation validations
                         "correlationId": null
                     }
                   """
-        @ignore
+
         Scenario: Verify error handling with POST using empty body
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """

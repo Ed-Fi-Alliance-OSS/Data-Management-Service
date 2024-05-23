@@ -26,11 +26,21 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ReqnrollFeatureFiles Remove="Features\Resources\CreateResourcesValidation.feature" />
+    <ReqnrollFeatureFiles Remove="Features\Resources\UpdateResourcesValidation.feature" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Content Include="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <UpToDateCheckInput Remove="features\EqualityConstraintValidation.feature" />
     <UpToDateCheckInput Remove="features\Information.feature" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Features\Resources\CreateResourcesValidation.feature" />
+    <None Include="Features\Resources\UpdateResourcesValidation.feature" />
   </ItemGroup>
 
   <ItemGroup>
