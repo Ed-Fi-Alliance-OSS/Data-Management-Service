@@ -14,10 +14,6 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// </summary>
 internal record UpsertRequest(
     /// <summary>
-    /// The ReferentialId of the document to upsert
-    /// </summary>
-    ReferentialId ReferentialId,
-    /// <summary>
     /// The ResourceInfo of the document to upsert
     /// </summary>
     IResourceInfo ResourceInfo,
@@ -44,11 +40,11 @@ internal record UpsertRequest(
     DocumentUuid DocumentUuid
 )
     : UpdateRequest(
-        ReferentialId,
         ResourceInfo,
         DocumentInfo,
         EdfiDoc,
         validateDocumentReferencesExist,
         TraceId,
         DocumentUuid
-    ), IUpsertRequest;
+    ),
+        IUpsertRequest;

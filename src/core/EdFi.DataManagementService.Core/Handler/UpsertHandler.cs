@@ -31,11 +31,10 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
         _logger.LogDebug("Entering UpsertHandler - {TraceId}", context.FrontendRequest.TraceId);
 
         // A document uuid that will be assigned if this is a new document
-        DocumentUuid candidateDocumentUuid = new(Guid.NewGuid().ToString());
+        DocumentUuid candidateDocumentUuid = new(Guid.NewGuid());
 
         UpsertResult result = await _documentStoreRepository.UpsertDocument(
             new UpsertRequest(
-                ReferentialId: new ReferentialId(Guid.Empty),
                 ResourceInfo: context.ResourceInfo,
                 DocumentInfo: context.DocumentInfo,
                 EdfiDoc: context.FrontendRequest.Body ?? new JsonObject(),

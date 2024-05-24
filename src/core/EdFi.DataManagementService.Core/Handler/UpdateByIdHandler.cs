@@ -7,10 +7,10 @@ using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using EdFi.DataManagementService.Core.Pipeline;
 using static EdFi.DataManagementService.Core.External.Backend.UpdateResult;
-using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
@@ -27,7 +27,6 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
 
         UpdateResult result = await _documentStoreRepository.UpdateDocumentById(
             new UpdateRequest(
-                ReferentialId: new ReferentialId(Guid.Empty),
                 DocumentUuid: context.PathComponents.DocumentUuid,
                 ResourceInfo: context.ResourceInfo,
                 DocumentInfo: context.DocumentInfo,

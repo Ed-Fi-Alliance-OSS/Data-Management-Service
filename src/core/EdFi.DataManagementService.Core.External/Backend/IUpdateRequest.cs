@@ -13,11 +13,6 @@ namespace EdFi.DataManagementService.Core.External.Backend;
 public interface IUpdateRequest
 {
     /// <summary>
-    /// The ReferentialId of the document to update
-    /// </summary>
-    ReferentialId ReferentialId { get; }
-
-    /// <summary>
     /// The ResourceInfo of the document to update
     /// </summary>
     IResourceInfo ResourceInfo { get; }

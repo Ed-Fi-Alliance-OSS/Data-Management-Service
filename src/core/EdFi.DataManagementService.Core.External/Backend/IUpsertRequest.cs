@@ -14,11 +14,6 @@ namespace EdFi.DataManagementService.Core.External.Backend;
 public interface IUpsertRequest
 {
     /// <summary>
-    /// The ReferentialId of the document to upsert
-    /// </summary>
-    ReferentialId ReferentialId { get; }
-
-    /// <summary>
     /// The ResourceInfo of the document to upsert
     /// </summary>
     IResourceInfo ResourceInfo { get; }

@@ -13,10 +13,6 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// </summary>
 internal record UpdateRequest(
     /// <summary>
-    /// The ReferentialId of the document to update
-    /// </summary>
-    ReferentialId ReferentialId,
-    /// <summary>
     /// The ResourceInfo of the document to update
     /// </summary>
     IResourceInfo ResourceInfo,
