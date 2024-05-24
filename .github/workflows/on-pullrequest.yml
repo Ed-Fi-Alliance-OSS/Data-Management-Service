@@ -98,13 +98,12 @@ jobs:
         run: ./build.ps1 UnitTest -Configuration Debug
 
       - name: Generate Coverage Report
-        if: always()
+        if: ${{ hashFiles('coverage.cobertura.xml') != '' }}
         run: |
           reportgenerator -reports:"coverage.cobertura.xml" -targetdir:"coveragereport" -reporttypes:Html
-          ls
 
       - name: Upload Coverage Report
-        if: always()
+        if: success()
         uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         with:
           name: Coverage Report
