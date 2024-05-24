@@ -25,7 +25,7 @@ internal class ValidateEqualityConstraintMiddleware(ILogger _logger, IEqualityCo
     {
         _logger.LogDebug("Entering ValidateEqualityConstraintMiddleware- {TraceId}", context.FrontendRequest.TraceId);
 
-        if (context.ParsedBody == No.EmptyJsonNode && context.FrontendRequest.Body != null)
+        if (context.ParsedBody == No.JsonNode && context.FrontendRequest.Body != null)
         {
             var body = JsonNode.Parse(context.FrontendRequest.Body);
             if (body != null)

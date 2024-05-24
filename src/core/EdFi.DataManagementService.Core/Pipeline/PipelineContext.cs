@@ -71,5 +71,5 @@ internal class PipelineContext(FrontendRequest _frontendRequest, RequestMethod _
     /// <summary>
     /// Body in Json format
     /// </summary>
-    public JsonNode ParsedBody { get; set; } = No.EmptyJsonNode;
+    public JsonNode ParsedBody { get; set; } = No.JsonNode;
 }
