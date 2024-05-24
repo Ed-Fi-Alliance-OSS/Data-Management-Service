@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Diagnostics;
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 
@@ -22,6 +24,15 @@ internal partial class ExtractDocumentInfoMiddleware(ILogger _logger) : IPipelin
             "Entering ExtractDocumentInfoMiddleware - {TraceId}",
             context.FrontendRequest.TraceId
         );
+
+        if (context.ParsedBody == No.EmptyJsonNode && context.FrontendRequest.Body != null)
+        {
+            var body = JsonNode.Parse(context.FrontendRequest.Body);
+            if (body != null)
+            {
+                context.ParsedBody = body;
+            }
+        }
 
         Debug.Assert(context.ParsedBody != null, "Body was null, pipeline config invalid");
 

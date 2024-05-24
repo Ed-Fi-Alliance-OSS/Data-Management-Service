@@ -16,9 +16,8 @@ namespace EdFi.DataManagementService.Core.Middleware
         {
             _logger.LogDebug("Entering ParseBodyMiddleware - {TraceId}", context.FrontendRequest.TraceId);
 
-            if (context.FrontendRequest.Body != null && string.IsNullOrWhiteSpace(context.FrontendRequest.Body))
+            if (context.FrontendRequest.Body != null)
             {
-                //validation here
                 try
                 {
                     var body = JsonNode.Parse(context.FrontendRequest.Body);
