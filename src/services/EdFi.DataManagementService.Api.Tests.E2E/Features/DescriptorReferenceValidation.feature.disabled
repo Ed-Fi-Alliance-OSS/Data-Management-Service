@@ -92,7 +92,7 @@ Feature: Validate the reference of descriptors when creating resources
 
         @ignore
         Scenario: User CANNOT create (upsert) a resource using a descriptor that does not exist
-             When a POST request is made to "/ed-fi/students" with body
+             When a POST request is made to "/ed-fi/students" with
                   """
                   {
                     "studentUniqueId": "604824",
