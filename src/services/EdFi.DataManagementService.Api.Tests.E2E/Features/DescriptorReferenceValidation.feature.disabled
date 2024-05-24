@@ -8,7 +8,7 @@ Feature: Validate the reference of descriptors when creating resources
 
         @ignore
         Scenario: User CAN'T create a resource when descriptor doesn't exist
-             When a POST request is made to "/ed-fi/localEducationAgencies" with body
+             When a POST request is made to "/ed-fi/localEducationAgencies" with
                   """
                   {
                         "localEducationAgencyId": 25590100,
@@ -29,7 +29,7 @@ Feature: Validate the reference of descriptors when creating resources
 
         @ignore
         Scenario: User can POST a resource when descriptor exists
-             When a POST request is made to "/ed-fi/localEducationAgencies" with body
+             When a POST request is made to "/ed-fi/localEducationAgencies" with
                   """
                   {
                     "localEducationAgencyId": 25590100,
@@ -47,7 +47,7 @@ Feature: Validate the reference of descriptors when creating resources
 
         @ignore
         Scenario: User can UPDATE a resource when descriptor exists
-             When a PUT request is made to "/ed-fi/students/{id}" with body
+             When a PUT request is made to "/ed-fi/students/{id}" with
                   """
                   {
                     "id": "{id}"
@@ -63,7 +63,7 @@ Feature: Validate the reference of descriptors when creating resources
 
         @ignore
         Scenario: User CANNOT update a resource using a descriptor that does not exist
-             When a PUT request is made to "/ed-fi/students/{id}" with body
+             When a PUT request is made to "/ed-fi/students/{id}" with
                   """
                   {
                     "id": "{id}"
