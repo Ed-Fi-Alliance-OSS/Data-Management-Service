@@ -42,7 +42,7 @@
 param(
     # Command to execute, defaults to "Build".
     [string]
-    [ValidateSet("Clean", "Build", "BuildAndPublish", "UnitTest", "E2ETest", "Package", "Push", "DockerBuild", "DockerRun", "Run")]
+    [ValidateSet("Clean", "Build", "BuildAndPublish", "UnitTest", "E2ETest", "Coverage", "Package", "Push", "DockerBuild", "DockerRun", "Run")]
     $Command = "Build",
 
     # Assembly and package version number for the Data Management Service. The
@@ -85,6 +85,10 @@ $servicesRoot = "$solutionRoot/services"
 $projectName = "EdFi.DataManagementService.Api"
 $packageName = "EdFi.DataManagementService"
 $testResults = "$PSScriptRoot/TestResults"
+#Coverage
+$thresholdCoverage = 58
+$coverageOutputFile = "coverage.cobertura.xml"
+$targetDir = "coveragereport"
 
 $maintainers = "Ed-Fi Alliance, LLC and contributors"
 
@@ -148,6 +152,10 @@ function RunTests {
         Write-Output "no test assemblies found in $testAssemblyPath"
     }
 
+    Write-Output "Tests Assemblies List"
+    Write-Output $testAssemblies
+    Write-Output "End Tests Assemblies List"
+
     $testAssemblies | ForEach-Object {
         Write-Output "Executing: dotnet test $($_)"
 
@@ -155,9 +163,25 @@ function RunTests {
         $fileNameNoExt = $fileName.subString(0, $fileName.length - 4)
 
         Invoke-Execute {
-            dotnet test $_ `
-                --logger "trx;LogFileName=$testResults/$fileNameNoExt.trx" `
-                --nologo
+            if ($Filter.Equals("*.Tests.Unit")){
+                #Execution with coverage
+                # Threshold need to be defined
+                coverlet $($_) `
+                --target dotnet --targetargs "test $($_)" `
+                --threshold $thresholdCoverage `
+                --threshold-type line `
+                --threshold-type branch `
+                --threshold-stat total `
+                --format json `
+                --format cobertura `
+                --merge-with "coverage.json"
+            } else {
+                Invoke-Execute {
+                    dotnet test $($_) `
+                       --logger "trx;LogFileName=$testResults/$fileNameNoExt.trx" `
+                       --nologo
+                }
+            }
         }
     }
 }
@@ -173,7 +197,6 @@ function RunE2E {
 function E2ETests {
     Invoke-Step { DockerBuild }
     Invoke-Step { RunE2E }
-
 }
 
 function RunNuGetPack {
@@ -225,12 +248,24 @@ function Invoke-Clean {
     Invoke-Step { DotNetClean }
 }
 
-function Invoke-UnitTestSuite {
-    Invoke-Step { UnitTests }
+function Invoke-TestExecution {
+    param (
+        [ValidateSet("E2ETests","UnitTests",
+        ErrorMessage="Please specify a valid Test Type name from the list.",
+        IgnoreCase=$true)]
+        # File search filter
+        [string]
+        $Filter
+    )
+    switch ($Filter) {
+        E2ETests { Invoke-Step { E2ETests } }
+        UnitTests { Invoke-Step { UnitTests } }
+        Default {"Unknow Test Type"}
+    }
 }
 
-function Invoke-E2ETestSuite {
-    Invoke-Step { E2ETests }
+function Invoke-Coverage{
+    reportgenerator -reports:"$coverageOutputFile" -targetdir:"$targetDir" -reporttypes:Html
 }
 
 function Invoke-BuildPackage {
@@ -304,8 +339,9 @@ Invoke-Main {
             Invoke-Build
             Invoke-Publish
         }
-        UnitTest { Invoke-UnitTestSuite }
-        E2ETest { Invoke-E2ETestSuite }
+        UnitTest { Invoke-TestExecution UnitTests }
+        E2ETest { Invoke-TestExecution E2ETests }
+        Coverage { Invoke-Coverage }
         Package { Invoke-BuildPackage }
         Push { Invoke-PushPackage }
         DockerBuild { Invoke-Step { DockerBuild } }

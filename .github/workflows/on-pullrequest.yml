@@ -88,9 +88,25 @@ jobs:
       - name: Build
         run: ./build.ps1 Build -Configuration Debug
 
-      - name: Run Unit Tests
+      - name: Install Coverlet Reference
         if: success()
+        run: |
+          dotnet tool install --global coverlet.console
+          dotnet tool install --global dotnet-reportgenerator-globaltool
+
+      - name: Run Unit Tests
         run: ./build.ps1 UnitTest -Configuration Debug
+
+      - name: Generate Coverage Report
+        if: ${{ hashFiles('coverage.cobertura.xml') != '' }}
+        run: ./build.ps1 Coverage
+
+      - name: Upload Coverage Report
+        if: success()
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+        with:
+          name: Coverage Report
+          path: coveragereport
 
       - name: Upload Test Results
         if: always()
