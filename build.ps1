@@ -244,14 +244,6 @@ function Invoke-Clean {
     Invoke-Step { DotNetClean }
 }
 
-function Invoke-UnitTestSuite {
-    Invoke-Step { UnitTests }
-}
-
-function Invoke-E2ETestSuite {
-    Invoke-Step { E2ETests }
-}
-
 function Invoke-TestExecution {
     param (
         [ValidateSet("E2ETests","UnitTests",
