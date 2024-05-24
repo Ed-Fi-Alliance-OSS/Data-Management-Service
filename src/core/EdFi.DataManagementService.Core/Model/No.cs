@@ -38,7 +38,12 @@ internal static class No
     /// <summary>
     /// The null object for DocumentUuid
     /// </summary>
-    public static readonly DocumentUuid DocumentUuid = new("00000000-0000-0000-0000-000000000000");
+    public static readonly DocumentUuid DocumentUuid = new(Guid.Empty);
+
+    /// <summary>
+    /// The null object for ReferentialId
+    /// </summary>
+    public static readonly ReferentialId ReferentialId = new(Guid.Empty);
 
     /// <summary>
     /// The null object for PathComponents
@@ -64,6 +69,7 @@ internal static class No
     public static readonly DocumentInfo DocumentInfo =
         new(
             DocumentIdentity: new DocumentIdentity([]),
+            ReferentialId: new(Guid.Empty),
             DocumentReferences: [],
             DescriptorReferences: [],
             SuperclassIdentity: null

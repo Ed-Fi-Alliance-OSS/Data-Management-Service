@@ -45,6 +45,8 @@ internal class DescriptorDocument(JsonNode _document)
     /// </summary>
     public DocumentInfo ToDocumentInfo()
     {
+        DocumentIdentity documentIdentity = ToDocumentIdentity();
+        
         return new(
             DocumentIdentity: ToDocumentIdentity(),
             DocumentReferences: [],

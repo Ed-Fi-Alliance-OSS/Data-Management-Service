@@ -5,7 +5,6 @@
 
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using ImpromptuInterface;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Backend
@@ -17,7 +16,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Backend
         {
             public int GetPartition(DocumentUuid documentUuid)
             {
-                return PartitionKeyFor(documentUuid);
+                return PartitionKeyFor(documentUuid).Value;
             }
         }
 
@@ -51,9 +50,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Backend
             [TestCase('F', ExpectedResult = 15)]
             public int All_possible_last_bytes_return_correct_partition(char lastByte)
             {
-                return _testPartitionedRepository.GetPartition(
-                    (new { Value = _randomDocumentUuid[..35] + lastByte }).ActLike<DocumentUuid>()
-                );
+                return _testPartitionedRepository.GetPartition(new(new(_randomDocumentUuid[..35] + lastByte)));
             }
         }
     }
