@@ -11,7 +11,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
 
         @ignore
         Scenario: Ensure clients can't GET information when filtering using invalid limit
-             When sending a GET request to "/ed-fi/schools?limit=<Value>"
+             When a GET request is made to "/ed-fi/schools?limit=<Value>"
              Then it should respond with 400
               And the response body is
                   """
@@ -34,7 +34,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
 
         @ignore
         Scenario: Ensure clients can get information when filtering by limit and and a valid offset
-             When sending a GET request to "/ed-fi/schools?offset=3&limit=5"
+             When a GET request is made to "/ed-fi/schools?offset=3&limit=5"
              Then it should respond with 200
               And the response body is
                   """
@@ -72,7 +72,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
 
         @ignore
         Scenario: Ensure clients can get information when filtering by limit and offset greater than the total
-             When sending a GET request to "/ed-fi/schools?offset=6&limit=5"
+             When a GET request is made to "/ed-fi/schools?offset=6&limit=5"
              Then it should respond with 200
               And the response body is
                   """
@@ -81,7 +81,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
 
         @ignore
         Scenario: Ensure clients can't GET information when filtering by limit and offset using invalid offset
-             When sending a GET request to "/ed-fi/schools?limit=6&offset=<Value>"
+             When a GET request is made to "/ed-fi/schools?limit=6&offset=<Value>"
              Then it should respond with 400
               And the response body is
                   """
@@ -104,7 +104,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
 
         @ignore
         Scenario: Ensure clients can GET information when querying using an offset without providing any limit in the query string
-             When sending a GET request to "/ed-fi/schools?offset=4"
+             When a GET request is made to "/ed-fi/schools?offset=4"
              Then it should respond with 200
               And the response body is
                   """
@@ -128,7 +128,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
 
         @ignore
         Scenario: Ensure clients can GET information when filtering with limits and properties
-             When sending a GET request to "/ed-fi/schools?nameOfInstitution=School+5&limit=2"
+             When a GET request is made to "/ed-fi/schools?nameOfInstitution=School+5&limit=2"
              Then it should respond with 200
               And the response body is
                   """
