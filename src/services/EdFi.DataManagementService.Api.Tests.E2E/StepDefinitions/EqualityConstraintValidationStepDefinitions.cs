@@ -15,13 +15,13 @@ public class EqualityConstraintValidationStepDefinitions(PlaywrightContext _play
 {
     private IAPIResponse _apiResponse = null!;
 
-    [When("sending a POST request to {string} with body")]
+    [When("a POST request is made to {string} with")]
     public async Task WhenSendingAPOSTRequestToWithBody(string url, string body)
     {
         _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
     }
 
-    [Then("the response code is {int}")]
+    [Then("it should respond with {int}")]
     public void ThenTheResponseCodeIs(int response)
     {
         _apiResponse.Status.Should().Be(response);
