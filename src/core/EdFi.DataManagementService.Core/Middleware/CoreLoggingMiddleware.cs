@@ -29,33 +29,7 @@ internal class CoreLoggingMiddleware(ILogger _logger) : IPipelineStep
         {
             _logger.LogError(ex, "Unknown Error - {TraceId}", context.FrontendRequest.TraceId);
 
-            FailureResponse failureResponse;
-
-            var validationErrors = new Dictionary<string, string[]>();
-
-            var value = new List<string>
-            {
-                ex.Message
-            };
-            validationErrors.Add("$.", value.ToArray());
-
-            failureResponse = FailureResponse.ForDataValidation(
-                "Data validation failed. See 'validationErrors' for details.",
-                validationErrors,
-                new List<string>().ToArray()
-            );
-
-            var options = new JsonSerializerOptions
-            {
-                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-            };
-
-            // Replace the frontend response (if any) with a 500 error
-            context.FrontendResponse = new(
-                StatusCode: 400,
-                JsonSerializer.Serialize(failureResponse, options),
-                Headers: []
-            );
+            FailureResponse.GenerateFrontendErrorResponse(context, ex.Message, 400);
         }
     }
 }

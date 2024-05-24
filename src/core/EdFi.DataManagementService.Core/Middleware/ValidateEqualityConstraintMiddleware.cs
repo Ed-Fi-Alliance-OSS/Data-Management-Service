@@ -5,11 +5,10 @@
 
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using Microsoft.Extensions.Logging;
+using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Validation;
-using EdFi.DataManagementService.Core.Pipeline;
-using System.Text.Json.Nodes;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
@@ -23,13 +22,8 @@ internal class ValidateEqualityConstraintMiddleware(ILogger _logger, IEqualityCo
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         _logger.LogDebug("Entering ValidateEqualityConstraintMiddleware- {TraceId}", context.FrontendRequest.TraceId);
-        JsonNode? body = new JsonObject();
-        if (context.FrontendRequest.Body != null)
-        {
-            body = JsonNode.Parse(context.FrontendRequest.Body);
-        }
 
-        string[] errors = _equalityConstraintValidator.Validate(body, context.ResourceSchema.EqualityConstraints);
+        string[] errors = _equalityConstraintValidator.Validate(context.ParsedBody, context.ResourceSchema.EqualityConstraints);
 
         if (errors.Length == 0)
         {

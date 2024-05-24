@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -33,18 +32,12 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
         // A document uuid that will be assigned if this is a new document
         DocumentUuid candidateDocumentUuid = new(Guid.NewGuid().ToString());
 
-        JsonNode? body = new JsonObject();
-        if (context.FrontendRequest.Body != null)
-        {
-            body = JsonNode.Parse(context.FrontendRequest.Body);
-        }
-
         UpsertResult result = await _documentStoreRepository.UpsertDocument(
             new UpsertRequest(
                 ReferentialId: new ReferentialId(Guid.Empty),
                 ResourceInfo: context.ResourceInfo,
                 DocumentInfo: context.DocumentInfo,
-                EdfiDoc: body ?? new JsonObject(),
+                EdfiDoc: context.ParsedBody,
                 validateDocumentReferencesExist: false,
                 TraceId: context.FrontendRequest.TraceId,
                 DocumentUuid: candidateDocumentUuid

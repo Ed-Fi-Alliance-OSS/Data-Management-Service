@@ -40,6 +40,8 @@ internal static class No
     /// </summary>
     public static readonly DocumentUuid DocumentUuid = new("00000000-0000-0000-0000-000000000000");
 
+    public static readonly JsonNode EmptyJsonNode = new JsonObject();
+
     /// <summary>
     /// The null object for PathComponents
     /// </summary>

@@ -23,7 +23,7 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         _logger.LogDebug("Entering UpdateByIdHandler - {TraceId}", context.FrontendRequest.TraceId);
-        Trace.Assert(context.FrontendRequest.Body != null, "Unexpected null Body on Frontend Request from PUT");
+        Trace.Assert(context.ParsedBody != null, "Unexpected null Body on Frontend Request from PUT");
 
         UpdateResult result = await _documentStoreRepository.UpdateDocumentById(
             new UpdateRequest(
@@ -31,7 +31,7 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
                 DocumentUuid: context.PathComponents.DocumentUuid,
                 ResourceInfo: context.ResourceInfo,
                 DocumentInfo: context.DocumentInfo,
-                EdfiDoc: context.FrontendRequest.Body,
+                EdfiDoc: context.ParsedBody,
                 validateDocumentReferencesExist: false,
                 TraceId: context.FrontendRequest.TraceId
             )

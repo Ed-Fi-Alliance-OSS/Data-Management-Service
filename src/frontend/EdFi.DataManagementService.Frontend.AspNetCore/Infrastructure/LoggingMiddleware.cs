@@ -41,8 +41,7 @@ public class LoggingMiddleware(RequestDelegate next)
                     JsonSerializer.Serialize(
                         new
                         {
-                            message =
-                                "The server encountered an unexpected condition that prevented it from fulfilling the request.",
+                            message = "The server encountered an unexpected condition that prevented it from fulfilling the request.",
                             traceId = context.TraceIdentifier
                         }
                     )

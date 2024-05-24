@@ -52,13 +52,16 @@ internal class DocumentValidator() : IDocumentValidator
         EvaluationOptions validatorEvaluationOptions =
             new() { OutputFormat = OutputFormat.List, RequireFormatValidation = true };
 
+        // Parse the body just one time
+        JsonNode? parsedBody = JsonNode.Parse(frontendRequest.Body);
+
         var resourceSchemaValidator = GetSchema(resourceSchema, method);
         var results = resourceSchemaValidator.Evaluate(
-            JsonNode.Parse(frontendRequest.Body),
+            parsedBody,
             validatorEvaluationOptions
         );
 
-        var pruneResult = PruneOverpostedData(JsonNode.Parse(frontendRequest.Body), results);
+        var pruneResult = PruneOverpostedData(parsedBody, results);
 
         if (pruneResult is PruneResult.Pruned pruned)
         {
@@ -80,7 +83,7 @@ internal class DocumentValidator() : IDocumentValidator
 
             // Now re-evaluate the pruned body
             results = resourceSchemaValidator.Evaluate(
-                JsonNode.Parse(frontendRequest.Body),
+                parsedBody,
                 validatorEvaluationOptions
             );
         }
@@ -151,14 +154,15 @@ internal class DocumentValidator() : IDocumentValidator
         }
     }
 
-    private static readonly Regex _propertyRegex = new Regex("\"([^\"]*)\"", RegexOptions.Compiled);
+    // Matches any text string enclosed in double quotation marks
+    private static readonly Regex _findErrorsRegex = new Regex("\"([^\"]*)\"", RegexOptions.Compiled);
 
     private static Dictionary<string, string[]> SplitErrorDetail(string error, string propertyName)
     {
         var validations = new Dictionary<string, string[]>();
         if (error.Contains("[") && error.Contains("]"))
         {
-            MatchCollection hits = _propertyRegex.Matches(error);
+            MatchCollection hits = _findErrorsRegex.Matches(error);
 
             foreach (var hit in hits.Select(hit => hit.Groups))
             {

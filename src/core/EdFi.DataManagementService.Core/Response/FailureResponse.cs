@@ -3,6 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.Pipeline;
+using Microsoft.Extensions.Logging;
+
 namespace EdFi.DataManagementService.Core.Response;
 
 /// <summary>
@@ -77,4 +83,34 @@ internal record FailureResponse(
             validationErrors: ValidationErrors,
             errors: Errors
         );
+
+    public static FrontendResponse GenerateFrontendErrorResponse(PipelineContext context, string errorDetail, int statusCode)
+    {
+        FailureResponse failureResponse;
+
+        var validationErrors = new Dictionary<string, string[]>();
+
+        var value = new List<string>
+        {
+            errorDetail
+        };
+        validationErrors.Add("$.", value.ToArray());
+
+        failureResponse = FailureResponse.ForDataValidation(
+            "Data validation failed. See 'validationErrors' for details.",
+            validationErrors,
+            new List<string>().ToArray()
+        );
+
+        var options = new JsonSerializerOptions
+        {
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
+
+        return context.FrontendResponse = new(
+            StatusCode: statusCode,
+            JsonSerializer.Serialize(failureResponse, options),
+            Headers: []
+        );
+    }
 }
