@@ -85,6 +85,10 @@ $servicesRoot = "$solutionRoot/services"
 $projectName = "EdFi.DataManagementService.Api"
 $packageName = "EdFi.DataManagementService"
 $testResults = "$PSScriptRoot/TestResults"
+#Coverage
+$thresholdCoverage = 58
+$coverageOutputFile = "coverage.cobertura.xml"
+$targetDir = "coveragereport"
 
 $maintainers = "Ed-Fi Alliance, LLC and contributors"
 
@@ -164,7 +168,7 @@ function RunTests {
                 # Threshold need to be defined
                 coverlet $($_) `
                 --target dotnet --targetargs "test $($_)" `
-                --threshold 50 `
+                --threshold $thresholdCoverage `
                 --threshold-type line `
                 --threshold-type branch `
                 --threshold-stat total `
@@ -260,6 +264,10 @@ function Invoke-TestExecution {
     }
 }
 
+function Invoke-Coverage{
+    reportgenerator -reports:"$coverageOutputFile" -targetdir:"$targetDir" -reporttypes:Html
+}
+
 function Invoke-BuildPackage {
     Invoke-Step { BuildPackage }
 }
@@ -333,6 +341,7 @@ Invoke-Main {
         }
         UnitTest { Invoke-TestExecution UnitTests }
         E2ETest { Invoke-TestExecution E2ETests }
+        Coverage { Invoke-Coverage }
         Package { Invoke-BuildPackage }
         Push { Invoke-PushPackage }
         DockerBuild { Invoke-Step { DockerBuild } }

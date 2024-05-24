@@ -99,8 +99,7 @@ jobs:
 
       - name: Generate Coverage Report
         if: ${{ hashFiles('coverage.cobertura.xml') != '' }}
-        run: |
-          reportgenerator -reports:"coverage.cobertura.xml" -targetdir:"coveragereport" -reporttypes:Html
+        run: ./build.ps1 Coverage
 
       - name: Upload Coverage Report
         if: success()
