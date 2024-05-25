@@ -166,23 +166,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features
              await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 45
-              await testRunner.AndAsync("the response body is", @"{
-""detail"": ""Data validation failed. See 'validationErrors' for details."",
-""type"": ""urn:ed-fi:api:bad-request:data"",
-""title"": ""Data Validation Failed"",
-""status"": 400,
-""correlationId"": null,
-""validationErrors"": {
-"""": [
-""Required properties [\\""totalInstructionalDays\\""] are not present""
-],
-""schoolReference : "": [
-""Required properties [\\""totalInstructionalDays\\""] are not present"",
-""schoolReference : Required properties [\\""schoolId\\""] are not present""
-]
-},
-""errors"": []
-}", ((Reqnroll.Table)(null)), "And ");
+              await testRunner.AndAsync("the response body is", @"{""detail"":""Data validation failed. See 'validationErrors' for details."",""type"":""urn:ed-fi:api:bad-request:data"",""title"":""Data Validation Failed"",""status"":400,""correlationId"":null,""validationErrors"":{"""":[""Required properties [\""totalInstructionalDays\""] are not present""],""schoolReference : "":[""Required properties [\""totalInstructionalDays\""] are not present"",""schoolReference : Required properties [\""schoolId\""] are not present""]},""errors"":[]}", ((Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
@@ -195,7 +179,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features
             string[] tagsOfScenario = ((string[])(null));
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
             Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Post a valid Descriptor", null, tagsOfScenario, argumentsOfScenario, featureTags);
-#line 66
+#line 50
         this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
@@ -205,11 +189,11 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features
             else
             {
                 await this.ScenarioStartAsync();
-#line 67
+#line 51
              await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/absenceEventCategoryDescriptors\" with", "{\n  \"codeValue\": \"Sample\",\n  \"shortDescription\": \"Bereavement\",\n  \"namespace\": \"u" +
                         "ri://ed-fi.org/AbsenceEventCategoryDescriptor\"\n}", ((Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 75
+#line 59
              await testRunner.ThenAsync("it should respond with 201", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
             }

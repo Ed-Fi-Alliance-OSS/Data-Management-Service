@@ -43,25 +43,9 @@ Feature: ValidationErrors
                   """
              Then it should respond with 400
               And the response body is
-                  """
-                  {
-                  "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
-                  "title": "Data Validation Failed",
-                  "status": 400,
-                  "correlationId": null,
-                  "validationErrors": {
-                  "": [
-                  "Required properties [\\"totalInstructionalDays\\"] are not present"
-                  ],
-                  "schoolReference : ": [
-                  "Required properties [\\"totalInstructionalDays\\"] are not present",
-                  "schoolReference : Required properties [\\"schoolId\\"] are not present"
-                  ]
-                  },
-                  "errors": []
-                  }
-                  """
+                  """"
+                  {"detail":"Data validation failed. See 'validationErrors' for details.","type":"urn:ed-fi:api:bad-request:data","title":"Data Validation Failed","status":400,"correlationId":null,"validationErrors":{"":["Required properties [\"totalInstructionalDays\"] are not present"],"schoolReference : ":["Required properties [\"totalInstructionalDays\"] are not present","schoolReference : Required properties [\"schoolId\"] are not present"]},"errors":[]}
+                  """"
 
         Scenario: Post a valid Descriptor
              When a POST request is made to "data/ed-fi/absenceEventCategoryDescriptors" with
@@ -73,4 +57,5 @@ Feature: ValidationErrors
                   }
                   """
              Then it should respond with 201
+
 
