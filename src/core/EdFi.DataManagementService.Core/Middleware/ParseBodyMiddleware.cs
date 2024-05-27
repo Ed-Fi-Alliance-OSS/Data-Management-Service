@@ -31,7 +31,7 @@ namespace EdFi.DataManagementService.Core.Middleware
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Unable to parse the request body as JSON - {TraceId}", context.FrontendRequest.TraceId);
+                    _logger.LogDebug(ex, "Unable to parse the request body as JSON - {TraceId}", context.FrontendRequest.TraceId);
 
                     var options = new JsonSerializerOptions
                     {
