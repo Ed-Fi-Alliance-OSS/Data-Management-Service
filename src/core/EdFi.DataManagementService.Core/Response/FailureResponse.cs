@@ -84,10 +84,8 @@ internal record FailureResponse(
             errors: Errors
         );
 
-    public static FrontendResponse GenerateFrontendErrorResponse(PipelineContext context, string errorDetail, int statusCode)
+    public static FailureResponse GenerateFrontendErrorResponse(string errorDetail)
     {
-        FailureResponse failureResponse;
-
         var validationErrors = new Dictionary<string, string[]>();
 
         var value = new List<string>
@@ -96,21 +94,10 @@ internal record FailureResponse(
         };
         validationErrors.Add("$.", value.ToArray());
 
-        failureResponse = FailureResponse.ForDataValidation(
+        return ForDataValidation(
             "Data validation failed. See 'validationErrors' for details.",
             validationErrors,
             new List<string>().ToArray()
-        );
-
-        var options = new JsonSerializerOptions
-        {
-            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-        };
-
-        return context.FrontendResponse = new(
-            StatusCode: statusCode,
-            JsonSerializer.Serialize(failureResponse, options),
-            Headers: []
         );
     }
 }

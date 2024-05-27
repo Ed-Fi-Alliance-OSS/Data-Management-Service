@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using Microsoft.Extensions.Logging;
@@ -27,7 +28,18 @@ internal class CoreLoggingMiddleware(ILogger _logger) : IPipelineStep
         {
             _logger.LogError(ex, "Unknown Error - {TraceId}", context.FrontendRequest.TraceId);
 
-            FailureResponse.GenerateFrontendErrorResponse(context, ex.Message, 400);
+            // Replace the frontend response (if any) with a 500 error
+            context.FrontendResponse = new(
+                StatusCode: 500,
+                Body: JsonSerializer.Serialize(
+                    new
+                    {
+                        message = "The server encountered an unexpected condition that prevented it from fulfilling the request.",
+                        traceId = context.FrontendRequest.TraceId
+                    }
+                ),
+                Headers: []
+            );
         }
     }
 }
