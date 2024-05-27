@@ -84,7 +84,7 @@ internal record FailureResponse(
             errors: Errors
         );
 
-    public static FailureResponse GenerateFrontendErrorResponse(string errorDetail)
+    public static string GenerateFrontendErrorResponse(string errorDetail)
     {
         var validationErrors = new Dictionary<string, string[]>();
 
@@ -94,10 +94,17 @@ internal record FailureResponse(
         };
         validationErrors.Add("$.", value.ToArray());
 
-        return ForDataValidation(
+        var options = new JsonSerializerOptions
+        {
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
+
+        var response = ForDataValidation(
             "Data validation failed. See 'validationErrors' for details.",
             validationErrors,
             new List<string>().ToArray()
         );
+
+        return JsonSerializer.Serialize(response, options);
     }
 }

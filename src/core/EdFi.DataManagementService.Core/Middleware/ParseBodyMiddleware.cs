@@ -33,14 +33,9 @@ namespace EdFi.DataManagementService.Core.Middleware
                 {
                     _logger.LogDebug(ex, "Unable to parse the request body as JSON - {TraceId}", context.FrontendRequest.TraceId);
 
-                    var options = new JsonSerializerOptions
-                    {
-                        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-                    };
-
                     context.FrontendResponse = new(
                         StatusCode: 400,
-                        JsonSerializer.Serialize(FailureResponse.GenerateFrontendErrorResponse(ex.Message), options),
+                        FailureResponse.GenerateFrontendErrorResponse(ex.Message),
                         Headers: []
                     );
                     return;
