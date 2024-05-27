@@ -165,6 +165,16 @@ public class ValidateEqualityConstraintMiddlewareTests
                 new TraceId("traceId")
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
+
+            if (_context.FrontendRequest.Body != null)
+            {
+                var body = JsonNode.Parse(_context.FrontendRequest.Body);
+                if (body != null)
+                {
+                    _context.ParsedBody = body;
+                }
+            }
+
             await Middleware().Execute(_context, Next());
         }
 

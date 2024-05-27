@@ -25,15 +25,6 @@ internal class ValidateEqualityConstraintMiddleware(ILogger _logger, IEqualityCo
     {
         _logger.LogDebug("Entering ValidateEqualityConstraintMiddleware- {TraceId}", context.FrontendRequest.TraceId);
 
-        if (context.ParsedBody == No.JsonNode && context.FrontendRequest.Body != null)
-        {
-            var body = JsonNode.Parse(context.FrontendRequest.Body);
-            if (body != null)
-            {
-                context.ParsedBody = body;
-            }
-        }
-
         string[] errors = _equalityConstraintValidator.Validate(context.ParsedBody, context.ResourceSchema.EqualityConstraints);
 
         if (errors.Length == 0)

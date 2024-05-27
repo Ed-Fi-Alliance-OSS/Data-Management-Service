@@ -73,6 +73,15 @@ public class ExtractDocumentInfoMiddlewareTests
                 ResourceSchema = resourceSchema
             };
 
+            if (context.FrontendRequest.Body != null)
+            {
+                var body = JsonNode.Parse(context.FrontendRequest.Body);
+                if (body != null)
+                {
+                    context.ParsedBody = body;
+                }
+            }
+
             await BuildMiddleware().Execute(context, NullNext);
         }
 

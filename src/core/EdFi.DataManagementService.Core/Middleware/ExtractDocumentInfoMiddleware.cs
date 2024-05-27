@@ -25,15 +25,6 @@ internal partial class ExtractDocumentInfoMiddleware(ILogger _logger) : IPipelin
             context.FrontendRequest.TraceId
         );
 
-        if (context.ParsedBody == No.JsonNode && context.FrontendRequest.Body != null)
-        {
-            var body = JsonNode.Parse(context.FrontendRequest.Body);
-            if (body != null)
-            {
-                context.ParsedBody = body;
-            }
-        }
-
         Debug.Assert(context.ParsedBody != null, "Body was null, pipeline config invalid");
 
         var (documentIdentity, superclassIdentity) = context.ResourceSchema.ExtractIdentities(context.ParsedBody);
