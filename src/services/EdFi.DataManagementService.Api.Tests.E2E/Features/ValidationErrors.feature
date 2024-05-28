@@ -12,7 +12,7 @@ Feature: ValidationErrors
                   """
 
 Scenario: Post an invalid body for academicWeeks when weekIdentifier length should be at least 5 characters
- When sending a POST request to "data/ed-fi/academicWeeks" with body
+ When a POST request is made to "data/ed-fi/academicWeeks" with
  """
  {
   "weekIdentifier": "one",
@@ -24,14 +24,14 @@ Scenario: Post an invalid body for academicWeeks when weekIdentifier length shou
   "totalInstructionalDays": 300
  }
  """ 
- 	Then the response code is 400
+ 	Then it should respond with 400
     And the response body is
 """
 {"detail":"Data validation failed. See 'validationErrors' for details.","type":"urn:ed-fi:api:bad-request:data","title":"Data Validation Failed","status":400,"correlationId":null,"validationErrors":{"$.weekIdentifier":["weekIdentifier Value should be at least 5 characters"]},"errors":[]}
 """
 
 Scenario: Post an invalid body for academicWeeks missing schoolid for schoolReference and totalInstructionalDays
-  When sending a POST request to "data/ed-fi/academicWeeks" with body
+  When a POST request is made to "data/ed-fi/academicWeeks" with
   """
   {
     "weekIdentifier": "seven",
@@ -41,26 +41,26 @@ Scenario: Post an invalid body for academicWeeks missing schoolid for schoolRefe
     "endDate": "2023-09-11"
   }
   """
-	Then the response code is 400
+	Then it should respond with 400
     And the response body is
 """
 {"detail":"Data validation failed. See 'validationErrors' for details.","type":"urn:ed-fi:api:bad-request:data","title":"Data Validation Failed","status":400,"correlationId":null,"validationErrors":{"$.totalInstructionalDays":["totalInstructionalDays is required."],"$.schoolReference.schoolId":["schoolId is required."]},"errors":[]}
 """
 
-        Scenario: Post a valid Descriptor
-             When a POST request is made to "data/ed-fi/absenceEventCategoryDescriptors" with
-                  """
-                  {
-                    "codeValue": "Sample",
-                    "shortDescription": "Bereavement",
-                    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor"
-                  }
-                  """
-             Then it should respond with 201
+Scenario: Post a valid Descriptor
+  When a POST request is made to "data/ed-fi/absenceEventCategoryDescriptors" with
+    """
+    {
+    "codeValue": "Sample",
+    "shortDescription": "Bereavement",
+    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor"
+    }
+    """
+  Then it should respond with 201
 
 
 Scenario: Post an invalid body for academicWeeks missing more than one required field
-  When sending a POST request to "data/ed-fi/academicWeeks" with body
+  When a POST request is made to "data/ed-fi/academicWeeks" with
   """
   {
     "_weekIdentifier": "abcdef",
@@ -72,14 +72,14 @@ Scenario: Post an invalid body for academicWeeks missing more than one required 
     "_totalInstructionalDays": 300
   }
   """
-  Then the response code is 400
+  Then it should respond with 400
     And the response body is
 """
 {"detail":"Data validation failed. See 'validationErrors' for details.","type":"urn:ed-fi:api:bad-request:data","title":"Data Validation Failed","status":400,"correlationId":null,"validationErrors":{"$.schoolReference":["schoolReference is required."],"$.weekIdentifier":["weekIdentifier is required."],"$.beginDate":["beginDate is required."],"$.endDate":["endDate is required."],"$.totalInstructionalDays":["totalInstructionalDays is required."]},"errors":[]}
 """
 
 Scenario: Post an invalid body for academicWeeks missing a required field in a nested object schoolid for schoolReference
-  When sending a POST request to "data/ed-fi/academicWeeks" with body
+  When a POST request is made to "data/ed-fi/academicWeeks" with
   """
   {
     "weekIdentifier": "abcdef",
@@ -91,14 +91,14 @@ Scenario: Post an invalid body for academicWeeks missing a required field in a n
     "totalInstructionalDays": 300
   }
   """
-  Then the response code is 400
+  Then it should respond with 400
     And the response body is
 """
 {"detail":"Data validation failed. See 'validationErrors' for details.","type":"urn:ed-fi:api:bad-request:data","title":"Data Validation Failed","status":400,"correlationId":null,"validationErrors":{"$.schoolReference.schoolId":["schoolId is required."]},"errors":[]}
 """
 
 Scenario: Post an invalid body for academicWeeks missing a comma before beginDate
-  When sending a POST request to "data/ed-fi/academicWeeks" with body
+  When a POST request is made to "data/ed-fi/academicWeeks" with
   """
   {
     "weekIdentifier": "abcdef",
@@ -110,14 +110,14 @@ Scenario: Post an invalid body for academicWeeks missing a comma before beginDat
     "totalInstructionalDays": 300
   }
   """
-  Then the response code is 400
+  Then it should respond with 400
     And the response body is
 """
 {"detail":"Data validation failed. See 'validationErrors' for details.","type":"urn:ed-fi:api:bad-request:data","title":"Data Validation Failed","status":400,"correlationId":null,"validationErrors":{"$.":["'\"' is invalid after a value. Expected either ',', '}', or ']'. LineNumber: 5 | BytePositionInLine: 2."]},"errors":[]}
 """
 
 Scenario: Post an invalid body for courseOfferings missing a two required fields for a nested object CourseReference and also schoolReference
-  When sending a POST request to "data/ed-fi/courseOfferings" with body
+  When a POST request is made to "data/ed-fi/courseOfferings" with
   """
   {
     "localCourseCode": "1",
@@ -135,7 +135,7 @@ Scenario: Post an invalid body for courseOfferings missing a two required fields
     }
 }
   """
-  Then the response code is 400
+  Then it should respond with 400
     And the response body is
 """
 {"detail":"Data validation failed. See 'validationErrors' for details.","type":"urn:ed-fi:api:bad-request:data","title":"Data Validation Failed","status":400,"correlationId":null,"validationErrors":{"$.schoolReference":["schoolReference is required."],"$.courseReference.courseCode":["courseCode is required."],"$.courseReference.educationOrganizationId":["educationOrganizationId is required."]},"errors":[]}
