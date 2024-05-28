@@ -3,8 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Text.Json.Nodes;
-using Microsoft.Extensions.Logging;
+using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
@@ -28,7 +29,7 @@ internal class ValidateEndpointMiddleware(ILogger _logger) : IPipelineStep
                 context.PathComponents.EndpointName,
                 context.FrontendRequest.TraceId
             );
-            context.FrontendResponse = new(
+            context.FrontendResponse = new FrontendResponse(
                 StatusCode: 404,
                 Body: $"Invalid resource '{context.PathComponents.EndpointName}'.",
                 Headers: []
@@ -49,7 +50,7 @@ internal class ValidateEndpointMiddleware(ILogger _logger) : IPipelineStep
                 context.PathComponents.EndpointName,
                 context.FrontendRequest.TraceId
             );
-            context.FrontendResponse = new(
+            context.FrontendResponse = new FrontendResponse(
                 StatusCode: 404,
                 Body: $"Invalid resource '{context.PathComponents.EndpointName}'.",
                 Headers: []

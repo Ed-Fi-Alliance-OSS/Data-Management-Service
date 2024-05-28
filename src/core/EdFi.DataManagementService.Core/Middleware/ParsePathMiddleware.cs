@@ -68,7 +68,7 @@ internal partial class ParsePathMiddleware(ILogger _logger) : IPipelineStep
                 "ParsePathMiddleware: Not a valid path - {TraceId}",
                 context.FrontendRequest.TraceId
             );
-            context.FrontendResponse = new(StatusCode: 404, Body: "", Headers: []);
+            context.FrontendResponse = new FrontendResponse(StatusCode: 404, Body: "", Headers: []);
             return;
         }
 
@@ -83,7 +83,7 @@ internal partial class ParsePathMiddleware(ILogger _logger) : IPipelineStep
                 "ParsePathMiddleware: Not a valid document UUID - {TraceId}",
                 context.FrontendRequest.TraceId
             );
-            context.FrontendResponse = new(StatusCode: 404, Body: "", Headers: []);
+            context.FrontendResponse = new FrontendResponse(StatusCode: 404, Body: "", Headers: []);
             return;
         }
 
