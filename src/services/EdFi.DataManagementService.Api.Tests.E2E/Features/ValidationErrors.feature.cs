@@ -226,7 +226,7 @@ this.ScenarioInitialize(scenarioInfo);
   await testRunner.ThenAsync("the response code is 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 75
-    await testRunner.AndAsync("the response body is", @"{""detail"":""Data validation failed. See 'validationErrors' for details."",""type"":""urn:ed-fi:api:bad-request:data"",""title"":""Data Validation Failed"",""status"":400,""correlationId"":null,""validationErrors"":{""$.schoolReference"":[""schoolReference is required.""],""$.weekIdentifier"":[""weekIdentifier is required.""],""$.beginDate"":[""beginDate is required.""],""$.endDate"":[""endDate is required.""],""$.totalInstructionalDays"":[""totalInstructionalDays is required.""],""$._schoolReference"":[""_schoolReference All values fail against the false schema""],""$._beginDate"":[""_beginDate All values fail against the false schema""],""$._endDate"":[""_endDate All values fail against the false schema""],""$._totalInstructionalDays"":[""_totalInstructionalDays All values fail against the false schema""]},""errors"":[]}", ((Reqnroll.Table)(null)), "And ");
+    await testRunner.AndAsync("the response body is", @"{""detail"":""Data validation failed. See 'validationErrors' for details."",""type"":""urn:ed-fi:api:bad-request:data"",""title"":""Data Validation Failed"",""status"":400,""correlationId"":null,""validationErrors"":{""$.schoolReference"":[""schoolReference is required.""],""$.weekIdentifier"":[""weekIdentifier is required.""],""$.beginDate"":[""beginDate is required.""],""$.endDate"":[""endDate is required.""],""$.totalInstructionalDays"":[""totalInstructionalDays is required.""]},""errors"":[]}", ((Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
@@ -338,7 +338,7 @@ this.ScenarioInitialize(scenarioInfo);
   await testRunner.ThenAsync("the response code is 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 138
-    await testRunner.AndAsync("the response body is", @"{""detail"":""Data validation failed. See 'validationErrors' for details."",""type"":""urn:ed-fi:api:bad-request:data"",""title"":""Data Validation Failed"",""status"":400,""correlationId"":null,""validationErrors"":{""$.schoolReference"":[""schoolReference is required.""],""$.courseReference.courseCode"":[""courseCode is required.""],""$.courseReference.educationOrganizationId"":[""educationOrganizationId is required.""],""$._courseCode"":[""_courseCode All values fail against the false schema""],""$._educationOrganizationId"":[""_educationOrganizationId All values fail against the false schema""]},""errors"":[]}", ((Reqnroll.Table)(null)), "And ");
+    await testRunner.AndAsync("the response body is", @"{""detail"":""Data validation failed. See 'validationErrors' for details."",""type"":""urn:ed-fi:api:bad-request:data"",""title"":""Data Validation Failed"",""status"":400,""correlationId"":null,""validationErrors"":{""$.schoolReference"":[""schoolReference is required.""],""$.courseReference.courseCode"":[""courseCode is required.""],""$.courseReference.educationOrganizationId"":[""educationOrganizationId is required.""]},""errors"":[]}", ((Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();

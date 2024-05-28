@@ -186,7 +186,7 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_should_have_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 

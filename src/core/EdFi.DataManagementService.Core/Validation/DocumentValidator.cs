@@ -54,21 +54,8 @@ internal class DocumentValidator() : IDocumentValidator
 
         if (pruneResult is PruneResult.Pruned pruned)
         {
-            string? stringValue;
-            if (pruned.prunedDocumentBody is JsonValue jsonValue)
-            {
-                stringValue = jsonValue.GetValue<string>();
-            }
-            else
-            {
-                stringValue = pruned.prunedDocumentBody.ToJsonString();
-            }
-
             // Used pruned body for the remainder of pipeline
-            context.FrontendRequest = context.FrontendRequest with
-            {
-                Body = stringValue
-            };
+            context.ParsedBody = pruned.prunedDocumentBody;
 
             // Now re-evaluate the pruned body
             results = resourceSchemaValidator.Evaluate(
