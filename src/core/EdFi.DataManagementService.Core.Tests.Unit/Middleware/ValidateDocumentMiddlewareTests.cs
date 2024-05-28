@@ -84,6 +84,16 @@ public class ValidateDocumentMiddlewareTests
             _context.ProjectSchema.FindResourceSchemaNode(new("schools")) ?? new JsonObject(),
             NullLogger.Instance
         );
+
+        if (_context.FrontendRequest.Body != null)
+        {
+            var body = JsonNode.Parse(_context.FrontendRequest.Body);
+            if (body != null)
+            {
+                _context.ParsedBody = body;
+            }
+        }
+
         return _context;
     }
 
