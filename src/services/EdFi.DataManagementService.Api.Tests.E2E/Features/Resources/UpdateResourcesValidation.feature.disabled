@@ -5,7 +5,7 @@ Feature: Resources "Update" Operation validations
         Background:
             Given the Data Management Service must receive a token issued by "http://localhost"
               And user is already authorized
-              And request made to "/ed-fi/absenceEventCategoryDescriptors" with
+              And a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "Sick Leave",
@@ -136,7 +136,7 @@ Feature: Resources "Update" Operation validations
                     }
                   """
              Then it should respond with 400
-              And the response message body is
+              And the response body is
                   """
                     {
                         "detail": "Data validation failed. See 'validationErrors' for details.",
@@ -172,7 +172,7 @@ Feature: Resources "Update" Operation validations
                     }
                   """
              Then it should respond with 400
-              And the response message body is
+              And the response body is
                   """
                     {
                         "detail": "Data validation failed. See 'validationErrors' for details.",
@@ -202,7 +202,7 @@ Feature: Resources "Update" Operation validations
                     }
                   """
              Then it should respond with 400
-              And the response message body is
+              And the response body is
                   """
                     {
                         "detail": "Data validation failed. See 'validationErrors' for details.",

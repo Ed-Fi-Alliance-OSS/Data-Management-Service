@@ -200,7 +200,7 @@ Feature: Resources "Create" Operation validations
                     }
                   """
              Then it should respond with 400
-              And the response message body is
+              And the response body is
                   """
                     {
                         "detail": "The request data was constructed incorrectly.",
