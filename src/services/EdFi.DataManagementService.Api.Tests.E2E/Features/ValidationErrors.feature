@@ -1,15 +1,15 @@
 Feature: ValidationErrors
     POST a request that has an invalid payload.
 
-Scenario: Post an empty request object
- When sending a POST request to "data/ed-fi/schools" with body
-  """
-  """
- Then the response code is 400
-    And the response body is
- """
-{"detail":"The request could not be processed. See 'errors' for details.","type":"urn:ed-fi:api:bad-request","title":"Bad Request","status":400,"correlationId":null,"validationErrors":{},"errors":["A non-empty request body is required."]}
- """
+        Scenario: Post an empty request object
+             When a POST request is made to "data/ed-fi/schools" with
+                  """
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {"detail":"The request could not be processed. See 'errors' for details.","type":"urn:ed-fi:api:bad-request","title":"Bad Request","status":400,"correlationId":null,"validationErrors":{},"errors":["A non-empty request body is required."]}
+                  """
 
 Scenario: Post an invalid body for academicWeeks when weekIdentifier length should be at least 5 characters
  When sending a POST request to "data/ed-fi/academicWeeks" with body
@@ -47,16 +47,17 @@ Scenario: Post an invalid body for academicWeeks missing schoolid for schoolRefe
 {"detail":"Data validation failed. See 'validationErrors' for details.","type":"urn:ed-fi:api:bad-request:data","title":"Data Validation Failed","status":400,"correlationId":null,"validationErrors":{"$.totalInstructionalDays":["totalInstructionalDays is required."],"$.schoolReference.schoolId":["schoolId is required."]},"errors":[]}
 """
 
-Scenario: Post a valid Descriptor
-  When sending a POST request to "data/ed-fi/absenceEventCategoryDescriptors" with body
-  """
-  {
-    "codeValue": "Sample",
-    "shortDescription": "Bereavement",
-    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor"
-  }
-  """
-  Then the response code is 201
+        Scenario: Post a valid Descriptor
+             When a POST request is made to "data/ed-fi/absenceEventCategoryDescriptors" with
+                  """
+                  {
+                    "codeValue": "Sample",
+                    "shortDescription": "Bereavement",
+                    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor"
+                  }
+                  """
+             Then it should respond with 201
+
 
 Scenario: Post an invalid body for academicWeeks missing more than one required field
   When sending a POST request to "data/ed-fi/academicWeeks" with body

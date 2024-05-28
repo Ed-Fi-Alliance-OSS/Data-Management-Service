@@ -36,7 +36,7 @@ Feature: School Year Reference Validation
 
         @Ignore
         Scenario: Try creating a resource using a valid school year
-             When sending a POST request to "/ed-fi/studentSectionAssociation" with body
+             When a POST request is made to "/ed-fi/studentSectionAssociation" with
                   """
                       {
                           "beginDate": "2024-04-25",
@@ -52,11 +52,11 @@ Feature: School Year Reference Validation
                           }
                       }
                   """
-             Then the response code is 201
+             Then it should respond with 201
 
         @Ignore
         Scenario: Try creating a resource using an invalid school year
-             When sending a POST request to "/ed-fi/studentSectionAssociation" with body
+             When a POST request is made to "/ed-fi/studentSectionAssociation" with
                   """
                       {
                           "beginDate": "2024-04-25",
@@ -72,7 +72,7 @@ Feature: School Year Reference Validation
                           }
                       }
                   """
-             Then the response code is 409
+             Then it should respond with 409
               And the response body is
                   """
                       {
@@ -82,7 +82,7 @@ Feature: School Year Reference Validation
 
         @Ignore
         Scenario: Validating Session POST with a valid school year
-             When sending a POST request to "/ed-fi/session" with body
+             When a POST request is made to "/ed-fi/session" with
                   """
                       {
                         "schoolReference": {
@@ -98,11 +98,11 @@ Feature: School Year Reference Validation
                         "totalInstructionalDays": 81,
                         }
                   """
-             Then the response code is 201
+             Then it should respond with 201
 
         @Ignore
         Scenario: Validating Session POST with a  non existing school year
-             When sending a POST request to "/ed-fi/session" with body
+             When a POST request is made to "/ed-fi/session" with
                   """
                       {
                         "schoolReference": {
@@ -118,7 +118,7 @@ Feature: School Year Reference Validation
                         "totalInstructionalDays": 81,
                         }
                   """
-             Then the response code is 409
+             Then it should respond with 409
               And the response body is
                   """
                       {
@@ -130,7 +130,7 @@ Feature: School Year Reference Validation
         @Ignore
         Scenario: Post a valid request using an existing CourseOffering
             Given a existing CourseOffering
-             When sending a POST request to "/ed-fi/courseOfferings" with body
+             When a POST request is made to "/ed-fi/courseOfferings" with
                   """
                       {
                           "localCourseCode": "ALG-1",
@@ -148,11 +148,11 @@ Feature: School Year Reference Validation
                           }
                       }
                   """
-             Then the response code is 201
+             Then it should respond with 201
 
         @Ignore
         Scenario: Post a valid request using a non existing CourseOffering and API will handle this correctly
-             When sending a POST request to "/ed-fi/courseOfferings" with body
+             When a POST request is made to "/ed-fi/courseOfferings" with
                   """
                       {
                       "localCourseCode": "ALG-1",
@@ -170,7 +170,7 @@ Feature: School Year Reference Validation
                       }
                       }
                   """
-             Then the response code is 409
+             Then it should respond with 409
               And the response body is
                   """
                       {
@@ -185,7 +185,7 @@ Feature: School Year Reference Validation
 
         @Ignore
         Scenario: Handling the array with two valid cohorts
-             When sending a POST request to "/ed-fi/studentEducationOrganizationAssociations" with body
+             When a POST request is made to "/ed-fi/studentEducationOrganizationAssociations" with
                   """
                   {
                       "educationOrganizationReference": {
@@ -212,11 +212,11 @@ Feature: School Year Reference Validation
                       ]
                   }
                   """
-             Then the response code is 200
+             Then it should respond with 200
 
         @Ignore
         Scenario: Handling the array with 2 cohorts (1st valid / 2nd invalid)
-             When sending a POST request to "/ed-fi/studentEducationOrganizationAssociations" with body
+             When a POST request is made to "/ed-fi/studentEducationOrganizationAssociations" with
                   """
                   {
                       "educationOrganizationReference": {
@@ -243,7 +243,7 @@ Feature: School Year Reference Validation
                       ]
                   }
                   """
-             Then the response code is 409
+             Then it should respond with 409
               And the response body is
                   """
                   {
@@ -253,7 +253,7 @@ Feature: School Year Reference Validation
 
         @Ignore
         Scenario: Handling the array with 2 cohorts (1st invalid / 2nd valid)
-             When sending a POST request to "/ed-fi/studentEducationOrganizationAssociations" with body
+             When a POST request is made to "/ed-fi/studentEducationOrganizationAssociations" with
                   """
                   {
                       "educationOrganizationReference": {
@@ -280,7 +280,7 @@ Feature: School Year Reference Validation
                       ]
                   }
                   """
-             Then the response code is 409
+             Then it should respond with 409
               And the response body is
                   """
                   {
@@ -290,7 +290,7 @@ Feature: School Year Reference Validation
 
         @Ignore
         Scenario: Handling the array with 2 duplicate cohorts
-             When sending a POST request to "/ed-fi/studentEducationOrganizationAssociations" with body
+             When a POST request is made to "/ed-fi/studentEducationOrganizationAssociations" with
                   """
                   {
                       "educationOrganizationReference": {
@@ -317,7 +317,7 @@ Feature: School Year Reference Validation
                       ]
                   }
                   """
-             Then the response code is 400
+             Then it should respond with 400
               And the response body is
                   """
                       {
