@@ -4,7 +4,7 @@ Feature: Resources "Update" Operation validations
         Background:
             Given the Data Management Service must receive a token issued by "http://localhost"
               And user is already authorized
-              And request made to "/ed-fi/absenceEventCategoryDescriptors" with
+              And request made to "data/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "Sick Leave",
@@ -19,17 +19,18 @@ Feature: Resources "Update" Operation validations
 
         Scenario: Verify that existing resources can be updated successfully
             # The id value should be replaced with the resource created in the Background section
-             When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
+             When a PUT request is made to "data/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
                     {
+                        "id": "{id}",
                         "codeValue": "Sick Leave",
                         "description": "Sick Leave Edited",
                         "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
                         "shortDescription": "Sick Leave"
                     }
                   """
-             Then it should respond with A04
-
+             Then it should respond with 204
+        @ignore
         Scenario: Verify updating a resource with valid data
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -53,7 +54,7 @@ Feature: Resources "Update" Operation validations
                         "shortDescription": "Sick Leave"
                     }
                   """
-
+        @ignore
         Scenario: Verify updating a non existing resource with valid data
              # The id value should be replaced with a non existing resource
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -77,7 +78,7 @@ Feature: Resources "Update" Operation validations
                         "correlationId": null
                     }
                   """
-
+        @ignore
         Scenario: Verify error handling updating a resource with invalid data
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -100,7 +101,7 @@ Feature: Resources "Update" Operation validations
                         "correlationId": null
                     }
                   """
-
+        @ignore
         Scenario: Verify that response contains the updated resource ID and data
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -120,7 +121,7 @@ Feature: Resources "Update" Operation validations
                         "location": "ed-fi/absenceEventCategoryDescriptors/{id}",
                     }
                   """
-
+        @ignore
         Scenario: Verify error handling when updating a resource with empty body
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -150,7 +151,7 @@ Feature: Resources "Update" Operation validations
                         }
                     }
                   """
-
+        @ignore
         Scenario: Verify error handling when resource ID is different in body on PUT
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with

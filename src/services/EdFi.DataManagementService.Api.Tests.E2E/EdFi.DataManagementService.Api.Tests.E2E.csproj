@@ -27,7 +27,6 @@
 
   <ItemGroup>
     <ReqnrollFeatureFiles Remove="Features\Resources\CreateResourcesValidation.feature" />
-    <ReqnrollFeatureFiles Remove="Features\Resources\UpdateResourcesValidation.feature" />
   </ItemGroup>
 
   <ItemGroup>
