@@ -5,7 +5,7 @@
 
 using EdFi.DataManagementService.Core.External.Model;
 
-namespace EdFi.DataManagementService.Core.Model;
+namespace EdFi.DataManagementService.Core.External.Frontend;
 
 /// <summary>
 /// An API request sent from the frontend to be processed

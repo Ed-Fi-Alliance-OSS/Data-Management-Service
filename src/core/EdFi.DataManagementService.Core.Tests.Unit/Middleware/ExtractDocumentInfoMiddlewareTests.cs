@@ -12,6 +12,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
+using EdFi.DataManagementService.Core.External.Frontend;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
@@ -60,9 +61,11 @@ public class ExtractDocumentInfoMiddlewareTests
                 )!
             );
 
+            string body = """{"schoolId": "123"}""";
+
             context = new(
                 new(
-                    Body: """{"schoolId": "123"}"""!,
+                    Body: body,
                     QueryParameters: [],
                     Path: "/ed-fi/schools",
                     TraceId: new TraceId("123")
@@ -70,17 +73,9 @@ public class ExtractDocumentInfoMiddlewareTests
                 RequestMethod.POST
             )
             {
-                ResourceSchema = resourceSchema
+                ResourceSchema = resourceSchema,
+                ParsedBody = JsonNode.Parse(body)!
             };
-
-            if (context.FrontendRequest.Body != null)
-            {
-                var body = JsonNode.Parse(context.FrontendRequest.Body);
-                if (body != null)
-                {
-                    context.ParsedBody = body;
-                }
-            }
 
             await BuildMiddleware().Execute(context, NullNext);
         }

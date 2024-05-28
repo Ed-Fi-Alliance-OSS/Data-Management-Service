@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Model;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
@@ -42,7 +43,7 @@ internal class ApiSchemaValidationMiddleware(
 
         if (SchemaValidationFailures.Any())
         {
-            context.FrontendResponse = new(StatusCode: 500, Body: string.Empty, Headers: []);
+            context.FrontendResponse = new FrontendResponse(StatusCode: 500, Body: string.Empty, Headers: []);
         }
         else
         {
