@@ -5,8 +5,6 @@ VisualStudioVersion = 17.4.33122.133
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "services", "services", "{22F7EF40-C77C-4AF0-8C1E-500EA6B85496}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Api.Tests.E2E", "services\EdFi.DataManagementService.Api.Tests.E2E\EdFi.DataManagementService.Api.Tests.E2E.csproj", "{678F06E1-CC23-438A-9CDF-52CA4C24BCED}"
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "backend", "backend", "{75AE8F7B-B980-48AE-8518-073830FA6471}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Backend", "backend\EdFi.DataManagementService.Backend\EdFi.DataManagementService.Backend.csproj", "{82EA8DF4-4DDB-4944-AF0D-60B7C784FB30}"
