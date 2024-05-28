@@ -6,7 +6,6 @@
 using System.Net;
 using EdFi.DataManagementService.Api.Tests.E2E.Management;
 using FluentAssertions;
-using FluentAssertions.Extensions;
 using Microsoft.Playwright;
 using Reqnroll;
 
