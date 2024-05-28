@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Handler;
@@ -40,6 +41,7 @@ internal class ApiService(
                         new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
                         new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                         new ParsePathMiddleware(_logger),
+                        new ParseBodyMiddleware(_logger),
                         new ValidateEndpointMiddleware(_logger),
                         new ValidateDocumentMiddleware(_logger, _documentValidator),
                         new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
@@ -81,6 +83,7 @@ internal class ApiService(
                         new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
                         new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                         new ParsePathMiddleware(_logger),
+                        new ParseBodyMiddleware(_logger),
                         new ValidateEndpointMiddleware(_logger),
                         new ValidateDocumentMiddleware(_logger, _documentValidator),
                         new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),

@@ -9,6 +9,7 @@ using static EdFi.DataManagementService.Core.External.Backend.GetResult;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.Model;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
@@ -38,9 +39,9 @@ internal class GetByIdHandler(IDocumentStoreRepository _documentStoreRepository,
 
         context.FrontendResponse = result switch
         {
-            GetSuccess success => new(StatusCode: 200, Body: success.EdfiDoc.ToString(), Headers: []),
-            GetFailureNotExists => new(StatusCode: 404, Body: null, Headers: []),
-            UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage, Headers: []),
+            GetSuccess success => new FrontendResponse(StatusCode: 200, Body: success.EdfiDoc.ToString(), Headers: []),
+            GetFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
+            UnknownFailure failure => new FrontendResponse(StatusCode: 500, Body: failure.FailureMessage, Headers: []),
             _ => new(StatusCode: 500, Body: "Unknown GetResult", Headers: [])
         };
     }

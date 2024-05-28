@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
-using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Frontend;
 
 namespace EdFi.DataManagementService.Core.Model;
 
@@ -39,6 +39,8 @@ internal static class No
     /// The null object for DocumentUuid
     /// </summary>
     public static readonly DocumentUuid DocumentUuid = new("00000000-0000-0000-0000-000000000000");
+
+    public static readonly JsonNode JsonNode = new JsonObject();
 
     /// <summary>
     /// The null object for PathComponents
@@ -78,7 +80,7 @@ internal static class No
     /// <summary>
     /// The null object for FrontendResponse
     /// </summary>
-    public static readonly FrontendResponse FrontendResponse = new(StatusCode: 503, Body: "", Headers: []);
+    public static readonly IFrontendResponse FrontendResponse = new FrontendResponse(StatusCode: 503, Body: "", Headers: []);
 
     /// <summary>
     /// A constructor of a PipelineContext initialized with null objects

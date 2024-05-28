@@ -25,6 +25,7 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <ProjectReference Include="..\EdFi.DataManagementService.Core\EdFi.DataManagementService.Core.csproj" />
+    <ProjectReference Include="..\EdFi.DataManagementService.Core.External\EdFi.DataManagementService.Core.External.csproj" />
   </ItemGroup>
 
 </Project>

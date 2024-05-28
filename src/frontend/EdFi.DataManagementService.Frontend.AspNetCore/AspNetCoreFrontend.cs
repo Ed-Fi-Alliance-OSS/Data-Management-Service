@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
@@ -19,7 +20,7 @@ public static class AspNetCoreFrontend
     /// <summary>
     /// Takes an HttpRequest and returns a deserialized request body
     /// </summary>
-    private static async Task<JsonNode?> ExtractJsonBodyFrom(HttpRequest request)
+    private static async Task<string?> ExtractJsonBodyFrom(HttpRequest request)
     {
         using Stream body = request.Body;
         using StreamReader bodyReader = new(body);
@@ -28,7 +29,7 @@ public static class AspNetCoreFrontend
         if (string.IsNullOrEmpty(requestBodyString))
             return null;
 
-        return JsonNode.Parse(requestBodyString);
+        return requestBodyString;
     }
 
     /// <summary>

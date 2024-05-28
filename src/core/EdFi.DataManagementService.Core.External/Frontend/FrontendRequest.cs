@@ -3,8 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json.Nodes;
-namespace EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Model;
+
+namespace EdFi.DataManagementService.Core.External.Frontend;
 
 /// <summary>
 /// An API request sent from the frontend to be processed
@@ -18,7 +19,7 @@ public record FrontendRequest(
     /// <summary>
     /// Request body provided by the frontend service as a JsonNode, or null if there is no body
     /// </summary>
-    JsonNode? Body,
+    string? Body,
     /// <summary>
     /// Query parameters provided by the frontend service as a dictionary.
     /// </summary>

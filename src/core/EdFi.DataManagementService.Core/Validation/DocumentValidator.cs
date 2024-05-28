@@ -6,9 +6,10 @@
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.ApiSchema;
-using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.Pipeline;
 using Json.Schema;
 
 namespace EdFi.DataManagementService.Core.Validation;
@@ -21,11 +22,7 @@ internal interface IDocumentValidator
     /// <param name="context"></param>
     /// <param name="validatorContext"></param>
     /// <returns></returns>
-    (string[], Dictionary<string, string[]>) Validate(
-        FrontendRequest frontendRequest,
-        ResourceSchema resourceSchema,
-        RequestMethod method
-    );
+    (string[], Dictionary<string, string[]>) Validate(PipelineContext context);
 }
 
 internal class DocumentValidator() : IDocumentValidator
@@ -37,13 +34,9 @@ internal class DocumentValidator() : IDocumentValidator
         return JsonSchema.FromText(stringifiedJsonSchema);
     }
 
-    public (string[], Dictionary<string, string[]>) Validate(
-        FrontendRequest frontendRequest,
-        ResourceSchema resourceSchema,
-        RequestMethod method
-    )
+    public (string[], Dictionary<string, string[]>) Validate(PipelineContext context)
     {
-        if (frontendRequest.Body == null)
+        if (context.ParsedBody == null || context.ParsedBody == No.JsonNode)
         {
             return (["A non-empty request body is required."], []);
         }
@@ -51,25 +44,22 @@ internal class DocumentValidator() : IDocumentValidator
         EvaluationOptions validatorEvaluationOptions =
             new() { OutputFormat = OutputFormat.List, RequireFormatValidation = true };
 
-        var resourceSchemaValidator = GetSchema(resourceSchema, method);
+        var resourceSchemaValidator = GetSchema(context.ResourceSchema, context.Method);
         var results = resourceSchemaValidator.Evaluate(
-            frontendRequest.Body,
+            context.ParsedBody,
             validatorEvaluationOptions
         );
 
-        var pruneResult = PruneOverpostedData(frontendRequest.Body, results);
+        var pruneResult = PruneOverpostedData(context.ParsedBody, results);
 
         if (pruneResult is PruneResult.Pruned pruned)
         {
             // Used pruned body for the remainder of pipeline
-            frontendRequest = frontendRequest with
-            {
-                Body = pruned.prunedDocumentBody
-            };
+            context.ParsedBody = pruned.prunedDocumentBody;
 
             // Now re-evaluate the pruned body
             results = resourceSchemaValidator.Evaluate(
-                frontendRequest.Body,
+                context.ParsedBody,
                 validatorEvaluationOptions
             );
         }
@@ -107,26 +97,64 @@ internal class DocumentValidator() : IDocumentValidator
         Dictionary<string, string[]> ValidationErrorsFrom(EvaluationResults results)
         {
             var validationErrors = new Dictionary<string, string[]>();
-            var val = new List<string>();
             foreach (var detail in results.Details)
             {
                 var propertyName = string.Empty;
-
                 if (detail.InstanceLocation != null && detail.InstanceLocation.Segments.Length != 0)
                 {
-                    propertyName = $"{detail.InstanceLocation.Segments[^1].Value} : ";
+                    propertyName = $"{detail.InstanceLocation.Segments[^1].Value}";
                 }
                 if (detail.Errors != null && detail.Errors.Any())
                 {
-                    foreach (var error in detail.Errors)
+                    foreach (var error in detail.Errors.Select(x => x.Value))
                     {
-                        val.Add($"{propertyName}{error.Value}");
-                        validationErrors.Add(propertyName, val.ToArray());
+                        var splitErrors = SplitErrorDetail(error, propertyName);
+
+                        foreach (var splitError in splitErrors)
+                        {
+                            if (validationErrors.ContainsKey(splitError.Key))
+                            {
+                                var existingErrors = validationErrors[splitError.Key].ToList();
+                                existingErrors.AddRange(splitError.Value);
+                                validationErrors[splitError.Key] = existingErrors.ToArray();
+                            }
+                            else
+                            {
+                                validationErrors.Add(splitError.Key, splitError.Value);
+                            }
+                        }
                     }
                 }
             }
             return validationErrors;
         }
+    }
+
+    // Matches any text string enclosed in double quotation marks
+    private static readonly Regex _findErrorsRegex = new Regex("\"([^\"]*)\"", RegexOptions.Compiled);
+
+    private static Dictionary<string, string[]> SplitErrorDetail(string error, string propertyName)
+    {
+        var validations = new Dictionary<string, string[]>();
+        if (error.Contains("[") && error.Contains("]"))
+        {
+            MatchCollection hits = _findErrorsRegex.Matches(error);
+
+            foreach (var hit in hits.Select(hit => hit.Groups))
+            {
+                var value = new List<string>();
+                value.Add($"{hit[1].Value} is required.");
+                var additional = propertyName == string.Empty ? "" : propertyName.Replace(":", "").TrimEnd() + ".";
+                validations.Add("$." + additional + hit[1].Value, value.ToArray());
+            }
+        }
+        else
+        {
+            var value = new List<string>();
+            value.Add($"{propertyName} {error}");
+            validations.Add("$." + propertyName, value.ToArray());
+        }
+        return validations;
     }
 }
 

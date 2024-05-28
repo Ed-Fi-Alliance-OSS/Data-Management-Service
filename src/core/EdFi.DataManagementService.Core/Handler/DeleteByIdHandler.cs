@@ -9,6 +9,7 @@ using static EdFi.DataManagementService.Core.External.Backend.DeleteResult;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.Model;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
@@ -39,10 +40,10 @@ internal class DeleteByIdHandler(IDocumentStoreRepository _documentStoreReposito
 
         context.FrontendResponse = result switch
         {
-            DeleteSuccess => new(StatusCode: 200, Body: null, Headers: []),
-            DeleteFailureNotExists => new(StatusCode: 404, Body: null, Headers: []),
-            DeleteFailureReference failure => new(StatusCode: 409, Body: failure.ReferencingDocumentInfo, Headers: []),
-            DeleteFailureWriteConflict failure => new(StatusCode: 409, Body: failure.FailureMessage, Headers: []),
+            DeleteSuccess => new FrontendResponse(StatusCode: 200, Body: null, Headers: []),
+            DeleteFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
+            DeleteFailureReference failure => new FrontendResponse(StatusCode: 409, Body: failure.ReferencingDocumentInfo, Headers: []),
+            DeleteFailureWriteConflict failure => new FrontendResponse(StatusCode: 409, Body: failure.FailureMessage, Headers: []),
             UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage, Headers: []),
             _ => new(StatusCode: 500, Body: "Unknown DeleteResult", Headers: [])
         };

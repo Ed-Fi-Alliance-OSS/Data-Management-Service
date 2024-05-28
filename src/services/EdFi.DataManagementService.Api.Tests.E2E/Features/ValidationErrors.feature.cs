@@ -115,7 +115,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features
             Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Post an invalid body for academicWeeks when weekIdentifier length should be at le" +
                     "ast 5 characters", null, tagsOfScenario, argumentsOfScenario, featureTags);
 #line 14
-        this.ScenarioInitialize(scenarioInfo);
+this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
             {
@@ -125,15 +125,15 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features
             {
                 await this.ScenarioStartAsync();
 #line 15
-             await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/academicWeeks\" with", "{\n \"weekIdentifier\": \"one\",\n \"schoolReference\": {\n   \"schoolId\": 17012391\n },\n \"b" +
-                        "eginDate\": \"2023-09-11\",\n \"endDate\": \"2023-09-11\",\n \"totalInstructionalDays\": 30" +
-                        "0\n}", ((Reqnroll.Table)(null)), "When ");
+ await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/academicWeeks\" with", "{\r\n \"weekIdentifier\": \"one\",\r\n \"schoolReference\": {\r\n   \"schoolId\": 17012391\r\n }," +
+                        "\r\n \"beginDate\": \"2023-09-11\",\r\n \"endDate\": \"2023-09-11\",\r\n \"totalInstructionalDa" +
+                        "ys\": 300\r\n}", ((Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 27
-             await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
+  await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 28
-              await testRunner.AndAsync("the response body is", @"{""detail"":""Data validation failed. See 'validationErrors' for details."",""type"":""urn:ed-fi:api:bad-request:data"",""title"":""Data Validation Failed"",""status"":400,""correlationId"":null,""validationErrors"":{""weekIdentifier : "":[""weekIdentifier : Value should be at least 5 characters""]},""errors"":[]}", ((Reqnroll.Table)(null)), "And ");
+    await testRunner.AndAsync("the response body is", @"{""detail"":""Data validation failed. See 'validationErrors' for details."",""type"":""urn:ed-fi:api:bad-request:data"",""title"":""Data Validation Failed"",""status"":400,""correlationId"":null,""validationErrors"":{""$.weekIdentifier"":[""weekIdentifier Value should be at least 5 characters""]},""errors"":[]}", ((Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
@@ -149,7 +149,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features
             Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Post an invalid body for academicWeeks missing schoolid for schoolReference and t" +
                     "otalInstructionalDays", null, tagsOfScenario, argumentsOfScenario, featureTags);
 #line 33
-        this.ScenarioInitialize(scenarioInfo);
+this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
             {
@@ -159,14 +159,14 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features
             {
                 await this.ScenarioStartAsync();
 #line 34
-             await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/academicWeeks\" with", "{\n  \"weekIdentifier\": \"seven\",\n  \"schoolReference\": {\n  },\n  \"beginDate\": \"2023-0" +
-                        "9-11\",\n  \"endDate\": \"2023-09-11\"\n}", ((Reqnroll.Table)(null)), "When ");
+  await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/academicWeeks\" with", "{\r\n  \"weekIdentifier\": \"seven\",\r\n  \"schoolReference\": {\r\n  },\r\n  \"beginDate\": \"20" +
+                        "23-09-11\",\r\n  \"endDate\": \"2023-09-11\"\r\n}", ((Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 44
-             await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
+ await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 45
-              await testRunner.AndAsync("the response body is", @"{""detail"":""Data validation failed. See 'validationErrors' for details."",""type"":""urn:ed-fi:api:bad-request:data"",""title"":""Data Validation Failed"",""status"":400,""correlationId"":null,""validationErrors"":{"""":[""Required properties [\""totalInstructionalDays\""] are not present""],""schoolReference : "":[""Required properties [\""totalInstructionalDays\""] are not present"",""schoolReference : Required properties [\""schoolId\""] are not present""]},""errors"":[]}", ((Reqnroll.Table)(null)), "And ");
+    await testRunner.AndAsync("the response body is", @"{""detail"":""Data validation failed. See 'validationErrors' for details."",""type"":""urn:ed-fi:api:bad-request:data"",""title"":""Data Validation Failed"",""status"":400,""correlationId"":null,""validationErrors"":{""$.totalInstructionalDays"":[""totalInstructionalDays is required.""],""$.schoolReference.schoolId"":[""schoolId is required.""]},""errors"":[]}", ((Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
@@ -180,7 +180,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
             Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Post a valid Descriptor", null, tagsOfScenario, argumentsOfScenario, featureTags);
 #line 50
-        this.ScenarioInitialize(scenarioInfo);
+this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
             {
@@ -190,11 +190,155 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features
             {
                 await this.ScenarioStartAsync();
 #line 51
-             await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/absenceEventCategoryDescriptors\" with", "{\n  \"codeValue\": \"Sample\",\n  \"shortDescription\": \"Bereavement\",\n  \"namespace\": \"u" +
-                        "ri://ed-fi.org/AbsenceEventCategoryDescriptor\"\n}", ((Reqnroll.Table)(null)), "When ");
+  await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/absenceEventCategoryDescriptors\" with", "{\r\n\"codeValue\": \"Sample\",\r\n\"shortDescription\": \"Bereavement\",\r\n\"namespace\": \"uri:" +
+                        "//ed-fi.org/AbsenceEventCategoryDescriptor\"\r\n}", ((Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 59
-             await testRunner.ThenAsync("it should respond with 201", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
+  await testRunner.ThenAsync("it should respond with 201", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
+#line hidden
+            }
+            await this.ScenarioCleanupAsync();
+        }
+        
+        [NUnit.Framework.TestAttribute()]
+        [NUnit.Framework.DescriptionAttribute("Post an invalid body for academicWeeks missing more than one required field")]
+        public async System.Threading.Tasks.Task PostAnInvalidBodyForAcademicWeeksMissingMoreThanOneRequiredField()
+        {
+            string[] tagsOfScenario = ((string[])(null));
+            System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
+            Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Post an invalid body for academicWeeks missing more than one required field", null, tagsOfScenario, argumentsOfScenario, featureTags);
+#line 62
+this.ScenarioInitialize(scenarioInfo);
+#line hidden
+            if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
+            {
+                testRunner.SkipScenario();
+            }
+            else
+            {
+                await this.ScenarioStartAsync();
+#line 63
+  await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/academicWeeks\" with", "{\r\n  \"_weekIdentifier\": \"abcdef\",\r\n  \"_schoolReference\": {\r\n      \"schoolId\": 255" +
+                        "901001\r\n  },\r\n  \"_beginDate\": \"2024-04-04\",\r\n  \"_endDate\": \"2024-04-04\",\r\n  \"_to" +
+                        "talInstructionalDays\": 300\r\n}", ((Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 75
+  await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
+#line hidden
+#line 76
+    await testRunner.AndAsync("the response body is", @"{""detail"":""Data validation failed. See 'validationErrors' for details."",""type"":""urn:ed-fi:api:bad-request:data"",""title"":""Data Validation Failed"",""status"":400,""correlationId"":null,""validationErrors"":{""$.schoolReference"":[""schoolReference is required.""],""$.weekIdentifier"":[""weekIdentifier is required.""],""$.beginDate"":[""beginDate is required.""],""$.endDate"":[""endDate is required.""],""$.totalInstructionalDays"":[""totalInstructionalDays is required.""]},""errors"":[]}", ((Reqnroll.Table)(null)), "And ");
+#line hidden
+            }
+            await this.ScenarioCleanupAsync();
+        }
+        
+        [NUnit.Framework.TestAttribute()]
+        [NUnit.Framework.DescriptionAttribute("Post an invalid body for academicWeeks missing a required field in a nested objec" +
+            "t schoolid for schoolReference")]
+        public async System.Threading.Tasks.Task PostAnInvalidBodyForAcademicWeeksMissingARequiredFieldInANestedObjectSchoolidForSchoolReference()
+        {
+            string[] tagsOfScenario = ((string[])(null));
+            System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
+            Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Post an invalid body for academicWeeks missing a required field in a nested objec" +
+                    "t schoolid for schoolReference", null, tagsOfScenario, argumentsOfScenario, featureTags);
+#line 81
+this.ScenarioInitialize(scenarioInfo);
+#line hidden
+            if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
+            {
+                testRunner.SkipScenario();
+            }
+            else
+            {
+                await this.ScenarioStartAsync();
+#line 82
+  await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/academicWeeks\" with", "{\r\n  \"weekIdentifier\": \"abcdef\",\r\n  \"schoolReference\": {\r\n      \"_schoolId\": 2559" +
+                        "01001\r\n  },\r\n  \"beginDate\": \"2024-04-04\",\r\n  \"endDate\": \"2024-04-04\",\r\n  \"totalI" +
+                        "nstructionalDays\": 300\r\n}", ((Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 94
+  await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
+#line hidden
+#line 95
+    await testRunner.AndAsync("the response body is", @"{""detail"":""Data validation failed. See 'validationErrors' for details."",""type"":""urn:ed-fi:api:bad-request:data"",""title"":""Data Validation Failed"",""status"":400,""correlationId"":null,""validationErrors"":{""$.schoolReference.schoolId"":[""schoolId is required.""]},""errors"":[]}", ((Reqnroll.Table)(null)), "And ");
+#line hidden
+            }
+            await this.ScenarioCleanupAsync();
+        }
+        
+        [NUnit.Framework.TestAttribute()]
+        [NUnit.Framework.DescriptionAttribute("Post an invalid body for academicWeeks missing a comma before beginDate")]
+        public async System.Threading.Tasks.Task PostAnInvalidBodyForAcademicWeeksMissingACommaBeforeBeginDate()
+        {
+            string[] tagsOfScenario = ((string[])(null));
+            System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
+            Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Post an invalid body for academicWeeks missing a comma before beginDate", null, tagsOfScenario, argumentsOfScenario, featureTags);
+#line 100
+this.ScenarioInitialize(scenarioInfo);
+#line hidden
+            if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
+            {
+                testRunner.SkipScenario();
+            }
+            else
+            {
+                await this.ScenarioStartAsync();
+#line 101
+  await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/academicWeeks\" with", "{\r\n  \"weekIdentifier\": \"abcdef\",\r\n  \"schoolReference\": {\r\n      \"schoolId\": 25590" +
+                        "1001\r\n  }\r\n  \"beginDate\": \"2024-04-04\",\r\n  \"endDate\": \"2024-04-04\",\r\n  \"totalIns" +
+                        "tructionalDays\": 300\r\n}", ((Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 113
+  await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
+#line hidden
+#line 114
+    await testRunner.AndAsync("the response body is", @"{""detail"":""Data validation failed. See 'validationErrors' for details."",""type"":""urn:ed-fi:api:bad-request:data"",""title"":""Data Validation Failed"",""status"":400,""correlationId"":null,""validationErrors"":{""$."":[""'\""' is invalid after a value. Expected either ',', '}', or ']'. LineNumber: 5 | BytePositionInLine: 2.""]},""errors"":[]}", ((Reqnroll.Table)(null)), "And ");
+#line hidden
+            }
+            await this.ScenarioCleanupAsync();
+        }
+        
+        [NUnit.Framework.TestAttribute()]
+        [NUnit.Framework.DescriptionAttribute("Post an invalid body for courseOfferings missing a two required fields for a nest" +
+            "ed object CourseReference and also schoolReference")]
+        public async System.Threading.Tasks.Task PostAnInvalidBodyForCourseOfferingsMissingATwoRequiredFieldsForANestedObjectCourseReferenceAndAlsoSchoolReference()
+        {
+            string[] tagsOfScenario = ((string[])(null));
+            System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
+            Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Post an invalid body for courseOfferings missing a two required fields for a nest" +
+                    "ed object CourseReference and also schoolReference", null, tagsOfScenario, argumentsOfScenario, featureTags);
+#line 119
+this.ScenarioInitialize(scenarioInfo);
+#line hidden
+            if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
+            {
+                testRunner.SkipScenario();
+            }
+            else
+            {
+                await this.ScenarioStartAsync();
+#line 120
+  await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/courseOfferings\" with", @"{
+  ""localCourseCode"": ""1"",
+  ""courseReference"": {
+      ""_courseCode"": ""1"",
+      ""_educationOrganizationId"": 1
+  },
+   ""_schoolReference"": {
+      ""schoolId"": 255901001
+  },
+  ""sessionReference"": {
+      ""schoolId"": 255901001,
+      ""schoolYear"": 2022,
+      ""sessionName"": ""Test""
+  }
+}", ((Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 138
+  await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
+#line hidden
+#line 139
+    await testRunner.AndAsync("the response body is", @"{""detail"":""Data validation failed. See 'validationErrors' for details."",""type"":""urn:ed-fi:api:bad-request:data"",""title"":""Data Validation Failed"",""status"":400,""correlationId"":null,""validationErrors"":{""$.schoolReference"":[""schoolReference is required.""],""$.courseReference.courseCode"":[""courseCode is required.""],""$.courseReference.educationOrganizationId"":[""educationOrganizationId is required.""]},""errors"":[]}", ((Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();

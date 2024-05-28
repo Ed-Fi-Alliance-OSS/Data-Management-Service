@@ -4,8 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Diagnostics;
 using System.Text.Json.Nodes;
-using Microsoft.Extensions.Logging;
+using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
@@ -24,14 +25,13 @@ internal partial class ExtractDocumentInfoMiddleware(ILogger _logger) : IPipelin
             context.FrontendRequest.TraceId
         );
 
-        Debug.Assert(context.FrontendRequest.Body != null, "Body was null, pipeline config invalid");
-        JsonNode documentBody = context.FrontendRequest.Body;
+        Debug.Assert(context.ParsedBody != null, "Body was null, pipeline config invalid");
 
-        var (documentIdentity, superclassIdentity) = context.ResourceSchema.ExtractIdentities(documentBody);
+        var (documentIdentity, superclassIdentity) = context.ResourceSchema.ExtractIdentities(context.ParsedBody);
 
         context.DocumentInfo = new(
-            DocumentReferences: context.ResourceSchema.ExtractDocumentReferences(documentBody),
-            DescriptorReferences: context.ResourceSchema.ExtractDescriptorValues(documentBody),
+            DocumentReferences: context.ResourceSchema.ExtractDocumentReferences(context.ParsedBody),
+            DescriptorReferences: context.ResourceSchema.ExtractDescriptorValues(context.ParsedBody),
             DocumentIdentity: documentIdentity,
             SuperclassIdentity: superclassIdentity
         );

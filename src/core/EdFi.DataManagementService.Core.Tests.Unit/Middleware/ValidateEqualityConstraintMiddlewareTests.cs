@@ -12,7 +12,7 @@ using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
-using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Frontend;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
@@ -108,7 +108,7 @@ public class ValidateEqualityConstraintMiddlewareTests
                 """;
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/bellschedules",
-                Body: JsonNode.Parse(jsonData),
+                Body: jsonData,
                 QueryParameters: [],
                 new TraceId("traceId")
             );
@@ -160,11 +160,21 @@ public class ValidateEqualityConstraintMiddlewareTests
                 """;
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/bellschedules",
-                Body: JsonNode.Parse(jsonData),
+                Body: jsonData,
                 QueryParameters: [],
                 new TraceId("traceId")
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
+
+            if (_context.FrontendRequest.Body != null)
+            {
+                var body = JsonNode.Parse(_context.FrontendRequest.Body);
+                if (body != null)
+                {
+                    _context.ParsedBody = body;
+                }
+            }
+
             await Middleware().Execute(_context, Next());
         }
 

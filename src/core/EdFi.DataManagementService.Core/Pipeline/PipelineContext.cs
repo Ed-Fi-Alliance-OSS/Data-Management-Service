@@ -3,8 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
-using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.Model;
 
 namespace EdFi.DataManagementService.Core.Pipeline;
@@ -65,5 +66,10 @@ internal class PipelineContext(FrontendRequest _frontendRequest, RequestMethod _
     /// <summary>
     /// The API response to be returned to the frontend
     /// </summary>
-    public FrontendResponse FrontendResponse { get; set; } = No.FrontendResponse;
+    public IFrontendResponse FrontendResponse { get; set; } = No.FrontendResponse;
+
+    /// <summary>
+    /// Body in Json format
+    /// </summary>
+    public JsonNode ParsedBody { get; set; } = No.JsonNode;
 }

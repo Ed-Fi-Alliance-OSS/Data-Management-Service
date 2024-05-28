@@ -13,7 +13,7 @@ using FluentAssertions;
 using Json.Schema;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
-using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Frontend;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
@@ -84,6 +84,16 @@ public class ValidateDocumentMiddlewareTests
             _context.ProjectSchema.FindResourceSchemaNode(new("schools")) ?? new JsonObject(),
             NullLogger.Instance
         );
+
+        if (_context.FrontendRequest.Body != null)
+        {
+            var body = JsonNode.Parse(_context.FrontendRequest.Body);
+            if (body != null)
+            {
+                _context.ParsedBody = body;
+            }
+        }
+
         return _context;
     }
 
@@ -137,7 +147,7 @@ public class ValidateDocumentMiddlewareTests
 
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
-                Body: JsonNode.Parse(jsonData),
+                Body: jsonData,
                 QueryParameters: [],
                new TraceId("traceId")
             );
@@ -165,7 +175,7 @@ public class ValidateDocumentMiddlewareTests
 
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
-                Body: JsonNode.Parse(jsonData),
+                Body: jsonData,
                 QueryParameters: [],
                 new TraceId("traceId")
             );
@@ -193,7 +203,7 @@ public class ValidateDocumentMiddlewareTests
 
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
-                Body: JsonNode.Parse(jsonData),
+                Body: jsonData,
                 QueryParameters: [],
                 new TraceId("traceId")
             );
@@ -216,7 +226,7 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_returns_message_body_with_required_validation_error()
         {
-            _context?.FrontendResponse.Body.Should().Contain("Required properties");
+            _context?.FrontendResponse.Body.Should().Contain("is required");
             _context?.FrontendResponse.Body.Should().Contain("schoolId");
         }
     }
@@ -234,7 +244,7 @@ public class ValidateDocumentMiddlewareTests
 
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
-                Body: JsonNode.Parse(jsonData),
+                Body: jsonData,
                 QueryParameters: [],
                 new TraceId("traceId")
             );
@@ -257,7 +267,7 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_returns_message_body_with_wrong_data_type_validation_error()
         {
-            _context?.FrontendResponse.Body.Should().Contain("schoolId : Value is");
+            _context?.FrontendResponse.Body.Should().Contain("schoolId Value is");
             _context?.FrontendResponse.Body.Should().Contain("integer");
         }
     }
@@ -275,7 +285,7 @@ public class ValidateDocumentMiddlewareTests
 
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
-                Body: JsonNode.Parse(jsonData),
+                Body: jsonData,
                 QueryParameters: [],
                 new TraceId("traceId")
             );
@@ -298,7 +308,7 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_returns_message_body_with_required_validation_error()
         {
-            _context?.FrontendResponse.Body.Should().Contain("Required properties");
+            _context?.FrontendResponse.Body.Should().Contain("is required");
             _context?.FrontendResponse.Body.Should().Contain("id");
         }
     }

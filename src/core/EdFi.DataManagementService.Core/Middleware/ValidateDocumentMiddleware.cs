@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Validation;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Model;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
@@ -22,7 +23,7 @@ internal class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _d
     {
         _logger.LogDebug("Entering ValidateDocumentMiddleware- {TraceId}", context.FrontendRequest.TraceId);
 
-        var (errors, validationErrors) = _documentValidator.Validate(context.FrontendRequest, context.ResourceSchema, context.Method);
+        var (errors, validationErrors) = _documentValidator.Validate(context);
 
         if (errors.Length == 0 && validationErrors.Count == 0)
         {
@@ -61,7 +62,7 @@ internal class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _d
                 Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
             };
 
-            context.FrontendResponse = new(
+            context.FrontendResponse = new FrontendResponse(
                 StatusCode: failureResponse.status,
                 Body: JsonSerializer.Serialize(failureResponse, options),
                 Headers: []

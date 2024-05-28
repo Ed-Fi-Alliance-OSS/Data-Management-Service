@@ -5,25 +5,42 @@
 
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using Microsoft.Extensions.Logging;
+using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Validation;
-using EdFi.DataManagementService.Core.Pipeline;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
 /// <summary>
-/// Validates equality constraints for a JSON document. These constraints come from implicit and explicit merges in the MetaEd model.
+/// Validates equality constraints for a JSON document. These constraints come from implicit and
+/// explicit merges in the MetaEd model.
 /// </summary>
 /// <param name="_logger"></param>
 /// <param name="_equalityConstraintValidator"></param>
-internal class ValidateEqualityConstraintMiddleware(ILogger _logger, IEqualityConstraintValidator _equalityConstraintValidator) : IPipelineStep
+internal class ValidateEqualityConstraintMiddleware(
+    ILogger _logger,
+    IEqualityConstraintValidator _equalityConstraintValidator
+) : IPipelineStep
 {
+    /// <summary>
+    /// Use to avoid HTML escaping in output message that we construct.
+    /// </summary>
+    private static readonly JsonSerializerOptions _serializerOptions =
+        new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        _logger.LogDebug("Entering ValidateEqualityConstraintMiddleware- {TraceId}", context.FrontendRequest.TraceId);
+        _logger.LogDebug(
+            "Entering ValidateEqualityConstraintMiddleware- {TraceId}",
+            context.FrontendRequest.TraceId
+        );
 
-        string[] errors = _equalityConstraintValidator.Validate(context.FrontendRequest.Body, context.ResourceSchema.EqualityConstraints);
+        string[] errors = _equalityConstraintValidator.Validate(
+            context.ParsedBody,
+            context.ResourceSchema.EqualityConstraints
+        );
 
         if (errors.Length == 0)
         {
@@ -44,18 +61,12 @@ internal class ValidateEqualityConstraintMiddleware(ILogger _logger, IEqualityCo
                 context.FrontendRequest.TraceId
             );
 
-            var options = new JsonSerializerOptions
-            {
-                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-            };
-
-            context.FrontendResponse = new(
+            context.FrontendResponse = new FrontendResponse(
                 StatusCode: failureResponse.status,
-                Body: JsonSerializer.Serialize(failureResponse, options),
+                Body: JsonSerializer.Serialize(failureResponse, _serializerOptions),
                 Headers: []
             );
             return;
         }
     }
 }
-
