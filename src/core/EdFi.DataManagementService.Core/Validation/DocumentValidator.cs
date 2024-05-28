@@ -10,6 +10,7 @@ using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.Pipeline;
 using Json.Schema;
 
 namespace EdFi.DataManagementService.Core.Validation;
@@ -22,11 +23,7 @@ internal interface IDocumentValidator
     /// <param name="context"></param>
     /// <param name="validatorContext"></param>
     /// <returns></returns>
-    (string[], Dictionary<string, string[]>) Validate(
-        FrontendRequest frontendRequest,
-        ResourceSchema resourceSchema,
-        RequestMethod method
-    );
+    (string[], Dictionary<string, string[]>) Validate(PipelineContext context);
 }
 
 internal class DocumentValidator() : IDocumentValidator
@@ -38,13 +35,9 @@ internal class DocumentValidator() : IDocumentValidator
         return JsonSchema.FromText(stringifiedJsonSchema);
     }
 
-    public (string[], Dictionary<string, string[]>) Validate(
-        FrontendRequest frontendRequest,
-        ResourceSchema resourceSchema,
-        RequestMethod method
-    )
+    public (string[], Dictionary<string, string[]>) Validate(PipelineContext context)
     {
-        if (frontendRequest.Body == null)
+        if (context.ParsedBody == null)
         {
             return (["A non-empty request body is required."], []);
         }
@@ -52,16 +45,13 @@ internal class DocumentValidator() : IDocumentValidator
         EvaluationOptions validatorEvaluationOptions =
             new() { OutputFormat = OutputFormat.List, RequireFormatValidation = true };
 
-        // Parse the body just one time
-        JsonNode? parsedBody = JsonNode.Parse(frontendRequest.Body);
-
-        var resourceSchemaValidator = GetSchema(resourceSchema, method);
+        var resourceSchemaValidator = GetSchema(context.ResourceSchema, context.Method);
         var results = resourceSchemaValidator.Evaluate(
-            parsedBody,
+            context.ParsedBody,
             validatorEvaluationOptions
         );
 
-        var pruneResult = PruneOverpostedData(parsedBody, results);
+        var pruneResult = PruneOverpostedData(context.ParsedBody, results);
 
         if (pruneResult is PruneResult.Pruned pruned)
         {
@@ -76,14 +66,14 @@ internal class DocumentValidator() : IDocumentValidator
             }
 
             // Used pruned body for the remainder of pipeline
-            frontendRequest = frontendRequest with
+            context.FrontendRequest = context.FrontendRequest with
             {
                 Body = stringValue
             };
 
             // Now re-evaluate the pruned body
             results = resourceSchemaValidator.Evaluate(
-                parsedBody,
+                context.ParsedBody,
                 validatorEvaluationOptions
             );
         }

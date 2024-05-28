@@ -22,7 +22,7 @@ internal class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _d
     {
         _logger.LogDebug("Entering ValidateDocumentMiddleware- {TraceId}", context.FrontendRequest.TraceId);
 
-        var (errors, validationErrors) = _documentValidator.Validate(context.FrontendRequest, context.ResourceSchema, context.Method);
+        var (errors, validationErrors) = _documentValidator.Validate(context);
 
         if (errors.Length == 0 && validationErrors.Count == 0)
         {
