@@ -10,7 +10,7 @@
 // ------------------------------------------------------------------------------
 #region Designer generated code
 #pragma warning disable
-namespace EdFi.DataManagementService.Api.Tests.E2E.Features
+namespace EdFi.DataManagementService.Api.Tests.E2E.Features.General
 {
     using Reqnroll;
     using System;
@@ -35,7 +35,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features
         public virtual async System.Threading.Tasks.Task FeatureSetupAsync()
         {
             testRunner = Reqnroll.TestRunnerManager.GetTestRunnerForAssembly(null, NUnit.Framework.TestContext.CurrentContext.WorkerId);
-            Reqnroll.FeatureInfo featureInfo = new Reqnroll.FeatureInfo(new System.Globalization.CultureInfo("en-US"), "Features", "Information", "    Retrieve information about the API", ProgrammingLanguage.CSharp, featureTags);
+            Reqnroll.FeatureInfo featureInfo = new Reqnroll.FeatureInfo(new System.Globalization.CultureInfo("en-US"), "Features/General", "Information", "    Retrieve information about the API", ProgrammingLanguage.CSharp, featureTags);
             await testRunner.OnFeatureStartAsync(featureInfo);
         }
         

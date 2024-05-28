@@ -71,7 +71,8 @@ Feature: Validate the reference of descriptors when creating resources
                     "birthDate": "2010-03-25",
                     "firstName": "Jeff",
                     "lastSurname": "Test"
-                    "citizenshipStatusDescriptor": "uri://ed-fi.org/CitizenshipStatusDescriptor#Fake",
+                    "citizenshipStatusDescriptor": "uri://ed-fi.org/CitizenshipStatusDescriptor#Fake"
+                  }
                   """
              Then it should respond with 400
               And the response body is

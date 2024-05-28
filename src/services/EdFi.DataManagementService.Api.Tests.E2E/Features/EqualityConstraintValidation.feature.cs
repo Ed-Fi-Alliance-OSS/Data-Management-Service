@@ -35,7 +35,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features
         public virtual async System.Threading.Tasks.Task FeatureSetupAsync()
         {
             testRunner = Reqnroll.TestRunnerManager.GetTestRunnerForAssembly(null, NUnit.Framework.TestContext.CurrentContext.WorkerId);
-            Reqnroll.FeatureInfo featureInfo = new Reqnroll.FeatureInfo(new System.Globalization.CultureInfo("en-US"), "Features", "Equality Constraint Validation", @"    Equality constraints on the resource describe values that must be equal when posting a resource. An example of an equalityConstraint on bellSchedule:
+            Reqnroll.FeatureInfo featureInfo = new Reqnroll.FeatureInfo(new System.Globalization.CultureInfo("en-US"), "Features", "Equality Constraint Validation", @"              Equality constraints on the resource describe values that must be equal when posting a resource. An example of an equalityConstraint on bellSchedule:
     ""equalityConstraints"": [
         {
             ""sourceJsonPath"": ""$.classPeriods[*].classPeriodReference.schoolId"",
@@ -87,7 +87,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
             Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Post a valid bell schedule no equality constraint violations.", null, tagsOfScenario, argumentsOfScenario, featureTags);
 #line 10
-this.ScenarioInitialize(scenarioInfo);
+        this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
             {
@@ -97,7 +97,7 @@ this.ScenarioInitialize(scenarioInfo);
             {
                 await this.ScenarioStartAsync();
 #line 11
-    await testRunner.WhenAsync("sending a POST request to \"data/ed-fi/bellschedules\" with body", @"{
+             await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/bellschedules\" with", @"{
     ""schoolReference"": {
         ""schoolId"": 255901001
     },
@@ -122,7 +122,7 @@ this.ScenarioInitialize(scenarioInfo);
     }", ((Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 37
-    await testRunner.ThenAsync("the response code is 201", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
+             await testRunner.ThenAsync("it should respond with 201", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
@@ -136,7 +136,7 @@ this.ScenarioInitialize(scenarioInfo);
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
             Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Post an invalid bell schedule with equality constraint violations.", null, tagsOfScenario, argumentsOfScenario, featureTags);
 #line 39
-this.ScenarioInitialize(scenarioInfo);
+        this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
             {
@@ -146,7 +146,7 @@ this.ScenarioInitialize(scenarioInfo);
             {
                 await this.ScenarioStartAsync();
 #line 40
-    await testRunner.WhenAsync("sending a POST request to \"data/ed-fi/bellschedules\" with body", @"{
+             await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/bellschedules\" with", @"{
     ""schoolReference"": {
         ""schoolId"": 255901001
     },
@@ -171,10 +171,10 @@ this.ScenarioInitialize(scenarioInfo);
     }", ((Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 66
-    await testRunner.ThenAsync("the response code is 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
+             await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 67
-        await testRunner.AndAsync("the response body is", @"{""detail"":""The request could not be processed. See 'errors' for details."",""type"":""urn:ed-fi:api:bad-request"",""title"":""Bad Request"",""status"":400,""correlationId"":null,""validationErrors"":null,""errors"":[""Constraint failure: document paths $.classPeriods[*].classPeriodReference.schoolId and $.schoolReference.schoolId must have the same values""]}", ((Reqnroll.Table)(null)), "And ");
+              await testRunner.AndAsync("the response body is", @"{""detail"":""The request could not be processed. See 'errors' for details."",""type"":""urn:ed-fi:api:bad-request"",""title"":""Bad Request"",""status"":400,""correlationId"":null,""validationErrors"":null,""errors"":[""Constraint failure: document paths $.classPeriods[*].classPeriodReference.schoolId and $.schoolReference.schoolId must have the same values""]}", ((Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
