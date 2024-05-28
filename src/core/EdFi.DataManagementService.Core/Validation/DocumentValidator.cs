@@ -126,7 +126,7 @@ internal class DocumentValidator() : IDocumentValidator
                 var propertyName = string.Empty;
                 if (detail.InstanceLocation != null && detail.InstanceLocation.Segments.Length != 0)
                 {
-                    propertyName = $"{detail.InstanceLocation.Segments[^1].Value} : ";
+                    propertyName = $"{detail.InstanceLocation.Segments[^1].Value}";
                 }
                 if (detail.Errors != null && detail.Errors.Any())
                 {
@@ -175,7 +175,7 @@ internal class DocumentValidator() : IDocumentValidator
         else
         {
             var value = new List<string>();
-            value.Add($"{propertyName}{error}");
+            value.Add($"{propertyName} {error}");
             validations.Add("$." + propertyName, value.ToArray());
         }
         return validations;

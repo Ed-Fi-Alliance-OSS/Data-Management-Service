@@ -257,7 +257,7 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_returns_message_body_with_wrong_data_type_validation_error()
         {
-            _context?.FrontendResponse.Body.Should().Contain("schoolId : Value is");
+            _context?.FrontendResponse.Body.Should().Contain("schoolId Value is");
             _context?.FrontendResponse.Body.Should().Contain("integer");
         }
     }
