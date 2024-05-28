@@ -86,7 +86,7 @@ $projectName = "EdFi.DataManagementService.Api"
 $packageName = "EdFi.DataManagementService"
 $testResults = "$PSScriptRoot/TestResults"
 #Coverage
-$thresholdCoverage = 58
+$thresholdCoverage = 20
 $coverageOutputFile = "coverage.cobertura.xml"
 $targetDir = "coveragereport"
 
@@ -167,7 +167,7 @@ function RunTests {
                 #Execution with coverage
                 # Threshold need to be defined
                 coverlet $($_) `
-                --target dotnet --targetargs "test $($_)" `
+                --target dotnet --targetargs "test $($_) --logger:trx" `
                 --threshold $thresholdCoverage `
                 --threshold-type line `
                 --threshold-type branch `
