@@ -4,8 +4,6 @@ Feature: Query Strings handling for GET requests
   Scenario: Ensure that schools return the total count
     Given there are no schools
     When a GET request is made to "/ed-fi/schools?totalCount=true"
-            """
-            """
     Then there is a response header with "totalCount" equals to 0
 
   @ignore
@@ -15,8 +13,6 @@ Feature: Query Strings handling for GET requests
             | 5            | School with max edorgId value        | [ "Postsecondary" ]                                                    | [ "School" ]                         |
             | 255901001    | Grand Bend High School               | [ "Tenth grade", "Ninth grade", "Eleventh grade", "Twelfth grade" ]    | [ "School" ]                         |
     When a GET request is made to "/ed-fi/schools?totalCount=true"
-            """
-            """
     Then there is a response header with "totalCount: 2"
 
   @ignore
@@ -26,8 +22,6 @@ Feature: Query Strings handling for GET requests
             | 5            | School with max edorgId value        | [ "Postsecondary" ]         | [ "School" ]                         |
             | 255901001    | Grand Bend High School               | [ "Tenth grade" ]           | [ "School" ]                         |
     When a GET request is made to "/ed-fi/schools?totalCount=false"
-            """
-            """
     Then it should respond with 200
     And header "totalCount" is not present
 
@@ -38,11 +32,8 @@ Feature: Query Strings handling for GET requests
             | 5            | School with max edorgId value        | [ "Postsecondary" ]          | [ "School" ]                         |
             | 255901001    | Grand Bend High School               | [ "Tenth grade" ]            | [ "School" ]                         |
     When a GET request is made to "/ed-fi/schools"
-            """
-            """
     Then it should respond with 200
     And header "totalCount" is not present
-
 
   @ignore
   Scenario: Ensure clients can GET information changing the casing of the query value to be all lowercase
@@ -50,8 +41,6 @@ Feature: Query Strings handling for GET requests
             | schoolId     | nameOfInstitution                    | gradeLevels                   | educationOrganizationCategories      |
             | 5            | School with max edorgId value        | [ "Postsecondary" ]           | [ "School" ]                         |
     When a GET request is made to "/ed-fi/schools?nameOfInstitution=ut+austin+college+of+education+graduate"
-            """
-            """
     Then it should respond with 200
     And "nameOfInstitution: UT Austin College of Education Under Graduate"
 
@@ -61,8 +50,6 @@ Feature: Query Strings handling for GET requests
             | schoolId     | nameOfInstitution                                    | gradeLevels               | educationOrganizationCategories      |
             | 6            | UT Austin College of Education Under Graduate        | [ "Postsecondary" ]       | [ "Educator Preparation Provider" ]  |
     When a GET request is made to "/ed-fi/schools?nameOfInstitution=UT+AUSTIN+COLLEGE+OF+EDUCATION+UNDER+GRADUATE"
-            """
-            """
     Then it should respond with 200
     And "nameOfInstitution: UT Austin College of Education Under Graduate"
 
@@ -114,11 +101,10 @@ Feature: Query Strings handling for GET requests
     When a GET request is made to "/ed-fi/schools?offset=3&limit=5"
             """
             """
-    Then it should respond with status 200
+    Then it should respond with 200
     And schools returned:
             | 255901001    | Grand Bend High School                          |
             | 255901044    | Grand Bend Middle School                        |
-
 
   @ignore
   Scenario: Ensure clients can get information when filtering by limit and offset greater than the total
@@ -130,9 +116,7 @@ Feature: Query Strings handling for GET requests
             | 255901001    | Grand Bend High School                          |
             | 255901044    | Grand Bend Middle School                        |
     When a GET request is made to  "/ed-fi/schools?offset=6&limit=5"
-            """
-            """
-    Then it should respond with status 200
+    Then it should respond with 200
     And "[]"
 
   @ignore
@@ -166,9 +150,7 @@ Feature: Query Strings handling for GET requests
             | schoolId     | nameOfInstitution                               |
             | 5            | School with max edorgId value                   |
             | 6            | UT Austin College of Education Under Graduate   |
-    When a GET request is made to "/ed-fi/schools?limit=-6&offset=-1" using values as
-            """
-            """
+    When a GET request is made to "/ed-fi/schools?limit=-6&offset=-1"
     Then it should respond with 400
     And the response body is
             """
@@ -183,11 +165,10 @@ Feature: Query Strings handling for GET requests
             }
             """
 
-
   @ignore
   Scenario: Ensure clients can GET information when filtering with limits and properties
     Given these schools exist:
             | schoolId     | nameOfInstitution                               |
             | 5            | School with max edorgId value                   |
             | 6            | UT Austin College of Education Under Graduate   |
-    When a GET request is made to "/ed-fi/schools?limit=2" using values as
+    When a GET request is made to "/ed-fi/schools?limit=2"
