@@ -30,17 +30,22 @@ RUN dotnet publish -c Release -o /app/Installer --no-restore --no-build
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0.3-alpine3.19-amd64@sha256:a531d9d123928514405b9da9ff28a3aa81bd6f7d7d8cfb6207b66c007e7b3075 AS runtimebase
 
-RUN apk --no-cache add bash=~5 postgresql-client
+RUN apk --no-cache add bash=~5 postgresql-client gettext=~0
 
 FROM runtimebase AS setup
 
 ENV ASPNETCORE_HTTP_PORTS=8080
+ENV NEED_DATABASE_SETUP=${NEED_DATABASE_SETUP}
 ENV POSTGRES_USER=${POSTGRES_USER}
 ENV POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+ENV POSTGRES_APP_USER=${POSTGRES_APP_USER}
+ENV POSTGRES_APP_PASSWORD=${POSTGRES_APP_PASSWORD}
 ENV POSTGRES_PORT=${POSTGRES_PORT}
 ENV POSTGRES_HOST=${POSTGRES_HOST}
 
 WORKDIR /app
+
+COPY --chmod=600 appsettings.template.json /app/appsettings.template.json
 
 COPY --from=build /app/Frontend/*.dll ./
 COPY --from=build /app/Installer/*.* ./Installer/
