@@ -4,13 +4,13 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
-using Microsoft.Extensions.Logging;
-using EdFi.DataManagementService.Core.Pipeline;
-using static EdFi.DataManagementService.Core.External.Backend.UpdateResult;
-using EdFi.DataManagementService.Core.Model;
-using EdFi.DataManagementService.Core.External.Interface;
-using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.Backend;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.Pipeline;
+using Microsoft.Extensions.Logging;
+using static EdFi.DataManagementService.Core.External.Backend.UpdateResult;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
@@ -45,16 +45,20 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
 
         context.FrontendResponse = result switch
         {
-            UpdateSuccess => new(StatusCode: 204, Body: null, Headers: []),
-            UpdateFailureNotExists => new(StatusCode: 404, Body: null, Headers: []),
-            UpdateFailureReference failure => new(StatusCode: 409, Body: failure.ReferencingDocumentInfo, Headers: []),
+            UpdateSuccess => new FrontendResponse(StatusCode: 204, Body: null, Headers: []),
+            UpdateFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
+            UpdateFailureReference failure
+                => new FrontendResponse(StatusCode: 409, Body: failure.ReferencingDocumentInfo, Headers: []),
             UpdateFailureIdentityConflict failure
-                => new(StatusCode: 400, Body: failure.ReferencingDocumentInfo, Headers: []),
-            UpdateFailureWriteConflict failure => new(StatusCode: 409, Body: failure.FailureMessage, Headers: []),
-            UpdateFailureImmutableIdentity failure => new(StatusCode: 409, Body: failure.FailureMessage, Headers: []),
-            UpdateFailureCascadeRequired => new(StatusCode: 400, Body: null, Headers: []),
-            UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage, Headers: []),
-            _ => new(StatusCode: 500, Body: "Unknown UpdateResult", Headers: [])
+                => new FrontendResponse(StatusCode: 400, Body: failure.ReferencingDocumentInfo, Headers: []),
+            UpdateFailureWriteConflict failure
+                => new FrontendResponse(StatusCode: 409, Body: failure.FailureMessage, Headers: []),
+            UpdateFailureImmutableIdentity failure
+                => new FrontendResponse(StatusCode: 409, Body: failure.FailureMessage, Headers: []),
+            UpdateFailureCascadeRequired => new FrontendResponse(StatusCode: 400, Body: null, Headers: []),
+            UnknownFailure failure
+                => new FrontendResponse(StatusCode: 500, Body: failure.FailureMessage, Headers: []),
+            _ => new FrontendResponse(StatusCode: 500, Body: "Unknown UpdateResult", Headers: [])
         };
     }
 }

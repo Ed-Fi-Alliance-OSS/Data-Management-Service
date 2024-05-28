@@ -13,7 +13,7 @@ using FluentAssertions;
 using Json.Schema;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
-using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Frontend;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
@@ -174,7 +174,7 @@ public class ValidateDocumentMiddlewareTests
         }
 
         [Test]
-        public void It_should_not_have_response()
+        public void It_should_have_response()
         {
             _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }

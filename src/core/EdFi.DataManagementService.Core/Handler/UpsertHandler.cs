@@ -53,7 +53,7 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
         context.FrontendResponse = result switch
         {
             InsertSuccess
-                => new(
+                => new FrontendResponse(
                     StatusCode: 201,
                     Body: null,
                     Headers: [],

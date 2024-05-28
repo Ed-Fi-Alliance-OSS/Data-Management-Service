@@ -12,7 +12,7 @@ using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
-using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Frontend;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 

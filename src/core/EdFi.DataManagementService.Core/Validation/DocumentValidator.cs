@@ -8,7 +8,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.ApiSchema;
-using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.Model;
 using Json.Schema;
 
@@ -19,9 +19,7 @@ internal interface IDocumentValidator
     /// <summary>
     /// Validates a document body against a JSON Schema
     /// </summary>
-    /// <param name="context"></param>
-    /// <param name="validatorContext"></param>
-    /// <returns></returns>
+
     (string[], Dictionary<string, string[]>) Validate(
         FrontendRequest frontendRequest,
         ResourceSchema resourceSchema,
@@ -168,8 +166,8 @@ internal class DocumentValidator() : IDocumentValidator
             {
                 var value = new List<string>();
                 value.Add($"{hit[1].Value} is required.");
-                var aditional = propertyName == string.Empty ? "" : propertyName.Replace(":", "").TrimEnd() + ".";
-                validations.Add("$." + aditional + hit[1].Value, value.ToArray());
+                var additional = propertyName == string.Empty ? "" : propertyName.Replace(":", "").TrimEnd() + ".";
+                validations.Add("$." + additional + hit[1].Value, value.ToArray());
             }
         }
         else

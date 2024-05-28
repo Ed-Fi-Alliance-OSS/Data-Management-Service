@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 
@@ -28,7 +29,7 @@ internal class CoreLoggingMiddleware(ILogger _logger) : IPipelineStep
             _logger.LogError(ex, "Unknown Error - {TraceId}", context.FrontendRequest.TraceId);
 
             // Replace the frontend response (if any) with a 500 error
-            context.FrontendResponse = new(
+            context.FrontendResponse = new FrontendResponse(
                 StatusCode: 500,
                 Body: JsonSerializer.Serialize(
                     new
