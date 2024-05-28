@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.Model;
 using FluentAssertions;
 using NUnit.Framework;
@@ -53,7 +54,13 @@ public class DescriptorDocumentTests
         [Test]
         public void It_has_derived_the_document_info()
         {
-            var documentInfo = descriptorDocument!.ToDocumentInfo();
+            var documentInfo = descriptorDocument!.ToDocumentInfo(
+                new BaseResourceInfo(
+                    ProjectName: new MetaEdProjectName("ProjectName"),
+                    ResourceName: new MetaEdResourceName("ResourceName"),
+                    IsDescriptor: true
+                )
+            );
             documentInfo.DocumentReferences.Should().BeEmpty();
             documentInfo.DescriptorReferences.Should().BeEmpty();
             documentInfo.SuperclassIdentity.Should().BeNull();
