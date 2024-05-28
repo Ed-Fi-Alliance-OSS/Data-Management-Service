@@ -5,7 +5,6 @@
 
 using System.Text.Json;
 using EdFi.DataManagementService.Core.Pipeline;
-using EdFi.DataManagementService.Core.Response;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;

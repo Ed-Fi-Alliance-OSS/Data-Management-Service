@@ -5,9 +5,6 @@
 
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using EdFi.DataManagementService.Core.Model;
-using EdFi.DataManagementService.Core.Pipeline;
-using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Response;
 
