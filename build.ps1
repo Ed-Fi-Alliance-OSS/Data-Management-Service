@@ -167,7 +167,7 @@ function RunTests {
                 #Execution with coverage
                 # Threshold need to be defined
                 coverlet $($_) `
-                --target dotnet --targetargs "test $($_)" `
+                --target dotnet --targetargs "test $($_) --logger:trx --nologo"`
                 --threshold $thresholdCoverage `
                 --threshold-type line `
                 --threshold-type branch `
