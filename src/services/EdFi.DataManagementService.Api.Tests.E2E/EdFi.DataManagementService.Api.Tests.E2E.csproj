@@ -18,15 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Remove="StepDefinitions\PingStepDefinitions2.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
     <None Remove="appsettings.json" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ReqnrollFeatureFiles Remove="Features\Resources\CreateResourcesValidation.feature" />
   </ItemGroup>
 
   <ItemGroup>
