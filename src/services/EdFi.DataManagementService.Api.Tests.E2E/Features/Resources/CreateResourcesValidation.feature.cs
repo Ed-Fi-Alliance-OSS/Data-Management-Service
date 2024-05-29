@@ -106,7 +106,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
         await this.FeatureBackgroundAsync();
 #line hidden
 #line 9
-             await testRunner.WhenAsync("a POST request is made to ed-fi/absenceEventCategoryDescriptors\" with", @"{
+             await testRunner.WhenAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors\" with", @"{
     ""codeValue"": ""Sick Leave"",
     ""description"": ""Sick Leave"",
     ""effectiveBeginDate"": ""2024-05-14"",
@@ -119,10 +119,17 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
              await testRunner.ThenAsync("it should respond with 201", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 21
-              await testRunner.AndAsync("the response headers includes", "  {\r\n      \"location\": ed-fi/absenceEventCategoryDescriptors/{id}\"\r\n  }", ((Reqnroll.Table)(null)), "And ");
+              await testRunner.AndAsync("the response headers includes", "  {\r\n      \"location\": \"ed-fi/absenceEventCategoryDescriptors/{id}\"\r\n  }", ((Reqnroll.Table)(null)), "And ");
 #line hidden
-#line 28
-              await testRunner.AndAsync("the record can be retrieved with a GET request", ((string)(null)), ((Reqnroll.Table)(null)), "And ");
+#line 27
+              await testRunner.AndAsync("the record can be retrieved with a GET request", @"{
+    ""codeValue"": ""Sick Leave"",
+    ""description"": ""Sick Leave"",
+    ""effectiveBeginDate"": ""2024-05-14"",
+    ""effectiveEndDate"": ""2024-05-14"",
+    ""namespace"": ""uri://ed-fi.org/AbsenceEventCategoryDescriptor"",
+    ""shortDescription"": ""Sick Leave""
+}", ((Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
@@ -135,7 +142,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
             string[] tagsOfScenario = ((string[])(null));
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
             Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Verify error handling with POST using invalid data", null, tagsOfScenario, argumentsOfScenario, featureTags);
-#line 33
+#line 39
         this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
@@ -148,15 +155,15 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
 #line 4
         await this.FeatureBackgroundAsync();
 #line hidden
-#line 34
-             await testRunner.WhenAsync("a POST request is made to ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"description\": \"Wrong Value\",\r\n      \"effectiveBeginDate\": \"2024-05-14" +
+#line 40
+             await testRunner.WhenAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"description\": \"Wrong Value\",\r\n      \"effectiveBeginDate\": \"2024-05-14" +
                         "\",\r\n      \"effectiveEndDate\": \"2024-05-14\",\r\n      \"namespace\": \"uri://ed-fi.org" +
                         "/AbsenceEventCategoryDescriptor\",\r\n      \"shortDescription\": \"Wrong Value\"\r\n  }", ((Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 44
+#line 50
              await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
-#line 45
+#line 51
               await testRunner.AndAsync("the response body is", @"{""detail"":""Data validation failed. See 'validationErrors' for details."",""type"":""urn:ed-fi:api:bad-request:data"",""title"":""Data Validation Failed"",""status"":400,""correlationId"":null,""validationErrors"":{"""":[""Required properties [\""codeValue\""] are not present""]},""errors"":[]}", ((Reqnroll.Table)(null)), "And ");
 #line hidden
             }
@@ -172,7 +179,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
                     "ignore"};
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
             Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Verify error handling with POST using invalid data Forbidden", null, tagsOfScenario, argumentsOfScenario, featureTags);
-#line 50
+#line 56
         this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
@@ -185,14 +192,14 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
 #line 4
         await this.FeatureBackgroundAsync();
 #line hidden
-#line 51
+#line 57
              await testRunner.WhenAsync("a POST request is made to ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"codeValue\": \"xxxx\",\r\n      \"description\": \"Wrong Value\",\r\n      \"name" +
                         "space\": \"uri://.org/wrong\",\r\n      \"shortDescription\": \"Wrong Value\"\r\n  }", ((Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 60
+#line 66
              await testRunner.ThenAsync("it should respond with 403", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
-#line 61
+#line 67
               await testRunner.AndAsync("the response body is", @"  {
       ""detail"": ""Access to the resource could not be authorized. The 'Namespace' value of the resource does not start with any of the caller's associated namespace prefixes ('uri://ed-fi.org', 'uri://gbisd.org', 'uri://tpdm.ed-fi.org')."",
       ""type"": ""urn:ed-fi:api:security:authorization:namespace:access-denied:namespace-mismatch"",
@@ -212,7 +219,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
             string[] tagsOfScenario = ((string[])(null));
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
             Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Verify error handling with POST using empty body", null, tagsOfScenario, argumentsOfScenario, featureTags);
-#line 72
+#line 78
         this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
@@ -225,13 +232,13 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
 #line 4
         await this.FeatureBackgroundAsync();
 #line hidden
-#line 73
+#line 79
              await testRunner.WhenAsync("a POST request is made to ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n  }", ((Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 78
+#line 84
              await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
-#line 79
+#line 85
               await testRunner.AndAsync("the response body is", @"{""detail"":""Data validation failed. See 'validationErrors' for details."",""type"":""urn:ed-fi:api:bad-request:data"",""title"":""Data Validation Failed"",""status"":400,""correlationId"":null,""validationErrors"":{"""":[""Required properties [\""namespace\"",\""codeValue\"",\""shortDescription\""] are not present""]},""errors"":[]}", ((Reqnroll.Table)(null)), "And ");
 #line hidden
             }
@@ -247,7 +254,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
                     "ignore"};
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
             Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Verify error handling with POST using blank spaces in the required fields", null, tagsOfScenario, argumentsOfScenario, featureTags);
-#line 85
+#line 91
         this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
@@ -260,15 +267,15 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
 #line 4
         await this.FeatureBackgroundAsync();
 #line hidden
-#line 86
+#line 92
              await testRunner.WhenAsync("a POST request is made to ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"codeValue\": \"                      \",\r\n      \"description\": \"        " +
                         "            \",\r\n      \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescript" +
                         "or\",\r\n      \"shortDescription\": \"                    \"\r\n  }", ((Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 95
+#line 101
              await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
-#line 98
+#line 104
               await testRunner.AndAsync("the response body is", @"  {
       ""detail"": ""Data validation failed. See 'validationErrors' for details."",
       ""type"": ""urn:ed-fi:api:bad-request:data"",
@@ -301,7 +308,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
                     "ignore"};
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
             Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Verify POST of existing record without changes", null, tagsOfScenario, argumentsOfScenario, featureTags);
-#line 121
+#line 127
         this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
@@ -314,20 +321,20 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
 #line 4
         await this.FeatureBackgroundAsync();
 #line hidden
-#line 122
+#line 128
             await testRunner.GivenAsync("a POST request is made to ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"codeValue\": \"Sick Lave\",\r\n      \"description\": \"Sick Leave\",\r\n      \"" +
                         "namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\r\n      \"shortDescr" +
                         "iption\": \"Sick Leave\"\r\n  }", ((Reqnroll.Table)(null)), "Given ");
 #line hidden
-#line 131
+#line 137
              await testRunner.WhenAsync("a POST request is made to ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"codeValue\": \"Sick Lave\",\r\n      \"description\": \"Sick Leave\",\r\n      \"" +
                         "namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\r\n      \"shortDescr" +
                         "iption\": \"Sick Leave\"\r\n  }", ((Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 140
+#line 146
              await testRunner.ThenAsync("it should respond with 200", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
-#line 141
+#line 147
               await testRunner.AndAsync("the record can be retrieved with a GET request", ((string)(null)), ((Reqnroll.Table)(null)), "And ");
 #line hidden
             }
@@ -343,7 +350,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
                     "ignore"};
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
             Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Verify POST of existing record (change non-key field) works", null, tagsOfScenario, argumentsOfScenario, featureTags);
-#line 144
+#line 150
         this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
@@ -356,12 +363,12 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
 #line 4
         await this.FeatureBackgroundAsync();
 #line hidden
-#line 145
+#line 151
              await testRunner.WhenAsync("a POST request is made to ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"codeValue\": \"Sick Lave\",\r\n      \"description\": \"Sick Leave Edit\",\r\n  " +
                         "    \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\r\n      \"short" +
                         "Description\": \"Sick Leave\"\r\n  }", ((Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 154
+#line 160
              await testRunner.ThenAsync("it should respond with 200", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
             }
@@ -377,7 +384,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
                     "ignore"};
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
             Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Verify error handling when resource ID is included in body on POST", null, tagsOfScenario, argumentsOfScenario, featureTags);
-#line 157
+#line 163
         this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
@@ -390,15 +397,15 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
 #line 4
         await this.FeatureBackgroundAsync();
 #line hidden
-#line 159
+#line 165
              await testRunner.WhenAsync("a POST request is made to \"/ed-fi/absenceEventCategoryDescriptors/\" with", "  {\r\n      \"id\": \"{id}\",\r\n      \"codeValue\": \"Sick Leave\",\r\n      \"description\": " +
                         "\"Sick Leave Edited\",\r\n      \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDe" +
                         "scriptor\",\r\n      \"shortDescription\": \"Sick Leave\"\r\n  }", ((Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 169
+#line 175
              await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
-#line 170
+#line 176
               await testRunner.AndAsync("the response body is", @"  {
       ""detail"": ""The request data was constructed incorrectly."",
       ""type"": ""urn:ed-fi:api:bad-request:data"",

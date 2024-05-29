@@ -16,6 +16,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.StepDefinitions
     {
         private IAPIResponse _apiResponse = null!;
         private string _id = string.Empty;
+        private string _location = string.Empty;
 
         [Given("the Data Management Service must receive a token issued by {string}")]
         public void GivenTheDataManagementServiceMustReceiveATokenIssuedBy(string p0)
@@ -36,6 +37,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.StepDefinitions
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
             if (_apiResponse.Headers.ContainsKey("location"))
             {
+                _location = _apiResponse.Headers["location"];
                 _id = _apiResponse.Headers["location"].Split('/').Last();
             }
         }
@@ -47,6 +49,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.StepDefinitions
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
             if (_apiResponse.Headers.ContainsKey("location"))
             {
+                _location = _apiResponse.Headers["location"];
                 _id = _apiResponse.Headers["location"].Split('/').Last();
             }
         }
@@ -92,9 +95,13 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.StepDefinitions
         }
 
         [Then("the record can be retrieved with a GET request")]
-        public void ThenTheRecordCanBeRetrievedWithAGETRequest()
+        public async Task ThenTheRecordCanBeRetrievedWithAGETRequest(string body)
         {
-            //throw new PendingStepException();
+            body = body.Replace("{id}", _id);
+            var bodyJson = JsonNode.Parse(body)!;
+            _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(_location)!;
+            var responseJson = JsonNode.Parse(_apiResponse.TextAsync().Result)!;
+            responseJson.ToString().Should().Be(bodyJson.ToString());
         }
     }
 }

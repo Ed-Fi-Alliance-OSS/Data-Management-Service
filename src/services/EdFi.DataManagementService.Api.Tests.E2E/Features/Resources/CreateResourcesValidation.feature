@@ -6,7 +6,7 @@ Feature: Resources "Create" Operation validations
               And user is already authorized
 
         Scenario: Verify new resource can be created successfully
-             When a POST request is made to ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                 """
                 {
                     "codeValue": "Sick Leave",
@@ -19,19 +19,25 @@ Feature: Resources "Create" Operation validations
                 """
              Then it should respond with 201
               And the response headers includes
-              #replace header {id} with the correct value
                   """
                     {
-                        "location": ed-fi/absenceEventCategoryDescriptors/{id}"
+                        "location": "ed-fi/absenceEventCategoryDescriptors/{id}"
                     }
                   """
               And the record can be retrieved with a GET request
-                            # TODO: when writing the step definition,
-                            # be sure to validate that the response matches the original payload,
-                            # except for the addition of the 'id' field
+                """
+                {
+                    "codeValue": "Sick Leave",
+                    "description": "Sick Leave",
+                    "effectiveBeginDate": "2024-05-14",
+                    "effectiveEndDate": "2024-05-14",
+                    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                    "shortDescription": "Sick Leave"
+                }
+                """
 
         Scenario: Verify error handling with POST using invalid data
-             When a POST request is made to ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "description": "Wrong Value",
