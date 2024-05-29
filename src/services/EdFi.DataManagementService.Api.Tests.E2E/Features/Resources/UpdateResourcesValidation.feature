@@ -4,7 +4,7 @@ Feature: Resources "Update" Operation validations
         Background:
             Given the Data Management Service must receive a token issued by "http://localhost"
               And user is already authorized
-              And request made to "data/ed-fi/absenceEventCategoryDescriptors" with
+              And a POST request is made to "data/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "Sick Leave",

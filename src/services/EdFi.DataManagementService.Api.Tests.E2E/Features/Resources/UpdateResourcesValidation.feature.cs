@@ -84,7 +84,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
               await testRunner.AndAsync("user is already authorized", ((string)(null)), ((Reqnroll.Table)(null)), "And ");
 #line hidden
 #line 7
-              await testRunner.AndAsync("request made to \"data/ed-fi/absenceEventCategoryDescriptors\" with", @"  {
+              await testRunner.AndAsync("a POST request is made to \"data/ed-fi/absenceEventCategoryDescriptors\" with", @"  {
       ""codeValue"": ""Sick Leave"",
       ""description"": ""Sick Leave"",
       ""effectiveBeginDate"": ""2024-05-14"",
