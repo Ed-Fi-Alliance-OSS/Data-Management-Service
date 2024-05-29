@@ -7,16 +7,16 @@ Feature: Resources "Create" Operation validations
 
         Scenario: Verify new resource can be created successfully
              When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
-                """
-                {
-                    "codeValue": "Sick Leave",
-                    "description": "Sick Leave",
-                    "effectiveBeginDate": "2024-05-14",
-                    "effectiveEndDate": "2024-05-14",
-                    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                    "shortDescription": "Sick Leave"
-                }
-                """
+                  """
+                  {
+                      "codeValue": "Sick Leave",
+                      "description": "Sick Leave",
+                      "effectiveBeginDate": "2024-05-14",
+                      "effectiveEndDate": "2024-05-14",
+                      "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                      "shortDescription": "Sick Leave"
+                  }
+                  """
              Then it should respond with 201
               And the response headers includes
                   """
@@ -25,16 +25,16 @@ Feature: Resources "Create" Operation validations
                     }
                   """
               And the record can be retrieved with a GET request
-                """
-                {
-                    "codeValue": "Sick Leave",
-                    "description": "Sick Leave",
-                    "effectiveBeginDate": "2024-05-14",
-                    "effectiveEndDate": "2024-05-14",
-                    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                    "shortDescription": "Sick Leave"
-                }
-                """
+                  """
+                  {
+                      "codeValue": "Sick Leave",
+                      "description": "Sick Leave",
+                      "effectiveBeginDate": "2024-05-14",
+                      "effectiveEndDate": "2024-05-14",
+                      "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                      "shortDescription": "Sick Leave"
+                  }
+                  """
 
         Scenario: Verify error handling with POST using invalid data
              When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with

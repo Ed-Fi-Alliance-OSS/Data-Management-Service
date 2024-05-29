@@ -58,7 +58,8 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.StepDefinitions
         public async Task WhenAPUTRequestIsMadeToWith(string url, string body)
         {
             url = $"data/{url.Replace("{id}", _id)}";
-            _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(url, new() { Data = body.Replace("{id}", _id) })!;
+            body = body.Replace("{id}", _id);
+            _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(url, new() { Data = body })!;
         }
 
         [When("a GET request is made to {string}")]
