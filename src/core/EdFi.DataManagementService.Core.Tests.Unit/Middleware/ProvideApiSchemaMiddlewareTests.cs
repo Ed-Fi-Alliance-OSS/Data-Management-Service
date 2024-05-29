@@ -24,7 +24,7 @@ public class ProvideApiSchemaMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_An_Api_Schema_Provider_Is_Injected : ParsePathMiddlewareTests
+    public class Given_an_api_schema_provider_is_injected : ParsePathMiddlewareTests
     {
         private readonly PipelineContext _context = No.PipelineContext();
         private static readonly JsonNode _apiSchemaRootNode =

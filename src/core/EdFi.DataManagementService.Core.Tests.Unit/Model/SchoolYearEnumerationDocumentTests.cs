@@ -14,7 +14,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Model;
 public class SchoolYearEnumerationDocumentTests
 {
     [TestFixture]
-    public class Given_A_School_Year_Enumeration_Document : SchoolYearEnumerationDocumentTests
+    public class Given_a_school_year_enumeration_document : SchoolYearEnumerationDocumentTests
     {
         internal SchoolYearEnumerationDocument? document;
 

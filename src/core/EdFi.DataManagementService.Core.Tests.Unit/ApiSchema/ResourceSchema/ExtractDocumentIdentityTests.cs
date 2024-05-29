@@ -16,7 +16,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.ApiSchema;
 public class ExtractDocumentIdentityTests
 {
     [TestFixture]
-    public class Given_Extracting_An_Identity_Composed_Of_Several_References : ExtractDocumentIdentityTests
+    public class Given_extracting_an_identity_composed_of_several_references : ExtractDocumentIdentityTests
     {
         internal DocumentIdentity? documentIdentity;
 
@@ -103,7 +103,7 @@ public class ExtractDocumentIdentityTests
     }
 
     [TestFixture]
-    public class Given_Extracting_An_Identity_That_Includes_A_Descriptor_Reference
+    public class Given_extracting_an_identity_that_includes_a_descriptor_reference
         : ExtractDocumentIdentityTests
     {
         internal DocumentIdentity? documentIdentity;
@@ -160,7 +160,7 @@ public class ExtractDocumentIdentityTests
     }
 
     [TestFixture]
-    public class Given_Extracting_An_Identity_That_Includes_A_School_Year_Reference
+    public class Given_extracting_an_identity_that_includes_a_school_year_reference
         : ExtractDocumentIdentityTests
     {
         internal DocumentIdentity? documentIdentity;

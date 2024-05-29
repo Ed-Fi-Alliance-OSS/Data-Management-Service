@@ -20,7 +20,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 public class MetadataModuleTests
 {
     [TestFixture]
-    public class When_Getting_The_Base_Metadata_Endpoint
+    public class When_getting_the_base_metadata_endpoint
     {
         private JsonNode? _jsonContent;
         private HttpResponseMessage? _response;
@@ -193,6 +193,7 @@ public class MetadataModuleTests
 
         // Act
         var response = await client.GetAsync("/metadata/swagger.json");
+        var content = await response.Content.ReadAsStringAsync();
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);

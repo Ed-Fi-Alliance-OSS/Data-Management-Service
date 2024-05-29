@@ -22,7 +22,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Backend
         }
 
         [TestFixture]
-        public class Given_A_Partitioned_Repository : PartitionedRepositoryTests
+        public class Given_a_partitioned_repository : PartitionedRepositoryTests
         {
             private string _randomDocumentUuid = Guid.Empty.ToString();
             private readonly TestPartitionedRepository _testPartitionedRepository = new();
