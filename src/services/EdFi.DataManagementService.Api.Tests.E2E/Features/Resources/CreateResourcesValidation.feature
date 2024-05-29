@@ -52,6 +52,7 @@ Feature: Resources "Create" Operation validations
                   """
                   {"detail":"Data validation failed. See 'validationErrors' for details.","type":"urn:ed-fi:api:bad-request:data","title":"Data Validation Failed","status":400,"correlationId":null,"validationErrors":{"":["Required properties [\"codeValue\"] are not present"]},"errors":[]}
                   """
+
         @ignore
         Scenario: Verify error handling with POST using invalid data Forbidden
              When a POST request is made to ed-fi/absenceEventCategoryDescriptors" with
@@ -125,7 +126,7 @@ Feature: Resources "Create" Operation validations
 
         @ignore
         Scenario: Verify POST of existing record without changes
-            Given a POST request is made to ed-fi/absenceEventCategoryDescriptors" with
+            Given a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "Sick Lave",
@@ -134,7 +135,7 @@ Feature: Resources "Create" Operation validations
                         "shortDescription": "Sick Leave"
                     }
                   """
-             When a POST request is made to ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "Sick Lave",
@@ -145,6 +146,14 @@ Feature: Resources "Create" Operation validations
                   """
              Then it should respond with 200
               And the record can be retrieved with a GET request
+                  """
+                        {
+                            "codeValue": "Sick Lave",
+                            "description": "Sick Leave",
+                            "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                            "shortDescription": "Sick Leave"
+                        }
+                  """
 
         @ignore
         Scenario: Verify POST of existing record (change non-key field) works
