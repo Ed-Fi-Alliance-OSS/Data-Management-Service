@@ -66,6 +66,6 @@ public class DiscoveryModuleTests
         apiDetails?.applicationName.Should().Be("DMS");
         apiDetails?.dataModels.Should().NotBeNull();
         apiDetails?.dataModels.Count().Should().Be(1);
-        apiDetails?.dataModels.First().name.Should().Be("Ed-Fi");
+        apiDetails?.dataModels[0].name.Should().Be("Ed-Fi");
     }
 }

@@ -26,7 +26,7 @@ public class UpdateByIdHandlerTests
     }
 
     [TestFixture]
-    public class Given_a_repository_that_returns_success : UpdateByIdHandlerTests
+    public class Given_A_Repository_That_Returns_Success : UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
@@ -54,7 +54,7 @@ public class UpdateByIdHandlerTests
     }
 
     [TestFixture]
-    public class Given_a_repository_that_returns_failure_not_exists : UpdateByIdHandlerTests
+    public class Given_A_Repository_That_Returns_Failure_Not_Exists : UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
@@ -82,7 +82,7 @@ public class UpdateByIdHandlerTests
     }
 
     [TestFixture]
-    public class Given_a_repository_that_returns_failure_reference : UpdateByIdHandlerTests
+    public class Given_S_Repository_That_Returns_Failure_Reference : UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
@@ -112,7 +112,7 @@ public class UpdateByIdHandlerTests
     }
 
     [TestFixture]
-    public class Given_a_repository_that_returns_failure_identity_conflict : UpdateByIdHandlerTests
+    public class Given_A_Repository_That_Returns_Failure_Identity_Conflict : UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
@@ -142,7 +142,7 @@ public class UpdateByIdHandlerTests
     }
 
     [TestFixture]
-    public class Given_a_repository_that_returns_failure_write_conflict : UpdateByIdHandlerTests
+    public class Given_A_Repository_That_Returns_Failure_Write_Conflict : UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
@@ -172,7 +172,7 @@ public class UpdateByIdHandlerTests
     }
 
     [TestFixture]
-    public class Given_a_repository_that_returns_failure_immutable_identity : UpdateByIdHandlerTests
+    public class Given_A_Repository_That_Returns_Failure_Immutable_Identity : UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
@@ -202,7 +202,7 @@ public class UpdateByIdHandlerTests
     }
 
     [TestFixture]
-    public class Given_a_repository_that_returns_failure_cascade_required : UpdateByIdHandlerTests
+    public class Given_A_Repository_That_Returns_Failure_Cascade_Required : UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
@@ -230,7 +230,7 @@ public class UpdateByIdHandlerTests
     }
 
     [TestFixture]
-    public class Given_a_repository_that_returns_unknown_failure : UpdateByIdHandlerTests
+    public class Given_A_Repository_That_Returns_Unknown_Failure : UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {

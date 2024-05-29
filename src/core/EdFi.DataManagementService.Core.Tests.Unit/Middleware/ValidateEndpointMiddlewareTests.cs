@@ -36,9 +36,9 @@ public class ValidateEndpointMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_an_invalid_project_namespace : ValidateEndpointMiddlewareTests
+    public class Given_An_Invalid_Project_Namespace : ValidateEndpointMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private readonly PipelineContext _context = No.PipelineContext();
 
         [SetUp]
         public async Task Setup()
@@ -84,9 +84,9 @@ public class ValidateEndpointMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_a_valid_project_namespace_and_invalid_endpoint : ValidateEndpointMiddlewareTests
+    public class Given_A_Valid_Project_Namespace_And_Invalid_Endpoint : ValidateEndpointMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private readonly PipelineContext _context = No.PipelineContext();
 
         [SetUp]
         public async Task Setup()
@@ -132,9 +132,9 @@ public class ValidateEndpointMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_a_valid_project_namespace_and_valid_endpoint : ValidateEndpointMiddlewareTests
+    public class Given_A_Valid_Project_Namespace_And_Valid_Endpoint : ValidateEndpointMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private readonly PipelineContext _context = No.PipelineContext();
 
         [SetUp]
         public async Task Setup()

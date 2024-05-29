@@ -24,7 +24,7 @@ public class ParsePathMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_an_empty_path : ParsePathMiddlewareTests
+    public class Given_An_Empty_Path : ParsePathMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -50,7 +50,7 @@ public class ParsePathMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_an_invalid_path : ParsePathMiddlewareTests
+    public class Given_An_Invalid_Path : ParsePathMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -76,7 +76,7 @@ public class ParsePathMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_a_valid_path_without_resourceId : ParsePathMiddlewareTests
+    public class Given_A_Valid_Path_Without_ResourceId : ParsePathMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -106,7 +106,7 @@ public class ParsePathMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_a_valid_path_with_valid_resourceId : ParsePathMiddlewareTests
+    public class Given_A_Valid_Path_With_Valid_ResourceId : ParsePathMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
         private readonly string documentUuid = "7825fba8-0b3d-4fc9-ae72-5ad8194d3ce2";
@@ -143,7 +143,7 @@ public class ParsePathMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_a_valid_path_with_invalid_resourceId : ParsePathMiddlewareTests
+    public class Given_A_Valid_Path_With_Invalid_ResourceId : ParsePathMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 

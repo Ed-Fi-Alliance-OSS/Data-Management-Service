@@ -25,7 +25,7 @@ public class ExtractDocumentInfoMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_pipeline_context_has_resource_schemas_and_document_body
+    public class Given_Pipeline_Context_Has_Resource_Schemas_And_Document_Body
         : ExtractDocumentInfoMiddlewareTests
     {
         private PipelineContext context = No.PipelineContext();
@@ -50,16 +50,6 @@ public class ExtractDocumentInfoMiddlewareTests
                 .ToApiSchemaDocument();
 
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "schools");
-
-            DocumentIdentity documentIdentity = resourceSchema.ExtractDocumentIdentity(
-                JsonNode.Parse(
-                    """
-                    {
-                        "schoolId": "123"
-                    }
-"""
-                )!
-            );
 
             string body = """{"schoolId": "123"}""";
 

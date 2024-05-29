@@ -72,7 +72,7 @@ public class ValidateEqualityConstraintMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_a_valid_body : ValidateEqualityConstraintMiddlewareTests
+    public class Given_A_Valid_Body : ValidateEqualityConstraintMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -124,7 +124,7 @@ public class ValidateEqualityConstraintMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_an_invalid_body_with_not_equal_school_ids : ValidateEqualityConstraintMiddlewareTests
+    public class Given_An_Invalid_Body_With_Not_Equal_School_Ids : ValidateEqualityConstraintMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
