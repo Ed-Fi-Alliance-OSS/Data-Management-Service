@@ -73,6 +73,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
+      - name: Install dependencies
+        run: dotnet restore
+
       # Must build the software after initialization of CodeQL; something about
       # CodeQL initialization causes the resulting build to fail unit tests.
       # Therefore rebuilding here, even though also built above.

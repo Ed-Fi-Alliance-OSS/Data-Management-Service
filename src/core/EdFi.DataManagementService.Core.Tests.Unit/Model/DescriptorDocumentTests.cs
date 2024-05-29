@@ -14,7 +14,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Model;
 public class DescriptorDocumentTests
 {
     [TestFixture]
-    public class Given_a_descriptor_document : DescriptorDocumentTests
+    public class Given_A_Descriptor_Document : DescriptorDocumentTests
     {
         internal DescriptorDocument? descriptorDocument;
 
