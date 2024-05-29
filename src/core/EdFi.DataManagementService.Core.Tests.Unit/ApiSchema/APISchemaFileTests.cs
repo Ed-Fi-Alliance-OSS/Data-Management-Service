@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Validation;
 using FakeItEasy;
@@ -27,7 +28,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.ApiSchema;
 public class APISchemaFileTests
 {
     [TestFixture]
-    public class Given_An_ApiSchema_File_With_Invalid_ResourceSchemas
+    public class Given_an_ApiSchema_file_with_invalid_resourceschemas
     {
         internal static ApiService BuildCoreFacade(IApiSchemaProvider apiSchemaProvider)
         {
@@ -54,8 +55,8 @@ public class APISchemaFileTests
         }
 
         [TestFixture]
-        public class Should_Respond_With_Internal_Server_Error_For_A_Get_Request
-            : Given_An_ApiSchema_File_With_Invalid_ResourceSchemas
+        public class Should_respond_with_internal_server_error_for_a_GET_request
+            : Given_an_ApiSchema_file_with_invalid_resourceschemas
         {
             // "resourceName" element does not exist on resource schema.
             [Test]
@@ -104,8 +105,8 @@ public class APISchemaFileTests
         }
 
         [TestFixture]
-        public class Should_Respond_With_Internal_Server_Error_For_A_Post_Request
-            : Given_An_ApiSchema_File_With_Invalid_ResourceSchemas
+        public class Should_respond_with_internal_server_error_for_a_POST_request
+            : Given_an_ApiSchema_file_with_invalid_resourceschemas
         {
             // "isShoolyearEnumeration" element does not exist on resource schema.
             [Test]

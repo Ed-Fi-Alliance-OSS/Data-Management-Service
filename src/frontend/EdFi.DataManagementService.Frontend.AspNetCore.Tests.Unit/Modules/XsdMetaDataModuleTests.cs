@@ -128,6 +128,7 @@ public class XsdMetaDataModuleTests
 
         // Act
         var response = await client.GetAsync("/metadata/xsd/test/test1/files");
+        var content = await response.Content.ReadAsStringAsync();
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -152,6 +153,7 @@ public class XsdMetaDataModuleTests
 
         // Act
         var response = await client.GetAsync("/metadata/xsd/wrong-section/files");
+        var content = await response.Content.ReadAsStringAsync();
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -218,6 +220,7 @@ public class XsdMetaDataModuleTests
 
         // Act
         var response = await client.GetAsync("/metadata/xsd/ed-fi/not-exists.xsd");
+        var content = await response.Content.ReadAsStringAsync();
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);

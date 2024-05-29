@@ -14,7 +14,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Pipeline;
 public class PipelineProviderTests
 {
     [TestFixture]
-    public class Given_A_Pipeline_With_No_Steps : PipelineProviderTests
+    public class Given_a_pipeline_with_no_steps : PipelineProviderTests
     {
         private readonly PipelineContext context = No.PipelineContext();
         private readonly PipelineProvider pipeline = new([]);
@@ -28,7 +28,7 @@ public class PipelineProviderTests
     }
 
     [TestFixture]
-    public class Given_A_Pipeline_With_One_Step : PipelineProviderTests
+    public class Given_a_pipeline_with_one_step : PipelineProviderTests
     {
         private readonly PipelineContext context = No.PipelineContext();
 
@@ -58,7 +58,7 @@ public class PipelineProviderTests
     }
 
     [TestFixture]
-    public class Given_A_Pipeline_With_Three_Steps : PipelineProviderTests
+    public class Given_a_pipeline_with_three_steps : PipelineProviderTests
     {
         private readonly PipelineContext context = No.PipelineContext();
 
@@ -90,7 +90,7 @@ public class PipelineProviderTests
     }
 
     [TestFixture]
-    public class Given_A_Pipeline_Where_A_Middle_Step_Does_Not_Call_Next : PipelineProviderTests
+    public class Given_a_pipeline_where_a_middle_step_does_not_call_next : PipelineProviderTests
     {
         private readonly PipelineContext context = No.PipelineContext();
 

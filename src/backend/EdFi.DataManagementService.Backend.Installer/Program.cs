@@ -5,7 +5,7 @@
 
 namespace EdFi.DataManagementService.Backend.Installer;
 
-public static class Program
+public class Program
 {
     public static void Main(string[] args)
     {

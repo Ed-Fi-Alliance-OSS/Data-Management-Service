@@ -27,7 +27,7 @@ public class GetByIdHandlerTests
     }
 
     [TestFixture]
-    public class Given_A_Repository_That_Returns_Success : GetByIdHandlerTests
+    public class Given_a_repository_that_returns_success : GetByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
@@ -59,11 +59,11 @@ public class GetByIdHandlerTests
     }
 
     [TestFixture]
-    public class Given_A_Repository_That_Returns_Failure_Not_Exists : GetByIdHandlerTests
+    public class Given_a_repository_that_returns_failure_not_exists : GetByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            public override Task<GetResult> GetDocumentById(IGetRequest deleteRequest)
             {
                 return Task.FromResult<GetResult>(new GetFailureNotExists());
             }
@@ -87,13 +87,13 @@ public class GetByIdHandlerTests
     }
 
     [TestFixture]
-    public class Given_A_Repository_That_Returns_Unknown_Failure : GetByIdHandlerTests
+    public class Given_a_repository_that_returns_unknown_failure : GetByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly string ResponseBody = "FailureMessage";
 
-            public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
+            public override Task<GetResult> GetDocumentById(IGetRequest deleteRequest)
             {
                 return Task.FromResult<GetResult>(new UnknownFailure(ResponseBody));
             }

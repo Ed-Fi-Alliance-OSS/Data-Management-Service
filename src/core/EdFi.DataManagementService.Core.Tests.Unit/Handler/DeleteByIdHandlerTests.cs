@@ -26,7 +26,7 @@ public class DeleteByIdHandlerTests
     }
 
     [TestFixture]
-    public class Given_A_Repository_That_Returns_Success : DeleteByIdHandlerTests
+    public class Given_a_repository_that_returns_success : DeleteByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
@@ -54,7 +54,7 @@ public class DeleteByIdHandlerTests
     }
 
     [TestFixture]
-    public class Given_A_Repository_That_Returns_Failure_Not_Exists : DeleteByIdHandlerTests
+    public class Given_a_repository_that_returns_failure_not_exists : DeleteByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
@@ -82,7 +82,7 @@ public class DeleteByIdHandlerTests
     }
 
     [TestFixture]
-    public class Given_A_Repository_That_Returns_Failure_Reference : DeleteByIdHandlerTests
+    public class Given_a_repository_that_returns_failure_reference : DeleteByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
@@ -112,7 +112,7 @@ public class DeleteByIdHandlerTests
     }
 
     [TestFixture]
-    public class Given_A_Repository_That_Returns_Failure_Write_Conflict : DeleteByIdHandlerTests
+    public class Given_a_repository_that_returns_failure_write_conflict : DeleteByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
@@ -142,7 +142,7 @@ public class DeleteByIdHandlerTests
     }
 
     [TestFixture]
-    public class Given_A_Repository_That_Returns_Unknown_Failure : DeleteByIdHandlerTests
+    public class Given_a_repository_that_returns_unknown_failure : DeleteByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
