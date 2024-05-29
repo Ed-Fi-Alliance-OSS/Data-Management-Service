@@ -65,6 +65,14 @@ jobs:
         with:
           languages: csharp
 
+      - name: Cache Nuget packages
+        uses: actions/cache@ab5e6d0c87105b4c9c2047343972218f562e4319 #v4.0.1
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj*') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
       # Must build the software after initialization of CodeQL; something about
       # CodeQL initialization causes the resulting build to fail unit tests.
       # Therefore rebuilding here, even though also built above.
