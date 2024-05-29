@@ -15,7 +15,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 public class ConfigurationTests
 {
     [TestFixture]
-    public class Given_a_configuration_with_invalid_app_settings
+    public class Given_A_Configuration_With_Invalid_App_Settings
     {
         private WebApplicationFactory<Program>? _factory;
 
@@ -42,8 +42,8 @@ public class ConfigurationTests
         }
 
         [TestFixture]
-        public class When_requesting_any_endpoint_Should_return_InternalServerError
-            : Given_a_configuration_with_invalid_app_settings
+        public class When_Requesting_Any_Endpoint_Should_Return_InternalServerError
+            : Given_A_Configuration_With_Invalid_App_Settings
         {
             [Test]
             public async Task When_no_authentication_service()
@@ -63,7 +63,7 @@ public class ConfigurationTests
     }
 
     [TestFixture]
-    public class Given_a_configuration_with_invalid_connection_strings
+    public class Given_A_Configuration_With_Invalid_Connection_Strings
     {
         private WebApplicationFactory<Program>? _factory;
 
@@ -93,8 +93,8 @@ public class ConfigurationTests
         }
 
         [TestFixture]
-        public class When_requesting_any_endpoint_Should_return_InternalServerError
-            : Given_a_configuration_with_invalid_connection_strings
+        public class When_Requesting_Any_Endpoint_Should_Return_InternalServerError
+            : Given_A_Configuration_With_Invalid_Connection_Strings
         {
             [Test]
             public async Task When_no_valid_connection_strings()

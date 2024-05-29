@@ -25,7 +25,7 @@ public class ApiSchemaValidationMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_an_api_schema_with_validation_errors : ApiSchemaValidationMiddlewareTests
+    public class Given_An_Api_Schema_With_Validation_Errors : ApiSchemaValidationMiddlewareTests
     {
         private readonly PipelineContext _context = No.PipelineContext();
 
