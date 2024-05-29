@@ -18,16 +18,16 @@ COPY .editorconfig .
 
 COPY Directory.Packages.props ./
 COPY nuget.config .
-RUN dotnet restore frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj
-RUN dotnet restore backend/EdFi.DataManagementService.Backend.Installer/EdFi.DataManagementService.Backend.Installer.csproj
+RUN dotnet restore frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj && \
+    dotnet restore backend/EdFi.DataManagementService.Backend.Installer/EdFi.DataManagementService.Backend.Installer.csproj
 
 WORKDIR /source/frontend/EdFi.DataManagementService.Frontend.AspNetCore
-RUN dotnet build -c Release --no-restore
-RUN dotnet publish -c Release --no-build --no-restore -o /app/Frontend
+RUN dotnet build -c Release --no-restore && \
+    dotnet publish -c Release --no-build --no-restore -o /app/Frontend
 
 WORKDIR /source/backend/EdFi.DataManagementService.Backend.Installer
-RUN dotnet build -c Release --no-restore
-RUN dotnet publish -c Release -o /app/Installer --no-restore --no-build
+RUN dotnet build -c Release --no-restore && \
+    dotnet publish -c Release -o /app/Installer --no-restore --no-build
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0.3-alpine3.19-amd64@sha256:a531d9d123928514405b9da9ff28a3aa81bd6f7d7d8cfb6207b66c007e7b3075 AS runtimebase
 
