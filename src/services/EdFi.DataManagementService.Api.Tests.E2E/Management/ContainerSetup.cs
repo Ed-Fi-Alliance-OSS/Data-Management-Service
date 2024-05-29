@@ -14,7 +14,7 @@ public class ContainerSetup
         var network = new NetworkBuilder().Build();
 
         string apiImageName = "local/edfi-data-management-service";
-        string dbImageName = "local/edfi-data-management-postgresql";
+        string dbImageName = "postgres:16.3-alpine3.20";
 
         var dbUserName = "postgres";
         var dbPassword = "P@ssw0rd";
