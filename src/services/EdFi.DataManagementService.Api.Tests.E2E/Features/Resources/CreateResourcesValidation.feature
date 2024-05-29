@@ -67,7 +67,7 @@ Feature: Resources "Create" Operation validations
 
         @ignore
         Scenario: Verify error handling with POST using invalid data Forbidden
-             When a POST request is made to ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "xxxx",
@@ -201,7 +201,7 @@ Feature: Resources "Create" Operation validations
         @ignore
         Scenario: Verify error handling when resource ID is included in body on POST
             # The id value should be replaced with the resource created in the Background section
-             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors/" with
+             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors/" with
                   """
                     {
                         "id": "{id}",
