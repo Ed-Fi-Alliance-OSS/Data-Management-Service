@@ -18,8 +18,7 @@ spec:
     spec:
       containers:
       - name: postgres-db
-        image: local/edfi-data-management-postgresql:latest
-        imagePullPolicy: Never
+        image: postgres:16.3-bookworm@sha256:1bf73ccae25238fa555100080042f0b2f9be08eb757e200fe6afc1fc413a1b3c
         ports:
             - containerPort: 5432
         env:
@@ -27,12 +26,12 @@ spec:
             valueFrom:
               configMapKeyRef:
                 name: app-configmap
-                key: postgres-user
+                key: postgres-admin-user
           - name: POSTGRES_PASSWORD
             valueFrom:
               secretKeyRef:
                 name: app-secret
-                key: postgres-password
+                key: postgres-admin-password
           - name: POSTGRES_HOST
             valueFrom:
               configMapKeyRef:
