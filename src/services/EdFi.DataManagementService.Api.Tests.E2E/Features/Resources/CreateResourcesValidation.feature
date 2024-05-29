@@ -50,7 +50,19 @@ Feature: Resources "Create" Operation validations
              Then it should respond with 400
               And the response body is
                   """
-                  {"detail":"Data validation failed. See 'validationErrors' for details.","type":"urn:ed-fi:api:bad-request:data","title":"Data Validation Failed","status":400,"correlationId":null,"validationErrors":{"":["Required properties [\"codeValue\"] are not present"]},"errors":[]}
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                        "$.codeValue": [
+                          "codeValue is required."
+                        ]
+                      },
+                      "errors": []
+                    }
                   """
 
         @ignore
@@ -77,7 +89,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         Scenario: Verify error handling with POST using empty body
-             When a POST request is made to ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                     }
@@ -85,12 +97,30 @@ Feature: Resources "Create" Operation validations
              Then it should respond with 400
               And the response body is
                   """
-                  {"detail":"Data validation failed. See 'validationErrors' for details.","type":"urn:ed-fi:api:bad-request:data","title":"Data Validation Failed","status":400,"correlationId":null,"validationErrors":{"":["Required properties [\"namespace\",\"codeValue\",\"shortDescription\"] are not present"]},"errors":[]}
+                    {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                        "$.namespace": [
+                          "namespace is required."
+                        ],
+                        "$.codeValue": [
+                          "codeValue is required."
+                        ],
+                        "$.shortDescription": [
+                          "shortDescription is required."
+                        ]
+                      },
+                      "errors": []
+                    }
                   """
 
         @ignore
         Scenario: Verify error handling with POST using blank spaces in the required fields
-             When a POST request is made to ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "                      ",
@@ -157,7 +187,7 @@ Feature: Resources "Create" Operation validations
 
         @ignore
         Scenario: Verify POST of existing record (change non-key field) works
-             When a POST request is made to ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "Sick Lave",

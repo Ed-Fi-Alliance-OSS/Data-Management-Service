@@ -27,7 +27,19 @@ Feature: ValidationErrors
              Then it should respond with 400
               And the response body is
                   """
-                  {"detail":"Data validation failed. See 'validationErrors' for details.","type":"urn:ed-fi:api:bad-request:data","title":"Data Validation Failed","status":400,"correlationId":null,"validationErrors":{"weekIdentifier : ":["weekIdentifier : Value should be at least 5 characters"]},"errors":[]}
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                        "$.weekIdentifier": [
+                          "weekIdentifier Value should be at least 5 characters"
+                        ]
+                      },
+                      "errors": []
+                    }
                   """
 
         Scenario: Post an invalid body for academicWeeks missing schoolid for schoolReference and totalInstructionalDays
@@ -44,7 +56,22 @@ Feature: ValidationErrors
              Then it should respond with 400
               And the response body is
                   """"
-                  {"detail":"Data validation failed. See 'validationErrors' for details.","type":"urn:ed-fi:api:bad-request:data","title":"Data Validation Failed","status":400,"correlationId":null,"validationErrors":{"":["Required properties [\"totalInstructionalDays\"] are not present"],"schoolReference : ":["Required properties [\"totalInstructionalDays\"] are not present","schoolReference : Required properties [\"schoolId\"] are not present"]},"errors":[]}
+                  {
+                        "detail": "Data validation failed. See 'validationErrors' for details.",
+                        "type": "urn:ed-fi:api:bad-request:data",
+                        "title": "Data Validation Failed",
+                        "status": 400,
+                        "correlationId": null,
+                        "validationErrors": {
+                        "$.totalInstructionalDays": [
+                            "totalInstructionalDays is required."
+                        ],
+                        "$.schoolReference.schoolId": [
+                            "schoolId is required."
+                        ]
+                        },
+                        "errors": []
+                    }
                   """"
 
         Scenario: Post a valid Descriptor
@@ -60,7 +87,7 @@ Feature: ValidationErrors
 
 
         Scenario: Post an invalid body for academicWeeks missing more than one required field
-             When a POST request is made to "data/ed-fi/academicWeeks" with
+             When a POST request is made to "ed-fi/academicWeeks" with
                   """
                   {
                     "_weekIdentifier": "abcdef",
@@ -79,7 +106,7 @@ Feature: ValidationErrors
                   """
 
         Scenario: Post an invalid body for academicWeeks missing a required field in a nested object schoolid for schoolReference
-             When a POST request is made to "data/ed-fi/academicWeeks" with
+             When a POST request is made to "ed-fi/academicWeeks" with
                   """
                   {
                     "weekIdentifier": "abcdef",
@@ -98,7 +125,7 @@ Feature: ValidationErrors
                   """
 
         Scenario: Post an invalid body for academicWeeks missing a comma before beginDate
-             When a POST request is made to "data/ed-fi/academicWeeks" with
+             When a POST request is made to "ed-fi/academicWeeks" with
                   """
                   {
                     "weekIdentifier": "abcdef",
@@ -117,7 +144,7 @@ Feature: ValidationErrors
                   """
 
         Scenario: Post an invalid body for courseOfferings missing a two required fields for a nested object CourseReference and also schoolReference
-             When a POST request is made to "data/ed-fi/courseOfferings" with
+             When a POST request is made to "ed-fi/courseOfferings" with
                   """
                   {
                     "localCourseCode": "1",
