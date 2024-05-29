@@ -3,35 +3,64 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-FROM mcr.microsoft.com/dotnet/sdk:8.0.201-jammy@sha256:9aacef90e2773ff7d13a2f2687739778ed39312678b3669de06ec5fbeb0e86af AS build
+FROM mcr.microsoft.com/dotnet/sdk:8.0.203-alpine3.18@sha256:2a8dca3af111071172b1629c12eefaeca0d6c2954887c4489195771c9e90833c as build
+
+WORKDIR /source
+
+COPY frontend/EdFi.DataManagementService.Frontend.AspNetCore/ ./frontend/EdFi.DataManagementService.Frontend.AspNetCore/
+COPY core/EdFi.DataManagementService.Core/ ./core/EdFi.DataManagementService.Core/
+COPY core/EdFi.DataManagementService.Core.External/ core/EdFi.DataManagementService.Core.External/
+COPY backend/EdFi.DataManagementService.Backend.Installer/ backend/EdFi.DataManagementService.Backend.Installer/
+COPY backend/EdFi.DataManagementService.Backend/ backend/EdFi.DataManagementService.Backend/
+COPY backend/EdFi.DataManagementService.Backend.Mssql/ backend/EdFi.DataManagementService.Backend.Mssql/
+COPY backend/EdFi.DataManagementService.Backend.Postgresql/ backend/EdFi.DataManagementService.Backend.Postgresql/
+COPY .editorconfig .
+
+COPY nuget.config .
+RUN dotnet restore frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj
+RUN dotnet restore backend/EdFi.DataManagementService.Backend.Installer/EdFi.DataManagementService.Backend.Installer.csproj
+
+WORKDIR /source/frontend/EdFi.DataManagementService.Frontend.AspNetCore
+RUN dotnet build -c Release --no-restore
+RUN dotnet publish -c Release --no-build --no-restore -o /app/Frontend
+
+WORKDIR /source/backend/EdFi.DataManagementService.Backend.Installer
+RUN dotnet build -c Release --no-restore
+RUN dotnet publish -c Release -o /app/Installer --no-restore --no-build
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0.3-alpine3.19-amd64@sha256:a531d9d123928514405b9da9ff28a3aa81bd6f7d7d8cfb6207b66c007e7b3075 AS runtimebase
+
+RUN apk --no-cache add bash=~5 postgresql-client gettext=~0
+
+FROM runtimebase AS setup
 
 ENV ASPNETCORE_HTTP_PORTS=8080
+ENV NEED_DATABASE_SETUP=${NEED_DATABASE_SETUP}
+
+ENV POSTGRES_ADMIN_USER=${POSTGRES_ADMIN_USER}
+ENV POSTGRES_ADMIN_PASSWORD=${POSTGRES_ADMIN_PASSWORD}
+
+ENV POSTGRES_USER=${POSTGRES_USER}
+ENV POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+
+ENV POSTGRES_PORT=${POSTGRES_PORT}
+ENV POSTGRES_HOST=${POSTGRES_HOST}
 
 WORKDIR /app
-COPY backend/EdFi.DataManagementService.Backend/*.csproj ./backend/EdFi.DataManagementService.Backend/
-COPY backend/EdFi.DataManagementService.Backend.Mssql/*.csproj ./backend/EdFi.DataManagementService.Backend.Mssql/
-COPY backend/EdFi.DataManagementService.Backend.Postgresql/*.csproj ./backend/EdFi.DataManagementService.Backend.Postgresql/
-COPY frontend/EdFi.DataManagementService.Frontend.AspNetCore/*.csproj ./frontend/EdFi.DataManagementService.Frontend.AspNetCore/
-COPY core/EdFi.DataManagementService.Core/*.csproj ./core/EdFi.DataManagementService.Core/
-COPY core/EdFi.DataManagementService.Core.External/*.csproj ./core/EdFi.DataManagementService.Core.External/
 
-COPY EdFi.DataManagementService-Docker.sln ./
-COPY nuget.config .
-RUN dotnet restore
+COPY --chmod=600 appsettings.template.json /app/appsettings.template.json
 
-COPY . .
+COPY --from=build /app/Frontend/*.dll ./
+COPY --from=build /app/Installer/*.* ./Installer/
+COPY --from=build /app/Frontend/ApiSchema/*.json ./ApiSchema/
+COPY --from=build /app/Frontend/*.pdb ./
+COPY --from=build /app/Frontend/appsettings.json ./
+COPY --from=build /app/Frontend/*runtimeconfig.json ./
+COPY --from=build /app/Frontend/*.deps.json ./
 
-RUN dotnet publish -c Release -o out
+COPY --chmod=700 run.sh /app/run.sh
 
-FROM mcr.microsoft.com/dotnet/aspnet:8.0.2-jammy-chiseled@sha256:cb35170c5c4687e42749a4f3538e6667cd682493466cc1535d8579befc23e077 AS runtime
-WORKDIR /app
-COPY --from=build /app/out/*.dll ./
-COPY --from=build /app/out/ApiSchema/*.json ./ApiSchema/
-COPY --from=build /app/out/*.pdb ./
-COPY --from=build /app/out/appsettings.json ./
-COPY --from=build /app/out/*runtimeconfig.json ./
-COPY --from=build /app/out/*.deps.json ./
+EXPOSE ${ASPNETCORE_HTTP_PORTS}
 
-EXPOSE $ASPNETCORE_HTTP_PORTS
-USER app
-ENTRYPOINT ["dotnet", "EdFi.DataManagementService.Frontend.AspNetCore.dll"]
+ENTRYPOINT ["/app/run.sh"]
+
