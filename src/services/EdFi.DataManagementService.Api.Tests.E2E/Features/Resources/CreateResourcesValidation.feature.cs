@@ -106,7 +106,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
         await this.FeatureBackgroundAsync();
 #line hidden
 #line 9
-             await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/absenceEventCategoryDescriptors\" with", @"{
+             await testRunner.WhenAsync("a POST request is made to ed-fi/absenceEventCategoryDescriptors\" with", @"{
     ""codeValue"": ""Sick Leave"",
     ""description"": ""Sick Leave"",
     ""effectiveBeginDate"": ""2024-05-14"",
@@ -119,7 +119,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
              await testRunner.ThenAsync("it should respond with 201", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 21
-              await testRunner.AndAsync("the response headers includes", "  {\r\n      \"location\": \"data/ed-fi/absenceEventCategoryDescriptors/{id}\"\r\n  }", ((Reqnroll.Table)(null)), "And ");
+              await testRunner.AndAsync("the response headers includes", "  {\r\n      \"location\": ed-fi/absenceEventCategoryDescriptors/{id}\"\r\n  }", ((Reqnroll.Table)(null)), "And ");
 #line hidden
 #line 28
               await testRunner.AndAsync("the record can be retrieved with a GET request", ((string)(null)), ((Reqnroll.Table)(null)), "And ");
@@ -149,7 +149,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
         await this.FeatureBackgroundAsync();
 #line hidden
 #line 34
-             await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"description\": \"Wrong Value\",\r\n      \"effectiveBeginDate\": \"2024-05-14" +
+             await testRunner.WhenAsync("a POST request is made to ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"description\": \"Wrong Value\",\r\n      \"effectiveBeginDate\": \"2024-05-14" +
                         "\",\r\n      \"effectiveEndDate\": \"2024-05-14\",\r\n      \"namespace\": \"uri://ed-fi.org" +
                         "/AbsenceEventCategoryDescriptor\",\r\n      \"shortDescription\": \"Wrong Value\"\r\n  }", ((Reqnroll.Table)(null)), "When ");
 #line hidden
@@ -186,7 +186,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
         await this.FeatureBackgroundAsync();
 #line hidden
 #line 51
-             await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"codeValue\": \"xxxx\",\r\n      \"description\": \"Wrong Value\",\r\n      \"name" +
+             await testRunner.WhenAsync("a POST request is made to ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"codeValue\": \"xxxx\",\r\n      \"description\": \"Wrong Value\",\r\n      \"name" +
                         "space\": \"uri://.org/wrong\",\r\n      \"shortDescription\": \"Wrong Value\"\r\n  }", ((Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 60
@@ -226,7 +226,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
         await this.FeatureBackgroundAsync();
 #line hidden
 #line 73
-             await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n  }", ((Reqnroll.Table)(null)), "When ");
+             await testRunner.WhenAsync("a POST request is made to ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n  }", ((Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 78
              await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
@@ -261,7 +261,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
         await this.FeatureBackgroundAsync();
 #line hidden
 #line 86
-             await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"codeValue\": \"                      \",\r\n      \"description\": \"        " +
+             await testRunner.WhenAsync("a POST request is made to ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"codeValue\": \"                      \",\r\n      \"description\": \"        " +
                         "            \",\r\n      \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescript" +
                         "or\",\r\n      \"shortDescription\": \"                    \"\r\n  }", ((Reqnroll.Table)(null)), "When ");
 #line hidden
@@ -315,12 +315,12 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
         await this.FeatureBackgroundAsync();
 #line hidden
 #line 122
-            await testRunner.GivenAsync("a POST request is made to \"data/ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"codeValue\": \"Sick Lave\",\r\n      \"description\": \"Sick Leave\",\r\n      \"" +
+            await testRunner.GivenAsync("a POST request is made to ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"codeValue\": \"Sick Lave\",\r\n      \"description\": \"Sick Leave\",\r\n      \"" +
                         "namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\r\n      \"shortDescr" +
                         "iption\": \"Sick Leave\"\r\n  }", ((Reqnroll.Table)(null)), "Given ");
 #line hidden
 #line 131
-             await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"codeValue\": \"Sick Lave\",\r\n      \"description\": \"Sick Leave\",\r\n      \"" +
+             await testRunner.WhenAsync("a POST request is made to ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"codeValue\": \"Sick Lave\",\r\n      \"description\": \"Sick Leave\",\r\n      \"" +
                         "namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\r\n      \"shortDescr" +
                         "iption\": \"Sick Leave\"\r\n  }", ((Reqnroll.Table)(null)), "When ");
 #line hidden
@@ -357,7 +357,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
         await this.FeatureBackgroundAsync();
 #line hidden
 #line 145
-             await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"codeValue\": \"Sick Lave\",\r\n      \"description\": \"Sick Leave Edit\",\r\n  " +
+             await testRunner.WhenAsync("a POST request is made to ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"codeValue\": \"Sick Lave\",\r\n      \"description\": \"Sick Leave Edit\",\r\n  " +
                         "    \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\r\n      \"short" +
                         "Description\": \"Sick Leave\"\r\n  }", ((Reqnroll.Table)(null)), "When ");
 #line hidden

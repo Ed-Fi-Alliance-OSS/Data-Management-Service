@@ -91,7 +91,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features
             {
                 await this.ScenarioStartAsync();
 #line 5
-                await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/schools\" with", "", ((Reqnroll.Table)(null)), "When ");
+                await testRunner.WhenAsync("a POST request is made to \"ed-fi/schools\" with", "", ((Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 8
                 await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
@@ -125,7 +125,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features
             {
                 await this.ScenarioStartAsync();
 #line 15
-                await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/academicWeeks\" with", "{\r\n \"weekIdentifier\": \"one\",\r\n \"schoolReference\": {\r\n   \"schoolId\": 17012391\r\n }," +
+                await testRunner.WhenAsync("a POST request is made to \"ed-fi/academicWeeks\" with", "{\r\n \"weekIdentifier\": \"one\",\r\n \"schoolReference\": {\r\n   \"schoolId\": 17012391\r\n }," +
                            "\r\n \"beginDate\": \"2023-09-11\",\r\n \"endDate\": \"2023-09-11\",\r\n \"totalInstructionalDa" +
                            "ys\": 300\r\n}", ((Reqnroll.Table)(null)), "When ");
 #line hidden
@@ -159,7 +159,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features
             {
                 await this.ScenarioStartAsync();
 #line 34
-                await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/academicWeeks\" with", "{\r\n  \"weekIdentifier\": \"seven\",\r\n  \"schoolReference\": {\r\n  },\r\n  \"beginDate\": \"20" +
+                await testRunner.WhenAsync("a POST request is made to \"ed-fi/academicWeeks\" with", "{\r\n  \"weekIdentifier\": \"seven\",\r\n  \"schoolReference\": {\r\n  },\r\n  \"beginDate\": \"20" +
                            "23-09-11\",\r\n  \"endDate\": \"2023-09-11\"\r\n}", ((Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 44
@@ -190,7 +190,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features
             {
                 await this.ScenarioStartAsync();
 #line 51
-                await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/absenceEventCategoryDescriptors\" with", "{\r\n  \"codeValue\": \"Sample\",\r\n  \"shortDescription\": \"Bereavement\",\r\n  \"namespace\":" +
+                await testRunner.WhenAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors\" with", "{\r\n  \"codeValue\": \"Sample\",\r\n  \"shortDescription\": \"Bereavement\",\r\n  \"namespace\":" +
                            " \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\"\r\n}", ((Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 59

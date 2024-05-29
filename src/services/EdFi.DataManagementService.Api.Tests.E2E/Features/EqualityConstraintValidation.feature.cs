@@ -97,7 +97,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features
             {
                 await this.ScenarioStartAsync();
 #line 11
-             await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/bellschedules\" with", @"{
+             await testRunner.WhenAsync("a POST request is made to \"ed-fi/bellschedules\" with", @"{
     ""schoolReference"": {
         ""schoolId"": 255901001
     },
@@ -146,7 +146,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features
             {
                 await this.ScenarioStartAsync();
 #line 40
-             await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/bellschedules\" with", @"{
+             await testRunner.WhenAsync("a POST request is made to \"ed-fi/bellschedules\" with", @"{
     ""schoolReference"": {
         ""schoolId"": 255901001
     },

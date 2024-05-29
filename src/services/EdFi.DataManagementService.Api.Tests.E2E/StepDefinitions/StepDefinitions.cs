@@ -32,6 +32,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.StepDefinitions
         [Given("a POST request is made to {string} with")]
         public async Task GivenAPOSTRequestIsMadeToWith(string url, string body)
         {
+            url = $"data/{url}";
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
             if (_apiResponse.Headers.ContainsKey("location"))
             {
@@ -42,6 +43,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.StepDefinitions
         [When("a POST request is made to {string} with")]
         public async Task WhenSendingAPOSTRequestToWithBody(string url, string body)
         {
+            url = $"data/{url}";
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
             if (_apiResponse.Headers.ContainsKey("location"))
             {
@@ -52,13 +54,15 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.StepDefinitions
         [When("a PUT request is made to {string} with")]
         public async Task WhenAPUTRequestIsMadeToWith(string url, string body)
         {
-            _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(string.Format(url.Replace("{id}", _id)), new() { Data = body.Replace("{id}", _id) })!;
+            url = $"data/{url.Replace("{id}", _id)}";
+            _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(url, new() { Data = body.Replace("{id}", _id) })!;
         }
 
         [When("a GET request is made to {string}")]
         public async Task WhenAGETRequestIsMadeTo(string url)
         {
-            _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(string.Format(url.Replace("{id}", _id)))!;
+            url = $"data/{url.Replace("{id}", _id)}";
+            _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(url)!;
         }
 
         [Then("it should respond with {int}")]
