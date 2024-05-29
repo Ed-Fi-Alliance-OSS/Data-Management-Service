@@ -76,7 +76,7 @@ Feature: Equality Constraint Validation
 
         @ignore
         Scenario: Making a Post request when value does not match the same value in an array
-             When a POST request is made to "/ed-fi/sections" with
+             When a POST request is made to "ed-fi/sections" with
                   """
                   {
                       "sectionIdentifier": "25590100102Trad220ALG112011Test",
@@ -115,7 +115,7 @@ Feature: Equality Constraint Validation
 
         @ignore
         Scenario: Making a Post request when a value matches the first scenario in an array but not the second
-             When a POST request is made to "/ed-fi/sections" with
+             When a POST request is made to "ed-fi/sections" with
                   """
                   {
                      "sectionIdentifier": "25590100102Trad220ALG112011Test",
@@ -163,7 +163,7 @@ Feature: Equality Constraint Validation
 
         @ignore
         Scenario: Making a Post request when value does not match the same value in a single other reference
-             When a POST request is made to "/ed-fi/sections" with
+             When a POST request is made to "ed-fi/sections" with
                   """
                   {
                      "sectionIdentifier": "25590100102Trad220ALG112011Test",
