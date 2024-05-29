@@ -187,6 +187,6 @@ Feature: Equality Constraint Validation
                       "type": "urn:ed-fi:api:conflict:invalid-reference",
                       "title": "Resource Not Unique Conflict due to invalid-reference",
                       "status": 409,
-                      "correlationId": "8d9f7ec3-c0ce-40fd-a336-d3cc2b4ba4ab"
+                      "correlationId": null
                   }
                   """
