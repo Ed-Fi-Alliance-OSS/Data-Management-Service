@@ -74,7 +74,10 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.StepDefinitions
         [Then("the response body is")]
         public void ThenTheResponseBodyIs(string body)
         {
-            _apiResponse.TextAsync().Result.Should().Be(body.Replace("{id}", _id));
+            body = body.Replace("{id}", _id);
+            var bodyJson = JsonNode.Parse(body)!;
+            var responseJson = JsonNode.Parse(_apiResponse.TextAsync().Result)!;
+            responseJson.ToString().Should().Be(bodyJson.ToString());
         }
 
         [Then("the response headers includes")]
