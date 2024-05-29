@@ -30,7 +30,7 @@ RUN dotnet build -c Release --no-restore && \
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0.3-alpine3.19-amd64@sha256:a531d9d123928514405b9da9ff28a3aa81bd6f7d7d8cfb6207b66c007e7b3075 AS runtimebase
 
-RUN apk --no-cache add bash=~5 postgresql-client gettext=~0
+RUN apk --no-cache add bash=~5 postgresql16-client=~16 gettext=~0
 
 FROM runtimebase AS setup
 
