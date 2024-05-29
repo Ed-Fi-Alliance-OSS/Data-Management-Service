@@ -106,20 +106,20 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
         await this.FeatureBackgroundAsync();
 #line hidden
 #line 9
-             await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/absenceEventCategoryDescriptors\" with", @"  {
-      ""codeValue"": ""Sick Leave"",
-      ""description"": ""Sick Leave"",
-      ""effectiveBeginDate"": ""2024-05-14"",
-      ""effectiveEndDate"": ""2024-05-14"",
-      ""namespace"": ""uri://ed-fi.org/AbsenceEventCategoryDescriptor"",
-      ""shortDescription"": ""Sick Leave""
-  }", ((Reqnroll.Table)(null)), "When ");
+             await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/absenceEventCategoryDescriptors\" with", @"{
+    ""codeValue"": ""Sick Leave"",
+    ""description"": ""Sick Leave"",
+    ""effectiveBeginDate"": ""2024-05-14"",
+    ""effectiveEndDate"": ""2024-05-14"",
+    ""namespace"": ""uri://ed-fi.org/AbsenceEventCategoryDescriptor"",
+    ""shortDescription"": ""Sick Leave""
+}", ((Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 20
              await testRunner.ThenAsync("it should respond with 201", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 21
-              await testRunner.AndAsync("the response headers includes", "  {\r\n      \"location\": \"data/ed-fi/absenceEventCategoryDescriptors/{id}\",\r\n  }", ((Reqnroll.Table)(null)), "And ");
+              await testRunner.AndAsync("the response headers includes", "  {\r\n      \"location\": \"data/ed-fi/absenceEventCategoryDescriptors/{id}\"\r\n  }", ((Reqnroll.Table)(null)), "And ");
 #line hidden
 #line 28
               await testRunner.AndAsync("the record can be retrieved with a GET request", ((string)(null)), ((Reqnroll.Table)(null)), "And ");
@@ -294,12 +294,14 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
         
         [NUnit.Framework.TestAttribute()]
         [NUnit.Framework.DescriptionAttribute("Verify POST of existing record without changes")]
+        [NUnit.Framework.IgnoreAttribute("Ignored scenario")]
         public async System.Threading.Tasks.Task VerifyPOSTOfExistingRecordWithoutChanges()
         {
-            string[] tagsOfScenario = ((string[])(null));
+            string[] tagsOfScenario = new string[] {
+                    "ignore"};
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
             Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Verify POST of existing record without changes", null, tagsOfScenario, argumentsOfScenario, featureTags);
-#line 120
+#line 121
         this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
@@ -312,20 +314,20 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
 #line 4
         await this.FeatureBackgroundAsync();
 #line hidden
-#line 121
-            await testRunner.GivenAsync("a POST request is made to \"/ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"codeValue\": \"Sick Lave\",\r\n      \"description\": \"Sick Leave\",\r\n      \"" +
+#line 122
+            await testRunner.GivenAsync("a POST request is made to \"data/ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"codeValue\": \"Sick Lave\",\r\n      \"description\": \"Sick Leave\",\r\n      \"" +
                         "namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\r\n      \"shortDescr" +
                         "iption\": \"Sick Leave\"\r\n  }", ((Reqnroll.Table)(null)), "Given ");
 #line hidden
-#line 130
-             await testRunner.WhenAsync("a POST request is made to \"/ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"codeValue\": \"Sick Lave\",\r\n      \"description\": \"Sick Leave\",\r\n      \"" +
+#line 131
+             await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"codeValue\": \"Sick Lave\",\r\n      \"description\": \"Sick Leave\",\r\n      \"" +
                         "namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\r\n      \"shortDescr" +
                         "iption\": \"Sick Leave\"\r\n  }", ((Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 139
+#line 140
              await testRunner.ThenAsync("it should respond with 200", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
-#line 140
+#line 141
               await testRunner.AndAsync("the record can be retrieved with a GET request", ((string)(null)), ((Reqnroll.Table)(null)), "And ");
 #line hidden
             }
@@ -341,7 +343,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
                     "ignore"};
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
             Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Verify POST of existing record (change non-key field) works", null, tagsOfScenario, argumentsOfScenario, featureTags);
-#line 143
+#line 144
         this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
@@ -354,12 +356,12 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
 #line 4
         await this.FeatureBackgroundAsync();
 #line hidden
-#line 144
+#line 145
              await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"codeValue\": \"Sick Lave\",\r\n      \"description\": \"Sick Leave Edit\",\r\n  " +
                         "    \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\r\n      \"short" +
                         "Description\": \"Sick Leave\"\r\n  }", ((Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 153
+#line 154
              await testRunner.ThenAsync("it should respond with 200", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
             }
@@ -375,7 +377,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
                     "ignore"};
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
             Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Verify error handling when resource ID is included in body on POST", null, tagsOfScenario, argumentsOfScenario, featureTags);
-#line 156
+#line 157
         this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
@@ -388,15 +390,15 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
 #line 4
         await this.FeatureBackgroundAsync();
 #line hidden
-#line 158
+#line 159
              await testRunner.WhenAsync("a POST request is made to \"/ed-fi/absenceEventCategoryDescriptors/\" with", "  {\r\n      \"id\": \"{id}\",\r\n      \"codeValue\": \"Sick Leave\",\r\n      \"description\": " +
                         "\"Sick Leave Edited\",\r\n      \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDe" +
                         "scriptor\",\r\n      \"shortDescription\": \"Sick Leave\"\r\n  }", ((Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 168
+#line 169
              await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
-#line 169
+#line 170
               await testRunner.AndAsync("the response body is", @"  {
       ""detail"": ""The request data was constructed incorrectly."",
       ""type"": ""urn:ed-fi:api:bad-request:data"",

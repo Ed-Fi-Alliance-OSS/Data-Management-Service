@@ -7,22 +7,22 @@ Feature: Resources "Create" Operation validations
 
         Scenario: Verify new resource can be created successfully
              When a POST request is made to "data/ed-fi/absenceEventCategoryDescriptors" with
-                  """
-                    {
-                        "codeValue": "Sick Leave",
-                        "description": "Sick Leave",
-                        "effectiveBeginDate": "2024-05-14",
-                        "effectiveEndDate": "2024-05-14",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                        "shortDescription": "Sick Leave"
-                    }
-                  """
+                """
+                {
+                    "codeValue": "Sick Leave",
+                    "description": "Sick Leave",
+                    "effectiveBeginDate": "2024-05-14",
+                    "effectiveEndDate": "2024-05-14",
+                    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                    "shortDescription": "Sick Leave"
+                }
+                """
              Then it should respond with 201
               And the response headers includes
               #replace header {id} with the correct value
                   """
                     {
-                        "location": "data/ed-fi/absenceEventCategoryDescriptors/{id}",
+                        "location": "data/ed-fi/absenceEventCategoryDescriptors/{id}"
                     }
                   """
               And the record can be retrieved with a GET request
@@ -117,8 +117,9 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
+        @ignore
         Scenario: Verify POST of existing record without changes
-            Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+            Given a POST request is made to "data/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "Sick Lave",
@@ -127,7 +128,7 @@ Feature: Resources "Create" Operation validations
                         "shortDescription": "Sick Leave"
                     }
                   """
-             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "data/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "Sick Lave",

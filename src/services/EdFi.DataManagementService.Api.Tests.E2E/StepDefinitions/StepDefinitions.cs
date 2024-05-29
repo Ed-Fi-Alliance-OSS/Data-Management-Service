@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Api.Tests.E2E.Management;
 using FluentAssertions;
 using Microsoft.Playwright;
@@ -28,17 +29,24 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.StepDefinitions
             //throw new PendingStepException();
         }
 
-        [Given("request made to {string} with")]
-        public async Task GivenRequestMadeToWith(string url, string body)
+        [Given("a POST request is made to {string} with")]
+        public async Task GivenAPOSTRequestIsMadeToWith(string url, string body)
         {
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
-            _id = _apiResponse.Headers["location"].Split('/').Last();
+            if (_apiResponse.Headers.ContainsKey("location"))
+            {
+                _id = _apiResponse.Headers["location"].Split('/').Last();
+            }
         }
 
         [When("a POST request is made to {string} with")]
         public async Task WhenSendingAPOSTRequestToWithBody(string url, string body)
         {
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
+            if (_apiResponse.Headers.ContainsKey("location"))
+            {
+                _id = _apiResponse.Headers["location"].Split('/').Last();
+            }
         }
 
         [When("a PUT request is made to {string} with")]
@@ -60,9 +68,26 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.StepDefinitions
         }
 
         [Then("the response body is")]
-        public void ThenTheResponseMessageBodyIs(string body)
+        public void ThenTheResponseBodyIs(string body)
         {
             _apiResponse.TextAsync().Result.Should().Be(body.Replace("{id}", _id));
+        }
+
+        [Then("the response headers includes")]
+        public void ThenTheResponseHeadersIncludes(string headers)
+        {
+            var value = JsonNode.Parse(headers)!;
+            foreach (var header in value.AsObject())
+            {
+                if (header.Value != null)
+                    _apiResponse.Headers[header.Key].Should().EndWith(header.Value.ToString().Replace("{id}", _id));
+            }
+        }
+
+        [Then("the record can be retrieved with a GET request")]
+        public void ThenTheRecordCanBeRetrievedWithAGETRequest()
+        {
+            //throw new PendingStepException();
         }
     }
 }

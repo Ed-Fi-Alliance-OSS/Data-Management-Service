@@ -5,57 +5,57 @@ Feature: Resources "Update" Operation validations
             Given the Data Management Service must receive a token issued by "http://localhost"
               And user is already authorized
               And a POST request is made to "data/ed-fi/absenceEventCategoryDescriptors" with
-                  """
-                    {
-                        "codeValue": "Sick Leave",
-                        "description": "Sick Leave",
-                        "effectiveBeginDate": "2024-05-14",
-                        "effectiveEndDate": "2024-05-14",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                        "shortDescription": "Sick Leave"
-                    }
-                  """
+                """
+                {
+                  "codeValue": "Sick Leave",
+                  "description": "Sick Leave",
+                  "effectiveBeginDate": "2024-05-14",
+                  "effectiveEndDate": "2024-05-14",
+                  "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                  "shortDescription": "Sick Leave"
+                }
+                """
              Then it should respond with 201
 
         Scenario: Verify that existing resources can be updated successfully
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "data/ed-fi/absenceEventCategoryDescriptors/{id}" with
-                  """
-                    {
-                        "id": "{id}",
-                        "codeValue": "Sick Leave",
-                        "description": "Sick Leave Edited",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                        "shortDescription": "Sick Leave"
-                    }
-                  """
+                """
+                {
+                  "id": "{id}",
+                  "codeValue": "Sick Leave",
+                  "description": "Sick Leave Edited",
+                  "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                  "shortDescription": "Sick Leave"
+                }
+                """
              Then it should respond with 204
 
         Scenario: Verify updating a resource with valid data
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "data/ed-fi/absenceEventCategoryDescriptors/{id}" with
-                  """
-                    {
-                        "id": "{id}",
-                        "codeValue": "Sick Leave",
-                        "description": "Sick Leave Edited",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                        "shortDescription": "Sick Leave"
-                    }
-                  """
+                """
+                {
+                  "id": "{id}",
+                  "codeValue": "Sick Leave",
+                  "description": "Sick Leave Edited",
+                  "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                  "shortDescription": "Sick Leave"
+                }
+                """
              Then it should respond with 204
              When a GET request is made to "data/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 200
               And the response body is
-                  """
-                    {
-                        "id": "{id}",
-                        "codeValue": "Sick Leave",
-                        "description": "Sick Leave Edited",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                        "shortDescription": "Sick Leave"
-                    }
-                  """
+                """
+                {
+                  "id": "{id}",
+                  "codeValue": "Sick Leave",
+                  "description": "Sick Leave Edited",
+                  "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                  "shortDescription": "Sick Leave"
+                }
+                """
         @ignore
         Scenario: Verify updating a non existing resource with valid data
              # The id value should be replaced with a non existing resource
@@ -182,7 +182,6 @@ Feature: Resources "Update" Operation validations
                         }
                     }
                   """
-
         @ignore
         Scenario: Verify error handling when resource ID is not included in body on PUT
             # The id value should be replaced with the resource created in the Background section
