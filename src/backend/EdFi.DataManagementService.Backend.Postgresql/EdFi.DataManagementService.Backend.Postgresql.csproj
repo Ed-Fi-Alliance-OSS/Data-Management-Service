@@ -15,18 +15,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="dbup-core" Version="5.0.87" />
-    <PackageReference Include="dbup-postgresql" Version="5.0.40" />
-      <PackageReference Include="Microsoft.CodeAnalysis" Version="4.8.0" />
-      <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle" Version="4.9.2">
-          <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-          <PrivateAssets>all</PrivateAssets>
-      </PackageReference>
-      <PackageReference Include="Npgsql" Version="8.0.3" />
-      <PackageReference Include="SonarAnalyzer.CSharp" Version="9.25.0.90414">
-          <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-          <PrivateAssets>all</PrivateAssets>
-      </PackageReference>
+    <PackageReference Include="dbup-core" />
+    <PackageReference Include="dbup-postgresql" />
+      <PackageReference Include="Microsoft.CodeAnalysis" />
+      <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle" />
+      <PackageReference Include="Npgsql" />
+      <PackageReference Include="SonarAnalyzer.CSharp" />
   </ItemGroup>
 
     <ItemGroup>

@@ -15,23 +15,28 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Backend.Postgresql", "backend\EdFi.DataManagementService.Backend.Postgresql\EdFi.DataManagementService.Backend.Postgresql.csproj", "{3B8DB16B-0A35-4565-B8CA-73DE662424BC}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.Backend.Installer", "backend\EdFi.DataManagementService.Backend.Installer\EdFi.DataManagementService.Backend.Installer.csproj", "{0D987657-9907-4385-BE24-580FE42C9E06}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Backend.Installer", "backend\EdFi.DataManagementService.Backend.Installer\EdFi.DataManagementService.Backend.Installer.csproj", "{0D987657-9907-4385-BE24-580FE42C9E06}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "frontend", "frontend", "{5B7BB270-905C-4D2F-BD3C-3374707FE1E3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.Frontend.AspNetCore", "frontend\EdFi.DataManagementService.Frontend.AspNetCore\EdFi.DataManagementService.Frontend.AspNetCore.csproj", "{53914CA2-E0E6-4D84-8899-D9C5CE40AA76}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Frontend.AspNetCore", "frontend\EdFi.DataManagementService.Frontend.AspNetCore\EdFi.DataManagementService.Frontend.AspNetCore.csproj", "{53914CA2-E0E6-4D84-8899-D9C5CE40AA76}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "core", "core", "{71E181BF-2E72-45F2-9DAD-6B1D18FAD164}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.Core", "core\EdFi.DataManagementService.Core\EdFi.DataManagementService.Core.csproj", "{AF9E2120-206E-4318-8A2B-2DB798D39C4D}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Core", "core\EdFi.DataManagementService.Core\EdFi.DataManagementService.Core.csproj", "{AF9E2120-206E-4318-8A2B-2DB798D39C4D}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit", "frontend\EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit\EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj", "{3B14F0A6-E2BB-411D-B31F-9C0B44C8ABE9}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit", "frontend\EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit\EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj", "{3B14F0A6-E2BB-411D-B31F-9C0B44C8ABE9}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.Core.Tests.Unit", "core\EdFi.DataManagementService.Core.Tests.Unit\EdFi.DataManagementService.Core.Tests.Unit.csproj", "{2C4790A3-B411-4F46-9428-832406A9D54E}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Core.Tests.Unit", "core\EdFi.DataManagementService.Core.Tests.Unit\EdFi.DataManagementService.Core.Tests.Unit.csproj", "{2C4790A3-B411-4F46-9428-832406A9D54E}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.Core.External", "core\EdFi.DataManagementService.Core.External\EdFi.DataManagementService.Core.External.csproj", "{798D160F-28A2-4194-9655-440FCCA0EF36}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Core.External", "core\EdFi.DataManagementService.Core.External\EdFi.DataManagementService.Core.External.csproj", "{798D160F-28A2-4194-9655-440FCCA0EF36}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.Backend.Test.Unit", "backend\EdFi.DataManagementService.Backend.Test.Unit\EdFi.DataManagementService.Backend.Test.Unit.csproj", "{340743A7-5BEC-4FEF-BD4C-F7C35BE7CBA2}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Backend.Test.Unit", "backend\EdFi.DataManagementService.Backend.Test.Unit\EdFi.DataManagementService.Backend.Test.Unit.csproj", "{340743A7-5BEC-4FEF-BD4C-F7C35BE7CBA2}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{D64FF6F6-BABC-4405-AF8C-24512E7FC7BE}"
+	ProjectSection(SolutionItems) = preProject
+		Directory.Packages.props = Directory.Packages.props
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
