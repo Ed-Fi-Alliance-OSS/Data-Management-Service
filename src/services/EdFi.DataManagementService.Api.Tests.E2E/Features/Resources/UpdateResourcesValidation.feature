@@ -132,7 +132,7 @@ Feature: Resources "Update" Operation validations
                     }
                   """
              Then it should respond with 400
-              And the response message body is
+              And the response body is
                   """
                     {
                         "detail": "Data validation failed. See 'validationErrors' for details.",
@@ -167,7 +167,7 @@ Feature: Resources "Update" Operation validations
                     }
                   """
              Then it should respond with 400
-              And the response message body is
+              And the response body is
                   """
                     {
                         "detail": "Data validation failed. See 'validationErrors' for details.",
@@ -197,7 +197,7 @@ Feature: Resources "Update" Operation validations
                     }
                   """
              Then it should respond with 400
-              And the response message body is
+              And the response body is
                   """
                     {
                         "detail": "Data validation failed. See 'validationErrors' for details.",

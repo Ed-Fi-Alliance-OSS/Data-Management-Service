@@ -321,7 +321,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
              await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 135
-              await testRunner.AndAsync("the response message body is", @"  {
+              await testRunner.AndAsync("the response body is", @"  {
       ""detail"": ""Data validation failed. See 'validationErrors' for details."",
       ""type"": ""urn:ed-fi:api:bad-request:data"",
       ""title"": ""Data Validation Failed"",
@@ -376,7 +376,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
              await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 170
-              await testRunner.AndAsync("the response message body is", @"  {
+              await testRunner.AndAsync("the response body is", @"  {
       ""detail"": ""Data validation failed. See 'validationErrors' for details."",
       ""type"": ""urn:ed-fi:api:bad-request:data"",
       ""title"": ""Data Validation Failed"",
@@ -424,7 +424,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
              await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 200
-              await testRunner.AndAsync("the response message body is", @"  {
+              await testRunner.AndAsync("the response body is", @"  {
       ""detail"": ""Data validation failed. See 'validationErrors' for details."",
       ""type"": ""urn:ed-fi:api:bad-request:data"",
       ""title"": ""Data Validation Failed"",
