@@ -18,9 +18,14 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
 [TestFixture]
 public class UpsertTests
 {
-    public static UpsertDocument UpsertDocument()
+    public static UpsertDocument CreateUpsert()
     {
         return new UpsertDocument(new SqlAction(), NullLogger<UpsertDocument>.Instance);
+    }
+
+    public static GetDocumentById CreateGetById()
+    {
+        return new GetDocumentById(NullLogger<GetDocumentById>.Instance);
     }
 
     public static T AsValueType<T, U>(U value)
@@ -29,134 +34,91 @@ public class UpsertTests
         return (new { Value = value }).ActLike<T>();
     }
 
-    [TestFixture, DatabaseTestWithRollback]
-    public class Given_something : UpsertTests, IDatabaseTest
+    public static readonly IResourceInfo _resourceInfo = (
+        new
+        {
+            ResourceVersion = AsValueType<ISemVer, string>("5.0.0"),
+            AllowIdentityUpdates = false,
+            ProjectName = AsValueType<IMetaEdProjectName, string>("ProjectName"),
+            ResourceName = AsValueType<IMetaEdResourceName, string>("ResourceName"),
+            IsDescriptor = false
+        }
+    ).ActLike<IResourceInfo>();
+
+    public static readonly IDocumentInfo _documentInfo = (
+        new
+        {
+            DocumentIdentity = (
+                new { IdentityValue = "", IdentityJsonPath = AsValueType<IJsonPath, string>("$") }
+            ).ActLike<IResourceInfo>(),
+            ReferentialId = new ReferentialId(Guid.Empty),
+            DocumentReferences = new List<IDocumentReference>(),
+            DescriptorReferences = new List<IDocumentReference>(),
+            SuperclassIdentity = null as ISuperclassIdentity
+        }
+    ).ActLike<IDocumentInfo>();
+
+    public static IUpsertRequest CreateUpsertRequest(Guid documentUuidGuid, string edFiDocString)
     {
-        private UpsertResult? result1;
-        private UpsertResult? result2;
-        private UpsertResult? result3;
+        return (
+            new
+            {
+                ResourceInfo = _resourceInfo,
+                DocumentInfo = _documentInfo,
+                EdfiDoc = JsonNode.Parse(edFiDocString),
+                TraceId = new TraceId("123"),
+                DocumentUuid = new DocumentUuid(documentUuidGuid)
+            }
+        ).ActLike<IUpsertRequest>();
+    }
+
+    public static IGetRequest CreateGetRequest(Guid documentUuidGuid)
+    {
+        return (
+            new
+            {
+                ResourceInfo = _resourceInfo,
+                TraceId = new TraceId("123"),
+                DocumentUuid = new DocumentUuid(documentUuidGuid)
+            }
+        ).ActLike<IGetRequest>();
+    }
+
+    [TestFixture, DatabaseTestWithRollback]
+    public class Given_an_upsert_of_a_new_document : UpsertTests, IDatabaseTest
+    {
+        private UpsertResult? _upsertResult;
+        private GetResult? _getResult;
 
         public NpgsqlDataSource? DataSource { get; set; }
+
+        private static readonly Guid _documentUuidGuid = Guid.NewGuid();
+        private static readonly string _edFiDocString = """{"abc":123}""";
 
         [SetUp]
         public async Task Setup()
         {
-            IUpsertRequest upsertRequest1 = (
-                new
-                {
-                    ResourceInfo = (
-                        new
-                        {
-                            ResourceVersion = AsValueType<ISemVer, string>("5.0.0"),
-                            AllowIdentityUpdates = false,
-                            ProjectName = AsValueType<IMetaEdProjectName, string>("ProjectName"),
-                            ResourceName = AsValueType<IMetaEdResourceName, string>("ResourceName"),
-                            IsDescriptor = false
-                        }
-                    ).ActLike<IResourceInfo>(),
-                    DocumentInfo = (
-                        new
-                        {
-                            DocumentIdentity = (
-                                new
-                                {
-                                    IdentityValue = "",
-                                    IdentityJsonPath = AsValueType<IJsonPath, string>("$")
-                                }
-                            ).ActLike<IResourceInfo>(),
-                            ReferentialId = new ReferentialId(Guid.Empty),
-                            DocumentReferences = new List<IDocumentReference>(),
-                            DescriptorReferences = new List<IDocumentReference>(),
-                            SuperclassIdentity = null as ISuperclassIdentity
-                        }
-                    ).ActLike<IDocumentInfo>(),
-                    EdfiDoc = JsonNode.Parse("{}"),
-                    TraceId = new TraceId("123"),
-                    DocumentUuid = new DocumentUuid(Guid.NewGuid())
-                }
-            ).ActLike<IUpsertRequest>();
+            // Try upsert as insert
+            IUpsertRequest upsertRequest = CreateUpsertRequest(_documentUuidGuid, _edFiDocString);
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest, DataSource!);
 
-            IUpsertRequest upsertRequest2 = (
-                new
-                {
-                    ResourceInfo = (
-                        new
-                        {
-                            ResourceVersion = AsValueType<ISemVer, string>("5.0.0"),
-                            AllowIdentityUpdates = false,
-                            ProjectName = AsValueType<IMetaEdProjectName, string>("ProjectName"),
-                            ResourceName = AsValueType<IMetaEdResourceName, string>("ResourceName"),
-                            IsDescriptor = false
-                        }
-                    ).ActLike<IResourceInfo>(),
-                    DocumentInfo = (
-                        new
-                        {
-                            DocumentIdentity = (
-                                new
-                                {
-                                    IdentityValue = "",
-                                    IdentityJsonPath = AsValueType<IJsonPath, string>("$")
-                                }
-                            ).ActLike<IResourceInfo>(),
-                            ReferentialId = new ReferentialId(Guid.Empty),
-                            DocumentReferences = new List<IDocumentReference>(),
-                            DescriptorReferences = new List<IDocumentReference>(),
-                            SuperclassIdentity = null as ISuperclassIdentity
-                        }
-                    ).ActLike<IDocumentInfo>(),
-                    EdfiDoc = JsonNode.Parse("{}"),
-                    TraceId = new TraceId("123"),
-                    DocumentUuid = new DocumentUuid(Guid.NewGuid())
-                }
-            ).ActLike<IUpsertRequest>();
-
-            IUpsertRequest upsertRequest3 = (
-                new
-                {
-                    ResourceInfo = (
-                        new
-                        {
-                            ResourceVersion = AsValueType<ISemVer, string>("5.0.0"),
-                            AllowIdentityUpdates = false,
-                            ProjectName = AsValueType<IMetaEdProjectName, string>("ProjectName"),
-                            ResourceName = AsValueType<IMetaEdResourceName, string>("ResourceName"),
-                            IsDescriptor = false
-                        }
-                    ).ActLike<IResourceInfo>(),
-                    DocumentInfo = (
-                        new
-                        {
-                            DocumentIdentity = (
-                                new
-                                {
-                                    IdentityValue = "",
-                                    IdentityJsonPath = AsValueType<IJsonPath, string>("$")
-                                }
-                            ).ActLike<IResourceInfo>(),
-                            ReferentialId = new ReferentialId(Guid.Empty),
-                            DocumentReferences = new List<IDocumentReference>(),
-                            DescriptorReferences = new List<IDocumentReference>(),
-                            SuperclassIdentity = null as ISuperclassIdentity
-                        }
-                    ).ActLike<IDocumentInfo>(),
-                    EdfiDoc = JsonNode.Parse("{}"),
-                    TraceId = new TraceId("123"),
-                    DocumentUuid = new DocumentUuid(Guid.NewGuid())
-                }
-            ).ActLike<IUpsertRequest>();
-
-            result1 = await UpsertDocument().Upsert(upsertRequest1, DataSource!);
-            result2 = await UpsertDocument().Upsert(upsertRequest2, DataSource!);
-            result3 = await UpsertDocument().Upsert(upsertRequest3, DataSource!);
+            // Confirm it's there
+            IGetRequest getRequest = CreateGetRequest(_documentUuidGuid);
+            _getResult = await CreateGetById().GetById(getRequest, DataSource!);
         }
 
         [Test]
-        public void It_has_something()
+        public void It_should_be_a_successful_insert()
         {
-            result1!.Should().BeOfType<UpsertResult.InsertSuccess>();
-            result2!.Should().BeOfType<UpsertResult.InsertSuccess>();
-            result3!.Should().BeOfType<UpsertResult.InsertSuccess>();
+            _upsertResult!.Should().BeOfType<UpsertResult.InsertSuccess>();
+        }
+
+        [Test]
+        public void It_should_be_found_by_get()
+        {
+            _getResult!.Should().BeOfType<GetResult.GetSuccess>();
+            (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
+            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Be(_edFiDocString);
         }
     }
 }

@@ -93,7 +93,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 }
             }
 
-            _logger.LogDebug("Upsert success - {TraceId}", upsertRequest.TraceId);
+            _logger.LogDebug("Upsert success as insert - {TraceId}", upsertRequest.TraceId);
             await transaction.CommitAsync();
             return new UpsertResult.InsertSuccess(upsertRequest.DocumentUuid);
         }
