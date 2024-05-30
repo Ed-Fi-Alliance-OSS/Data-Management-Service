@@ -36,6 +36,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		Directory.Packages.props = Directory.Packages.props
 	EndProjectSection
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Api.Tests.E2E", "tests\EdFi.DataManagementService.Api.Tests.E2E\EdFi.DataManagementService.Api.Tests.E2E.csproj", "{5B25838D-2B22-4AD9-AA85-B3439D782CAC}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Tests.E2E", "tests\EdFi.DataManagementService.Tests.E2E\EdFi.DataManagementService.Tests.E2E.csproj", "{F45D8E74-55D2-47CB-8DE7-A925AA51B707}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -83,10 +84,10 @@ Global
 		{340743A7-5BEC-4FEF-BD4C-F7C35BE7CBA2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{340743A7-5BEC-4FEF-BD4C-F7C35BE7CBA2}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{340743A7-5BEC-4FEF-BD4C-F7C35BE7CBA2}.Release|Any CPU.Build.0 = Release|Any CPU
-		{5B25838D-2B22-4AD9-AA85-B3439D782CAC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{5B25838D-2B22-4AD9-AA85-B3439D782CAC}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{5B25838D-2B22-4AD9-AA85-B3439D782CAC}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{5B25838D-2B22-4AD9-AA85-B3439D782CAC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F45D8E74-55D2-47CB-8DE7-A925AA51B707}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F45D8E74-55D2-47CB-8DE7-A925AA51B707}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F45D8E74-55D2-47CB-8DE7-A925AA51B707}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F45D8E74-55D2-47CB-8DE7-A925AA51B707}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -102,7 +103,7 @@ Global
 		{2C4790A3-B411-4F46-9428-832406A9D54E} = {71E181BF-2E72-45F2-9DAD-6B1D18FAD164}
 		{798D160F-28A2-4194-9655-440FCCA0EF36} = {71E181BF-2E72-45F2-9DAD-6B1D18FAD164}
 		{340743A7-5BEC-4FEF-BD4C-F7C35BE7CBA2} = {75AE8F7B-B980-48AE-8518-073830FA6471}
-		{5B25838D-2B22-4AD9-AA85-B3439D782CAC} = {22F7EF40-C77C-4AF0-8C1E-500EA6B85496}
+		{F45D8E74-55D2-47CB-8DE7-A925AA51B707} = {22F7EF40-C77C-4AF0-8C1E-500EA6B85496}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {CAB3D5DE-BC6C-44FD-831C-9C7BE3935343}

@@ -10,7 +10,7 @@
 // ------------------------------------------------------------------------------
 #region Designer generated code
 #pragma warning disable
-namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Resources
+namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
 {
     using Reqnroll;
     using System;

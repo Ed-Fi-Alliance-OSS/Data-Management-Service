@@ -7,7 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Serilog;
 using Serilog.Core;
 
-namespace EdFi.DataManagementService.Api.Tests.E2E.Management;
+namespace EdFi.DataManagementService.Tests.E2E.Management;
 
 public class TestLogger : IDisposable
 {
