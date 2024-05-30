@@ -10,7 +10,7 @@ copy the current DMS solution into the container, build it and start it.
 ## Running The Tests 
 
 * Run from the Visual Studio Test Explorer.
-* cd into `/src/services` and run `dotnet test EdFi.DataManagementService.Api.Tests.E2E`.
+* cd into `/src/tests` and run `dotnet test EdFi.DataManagementService.Api.Tests.E2E`.
 
 ## Test Environments
 
