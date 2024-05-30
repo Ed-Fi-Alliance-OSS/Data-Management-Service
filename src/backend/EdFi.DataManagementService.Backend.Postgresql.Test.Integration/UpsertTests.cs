@@ -93,7 +93,7 @@ public class UpsertTests
         public NpgsqlDataSource? DataSource { get; set; }
 
         private static readonly Guid _documentUuidGuid = Guid.NewGuid();
-        private static readonly string _edFiDocString = """{"abc":123}""";
+        private static readonly string _edFiDocString = """{"abc":1}""";
 
         [SetUp]
         public async Task Setup()
@@ -119,6 +119,49 @@ public class UpsertTests
             _getResult!.Should().BeOfType<GetResult.GetSuccess>();
             (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
             (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Be(_edFiDocString);
+        }
+    }
+
+    [TestFixture, DatabaseTestWithRollback]
+    public class Given_an_upsert_of_an_existing_document : UpsertTests, IDatabaseTest
+    {
+        private UpsertResult? _upsertResult;
+        private GetResult? _getResult;
+
+        public NpgsqlDataSource? DataSource { get; set; }
+
+        private static readonly Guid _documentUuidGuid = Guid.NewGuid();
+        private static readonly string _edFiDocString1 = """{"abc":1}""";
+        private static readonly string _edFiDocString2 = """{"abc":2}""";
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Create
+            IUpsertRequest upsertRequest1 = CreateUpsertRequest(_documentUuidGuid, _edFiDocString1);
+            await CreateUpsert().Upsert(upsertRequest1, DataSource!);
+
+            // Update
+            IUpsertRequest upsertRequest2 = CreateUpsertRequest(_documentUuidGuid, _edFiDocString2);
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest2, DataSource!);
+
+            // Confirm change was made
+            IGetRequest getRequest = CreateGetRequest(_documentUuidGuid);
+            _getResult = await CreateGetById().GetById(getRequest, DataSource!);
+        }
+
+        [Test]
+        public void It_should_be_a_successful_update()
+        {
+            _upsertResult!.Should().BeOfType<UpsertResult.UpdateSuccess>();
+        }
+
+        [Test]
+        public void It_should_be_found_updated_by_get()
+        {
+            _getResult!.Should().BeOfType<GetResult.GetSuccess>();
+            (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
+            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Be(_edFiDocString2);
         }
     }
 }
