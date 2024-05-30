@@ -5,6 +5,7 @@
 
 using System.Net;
 using System.Threading.RateLimiting;
+using Microsoft.Extensions.Logging;
 using EdFi.DataManagementService.Backend.Deploy;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
@@ -33,14 +34,16 @@ public static class WebApplicationBuilderExtensions
             .Configure<ConnectionStrings>(webAppBuilder.Configuration.GetSection("ConnectionStrings"))
             .AddSingleton<IValidateOptions<ConnectionStrings>, ConnectionStringsValidator>();
 
+        var logger = ConfigureLogging();
+
         if (webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
         {
+            logger.Information("Injecting rate limiting");
             ConfigureRateLimit(webAppBuilder);
         }
-        ConfigureLogging();
-        ConfigureDatabase();
+        ConfigureDatabase(logger);
 
-        void ConfigureLogging()
+        Serilog.ILogger ConfigureLogging()
         {
             var logger = new LoggerConfiguration()
                 .ReadFrom.Configuration(webAppBuilder.Configuration)
@@ -48,9 +51,11 @@ public static class WebApplicationBuilderExtensions
                 .CreateLogger();
             webAppBuilder.Logging.ClearProviders();
             webAppBuilder.Logging.AddSerilog(logger);
+
+            return logger;
         }
 
-        void ConfigureDatabase()
+        void ConfigureDatabase(Serilog.ILogger logger)
         {
             if (
                 string.Equals(
@@ -60,6 +65,7 @@ public static class WebApplicationBuilderExtensions
                 )
             )
             {
+                logger.Information("Injecting PostgreSQL as the primary backend datastore");
                 webAppBuilder.Services.AddSingleton<
                     IDatabaseDeploy,
                     Backend.Postgresql.Deploy.DatabaseDeploy
@@ -67,6 +73,7 @@ public static class WebApplicationBuilderExtensions
             }
             else
             {
+                logger.Information("Injecting MSSQL as the primary backend datastore");
                 webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Mssql.Deploy.DatabaseDeploy>();
             }
         }

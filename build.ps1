@@ -303,12 +303,10 @@ function Invoke-PushPackage {
 
 $dockerTagBase = "local"
 $dockerTagDMS = "$($dockerTagBase)/edfi-data-management-service"
-$dockerTagPostgresql = "$($dockerTagBase)/edfi-data-management-postgresql"
 
 function DockerBuild {
     Push-Location src/
     &docker build -t $dockerTagDMS -f Dockerfile .
-    &docker build -t $dockerTagPostgresql -f Postgresql.Dockerfile .
     Pop-Location
 }
 
