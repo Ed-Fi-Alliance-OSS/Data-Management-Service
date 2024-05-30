@@ -13,6 +13,7 @@ public class ContainerSetup
     {
         var network = new NetworkBuilder().Build();
 
+        // Images need to be previously built
         string apiImageName = "local/edfi-data-management-service";
         string dbImageName = "postgres:16.3-alpine3.20";
 
@@ -29,7 +30,6 @@ public class ContainerSetup
             .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(5432))
             .Build();
 
-        // Image needs to be previously built
         var apiContaner = new ContainerBuilder()
             .WithImage(apiImageName)
             .WithPortBinding(8080)
