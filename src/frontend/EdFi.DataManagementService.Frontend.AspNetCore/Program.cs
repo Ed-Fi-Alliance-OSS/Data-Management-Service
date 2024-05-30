@@ -55,6 +55,7 @@ void InitializeDatabase(WebApplication app)
 {
     if (app.Services.GetRequiredService<IOptions<AppSettings>>().Value.DeployDatabaseOnStartup)
     {
+        app.Logger.LogInformation("Running initial database deploy");
         try
         {
             var result = app
