@@ -30,7 +30,7 @@ public class ContainerSetup
             .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(5432))
             .Build();
 
-        var apiContaner = new ContainerBuilder()
+        var apiContainer = new ContainerBuilder()
             .WithImage(apiImageName)
             .WithPortBinding(8080)
             .WithEnvironment("NEED_DATABASE_SETUP", "true")
@@ -45,12 +45,12 @@ public class ContainerSetup
             .Build();
 
         await network.CreateAsync().ConfigureAwait(false);
-        await Task.WhenAll(apiContaner.StartAsync(), dbContainer.StartAsync()).ConfigureAwait(false);
+        await Task.WhenAll(dbContainer.StartAsync(), apiContainer.StartAsync()).ConfigureAwait(false);
 
         return new UriBuilder(
             Uri.UriSchemeHttp,
-            apiContaner.Hostname,
-            apiContaner.GetMappedPublicPort(8080)
+            apiContainer.Hostname,
+            apiContainer.GetMappedPublicPort(8080)
         ).ToString();
     }
 }
