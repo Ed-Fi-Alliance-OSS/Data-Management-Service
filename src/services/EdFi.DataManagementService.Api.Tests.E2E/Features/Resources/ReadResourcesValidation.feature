@@ -1,11 +1,9 @@
-# This is a rough draft feature for future use.
-@ignore
-Feature: Resources "Read" Operation validations
+﻿Feature: Resources "Read" Operation validations
 
         Background:
             Given the Data Management Service must receive a token issued by "http://localhost"
               And user is already authorized
-              And a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+              And a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "Sick Leave",
@@ -20,53 +18,46 @@ Feature: Resources "Read" Operation validations
 
         @ignore
         Scenario: Verify existing resources can be retrieved successfully
-             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors"
+             When a GET request is made to "ed-fi/absenceEventCategoryDescriptors"
              Then it should respond with 200
               And the response body is
                   """
                     [
                         {
-                            "id": "{id}"
+                            "id": "{id}",
                             "codeValue": "Jury duty",
                             "description": "Jury duty",
                             "effectiveBeginDate": "2024-05-14",
                             "effectiveEndDate": "2024-05-14",
                             "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
                             "shortDescription": "Jury duty"
-                            "_etag": "5250182869515346067",
-                            "_lastModifiedDate": "2024-04-25T23:38:28.7958163Z"
                         }
                     ]
                   """
 
-        @ignore
         Scenario: Verify retrieving a single resource by ID
         # Replace Endpoint with the required value, this is just an example to make sure Descriptors are working fine
-             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
+             When a GET request is made to "ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 200
               And the response body is
                   """
                     {
-                        "id": "{id}"
-                        "codeValue": "Jury duty",
-                        "description": "Jury duty",
-                        "effectiveBeginDate": "2024-05-14",
-                        "effectiveEndDate": "2024-05-14",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                        "shortDescription": "Jury duty"
-                        "_etag": "5250182869515346067",
-                        "_lastModifiedDate": "2024-04-25T23:38:28.7958163Z"
+                      "codeValue": "Sick Leave",
+                      "description": "Sick Leave",
+                      "effectiveBeginDate": "2024-05-14",
+                      "effectiveEndDate": "2024-05-14",
+                      "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                      "shortDescription": "Sick Leave"
                     }
                   """
 
-        @ignore
         Scenario: Verify response code 404 when ID does not exist
-             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/123123123123"
+             When a GET request is made to "ed-fi/absenceEventCategoryDescriptors/123123123123"
              Then it should respond with 404
 
         @ignore
         Scenario: Verify array records content on GET All
-             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors"
+             When a GET request is made to "ed-fi/absenceEventCategoryDescriptors"
              Then it should respond with 200
               And total of records should be "1"
               And the record with ID {id} should exist

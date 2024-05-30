@@ -1,43 +1,45 @@
 # This is a rough draft feature for future use.
-@ignore
 Feature: Resources "Create" Operation validations
 
         Background:
             Given the Data Management Service must receive a token issued by "http://localhost"
               And user is already authorized
 
-        @ignore
         Scenario: Verify new resource can be created successfully
-             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
-                    {
-                        "codeValue": "Sick Leave",
-                        "description": "Sick Leave",
-                        "effectiveBeginDate": "2024-05-14",
-                        "effectiveEndDate": "2024-05-14",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                        "shortDescription": "Sick Leave"
-                    }
+                  {
+                      "codeValue": "Sick Leave",
+                      "description": "Sick Leave",
+                      "effectiveBeginDate": "2024-05-14",
+                      "effectiveEndDate": "2024-05-14",
+                      "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                      "shortDescription": "Sick Leave"
+                  }
                   """
              Then it should respond with 201
               And the response headers includes
-              #replace header {id} with the correct value
                   """
                     {
-                        "location": "ed-fi/absenceEventCategoryDescriptors/{id}",
+                        "location": "ed-fi/absenceEventCategoryDescriptors/{id}"
                     }
                   """
               And the record can be retrieved with a GET request
-                            # TODO: when writing the step definition,
-                            # be sure to validate that the response matches the original payload,
-                            # except for the addition of the 'id' field
+                  """
+                  {
+                      "codeValue": "Sick Leave",
+                      "description": "Sick Leave",
+                      "effectiveBeginDate": "2024-05-14",
+                      "effectiveEndDate": "2024-05-14",
+                      "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                      "shortDescription": "Sick Leave"
+                  }
+                  """
 
-        @ignore
         Scenario: Verify error handling with POST using invalid data
-             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
-                        "codeValue": "",
                         "description": "Wrong Value",
                         "effectiveBeginDate": "2024-05-14",
                         "effectiveEndDate": "2024-05-14",
@@ -48,23 +50,24 @@ Feature: Resources "Create" Operation validations
              Then it should respond with 400
               And the response body is
                   """
-                    {
-                        "detail": "Data validation failed. See 'validationErrors' for details.",
-                        "type": "urn:ed-fi:api:bad-request:data",
-                        "title": "Data Validation Failed",
-                        "status": 400,
-                        "correlationId": null,
-                        "validationErrors": {
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
                         "$.codeValue": [
-                            "CodeValue is required and should not be left empty."
+                          "codeValue is required."
                         ]
-                  }
+                      },
+                      "errors": []
                     }
                   """
 
         @ignore
         Scenario: Verify error handling with POST using invalid data Forbidden
-             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "xxxx",
@@ -84,9 +87,9 @@ Feature: Resources "Create" Operation validations
                         "correlationId": null
                     }
                   """
-        @ignore
+
         Scenario: Verify error handling with POST using empty body
-             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                     }
@@ -95,28 +98,29 @@ Feature: Resources "Create" Operation validations
               And the response body is
                   """
                     {
-                        "detail": "Data validation failed. See 'validationErrors' for details.",
-                        "type": "urn:ed-fi:api:bad-request:data",
-                        "title": "Data Validation Failed",
-                        "status": 400,
-                        "correlationId": null,
-                        "validationErrors": {
-                            "$.codeValue": [
-                                "CodeValue is required."
-                                ],
-                            "$.namespace": [
-                                "Namespace is required."
-                                ],
-                            "$.shortDescription": [
-                                "ShortDescription is required."
-                                ]
-                        }
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                        "$.namespace": [
+                          "namespace is required."
+                        ],
+                        "$.codeValue": [
+                          "codeValue is required."
+                        ],
+                        "$.shortDescription": [
+                          "shortDescription is required."
+                        ]
+                      },
+                      "errors": []
                     }
                   """
 
         @ignore
         Scenario: Verify error handling with POST using blank spaces in the required fields
-             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "                      ",
@@ -152,7 +156,7 @@ Feature: Resources "Create" Operation validations
 
         @ignore
         Scenario: Verify POST of existing record without changes
-            Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+            Given a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "Sick Lave",
@@ -161,7 +165,7 @@ Feature: Resources "Create" Operation validations
                         "shortDescription": "Sick Leave"
                     }
                   """
-             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "Sick Lave",
@@ -172,10 +176,18 @@ Feature: Resources "Create" Operation validations
                   """
              Then it should respond with 200
               And the record can be retrieved with a GET request
+                  """
+                        {
+                            "codeValue": "Sick Lave",
+                            "description": "Sick Leave",
+                            "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                            "shortDescription": "Sick Leave"
+                        }
+                  """
 
         @ignore
         Scenario: Verify POST of existing record (change non-key field) works
-             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "Sick Lave",
@@ -189,7 +201,7 @@ Feature: Resources "Create" Operation validations
         @ignore
         Scenario: Verify error handling when resource ID is included in body on POST
             # The id value should be replaced with the resource created in the Background section
-             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors/" with
+             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors/" with
                   """
                     {
                         "id": "{id}",

@@ -8,7 +8,7 @@ Feature: Equality Constraint Validation
     ]
 
         Scenario: Post a valid bell schedule no equality constraint violations.
-             When a POST request is made to "data/ed-fi/bellschedules" with
+             When a POST request is made to "ed-fi/bellschedules" with
                   """
                   {
                       "schoolReference": {
@@ -37,7 +37,7 @@ Feature: Equality Constraint Validation
              Then it should respond with 201
 
         Scenario: Post an invalid bell schedule with equality constraint violations.
-             When a POST request is made to "data/ed-fi/bellschedules" with
+             When a POST request is made to "ed-fi/bellschedules" with
                   """
                   {
                       "schoolReference": {
@@ -69,7 +69,6 @@ Feature: Equality Constraint Validation
                   {"detail":"The request could not be processed. See 'errors' for details.","type":"urn:ed-fi:api:bad-request","title":"Bad Request","status":400,"correlationId":null,"validationErrors":null,"errors":["Constraint failure: document paths $.classPeriods[*].classPeriodReference.schoolId and $.schoolReference.schoolId must have the same values"]}
                   """
 
-        @ignore
         Scenario: Making a Post request when value does not match the same value in an array
              When a POST request is made to "ed-fi/sections" with
                   """
@@ -95,20 +94,18 @@ Feature: Equality Constraint Validation
               And the response body is
                   """
                   {
-                      "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data",
-                      "title": "Data Validation Failed",
-                      "status": 400,
-                      "correlationId": null,
-                      "validationErrors": {
-                          "$.classPeriods[0].classPeriodReference.schoolId": [
-                              "All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '255901001', '255901107'"
-                          ]
-                      }
+                    "detail": "The request could not be processed. See 'errors' for details.",
+                    "type": "urn:ed-fi:api:bad-request",
+                    "title": "Bad Request",
+                    "status": 400,
+                    "correlationId": null,
+                    "validationErrors": null,
+                    "errors": [
+                        "Constraint failure: document paths $.classPeriods[*].classPeriodReference.schoolId and $.courseOfferingReference.schoolId must have the same values"
+                    ]
                   }
                   """
 
-        @ignore
         Scenario: Making a Post request when a value matches the first scenario in an array but not the second
              When a POST request is made to "ed-fi/sections" with
                   """
@@ -140,19 +137,15 @@ Feature: Equality Constraint Validation
               And the response body is
                   """
                   {
-                      "type": "urn:ed-fi:api:bad-request:data",
-                      "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "title": "Data Validation Failed",
-                      "status": 400,
-                      "correlationId": null,
-                      "validationErrors": {
-                          "$.classPeriods[0].classPeriodReference.schoolId": [
-                              "All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '255901001', '1'"
-                          ],
-                          "$.classPeriods[1].classPeriodReference.schoolId": [
-                              "All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '255901001', '1'"
-                          ]
-                      }
+                    "detail": "The request could not be processed. See 'errors' for details.",
+                    "type": "urn:ed-fi:api:bad-request",
+                    "title": "Bad Request",
+                    "status": 400,
+                    "correlationId": null,
+                    "validationErrors": null,
+                    "errors": [
+                        "Constraint failure: document paths $.classPeriods[*].classPeriodReference.schoolId and $.courseOfferingReference.schoolId must have the same values"
+                    ]
                   }
                   """
 

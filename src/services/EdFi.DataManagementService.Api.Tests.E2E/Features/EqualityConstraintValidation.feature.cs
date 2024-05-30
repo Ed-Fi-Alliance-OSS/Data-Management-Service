@@ -97,7 +97,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features
             {
                 await this.ScenarioStartAsync();
 #line 11
-             await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/bellschedules\" with", @"{
+             await testRunner.WhenAsync("a POST request is made to \"ed-fi/bellschedules\" with", @"{
     ""schoolReference"": {
         ""schoolId"": 255901001
     },
@@ -146,7 +146,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features
             {
                 await this.ScenarioStartAsync();
 #line 40
-             await testRunner.WhenAsync("a POST request is made to \"data/ed-fi/bellschedules\" with", @"{
+             await testRunner.WhenAsync("a POST request is made to \"ed-fi/bellschedules\" with", @"{
     ""schoolReference"": {
         ""schoolId"": 255901001
     },
@@ -175,6 +175,175 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features
 #line hidden
 #line 67
               await testRunner.AndAsync("the response body is", @"{""detail"":""The request could not be processed. See 'errors' for details."",""type"":""urn:ed-fi:api:bad-request"",""title"":""Bad Request"",""status"":400,""correlationId"":null,""validationErrors"":null,""errors"":[""Constraint failure: document paths $.classPeriods[*].classPeriodReference.schoolId and $.schoolReference.schoolId must have the same values""]}", ((Reqnroll.Table)(null)), "And ");
+#line hidden
+            }
+            await this.ScenarioCleanupAsync();
+        }
+        
+        [NUnit.Framework.TestAttribute()]
+        [NUnit.Framework.DescriptionAttribute("Making a Post request when value does not match the same value in an array")]
+        public async System.Threading.Tasks.Task MakingAPostRequestWhenValueDoesNotMatchTheSameValueInAnArray()
+        {
+            string[] tagsOfScenario = ((string[])(null));
+            System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
+            Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Making a Post request when value does not match the same value in an array", null, tagsOfScenario, argumentsOfScenario, featureTags);
+#line 72
+        this.ScenarioInitialize(scenarioInfo);
+#line hidden
+            if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
+            {
+                testRunner.SkipScenario();
+            }
+            else
+            {
+                await this.ScenarioStartAsync();
+#line 73
+             await testRunner.WhenAsync("a POST request is made to \"ed-fi/sections\" with", @"{
+    ""sectionIdentifier"": ""25590100102Trad220ALG112011Test"",
+    ""courseOfferingReference"": {
+        ""localCourseCode"": ""ALG-1"",
+        ""schoolId"": 255901001,
+        ""schoolYear"": 2022,
+        ""sessionName"": ""2021-2022 Fall Semester""
+    },
+    ""classPeriods"": [
+        {
+            ""classPeriodReference"": {
+                ""classPeriodName"": ""02 - Traditional"",
+                ""schoolId"": 255901107
+            }
+        }
+    ]
+}", ((Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 93
+             await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
+#line hidden
+#line 94
+              await testRunner.AndAsync("the response body is", @"{
+  ""detail"": ""The request could not be processed. See 'errors' for details."",
+  ""type"": ""urn:ed-fi:api:bad-request"",
+  ""title"": ""Bad Request"",
+  ""status"": 400,
+  ""correlationId"": null,
+  ""validationErrors"": null,
+  ""errors"": [
+      ""Constraint failure: document paths $.classPeriods[*].classPeriodReference.schoolId and $.courseOfferingReference.schoolId must have the same values""
+  ]
+}", ((Reqnroll.Table)(null)), "And ");
+#line hidden
+            }
+            await this.ScenarioCleanupAsync();
+        }
+        
+        [NUnit.Framework.TestAttribute()]
+        [NUnit.Framework.DescriptionAttribute("Making a Post request when a value matches the first scenario in an array but not" +
+            " the second")]
+        public async System.Threading.Tasks.Task MakingAPostRequestWhenAValueMatchesTheFirstScenarioInAnArrayButNotTheSecond()
+        {
+            string[] tagsOfScenario = ((string[])(null));
+            System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
+            Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Making a Post request when a value matches the first scenario in an array but not" +
+                    " the second", null, tagsOfScenario, argumentsOfScenario, featureTags);
+#line 109
+        this.ScenarioInitialize(scenarioInfo);
+#line hidden
+            if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
+            {
+                testRunner.SkipScenario();
+            }
+            else
+            {
+                await this.ScenarioStartAsync();
+#line 110
+             await testRunner.WhenAsync("a POST request is made to \"ed-fi/sections\" with", @"{
+   ""sectionIdentifier"": ""25590100102Trad220ALG112011Test"",
+   ""courseOfferingReference"": {
+       ""localCourseCode"": ""ALG-1"",
+       ""schoolId"": 255901001,
+       ""schoolYear"": 2022,
+       ""sessionName"": ""2021-2022 Fall Semester""
+   },
+   ""classPeriods"": [
+       {
+           ""classPeriodReference"": {
+               ""classPeriodName"": ""01 - Traditional"",
+               ""schoolId"": 1
+           }
+       },
+       {
+           ""classPeriodReference"": {
+               ""classPeriodName"": ""02 - Traditional"",
+               ""schoolId"": 1
+           }
+       }
+   ]
+}", ((Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 136
+             await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
+#line hidden
+#line 137
+              await testRunner.AndAsync("the response body is", @"{
+  ""detail"": ""The request could not be processed. See 'errors' for details."",
+  ""type"": ""urn:ed-fi:api:bad-request"",
+  ""title"": ""Bad Request"",
+  ""status"": 400,
+  ""correlationId"": null,
+  ""validationErrors"": null,
+  ""errors"": [
+      ""Constraint failure: document paths $.classPeriods[*].classPeriodReference.schoolId and $.courseOfferingReference.schoolId must have the same values""
+  ]
+}", ((Reqnroll.Table)(null)), "And ");
+#line hidden
+            }
+            await this.ScenarioCleanupAsync();
+        }
+        
+        [NUnit.Framework.TestAttribute()]
+        [NUnit.Framework.DescriptionAttribute("Making a Post request when value does not match the same value in a single other " +
+            "reference")]
+        [NUnit.Framework.IgnoreAttribute("Ignored scenario")]
+        public async System.Threading.Tasks.Task MakingAPostRequestWhenValueDoesNotMatchTheSameValueInASingleOtherReference()
+        {
+            string[] tagsOfScenario = new string[] {
+                    "ignore"};
+            System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
+            Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Making a Post request when value does not match the same value in a single other " +
+                    "reference", null, tagsOfScenario, argumentsOfScenario, featureTags);
+#line 153
+        this.ScenarioInitialize(scenarioInfo);
+#line hidden
+            if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
+            {
+                testRunner.SkipScenario();
+            }
+            else
+            {
+                await this.ScenarioStartAsync();
+#line 154
+             await testRunner.WhenAsync("a POST request is made to \"ed-fi/sections\" with", @"{
+   ""sectionIdentifier"": ""25590100102Trad220ALG112011Test"",
+   ""courseOfferingReference"": {
+       ""localCourseCode"": ""ALG-1"",
+       ""schoolId"": 255901001,
+       ""schoolYear"": 2022,
+       ""sessionName"": ""2021-2022 Fall Semester""
+   },
+   ""locationReference"": {
+       ""classroomIdentificationCode"": ""106"",
+       ""schoolId"": 1
+   }
+}", ((Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 170
+             await testRunner.ThenAsync("it should respond with 409", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
+#line hidden
+#line 171
+              await testRunner.AndAsync("the response body is", "{\r\n    \"detail\": \"The referenced \'Location\' resource does not exist.\",\r\n    \"type" +
+                        "\": \"urn:ed-fi:api:conflict:invalid-reference\",\r\n    \"title\": \"Resource Not Uniqu" +
+                        "e Conflict due to invalid-reference\",\r\n    \"status\": 409,\r\n    \"correlationId\": " +
+                        "null\r\n}", ((Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();

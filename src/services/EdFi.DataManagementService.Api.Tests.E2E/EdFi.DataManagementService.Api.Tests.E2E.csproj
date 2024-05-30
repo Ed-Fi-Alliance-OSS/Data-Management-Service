@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
@@ -10,18 +10,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="StepDefinitions2\**" />
-    <EmbeddedResource Remove="StepDefinitions2\**" />
-    <None Remove="StepDefinitions2\**" />
-    <ReqnrollFeatureFiles Remove="StepDefinitions2\**" />
-    <ReqnrollObsoleteCodeBehindFiles Remove="StepDefinitions2\**" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Compile Remove="StepDefinitions\PingStepDefinitions2.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
     <None Remove="appsettings.json" />
   </ItemGroup>
 
@@ -29,8 +17,6 @@
     <Content Include="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <UpToDateCheckInput Remove="features\EqualityConstraintValidation.feature" />
-    <UpToDateCheckInput Remove="features\Information.feature" />
   </ItemGroup>
 
   <ItemGroup>
