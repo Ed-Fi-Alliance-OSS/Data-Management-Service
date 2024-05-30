@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-FROM mcr.microsoft.com/dotnet/sdk:8.0.201-jammy@sha256:9aacef90e2773ff7d13a2f2687739778ed39312678b3669de06ec5fbeb0e86af AS build
+FROM mcr.microsoft.com/dotnet/sdk:8.0.203-alpine3.18@sha256:2a8dca3af111071172b1629c12eefaeca0d6c2954887c4489195771c9e90833c as build
 
 ENV ASPNETCORE_HTTP_PORTS=8080
 
@@ -16,6 +16,7 @@ COPY core/EdFi.DataManagementService.Core/*.csproj ./core/EdFi.DataManagementSer
 COPY core/EdFi.DataManagementService.Core.External/*.csproj ./core/EdFi.DataManagementService.Core.External/
 
 COPY EdFi.DataManagementService-Docker.sln ./
+COPY Directory.Packages.props ./
 COPY nuget.config .
 RUN dotnet restore
 
