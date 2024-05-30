@@ -14,7 +14,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Model;
 public class DocumentIdentityTests
 {
     [TestFixture]
-    public class Given_a_school_identity_which_is_a_subclass_of_education_organization : DocumentIdentityTests
+    public class Given_A_School_Identity_Which_Is_A_Subclass_Of_Education_Organization : DocumentIdentityTests
     {
         internal DocumentIdentity? superclassIdentity;
 
@@ -37,7 +37,7 @@ public class DocumentIdentityTests
     }
 
     [TestFixture]
-    public class Given_the_identity_of_a_resource_with_a_single_identity_element : DocumentIdentityTests
+    public class Given_The_Identity_Of_A_Resource_With_A_Single_Identity_Element : DocumentIdentityTests
     {
         internal ReferentialId referentialId;
 
@@ -57,7 +57,7 @@ public class DocumentIdentityTests
     }
 
     [TestFixture]
-    public class Given_the_identity_of_a_resource_with_multiple_identity_elements : DocumentIdentityTests
+    public class Given_The_Identity_Of_A_Resource_With_Multiple_Identity_Elements : DocumentIdentityTests
     {
         internal ReferentialId referentialId;
 

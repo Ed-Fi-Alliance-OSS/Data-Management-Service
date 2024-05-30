@@ -13,11 +13,16 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "frontend", "frontend", "{5B7BB270-905C-4D2F-BD3C-3374707FE1E3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.Frontend.AspNetCore", "frontend\EdFi.DataManagementService.Frontend.AspNetCore\EdFi.DataManagementService.Frontend.AspNetCore.csproj", "{53914CA2-E0E6-4D84-8899-D9C5CE40AA76}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Frontend.AspNetCore", "frontend\EdFi.DataManagementService.Frontend.AspNetCore\EdFi.DataManagementService.Frontend.AspNetCore.csproj", "{53914CA2-E0E6-4D84-8899-D9C5CE40AA76}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "core", "core", "{71E181BF-2E72-45F2-9DAD-6B1D18FAD164}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.Core", "core\EdFi.DataManagementService.Core\EdFi.DataManagementService.Core.csproj", "{AF9E2120-206E-4318-8A2B-2DB798D39C4D}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Core", "core\EdFi.DataManagementService.Core\EdFi.DataManagementService.Core.csproj", "{AF9E2120-206E-4318-8A2B-2DB798D39C4D}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{931023DD-0F80-4ED3-BD31-4F1D5198A2E9}"
+	ProjectSection(SolutionItems) = preProject
+		Directory.Packages.props = Directory.Packages.props
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

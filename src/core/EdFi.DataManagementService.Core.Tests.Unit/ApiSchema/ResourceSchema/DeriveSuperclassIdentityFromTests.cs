@@ -16,7 +16,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.ApiSchema;
 public class DeriveSuperclassIdentityFromTests
 {
     [TestFixture]
-    public class Given_a_school_which_is_a_subclass_of_education_organization
+    public class Given_A_School_Which_Is_A_Subclass_Of_Education_Organization
         : DeriveSuperclassIdentityFromTests
     {
         internal SuperclassIdentity? superclassIdentity;
@@ -74,7 +74,7 @@ public class DeriveSuperclassIdentityFromTests
     }
 
     [TestFixture]
-    public class Given_a_section_which_is_not_a_subclass : DeriveSuperclassIdentityFromTests
+    public class Given_A_Section_Which_Is_Not_A_Subclass : DeriveSuperclassIdentityFromTests
     {
         internal SuperclassIdentity? superclassIdentity;
 

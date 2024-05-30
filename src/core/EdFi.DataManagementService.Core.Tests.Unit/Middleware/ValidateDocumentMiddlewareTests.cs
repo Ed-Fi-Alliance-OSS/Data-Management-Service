@@ -98,7 +98,7 @@ public class ValidateDocumentMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_an_empty_body : ValidateDocumentMiddlewareTests
+    public class Given_An_Empty_Body : ValidateDocumentMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -135,7 +135,7 @@ public class ValidateDocumentMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_a_request_with_overposted_property : ValidateDocumentMiddlewareTests
+    public class Given_A_Request_With_Overposted_Property : ValidateDocumentMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -163,7 +163,7 @@ public class ValidateDocumentMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_a_request_with_overposted_nested_property : ValidateDocumentMiddlewareTests
+    public class Given_A_Request_With_Overposted_Nested_Property : ValidateDocumentMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -191,7 +191,7 @@ public class ValidateDocumentMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_a_request_with_no_required_property : ValidateDocumentMiddlewareTests
+    public class Given_A_Request_With_No_Required_Property : ValidateDocumentMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -232,7 +232,7 @@ public class ValidateDocumentMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_a_request_with_wrong_type_property_value : ValidateDocumentMiddlewareTests
+    public class Given_A_Request_With_Wrong_Type_Property_Value : ValidateDocumentMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -273,7 +273,7 @@ public class ValidateDocumentMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_a_update_request_with_no_id_property : ValidateDocumentMiddlewareTests
+    public class Given_A_Update_Request_With_No_Id_Property : ValidateDocumentMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 

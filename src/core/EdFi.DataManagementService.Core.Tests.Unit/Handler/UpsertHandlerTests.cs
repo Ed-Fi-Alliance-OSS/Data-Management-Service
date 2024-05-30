@@ -26,7 +26,7 @@ public class UpsertHandlerTests
     }
 
     [TestFixture]
-    public class Given_a_repository_that_returns_success : UpsertHandlerTests
+    public class Given_A_Repository_That_Returns_Success : UpsertHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
@@ -56,7 +56,7 @@ public class UpsertHandlerTests
     }
 
     [TestFixture]
-    public class Given_a_repository_that_returns_failure_reference : UpsertHandlerTests
+    public class Given_A_Repository_That_Returns_Failure_Reference : UpsertHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
@@ -88,7 +88,7 @@ public class UpsertHandlerTests
     }
 
     [TestFixture]
-    public class Given_a_repository_that_returns_failure_identity_conflict : UpsertHandlerTests
+    public class Given_A_Repository_That_Returns_Failure_Identity_Conflict : UpsertHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
@@ -120,7 +120,7 @@ public class UpsertHandlerTests
     }
 
     [TestFixture]
-    public class Given_a_repository_that_returns_failure_write_conflict : UpsertHandlerTests
+    public class Given_A_Repository_That_Returns_Failure_Write_Conflict : UpsertHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
@@ -152,7 +152,7 @@ public class UpsertHandlerTests
     }
 
     [TestFixture]
-    public class Given_a_repository_that_returns_unknown_failure : UpsertHandlerTests
+    public class Given_A_Repository_That_Returns_Unknown_Failure : UpsertHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
