@@ -57,7 +57,6 @@ COPY --from=build /app/Frontend/ApiSchema/*.json ./ApiSchema/
 COPY --from=build /app/Frontend/*.pdb ./
 COPY --from=build /app/Frontend/appsettings.json ./
 COPY --from=build /app/Frontend/*runtimeconfig.json ./
-COPY --from=build /app/Frontend/*.deps.json ./
 
 COPY --chmod=700 run.sh /app/run.sh
 
