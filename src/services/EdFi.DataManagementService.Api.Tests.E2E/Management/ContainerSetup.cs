@@ -13,32 +13,44 @@ public class ContainerSetup
     {
         var network = new NetworkBuilder().Build();
 
+        // Images need to be previously built
         string apiImageName = "local/edfi-data-management-service";
-        string dbImageName = "local/edfi-data-management-postgresql";
+        string dbImageName = "postgres:16.3-alpine3.20";
 
-        // Image needs to be previously built
-        var apiContaner = new ContainerBuilder()
+        var dbUserName = "postgres";
+        var dbPassword = "P@ssw0rd";
+        var dbContainerName = "dmsdb";
+
+        var dbContainer = new ContainerBuilder()
+            .WithImage(dbImageName)
+            .WithPortBinding(5432, 5432)
+            .WithNetwork(network)
+            .WithNetworkAliases(dbContainerName)
+            .WithEnvironment("POSTGRES_PASSWORD", dbPassword)
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(5432))
+            .Build();
+
+        var apiContainer = new ContainerBuilder()
             .WithImage(apiImageName)
             .WithPortBinding(8080)
+            .WithEnvironment("NEED_DATABASE_SETUP", "true")
+            .WithEnvironment("POSTGRES_ADMIN_USER", dbUserName)
+            .WithEnvironment("POSTGRES_ADMIN_PASSWORD", dbPassword)
+            .WithEnvironment("POSTGRES_PASSWORD", dbPassword)
+            .WithEnvironment("POSTGRES_USER", dbUserName)
+            .WithEnvironment("POSTGRES_PORT", "5432")
+            .WithEnvironment("POSTGRES_HOST", dbContainerName)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(8080)))
             .WithNetwork(network)
             .Build();
 
-        var dbContainer = new ContainerBuilder()
-        .WithImage(dbImageName)
-        .WithPortBinding(5432, 5432)
-        .WithNetwork(network)
-        .WithNetworkAliases("dmsdb")
-        .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(5432))
-        .Build();
-
         await network.CreateAsync().ConfigureAwait(false);
-        await Task.WhenAll(apiContaner.StartAsync(), dbContainer.StartAsync()).ConfigureAwait(false);
+        await Task.WhenAll(dbContainer.StartAsync(), apiContainer.StartAsync()).ConfigureAwait(false);
 
         return new UriBuilder(
             Uri.UriSchemeHttp,
-            apiContaner.Hostname,
-            apiContaner.GetMappedPublicPort(8080)
+            apiContainer.Hostname,
+            apiContainer.GetMappedPublicPort(8080)
         ).ToString();
     }
 }

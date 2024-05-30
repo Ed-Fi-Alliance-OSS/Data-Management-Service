@@ -29,6 +29,7 @@ will replace [Ed-Fi ODS/API 7.x](https://techdocs.ed-fi.org/x/UQSUCg).
 
 - [Running in Local Context](./docs/RUNNING-LOCALLY.md)
 - [Configuration](./docs/CONFIGURATION.md)
+- [Docker](./docs/DOCKER.md)
 
 ## Legal Information
 
