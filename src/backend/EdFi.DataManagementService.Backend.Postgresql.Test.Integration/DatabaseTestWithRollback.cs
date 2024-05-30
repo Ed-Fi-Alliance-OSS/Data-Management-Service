@@ -56,5 +56,5 @@ public class DatabaseTestWithRollback : Attribute, ITestAction
         }
     }
 
-    public ActionTargets Targets => ActionTargets.Test;
+    public ActionTargets Targets => ActionTargets.Default;
 }
