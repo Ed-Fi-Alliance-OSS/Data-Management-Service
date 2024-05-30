@@ -12,6 +12,8 @@ COPY backend/EdFi.DataManagementService.Backend/*.csproj backend/EdFi.DataManage
 COPY backend/EdFi.DataManagementService.Backend.Mssql/*.csproj backend/EdFi.DataManagementService.Backend.Mssql/
 COPY backend/EdFi.DataManagementService.Backend.Postgresql/*.csproj backend/EdFi.DataManagementService.Backend.Postgresql/
 
+COPY Directory.Packages.props ./
+
 # Fail fast by restoring before taking any other action
 RUN dotnet restore backend/EdFi.DataManagementService.Backend.Installer
 
