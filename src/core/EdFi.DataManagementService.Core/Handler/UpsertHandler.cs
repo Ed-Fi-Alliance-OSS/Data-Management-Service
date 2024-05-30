@@ -38,7 +38,6 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
                 ResourceInfo: context.ResourceInfo,
                 DocumentInfo: context.DocumentInfo,
                 EdfiDoc: context.FrontendRequest.Body ?? new JsonObject(),
-                validateDocumentReferencesExist: false,
                 TraceId: context.FrontendRequest.TraceId,
                 DocumentUuid: candidateDocumentUuid
             )

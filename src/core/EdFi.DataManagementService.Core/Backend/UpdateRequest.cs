@@ -25,10 +25,6 @@ internal record UpdateRequest(
     /// </summary>
     JsonNode EdfiDoc,
     /// <summary>
-    /// If true, validates that all references in the document exist
-    /// </summary>
-    bool validateDocumentReferencesExist,
-    /// <summary>
     /// The request TraceId
     /// </summary>
     ITraceId TraceId,

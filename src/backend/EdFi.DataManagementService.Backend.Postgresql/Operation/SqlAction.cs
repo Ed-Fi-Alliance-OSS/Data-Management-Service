@@ -8,7 +8,7 @@ using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Model;
 using Npgsql;
 
-namespace EdFi.DataManagementService.Backend.Postgresql;
+namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
 
 /// <summary>
 /// A facade of all the DB interactions. Any action requiring SQL statement execution should be here.

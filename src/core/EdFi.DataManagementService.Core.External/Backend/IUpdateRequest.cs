@@ -28,11 +28,6 @@ public interface IUpdateRequest
     JsonNode EdfiDoc { get; }
 
     /// <summary>
-    /// If true, validates that all references in the document exist
-    /// </summary>
-    bool validateDocumentReferencesExist { get; }
-
-    /// <summary>
     /// The request TraceId
     /// </summary>
     ITraceId TraceId { get; }

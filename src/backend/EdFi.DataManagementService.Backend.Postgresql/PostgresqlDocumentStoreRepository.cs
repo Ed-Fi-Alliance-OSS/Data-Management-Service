@@ -5,95 +5,31 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Backend.Postgresql.Model;
+using EdFi.DataManagementService.Backend.Postgresql.Operation;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
-using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
 
 public class PostgresqlDocumentStoreRepository(
-    ILogger<PostgresqlDocumentStoreRepository> _logger,
     NpgsqlDataSource _dataSource,
-    ISqlAction _sqlAction
+    ILogger<PostgresqlDocumentStoreRepository> _logger,
+    IUpsertDocument _upsertDocument
 ) : PartitionedRepository, IDocumentStoreRepository, IQueryHandler
 {
     public async Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
     {
-        _logger.LogDebug("Entering UpsertDocument - {TraceId}", upsertRequest.TraceId);
+        _logger.LogDebug("Entering PostgresqlDocumentStoreRepository.UpsertDocument - {TraceId}", upsertRequest.TraceId);
 
         try
         {
-            await using var connection = await _dataSource.OpenConnectionAsync();
-            await using var transaction = await connection.BeginTransactionAsync();
-
-            // Attempt to get the document, to see whether this is an insert or update
-            Document? documentFromDb = await _sqlAction.FindDocumentByReferentialId(
-                upsertRequest.DocumentInfo.ReferentialId,
-                PartitionKeyFor(upsertRequest.DocumentInfo.ReferentialId),
-                connection,
-                transaction
-            );
-
-            // Either get the existing document uuid or use the new one provided
-            DocumentUuid documentUuid =
-                documentFromDb == null
-                    ? upsertRequest.DocumentUuid
-                    : new DocumentUuid(documentFromDb.DocumentUuid);
-
-            //// Continue here - decide update or insert
-            try
-            {
-                int resultCount = await _sqlAction.InsertDocument(
-                    new(
-                        DocumentPartitionKey: PartitionKeyFor(documentUuid).Value,
-                        DocumentUuid: documentUuid.Value,
-                        ResourceName: upsertRequest.ResourceInfo.ResourceName.Value,
-                        ResourceVersion: upsertRequest.ResourceInfo.ResourceVersion.Value,
-                        ProjectName: upsertRequest.ResourceInfo.ProjectName.Value,
-                        EdfiDoc: JsonSerializer.Deserialize<JsonElement>(upsertRequest.EdfiDoc)
-                    ),
-                    connection,
-                    transaction
-                );
-
-                if (resultCount != 1)
-                {
-                    _logger.LogError(
-                        "Upsert result count was {ResultCount} for {DocumentUuid}, cause is unknown - {TraceId}",
-                        resultCount,
-                        upsertRequest.DocumentUuid,
-                        upsertRequest.TraceId
-                    );
-                    return new UpsertResult.UnknownFailure("Unknown Failure");
-                }
-            }
-            catch (PostgresException pe)
-            {
-                if (
-                    pe.SqlState == PostgresErrorCodes.IntegrityConstraintViolation
-                    || pe.SqlState == PostgresErrorCodes.UniqueViolation
-                )
-                {
-                    _logger.LogError(
-                        pe,
-                        "Upsert failure due to duplicate DocumentUuids on insert. This shouldn't happen - {TraceId}",
-                        upsertRequest.TraceId
-                    );
-                    return new UpsertResult.UnknownFailure(
-                        "Upsert failure due to duplicate DocumentUuids on insert"
-                    );
-                }
-            }
-
-            _logger.LogDebug("Upsert success - {TraceId}", upsertRequest.TraceId);
-            return new UpsertResult.InsertSuccess(upsertRequest.DocumentUuid);
+            return await _upsertDocument.Upsert(upsertRequest, _dataSource);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Upsert failure - {TraceId}", upsertRequest.TraceId);
+            _logger.LogCritical(ex, "Uncaught Upsert failure - {TraceId}", upsertRequest.TraceId);
             return new UpsertResult.UnknownFailure("Unknown Failure");
         }
     }

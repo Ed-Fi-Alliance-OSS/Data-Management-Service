@@ -3,9 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-namespace EdFi.DataManagementService.Core.External.Model;
+using Npgsql;
 
-/// <summary>
-/// A string type branded as a traceId, which is a frontend-provided identifier representing a unique request
-/// </summary>
-public record struct TraceId(string Value) : ITraceId;
+namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
+
+public interface IDatabaseTest
+{
+    NpgsqlDataSource? DataSource { get; set; }
+}

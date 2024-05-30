@@ -31,7 +31,6 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
                 ResourceInfo: context.ResourceInfo,
                 DocumentInfo: context.DocumentInfo,
                 EdfiDoc: context.FrontendRequest.Body,
-                validateDocumentReferencesExist: false,
                 TraceId: context.FrontendRequest.TraceId
             )
         );
