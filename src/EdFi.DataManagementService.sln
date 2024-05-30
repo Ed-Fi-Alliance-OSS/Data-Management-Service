@@ -3,9 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.4.33122.133
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "services", "services", "{22F7EF40-C77C-4AF0-8C1E-500EA6B85496}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Api.Tests.E2E", "services\EdFi.DataManagementService.Api.Tests.E2E\EdFi.DataManagementService.Api.Tests.E2E.csproj", "{678F06E1-CC23-438A-9CDF-52CA4C24BCED}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{22F7EF40-C77C-4AF0-8C1E-500EA6B85496}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "backend", "backend", "{75AE8F7B-B980-48AE-8518-073830FA6471}"
 EndProject
@@ -37,6 +35,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 	ProjectSection(SolutionItems) = preProject
 		Directory.Packages.props = Directory.Packages.props
 	EndProjectSection
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Api.Tests.E2E", "tests\EdFi.DataManagementService.Api.Tests.E2E\EdFi.DataManagementService.Api.Tests.E2E.csproj", "{5B25838D-2B22-4AD9-AA85-B3439D782CAC}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -44,10 +43,6 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{678F06E1-CC23-438A-9CDF-52CA4C24BCED}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{678F06E1-CC23-438A-9CDF-52CA4C24BCED}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{678F06E1-CC23-438A-9CDF-52CA4C24BCED}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{678F06E1-CC23-438A-9CDF-52CA4C24BCED}.Release|Any CPU.Build.0 = Release|Any CPU
 		{82EA8DF4-4DDB-4944-AF0D-60B7C784FB30}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{82EA8DF4-4DDB-4944-AF0D-60B7C784FB30}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{82EA8DF4-4DDB-4944-AF0D-60B7C784FB30}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -88,12 +83,15 @@ Global
 		{340743A7-5BEC-4FEF-BD4C-F7C35BE7CBA2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{340743A7-5BEC-4FEF-BD4C-F7C35BE7CBA2}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{340743A7-5BEC-4FEF-BD4C-F7C35BE7CBA2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5B25838D-2B22-4AD9-AA85-B3439D782CAC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5B25838D-2B22-4AD9-AA85-B3439D782CAC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5B25838D-2B22-4AD9-AA85-B3439D782CAC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5B25838D-2B22-4AD9-AA85-B3439D782CAC}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
-		{678F06E1-CC23-438A-9CDF-52CA4C24BCED} = {22F7EF40-C77C-4AF0-8C1E-500EA6B85496}
 		{82EA8DF4-4DDB-4944-AF0D-60B7C784FB30} = {75AE8F7B-B980-48AE-8518-073830FA6471}
 		{0146B374-35C4-4191-9D09-3CDDC4ABCA2F} = {75AE8F7B-B980-48AE-8518-073830FA6471}
 		{3B8DB16B-0A35-4565-B8CA-73DE662424BC} = {75AE8F7B-B980-48AE-8518-073830FA6471}
@@ -104,6 +102,7 @@ Global
 		{2C4790A3-B411-4F46-9428-832406A9D54E} = {71E181BF-2E72-45F2-9DAD-6B1D18FAD164}
 		{798D160F-28A2-4194-9655-440FCCA0EF36} = {71E181BF-2E72-45F2-9DAD-6B1D18FAD164}
 		{340743A7-5BEC-4FEF-BD4C-F7C35BE7CBA2} = {75AE8F7B-B980-48AE-8518-073830FA6471}
+		{5B25838D-2B22-4AD9-AA85-B3439D782CAC} = {22F7EF40-C77C-4AF0-8C1E-500EA6B85496}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {CAB3D5DE-BC6C-44FD-831C-9C7BE3935343}
