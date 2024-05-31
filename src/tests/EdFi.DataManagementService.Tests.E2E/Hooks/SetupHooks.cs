@@ -3,11 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Api.Tests.E2E.Management;
+using EdFi.DataManagementService.Tests.E2E.Management;
 using Microsoft.Extensions.Configuration;
 using Reqnroll;
 
-namespace EdFi.DataManagementService.Api.Tests.E2E.Hooks;
+namespace EdFi.DataManagementService.Tests.E2E.Hooks;
 
 [Binding]
 public class SetupHooks

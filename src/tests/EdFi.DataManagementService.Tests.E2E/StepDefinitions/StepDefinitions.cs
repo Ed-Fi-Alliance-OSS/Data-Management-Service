@@ -4,12 +4,12 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Api.Tests.E2E.Management;
+using EdFi.DataManagementService.Tests.E2E.Management;
 using FluentAssertions;
 using Microsoft.Playwright;
 using Reqnroll;
 
-namespace EdFi.DataManagementService.Api.Tests.E2E.StepDefinitions
+namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 {
     [Binding]
     public class StepDefinitions(PlaywrightContext _playwrightContext)
