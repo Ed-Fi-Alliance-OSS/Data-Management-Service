@@ -12,6 +12,8 @@ on:
       - main
     paths:
       - "**/*.cs"
+      - "**/*.csproj"
+      - "**/Directory.packages.props"
   pull_request:
     branches:
       - main
@@ -21,6 +23,7 @@ on:
       - "**/*.cs"
       - "**/*.csproj"
       - ".github/**/*.yml"
+      - "**/Directory.packages.props"
   workflow_dispatch:
 
 concurrency:

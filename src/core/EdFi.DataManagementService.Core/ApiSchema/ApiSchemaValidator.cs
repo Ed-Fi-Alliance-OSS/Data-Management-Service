@@ -48,7 +48,7 @@ internal class ApiSchemaValidator(IApiSchemaSchemaProvider _apiSchemaSchemaProvi
             {
                 var propertyPathAndName = "$.";
 
-                if (detail.InstanceLocation != null && detail.InstanceLocation.Segments.Length != 0)
+                if (detail.InstanceLocation != null && detail.InstanceLocation.Count != 0)
                 {
                     propertyPathAndName = $"${detail.InstanceLocation.ToString().Replace("/", ".")}";
                 }
