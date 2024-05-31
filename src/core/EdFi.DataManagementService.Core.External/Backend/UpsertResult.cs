@@ -38,8 +38,7 @@ public record UpsertResult
     /// <summary>
     /// A transient failure due to a transaction write conflict
     /// </summary>
-    /// <param name="FailureMessage">A message providing failure information</param>
-    public record UpsertFailureWriteConflict(string FailureMessage) : UpsertResult();
+    public record UpsertFailureWriteConflict() : UpsertResult();
 
     /// <summary>
     /// A failure of unknown category

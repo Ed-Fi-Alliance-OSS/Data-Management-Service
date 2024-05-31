@@ -34,14 +34,12 @@ public record UpdateResult
     /// <summary>
     /// A transient failure due to a transaction write conflict
     /// </summary>
-    /// <param name="FailureMessage">A message providing failure information</param>
-    public record UpdateFailureWriteConflict(string FailureMessage) : UpdateResult();
+    public record UpdateFailureWriteConflict() : UpdateResult();
 
     /// <summary>
     /// A failure because the identity of this type of resource cannot be changed via update
     /// </summary>
-    /// <param name="FailureMessage">A message providing failure information</param>
-    public record UpdateFailureImmutableIdentity(string FailureMessage) : UpdateResult();
+    public record UpdateFailureImmutableIdentity() : UpdateResult();
 
     /// <summary>
     /// A failure because an update cascade is required

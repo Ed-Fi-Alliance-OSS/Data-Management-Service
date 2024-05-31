@@ -74,8 +74,8 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
                 => new(StatusCode: 409, Body: failure.ReferencingDocumentInfo, Headers: []),
             UpsertFailureIdentityConflict failure
                 => new(StatusCode: 400, Body: failure.ReferencingDocumentInfo, Headers: []),
-            UpsertFailureWriteConflict failure
-                => new(StatusCode: 409, Body: failure.FailureMessage, Headers: []),
+            UpsertFailureWriteConflict
+                => new(StatusCode: 409, Body: null, Headers: []),
             UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage, Headers: []),
             _ => new(StatusCode: 500, Body: "Unknown UpsertResult", Headers: [])
         };

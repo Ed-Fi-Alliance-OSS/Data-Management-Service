@@ -28,8 +28,7 @@ public abstract record DeleteResult
     /// <summary>
     /// A transient failure due to a transaction write conflict
     /// </summary>
-    /// <param name="FailureMessage">A message providing failure information</param>
-    public record DeleteFailureWriteConflict(string FailureMessage) : DeleteResult;
+    public record DeleteFailureWriteConflict() : DeleteResult;
 
     /// <summary>
     /// A failure of unknown category
