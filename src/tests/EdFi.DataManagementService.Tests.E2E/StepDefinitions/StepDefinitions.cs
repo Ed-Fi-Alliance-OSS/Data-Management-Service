@@ -59,6 +59,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         public async Task WhenAPUTRequestIsMadeToWith(string url, string body)
         {
             url = $"data/{url.Replace("{id}", _id)}";
+            Console.WriteLine("PUT URL: " + url);
             body = body.Replace("{id}", _id);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(url, new() { Data = body })!;
         }
@@ -67,7 +68,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         public async Task WhenAGETRequestIsMadeTo(string url)
         {
             url = $"data/{url.Replace("{id}", _id)}";
-            Console.WriteLine("URL: " + url);
+            Console.WriteLine("GET URL: " + url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(url)!;
         }
 
