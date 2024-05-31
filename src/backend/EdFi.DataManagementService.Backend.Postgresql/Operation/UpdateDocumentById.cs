@@ -42,29 +42,45 @@ public class UpdateDocumentById(
             switch (rowsAffected)
             {
                 case 1:
-                    return await Task.FromResult<UpdateResult>(new UpdateResult.UpdateSuccess());
+                    return new UpdateResult.UpdateSuccess();
                 case 0:
                     _logger.LogInformation(
                         "Failure: Record to update does not exist - {TraceId}",
                         updateRequest.TraceId
                     );
-                    return await Task.FromResult<UpdateResult>(new UpdateResult.UpdateFailureNotExists());
+                    return new UpdateResult.UpdateFailureNotExists();
                 default:
-                    _logger.LogError(
-                        "UpdateDocumentById rows affected was '{RowsAffected}' for {DocumentUuid} - {TraceId}",
+                    _logger.LogCritical(
+                        "UpdateDocumentById rows affected was '{RowsAffected}' for {DocumentUuid} - Should never happen - {TraceId}",
                         rowsAffected,
                         updateRequest.DocumentUuid,
                         updateRequest.TraceId
                     );
-                    return await Task.FromResult<UpdateResult>(
-                        new UpdateResult.UnknownFailure("Unknown Failure")
-                    );
+                    return new UpdateResult.UnknownFailure("Unknown Failure");
             }
+        }
+        catch (PostgresException pe)
+        {
+            if (pe.SqlState == PostgresErrorCodes.SerializationFailure)
+            {
+                _logger.LogDebug(
+                    pe,
+                    "Transaction conflict on Documents table update - {TraceId}",
+                    updateRequest.TraceId
+                );
+                await transaction.RollbackAsync();
+                return new UpdateResult.UpdateFailureWriteConflict();
+            }
+
+            _logger.LogError(pe, "Failure on Documents table update - {TraceId}", updateRequest.TraceId);
+            await transaction.RollbackAsync();
+            return new UpdateResult.UnknownFailure("Update failure");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "UpdateDocumentById failure - {TraceId}", updateRequest.TraceId);
-            return await Task.FromResult<UpdateResult>(new UpdateResult.UnknownFailure("Unknown Failure"));
+            _logger.LogError(ex, "Failure on Documents table update - {TraceId}", updateRequest.TraceId);
+            await transaction.RollbackAsync();
+            return new UpdateResult.UnknownFailure("Update failure");
         }
     }
 }
