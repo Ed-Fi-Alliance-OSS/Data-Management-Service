@@ -62,6 +62,11 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             Console.WriteLine("PUT URL: " + url);
             body = body.Replace("{id}", _id);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(url, new() { Data = body })!;
+            if (_apiResponse.Headers.ContainsKey("location"))
+            {
+                _location = _apiResponse.Headers["location"];
+                _id = _apiResponse.Headers["location"].Split('/').Last();
+            }
         }
 
         [When("a GET request is made to {string}")]
