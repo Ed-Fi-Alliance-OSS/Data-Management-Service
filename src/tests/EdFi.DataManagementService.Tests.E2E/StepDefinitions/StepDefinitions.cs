@@ -62,6 +62,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             Console.WriteLine("PUT URL: " + url);
             body = body.Replace("{id}", _id);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(url, new() { Data = body })!;
+
+            Console.WriteLine("Headers: " + _apiResponse.Headers);
             if (_apiResponse.Headers.ContainsKey("location"))
             {
                 _location = _apiResponse.Headers["location"];
