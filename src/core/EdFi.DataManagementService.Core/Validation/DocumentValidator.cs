@@ -10,6 +10,7 @@ using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using Json.Pointer;
 using Json.Schema;
 
 namespace EdFi.DataManagementService.Core.Validation;
@@ -73,7 +74,7 @@ internal class DocumentValidator() : IDocumentValidator
 
             var additionalProperties = evaluationResults
                 .Details.Where(r =>
-                    r.EvaluationPath.Segments.Any() && r.EvaluationPath.Segments[^1] == "additionalProperties"
+                    r.EvaluationPath.Count > 0 && r.EvaluationPath[^1] == "additionalProperties"
                 )
                 .ToList();
 
@@ -84,7 +85,7 @@ internal class DocumentValidator() : IDocumentValidator
             {
                 JsonObject jsonObject = documentBody.AsObject();
                 var prunedJsonObject = jsonObject.RemoveProperty(
-                    additionalProperty.InstanceLocation.Segments
+                    [.. additionalProperty.InstanceLocation]
                 );
                 var prunedDocumentBody = JsonNode.Parse(prunedJsonObject.ToJsonString());
                 Trace.Assert(prunedDocumentBody != null, "Unexpected null after parsing pruned object");
@@ -100,9 +101,9 @@ internal class DocumentValidator() : IDocumentValidator
             foreach (var detail in results.Details)
             {
                 var propertyName = string.Empty;
-                if (detail.InstanceLocation != null && detail.InstanceLocation.Segments.Length != 0)
+                if (detail.InstanceLocation != null && detail.InstanceLocation.Count != 0)
                 {
-                    propertyName = $"{detail.InstanceLocation.Segments[^1].Value}";
+                    propertyName = $"{detail.InstanceLocation[^1]}";
                 }
                 if (detail.Errors != null && detail.Errors.Any())
                 {
@@ -173,18 +174,18 @@ internal static class JsonObjectExtensions
 {
     internal static JsonObject RemoveProperty(
         this JsonObject jsonObject,
-        Json.Pointer.PointerSegment[] segments
+        string[] segments
     )
     {
         if (segments.Length == 0)
             return jsonObject;
         if (segments.Length == 1)
         {
-            jsonObject.Remove(segments[0].Value);
+            jsonObject.Remove(segments[0]);
             return jsonObject;
         }
 
-        var node = jsonObject[segments[0].Value];
+        var node = jsonObject[segments[0]];
         Trace.Assert(node != null, "PointerSegment not found on JsonObject");
         var nodeObj = node.AsObject();
         nodeObj.RemoveProperty(segments.Skip(1).ToArray());
