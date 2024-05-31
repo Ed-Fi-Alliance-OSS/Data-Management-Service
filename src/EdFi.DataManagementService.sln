@@ -35,7 +35,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 	ProjectSection(SolutionItems) = preProject
 		Directory.Packages.props = Directory.Packages.props
 	EndProjectSection
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Api.Tests.E2E", "tests\EdFi.DataManagementService.Api.Tests.E2E\EdFi.DataManagementService.Api.Tests.E2E.csproj", "{5B25838D-2B22-4AD9-AA85-B3439D782CAC}"
+EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Tests.E2E", "tests\EdFi.DataManagementService.Tests.E2E\EdFi.DataManagementService.Tests.E2E.csproj", "{F45D8E74-55D2-47CB-8DE7-A925AA51B707}"
 EndProject
 Global
