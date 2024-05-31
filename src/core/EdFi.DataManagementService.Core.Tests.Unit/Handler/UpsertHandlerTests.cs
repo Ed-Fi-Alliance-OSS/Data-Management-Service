@@ -124,11 +124,9 @@ public class UpsertHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public static readonly string ResponseBody = "FailureMessage";
-
             public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
-                return Task.FromResult<UpsertResult>(new UpsertFailureWriteConflict(ResponseBody));
+                return Task.FromResult<UpsertResult>(new UpsertFailureWriteConflict());
             }
         }
 
@@ -145,7 +143,6 @@ public class UpsertHandlerTests
         public void It_has_the_correct_response()
         {
             context.FrontendResponse.StatusCode.Should().Be(409);
-            context.FrontendResponse.Body.Should().Be(Repository.ResponseBody);
             context.FrontendResponse.Headers.Should().BeEmpty();
             context.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }
