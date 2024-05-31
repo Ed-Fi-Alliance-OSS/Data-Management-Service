@@ -63,7 +63,13 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             body = body.Replace("{id}", _id);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(url, new() { Data = body })!;
 
-            Console.WriteLine("Headers: " + _apiResponse.Headers);
+            foreach (System.Collections.Generic.KeyValuePair<string, System.String> kvp in _apiResponse.Headers)
+            {
+                string myText;
+                myText = System.String.Format("Key={0}, Value={1}", kvp.Key, kvp.Value);
+                Console.WriteLine("Headers: " + myText);
+            }
+
             if (_apiResponse.Headers.ContainsKey("location"))
             {
                 _location = _apiResponse.Headers["location"];
