@@ -42,12 +42,15 @@ public class UpdateDocumentById(
             switch (rowsAffected)
             {
                 case 1:
+                    await transaction.CommitAsync();
                     return new UpdateResult.UpdateSuccess();
+
                 case 0:
                     _logger.LogInformation(
                         "Failure: Record to update does not exist - {TraceId}",
                         updateRequest.TraceId
                     );
+                    await transaction.RollbackAsync();
                     return new UpdateResult.UpdateFailureNotExists();
                 default:
                     _logger.LogCritical(
@@ -56,6 +59,7 @@ public class UpdateDocumentById(
                         updateRequest.DocumentUuid,
                         updateRequest.TraceId
                     );
+                    await transaction.RollbackAsync();
                     return new UpdateResult.UnknownFailure("Unknown Failure");
             }
         }
