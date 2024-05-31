@@ -68,6 +68,26 @@ Feature: Validate Extra Properties are being removed
                   }
                   """
              Then it should respond with 204
+              And the response headers includes
+                  """
+                    {
+                        "location": "/ed-fi/academicWeeks/{id}"
+                    }
+                  """
+             When a GET request is made to "ed-fi/academicWeeks/{id}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                    "weekIdentifier": "LastWeek",
+                    "schoolReference": {
+                      "schoolId": 255901001
+                    },
+                    "beginDate": "2024-05-30",
+                    "endDate": "2024-06-30",
+                    "totalInstructionalDays": 0
+                  }
+                  """
 
 
 
