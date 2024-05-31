@@ -51,7 +51,6 @@ Feature: Validate Extra Properties are being removed
              When a PUT request is made to "ed-fi/academicWeeks/{id}" with
                   """
                   {
-                  "id": "{id}",
                   "weekIdentifier": "LastWeek",
                   "schoolReference": {
                   "schoolId": 255901001,
