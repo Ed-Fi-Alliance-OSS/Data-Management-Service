@@ -20,7 +20,7 @@
 		<PackageVersion Include="Serilog.Sinks.Console" Version="5.0.1" />
 		<PackageVersion Include="Serilog.Sinks.File" Version="5.0.0" />
 		<PackageVersion Include="SonarAnalyzer.CSharp" Version="9.25.0.90414" />
-		<PackageVersion Include="JsonSchema.Net" Version="6.0.3" />
+		<PackageVersion Include="JsonSchema.Net" Version="7.0.2" />
 		<PackageVersion Include="JsonPath.Net" Version="1.0.5" />
   </ItemGroup>
 
