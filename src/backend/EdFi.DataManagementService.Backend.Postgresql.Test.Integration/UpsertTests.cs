@@ -16,6 +16,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
 
 [TestFixture]
+[Ignore("Only works on Brad's dev env")]
 public class UpsertTests
 {
     public static UpsertDocument CreateUpsert(NpgsqlDataSource dataSource)
