@@ -21,7 +21,7 @@ if [ "$NEED_DATABASE_SETUP" = true ]; then
   DATABASE="edfi_datamanagementservice"
 
   echo "Installing Data Management Service schema."
-  dotnet Installer/EdFi.DataManagementService.Backend.Installer.dll postgresql "host=${POSTGRES_HOST};port=${POSTGRES_PORT};username=${POSTGRES_ADMIN_USER};password=${POSTGRES_ADMIN_PASSWORD};database=${DATABASE};"
+  dotnet Installer/EdFi.DataManagementService.Backend.Installer.dll -e postgresql -c "host=${POSTGRES_HOST};port=${POSTGRES_PORT};username=${POSTGRES_ADMIN_USER};password=${POSTGRES_ADMIN_PASSWORD};database=${DATABASE};"
 
   export NEED_DATABASE_SETUP=false
 

@@ -13,7 +13,14 @@ public class DatabaseDeploy : IDatabaseDeploy
 {
     public DatabaseDeployResult DeployDatabase(string connectionString)
     {
-        EnsureDatabase.For.PostgresqlDatabase(connectionString);
+        try
+        {
+            EnsureDatabase.For.PostgresqlDatabase(connectionString);
+        }
+        catch (Exception e)
+        {
+            return new DatabaseDeployResult.DatabaseDeployFailure(e);
+        }
 
         var upgrader = DeployChanges.To
             .PostgresqlDatabase(connectionString)
@@ -22,8 +29,10 @@ public class DatabaseDeploy : IDatabaseDeploy
             .LogToAutodetectedLog()
             .Build();
 
-        var result = upgrader.PerformUpgrade();
+        if (!upgrader.TryConnect(out string error))
+            return new DatabaseDeployResult.DatabaseDeployFailure(new Exception(error));
 
+        var result = upgrader.PerformUpgrade();
         return result.Successful
             ? new DatabaseDeployResult.DatabaseDeploySuccess()
             : new DatabaseDeployResult.DatabaseDeployFailure(result.Error);
