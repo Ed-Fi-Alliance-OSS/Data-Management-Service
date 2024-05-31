@@ -183,6 +183,17 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Properties
 #line 70
              await testRunner.ThenAsync("it should respond with 204", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
 #line hidden
+#line 77
+             await testRunner.WhenAsync("a GET request is made to \"ed-fi/academicWeeks/{id}\"", ((string)(null)), ((Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 78
+             await testRunner.ThenAsync("it should respond with 200", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
+#line hidden
+#line 79
+              await testRunner.AndAsync("the response body is", "{\n  \"id\": \"{id}\",\n  \"weekIdentifier\": \"LastWeek\",\n  \"schoolReference\": {\n    \"sch" +
+                        "oolId\": 255901001\n  },\n  \"beginDate\": \"2024-05-30\",\n  \"endDate\": \"2024-06-30\",\n " +
+                        " \"totalInstructionalDays\": 0\n}", ((Reqnroll.Table)(null)), "And ");
+#line hidden
             }
             await this.ScenarioCleanupAsync();
         }

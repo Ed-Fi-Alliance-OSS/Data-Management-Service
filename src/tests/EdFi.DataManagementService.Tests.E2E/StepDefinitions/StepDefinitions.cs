@@ -46,7 +46,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         public async Task WhenSendingAPOSTRequestToWithBody(string url, string body)
         {
             url = $"data/{url}";
-            Console.WriteLine("POST URL: " + url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
             if (_apiResponse.Headers.ContainsKey("location"))
             {
@@ -59,22 +58,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         public async Task WhenAPUTRequestIsMadeToWith(string url, string body)
         {
             url = $"data/{url.Replace("{id}", _id)}";
-            Console.WriteLine("PUT URL: " + url);
             body = body.Replace("{id}", _id);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(url, new() { Data = body })!;
-
-            foreach (System.Collections.Generic.KeyValuePair<string, System.String> kvp in _apiResponse.Headers)
-            {
-                string myText;
-                myText = System.String.Format("Key={0}, Value={1}", kvp.Key, kvp.Value);
-                Console.WriteLine("Headers: " + myText);
-            }
-
-            if (_apiResponse.Headers.ContainsKey("location"))
-            {
-                _location = _apiResponse.Headers["location"];
-                _id = _apiResponse.Headers["location"].Split('/').Last();
-            }
         }
 
         [When("a GET request is made to {string}")]
