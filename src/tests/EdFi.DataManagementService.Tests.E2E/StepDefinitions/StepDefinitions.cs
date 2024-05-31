@@ -46,6 +46,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         public async Task WhenSendingAPOSTRequestToWithBody(string url, string body)
         {
             url = $"data/{url}";
+            Console.WriteLine("POST URL: " + url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
             if (_apiResponse.Headers.ContainsKey("location"))
             {
@@ -66,6 +67,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         public async Task WhenAGETRequestIsMadeTo(string url)
         {
             url = $"data/{url.Replace("{id}", _id)}";
+            Console.WriteLine("URL: " + url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(url)!;
         }
 

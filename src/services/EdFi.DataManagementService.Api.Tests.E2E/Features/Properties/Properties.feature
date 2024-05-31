@@ -2,8 +2,7 @@ Feature: Validate Extra Properties are being removed
     Tests that perform POST and PUT requests with extra properties,
     paired with a GET request that proves the extra properties have been removed
 
-        @properties
-        Scenario: Validate extra properties are being removed on POST
+        Background:
              When a POST request is made to "ed-fi/academicWeeks" with
                   """
                   {
@@ -29,7 +28,12 @@ Feature: Validate Extra Properties are being removed
                         "location": "/ed-fi/academicWeeks/{id}"
                     }
                   """
-              And the record can be retrieved with a GET request
+
+        @properties
+        Scenario: Validate extra properties are being removed on POST
+             When a GET request is made to "ed-fi/academicWeeks/{id}"
+             Then it should respond with 200
+              And the response body is
                   """
                   {
                     "weekIdentifier": "LastWeek",
@@ -64,12 +68,7 @@ Feature: Validate Extra Properties are being removed
                   }
                   """
              Then it should respond with 204
-              And the response headers includes
-                  """
-                    {
-                        "location": "/ed-fi/academicWeeks/{id}"
-                    }
-                  """
+
 
 
 

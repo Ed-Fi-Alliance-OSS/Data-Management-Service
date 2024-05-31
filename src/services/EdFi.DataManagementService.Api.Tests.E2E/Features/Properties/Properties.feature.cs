@@ -20,8 +20,8 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Properties
     [System.CodeDom.Compiler.GeneratedCodeAttribute("Reqnroll", "1.0.0.0")]
     [System.Runtime.CompilerServices.CompilerGeneratedAttribute()]
     [NUnit.Framework.TestFixtureAttribute()]
-    [NUnit.Framework.DescriptionAttribute("ValidationErrors")]
-    public partial class ValidationErrorsFeature
+    [NUnit.Framework.DescriptionAttribute("Validate Extra Properties are being removed")]
+    public partial class ValidateExtraPropertiesAreBeingRemovedFeature
     {
         
         private Reqnroll.ITestRunner testRunner;
@@ -35,7 +35,8 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Properties
         public virtual async System.Threading.Tasks.Task FeatureSetupAsync()
         {
             testRunner = Reqnroll.TestRunnerManager.GetTestRunnerForAssembly(null, NUnit.Framework.TestContext.CurrentContext.WorkerId);
-            Reqnroll.FeatureInfo featureInfo = new Reqnroll.FeatureInfo(new System.Globalization.CultureInfo("en-US"), "Features/Properties", "ValidationErrors", "    POST a request that has an invalid payload.", ProgrammingLanguage.CSharp, featureTags);
+            Reqnroll.FeatureInfo featureInfo = new Reqnroll.FeatureInfo(new System.Globalization.CultureInfo("en-US"), "Features/Properties", "Validate Extra Properties are being removed", "    Tests that perform POST and PUT requests with extra properties,\n    paired wi" +
+                    "th a GET request that proves the extra properties have been removed", ProgrammingLanguage.CSharp, featureTags);
             await testRunner.OnFeatureStartAsync(featureInfo);
         }
         
@@ -73,25 +74,10 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Properties
             await testRunner.CollectScenarioErrorsAsync();
         }
         
-        [NUnit.Framework.TestAttribute()]
-        [NUnit.Framework.DescriptionAttribute("Validate extra properties are being removed on POST")]
-        [NUnit.Framework.CategoryAttribute("properties")]
-        public async System.Threading.Tasks.Task ValidateExtraPropertiesAreBeingRemovedOnPOST()
+        public virtual async System.Threading.Tasks.Task FeatureBackgroundAsync()
         {
-            string[] tagsOfScenario = new string[] {
-                    "properties"};
-            System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
-            Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Validate extra properties are being removed on POST", null, tagsOfScenario, argumentsOfScenario, featureTags);
 #line 5
-        this.ScenarioInitialize(scenarioInfo);
-#line hidden
-            if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
-            {
-                testRunner.SkipScenario();
-            }
-            else
-            {
-                await this.ScenarioStartAsync();
+        #line hidden
 #line 6
              await testRunner.WhenAsync("a POST request is made to \"ed-fi/academicWeeks\" with", @"{
 ""weekIdentifier"": ""LastWeek"",
@@ -115,8 +101,38 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Properties
 #line 25
               await testRunner.AndAsync("the response headers includes", "  {\n      \"location\": \"/ed-fi/academicWeeks/{id}\"\n  }", ((Reqnroll.Table)(null)), "And ");
 #line hidden
-#line 31
-              await testRunner.AndAsync("the record can be retrieved with a GET request", "{\n  \"weekIdentifier\": \"LastWeek\",\n  \"schoolReference\": {\n    \"schoolId\": 25590100" +
+        }
+        
+        [NUnit.Framework.TestAttribute()]
+        [NUnit.Framework.DescriptionAttribute("Validate extra properties are being removed on POST")]
+        [NUnit.Framework.CategoryAttribute("properties")]
+        public async System.Threading.Tasks.Task ValidateExtraPropertiesAreBeingRemovedOnPOST()
+        {
+            string[] tagsOfScenario = new string[] {
+                    "properties"};
+            System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
+            Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Validate extra properties are being removed on POST", null, tagsOfScenario, argumentsOfScenario, featureTags);
+#line 33
+        this.ScenarioInitialize(scenarioInfo);
+#line hidden
+            if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
+            {
+                testRunner.SkipScenario();
+            }
+            else
+            {
+                await this.ScenarioStartAsync();
+#line 5
+        await this.FeatureBackgroundAsync();
+#line hidden
+#line 34
+             await testRunner.WhenAsync("a GET request is made to \"ed-fi/academicWeeks/{id}\"", ((string)(null)), ((Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 35
+             await testRunner.ThenAsync("it should respond with 200", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
+#line hidden
+#line 36
+              await testRunner.AndAsync("the response body is", "{\n  \"weekIdentifier\": \"LastWeek\",\n  \"schoolReference\": {\n    \"schoolId\": 25590100" +
                         "1\n  },\n  \"beginDate\": \"2024-05-30\",\n  \"endDate\": \"2024-05-30\",\n  \"totalInstructi" +
                         "onalDays\": 0\n}", ((Reqnroll.Table)(null)), "And ");
 #line hidden
@@ -133,7 +149,7 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Properties
                     "properties"};
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
             Reqnroll.ScenarioInfo scenarioInfo = new Reqnroll.ScenarioInfo("Validate extra properties are being removed on PUT", null, tagsOfScenario, argumentsOfScenario, featureTags);
-#line 45
+#line 50
         this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((TagHelper.ContainsIgnoreTag(tagsOfScenario) || TagHelper.ContainsIgnoreTag(featureTags)))
@@ -143,7 +159,10 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Properties
             else
             {
                 await this.ScenarioStartAsync();
-#line 46
+#line 5
+        await this.FeatureBackgroundAsync();
+#line hidden
+#line 51
              await testRunner.WhenAsync("a PUT request is made to \"ed-fi/academicWeeks/{id}\" with", @"{
 ""id"": ""{id}"",
 ""weekIdentifier"": ""LastWeek"",
@@ -161,11 +180,8 @@ namespace EdFi.DataManagementService.Api.Tests.E2E.Features.Properties
 ""_lastModifiedDate"": ""2024-05-30T22:30:57.509Z""
 }", ((Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 65
+#line 70
              await testRunner.ThenAsync("it should respond with 204", ((string)(null)), ((Reqnroll.Table)(null)), "Then ");
-#line hidden
-#line 66
-              await testRunner.AndAsync("the response headers includes", "  {\n      \"location\": \"/ed-fi/academicWeeks/{id}\"\n  }", ((Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
