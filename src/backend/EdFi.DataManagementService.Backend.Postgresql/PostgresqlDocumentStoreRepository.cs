@@ -15,7 +15,7 @@ public class PostgresqlDocumentStoreRepository(
     IGetDocumentById _getDocumentById,
     IUpdateDocumentById _updateDocumentById,
     IUpsertDocument _upsertDocument
-) : PartitionedRepository, IDocumentStoreRepository, IQueryHandler
+) : IDocumentStoreRepository, IQueryHandler
 {
     public async Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
     {
