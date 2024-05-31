@@ -66,7 +66,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         public async Task WhenAGETRequestIsMadeTo(string url)
         {
             url = $"data/{url.Replace("{id}", _id)}";
-            Console.WriteLine("GET URL: " + url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(url)!;
         }
 
