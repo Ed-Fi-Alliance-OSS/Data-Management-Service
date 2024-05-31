@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -15,33 +16,28 @@ public interface IUpdateDocumentById
     public Task<UpdateResult> UpdateById(IUpdateRequest updateRequest);
 }
 
-public class UpdateDocumentById(NpgsqlDataSource _dataSource, ILogger<UpdateDocumentById> _logger)
-    : IUpdateDocumentById
+public class UpdateDocumentById(
+    NpgsqlDataSource _dataSource,
+    ISqlAction _sqlAction,
+    ILogger<UpdateDocumentById> _logger
+) : IUpdateDocumentById
 {
     public async Task<UpdateResult> UpdateById(IUpdateRequest updateRequest)
     {
         _logger.LogDebug("Entering UpdateDocumentById.UpdateById - {TraceId}", updateRequest.TraceId);
 
+        await using var connection = await _dataSource.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+
         try
         {
-            await using var connection = await _dataSource.OpenConnectionAsync();
-
-            await using var command = new NpgsqlCommand(
-                @"UPDATE public.documents
-                    SET EdfiDoc = $1
-                    WHERE DocumentPartitionKey = $2 AND DocumentUuid = $3;",
-                connection
-            )
-            {
-                Parameters =
-                {
-                    new() { Value = updateRequest.EdfiDoc.ToJsonString() },
-                    new() { Value = PartitionKeyFor(updateRequest.DocumentUuid) },
-                    new() { Value = updateRequest.DocumentUuid.Value },
-                }
-            };
-
-            int rowsAffected = await command.ExecuteNonQueryAsync();
+            int rowsAffected = await _sqlAction.UpdateDocumentEdFiDoc(
+                PartitionKeyFor(updateRequest.DocumentUuid).Value,
+                updateRequest.DocumentUuid.Value,
+                JsonSerializer.Deserialize<JsonElement>(updateRequest.EdfiDoc),
+                connection,
+                transaction
+            );
 
             switch (rowsAffected)
             {
