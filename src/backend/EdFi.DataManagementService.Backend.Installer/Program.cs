@@ -21,11 +21,12 @@ public class Options
 
 public static class Program
 {
+    static ParserResult<Options>? _parseResult;
     public static void Main(string[] args)
     {
         var parser = new Parser(config => config.HelpWriter = null);
-        var parseResult = parser.ParseArguments<Options>(args);
-        parseResult
+        _parseResult = parser.ParseArguments<Options>(args);
+        _parseResult
             .WithParsed(runOptions =>
             {
                 switch (runOptions.DatabaseEngine)
@@ -37,12 +38,14 @@ public static class Program
                         HandleResult(new Mssql.Deploy.DatabaseDeploy().DeployDatabase(runOptions.ConnectionString!));
                         break;
                     default:
-                        throw new NotImplementedException();
+                        Console.WriteLine("Invalid database engine specified.");
+                        DisplayHelp(_parseResult);
+                        break;
                 }
             })
             .WithNotParsed(_ =>
             {
-                DisplayHelp(parseResult);
+                DisplayHelp(_parseResult);
             });
 
         if (Debugger.IsAttached)
