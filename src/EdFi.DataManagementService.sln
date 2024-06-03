@@ -29,7 +29,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Core.External", "core\EdFi.DataManagementService.Core.External\EdFi.DataManagementService.Core.External.csproj", "{798D160F-28A2-4194-9655-440FCCA0EF36}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Backend.Test.Unit", "backend\EdFi.DataManagementService.Backend.Test.Unit\EdFi.DataManagementService.Backend.Test.Unit.csproj", "{340743A7-5BEC-4FEF-BD4C-F7C35BE7CBA2}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Backend.Tests.Unit", "backend\EdFi.DataManagementService.Backend.Tests.Unit\EdFi.DataManagementService.Backend.Tests.Unit.csproj", "{340743A7-5BEC-4FEF-BD4C-F7C35BE7CBA2}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{D64FF6F6-BABC-4405-AF8C-24512E7FC7BE}"
 	ProjectSection(SolutionItems) = preProject
