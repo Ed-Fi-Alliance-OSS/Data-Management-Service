@@ -14,12 +14,12 @@
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.1" />
     <PackageVersion Include="Npgsql" Version="8.0.3" />
-    <PackageVersion Include="Serilog" Version="3.1.1" />
+    <PackageVersion Include="Serilog" Version="4.0.0" />
     <PackageVersion Include="Serilog.Extensions.Logging" Version="8.0.0" />
     <PackageVersion Include="Serilog.Settings.Configuration" Version="8.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="5.0.1" />
     <PackageVersion Include="Serilog.Sinks.File" Version="5.0.0" />
-    <PackageVersion Include="SonarAnalyzer.CSharp" Version="9.25.1.91650" />
+    <PackageVersion Include="SonarAnalyzer.CSharp" Version="9.26.0.92422" />
     <PackageVersion Include="JsonSchema.Net" Version="7.0.2" />
     <PackageVersion Include="JsonPath.Net" Version="1.1.0" />
   </ItemGroup>
@@ -41,8 +41,8 @@
     <PackageVersion Include="NUnit" Version="4.1.0" />
     <PackageVersion Include="NUnit3TestAdapter" Version="4.5.0" />
     <PackageVersion Include="NUnit.Analyzers" Version="4.2.0" />
-    <PackageVersion Include="Reqnroll" Version="2.0.1" />
-    <PackageVersion Include="Reqnroll.NUnit" Version="2.0.1" />
+    <PackageVersion Include="Reqnroll" Version="2.0.2" />
+    <PackageVersion Include="Reqnroll.NUnit" Version="2.0.2" />
     <PackageVersion Include="Testcontainers" Version="3.8.0" />
   </ItemGroup>
 </Project>
