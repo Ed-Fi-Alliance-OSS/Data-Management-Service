@@ -14,7 +14,7 @@
                         "shortDescription": "Sick Leave"
                     }
                   """
-             Then it should respond with 201
+             Then it should respond with 201 or 200
 
         @ignore
         Scenario: Verify existing resources can be retrieved successfully

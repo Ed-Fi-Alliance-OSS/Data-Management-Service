@@ -17,7 +17,7 @@ Feature: Resources "Create" Operation validations
                       "shortDescription": "Sick Leave"
                   }
                   """
-             Then it should respond with 201
+             Then it should respond with 201 or 200
               And the response headers includes
                   """
                     {

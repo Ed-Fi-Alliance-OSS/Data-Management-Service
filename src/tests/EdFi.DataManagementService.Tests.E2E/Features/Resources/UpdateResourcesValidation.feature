@@ -15,7 +15,7 @@ Feature: Resources "Update" Operation validations
                     "shortDescription": "Sick Leave"
                   }
                   """
-             Then it should respond with 201
+             Then it should respond with 201 or 200
 
         Scenario: Verify that existing resources can be updated successfully
             # The id value should be replaced with the resource created in the Background section

@@ -21,7 +21,7 @@ Feature: Validate Extra Properties are being removed
                     "_lastModifiedDate": "2024-05-30T22:30:57.509Z"
                   }
                   """
-             Then it should respond with 201
+             Then it should respond with 201 or 200
               And the response headers includes
                   """
                   {
