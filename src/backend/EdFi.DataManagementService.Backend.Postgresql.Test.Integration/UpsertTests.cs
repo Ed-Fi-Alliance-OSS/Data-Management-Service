@@ -16,8 +16,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
 
 [TestFixture]
-[Ignore("Only works on Brad's dev env")]
-public class UpsertTests
+public class UpsertTests : DatabaseTest
 {
     public static UpsertDocument CreateUpsert(NpgsqlDataSource dataSource)
     {
@@ -85,17 +84,15 @@ public class UpsertTests
         ).ActLike<IGetRequest>();
     }
 
-    [TestFixture, DatabaseTestWithRollback]
-    public class Given_an_upsert_of_a_new_document : UpsertTests, IDatabaseTest
+    [TestFixture]
+    public class Given_an_upsert_of_a_new_document : UpsertTests
     {
         private UpsertResult? _upsertResult;
         private GetResult? _getResult;
 
-        public NpgsqlDataSource? DataSource { get; set; }
-
         private static readonly Guid _documentUuidGuid = Guid.NewGuid();
         private static readonly string _edFiDocString = """{"abc":1}""";
-
+        
         [SetUp]
         public async Task Setup()
         {
@@ -123,14 +120,13 @@ public class UpsertTests
         }
     }
 
-    [TestFixture, DatabaseTestWithRollback]
-    public class Given_an_upsert_of_an_existing_document : UpsertTests, IDatabaseTest
+    [TestFixture]
+    public class Given_an_upsert_of_an_existing_document : UpsertTests
     {
         private UpsertResult? _upsertResult;
         private GetResult? _getResult;
 
-        public NpgsqlDataSource? DataSource { get; set; }
-
+        
         private static readonly Guid _documentUuidGuid = Guid.NewGuid();
         private static readonly string _edFiDocString1 = """{"abc":1}""";
         private static readonly string _edFiDocString2 = """{"abc":2}""";
