@@ -57,7 +57,7 @@ public class GetDocumentByResourceName(NpgsqlDataSource _dataSource, ILogger<Get
                 }
             }
 
-            // TODO: Documents table needs a last modified datetime
+            // TODO: Documents table needs a last modified datetime - DMS-131
             return new GetResult.GetSuccess(getRequest.DocumentUuid, JsonSerializer.Serialize(documents), DateTime.Now);
         }
         catch (Exception ex)
