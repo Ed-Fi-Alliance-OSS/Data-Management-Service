@@ -92,7 +92,7 @@ public class UpsertTests : DatabaseTest
 
         private static readonly Guid _documentUuidGuid = Guid.NewGuid();
         private static readonly string _edFiDocString = """{"abc":1}""";
-        
+
         [SetUp]
         public async Task Setup()
         {
@@ -126,7 +126,6 @@ public class UpsertTests : DatabaseTest
         private UpsertResult? _upsertResult;
         private GetResult? _getResult;
 
-        
         private static readonly Guid _documentUuidGuid = Guid.NewGuid();
         private static readonly string _edFiDocString1 = """{"abc":1}""";
         private static readonly string _edFiDocString2 = """{"abc":2}""";
