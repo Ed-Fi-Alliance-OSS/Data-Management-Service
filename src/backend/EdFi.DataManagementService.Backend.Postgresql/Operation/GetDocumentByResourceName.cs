@@ -55,11 +55,6 @@ public class GetDocumentByResourceName(NpgsqlDataSource _dataSource, ILogger<Get
                 }
             }
 
-            if (documents.Count == 0)
-            {
-                return new GetResult.GetFailureNotExists();
-            }
-
             // TODO: Documents table needs a last modified datetime
             return new GetResult.GetSuccess(getRequest.DocumentUuid, JsonSerializer.Serialize(documents), DateTime.Now);
         }
