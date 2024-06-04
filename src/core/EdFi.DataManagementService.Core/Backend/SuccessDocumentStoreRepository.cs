@@ -43,7 +43,7 @@ internal class SuccessDocumentStoreRepository(ILogger<SuccessDocumentStoreReposi
         );
     }
 
-    public async Task<GetResult> GetDocumentByResourceName(IGetRequest getRequest)
+    public async Task<GetResult> GetDocumentByResourceName(IGetRequest getRequest, int offset, int limit)
     {
         _logger.LogWarning(
             "GetDocumentByResourceName(): Backend repository has been configured to always report success - {TraceId}",
