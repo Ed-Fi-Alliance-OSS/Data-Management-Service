@@ -64,7 +64,7 @@ public static class AspNetCoreFrontend
     {
         if (frontendResponse.LocationHeaderPath != null)
         {
-            string urlBeforeDmsPath = httpContext.Request.UrlWithPathSegment()[..^(dmsPath.Length + 1)];
+            string urlBeforeDmsPath = httpContext.Request.UrlWithPathSegment()[..^dmsPath.Length].TrimEnd('/');
             httpContext.Response.Headers.Append(
                 "Location",
                 $"{urlBeforeDmsPath}{frontendResponse.LocationHeaderPath}"

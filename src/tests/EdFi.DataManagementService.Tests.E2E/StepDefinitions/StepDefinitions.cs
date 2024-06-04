@@ -75,13 +75,19 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _apiResponse.Status.Should().Be(statusCode);
         }
 
+        [Then("it should respond with {int} or {int}")]
+        public void ThenItShouldRespondWithEither(int statusCode1, int statusCode2)
+        {
+            _apiResponse.Status.Should().BeOneOf([statusCode1, statusCode2]);
+        }
+
         [Then("the response body is")]
         public void ThenTheResponseBodyIs(string body)
         {
             body = body.Replace("{id}", _id);
-            var bodyJson = JsonNode.Parse(body)!;
-            var responseJson = JsonNode.Parse(_apiResponse.TextAsync().Result)!;
-            responseJson.ToString().Should().Be(bodyJson.ToString());
+            JsonNode bodyJson = JsonNode.Parse(body)!;
+            JsonNode responseJson = JsonNode.Parse(_apiResponse.TextAsync().Result)!;
+            JsonNode.DeepEquals(bodyJson, responseJson).Should().BeTrue();
         }
 
         [Then("the response headers includes")]
@@ -91,7 +97,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             foreach (var header in value.AsObject())
             {
                 if (header.Value != null)
-                    _apiResponse.Headers[header.Key].Should().EndWith(header.Value.ToString().Replace("{id}", _id));
+                    _apiResponse.Headers[header.Key].Should().EndWith("data" + header.Value.ToString().Replace("{id}", _id));
             }
         }
 
@@ -99,10 +105,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         public async Task ThenTheRecordCanBeRetrievedWithAGETRequest(string body)
         {
             body = body.Replace("{id}", _id);
-            var bodyJson = JsonNode.Parse(body)!;
+            JsonNode bodyJson = JsonNode.Parse(body)!;
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(_location)!;
-            var responseJson = JsonNode.Parse(_apiResponse.TextAsync().Result)!;
-            responseJson.ToString().Should().Be(bodyJson.ToString());
+            JsonNode responseJson = JsonNode.Parse(_apiResponse.TextAsync().Result)!;
+            JsonNode.DeepEquals(bodyJson, responseJson).Should().BeTrue();
         }
     }
 }

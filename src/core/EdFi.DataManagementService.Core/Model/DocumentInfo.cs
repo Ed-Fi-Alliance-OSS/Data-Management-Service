@@ -16,6 +16,10 @@ internal record DocumentInfo(
     /// </summary>
     IDocumentIdentity DocumentIdentity,
     /// <summary>
+    /// The identity of the API document expressed as a ReferentialId
+    /// </summary>
+    ReferentialId ReferentialId,
+    /// <summary>
     /// A list of the document references extracted from the API document
     /// </summary>
     IDocumentReference[] DocumentReferences,

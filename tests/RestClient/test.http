@@ -21,21 +21,22 @@ POST http://localhost:5198/data/ed-fi/contentClassDescriptors/
   "namespace": "uri://ed-fi.org/ContentClassDescriptor"
 }
 
-### Test POST of descriptor with lousy endpoint casing
-
-POST http://localhost:5198/data/ed-fi/cOnTentClaSsdEscriptOrS/
-
-{
-  "codeValue": "Presentation",
-  "shortDescription": "Presentation",
-  "description": "Presentation",
-  "namespace": "uri://ed-fi.org/ContentClassDescriptor"
-}
-
 ### Test GET of descriptor
 
-GET http://localhost:5198/data/ed-fi/contentClassDescriptors/f87e33d5-5c7d-4941-929a-97b60ffa64c4
+GET http://localhost:5198/data/ed-fi/contentClassDescriptors/a71c8b76-261b-4452-9862-7f4df0b60758
 
+
+### Test PUT of descriptor
+
+PUT http://localhost:5198/data/ed-fi/contentClassDescriptors/a71c8b76-261b-4452-9862-7f4df0b60758
+
+{
+  "id": "a71c8b76-261b-4452-9862-7f4df0b60758",
+  "codeValue": "Presentation",
+  "shortDescription": "Presentation",
+  "description": "1234",
+  "namespace": "uri://ed-fi.org/ContentClassDescriptor"
+}
 
 ### Test POST of an EducationContent
 

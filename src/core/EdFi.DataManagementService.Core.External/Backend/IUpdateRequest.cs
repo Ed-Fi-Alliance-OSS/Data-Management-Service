@@ -13,11 +13,6 @@ namespace EdFi.DataManagementService.Core.External.Backend;
 public interface IUpdateRequest
 {
     /// <summary>
-    /// The ReferentialId of the document to update
-    /// </summary>
-    IReferentialId ReferentialId { get; }
-
-    /// <summary>
     /// The ResourceInfo of the document to update
     /// </summary>
     IResourceInfo ResourceInfo { get; }
@@ -33,11 +28,6 @@ public interface IUpdateRequest
     JsonNode EdfiDoc { get; }
 
     /// <summary>
-    /// If true, validates that all references in the document exist
-    /// </summary>
-    bool validateDocumentReferencesExist { get; }
-
-    /// <summary>
     /// The request TraceId
     /// </summary>
     ITraceId TraceId { get; }
@@ -45,5 +35,5 @@ public interface IUpdateRequest
     /// <summary>
     /// The DocumentUuid of the document to update
     /// </summary>
-    IDocumentUuid DocumentUuid { get; }
+    DocumentUuid DocumentUuid { get; }
 }

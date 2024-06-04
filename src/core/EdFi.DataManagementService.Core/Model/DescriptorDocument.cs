@@ -43,10 +43,13 @@ internal class DescriptorDocument(JsonNode _document)
     /// <summary>
     /// Creates a new DocumentInfo from the DescriptorDocument
     /// </summary>
-    public DocumentInfo ToDocumentInfo()
+    public DocumentInfo ToDocumentInfo(BaseResourceInfo resourceInfo)
     {
+        DocumentIdentity documentIdentity = ToDocumentIdentity();
+
         return new(
-            DocumentIdentity: ToDocumentIdentity(),
+            DocumentIdentity: documentIdentity,
+            ReferentialId: documentIdentity.ToReferentialId(resourceInfo),
             DocumentReferences: [],
             DescriptorReferences: [],
             SuperclassIdentity: null

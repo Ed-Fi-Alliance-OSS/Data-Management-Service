@@ -3,29 +3,19 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using ImpromptuInterface;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Backend.PartitionUtility;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Backend
 {
     [TestFixture]
-    public class PartitionedRepositoryTests
+    public class PartitionUtilityTests
     {
-        private class TestPartitionedRepository : PartitionedRepository
-        {
-            public int GetPartition(IDocumentUuid documentUuid)
-            {
-                return PartitionKeyFor(documentUuid);
-            }
-        }
-
         [TestFixture]
-        public class Given_A_Partitioned_Repository : PartitionedRepositoryTests
+        public class Given_A_Partitioned_Repository : PartitionUtilityTests
         {
             private string _randomDocumentUuid = Guid.Empty.ToString();
-            private readonly TestPartitionedRepository _testPartitionedRepository = new();
 
             [SetUp]
             public void Setup()
@@ -51,9 +41,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Backend
             [TestCase('F', ExpectedResult = 15)]
             public int All_possible_last_bytes_return_correct_partition(char lastByte)
             {
-                return _testPartitionedRepository.GetPartition(
-                    (new { Value = _randomDocumentUuid[..35] + lastByte }).ActLike<IDocumentUuid>()
-                );
+                return PartitionKeyFor(new DocumentUuid(new(_randomDocumentUuid[..35] + lastByte))).Value;
             }
         }
     }

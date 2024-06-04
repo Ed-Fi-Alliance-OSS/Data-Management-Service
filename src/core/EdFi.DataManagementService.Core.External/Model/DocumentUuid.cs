@@ -5,7 +5,5 @@
 
 namespace EdFi.DataManagementService.Core.External.Model;
 
-/// <summary>
-/// A string type branded as a traceId, which is a frontend-provided identifier representing a unique request
-/// </summary>
-public record struct TraceId(string Value) : ITraceId;
+// A Guid type branded as a DocumentUuid, which is a UUID that identifies a document.
+public record struct DocumentUuid(Guid Value);

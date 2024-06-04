@@ -13,10 +13,6 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// </summary>
 internal record UpdateRequest(
     /// <summary>
-    /// The ReferentialId of the document to update
-    /// </summary>
-    IReferentialId ReferentialId,
-    /// <summary>
     /// The ResourceInfo of the document to update
     /// </summary>
     IResourceInfo ResourceInfo,
@@ -29,15 +25,11 @@ internal record UpdateRequest(
     /// </summary>
     JsonNode EdfiDoc,
     /// <summary>
-    /// If true, validates that all references in the document exist
-    /// </summary>
-    bool validateDocumentReferencesExist,
-    /// <summary>
     /// The request TraceId
     /// </summary>
     ITraceId TraceId,
     /// <summary>
     /// The DocumentUuid of the document to update
     /// </summary>
-    IDocumentUuid DocumentUuid
+    DocumentUuid DocumentUuid
 ) : IUpdateRequest;

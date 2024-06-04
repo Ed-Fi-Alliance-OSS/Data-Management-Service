@@ -146,11 +146,9 @@ public class UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public static readonly string ResponseBody = "FailureMessage";
-
             public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
             {
-                return Task.FromResult<UpdateResult>(new UpdateFailureWriteConflict(ResponseBody));
+                return Task.FromResult<UpdateResult>(new UpdateFailureWriteConflict());
             }
         }
 
@@ -167,7 +165,6 @@ public class UpdateByIdHandlerTests
         public void It_has_the_correct_response()
         {
             context.FrontendResponse.StatusCode.Should().Be(409);
-            context.FrontendResponse.Body.Should().Be(Repository.ResponseBody);
         }
     }
 
@@ -176,11 +173,9 @@ public class UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public static readonly string ResponseBody = "FailureMessage";
-
             public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
             {
-                return Task.FromResult<UpdateResult>(new UpdateFailureImmutableIdentity(ResponseBody));
+                return Task.FromResult<UpdateResult>(new UpdateFailureImmutableIdentity());
             }
         }
 
@@ -197,7 +192,6 @@ public class UpdateByIdHandlerTests
         public void It_has_the_correct_response()
         {
             context.FrontendResponse.StatusCode.Should().Be(409);
-            context.FrontendResponse.Body.Should().Be(Repository.ResponseBody);
         }
     }
 

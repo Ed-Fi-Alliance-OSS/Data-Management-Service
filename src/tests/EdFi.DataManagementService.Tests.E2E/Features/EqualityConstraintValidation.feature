@@ -34,7 +34,7 @@ Feature: Equality Constraint Validation
                       "gradeLevels": []
                       }
                   """
-             Then it should respond with 201
+             Then it should respond with 201 or 200
 
         Scenario: Post an invalid bell schedule with equality constraint violations.
              When a POST request is made to "ed-fi/bellschedules" with

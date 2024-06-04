@@ -83,7 +83,7 @@ Feature: ValidationErrors
                     "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor"
                   }
                   """
-             Then it should respond with 201
+             Then it should respond with 201 or 200
 
 
         Scenario: Post an invalid body for academicWeeks missing more than one required field

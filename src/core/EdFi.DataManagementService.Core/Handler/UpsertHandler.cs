@@ -20,7 +20,7 @@ namespace EdFi.DataManagementService.Core.Handler;
 internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger)
     : IPipelineStep
 {
-    private static string ToResourcePath(PathComponents p, IDocumentUuid u)
+    private static string ToResourcePath(PathComponents p, DocumentUuid u)
     {
         return $"/{p.ProjectNamespace.Value}/{p.EndpointName.Value}/{u.Value}";
     }
@@ -30,15 +30,13 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
         _logger.LogDebug("Entering UpsertHandler - {TraceId}", context.FrontendRequest.TraceId);
 
         // A document uuid that will be assigned if this is a new document
-        DocumentUuid candidateDocumentUuid = new(Guid.NewGuid().ToString());
+        DocumentUuid candidateDocumentUuid = new(Guid.NewGuid());
 
         UpsertResult result = await _documentStoreRepository.UpsertDocument(
             new UpsertRequest(
-                ReferentialId: new ReferentialId(Guid.Empty),
                 ResourceInfo: context.ResourceInfo,
                 DocumentInfo: context.DocumentInfo,
                 EdfiDoc: context.ParsedBody,
-                validateDocumentReferencesExist: false,
                 TraceId: context.FrontendRequest.TraceId,
                 DocumentUuid: candidateDocumentUuid
             )
@@ -76,8 +74,8 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
                 => new(StatusCode: 409, Body: failure.ReferencingDocumentInfo, Headers: []),
             UpsertFailureIdentityConflict failure
                 => new(StatusCode: 400, Body: failure.ReferencingDocumentInfo, Headers: []),
-            UpsertFailureWriteConflict failure
-                => new(StatusCode: 409, Body: failure.FailureMessage, Headers: []),
+            UpsertFailureWriteConflict
+                => new(StatusCode: 409, Body: null, Headers: []),
             UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage, Headers: []),
             _ => new(StatusCode: 500, Body: "Unknown UpsertResult", Headers: [])
         };

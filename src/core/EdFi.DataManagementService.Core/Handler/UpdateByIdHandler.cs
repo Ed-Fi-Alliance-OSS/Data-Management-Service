@@ -27,12 +27,10 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
 
         UpdateResult result = await _documentStoreRepository.UpdateDocumentById(
             new UpdateRequest(
-                ReferentialId: new ReferentialId(Guid.Empty),
                 DocumentUuid: context.PathComponents.DocumentUuid,
                 ResourceInfo: context.ResourceInfo,
                 DocumentInfo: context.DocumentInfo,
                 EdfiDoc: context.ParsedBody,
-                validateDocumentReferencesExist: false,
                 TraceId: context.FrontendRequest.TraceId
             )
         );
@@ -51,10 +49,10 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
                 => new FrontendResponse(StatusCode: 409, Body: failure.ReferencingDocumentInfo, Headers: []),
             UpdateFailureIdentityConflict failure
                 => new FrontendResponse(StatusCode: 400, Body: failure.ReferencingDocumentInfo, Headers: []),
-            UpdateFailureWriteConflict failure
-                => new FrontendResponse(StatusCode: 409, Body: failure.FailureMessage, Headers: []),
-            UpdateFailureImmutableIdentity failure
-                => new FrontendResponse(StatusCode: 409, Body: failure.FailureMessage, Headers: []),
+            UpdateFailureWriteConflict
+                => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),
+            UpdateFailureImmutableIdentity
+                => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),
             UpdateFailureCascadeRequired => new FrontendResponse(StatusCode: 400, Body: null, Headers: []),
             UnknownFailure failure
                 => new FrontendResponse(StatusCode: 500, Body: failure.FailureMessage, Headers: []),

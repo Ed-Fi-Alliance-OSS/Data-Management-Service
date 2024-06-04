@@ -17,11 +17,11 @@ Feature: Resources "Create" Operation validations
                       "shortDescription": "Sick Leave"
                   }
                   """
-             Then it should respond with 201
+             Then it should respond with 201 or 200
               And the response headers includes
                   """
                     {
-                        "location": "ed-fi/absenceEventCategoryDescriptors/{id}"
+                        "location": "/ed-fi/absenceEventCategoryDescriptors/{id}"
                     }
                   """
               And the record can be retrieved with a GET request

@@ -35,8 +35,8 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Properties
         public virtual async System.Threading.Tasks.Task FeatureSetupAsync()
         {
             testRunner = global::Reqnroll.TestRunnerManager.GetTestRunnerForAssembly(null, NUnit.Framework.TestContext.CurrentContext.WorkerId);
-            global::Reqnroll.FeatureInfo featureInfo = new global::Reqnroll.FeatureInfo(new System.Globalization.CultureInfo("en-US"), "Features/Properties", "Validate Extra Properties are being removed", "    Tests that perform POST and PUT requests with extra properties,\r\n    paired w" +
-                    "ith a GET request that proves the extra properties have been removed", global::Reqnroll.ProgrammingLanguage.CSharp, featureTags);
+            global::Reqnroll.FeatureInfo featureInfo = new global::Reqnroll.FeatureInfo(new System.Globalization.CultureInfo("en-US"), "Features/Properties", "Validate Extra Properties are being removed", "    Tests that perform POST and PUT requests with extra properties,\n    paired wi" +
+                    "th a GET request that proves the extra properties have been removed", global::Reqnroll.ProgrammingLanguage.CSharp, featureTags);
             await testRunner.OnFeatureStartAsync(featureInfo);
         }
         
@@ -96,10 +96,10 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Properties
 }", ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 24
-             await testRunner.ThenAsync("it should respond with 201", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
+             await testRunner.ThenAsync("it should respond with 201 or 200", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 25
-              await testRunner.AndAsync("the response headers includes", "{\r\n  \"location\": \"/ed-fi/academicWeeks/{id}\"\r\n}", ((global::Reqnroll.Table)(null)), "And ");
+              await testRunner.AndAsync("the response headers includes", "{\n  \"location\": \"/ed-fi/academicWeeks/{id}\"\n}", ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
         }
         
@@ -132,9 +132,9 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Properties
              await testRunner.ThenAsync("it should respond with 200", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 36
-              await testRunner.AndAsync("the response body is", "{\r\n  \"weekIdentifier\": \"LastWeek\",\r\n  \"schoolReference\": {\r\n    \"schoolId\": 25590" +
-                        "1001\r\n  },\r\n  \"beginDate\": \"2024-05-30\",\r\n  \"endDate\": \"2024-05-30\",\r\n  \"totalIn" +
-                        "structionalDays\": 0\r\n}", ((global::Reqnroll.Table)(null)), "And ");
+              await testRunner.AndAsync("the response body is", "{\n  \"weekIdentifier\": \"LastWeek\",\n  \"schoolReference\": {\n    \"schoolId\": 25590100" +
+                        "1\n  },\n  \"beginDate\": \"2024-05-30\",\n  \"endDate\": \"2024-05-30\",\n  \"totalInstructi" +
+                        "onalDays\": 0\n}", ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
@@ -190,9 +190,9 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Properties
              await testRunner.ThenAsync("it should respond with 200", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 73
-              await testRunner.AndAsync("the response body is", "{\r\n  \"id\": \"{id}\",\r\n  \"weekIdentifier\": \"LastWeek\",\r\n  \"schoolReference\": {\r\n    " +
-                        "\"schoolId\": 255901001\r\n  },\r\n  \"beginDate\": \"2024-05-30\",\r\n  \"endDate\": \"2024-06" +
-                        "-30\",\r\n  \"totalInstructionalDays\": 0\r\n}", ((global::Reqnroll.Table)(null)), "And ");
+              await testRunner.AndAsync("the response body is", "{\n  \"id\": \"{id}\",\n  \"weekIdentifier\": \"LastWeek\",\n  \"schoolReference\": {\n    \"sch" +
+                        "oolId\": 255901001\n  },\n  \"beginDate\": \"2024-05-30\",\n  \"endDate\": \"2024-06-30\",\n " +
+                        " \"totalInstructionalDays\": 0\n}", ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();

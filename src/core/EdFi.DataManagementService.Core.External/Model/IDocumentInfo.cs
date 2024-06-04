@@ -14,14 +14,22 @@ public interface IDocumentInfo
     /// The identity elements extracted from the API document
     /// </summary>
     IDocumentIdentity DocumentIdentity { get; }
+
+    /// <summary>
+    /// The identity of the API document expressed as a ReferentialId
+    /// </summary>
+    ReferentialId ReferentialId { get; }
+
     /// <summary>
     /// A list of the document references extracted from the API document
     /// </summary>
     IDocumentReference[] DocumentReferences { get; }
+
     /// <summary>
     /// A list of the non-reference (meaning top-level only) descriptor values of the entity extracted from the API document
     /// </summary>
     IDocumentReference[] DescriptorReferences { get; }
+
     /// <summary>
     /// If this document is a subclass, this provides the document superclass identity information.
     /// </summary>
