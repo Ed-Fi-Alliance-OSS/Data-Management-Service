@@ -25,7 +25,7 @@ public interface IDocumentStoreRepository
     /// <summary>
     /// Entry point for get document by resource name requests
     /// </summary>
-    public Task<GetResult> GetDocumentByResourceName(IGetRequest getRequest);
+    public Task<GetResult> GetDocumentByResourceName(IGetRequest getRequest, int offset, int limit);
 
     /// <summary>
     /// Entry point for update document by id requests

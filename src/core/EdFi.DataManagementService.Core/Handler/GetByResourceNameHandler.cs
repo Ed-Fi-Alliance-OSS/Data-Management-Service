@@ -19,13 +19,16 @@ internal class GetByResourceNameHandler(IDocumentStoreRepository _documentStoreR
     {
         _logger.LogDebug("Entering GetByResourceNameHandler - {TraceId}", context.FrontendRequest.TraceId);
 
+        int offset = int.TryParse(context.FrontendRequest.QueryParameters["offset"], out int o) ? o : 0;
+        int limit = int.TryParse(context.FrontendRequest.QueryParameters["limit"], out int l) ? l : 25;
+
         GetResult result = await _documentStoreRepository.GetDocumentByResourceName(
             new GetRequest(
                 DocumentUuid: context.PathComponents.DocumentUuid,
                 ResourceInfo: context.ResourceInfo,
                 TraceId: context.FrontendRequest.TraceId
             )
-        );
+            , offset, limit);
 
         _logger.LogDebug(
             "Document store GetByResourceNameHandler returned {GetResult}- {TraceId}",

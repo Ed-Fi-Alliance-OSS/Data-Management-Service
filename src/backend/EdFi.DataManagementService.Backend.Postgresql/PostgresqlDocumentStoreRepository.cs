@@ -54,7 +54,7 @@ public class PostgresqlDocumentStoreRepository(
         }
     }
 
-    public async Task<GetResult> GetDocumentByResourceName(IGetRequest getRequest)
+    public async Task<GetResult> GetDocumentByResourceName(IGetRequest getRequest, int offset, int limit)
     {
         _logger.LogDebug(
             "Entering PostgresqlDocumentStoreRepository.GetDocumentByResourceName - {TraceId}",
@@ -63,7 +63,7 @@ public class PostgresqlDocumentStoreRepository(
 
         try
         {
-            return await _getDocumentByResourceName.GetByResourceName(getRequest);
+            return await _getDocumentByResourceName.GetByResourceName(getRequest, offset, limit);
         }
         catch (Exception ex)
         {

@@ -13,12 +13,12 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
 
 public interface IGetDocumentByResourceName
 {
-    public Task<GetResult> GetByResourceName(IGetRequest getRequest);
+    public Task<GetResult> GetByResourceName(IGetRequest getRequest, int offset, int limit);
 }
 
 public class GetDocumentByResourceName(NpgsqlDataSource _dataSource, ILogger<GetDocumentByResourceName> _logger) : IGetDocumentByResourceName
 {
-    public async Task<GetResult> GetByResourceName(IGetRequest getRequest)
+    public async Task<GetResult> GetByResourceName(IGetRequest getRequest, int offset, int limit)
     {
         _logger.LogDebug("Entering GetDocumentByResourceName.GetByResourceName - {TraceId}", getRequest.TraceId);
         try
@@ -27,13 +27,15 @@ public class GetDocumentByResourceName(NpgsqlDataSource _dataSource, ILogger<Get
 
             await using NpgsqlCommand command =
                 new(
-                    @"SELECT EdfiDoc FROM public.Documents WHERE resourcename = $1 OFFSET 0 ROWS FETCH FIRST 25 ROWS ONLY;",
+                    @"SELECT EdfiDoc FROM public.Documents WHERE resourcename = $1 OFFSET $2 ROWS FETCH FIRST $3 ROWS ONLY;",
                     connection
                 )
                 {
                     Parameters =
                     {
                         new() { Value = getRequest.ResourceInfo.ResourceName.Value },
+                        new() { Value = offset },
+                        new () { Value = limit },
                     }
                 };
 
