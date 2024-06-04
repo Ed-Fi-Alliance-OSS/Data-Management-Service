@@ -72,7 +72,7 @@ internal class ApiService(
         );
 
     /// <summary>
-    /// The pipeline steps to satisfy a get by id request
+    /// The pipeline steps to satisfy a get by resource name request
     /// </summary>
     private readonly Lazy<PipelineProvider> _getByResourceNameSteps =
         new(
