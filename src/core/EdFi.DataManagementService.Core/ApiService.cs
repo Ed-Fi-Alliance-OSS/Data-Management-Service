@@ -73,6 +73,25 @@ internal class ApiService(
         );
 
     /// <summary>
+    /// The pipeline steps to satisfy a get by id request
+    /// </summary>
+    private readonly Lazy<PipelineProvider> _getByResourceNameSteps =
+        new(
+            () =>
+                new(
+                    [
+                        new CoreLoggingMiddleware(_logger),
+                        new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
+                        new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
+                        new ParsePathMiddleware(_logger),
+                        new ValidateEndpointMiddleware(_logger),
+                        new BuildResourceInfoMiddleware(_logger),
+                        new GetByResourceNameHandler(_documentStoreRepository, _logger)
+                    ]
+                )
+        );
+
+    /// <summary>
     /// The pipeline steps to satisfy an update request
     /// </summary>
     private readonly Lazy<PipelineProvider> _updateSteps =
@@ -128,10 +147,18 @@ internal class ApiService(
     /// <summary>
     /// DMS entry point for all API GET by id requests
     /// </summary>
-    public async Task<IFrontendResponse> GetById(FrontendRequest frontendRequest)
+    public async Task<IFrontendResponse> Get(FrontendRequest frontendRequest)
     {
         PipelineContext pipelineContext = new(frontendRequest, RequestMethod.GET);
-        await _getByIdSteps.Value.Run(pipelineContext);
+        string[] segments = frontendRequest.Path.Split(new char[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 3 && segments[2].Length == 36 && Guid.TryParse(segments[2], out _))
+        {
+            await _getByIdSteps.Value.Run(pipelineContext);
+        }
+        else
+        {
+            await _getByResourceNameSteps.Value.Run(pipelineContext);
+        }
         return pipelineContext.FrontendResponse;
     }
 
