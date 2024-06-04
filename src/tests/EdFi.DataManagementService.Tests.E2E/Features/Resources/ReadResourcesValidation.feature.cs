@@ -170,10 +170,14 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
              await testRunner.ThenAsync("it should respond with 200", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 42
-              await testRunner.AndAsync("the response body is", "  {\n    \"codeValue\": \"Sick Leave\",\n    \"description\": \"Sick Leave\",\n    \"effectiv" +
-                        "eBeginDate\": \"2024-05-14\",\n    \"effectiveEndDate\": \"2024-05-14\",\n    \"namespace\"" +
-                        ": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\n    \"shortDescription\": \"Sic" +
-                        "k Leave\"\n  }", ((global::Reqnroll.Table)(null)), "And ");
+              await testRunner.AndAsync("the response body is", @"  {
+    ""codeValue"": ""Sick Leave"",
+    ""description"": ""Sick Leave"",
+    ""effectiveBeginDate"": ""2024-05-14"",
+    ""effectiveEndDate"": ""2024-05-14"",
+    ""namespace"": ""uri://ed-fi.org/AbsenceEventCategoryDescriptor"",
+    ""shortDescription"": ""Sick Leave""
+  }", ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();

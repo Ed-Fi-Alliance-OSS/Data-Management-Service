@@ -27,6 +27,7 @@ public static class DmsCoreServiceExtensions
             .AddSingleton<IApiSchemaValidator, ApiSchemaValidator>()
             .AddSingleton<IApiService, ApiService>()
             .AddTransient<IDocumentValidator, DocumentValidator>()
+            .AddTransient<IImmutableIdentityValidator, ImmutableIdentityValidator>()
             .AddTransient<IEqualityConstraintValidator, EqualityConstraintValidator>();
 
         return services;

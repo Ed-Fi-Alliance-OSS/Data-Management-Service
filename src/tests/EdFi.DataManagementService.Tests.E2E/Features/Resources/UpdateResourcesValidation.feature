@@ -153,13 +153,13 @@ Feature: Resources "Update" Operation validations
                         }
                     }
                   """
-        @ignore
+
         Scenario: Verify error handling when resource ID is different in body on PUT
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
                     {
-                        "id": <id_different_from_original_resource>,
+                        "id": "00000000-0000-0000-0000-000000000000",
                         "codeValue": "Sick Leave",
                         "description": "Sick Leave Edited",
                         "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
@@ -170,16 +170,15 @@ Feature: Resources "Update" Operation validations
               And the response body is
                   """
                     {
-                        "detail": "Data validation failed. See 'validationErrors' for details.",
-                        "type": "urn:ed-fi:api:bad-request:data",
-                        "title": "Data Validation Failed",
-                        "status": 400,
-                        "correlationId": null,
-                        "validationErrors": {
-                            "$.id": [
-                            "Input string '<id_different_from_original_resource>' is not a valid number. Path 'id', line 2, position 62."
-                            ]
-                        }
+                      "detail": "The request could not be processed. See 'errors' for details.",
+                      "type": "urn:ed-fi:api:bad-request",
+                      "title": "Bad Request",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": null,
+                      "errors": [
+                        "Request body id must match the id in the url."
+                      ]
                     }
                   """
         @ignore
