@@ -115,7 +115,7 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
              await testRunner.ThenAsync("it should respond with 201 or 200", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 21
-              await testRunner.AndAsync("the response headers includes", "  {\n      \"location\": \"ed-fi/absenceEventCategoryDescriptors/{id}\"\n  }", ((global::Reqnroll.Table)(null)), "And ");
+              await testRunner.AndAsync("the response headers includes", "  {\n      \"location\": \"/ed-fi/absenceEventCategoryDescriptors/{id}\"\n  }", ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
 #line 27
               await testRunner.AndAsync("the record can be retrieved with a GET request", "{\n    \"codeValue\": \"Sick Leave\",\n    \"description\": \"Sick Leave\",\n    \"effectiveB" +

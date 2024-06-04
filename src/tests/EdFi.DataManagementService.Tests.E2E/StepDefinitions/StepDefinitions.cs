@@ -97,7 +97,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             foreach (var header in value.AsObject())
             {
                 if (header.Value != null)
-                    _apiResponse.Headers[header.Key].Should().EndWith(header.Value.ToString().Replace("{id}", _id));
+                    _apiResponse.Headers[header.Key].Should().EndWith("data" + header.Value.ToString().Replace("{id}", _id));
             }
         }
 

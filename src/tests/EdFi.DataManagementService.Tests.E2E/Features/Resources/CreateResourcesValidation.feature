@@ -21,7 +21,7 @@ Feature: Resources "Create" Operation validations
               And the response headers includes
                   """
                     {
-                        "location": "ed-fi/absenceEventCategoryDescriptors/{id}"
+                        "location": "/ed-fi/absenceEventCategoryDescriptors/{id}"
                     }
                   """
               And the record can be retrieved with a GET request
