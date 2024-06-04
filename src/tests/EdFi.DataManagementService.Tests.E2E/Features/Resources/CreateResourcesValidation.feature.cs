@@ -106,22 +106,30 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
         await this.FeatureBackgroundAsync();
 #line hidden
 #line 9
-             await testRunner.WhenAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors\" with", "{\n    \"codeValue\": \"Sick Leave\",\n    \"description\": \"Sick Leave\",\n    \"effectiveB" +
-                        "eginDate\": \"2024-05-14\",\n    \"effectiveEndDate\": \"2024-05-14\",\n    \"namespace\": " +
-                        "\"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\n    \"shortDescription\": \"Sick " +
-                        "Leave\"\n}", ((global::Reqnroll.Table)(null)), "When ");
+             await testRunner.WhenAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors\" with", @"{
+    ""codeValue"": ""Sick Leave"",
+    ""description"": ""Sick Leave"",
+    ""effectiveBeginDate"": ""2024-05-14"",
+    ""effectiveEndDate"": ""2024-05-14"",
+    ""namespace"": ""uri://ed-fi.org/AbsenceEventCategoryDescriptor"",
+    ""shortDescription"": ""Sick Leave""
+}", ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 20
              await testRunner.ThenAsync("it should respond with 201 or 200", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 21
-              await testRunner.AndAsync("the response headers includes", "  {\n      \"location\": \"/ed-fi/absenceEventCategoryDescriptors/{id}\"\n  }", ((global::Reqnroll.Table)(null)), "And ");
+              await testRunner.AndAsync("the response headers includes", "  {\r\n      \"location\": \"/ed-fi/absenceEventCategoryDescriptors/{id}\"\r\n  }", ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
 #line 27
-              await testRunner.AndAsync("the record can be retrieved with a GET request", "{\n    \"codeValue\": \"Sick Leave\",\n    \"description\": \"Sick Leave\",\n    \"effectiveB" +
-                        "eginDate\": \"2024-05-14\",\n    \"effectiveEndDate\": \"2024-05-14\",\n    \"namespace\": " +
-                        "\"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\n    \"shortDescription\": \"Sick " +
-                        "Leave\"\n}", ((global::Reqnroll.Table)(null)), "And ");
+              await testRunner.AndAsync("the record can be retrieved with a GET request", @"{
+    ""codeValue"": ""Sick Leave"",
+    ""description"": ""Sick Leave"",
+    ""effectiveBeginDate"": ""2024-05-14"",
+    ""effectiveEndDate"": ""2024-05-14"",
+    ""namespace"": ""uri://ed-fi.org/AbsenceEventCategoryDescriptor"",
+    ""shortDescription"": ""Sick Leave""
+}", ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
@@ -148,9 +156,9 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
         await this.FeatureBackgroundAsync();
 #line hidden
 #line 40
-             await testRunner.WhenAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors\" with", "  {\n      \"description\": \"Wrong Value\",\n      \"effectiveBeginDate\": \"2024-05-14\"," +
-                        "\n      \"effectiveEndDate\": \"2024-05-14\",\n      \"namespace\": \"uri://ed-fi.org/Abs" +
-                        "enceEventCategoryDescriptor\",\n      \"shortDescription\": \"Wrong Value\"\n  }", ((global::Reqnroll.Table)(null)), "When ");
+             await testRunner.WhenAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"description\": \"Wrong Value\",\r\n      \"effectiveBeginDate\": \"2024-05-14" +
+                        "\",\r\n      \"effectiveEndDate\": \"2024-05-14\",\r\n      \"namespace\": \"uri://ed-fi.org" +
+                        "/AbsenceEventCategoryDescriptor\",\r\n      \"shortDescription\": \"Wrong Value\"\r\n  }", ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 50
              await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
@@ -197,8 +205,8 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
         await this.FeatureBackgroundAsync();
 #line hidden
 #line 70
-             await testRunner.WhenAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors\" with", "  {\n      \"codeValue\": \"xxxx\",\n      \"description\": \"Wrong Value\",\n      \"namespa" +
-                        "ce\": \"uri://.org/wrong\",\n      \"shortDescription\": \"Wrong Value\"\n  }", ((global::Reqnroll.Table)(null)), "When ");
+             await testRunner.WhenAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"codeValue\": \"xxxx\",\r\n      \"description\": \"Wrong Value\",\r\n      \"name" +
+                        "space\": \"uri://.org/wrong\",\r\n      \"shortDescription\": \"Wrong Value\"\r\n  }", ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 79
              await testRunner.ThenAsync("it should respond with 403", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
@@ -237,7 +245,7 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
         await this.FeatureBackgroundAsync();
 #line hidden
 #line 92
-             await testRunner.WhenAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors\" with", "  {\n  }", ((global::Reqnroll.Table)(null)), "When ");
+             await testRunner.WhenAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n  }", ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 97
              await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
@@ -290,9 +298,9 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
         await this.FeatureBackgroundAsync();
 #line hidden
 #line 123
-             await testRunner.WhenAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors\" with", "  {\n      \"codeValue\": \"                      \",\n      \"description\": \"          " +
-                        "          \",\n      \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\"" +
-                        ",\n      \"shortDescription\": \"                    \"\n  }", ((global::Reqnroll.Table)(null)), "When ");
+             await testRunner.WhenAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"codeValue\": \"                      \",\r\n      \"description\": \"        " +
+                        "            \",\r\n      \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescript" +
+                        "or\",\r\n      \"shortDescription\": \"                    \"\r\n  }", ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 132
              await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
@@ -344,22 +352,22 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
         await this.FeatureBackgroundAsync();
 #line hidden
 #line 159
-            await testRunner.GivenAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors\" with", "  {\n      \"codeValue\": \"Sick Lave\",\n      \"description\": \"Sick Leave\",\n      \"nam" +
-                        "espace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\n      \"shortDescripti" +
-                        "on\": \"Sick Leave\"\n  }", ((global::Reqnroll.Table)(null)), "Given ");
+            await testRunner.GivenAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"codeValue\": \"Sick Lave\",\r\n      \"description\": \"Sick Leave\",\r\n      \"" +
+                        "namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\r\n      \"shortDescr" +
+                        "iption\": \"Sick Leave\"\r\n  }", ((global::Reqnroll.Table)(null)), "Given ");
 #line hidden
 #line 168
-             await testRunner.WhenAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors\" with", "  {\n      \"codeValue\": \"Sick Lave\",\n      \"description\": \"Sick Leave\",\n      \"nam" +
-                        "espace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\n      \"shortDescripti" +
-                        "on\": \"Sick Leave\"\n  }", ((global::Reqnroll.Table)(null)), "When ");
+             await testRunner.WhenAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"codeValue\": \"Sick Lave\",\r\n      \"description\": \"Sick Leave\",\r\n      \"" +
+                        "namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\r\n      \"shortDescr" +
+                        "iption\": \"Sick Leave\"\r\n  }", ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 177
              await testRunner.ThenAsync("it should respond with 200", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 178
-              await testRunner.AndAsync("the record can be retrieved with a GET request", "      {\n          \"codeValue\": \"Sick Lave\",\n          \"description\": \"Sick Leave\"" +
-                        ",\n          \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\n     " +
-                        "     \"shortDescription\": \"Sick Leave\"\n      }", ((global::Reqnroll.Table)(null)), "And ");
+              await testRunner.AndAsync("the record can be retrieved with a GET request", "      {\r\n          \"codeValue\": \"Sick Lave\",\r\n          \"description\": \"Sick Leav" +
+                        "e\",\r\n          \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\r\n " +
+                        "         \"shortDescription\": \"Sick Leave\"\r\n      }", ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
@@ -388,9 +396,9 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
         await this.FeatureBackgroundAsync();
 #line hidden
 #line 190
-             await testRunner.WhenAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors\" with", "  {\n      \"codeValue\": \"Sick Lave\",\n      \"description\": \"Sick Leave Edit\",\n     " +
-                        " \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\n      \"shortDesc" +
-                        "ription\": \"Sick Leave\"\n  }", ((global::Reqnroll.Table)(null)), "When ");
+             await testRunner.WhenAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors\" with", "  {\r\n      \"codeValue\": \"Sick Lave\",\r\n      \"description\": \"Sick Leave Edit\",\r\n  " +
+                        "    \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\r\n      \"short" +
+                        "Description\": \"Sick Leave\"\r\n  }", ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 199
              await testRunner.ThenAsync("it should respond with 200", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
@@ -422,9 +430,9 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
         await this.FeatureBackgroundAsync();
 #line hidden
 #line 204
-             await testRunner.WhenAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors/\" with", "  {\n      \"id\": \"{id}\",\n      \"codeValue\": \"Sick Leave\",\n      \"description\": \"Si" +
-                        "ck Leave Edited\",\n      \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescri" +
-                        "ptor\",\n      \"shortDescription\": \"Sick Leave\"\n  }", ((global::Reqnroll.Table)(null)), "When ");
+             await testRunner.WhenAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors/\" with", "  {\r\n      \"id\": \"{id}\",\r\n      \"codeValue\": \"Sick Leave\",\r\n      \"description\": " +
+                        "\"Sick Leave Edited\",\r\n      \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDe" +
+                        "scriptor\",\r\n      \"shortDescription\": \"Sick Leave\"\r\n  }", ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 214
              await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");

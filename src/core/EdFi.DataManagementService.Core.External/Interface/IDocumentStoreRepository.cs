@@ -23,6 +23,11 @@ public interface IDocumentStoreRepository
     public Task<GetResult> GetDocumentById(IGetRequest getRequest);
 
     /// <summary>
+    /// Entry point for get document by resource name requests
+    /// </summary>
+    public Task<GetResult> GetDocumentByResourceName(IGetRequest getRequest);
+
+    /// <summary>
     /// Entry point for update document by id requests
     /// </summary>
     public Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest);
