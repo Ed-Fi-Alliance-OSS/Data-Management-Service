@@ -15,19 +15,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
 [TestFixture]
 public class UpdateTests : DatabaseTest
 {
-    public static readonly IDocumentInfo OtherDocumentInfo = (
-        new
-        {
-            DocumentIdentity = (
-                new { IdentityValue = "", IdentityJsonPath = AsValueType<IJsonPath, string>("$") }
-            ).ActLike<IResourceInfo>(),
-            ReferentialId = new ReferentialId(Guid.NewGuid()),
-            DocumentReferences = new List<IDocumentReference>(),
-            DescriptorReferences = new List<IDocumentReference>(),
-            SuperclassIdentity = null as ISuperclassIdentity
-        }
-    ).ActLike<IDocumentInfo>();
-
     public static IUpsertRequest CreateUpsertRequest(Guid documentUuidGuid, string edFiDocString)
     {
         return (

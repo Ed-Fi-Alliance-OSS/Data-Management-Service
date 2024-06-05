@@ -9,7 +9,7 @@ using EdFi.DataManagementService.Core.Pipeline;
 
 namespace EdFi.DataManagementService.Core.Validation;
 
-internal interface IImmutableIdentityValidator
+internal interface IMatchingDocumentUuidsValidator
 {
     /// <summary>
     /// Validates a document for update has id matching the id in the request path
@@ -19,7 +19,7 @@ internal interface IImmutableIdentityValidator
     bool Validate(PipelineContext context);
 }
 
-internal class ImmutableIdValidator() : IImmutableIdentityValidator
+internal class MatchingDocumentUuidsValidator() : IMatchingDocumentUuidsValidator
 {
     public bool Validate(PipelineContext context)
     {

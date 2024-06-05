@@ -13,11 +13,11 @@ using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware
 {
-    internal class ValidateImmutableIdMiddleware(ILogger _logger, IImmutableIdentityValidator _validator) : IPipelineStep
+    internal class ValidateMatchingDocumentUuidsMiddleware(ILogger _logger, IMatchingDocumentUuidsValidator _validator) : IPipelineStep
     {
         public async Task Execute(PipelineContext context, Func<Task> next)
         {
-            _logger.LogDebug("Entering ValidateImmutableIdMiddleware- {TraceId}", context.FrontendRequest.TraceId);
+            _logger.LogDebug("Entering ValidateMatchingDocumentUuidsMiddleware- {TraceId}", context.FrontendRequest.TraceId);
 
             var isValid = _validator.Validate(context);
 

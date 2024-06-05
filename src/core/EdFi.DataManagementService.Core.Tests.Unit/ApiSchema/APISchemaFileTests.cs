@@ -38,7 +38,7 @@ public class APISchemaFileTests
                 ),
                 new SuccessDocumentStoreRepository(NullLogger<SuccessDocumentStoreRepository>.Instance),
                 new DocumentValidator(),
-                new ImmutableIdValidator(),
+                new MatchingDocumentUuidsValidator(),
                 new EqualityConstraintValidator(),
                 NullLogger<ApiService>.Instance
             );

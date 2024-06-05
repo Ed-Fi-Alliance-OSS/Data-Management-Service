@@ -17,7 +17,7 @@ using FluentAssertions;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
 {
-    public class ValidateImmutableIdMiddlewareTests
+    public class ValidateMatchingDocumentUuidsMiddlewareTests
     {
         public static Func<Task> Next()
         {
@@ -35,8 +35,8 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         }
 
         internal static IPipelineStep Middleware(){
-            var immutableIdentityValidator = new ImmutableIdValidator();
-            return new ValidateImmutableIdMiddleware(NullLogger.Instance, immutableIdentityValidator);
+            var immutableIdentityValidator = new MatchingDocumentUuidsValidator();
+            return new ValidateMatchingDocumentUuidsMiddleware(NullLogger.Instance, immutableIdentityValidator);
         }
 
         internal PipelineContext Context(FrontendRequest frontendRequest, RequestMethod method)
@@ -63,7 +63,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         }
 
         [TestFixture]
-        public class Given_A_Matching_Id_In_Body_And_Url : ValidateImmutableIdMiddlewareTests
+        public class Given_A_Matching_Id_In_Body_And_Url : ValidateMatchingDocumentUuidsMiddlewareTests
         {
             private PipelineContext _context = No.PipelineContext();
             private string id = Guid.NewGuid().ToString();
@@ -111,7 +111,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         }
 
         [TestFixture]
-        public class Given_A_Different_Id_In_Body_And_Url : ValidateImmutableIdMiddlewareTests
+        public class Given_A_Different_Id_In_Body_And_Url : ValidateMatchingDocumentUuidsMiddlewareTests
         {
             private PipelineContext _context = No.PipelineContext();
             private string id = Guid.NewGuid().ToString();
