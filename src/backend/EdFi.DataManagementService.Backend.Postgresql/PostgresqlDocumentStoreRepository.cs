@@ -3,14 +3,17 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using EdFi.DataManagementService.Backend.Postgresql.Operation;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
 
 public class PostgresqlDocumentStoreRepository(
+    NpgsqlDataSource _dataSource,
     ILogger<PostgresqlDocumentStoreRepository> _logger,
     IGetDocumentById _getDocumentById,
     IUpdateDocumentById _updateDocumentById,
@@ -27,7 +30,22 @@ public class PostgresqlDocumentStoreRepository(
 
         try
         {
-            return await _upsertDocument.Upsert(upsertRequest);
+            await using var connection = await _dataSource.OpenConnectionAsync();
+            await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable);
+
+            UpsertResult result = await _upsertDocument.Upsert(upsertRequest, connection, transaction);
+
+            switch (result)
+            {
+                case UpsertResult.InsertSuccess:
+                case UpsertResult.UpdateSuccess:
+                    await transaction.CommitAsync();
+                    break;
+                default:
+                    await transaction.RollbackAsync();
+                    break;
+            }
+            return result;
         }
         catch (Exception ex)
         {
@@ -45,7 +63,21 @@ public class PostgresqlDocumentStoreRepository(
 
         try
         {
-            return await _getDocumentById.GetById(getRequest);
+            await using var connection = await _dataSource.OpenConnectionAsync();
+            await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable);
+
+            GetResult result = await _getDocumentById.GetById(getRequest, connection, transaction);
+
+            switch (result)
+            {
+                case GetResult.GetSuccess:
+                    await transaction.CommitAsync();
+                    break;
+                default:
+                    await transaction.RollbackAsync();
+                    break;
+            }
+            return result;
         }
         catch (Exception ex)
         {
@@ -63,7 +95,25 @@ public class PostgresqlDocumentStoreRepository(
 
         try
         {
-            return await _updateDocumentById.UpdateById(updateRequest);
+            await using var connection = await _dataSource.OpenConnectionAsync();
+            await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable);
+
+            UpdateResult result = await _updateDocumentById.UpdateById(
+                updateRequest,
+                connection,
+                transaction
+            );
+
+            switch (result)
+            {
+                case UpdateResult.UpdateSuccess:
+                    await transaction.CommitAsync();
+                    break;
+                default:
+                    await transaction.RollbackAsync();
+                    break;
+            }
+            return result;
         }
         catch (Exception ex)
         {
@@ -81,7 +131,24 @@ public class PostgresqlDocumentStoreRepository(
 
         try
         {
-            return await _deleteDocumentById.DeleteById(deleteRequest);
+            await using var connection = await _dataSource.OpenConnectionAsync();
+            await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable);
+            DeleteResult result = await _deleteDocumentById.DeleteById(
+                deleteRequest,
+                connection,
+                transaction
+            );
+
+            switch (result)
+            {
+                case DeleteResult.DeleteSuccess:
+                    await transaction.CommitAsync();
+                    break;
+                default:
+                    await transaction.RollbackAsync();
+                    break;
+            }
+            return result;
         }
         catch (Exception ex)
         {

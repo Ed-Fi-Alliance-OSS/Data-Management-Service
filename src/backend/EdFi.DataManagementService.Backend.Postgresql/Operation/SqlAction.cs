@@ -6,7 +6,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
-using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using Npgsql;
 
@@ -19,6 +18,13 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
 /// </summary>
 public interface ISqlAction
 {
+    public Task<JsonNode?> FindDocumentEdfiDocByDocumentUuid(
+        DocumentUuid documentUuid,
+        PartitionKey partitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
     public Task<Document?> FindDocumentByReferentialId(
         ReferentialId referentialId,
         PartitionKey partitionKey,
@@ -55,7 +61,7 @@ public interface ISqlAction
 
     public Task<long> InsertAlias(Alias alias, NpgsqlConnection connection, NpgsqlTransaction transaction);
 
-    public Task<int> UpdateDocumentEdFiDoc(
+    public Task<int> UpdateDocumentEdfiDoc(
         int documentPartitionKey,
         Guid documentUuid,
         JsonElement edfiDoc,
@@ -98,6 +104,43 @@ public record UpdateDocumentValidationResult(bool DocumentExists, bool Referenti
 /// </summary>
 public class SqlAction : ISqlAction
 {
+    /// <summary>
+    /// Returns the EdfiDoc of single Document from the database corresponding to the given DocumentUuid,
+    /// or null if no matching Document was found.
+    /// </summary>
+    public async Task<JsonNode?> FindDocumentEdfiDocByDocumentUuid(
+        DocumentUuid documentUuid,
+        PartitionKey partitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command =
+            new(
+                @"SELECT EdfiDoc FROM public.Documents WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2;",
+                connection,
+                transaction
+            )
+            {
+                Parameters =
+                {
+                    new() { Value = partitionKey.Value },
+                    new() { Value = documentUuid.Value },
+                }
+            };
+
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+
+        if (!reader.HasRows)
+        {
+            return null;
+        }
+
+        // Assumes only one row returned
+        await reader.ReadAsync();
+        return (await reader.GetFieldValueAsync<JsonElement>(0)).Deserialize<JsonNode>();
+    }
+
     /// <summary>
     /// Returns a single Document from the database corresponding to the given ReferentialId,
     /// or null if no matching Document was found.
@@ -260,7 +303,7 @@ public class SqlAction : ISqlAction
     /// <summary>
     /// Update the EdfiDoc of a Document and return the number of rows affected
     /// </summary>
-    public async Task<int> UpdateDocumentEdFiDoc(
+    public async Task<int> UpdateDocumentEdfiDoc(
         int documentPartitionKey,
         Guid documentUuid,
         JsonElement edfiDoc,
