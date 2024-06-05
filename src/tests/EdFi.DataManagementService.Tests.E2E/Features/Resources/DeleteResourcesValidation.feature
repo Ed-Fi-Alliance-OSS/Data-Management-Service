@@ -40,3 +40,76 @@ Feature: Resources "Delete" Operation validations
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 404
 
+        @ignore
+        Scenario: Verify response code when deleting a referenced descriptor
+             When a POST request is made to "/ed-fi/gradingPeriodDescriptors" with
+             """
+              {
+                "codeValue": "First Six Weeks",
+                "description": "First Six Weeks",
+                "namespace": "uri://ed-fi.org/GradingPeriodDescriptor",
+                "shortDescription": "First Six Weeks"
+              }
+             """
+             Then it should respond with 201 or 200
+             When a POST request is made for dependent resource "/ed-fi/gradingPeriods" with
+             """
+              {
+                "schoolReference": {
+                  "schoolId": 255901001
+                },
+                "schoolYearTypeReference": {
+                  "schoolYear": 2022
+                },
+                "gradingPeriodDescriptor": "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks",
+                "gradingPeriodName": "2021-2022 Fall Semester Exam 1",
+                "beginDate": "2021-08-23",
+                "endDate": "2021-10-03",
+                "periodSequence": 1,
+                "totalInstructionalDays": 29
+              }
+             """
+             Then it should respond with 201 or 200
+             When a DELETE request is made to "/ed-fi/gradingPeriodDescriptors/{id}"
+             Then it should respond with 409
+
+       @ignore
+       Scenario: Verify response code when deleting a referenced resource
+             When a POST request is made to "/ed-fi/schools" with
+             """
+               {
+                 "schoolId": 255901001,
+                 "nameOfInstitution": "testschool",
+                  "educationOrganizationCategories": [
+                    {
+                      "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Other"
+                    }
+                  ],
+                  "schoolCategories": [
+                    {
+                      "schoolCategoryDescriptor": "uri://ed-fi.org/SchoolCategoryDescriptor#All Levels"
+                    }
+                  ],
+                  "gradeLevels": [
+                    {
+                      "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#First Grade"
+                    }
+                  ]
+               }
+             """
+             Then it should respond with 201 or 200
+             When a POST request is made to "ed-fi/academicWeeks" with
+                  """
+                   {
+                    "weekIdentifier": "abcdef",
+                    "schoolReference": {
+                        "schoolId": 255901001 },
+                    "beginDate": "2024-04-04",
+                    "endDate": "2024-04-04",
+                    "totalInstructionalDays": 300
+                   }
+                  """
+             Then it should respond with 201 or 200
+             When a DELETE request is made to "/ed-fi/schools/{id}"
+             Then it should respond with 409
+

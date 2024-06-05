@@ -41,6 +41,11 @@ public interface ISqlAction
         NpgsqlTransaction transaction
     );
 
+    public Task<int> DeleteAliasByDocumentId(
+        int documentPartitionKey,
+        DocumentUuid documentUuid,
+        NpgsqlConnection connection
+    );
     public Task<UpdateDocumentValidationResult> UpdateDocumentValidation(
         DocumentUuid documentUuid,
         PartitionKey documentPartitionKey,
@@ -52,10 +57,15 @@ public interface ISqlAction
 
     public Task<int> DeleteAliasByDocumentId(DocumentUuid documentUuid, NpgsqlConnection connection);
 
-    public Task<int> DeleteDocumentByDocumentId(DocumentUuid documentUuid, NpgsqlConnection connection);
+    public Task<int> DeleteDocumentByDocumentId(
+        int documentPartitionKey,
+        DocumentUuid documentUuid,
+        NpgsqlConnection connection
+    );
 }
 
 public record UpsertDocumentSqlResult(bool Inserted, long DocumentId);
+
 public record UpdateDocumentValidationResult(bool DocumentExists, bool ReferentialIdExists);
 
 /// <summary>
@@ -182,28 +192,30 @@ public class SqlAction : ISqlAction
         ReferentialId referentialId,
         PartitionKey referentialPartitionKey,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction)
+        NpgsqlTransaction transaction
+    )
     {
-        await using NpgsqlCommand validationCommand = new(
-            @"SELECT DocumentUuid, ReferentialId
+        await using NpgsqlCommand validationCommand =
+            new(
+                @"SELECT DocumentUuid, ReferentialId
                 FROM public.documents d
                 LEFT JOIN public.aliases a ON
                     a.DocumentId = d.Id
                     AND a.DocumentPartitionKey = d.DocumentPartitionKey
                     AND a.ReferentialId = $1 and a.ReferentialPartitionKey = $2
                 WHERE d.DocumentUuid = $3 AND d.DocumentPartitionKey = $4",
-            connection,
-            transaction
-        )
-        {
-            Parameters =
+                connection,
+                transaction
+            )
             {
-                new() { Value = referentialId.Value },
-                new() { Value = referentialPartitionKey.Value },
-                new() { Value = documentUuid.Value },
-                new() { Value = documentPartitionKey.Value },
-            }
-        };
+                Parameters =
+                {
+                    new() { Value = referentialId.Value },
+                    new() { Value = referentialPartitionKey.Value },
+                    new() { Value = documentUuid.Value },
+                    new() { Value = documentPartitionKey.Value },
+                }
+            };
 
         await using NpgsqlDataReader reader = await validationCommand.ExecuteReaderAsync();
 
@@ -257,17 +269,24 @@ public class SqlAction : ISqlAction
     /// <summary>
     /// Delete associated Alias records for a given Document_Uuid return the number of rows affected
     /// </summary>
-    public async Task<int> DeleteAliasByDocumentId(DocumentUuid documentUuid, NpgsqlConnection connection)
+    public async Task<int> DeleteAliasByDocumentId(
+        int documentPartitionKey,
+        DocumentUuid documentUuid,
+        NpgsqlConnection connection
+    )
     {
         await using NpgsqlCommand command =
             new(
-                @"DELETE from public.Aliases WHERE Id in(SELECT a.id FROM public.Aliases a
-                INNER JOIN public.Documents d ON d.Id = a.DocumentId AND d.DocumentPartitionKey =  a.DocumentPartitionKey
-                WHERE d.DocumentUuid = $1)",
+                @"DELETE from public.Aliases WHERE DocumentId in (SELECT Id from public.Documents 
+                WHERE DocumentUuid = $1 AND DocumentPartitionKey = $2)",
                 connection
             )
             {
-                Parameters = { new() { Value = documentUuid.Value } }
+                Parameters =
+                {
+                    new() { Value = documentUuid.Value },
+                    new() { Value = documentPartitionKey }
+                }
             };
 
         int rowsAffected = await command.ExecuteNonQueryAsync();
@@ -277,12 +296,23 @@ public class SqlAction : ISqlAction
     /// <summary>
     /// Delete a document for a given Document_Uuid and returns the number of rows affected
     /// </summary>
-    public async Task<int> DeleteDocumentByDocumentId(DocumentUuid documentUuid, NpgsqlConnection connection)
+    public async Task<int> DeleteDocumentByDocumentId(
+        int documentPartitionKey,
+        DocumentUuid documentUuid,
+        NpgsqlConnection connection
+    )
     {
         await using NpgsqlCommand command =
-            new(@"DELETE from public.Documents WHERE DocumentUuid = $1", connection)
+            new(
+                @"DELETE from public.Documents WHERE DocumentUuid = $1 AND DocumentPartitionKey = $2",
+                connection
+            )
             {
-                Parameters = { new() { Value = documentUuid.Value } }
+                Parameters =
+                {
+                    new() { Value = documentUuid.Value },
+                    new() { Value = documentPartitionKey }
+                }
             };
 
         int rowsAffected = await command.ExecuteNonQueryAsync();

@@ -16,6 +16,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
     {
         private IAPIResponse _apiResponse = null!;
         private string _id = string.Empty;
+        private string _dependentId = string.Empty;
         private string _location = string.Empty;
 
         [Given("the Data Management Service must receive a token issued by {string}")]
@@ -53,6 +54,18 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             {
                 _location = _apiResponse.Headers["location"];
                 _id = _apiResponse.Headers["location"].Split('/').Last();
+            }
+        }
+
+        [When("a POST request is made for dependent resource {string} with")]
+        public async Task WhenSendingAPOSTRequestForDependentResourceWithBody(string url, string body)
+        {
+            url = $"data/{url}";
+            _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
+            if (_apiResponse.Headers.ContainsKey("location"))
+            {
+                _location = _apiResponse.Headers["location"];
+                _dependentId = _apiResponse.Headers["location"].Split('/').Last();
             }
         }
 

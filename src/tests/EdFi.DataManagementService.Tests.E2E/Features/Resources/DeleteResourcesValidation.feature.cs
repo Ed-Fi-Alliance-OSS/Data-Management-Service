@@ -230,6 +230,129 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
             }
             await this.ScenarioCleanupAsync();
         }
+        
+        [NUnit.Framework.TestAttribute()]
+        [NUnit.Framework.DescriptionAttribute("Verify response code when deleting a referenced descriptor")]
+        [NUnit.Framework.IgnoreAttribute("Ignored scenario")]
+        public async System.Threading.Tasks.Task VerifyResponseCodeWhenDeletingAReferencedDescriptor()
+        {
+            string[] tagsOfScenario = new string[] {
+                    "ignore"};
+            System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
+            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Verify response code when deleting a referenced descriptor", null, tagsOfScenario, argumentsOfScenario, featureTags);
+#line 44
+        this.ScenarioInitialize(scenarioInfo);
+#line hidden
+            if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
+            {
+                testRunner.SkipScenario();
+            }
+            else
+            {
+                await this.ScenarioStartAsync();
+#line 5
+        await this.FeatureBackgroundAsync();
+#line hidden
+#line 45
+             await testRunner.WhenAsync("a POST request is made to \"/ed-fi/gradingPeriodDescriptors\" with", " {\r\n   \"codeValue\": \"First Six Weeks\",\r\n   \"description\": \"First Six Weeks\",\r\n   " +
+                        "\"namespace\": \"uri://ed-fi.org/GradingPeriodDescriptor\",\r\n   \"shortDescription\": " +
+                        "\"First Six Weeks\"\r\n }", ((global::Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 54
+             await testRunner.ThenAsync("it should respond with 201 or 200", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
+#line hidden
+#line 55
+             await testRunner.WhenAsync("a POST request is made for dependent resource \"/ed-fi/gradingPeriods\" with", @" {
+   ""schoolReference"": {
+     ""schoolId"": 255901001
+   },
+   ""schoolYearTypeReference"": {
+     ""schoolYear"": 2022
+   },
+   ""gradingPeriodDescriptor"": ""uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks"",
+   ""gradingPeriodName"": ""2021-2022 Fall Semester Exam 1"",
+   ""beginDate"": ""2021-08-23"",
+   ""endDate"": ""2021-10-03"",
+   ""periodSequence"": 1,
+   ""totalInstructionalDays"": 29
+ }", ((global::Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 72
+             await testRunner.ThenAsync("it should respond with 201 or 200", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
+#line hidden
+#line 73
+             await testRunner.WhenAsync("a DELETE request is made to \"/ed-fi/gradingPeriodDescriptors/{id}\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 74
+             await testRunner.ThenAsync("it should respond with 409", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
+#line hidden
+            }
+            await this.ScenarioCleanupAsync();
+        }
+        
+        [NUnit.Framework.TestAttribute()]
+        [NUnit.Framework.DescriptionAttribute("Verify response code when deleting a referenced resource")]
+        [NUnit.Framework.IgnoreAttribute("Ignored scenario")]
+        public async System.Threading.Tasks.Task VerifyResponseCodeWhenDeletingAReferencedResource()
+        {
+            string[] tagsOfScenario = new string[] {
+                    "ignore"};
+            System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
+            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Verify response code when deleting a referenced resource", null, tagsOfScenario, argumentsOfScenario, featureTags);
+#line 77
+       this.ScenarioInitialize(scenarioInfo);
+#line hidden
+            if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
+            {
+                testRunner.SkipScenario();
+            }
+            else
+            {
+                await this.ScenarioStartAsync();
+#line 5
+        await this.FeatureBackgroundAsync();
+#line hidden
+#line 78
+             await testRunner.WhenAsync("a POST request is made to \"/ed-fi/schools\" with", @"  {
+    ""schoolId"": 255901001,
+    ""nameOfInstitution"": ""testschool"",
+     ""educationOrganizationCategories"": [
+       {
+         ""educationOrganizationCategoryDescriptor"": ""uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Other""
+       }
+     ],
+     ""schoolCategories"": [
+       {
+         ""schoolCategoryDescriptor"": ""uri://ed-fi.org/SchoolCategoryDescriptor#All Levels""
+       }
+     ],
+     ""gradeLevels"": [
+       {
+         ""gradeLevelDescriptor"": ""uri://ed-fi.org/GradeLevelDescriptor#First Grade""
+       }
+     ]
+  }", ((global::Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 100
+             await testRunner.ThenAsync("it should respond with 201 or 200", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
+#line hidden
+#line 101
+             await testRunner.WhenAsync("a POST request is made to \"ed-fi/academicWeeks\" with", " {\r\n  \"weekIdentifier\": \"abcdef\",\r\n  \"schoolReference\": {\r\n      \"schoolId\": 2559" +
+                        "01001 },\r\n  \"beginDate\": \"2024-04-04\",\r\n  \"endDate\": \"2024-04-04\",\r\n  \"totalInst" +
+                        "ructionalDays\": 300\r\n }", ((global::Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 112
+             await testRunner.ThenAsync("it should respond with 201 or 200", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
+#line hidden
+#line 113
+             await testRunner.WhenAsync("a DELETE request is made to \"/ed-fi/schools/{id}\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 114
+             await testRunner.ThenAsync("it should respond with 409", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
+#line hidden
+            }
+            await this.ScenarioCleanupAsync();
+        }
     }
 }
 #pragma warning restore

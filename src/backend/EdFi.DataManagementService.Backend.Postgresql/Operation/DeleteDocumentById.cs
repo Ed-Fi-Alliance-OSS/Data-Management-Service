@@ -28,6 +28,7 @@ public class DeleteDocumentById(
 
         await using var connection = await _dataSource.OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
+        int documentPartitionKey = PartitionKeyFor(deleteRequest.DocumentUuid).Value;
         int rowsAffectedOnAliasTable = 0;
         int rowsAffected = 0;
 
@@ -36,6 +37,7 @@ public class DeleteDocumentById(
             try
             {
                 rowsAffectedOnAliasTable = await _sqlAction.DeleteAliasByDocumentId(
+                    documentPartitionKey,
                     deleteRequest.DocumentUuid,
                     connection
                 );
@@ -57,6 +59,7 @@ public class DeleteDocumentById(
             try
             {
                 rowsAffected = await _sqlAction.DeleteDocumentByDocumentId(
+                    documentPartitionKey,
                     deleteRequest.DocumentUuid,
                     connection
                 );
