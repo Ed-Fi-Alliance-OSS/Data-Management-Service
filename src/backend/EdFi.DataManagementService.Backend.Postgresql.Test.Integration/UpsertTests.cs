@@ -4,13 +4,10 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Backend.Postgresql.Operation;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using ImpromptuInterface;
-using Microsoft.Extensions.Logging.Abstractions;
-using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
@@ -18,53 +15,13 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
 [TestFixture]
 public class UpsertTests : DatabaseTest
 {
-    public static UpsertDocument CreateUpsert(NpgsqlDataSource dataSource)
-    {
-        return new UpsertDocument(dataSource, new SqlAction(), NullLogger<UpsertDocument>.Instance);
-    }
-
-    public static GetDocumentById CreateGetById(NpgsqlDataSource dataSource)
-    {
-        return new GetDocumentById(dataSource, NullLogger<GetDocumentById>.Instance);
-    }
-
-    public static T AsValueType<T, U>(U value)
-        where T : class
-    {
-        return (new { Value = value }).ActLike<T>();
-    }
-
-    public static readonly IResourceInfo _resourceInfo = (
-        new
-        {
-            ResourceVersion = AsValueType<ISemVer, string>("5.0.0"),
-            AllowIdentityUpdates = false,
-            ProjectName = AsValueType<IMetaEdProjectName, string>("ProjectName"),
-            ResourceName = AsValueType<IMetaEdResourceName, string>("ResourceName"),
-            IsDescriptor = false
-        }
-    ).ActLike<IResourceInfo>();
-
-    public static readonly IDocumentInfo _documentInfo = (
-        new
-        {
-            DocumentIdentity = (
-                new { IdentityValue = "", IdentityJsonPath = AsValueType<IJsonPath, string>("$") }
-            ).ActLike<IResourceInfo>(),
-            ReferentialId = new ReferentialId(Guid.Empty),
-            DocumentReferences = new List<IDocumentReference>(),
-            DescriptorReferences = new List<IDocumentReference>(),
-            SuperclassIdentity = null as ISuperclassIdentity
-        }
-    ).ActLike<IDocumentInfo>();
-
     public static IUpsertRequest CreateUpsertRequest(Guid documentUuidGuid, string edFiDocString)
     {
         return (
             new
             {
-                ResourceInfo = _resourceInfo,
-                DocumentInfo = _documentInfo,
+                ResourceInfo = ResourceInfo,
+                DocumentInfo = DocumentInfo,
                 EdfiDoc = JsonNode.Parse(edFiDocString),
                 TraceId = new TraceId("123"),
                 DocumentUuid = new DocumentUuid(documentUuidGuid)
@@ -77,7 +34,7 @@ public class UpsertTests : DatabaseTest
         return (
             new
             {
-                ResourceInfo = _resourceInfo,
+                ResourceInfo = ResourceInfo,
                 TraceId = new TraceId("123"),
                 DocumentUuid = new DocumentUuid(documentUuidGuid)
             }
@@ -85,7 +42,7 @@ public class UpsertTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_upsert_of_a_new_document : UpsertTests
+    public class GivenAnUpsertOfANewDocument : UpsertTests
     {
         private UpsertResult? _upsertResult;
         private GetResult? _getResult;
@@ -121,7 +78,7 @@ public class UpsertTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_upsert_of_an_existing_document : UpsertTests
+    public class GivenAnUpsertOfAnExistingDocument : UpsertTests
     {
         private UpsertResult? _upsertResult;
         private GetResult? _getResult;
