@@ -42,7 +42,7 @@ public class UpsertTests : DatabaseTest
     }
 
     [TestFixture]
-    public class GivenAnUpsertOfANewDocument : UpsertTests
+    public class Given_an_upsert_of_a_new_document : UpsertTests
     {
         private UpsertResult? _upsertResult;
         private GetResult? _getResult;
@@ -78,7 +78,7 @@ public class UpsertTests : DatabaseTest
     }
 
     [TestFixture]
-    public class GivenAnUpsertOfAnExistingDocument : UpsertTests
+    public class Given_an_upsert_of_an_existing_document : UpsertTests
     {
         private UpsertResult? _upsertResult;
         private GetResult? _getResult;

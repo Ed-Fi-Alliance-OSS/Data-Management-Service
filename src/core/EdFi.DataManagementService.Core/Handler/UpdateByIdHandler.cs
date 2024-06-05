@@ -8,7 +8,6 @@ using System.Text.Json;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
-using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
@@ -23,11 +22,6 @@ namespace EdFi.DataManagementService.Core.Handler;
 internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger)
     : IPipelineStep
 {
-    private static string ToResourcePath(PathComponents p, DocumentUuid u)
-    {
-        return $"/{p.ProjectNamespace.Value}/{p.EndpointName.Value}/{u.Value}";
-    }
-
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         _logger.LogDebug("Entering UpdateByIdHandler - {TraceId}", context.FrontendRequest.TraceId);
@@ -55,7 +49,7 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
                     StatusCode: 204,
                     Body: null,
                     Headers: [],
-                    LocationHeaderPath: ToResourcePath(
+                    LocationHeaderPath: PathComponents.ToResourcePath(
                             context.PathComponents,
                             ((UpdateSuccess)result).ExistingDocumentUuid
                     )

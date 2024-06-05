@@ -208,12 +208,12 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
         }
         
         [NUnit.Framework.TestAttribute()]
-        [NUnit.Framework.DescriptionAttribute("Verify error handling updating a resource natural key")]
-        public async System.Threading.Tasks.Task VerifyErrorHandlingUpdatingAResourceNaturalKey()
+        [NUnit.Framework.DescriptionAttribute("Verify error handling updating the document identity")]
+        public async System.Threading.Tasks.Task VerifyErrorHandlingUpdatingTheDocumentIdentity()
         {
             string[] tagsOfScenario = ((string[])(null));
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
-            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Verify error handling updating a resource natural key", null, tagsOfScenario, argumentsOfScenario, featureTags);
+            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Verify error handling updating the document identity", null, tagsOfScenario, argumentsOfScenario, featureTags);
 #line 85
         this.ScenarioInitialize(scenarioInfo);
 #line hidden

@@ -82,7 +82,7 @@ Feature: Resources "Update" Operation validations
                       "errors": null
                   }
                   """
-        Scenario: Verify error handling updating a resource natural key
+        Scenario: Verify error handling updating the document identity
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """

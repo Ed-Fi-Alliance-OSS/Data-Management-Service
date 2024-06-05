@@ -20,11 +20,6 @@ namespace EdFi.DataManagementService.Core.Handler;
 internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger)
     : IPipelineStep
 {
-    private static string ToResourcePath(PathComponents p, DocumentUuid u)
-    {
-        return $"/{p.ProjectNamespace.Value}/{p.EndpointName.Value}/{u.Value}";
-    }
-
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         _logger.LogDebug("Entering UpsertHandler - {TraceId}", context.FrontendRequest.TraceId);
@@ -55,7 +50,7 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
                     StatusCode: 201,
                     Body: null,
                     Headers: [],
-                    LocationHeaderPath: ToResourcePath(
+                    LocationHeaderPath: PathComponents.ToResourcePath(
                         context.PathComponents,
                         ((InsertSuccess)result).NewDocumentUuid
                     )
@@ -65,7 +60,7 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
                     StatusCode: 200,
                     Body: null,
                     Headers: [],
-                    LocationHeaderPath: ToResourcePath(
+                    LocationHeaderPath: PathComponents.ToResourcePath(
                         context.PathComponents,
                         ((UpdateSuccess)result).ExistingDocumentUuid
                     )

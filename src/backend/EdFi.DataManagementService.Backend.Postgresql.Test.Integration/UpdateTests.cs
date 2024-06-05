@@ -135,7 +135,7 @@ public class UpdateTests : DatabaseTest
         }
 
         [Test]
-        public void It_should_be_a_successful_update()
+        public void It_should_not_be_a_successful_update()
         {
             _updateResult!.Should().BeOfType<UpdateResult.UpdateFailureImmutableIdentity>();
         }
