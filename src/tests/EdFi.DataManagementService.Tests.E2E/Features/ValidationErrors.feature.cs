@@ -125,9 +125,9 @@ namespace EdFi.DataManagementService.Tests.E2E.Features
             {
                 await this.ScenarioStartAsync();
 #line 15
-             await testRunner.WhenAsync("a POST request is made to \"ed-fi/academicWeeks\" with", "{\n \"weekIdentifier\": \"one\",\n \"schoolReference\": {\n   \"schoolId\": 17012391\n },\n \"b" +
-                        "eginDate\": \"2023-09-11\",\n \"endDate\": \"2023-09-11\",\n \"totalInstructionalDays\": 30" +
-                        "0\n}", ((global::Reqnroll.Table)(null)), "When ");
+             await testRunner.WhenAsync("a POST request is made to \"ed-fi/academicWeeks\" with", "{\r\n \"weekIdentifier\": \"one\",\r\n \"schoolReference\": {\r\n   \"schoolId\": 17012391\r\n }," +
+                        "\r\n \"beginDate\": \"2023-09-11\",\r\n \"endDate\": \"2023-09-11\",\r\n \"totalInstructionalDa" +
+                        "ys\": 300\r\n}", ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 27
              await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
@@ -171,8 +171,8 @@ namespace EdFi.DataManagementService.Tests.E2E.Features
             {
                 await this.ScenarioStartAsync();
 #line 46
-             await testRunner.WhenAsync("a POST request is made to \"ed-fi/academicWeeks\" with", "{\n  \"weekIdentifier\": \"seven\",\n  \"schoolReference\": {\n  },\n  \"beginDate\": \"2023-0" +
-                        "9-11\",\n  \"endDate\": \"2023-09-11\"\n}", ((global::Reqnroll.Table)(null)), "When ");
+             await testRunner.WhenAsync("a POST request is made to \"ed-fi/academicWeeks\" with", "{\r\n  \"weekIdentifier\": \"seven\",\r\n  \"schoolReference\": {\r\n  },\r\n  \"beginDate\": \"20" +
+                        "23-09-11\",\r\n  \"endDate\": \"2023-09-11\"\r\n}", ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 56
              await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
@@ -217,8 +217,8 @@ namespace EdFi.DataManagementService.Tests.E2E.Features
             {
                 await this.ScenarioStartAsync();
 #line 78
-             await testRunner.WhenAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors\" with", "{\n  \"codeValue\": \"Sample\",\n  \"shortDescription\": \"Bereavement\",\n  \"namespace\": \"u" +
-                        "ri://ed-fi.org/AbsenceEventCategoryDescriptor\"\n}", ((global::Reqnroll.Table)(null)), "When ");
+             await testRunner.WhenAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors\" with", "{\r\n  \"codeValue\": \"Sample\",\r\n  \"shortDescription\": \"Bereavement\",\r\n  \"namespace\":" +
+                        " \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\"\r\n}", ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 86
              await testRunner.ThenAsync("it should respond with 201 or 200", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
@@ -245,9 +245,9 @@ namespace EdFi.DataManagementService.Tests.E2E.Features
             {
                 await this.ScenarioStartAsync();
 #line 90
-             await testRunner.WhenAsync("a POST request is made to \"ed-fi/academicWeeks\" with", "{\n  \"_weekIdentifier\": \"abcdef\",\n  \"_schoolReference\": {\n      \"schoolId\": 255901" +
-                        "001\n  },\n  \"_beginDate\": \"2024-04-04\",\n  \"_endDate\": \"2024-04-04\",\n  \"_totalInst" +
-                        "ructionalDays\": 300\n}", ((global::Reqnroll.Table)(null)), "When ");
+             await testRunner.WhenAsync("a POST request is made to \"ed-fi/academicWeeks\" with", "{\r\n  \"_weekIdentifier\": \"abcdef\",\r\n  \"_schoolReference\": {\r\n      \"schoolId\": 255" +
+                        "901001\r\n  },\r\n  \"_beginDate\": \"2024-04-04\",\r\n  \"_endDate\": \"2024-04-04\",\r\n  \"_to" +
+                        "talInstructionalDays\": 300\r\n}", ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 102
              await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
@@ -279,9 +279,9 @@ namespace EdFi.DataManagementService.Tests.E2E.Features
             {
                 await this.ScenarioStartAsync();
 #line 109
-             await testRunner.WhenAsync("a POST request is made to \"ed-fi/academicWeeks\" with", "{\n  \"weekIdentifier\": \"abcdef\",\n  \"schoolReference\": {\n      \"_schoolId\": 2559010" +
-                        "01\n  },\n  \"beginDate\": \"2024-04-04\",\n  \"endDate\": \"2024-04-04\",\n  \"totalInstruct" +
-                        "ionalDays\": 300\n}", ((global::Reqnroll.Table)(null)), "When ");
+             await testRunner.WhenAsync("a POST request is made to \"ed-fi/academicWeeks\" with", "{\r\n  \"weekIdentifier\": \"abcdef\",\r\n  \"schoolReference\": {\r\n      \"_schoolId\": 2559" +
+                        "01001\r\n  },\r\n  \"beginDate\": \"2024-04-04\",\r\n  \"endDate\": \"2024-04-04\",\r\n  \"totalI" +
+                        "nstructionalDays\": 300\r\n}", ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 121
              await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
@@ -311,9 +311,9 @@ namespace EdFi.DataManagementService.Tests.E2E.Features
             {
                 await this.ScenarioStartAsync();
 #line 128
-             await testRunner.WhenAsync("a POST request is made to \"ed-fi/academicWeeks\" with", "{\n  \"weekIdentifier\": \"abcdef\",\n  \"schoolReference\": {\n      \"schoolId\": 25590100" +
-                        "1\n  }\n  \"beginDate\": \"2024-04-04\",\n  \"endDate\": \"2024-04-04\",\n  \"totalInstructio" +
-                        "nalDays\": 300\n}", ((global::Reqnroll.Table)(null)), "When ");
+             await testRunner.WhenAsync("a POST request is made to \"ed-fi/academicWeeks\" with", "{\r\n  \"weekIdentifier\": \"abcdef\",\r\n  \"schoolReference\": {\r\n      \"schoolId\": 25590" +
+                        "1001\r\n  }\r\n  \"beginDate\": \"2024-04-04\",\r\n  \"endDate\": \"2024-04-04\",\r\n  \"totalIns" +
+                        "tructionalDays\": 300\r\n}", ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 140
              await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");

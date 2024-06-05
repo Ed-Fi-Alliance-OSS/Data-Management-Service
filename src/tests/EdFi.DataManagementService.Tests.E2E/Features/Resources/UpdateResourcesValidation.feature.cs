@@ -84,9 +84,10 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
               await testRunner.AndAsync("user is already authorized", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
 #line 7
-              await testRunner.AndAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors\" with", "{\n  \"codeValue\": \"Sick Leave\",\n  \"description\": \"Sick Leave\",\n  \"effectiveBeginDa" +
-                    "te\": \"2024-05-14\",\n  \"effectiveEndDate\": \"2024-05-14\",\n  \"namespace\": \"uri://ed-" +
-                    "fi.org/AbsenceEventCategoryDescriptor\",\n  \"shortDescription\": \"Sick Leave\"\n}", ((global::Reqnroll.Table)(null)), "And ");
+              await testRunner.AndAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors\" with", "{\r\n  \"codeValue\": \"Sick Leave\",\r\n  \"description\": \"Sick Leave\",\r\n  \"effectiveBegi" +
+                    "nDate\": \"2024-05-14\",\r\n  \"effectiveEndDate\": \"2024-05-14\",\r\n  \"namespace\": \"uri:" +
+                    "//ed-fi.org/AbsenceEventCategoryDescriptor\",\r\n  \"shortDescription\": \"Sick Leave\"" +
+                    "\r\n}", ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
 #line 18
              await testRunner.ThenAsync("it should respond with 201 or 200", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
@@ -114,9 +115,9 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
         await this.FeatureBackgroundAsync();
 #line hidden
 #line 22
-             await testRunner.WhenAsync("a PUT request is made to \"ed-fi/absenceEventCategoryDescriptors/{id}\" with", "{\n  \"id\": \"{id}\",\n  \"codeValue\": \"Sick Leave\",\n  \"description\": \"Sick Leave Edite" +
-                        "d\",\n  \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\n  \"shortDes" +
-                        "cription\": \"Sick Leave\"\n}", ((global::Reqnroll.Table)(null)), "When ");
+             await testRunner.WhenAsync("a PUT request is made to \"ed-fi/absenceEventCategoryDescriptors/{id}\" with", "{\r\n  \"id\": \"{id}\",\r\n  \"codeValue\": \"Sick Leave\",\r\n  \"description\": \"Sick Leave Ed" +
+                        "ited\",\r\n  \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\r\n  \"sho" +
+                        "rtDescription\": \"Sick Leave\"\r\n}", ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 32
              await testRunner.ThenAsync("it should respond with 204", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
@@ -146,9 +147,9 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
         await this.FeatureBackgroundAsync();
 #line hidden
 #line 36
-             await testRunner.WhenAsync("a PUT request is made to \"ed-fi/absenceEventCategoryDescriptors/{id}\" with", "{\n  \"id\": \"{id}\",\n  \"codeValue\": \"Sick Leave\",\n  \"description\": \"Sick Leave Edite" +
-                        "d\",\n  \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\n  \"shortDes" +
-                        "cription\": \"Sick Leave\"\n}", ((global::Reqnroll.Table)(null)), "When ");
+             await testRunner.WhenAsync("a PUT request is made to \"ed-fi/absenceEventCategoryDescriptors/{id}\" with", "{\r\n  \"id\": \"{id}\",\r\n  \"codeValue\": \"Sick Leave\",\r\n  \"description\": \"Sick Leave Ed" +
+                        "ited\",\r\n  \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\r\n  \"sho" +
+                        "rtDescription\": \"Sick Leave\"\r\n}", ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 46
              await testRunner.ThenAsync("it should respond with 204", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
@@ -160,9 +161,9 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
              await testRunner.ThenAsync("it should respond with 200", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 49
-              await testRunner.AndAsync("the response body is", "{\n  \"id\": \"{id}\",\n  \"codeValue\": \"Sick Leave\",\n  \"description\": \"Sick Leave Edite" +
-                        "d\",\n  \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\n  \"shortDes" +
-                        "cription\": \"Sick Leave\"\n}", ((global::Reqnroll.Table)(null)), "And ");
+              await testRunner.AndAsync("the response body is", "{\r\n  \"id\": \"{id}\",\r\n  \"codeValue\": \"Sick Leave\",\r\n  \"description\": \"Sick Leave Ed" +
+                        "ited\",\r\n  \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\r\n  \"sho" +
+                        "rtDescription\": \"Sick Leave\"\r\n}", ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
@@ -170,11 +171,9 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
         
         [NUnit.Framework.TestAttribute()]
         [NUnit.Framework.DescriptionAttribute("Verify updating a non existing resource with valid data")]
-        [NUnit.Framework.IgnoreAttribute("Ignored scenario")]
         public async System.Threading.Tasks.Task VerifyUpdatingANonExistingResourceWithValidData()
         {
-            string[] tagsOfScenario = new string[] {
-                    "ignore"};
+            string[] tagsOfScenario = ((string[])(null));
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Verify updating a non existing resource with valid data", null, tagsOfScenario, argumentsOfScenario, featureTags);
 #line 60
@@ -191,32 +190,31 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
         await this.FeatureBackgroundAsync();
 #line hidden
 #line 62
-             await testRunner.WhenAsync("a PUT request is made to \"ed-fi/absenceEventCategoryDescriptors/{id}\" with", "  {\n      \"id\": {id},\n      \"codeValue\": \"Sick Leave\",\n      \"description\": \"Sick" +
-                        " Leave Edited\",\n      \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescript" +
-                        "or\",\n      \"shortDescription\": \"Sick Leave\"\n  }", ((global::Reqnroll.Table)(null)), "When ");
+             await testRunner.WhenAsync("a PUT request is made to \"ed-fi/absenceEventCategoryDescriptors/00000000-0000-400" +
+                        "0-a000-000000000000\" with", "{\r\n  \"id\": \"00000000-0000-4000-a000-000000000000\",\r\n  \"codeValue\": \"Sick Leave\",\r" +
+                        "\n  \"description\": \"Sick Leave Edited\",\r\n  \"namespace\": \"uri://ed-fi.org/AbsenceE" +
+                        "ventCategoryDescriptor\",\r\n  \"shortDescription\": \"Sick Leave\"\r\n}", ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
 #line 72
              await testRunner.ThenAsync("it should respond with 404", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 73
-              await testRunner.AndAsync("the response body is", "  {\n      \"detail\": \"Resource to update was not found.\",\n      \"type\": \"urn:ed-fi" +
-                        ":api:not-found\",\n      \"title\": \"Not Found\",\n      \"status\": 404,\n      \"correla" +
-                        "tionId\": null\n  }", ((global::Reqnroll.Table)(null)), "And ");
+              await testRunner.AndAsync("the response body is", "{\r\n    \"detail\": \"Resource to update was not found\",\r\n    \"type\": \"urn:ed-fi:api:" +
+                        "not-found\",\r\n    \"title\": \"Not Found\",\r\n    \"status\": 404,\r\n    \"correlationId\":" +
+                        " null,\r\n    \"validationErrors\": null,\r\n    \"errors\": null\r\n}", ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
         }
         
         [NUnit.Framework.TestAttribute()]
-        [NUnit.Framework.DescriptionAttribute("Verify error handling updating a resource with invalid data")]
-        [NUnit.Framework.IgnoreAttribute("Ignored scenario")]
-        public async System.Threading.Tasks.Task VerifyErrorHandlingUpdatingAResourceWithInvalidData()
+        [NUnit.Framework.DescriptionAttribute("Verify error handling updating the document identity")]
+        public async System.Threading.Tasks.Task VerifyErrorHandlingUpdatingTheDocumentIdentity()
         {
-            string[] tagsOfScenario = new string[] {
-                    "ignore"};
+            string[] tagsOfScenario = ((string[])(null));
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
-            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Verify error handling updating a resource with invalid data", null, tagsOfScenario, argumentsOfScenario, featureTags);
-#line 84
+            global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Verify error handling updating the document identity", null, tagsOfScenario, argumentsOfScenario, featureTags);
+#line 85
         this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -229,21 +227,25 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
 #line 4
         await this.FeatureBackgroundAsync();
 #line hidden
-#line 86
-             await testRunner.WhenAsync("a PUT request is made to \"ed-fi/absenceEventCategoryDescriptors/{id}\" with", "  {\n      \"codeValue\": \"Sick Leave\",\n      \"description\": \"Sick Leave Edited\",\n  " +
-                        "    \"namespace\": \"AbsenceEventCategoryDescriptor\",\n      \"shortDescription\": \"Si" +
-                        "ck Leave\"\n  }", ((global::Reqnroll.Table)(null)), "When ");
+#line 87
+             await testRunner.WhenAsync("a PUT request is made to \"ed-fi/absenceEventCategoryDescriptors/{id}\" with", "{\r\n  \"id\": \"{id}\",\r\n  \"codeValue\": \"Sick Leave\",\r\n  \"description\": \"Sick Leave Ed" +
+                        "ited\",\r\n  \"namespace\": \"AbsenceEventCategoryDescriptor\",\r\n  \"shortDescription\": " +
+                        "\"Sick Leave Edited\"\r\n}", ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 95
+#line 97
              await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
-#line 96
-              await testRunner.AndAsync("the response body is", @"  {
-      ""detail"": ""Identifying values for the AbsenceEventCategoryDescriptor resource cannot be changed. Delete and recreate the resource item instead."",
-      ""type"": ""urn:ed-fi:api:bad-request:data"",
-      ""title"": ""Data Validation Failed"",
-      ""status"": 400,
-      ""correlationId"": null
+#line 98
+              await testRunner.AndAsync("the response body is", @"{
+  ""detail"": ""The request could not be processed. See 'errors' for details."",
+  ""type"": ""urn:ed-fi:api:bad-request"",
+  ""title"": ""Bad Request"",
+  ""status"": 400,
+  ""correlationId"": null,
+  ""validationErrors"": null,
+  ""errors"": [
+      ""Identifying values for the AbsenceEventCategoryDescriptor resource cannot be changed. Delete and recreate the resource item instead.""
+  ]
   }", ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
@@ -252,14 +254,12 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
         
         [NUnit.Framework.TestAttribute()]
         [NUnit.Framework.DescriptionAttribute("Verify that response contains the updated resource ID and data")]
-        [NUnit.Framework.IgnoreAttribute("Ignored scenario")]
         public async System.Threading.Tasks.Task VerifyThatResponseContainsTheUpdatedResourceIDAndData()
         {
-            string[] tagsOfScenario = new string[] {
-                    "ignore"};
+            string[] tagsOfScenario = ((string[])(null));
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Verify that response contains the updated resource ID and data", null, tagsOfScenario, argumentsOfScenario, featureTags);
-#line 107
+#line 113
         this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -272,16 +272,16 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
 #line 4
         await this.FeatureBackgroundAsync();
 #line hidden
-#line 109
-             await testRunner.WhenAsync("a PUT request is made to \"ed-fi/absenceEventCategoryDescriptors/{id}\" with", "  {\n      \"codeValue\": \"Sick Leave\",\n      \"description\": \"Sick Leave Edited\",\n  " +
-                        "    \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\n      \"shortD" +
-                        "escription\": \"Sick Leave\"\n  }", ((global::Reqnroll.Table)(null)), "When ");
+#line 115
+             await testRunner.WhenAsync("a PUT request is made to \"ed-fi/absenceEventCategoryDescriptors/{id}\" with", "{\r\n  \"id\": \"{id}\",\r\n  \"codeValue\": \"Sick Leave\",\r\n  \"description\": \"Sick Leave Ed" +
+                        "ited\",\r\n  \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\r\n  \"sho" +
+                        "rtDescription\": \"Sick Leave\"\r\n}", ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 118
+#line 125
              await testRunner.ThenAsync("it should respond with 204", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
-#line 119
-              await testRunner.AndAsync("the response headers includes", "  {\n      \"location\": \"ed-fi/absenceEventCategoryDescriptors/{id}\",\n  }", ((global::Reqnroll.Table)(null)), "And ");
+#line 126
+              await testRunner.AndAsync("the response headers includes", "{\r\n    \"location\": \"/ed-fi/absenceEventCategoryDescriptors/{id}\"\r\n}", ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
@@ -289,14 +289,12 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
         
         [NUnit.Framework.TestAttribute()]
         [NUnit.Framework.DescriptionAttribute("Verify error handling when updating a resource with empty body")]
-        [NUnit.Framework.IgnoreAttribute("Ignored scenario")]
         public async System.Threading.Tasks.Task VerifyErrorHandlingWhenUpdatingAResourceWithEmptyBody()
         {
-            string[] tagsOfScenario = new string[] {
-                    "ignore"};
+            string[] tagsOfScenario = ((string[])(null));
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Verify error handling when updating a resource with empty body", null, tagsOfScenario, argumentsOfScenario, featureTags);
-#line 127
+#line 134
         this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -309,31 +307,35 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
 #line 4
         await this.FeatureBackgroundAsync();
 #line hidden
-#line 129
-             await testRunner.WhenAsync("a PUT request is made to \"ed-fi/absenceEventCategoryDescriptors/{id}\" with", "  {\n  }", ((global::Reqnroll.Table)(null)), "When ");
+#line 136
+             await testRunner.WhenAsync("a PUT request is made to \"ed-fi/absenceEventCategoryDescriptors/{id}\" with", "{\r\n}", ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 134
+#line 141
              await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
-#line 135
-              await testRunner.AndAsync("the response body is", @"  {
-      ""detail"": ""Data validation failed. See 'validationErrors' for details."",
-      ""type"": ""urn:ed-fi:api:bad-request:data"",
-      ""title"": ""Data Validation Failed"",
-      ""status"": 400,
-      ""correlationId"": null,
-      ""validationErrors"": {
-          ""$.codeValue"": [
-              ""CodeValue is required.""
-          ],
-          ""$.namespace"": [
-              ""Namespace is required.""
-          ],
-          ""$.shortDescription"": [
-              ""ShortDescription is required.""
-          ]
-      }
-  }", ((global::Reqnroll.Table)(null)), "And ");
+#line 142
+              await testRunner.AndAsync("the response body is", @"{
+  ""detail"": ""Data validation failed. See 'validationErrors' for details."",
+  ""type"": ""urn:ed-fi:api:bad-request:data"",
+  ""title"": ""Data Validation Failed"",
+  ""status"": 400,
+  ""correlationId"": null,
+  ""validationErrors"": {
+      ""$.namespace"": [
+      ""namespace is required.""
+      ],
+      ""$.codeValue"": [
+      ""codeValue is required.""
+      ],
+      ""$.shortDescription"": [
+      ""shortDescription is required.""
+      ],
+      ""$.id"": [
+      ""id is required.""
+      ]
+  },
+  ""errors"": []
+}", ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
@@ -341,14 +343,12 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
         
         [NUnit.Framework.TestAttribute()]
         [NUnit.Framework.DescriptionAttribute("Verify error handling when resource ID is different in body on PUT")]
-        [NUnit.Framework.IgnoreAttribute("Ignored scenario")]
         public async System.Threading.Tasks.Task VerifyErrorHandlingWhenResourceIDIsDifferentInBodyOnPUT()
         {
-            string[] tagsOfScenario = new string[] {
-                    "ignore"};
+            string[] tagsOfScenario = ((string[])(null));
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Verify error handling when resource ID is different in body on PUT", null, tagsOfScenario, argumentsOfScenario, featureTags);
-#line 157
+#line 168
         this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -361,28 +361,26 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
 #line 4
         await this.FeatureBackgroundAsync();
 #line hidden
-#line 159
-             await testRunner.WhenAsync("a PUT request is made to \"ed-fi/absenceEventCategoryDescriptors/{id}\" with", "  {\n      \"id\": <id_different_from_original_resource>,\n      \"codeValue\": \"Sick L" +
-                        "eave\",\n      \"description\": \"Sick Leave Edited\",\n      \"namespace\": \"uri://ed-fi" +
-                        ".org/AbsenceEventCategoryDescriptor\",\n      \"shortDescription\": \"Sick Leave\"\n  }" +
-                        "", ((global::Reqnroll.Table)(null)), "When ");
+#line 170
+             await testRunner.WhenAsync("a PUT request is made to \"ed-fi/absenceEventCategoryDescriptors/{id}\" with", "{\r\n  \"id\": \"00000000-0000-0000-0000-000000000000\",\r\n  \"codeValue\": \"Sick Leave\",\r" +
+                        "\n  \"description\": \"Sick Leave Edited\",\r\n  \"namespace\": \"uri://ed-fi.org/AbsenceE" +
+                        "ventCategoryDescriptor\",\r\n  \"shortDescription\": \"Sick Leave\"\r\n}", ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 169
+#line 180
              await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
-#line 170
-              await testRunner.AndAsync("the response body is", @"  {
-      ""detail"": ""Data validation failed. See 'validationErrors' for details."",
-      ""type"": ""urn:ed-fi:api:bad-request:data"",
-      ""title"": ""Data Validation Failed"",
-      ""status"": 400,
-      ""correlationId"": null,
-      ""validationErrors"": {
-          ""$.id"": [
-          ""Input string '<id_different_from_original_resource>' is not a valid number. Path 'id', line 2, position 62.""
-          ]
-      }
-  }", ((global::Reqnroll.Table)(null)), "And ");
+#line 181
+              await testRunner.AndAsync("the response body is", @"{
+  ""detail"": ""The request could not be processed. See 'errors' for details."",
+  ""type"": ""urn:ed-fi:api:bad-request"",
+  ""title"": ""Bad Request"",
+  ""status"": 400,
+  ""correlationId"": null,
+  ""validationErrors"": null,
+  ""errors"": [
+      ""Request body id must match the id in the url.""
+  ]
+}", ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
@@ -397,7 +395,7 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
                     "ignore"};
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Verify error handling when resource ID is not included in body on PUT", null, tagsOfScenario, argumentsOfScenario, featureTags);
-#line 186
+#line 196
         this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -410,27 +408,27 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
 #line 4
         await this.FeatureBackgroundAsync();
 #line hidden
-#line 188
-             await testRunner.WhenAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors/{id}\" with", "  {\n      \"id\": \"\",\n      \"codeValue\": \"Sick Leave\",\n      \"description\": \"Sick L" +
-                        "eave Edited\",\n      \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor" +
-                        "\",\n      \"shortDescription\": \"Sick Leave\"\n  }", ((global::Reqnroll.Table)(null)), "When ");
-#line hidden
 #line 198
+             await testRunner.WhenAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors/{id}\" with", "{\r\n  \"id\": \"\",\r\n  \"codeValue\": \"Sick Leave\",\r\n  \"description\": \"Sick Leave Edited" +
+                        "\",\r\n  \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescriptor\",\r\n  \"shortDe" +
+                        "scription\": \"Sick Leave\"\r\n}", ((global::Reqnroll.Table)(null)), "When ");
+#line hidden
+#line 208
              await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
-#line 199
-              await testRunner.AndAsync("the response body is", @"  {
-      ""detail"": ""Data validation failed. See 'validationErrors' for details."",
-      ""type"": ""urn:ed-fi:api:bad-request:data"",
-      ""title"": ""Data Validation Failed"",
-      ""status"": 400,
-      ""correlationId"": null,
-      ""validationErrors"": {
-          ""$.id"": [
-          ""Error converting value \\""\\"" to type 'System.Guid'. Path 'id', line 2, position 32.""
-          ]
-      }
-  }", ((global::Reqnroll.Table)(null)), "And ");
+#line 209
+              await testRunner.AndAsync("the response body is", @"{
+  ""detail"": ""Data validation failed. See 'validationErrors' for details."",
+  ""type"": ""urn:ed-fi:api:bad-request:data"",
+  ""title"": ""Data Validation Failed"",
+  ""status"": 400,
+  ""correlationId"": null,
+  ""validationErrors"": {
+      ""$.id"": [
+      ""Error converting value \\""\\"" to type 'System.Guid'. Path 'id', line 2, position 32.""
+      ]
+  }
+}", ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();

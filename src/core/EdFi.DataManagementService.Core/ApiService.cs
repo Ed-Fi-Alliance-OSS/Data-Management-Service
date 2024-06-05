@@ -25,6 +25,7 @@ internal class ApiService(
     IApiSchemaValidator _apiSchemaValidator,
     IDocumentStoreRepository _documentStoreRepository,
     IDocumentValidator _documentValidator,
+    IMatchingDocumentUuidsValidator matchingDocumentUuidsValidator,
     IEqualityConstraintValidator _equalityConstraintValidator,
     ILogger<ApiService> _logger
 ) : IApiService
@@ -86,6 +87,7 @@ internal class ApiService(
                         new ParseBodyMiddleware(_logger),
                         new ValidateEndpointMiddleware(_logger),
                         new ValidateDocumentMiddleware(_logger, _documentValidator),
+                        new ValidateMatchingDocumentUuidsMiddleware(_logger, matchingDocumentUuidsValidator),
                         new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
                         new ExtractDocumentInfoMiddleware(_logger),
                         new BuildResourceInfoMiddleware(_logger),

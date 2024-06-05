@@ -31,19 +31,46 @@ public class UpdateDocumentById(
 
         try
         {
-            int rowsAffected = await _sqlAction.UpdateDocumentEdFiDoc(
-                PartitionKeyFor(updateRequest.DocumentUuid).Value,
-                updateRequest.DocumentUuid.Value,
-                JsonSerializer.Deserialize<JsonElement>(updateRequest.EdfiDoc),
+
+            var validationResult = await _sqlAction.UpdateDocumentValidation(
+                updateRequest.DocumentUuid,
+                PartitionKeyFor(updateRequest.DocumentUuid),
+                updateRequest.DocumentInfo.ReferentialId,
+                PartitionKeyFor(updateRequest.DocumentInfo.ReferentialId),
                 connection,
                 transaction
             );
+
+            if (!validationResult.DocumentExists)
+            {
+                // Document does not exist
+                return new UpdateResult.UpdateFailureNotExists();
+            }
+
+            if (!validationResult.ReferentialIdExists)
+            {
+                // Extracted referential id does not match stored. Must be attempting to change natural key.
+                _logger.LogInformation(
+                    "Failure: Natural key does not match on update - {TraceId}",
+                    updateRequest.TraceId
+                );
+                return new UpdateResult.UpdateFailureImmutableIdentity(
+                    $"Identifying values for the {updateRequest.ResourceInfo.ResourceName.Value} resource cannot be changed. Delete and recreate the resource item instead.");
+            }
+
+            int rowsAffected = await _sqlAction.UpdateDocumentEdFiDoc(
+                    PartitionKeyFor(updateRequest.DocumentUuid).Value,
+                    updateRequest.DocumentUuid.Value,
+                    JsonSerializer.Deserialize<JsonElement>(updateRequest.EdfiDoc),
+                    connection,
+                    transaction
+                );
 
             switch (rowsAffected)
             {
                 case 1:
                     await transaction.CommitAsync();
-                    return new UpdateResult.UpdateSuccess();
+                    return new UpdateResult.UpdateSuccess(updateRequest.DocumentUuid);
 
                 case 0:
                     _logger.LogInformation(
@@ -62,6 +89,7 @@ public class UpdateDocumentById(
                     await transaction.RollbackAsync();
                     return new UpdateResult.UnknownFailure("Unknown Failure");
             }
+
         }
         catch (PostgresException pe)
         {
@@ -87,4 +115,6 @@ public class UpdateDocumentById(
             return new UpdateResult.UnknownFailure("Update failure");
         }
     }
+
+
 }

@@ -25,4 +25,16 @@ internal record PathComponents(
     /// The optional resource identifier, which is a document uuid
     /// </summary>
     DocumentUuid DocumentUuid
-);
+)
+{
+    /// <summary>
+    /// Return the path of the resource such as for location headers
+    /// </summary>
+    /// <param name="pathComponents"></param>
+    /// <param name="documentUuid"></param>
+    /// <returns>The path of the resource</returns>
+    public static string ToResourcePath(PathComponents pathComponents, DocumentUuid documentUuid)
+    {
+        return $"/{pathComponents.ProjectNamespace.Value}/{pathComponents.EndpointName.Value}/{documentUuid.Value}";
+    }
+};

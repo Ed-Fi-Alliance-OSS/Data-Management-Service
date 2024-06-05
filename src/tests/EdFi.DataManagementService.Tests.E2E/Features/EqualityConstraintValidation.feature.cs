@@ -340,10 +340,10 @@ namespace EdFi.DataManagementService.Tests.E2E.Features
              await testRunner.ThenAsync("it should respond with 409", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 171
-              await testRunner.AndAsync("the response body is", "{\n    \"detail\": \"The referenced \'Location\' resource does not exist.\",\n    \"type\":" +
-                        " \"urn:ed-fi:api:conflict:invalid-reference\",\n    \"title\": \"Resource Not Unique C" +
-                        "onflict due to invalid-reference\",\n    \"status\": 409,\n    \"correlationId\": null\n" +
-                        "}", ((global::Reqnroll.Table)(null)), "And ");
+              await testRunner.AndAsync("the response body is", "{\r\n    \"detail\": \"The referenced \'Location\' resource does not exist.\",\r\n    \"type" +
+                        "\": \"urn:ed-fi:api:conflict:invalid-reference\",\r\n    \"title\": \"Resource Not Uniqu" +
+                        "e Conflict due to invalid-reference\",\r\n    \"status\": 409,\r\n    \"correlationId\": " +
+                        "null\r\n}", ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();

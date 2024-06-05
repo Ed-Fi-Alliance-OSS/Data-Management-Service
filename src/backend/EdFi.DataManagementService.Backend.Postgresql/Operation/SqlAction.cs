@@ -5,6 +5,7 @@
 
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using Npgsql;
 
@@ -39,9 +40,19 @@ public interface ISqlAction
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     );
+
+    public Task<UpdateDocumentValidationResult> UpdateDocumentValidation(
+        DocumentUuid documentUuid,
+        PartitionKey documentPartitionKey,
+        ReferentialId referentialId,
+        PartitionKey referentialPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
 }
 
 public record UpsertDocumentSqlResult(bool Inserted, long DocumentId);
+public record UpdateDocumentValidationResult(bool DocumentExists, bool ReferentialIdExists);
 
 /// <summary>
 /// A facade of all the DB interactions. Any action requiring SQL statement execution should be here.
@@ -159,6 +170,55 @@ public class SqlAction : ISqlAction
         };
 
         return await upsertDocumentCmd.ExecuteNonQueryAsync();
+    }
+
+    public async Task<UpdateDocumentValidationResult> UpdateDocumentValidation(
+        DocumentUuid documentUuid,
+        PartitionKey documentPartitionKey,
+        ReferentialId referentialId,
+        PartitionKey referentialPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction)
+    {
+        await using NpgsqlCommand validationCommand = new(
+            @"SELECT DocumentUuid, ReferentialId
+                FROM public.documents d
+                LEFT JOIN public.aliases a ON
+                    a.DocumentId = d.Id
+                    AND a.DocumentPartitionKey = d.DocumentPartitionKey
+                    AND a.ReferentialId = $1 and a.ReferentialPartitionKey = $2
+                WHERE d.DocumentUuid = $3 AND d.DocumentPartitionKey = $4",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = referentialId.Value },
+                new() { Value = referentialPartitionKey.Value },
+                new() { Value = documentUuid.Value },
+                new() { Value = documentPartitionKey.Value },
+            }
+        };
+
+        await using NpgsqlDataReader reader = await validationCommand.ExecuteReaderAsync();
+
+        if (!reader.HasRows)
+        {
+            // Document does not exist
+            return (new UpdateDocumentValidationResult(false, false));
+        }
+
+        // Assumes only one row returned (should never be more due to DB unique constraint)
+        await reader.ReadAsync();
+
+        if (await reader.IsDBNullAsync(reader.GetOrdinal("ReferentialId")))
+        {
+            // Extracted referential id does not match stored. Must be attempting to change natural key.
+            return (new UpdateDocumentValidationResult(true, false));
+        }
+
+        return (new UpdateDocumentValidationResult(true, true));
     }
 
     /// <summary>
