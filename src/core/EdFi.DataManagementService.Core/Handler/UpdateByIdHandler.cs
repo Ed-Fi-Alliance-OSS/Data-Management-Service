@@ -60,7 +60,11 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
                             ((UpdateSuccess)result).ExistingDocumentUuid
                     )
                 ),
-            UpdateFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
+            UpdateFailureNotExists => new FrontendResponse(
+                    StatusCode: 404,
+                    Body: JsonSerializer.Serialize(FailureResponse.ForNotFound("Resource to update was not found")),
+                    Headers: []
+                ),
             UpdateFailureReference failure
                 => new FrontendResponse(StatusCode: 409, Body: failure.ReferencingDocumentInfo, Headers: []),
             UpdateFailureIdentityConflict failure
@@ -69,8 +73,8 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
                 => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),
             UpdateFailureImmutableIdentity failure
                 => new FrontendResponse(
-                    StatusCode: 400, Body:
-                    JsonSerializer.Serialize(
+                    StatusCode: 400,
+                    Body: JsonSerializer.Serialize(
                         FailureResponse.ForBadRequest(
                             "The request could not be processed. See 'errors' for details.",
                             null,

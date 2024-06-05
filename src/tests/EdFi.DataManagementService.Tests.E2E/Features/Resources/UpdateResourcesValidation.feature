@@ -56,78 +56,80 @@ Feature: Resources "Update" Operation validations
                     "shortDescription": "Sick Leave"
                   }
                   """
-        @ignore
+
         Scenario: Verify updating a non existing resource with valid data
              # The id value should be replaced with a non existing resource
-             When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
+             When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/00000000-0000-4000-a000-000000000000" with
                   """
-                    {
-                        "id": {id},
-                        "codeValue": "Sick Leave",
-                        "description": "Sick Leave Edited",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                        "shortDescription": "Sick Leave"
-                    }
+                  {
+                    "id": "00000000-0000-4000-a000-000000000000",
+                    "codeValue": "Sick Leave",
+                    "description": "Sick Leave Edited",
+                    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                    "shortDescription": "Sick Leave"
+                  }
                   """
              Then it should respond with 404
               And the response body is
                   """
-                    {
-                        "detail": "Resource to update was not found.",
-                        "type": "urn:ed-fi:api:not-found",
-                        "title": "Not Found",
-                        "status": 404,
-                        "correlationId": null
-                    }
+                  {
+                      "detail": "Resource to update was not found",
+                      "type": "urn:ed-fi:api:not-found",
+                      "title": "Not Found",
+                      "status": 404,
+                      "correlationId": null,
+                      "validationErrors": null,
+                      "errors": null
+                  }
                   """
         Scenario: Verify error handling updating a resource natural key
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
-                    {
-                        "id": "{id}",
-                        "codeValue": "Sick Leave",
-                        "description": "Sick Leave Edited",
-                        "namespace": "AbsenceEventCategoryDescriptor",
-                        "shortDescription": "Sick Leave Edited"
-                    }
+                  {
+                    "id": "{id}",
+                    "codeValue": "Sick Leave",
+                    "description": "Sick Leave Edited",
+                    "namespace": "AbsenceEventCategoryDescriptor",
+                    "shortDescription": "Sick Leave Edited"
+                  }
                   """
              Then it should respond with 400
               And the response body is
                   """
-                    {
-                       "detail": "The request could not be processed. See 'errors' for details.",
-                       "type": "urn:ed-fi:api:bad-request",
-                       "title": "Bad Request",
-                       "status": 400,
-                       "correlationId": null,
-                       "validationErrors": null,
-                       "errors": [
-                         "Identifying values for the AbsenceEventCategoryDescriptor resource cannot be changed. Delete and recreate the resource item instead."
-                       ]
-                     }
+                  {
+                    "detail": "The request could not be processed. See 'errors' for details.",
+                    "type": "urn:ed-fi:api:bad-request",
+                    "title": "Bad Request",
+                    "status": 400,
+                    "correlationId": null,
+                    "validationErrors": null,
+                    "errors": [
+                        "Identifying values for the AbsenceEventCategoryDescriptor resource cannot be changed. Delete and recreate the resource item instead."
+                    ]
+                    }
                   """
 
         Scenario: Verify that response contains the updated resource ID and data
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
-                """
-                {
+                  """
+                  {
                     "id": "{id}",
                     "codeValue": "Sick Leave",
                     "description": "Sick Leave Edited",
                     "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
                     "shortDescription": "Sick Leave"
                   }
-                """
+                  """
              Then it should respond with 204
               And the response headers includes
               #replace header {id} with the correct value
-                """
-                {
-                    "location": "/ed-fi/absenceEventCategoryDescriptors/{id}"
-                }
-                """
+                  """
+                  {
+                      "location": "/ed-fi/absenceEventCategoryDescriptors/{id}"
+                  }
+                  """
 
         Scenario: Verify error handling when updating a resource with empty body
              # The id value should be replaced with the resource created in the Background section
@@ -167,55 +169,55 @@ Feature: Resources "Update" Operation validations
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
-                    {
-                        "id": "00000000-0000-0000-0000-000000000000",
-                        "codeValue": "Sick Leave",
-                        "description": "Sick Leave Edited",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                        "shortDescription": "Sick Leave"
-                    }
+                  {
+                    "id": "00000000-0000-0000-0000-000000000000",
+                    "codeValue": "Sick Leave",
+                    "description": "Sick Leave Edited",
+                    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                    "shortDescription": "Sick Leave"
+                  }
                   """
              Then it should respond with 400
               And the response body is
                   """
-                    {
-                      "detail": "The request could not be processed. See 'errors' for details.",
-                      "type": "urn:ed-fi:api:bad-request",
-                      "title": "Bad Request",
-                      "status": 400,
-                      "correlationId": null,
-                      "validationErrors": null,
-                      "errors": [
+                  {
+                    "detail": "The request could not be processed. See 'errors' for details.",
+                    "type": "urn:ed-fi:api:bad-request",
+                    "title": "Bad Request",
+                    "status": 400,
+                    "correlationId": null,
+                    "validationErrors": null,
+                    "errors": [
                         "Request body id must match the id in the url."
-                      ]
-                    }
+                    ]
+                  }
                   """
         @ignore
         Scenario: Verify error handling when resource ID is not included in body on PUT
             # The id value should be replaced with the resource created in the Background section
              When a POST request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
-                    {
-                        "id": "",
-                        "codeValue": "Sick Leave",
-                        "description": "Sick Leave Edited",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                        "shortDescription": "Sick Leave"
-                    }
+                  {
+                    "id": "",
+                    "codeValue": "Sick Leave",
+                    "description": "Sick Leave Edited",
+                    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                    "shortDescription": "Sick Leave"
+                  }
                   """
              Then it should respond with 400
               And the response body is
                   """
-                    {
-                        "detail": "Data validation failed. See 'validationErrors' for details.",
-                        "type": "urn:ed-fi:api:bad-request:data",
-                        "title": "Data Validation Failed",
-                        "status": 400,
-                        "correlationId": null,
-                        "validationErrors": {
-                            "$.id": [
-                            "Error converting value \\"\\" to type 'System.Guid'. Path 'id', line 2, position 32."
-                            ]
-                        }
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null,
+                    "validationErrors": {
+                        "$.id": [
+                        "Error converting value \\"\\" to type 'System.Guid'. Path 'id', line 2, position 32."
+                        ]
                     }
+                  }
                   """

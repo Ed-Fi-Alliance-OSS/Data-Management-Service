@@ -50,6 +50,7 @@ internal record FailureResponse(
     private const string BaseTypePrefix = "urn:ed-fi:api";
     private const string BadRequestTypePrefix = $"{BaseTypePrefix}:bad-request";
     private const string DataValidationTypePrefix = $"{BadRequestTypePrefix}:data";
+    private const string NotFoundTypePrefix = $"{BaseTypePrefix}:not-found";
 
     public static FailureResponse ForDataValidation(
         string Detail,
@@ -79,6 +80,19 @@ internal record FailureResponse(
             correlationId: null,
             validationErrors: ValidationErrors,
             errors: Errors
+        );
+
+    public static FailureResponse ForNotFound(
+        string Detail
+    ) =>
+        new(
+            detail: Detail,
+            type: NotFoundTypePrefix,
+            title: "Not Found",
+            status: 404,
+            correlationId: null,
+            validationErrors: null,
+            errors: null
         );
 
     public static string GenerateFrontendErrorResponse(string errorDetail)
