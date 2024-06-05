@@ -1,5 +1,5 @@
 # This is a rough draft feature for future use.
-@ignore
+
 Feature: Resources "Delete" Operation validations
 
         Background:
@@ -16,65 +16,27 @@ Feature: Resources "Delete" Operation validations
                         "shortDescription": "Sick Leave"
                     }
                   """
-             Then it should respond with 201
+             Then it should respond with 201 or 200
 
-        @ignore
         Scenario: Verify deleting a specific resource by ID
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
-             Then it should respond with 204
+             Then it should respond with 200
 
-        @ignore
         Scenario: Verify error handling when deleting using a invalid id
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/00112233445566"
-             Then it should respond with 400
-              And the response body is
-                  """
-                    {
-                        "detail": "Data validation failed. See 'validationErrors' for details.",
-                        "type": "urn:ed-fi:api:bad-request:data",
-                        "title": "Data Validation Failed",
-                        "status": 400,
-                        "correlationId": null,
-                        "validationErrors": {
-                            "$.id": [
-                                "The value '00112233445566' is not valid."
-                            ]
-                        }
-                    }
-                  """
+             Then it should respond with 404
 
-        @ignore
         Scenario: Verify error handling when deleting a non existing resource
             # The id value should be replaced with the resource created in the Background section
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
-             Then it should respond with 204
+             Then it should respond with 200
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 404
-              And the response body is
-                  """
-                    {
-                        "detail": "Resource to delete was not found.",
-                        "type": "urn:ed-fi:api:not-found",
-                        "title": "Not Found",
-                        "status": 404,
-                        "correlationId": null
-                    }
-                  """
 
-        @ignore
         Scenario: Verify response code when GET a deleted resource
             # The id value should be replaced with the resource created in the Background section
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
-             Then it should respond with 204
+             Then it should respond with 200
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 404
-              And the response body is
-                  """
-                    {
-                        "detail": "The specified resource item could not be found.",
-                        "type": "urn:ed-fi:api:not-found",
-                        "title": "Not Found",
-                        "status": 404,
-                        "correlationId": null
-                    }
-                  """
+

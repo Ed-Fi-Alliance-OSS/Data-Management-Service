@@ -49,6 +49,10 @@ public interface ISqlAction
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     );
+
+    public Task<int> DeleteAliasByDocumentId(DocumentUuid documentUuid, NpgsqlConnection connection);
+
+    public Task<int> DeleteDocumentByDocumentId(DocumentUuid documentUuid, NpgsqlConnection connection);
 }
 
 public record UpsertDocumentSqlResult(bool Inserted, long DocumentId);
@@ -248,5 +252,40 @@ public class SqlAction : ISqlAction
         };
 
         return Convert.ToInt64(await insertAliasCmd.ExecuteScalarAsync());
+    }
+
+    /// <summary>
+    /// Delete associated Alias records for a given Document_Uuid return the number of rows affected
+    /// </summary>
+    public async Task<int> DeleteAliasByDocumentId(DocumentUuid documentUuid, NpgsqlConnection connection)
+    {
+        await using NpgsqlCommand command =
+            new(
+                @"DELETE from public.Aliases WHERE Id in(SELECT a.id FROM public.Aliases a
+                INNER JOIN public.Documents d ON d.Id = a.DocumentId AND d.DocumentPartitionKey =  a.DocumentPartitionKey
+                WHERE d.DocumentUuid = $1)",
+                connection
+            )
+            {
+                Parameters = { new() { Value = documentUuid.Value } }
+            };
+
+        int rowsAffected = await command.ExecuteNonQueryAsync();
+        return rowsAffected;
+    }
+
+    /// <summary>
+    /// Delete a document for a given Document_Uuid and returns the number of rows affected
+    /// </summary>
+    public async Task<int> DeleteDocumentByDocumentId(DocumentUuid documentUuid, NpgsqlConnection connection)
+    {
+        await using NpgsqlCommand command =
+            new(@"DELETE from public.Documents WHERE DocumentUuid = $1", connection)
+            {
+                Parameters = { new() { Value = documentUuid.Value } }
+            };
+
+        int rowsAffected = await command.ExecuteNonQueryAsync();
+        return rowsAffected;
     }
 }

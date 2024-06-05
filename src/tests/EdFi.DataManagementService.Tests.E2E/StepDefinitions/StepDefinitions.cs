@@ -65,6 +65,13 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(url, new() { Data = body })!;
         }
 
+        [When("a DELETE request is made to {string}")]
+        public async Task WhenADELETERequestIsMadeTo(string url)
+        {
+            url = $"data/{url.Replace("{id}", _id)}";
+            _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(url)!;
+        }
+
         [When("a GET request is made to {string}")]
         public async Task WhenAGETRequestIsMadeTo(string url)
         {
@@ -102,7 +109,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             foreach (var header in value.AsObject())
             {
                 if (header.Value != null)
-                    _apiResponse.Headers[header.Key].Should().EndWith("data" + header.Value.ToString().Replace("{id}", _id));
+                    _apiResponse
+                        .Headers[header.Key]
+                        .Should()
+                        .EndWith("data" + header.Value.ToString().Replace("{id}", _id));
             }
         }
 

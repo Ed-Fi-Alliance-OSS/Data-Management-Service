@@ -14,7 +14,8 @@ public class PostgresqlDocumentStoreRepository(
     ILogger<PostgresqlDocumentStoreRepository> _logger,
     IGetDocumentById _getDocumentById,
     IUpdateDocumentById _updateDocumentById,
-    IUpsertDocument _upsertDocument
+    IUpsertDocument _upsertDocument,
+    IDeleteDocumentById _deleteDocumentById
 ) : IDocumentStoreRepository, IQueryHandler
 {
     public async Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
@@ -73,11 +74,20 @@ public class PostgresqlDocumentStoreRepository(
 
     public async Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
     {
-        _logger.LogWarning(
-            "DeleteDocumentById(): Backend repository has been configured to always report success  - {TraceId}",
+        _logger.LogDebug(
+            "Entering PostgresqlDocumentStoreRepository.DeleteDocumentById  - {TraceId}",
             deleteRequest.TraceId
         );
-        return await Task.FromResult<DeleteResult>(new DeleteResult.DeleteSuccess());
+
+        try
+        {
+            return await _deleteDocumentById.DeleteById(deleteRequest);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogCritical(ex, "Uncaught DeleteById failure - {TraceId}", deleteRequest.TraceId);
+            return new DeleteResult.UnknownFailure("Unknown Failure");
+        }
     }
 
     public async Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
