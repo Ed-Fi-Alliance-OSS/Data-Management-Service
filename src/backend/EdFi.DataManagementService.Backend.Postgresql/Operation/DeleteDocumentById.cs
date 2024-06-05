@@ -19,7 +19,7 @@ public interface IDeleteDocumentById
 public class DeleteDocumentById(
     NpgsqlDataSource _dataSource,
     ISqlAction _sqlAction,
-    ILogger<UpdateDocumentById> _logger
+    ILogger<DeleteDocumentById> _logger
 ) : IDeleteDocumentById
 {
     public async Task<DeleteResult> DeleteById(IDeleteRequest deleteRequest)
@@ -28,13 +28,22 @@ public class DeleteDocumentById(
 
         await using var connection = await _dataSource.OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
+        int rowsAffectedOnAliasTable = 0;
+        int rowsAffected = 0;
 
         try
         {
-            int rowsAffectedOnAliasTable = await _sqlAction.DeleteAliasByDocumentId(
-                deleteRequest.DocumentUuid,
-                connection
-            );
+            try
+            {
+                rowsAffectedOnAliasTable = await _sqlAction.DeleteAliasByDocumentId(
+                    deleteRequest.DocumentUuid,
+                    connection
+                );
+            }
+            catch (PostgresException pe)
+            {
+                return await HandlePostgresException("Aliases", pe);
+            }
 
             if (rowsAffectedOnAliasTable == 0)
             {
@@ -44,10 +53,18 @@ public class DeleteDocumentById(
                     deleteRequest.TraceId
                 );
             }
-            int rowsAffected = await _sqlAction.DeleteDocumentByDocumentId(
-                deleteRequest.DocumentUuid,
-                connection
-            );
+
+            try
+            {
+                rowsAffected = await _sqlAction.DeleteDocumentByDocumentId(
+                    deleteRequest.DocumentUuid,
+                    connection
+                );
+            }
+            catch (PostgresException pe)
+            {
+                return await HandlePostgresException("Documents", pe);
+            }
 
             switch (rowsAffected)
             {
@@ -72,6 +89,30 @@ public class DeleteDocumentById(
                     return await Task.FromResult<DeleteResult>(
                         new DeleteResult.UnknownFailure("Unknown Failure")
                     );
+            }
+
+            async Task<DeleteResult> HandlePostgresException(string tableName, PostgresException pe)
+            {
+                if (pe.SqlState == PostgresErrorCodes.SerializationFailure)
+                {
+                    _logger.LogDebug(
+                        pe,
+                        "Transaction conflict on {TableName} table delete - {TraceId}",
+                        tableName,
+                        deleteRequest.TraceId
+                    );
+                    await transaction.RollbackAsync();
+                    return new DeleteResult.DeleteFailureWriteConflict();
+                }
+
+                _logger.LogError(
+                    pe,
+                    "Failure on {TableName} table insert - {TraceId}",
+                    tableName,
+                    deleteRequest.TraceId
+                );
+                await transaction.RollbackAsync();
+                return new DeleteResult.UnknownFailure("Delete failure");
             }
         }
         catch (Exception ex)
