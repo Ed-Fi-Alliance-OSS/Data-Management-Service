@@ -31,6 +31,19 @@ public class UpdateDocumentById(
 
         try
         {
+            var referenceDocument = await _sqlAction.FindDocumentByReferentialId(updateRequest.DocumentInfo.ReferentialId,
+                PartitionKeyFor(updateRequest.DocumentInfo.ReferentialId), connection, transaction);
+
+            if (referenceDocument is null || referenceDocument.DocumentUuid != updateRequest.DocumentUuid.Value)
+            {
+                _logger.LogInformation(
+                    "Failure: Natural key does not match on update - {TraceId}",
+                    updateRequest.TraceId
+                );
+                await transaction.RollbackAsync();
+                return new UpdateResult.UpdateFailureImmutableIdentity($"Identifying values for the {updateRequest.ResourceInfo.ResourceName.Value} resource cannot be changed. Delete and recreate the resource item instead.");
+            }
+
             int rowsAffected = await _sqlAction.UpdateDocumentEdFiDoc(
                 PartitionKeyFor(updateRequest.DocumentUuid).Value,
                 updateRequest.DocumentUuid.Value,

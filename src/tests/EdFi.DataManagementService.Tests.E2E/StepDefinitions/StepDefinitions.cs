@@ -12,7 +12,7 @@ using Reqnroll;
 namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 {
     [Binding]
-    public class StepDefinitions(PlaywrightContext _playwrightContext)
+    public class StepDefinitions(PlaywrightContext _playwrightContext, TestLogger _logger)
     {
         private IAPIResponse _apiResponse = null!;
         private string _id = string.Empty;
@@ -34,6 +34,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         public async Task GivenAPOSTRequestIsMadeToWith(string url, string body)
         {
             url = $"data/{url}";
+            _logger.log.Information(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
             if (_apiResponse.Headers.ContainsKey("location"))
             {
@@ -46,6 +47,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         public async Task WhenSendingAPOSTRequestToWithBody(string url, string body)
         {
             url = $"data/{url}";
+            _logger.log.Information(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
             if (_apiResponse.Headers.ContainsKey("location"))
             {
@@ -59,6 +61,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         {
             url = $"data/{url.Replace("{id}", _id)}";
             body = body.Replace("{id}", _id);
+            _logger.log.Information(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(url, new() { Data = body })!;
         }
 
@@ -66,6 +69,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         public async Task WhenAGETRequestIsMadeTo(string url)
         {
             url = $"data/{url.Replace("{id}", _id)}";
+            _logger.log.Information(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(url)!;
         }
 
@@ -87,6 +91,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             body = body.Replace("{id}", _id);
             JsonNode bodyJson = JsonNode.Parse(body)!;
             JsonNode responseJson = JsonNode.Parse(_apiResponse.TextAsync().Result)!;
+            _logger.log.Information(responseJson.ToString());
             JsonNode.DeepEquals(bodyJson, responseJson).Should().BeTrue();
         }
 
@@ -108,6 +113,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             JsonNode bodyJson = JsonNode.Parse(body)!;
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(_location)!;
             JsonNode responseJson = JsonNode.Parse(_apiResponse.TextAsync().Result)!;
+            _logger.log.Information(responseJson.ToString());
             JsonNode.DeepEquals(bodyJson, responseJson).Should().BeTrue();
         }
     }

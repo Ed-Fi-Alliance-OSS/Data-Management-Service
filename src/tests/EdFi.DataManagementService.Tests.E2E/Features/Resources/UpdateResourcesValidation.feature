@@ -80,28 +80,32 @@ Feature: Resources "Update" Operation validations
                         "correlationId": null
                     }
                   """
-        @ignore
-        Scenario: Verify error handling updating a resource with invalid data
+        Scenario: Verify error handling updating a resource natural key
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
                     {
+                        "id": "{id}",
                         "codeValue": "Sick Leave",
                         "description": "Sick Leave Edited",
                         "namespace": "AbsenceEventCategoryDescriptor",
-                        "shortDescription": "Sick Leave"
+                        "shortDescription": "Sick Leave Edited"
                     }
                   """
              Then it should respond with 400
               And the response body is
                   """
                     {
-                        "detail": "Identifying values for the AbsenceEventCategoryDescriptor resource cannot be changed. Delete and recreate the resource item instead.",
-                        "type": "urn:ed-fi:api:bad-request:data",
-                        "title": "Data Validation Failed",
-                        "status": 400,
-                        "correlationId": null
-                    }
+                       "detail": "The request could not be processed. See 'errors' for details.",
+                       "type": "urn:ed-fi:api:bad-request",
+                       "title": "Bad Request",
+                       "status": 400,
+                       "correlationId": null,
+                       "validationErrors": null,
+                       "errors": [
+                         "Identifying values for the AbsenceEventCategoryDescriptor resource cannot be changed. Delete and recreate the resource item instead."
+                       ]
+                     }
                   """
         @ignore
         Scenario: Verify that response contains the updated resource ID and data
@@ -120,7 +124,7 @@ Feature: Resources "Update" Operation validations
               #replace header {id} with the correct value
                   """
                     {
-                        "location": "ed-fi/absenceEventCategoryDescriptors/{id}",
+                        "location": "/ed-fi/absenceEventCategoryDescriptors/{id}",
                     }
                   """
         @ignore

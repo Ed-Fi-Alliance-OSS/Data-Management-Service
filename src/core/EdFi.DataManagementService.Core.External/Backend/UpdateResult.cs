@@ -39,7 +39,8 @@ public record UpdateResult
     /// <summary>
     /// A failure because the identity of this type of resource cannot be changed via update
     /// </summary>
-    public record UpdateFailureImmutableIdentity() : UpdateResult();
+    /// <param name="FailureMessage">A message providing failure information</param>
+    public record UpdateFailureImmutableIdentity(string FailureMessage) : UpdateResult();
 
     /// <summary>
     /// A failure because an update cascade is required

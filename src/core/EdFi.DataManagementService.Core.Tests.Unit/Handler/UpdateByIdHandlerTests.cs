@@ -175,7 +175,7 @@ public class UpdateByIdHandlerTests
         {
             public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
             {
-                return Task.FromResult<UpdateResult>(new UpdateFailureImmutableIdentity());
+                return Task.FromResult<UpdateResult>(new UpdateFailureImmutableIdentity("Identifying values for the resource cannot be changed. Delete and recreate the resource item instead."));
             }
         }
 
@@ -191,7 +191,7 @@ public class UpdateByIdHandlerTests
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(409);
+            context.FrontendResponse.StatusCode.Should().Be(400);
         }
     }
 

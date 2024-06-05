@@ -4,11 +4,13 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
+using System.Text.Json;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Response;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.External.Backend.UpdateResult;
 
@@ -51,8 +53,13 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
                 => new FrontendResponse(StatusCode: 400, Body: failure.ReferencingDocumentInfo, Headers: []),
             UpdateFailureWriteConflict
                 => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),
-            UpdateFailureImmutableIdentity
-                => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),
+            UpdateFailureImmutableIdentity failure
+                => new FrontendResponse(StatusCode: 400, Body: JsonSerializer.Serialize(
+                    FailureResponse.ForBadRequest(
+                        "The request could not be processed. See 'errors' for details.",
+                        null,
+                        [failure.FailureMessage]
+                    )), Headers: []),
             UpdateFailureCascadeRequired => new FrontendResponse(StatusCode: 400, Body: null, Headers: []),
             UnknownFailure failure
                 => new FrontendResponse(StatusCode: 500, Body: failure.FailureMessage, Headers: []),
