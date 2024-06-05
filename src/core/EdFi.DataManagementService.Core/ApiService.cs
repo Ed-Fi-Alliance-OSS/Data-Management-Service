@@ -87,7 +87,7 @@ internal class ApiService(
                         new ParseBodyMiddleware(_logger),
                         new ValidateEndpointMiddleware(_logger),
                         new ValidateDocumentMiddleware(_logger, _documentValidator),
-                        new ValidateImmutableIdentityMiddleware(_logger, immutableIdentityValidator),
+                        new ValidateImmutableIdMiddleware(_logger, immutableIdentityValidator),
                         new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
                         new ExtractDocumentInfoMiddleware(_logger),
                         new BuildResourceInfoMiddleware(_logger),

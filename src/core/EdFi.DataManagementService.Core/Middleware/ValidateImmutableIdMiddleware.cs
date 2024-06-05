@@ -13,15 +13,15 @@ using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware
 {
-    internal class ValidateImmutableIdentityMiddleware(ILogger _logger, IImmutableIdentityValidator _validator) : IPipelineStep
+    internal class ValidateImmutableIdMiddleware(ILogger _logger, IImmutableIdentityValidator _validator) : IPipelineStep
     {
         public async Task Execute(PipelineContext context, Func<Task> next)
         {
-            _logger.LogDebug("Entering ValidateImmutableIdentityMiddleware- {TraceId}", context.FrontendRequest.TraceId);
+            _logger.LogDebug("Entering ValidateImmutableIdMiddleware- {TraceId}", context.FrontendRequest.TraceId);
 
-            var errors = _validator.Validate(context);
+            var isValid = _validator.Validate(context);
 
-            if (errors.Length == 0)
+            if (isValid)
             {
                 await next();
             }
@@ -30,7 +30,7 @@ namespace EdFi.DataManagementService.Core.Middleware
                 FailureResponse failureResponse = FailureResponse.ForBadRequest(
                     "The request could not be processed. See 'errors' for details.",
                     null,
-                    errors
+                    ["Request body id must match the id in the url."]
                 );
 
                 _logger.LogDebug(

@@ -15,28 +15,17 @@ internal interface IImmutableIdentityValidator
     /// Validates a document for update has id matching the id in the request path
     /// </summary>
     /// <param name="context"></param>
-    /// <param name="validatorContext"></param>
-    /// <returns></returns>
-    string[] Validate(PipelineContext context);
+    /// <returns>A boolean indicating whether the validator passed or not</returns>
+    bool Validate(PipelineContext context);
 }
 
-internal class ImmutableIdentityValidator() : IImmutableIdentityValidator
+internal class ImmutableIdValidator() : IImmutableIdentityValidator
 {
-    public string[] Validate(PipelineContext context)
+    public bool Validate(PipelineContext context)
     {
-        if (context.ParsedBody == No.JsonNode)
-        {
-            return (["A non-empty request body is required."]);
-        }
-
         var documentId = context.ParsedBody["id"]?.GetValue<string>();
 
-        if (documentId != null &&
-            context.PathComponents.DocumentUuid == new DocumentUuid(new Guid(documentId)))
-        {
-            return ([]);
-        }
-
-        return (["Request body id must match the id in the url."]);
+        return documentId != null &&
+               context.PathComponents.DocumentUuid == new DocumentUuid(new Guid(documentId));
     }
 }

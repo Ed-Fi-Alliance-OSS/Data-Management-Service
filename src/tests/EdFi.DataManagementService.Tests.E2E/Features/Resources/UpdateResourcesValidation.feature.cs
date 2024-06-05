@@ -292,11 +292,9 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
         
         [NUnit.Framework.TestAttribute()]
         [NUnit.Framework.DescriptionAttribute("Verify error handling when updating a resource with empty body")]
-        [NUnit.Framework.IgnoreAttribute("Ignored scenario")]
         public async System.Threading.Tasks.Task VerifyErrorHandlingWhenUpdatingAResourceWithEmptyBody()
         {
-            string[] tagsOfScenario = new string[] {
-                    "ignore"};
+            string[] tagsOfScenario = ((string[])(null));
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Verify error handling when updating a resource with empty body", null, tagsOfScenario, argumentsOfScenario, featureTags);
 #line 131
@@ -319,24 +317,28 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
              await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
 #line 139
-              await testRunner.AndAsync("the response body is", @"  {
-      ""detail"": ""Data validation failed. See 'validationErrors' for details."",
-      ""type"": ""urn:ed-fi:api:bad-request:data"",
-      ""title"": ""Data Validation Failed"",
-      ""status"": 400,
-      ""correlationId"": null,
-      ""validationErrors"": {
-          ""$.codeValue"": [
-              ""CodeValue is required.""
-          ],
-          ""$.namespace"": [
-              ""Namespace is required.""
-          ],
-          ""$.shortDescription"": [
-              ""ShortDescription is required.""
-          ]
-      }
-  }", ((global::Reqnroll.Table)(null)), "And ");
+              await testRunner.AndAsync("the response body is", @"{
+  ""detail"": ""Data validation failed. See 'validationErrors' for details."",
+  ""type"": ""urn:ed-fi:api:bad-request:data"",
+  ""title"": ""Data Validation Failed"",
+  ""status"": 400,
+  ""correlationId"": null,
+  ""validationErrors"": {
+      ""$.namespace"": [
+      ""namespace is required.""
+      ],
+      ""$.codeValue"": [
+      ""codeValue is required.""
+      ],
+      ""$.shortDescription"": [
+      ""shortDescription is required.""
+      ],
+      ""$.id"": [
+      ""id is required.""
+      ]
+  },
+  ""errors"": []
+}", ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
@@ -349,7 +351,7 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
             string[] tagsOfScenario = ((string[])(null));
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Verify error handling when resource ID is different in body on PUT", null, tagsOfScenario, argumentsOfScenario, featureTags);
-#line 161
+#line 165
         this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -362,16 +364,16 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
 #line 4
         await this.FeatureBackgroundAsync();
 #line hidden
-#line 163
+#line 167
              await testRunner.WhenAsync("a PUT request is made to \"ed-fi/absenceEventCategoryDescriptors/{id}\" with", "  {\r\n      \"id\": \"00000000-0000-0000-0000-000000000000\",\r\n      \"codeValue\": \"Sic" +
                         "k Leave\",\r\n      \"description\": \"Sick Leave Edited\",\r\n      \"namespace\": \"uri://" +
                         "ed-fi.org/AbsenceEventCategoryDescriptor\",\r\n      \"shortDescription\": \"Sick Leav" +
                         "e\"\r\n  }", ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 173
+#line 177
              await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
-#line 174
+#line 178
               await testRunner.AndAsync("the response body is", @"  {
     ""detail"": ""The request could not be processed. See 'errors' for details."",
     ""type"": ""urn:ed-fi:api:bad-request"",
@@ -397,7 +399,7 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
                     "ignore"};
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Verify error handling when resource ID is not included in body on PUT", null, tagsOfScenario, argumentsOfScenario, featureTags);
-#line 189
+#line 193
         this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -410,15 +412,15 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
 #line 4
         await this.FeatureBackgroundAsync();
 #line hidden
-#line 191
+#line 195
              await testRunner.WhenAsync("a POST request is made to \"ed-fi/absenceEventCategoryDescriptors/{id}\" with", "  {\r\n      \"id\": \"\",\r\n      \"codeValue\": \"Sick Leave\",\r\n      \"description\": \"Sic" +
                         "k Leave Edited\",\r\n      \"namespace\": \"uri://ed-fi.org/AbsenceEventCategoryDescri" +
                         "ptor\",\r\n      \"shortDescription\": \"Sick Leave\"\r\n  }", ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 201
+#line 205
              await testRunner.ThenAsync("it should respond with 400", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
-#line 202
+#line 206
               await testRunner.AndAsync("the response body is", @"  {
       ""detail"": ""Data validation failed. See 'validationErrors' for details."",
       ""type"": ""urn:ed-fi:api:bad-request:data"",

@@ -127,7 +127,7 @@ Feature: Resources "Update" Operation validations
                         "location": "/ed-fi/absenceEventCategoryDescriptors/{id}",
                     }
                   """
-        @ignore
+
         Scenario: Verify error handling when updating a resource with empty body
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -138,24 +138,28 @@ Feature: Resources "Update" Operation validations
              Then it should respond with 400
               And the response body is
                   """
-                    {
-                        "detail": "Data validation failed. See 'validationErrors' for details.",
-                        "type": "urn:ed-fi:api:bad-request:data",
-                        "title": "Data Validation Failed",
-                        "status": 400,
-                        "correlationId": null,
-                        "validationErrors": {
-                            "$.codeValue": [
-                                "CodeValue is required."
-                            ],
-                            "$.namespace": [
-                                "Namespace is required."
-                            ],
-                            "$.shortDescription": [
-                                "ShortDescription is required."
-                            ]
-                        }
-                    }
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null,
+                    "validationErrors": {
+                        "$.namespace": [
+                        "namespace is required."
+                        ],
+                        "$.codeValue": [
+                        "codeValue is required."
+                        ],
+                        "$.shortDescription": [
+                        "shortDescription is required."
+                        ],
+                        "$.id": [
+                        "id is required."
+                        ]
+                    },
+                    "errors": []
+                  }
                   """
 
         Scenario: Verify error handling when resource ID is different in body on PUT
