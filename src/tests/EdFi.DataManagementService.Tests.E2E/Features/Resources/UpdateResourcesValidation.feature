@@ -107,33 +107,34 @@ Feature: Resources "Update" Operation validations
                        ]
                      }
                   """
-        @ignore
+
         Scenario: Verify that response contains the updated resource ID and data
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
-                  """
-                    {
-                        "codeValue": "Sick Leave",
-                        "description": "Sick Leave Edited",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                        "shortDescription": "Sick Leave"
-                    }
-                  """
+                """
+                {
+                    "id": "{id}",
+                    "codeValue": "Sick Leave",
+                    "description": "Sick Leave Edited",
+                    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                    "shortDescription": "Sick Leave"
+                  }
+                """
              Then it should respond with 204
               And the response headers includes
               #replace header {id} with the correct value
-                  """
-                    {
-                        "location": "/ed-fi/absenceEventCategoryDescriptors/{id}",
-                    }
-                  """
+                """
+                {
+                    "location": "/ed-fi/absenceEventCategoryDescriptors/{id}"
+                }
+                """
 
         Scenario: Verify error handling when updating a resource with empty body
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
-                    {
-                    }
+                  {
+                  }
                   """
              Then it should respond with 400
               And the response body is

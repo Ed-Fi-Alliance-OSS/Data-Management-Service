@@ -32,7 +32,7 @@ public class UpdateByIdHandlerTests
         {
             public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
             {
-                return Task.FromResult<UpdateResult>(new UpdateSuccess());
+                return Task.FromResult<UpdateResult>(new UpdateSuccess(updateRequest.DocumentUuid));
             }
         }
 

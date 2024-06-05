@@ -49,7 +49,7 @@ internal class SuccessDocumentStoreRepository(ILogger<SuccessDocumentStoreReposi
             "UpdateDocumentById(): Backend repository has been configured to always report success - {TraceId}",
             updateRequest.TraceId
         );
-        return await Task.FromResult<UpdateResult>(new UpdateResult.UpdateSuccess());
+        return await Task.FromResult<UpdateResult>(new UpdateResult.UpdateSuccess(updateRequest.DocumentUuid));
     }
 
     public async Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)

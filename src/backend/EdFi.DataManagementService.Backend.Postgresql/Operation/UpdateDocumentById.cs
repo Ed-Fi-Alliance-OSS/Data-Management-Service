@@ -56,7 +56,7 @@ public class UpdateDocumentById(
             {
                 case 1:
                     await transaction.CommitAsync();
-                    return new UpdateResult.UpdateSuccess();
+                    return new UpdateResult.UpdateSuccess(updateRequest.DocumentUuid);
 
                 case 0:
                     _logger.LogInformation(
