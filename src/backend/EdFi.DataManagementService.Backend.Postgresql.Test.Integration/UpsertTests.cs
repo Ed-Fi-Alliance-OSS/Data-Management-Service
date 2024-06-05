@@ -15,32 +15,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
 [TestFixture]
 public class UpsertTests : DatabaseTest
 {
-    public static IUpsertRequest CreateUpsertRequest(Guid documentUuidGuid, string edFiDocString)
-    {
-        return (
-            new
-            {
-                ResourceInfo = ResourceInfo,
-                DocumentInfo = DocumentInfo,
-                EdfiDoc = JsonNode.Parse(edFiDocString),
-                TraceId = new TraceId("123"),
-                DocumentUuid = new DocumentUuid(documentUuidGuid)
-            }
-        ).ActLike<IUpsertRequest>();
-    }
-
-    public static IGetRequest CreateGetRequest(Guid documentUuidGuid)
-    {
-        return (
-            new
-            {
-                ResourceInfo = ResourceInfo,
-                TraceId = new TraceId("123"),
-                DocumentUuid = new DocumentUuid(documentUuidGuid)
-            }
-        ).ActLike<IGetRequest>();
-    }
-
     [TestFixture]
     public class Given_an_upsert_of_a_new_document : UpsertTests
     {

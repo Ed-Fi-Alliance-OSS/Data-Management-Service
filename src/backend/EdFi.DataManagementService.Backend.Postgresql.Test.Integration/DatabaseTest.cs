@@ -3,7 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Operation;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using ImpromptuInterface;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -15,34 +17,20 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration
 {
     public abstract class DatabaseTest
     {
-        private static readonly string _connectionString = Configuration.DatabaseConnectionString ?? string.Empty;
+        public NpgsqlDataSource? DataSource { get; set; }
+
+        private static readonly string _connectionString =
+            Configuration.DatabaseConnectionString ?? string.Empty;
         private NpgsqlConnection? _respawnerConnection;
         private Respawner? _respawner;
 
-        public NpgsqlDataSource? DataSource { get; set; }
-
-        public static UpsertDocument CreateUpsert(NpgsqlDataSource dataSource)
-        {
-            return new UpsertDocument(dataSource, new SqlAction(), NullLogger<UpsertDocument>.Instance);
-        }
-
-        public static UpdateDocumentById CreateUpdate(NpgsqlDataSource dataSource)
-        {
-            return new UpdateDocumentById(dataSource, new SqlAction(), NullLogger<UpdateDocumentById>.Instance);
-        }
-
-        public static GetDocumentById CreateGetById(NpgsqlDataSource dataSource)
-        {
-            return new GetDocumentById(dataSource, NullLogger<GetDocumentById>.Instance);
-        }
-
-        public static T AsValueType<T, TU>(TU value)
+        public static T AsValueType<T, U>(U value)
             where T : class
         {
             return (new { Value = value }).ActLike<T>();
         }
 
-        public static readonly IResourceInfo ResourceInfo = (
+        public static readonly IResourceInfo _resourceInfo = (
             new
             {
                 ResourceVersion = AsValueType<ISemVer, string>("5.0.0"),
@@ -53,7 +41,7 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration
             }
         ).ActLike<IResourceInfo>();
 
-        public static readonly IDocumentInfo DocumentInfo = (
+        public static readonly IDocumentInfo _documentInfo = (
             new
             {
                 DocumentIdentity = (
@@ -65,6 +53,63 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration
                 SuperclassIdentity = null as ISuperclassIdentity
             }
         ).ActLike<IDocumentInfo>();
+
+        public static IUpsertRequest CreateUpsertRequest(Guid documentUuidGuid, string edFiDocString)
+        {
+            return (
+                new
+                {
+                    ResourceInfo = _resourceInfo,
+                    DocumentInfo = _documentInfo,
+                    EdfiDoc = JsonNode.Parse(edFiDocString),
+                    TraceId = new TraceId("123"),
+                    DocumentUuid = new DocumentUuid(documentUuidGuid)
+                }
+            ).ActLike<IUpsertRequest>();
+        }
+
+        public static IGetRequest CreateGetRequest(Guid documentUuidGuid)
+        {
+            return (
+                new
+                {
+                    ResourceInfo = _resourceInfo,
+                    TraceId = new TraceId("123"),
+                    DocumentUuid = new DocumentUuid(documentUuidGuid)
+                }
+            ).ActLike<IGetRequest>();
+        }
+
+        public static IDeleteRequest CreateDeleteRequest(Guid documentUuidGuid)
+        {
+            return (
+                new
+                {
+                    ResourceInfo = _resourceInfo,
+                    TraceId = new TraceId("123"),
+                    DocumentUuid = new DocumentUuid(documentUuidGuid)
+                }
+            ).ActLike<IDeleteRequest>();
+        }
+
+        public static UpsertDocument CreateUpsert(NpgsqlDataSource dataSource)
+        {
+            return new UpsertDocument(dataSource, new SqlAction(), NullLogger<UpsertDocument>.Instance);
+        }
+
+        public static GetDocumentById CreateGetById(NpgsqlDataSource dataSource)
+        {
+            return new GetDocumentById(dataSource, NullLogger<GetDocumentById>.Instance);
+        }
+
+        public static DeleteDocumentById CreateDeleteById(NpgsqlDataSource dataSource)
+        {
+            return new DeleteDocumentById(
+                dataSource,
+                new SqlAction(),
+                NullLogger<DeleteDocumentById>.Instance
+            );
+        }
 
         [OneTimeSetUp]
         public void OneTimeSetup()
@@ -82,11 +127,7 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration
                 _respawnerConnection,
                 new RespawnerOptions
                 {
-                    TablesToInclude =
-                    [
-                        new("public", "documents"),
-                        new("public", "aliases")
-                    ],
+                    TablesToInclude = [new("public", "documents"), new("public", "aliases")],
                     DbAdapter = DbAdapter.Postgres
                 }
             );
