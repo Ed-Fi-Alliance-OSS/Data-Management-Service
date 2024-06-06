@@ -20,11 +20,6 @@ internal abstract class NotImplementedDocumentStoreRepository : IDocumentStoreRe
         throw new NotImplementedException();
     }
 
-    public virtual Task<GetResult> GetDocumentByResourceName(IGetRequest getRequest, int offset, int limit)
-    {
-        throw new NotImplementedException();
-    }
-
     public virtual Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
     {
         throw new NotImplementedException();

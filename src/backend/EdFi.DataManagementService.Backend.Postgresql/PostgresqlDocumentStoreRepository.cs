@@ -13,7 +13,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql;
 public class PostgresqlDocumentStoreRepository(
     ILogger<PostgresqlDocumentStoreRepository> _logger,
     IGetDocumentById _getDocumentById,
-    IGetDocumentByResourceName _getDocumentByResourceName,
     IUpdateDocumentById _updateDocumentById,
     IUpsertDocument _upsertDocument
 ) : IDocumentStoreRepository, IQueryHandler
@@ -50,24 +49,6 @@ public class PostgresqlDocumentStoreRepository(
         catch (Exception ex)
         {
             _logger.LogCritical(ex, "Uncaught GetById failure - {TraceId}", getRequest.TraceId);
-            return new GetResult.UnknownFailure("Unknown Failure");
-        }
-    }
-
-    public async Task<GetResult> GetDocumentByResourceName(IGetRequest getRequest, int offset, int limit)
-    {
-        _logger.LogDebug(
-            "Entering PostgresqlDocumentStoreRepository.GetDocumentByResourceName - {TraceId}",
-            getRequest.TraceId
-        );
-
-        try
-        {
-            return await _getDocumentByResourceName.GetByResourceName(getRequest, offset, limit);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogCritical(ex, "Uncaught GetByResourceName failure - {TraceId}", getRequest.TraceId);
             return new GetResult.UnknownFailure("Unknown Failure");
         }
     }

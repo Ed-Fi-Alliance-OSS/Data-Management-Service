@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -13,6 +14,7 @@ using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Validation;
+using Microsoft.CodeAnalysis;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core;
@@ -25,6 +27,7 @@ internal class ApiService(
     IApiSchemaValidator _apiSchemaValidator,
     IDocumentStoreRepository _documentStoreRepository,
     IDocumentValidator _documentValidator,
+    IQueryHandler _queryHandler,
     IMatchingDocumentUuidsValidator matchingDocumentUuidsValidator,
     IEqualityConstraintValidator _equalityConstraintValidator,
     ILogger<ApiService> _logger
@@ -75,7 +78,7 @@ internal class ApiService(
     /// <summary>
     /// The pipeline steps to satisfy a get by resource name request
     /// </summary>
-    private readonly Lazy<PipelineProvider> _getByResourceNameSteps =
+    private readonly Lazy<PipelineProvider> _getByKeySteps =
         new(
             () =>
                 new(
@@ -86,7 +89,8 @@ internal class ApiService(
                         new ParsePathMiddleware(_logger),
                         new ValidateEndpointMiddleware(_logger),
                         new BuildResourceInfoMiddleware(_logger),
-                        new GetByResourceNameHandler(_documentStoreRepository, _logger)
+                        new ValidateQueryMiddleware(_logger),
+                        new GetByKeyHandler(_queryHandler, _logger)
                     ]
                 )
         );
@@ -150,14 +154,25 @@ internal class ApiService(
     public async Task<IFrontendResponse> Get(FrontendRequest frontendRequest)
     {
         PipelineContext pipelineContext = new(frontendRequest, RequestMethod.GET);
-        string[] segments = frontendRequest.Path.Split(new char[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
-        if (segments.Length == 3 && segments[2].Length == 36 && Guid.TryParse(segments[2], out _))
+
+        Match match = UtilityService.PathExpressionRegex().Match(frontendRequest.Path);
+
+        string documentUuidValue;
+        string? documentUuid = string.Empty;
+
+        if (match.Success)
+        {
+            documentUuidValue = match.Groups["documentUuid"].Value;
+            documentUuid = documentUuidValue == "" ? null : documentUuidValue;
+        }
+
+        if (documentUuid != null)
         {
             await _getByIdSteps.Value.Run(pipelineContext);
         }
         else
         {
-            await _getByResourceNameSteps.Value.Run(pipelineContext);
+            await _getByKeySteps.Value.Run(pipelineContext);
         }
         return pipelineContext.FrontendResponse;
     }

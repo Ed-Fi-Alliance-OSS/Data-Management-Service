@@ -14,10 +14,10 @@ internal record PaginationParameters(
     /// <summary>
     /// The pagination limit
     /// </summary>
-    string? limit,
+    int? limit,
 
     /// <summary>
     /// The pagination offset
     /// </summary>
-    string? offset
+    int? offset
 ) : IPaginationParameters;

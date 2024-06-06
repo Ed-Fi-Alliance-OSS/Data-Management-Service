@@ -1,0 +1,37 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using EdFi.DataManagementService.Core.Backend;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.Pipeline;
+using Microsoft.Extensions.Logging;
+
+namespace EdFi.DataManagementService.Core.Middleware;
+
+internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
+{
+    public async Task Execute(PipelineContext context, Func<Task> next)
+    {
+        _logger.LogDebug("Entering ValidateQueryMiddleware - {TraceId}", context.FrontendRequest.TraceId);
+
+        int offset = 0;
+        int limit = 25;
+
+        if (context.FrontendRequest.QueryParameters.ContainsKey("offset"))
+        {
+            offset = int.TryParse(context.FrontendRequest.QueryParameters["offset"], out int o) ? o : 0;
+        }
+        if (context.FrontendRequest.QueryParameters.ContainsKey("limit"))
+        {
+            limit = int.TryParse(context.FrontendRequest.QueryParameters["limit"], out int l) ? l : 25;
+        }
+
+        context.PaginationParameters = new(limit: limit, offset: offset);
+
+
+        await next();
+    }
+}
+

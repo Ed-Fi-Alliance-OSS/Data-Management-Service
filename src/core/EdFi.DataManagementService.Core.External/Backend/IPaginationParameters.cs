@@ -13,10 +13,10 @@ public interface IPaginationParameters
     /// <summary>
     /// The pagination limit
     /// </summary>
-    string? limit { get; }
+    int? limit { get; }
 
     /// <summary>
     /// The pagination offset
     /// </summary>
-    string? offset { get; }
+    int? offset { get; }
 }

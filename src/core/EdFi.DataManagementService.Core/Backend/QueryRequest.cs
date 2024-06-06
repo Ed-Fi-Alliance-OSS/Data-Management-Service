@@ -31,5 +31,5 @@ internal record QueryRequest(
     /// <summary>
     /// The request TraceId
     /// </summary>
-    TraceId TraceId
+    ITraceId TraceId
 ) : IQueryRequest;

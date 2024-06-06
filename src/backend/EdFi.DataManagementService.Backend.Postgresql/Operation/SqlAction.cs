@@ -27,6 +27,13 @@ public interface ISqlAction
         NpgsqlTransaction transaction
     );
 
+    public Task<JsonNode[]> GetDocumentsByKey(
+        string resourceName,
+        IPaginationParameters paginationParameters,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
     public Task<JsonNode?> GetDocumentById(
         Guid documentUuid,
         int partitionKey,
@@ -118,6 +125,48 @@ public class SqlAction : ISqlAction
             CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
             LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt"))
         );
+    }
+
+    /// <summary>
+    /// Returns Documents from the database corresponding to the given ResourceName,
+    /// or null if no matching Document was found.
+    /// </summary>
+    public async Task<JsonNode[]> GetDocumentsByKey(
+        string resourceName,
+        IPaginationParameters paginationParameters,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command =
+            new(
+                @"SELECT EdfiDoc FROM public.Documents WHERE resourcename = $1 ORDER BY createdat OFFSET $2 ROWS FETCH FIRST $3 ROWS ONLY;",
+                connection
+            )
+            {
+                Parameters =
+                {
+                    new() { Value = resourceName},
+                    new() { Value = paginationParameters.offset },
+                    new () { Value = paginationParameters.limit },
+                }
+            };
+
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+
+        var documents = new List<JsonNode>();
+
+        while (await reader.ReadAsync())
+        {
+            JsonNode? edfiDoc = (await reader.GetFieldValueAsync<JsonElement>(0)).Deserialize<JsonNode>();
+
+            if (edfiDoc != null)
+            {
+                documents.Add(edfiDoc);
+            }
+        }
+
+        return documents.ToArray();
     }
 
     /// <summary>
