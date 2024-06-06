@@ -55,6 +55,10 @@ spec:
                 configMapKeyRef:
                   name: app-configmap
                   key: postgres-port
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef: app-configmap
+                key: log-level
           livenessProbe:
             exec:
               command:

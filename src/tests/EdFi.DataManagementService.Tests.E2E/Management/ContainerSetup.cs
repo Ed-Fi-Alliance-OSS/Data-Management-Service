@@ -40,6 +40,7 @@ public class ContainerSetup
             .WithEnvironment("POSTGRES_USER", dbUserName)
             .WithEnvironment("POSTGRES_PORT", "5432")
             .WithEnvironment("POSTGRES_HOST", dbContainerName)
+            .WithEnvironment("LOG_LEVEL", "Debug")
             .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(8080)))
             .WithNetwork(network)
             .Build();
