@@ -23,7 +23,7 @@ public class ContainerSetup
 
         var dbContainer = new ContainerBuilder()
             .WithImage(dbImageName)
-            .WithPortBinding(5432, 5432)
+            .WithPortBinding(5404, 5432)
             .WithNetwork(network)
             .WithNetworkAliases(dbContainerName)
             .WithEnvironment("POSTGRES_PASSWORD", dbPassword)
