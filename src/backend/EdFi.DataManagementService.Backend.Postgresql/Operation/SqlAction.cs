@@ -48,12 +48,6 @@ public interface ISqlAction
         NpgsqlTransaction transaction
     );
 
-    public Task<int> DeleteAliasByDocumentId(
-        int documentPartitionKey,
-        long? documentId,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction
-    );
     public Task<UpdateDocumentValidationResult> UpdateDocumentValidation(
         DocumentUuid documentUuid,
         PartitionKey documentPartitionKey,
@@ -63,7 +57,12 @@ public interface ISqlAction
         NpgsqlTransaction transaction
     );
 
-    public Task<int> DeleteAliasByDocumentId(DocumentUuid documentUuid, NpgsqlConnection connection);
+    public Task<int> DeleteAliasByDocumentId(
+        int documentPartitionKey,
+        long? documentId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
 
     public Task<int> DeleteDocumentByDocumentId(
         int documentPartitionKey,

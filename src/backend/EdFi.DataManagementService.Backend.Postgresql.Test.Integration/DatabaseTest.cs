@@ -68,6 +68,39 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration
             ).ActLike<IUpsertRequest>();
         }
 
+        public static IUpdateRequest CreateUpdateRequest(
+            Guid documentUuidGuid,
+            Guid referentialIdGuid,
+            string edFiDocString
+        )
+        {
+            return (
+                new
+                {
+                    ResourceInfo = _resourceInfo,
+                    DocumentInfo = (
+                        new
+                        {
+                            DocumentIdentity = (
+                                new
+                                {
+                                    IdentityValue = "",
+                                    IdentityJsonPath = AsValueType<IJsonPath, string>("$")
+                                }
+                            ).ActLike<IResourceInfo>(),
+                            ReferentialId = new ReferentialId(referentialIdGuid),
+                            DocumentReferences = new List<IDocumentReference>(),
+                            DescriptorReferences = new List<IDocumentReference>(),
+                            SuperclassIdentity = null as ISuperclassIdentity
+                        }
+                    ).ActLike<IDocumentInfo>(),
+                    EdfiDoc = JsonNode.Parse(edFiDocString),
+                    TraceId = new TraceId("123"),
+                    DocumentUuid = new DocumentUuid(documentUuidGuid)
+                }
+            ).ActLike<IUpdateRequest>();
+        }
+
         public static IGetRequest CreateGetRequest(Guid documentUuidGuid)
         {
             return (
@@ -95,6 +128,15 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration
         public static UpsertDocument CreateUpsert(NpgsqlDataSource dataSource)
         {
             return new UpsertDocument(dataSource, new SqlAction(), NullLogger<UpsertDocument>.Instance);
+        }
+
+        public static UpdateDocumentById CreateUpdate(NpgsqlDataSource dataSource)
+        {
+            return new UpdateDocumentById(
+                dataSource,
+                new SqlAction(),
+                NullLogger<UpdateDocumentById>.Instance
+            );
         }
 
         public static GetDocumentById CreateGetById(NpgsqlDataSource dataSource)
