@@ -59,6 +59,26 @@ spec:
               valueFrom:
                 configMapKeyRef: app-configmap
                 key: log-level
+            - name: OAUTH_TOKEN_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: app-configmap
+                  key: oauth-token-endpoint
+            - name: RATE_LIMIT_PERMIT_LIMIT
+              valueFrom:
+                configMapKeyRef:
+                  name: app-configmap
+                  key: rate-limit-permit-limit
+            - name: RATE_LIMIT_WINDOW
+              valueFrom:
+                configMapKeyRef:
+                  name: app-configmap
+                  key: rate-limit-window
+            - name: RATE_LIMIT_QUEUE_LIMIT
+              valueFrom:
+                configMapKeyRef:
+                  name: app-configmap
+                  key: rate-limit-queue-limit
           livenessProbe:
             exec:
               command:
