@@ -41,7 +41,16 @@ public class DeleteDocumentById(
                 transaction
             );
 
-            if (document != null)
+            if (document == null)
+            {
+                _logger.LogInformation(
+                    "Failure: Record to delete does not exist - {TraceId}",
+                    deleteRequest.TraceId
+                );
+                await transaction.RollbackAsync();
+                return new DeleteResult.DeleteFailureNotExists();
+            }
+            else
             {
                 try
                 {
@@ -84,14 +93,14 @@ public class DeleteDocumentById(
                 {
                     case 1:
                         await transaction.CommitAsync();
-                        return await Task.FromResult<DeleteResult>(new DeleteResult.DeleteSuccess());
+                        return new DeleteResult.DeleteSuccess();
                     case 0:
                         _logger.LogInformation(
                             "Failure: Record to delete does not exist - {TraceId}",
                             deleteRequest.TraceId
                         );
                         await transaction.RollbackAsync();
-                        return await Task.FromResult<DeleteResult>(new DeleteResult.DeleteFailureNotExists());
+                        return new DeleteResult.DeleteFailureNotExists();
                     default:
                         _logger.LogError(
                             "DeleteDocumentById rows affected was '{RowsAffected}' for {DocumentUuid} - {TraceId}",
@@ -100,9 +109,7 @@ public class DeleteDocumentById(
                             deleteRequest.TraceId
                         );
                         await transaction.RollbackAsync();
-                        return await Task.FromResult<DeleteResult>(
-                            new DeleteResult.UnknownFailure("Unknown Failure")
-                        );
+                        return new DeleteResult.UnknownFailure("Unknown Failure");
                 }
 
                 async Task<DeleteResult> HandlePostgresException(string tableName, PostgresException pe)
@@ -129,21 +136,12 @@ public class DeleteDocumentById(
                     return new DeleteResult.UnknownFailure("Delete failure");
                 }
             }
-            else
-            {
-                _logger.LogInformation(
-                    "Failure: Record to delete does not exist - {TraceId}",
-                    deleteRequest.TraceId
-                );
-                await transaction.RollbackAsync();
-                return await Task.FromResult<DeleteResult>(new DeleteResult.DeleteFailureNotExists());
-            }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "DeleteDocumentById failure - {TraceId}", deleteRequest.TraceId);
             await transaction.RollbackAsync();
-            return await Task.FromResult<DeleteResult>(new DeleteResult.UnknownFailure("Unknown Failure"));
+            return new DeleteResult.UnknownFailure("Unknown Failure");
         }
     }
 }

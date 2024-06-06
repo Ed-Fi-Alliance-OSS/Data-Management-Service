@@ -19,7 +19,7 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
 public class DeleteTests : DatabaseTest
 {
     [TestFixture]
-    public class Given_an_delete_of_a_document : DeleteTests
+    public class Given_a_delete_of_a_document : DeleteTests
     {
         private DeleteResult? _deleteResult;
 
@@ -45,7 +45,7 @@ public class DeleteTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_delete_of_non_existing_document : DeleteTests
+    public class Given_a_delete_of_a_non_existing_document : DeleteTests
     {
         private DeleteResult? _deleteResult;
 
