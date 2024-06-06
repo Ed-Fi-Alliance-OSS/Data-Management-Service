@@ -1,6 +1,9 @@
 ### Test POST of invalid resource
 
-POST http://localhost:5198/data/ed-fi/doesNotExistDescriptor/
+@port = 8080
+#@port = 5198
+
+POST http://localhost:{{port}}/data/ed-fi/doesNotExistDescriptor/
 
 {
   "codeValue": "Presentation",
@@ -12,7 +15,7 @@ POST http://localhost:5198/data/ed-fi/doesNotExistDescriptor/
 
 ### Test POST of descriptor
 
-POST http://localhost:5198/data/ed-fi/contentClassDescriptors/
+POST http://localhost:{{port}}/data/ed-fi/contentClassDescriptors/
 
 {
   "codeValue": "Presentation",
@@ -23,12 +26,12 @@ POST http://localhost:5198/data/ed-fi/contentClassDescriptors/
 
 ### Test GET of descriptor
 
-GET http://localhost:5198/data/ed-fi/contentClassDescriptors/a71c8b76-261b-4452-9862-7f4df0b60758
+GET http://localhost:{{port}}/data/ed-fi/contentClassDescriptors/a71c8b76-261b-4452-9862-7f4df0b60758
 
 
 ### Test PUT of descriptor
 
-PUT http://localhost:5198/data/ed-fi/contentClassDescriptors/a71c8b76-261b-4452-9862-7f4df0b60758
+PUT http://localhost:{{port}}/data/ed-fi/contentClassDescriptors/a71c8b76-261b-4452-9862-7f4df0b60758
 
 {
   "id": "a71c8b76-261b-4452-9862-7f4df0b60758",
@@ -40,7 +43,7 @@ PUT http://localhost:5198/data/ed-fi/contentClassDescriptors/a71c8b76-261b-4452-
 
 ### Test POST of an EducationContent
 
-POST http://localhost:5198/data/ed-fi/educationContents
+POST http://localhost:{{port}}/data/ed-fi/educationContents
 
 {
     "contentIdentifier": "933zsd4350",
@@ -52,7 +55,7 @@ POST http://localhost:5198/data/ed-fi/educationContents
 
 ### Test POST of a misspelled EducationContent
 
-POST http://localhost:5198/data/ed-fi/educationContentsss
+POST http://localhost:{{port}}/data/ed-fi/educationContentsss
 
 {
     "contentIdentifier": "933zsd4350",
@@ -64,7 +67,7 @@ POST http://localhost:5198/data/ed-fi/educationContentsss
 
 ### Test POST of an EducationContent with lousy endpoint casing
 
-POST http://localhost:5198/data/ed-fi/eDUCatiONConteNtS
+POST http://localhost:{{port}}/data/ed-fi/eDUCatiONConteNtS
 
 {
     "contentIdentifier": "933zsd4350",
@@ -76,7 +79,7 @@ POST http://localhost:5198/data/ed-fi/eDUCatiONConteNtS
 
 ### Test PUT of an EducationContent
 
-PUT http://localhost:5198/data/ed-fi/educationContents/8902c802-2b20-4481-9a27-1e92edb3834a
+PUT http://localhost:{{port}}/data/ed-fi/educationContents/8902c802-2b20-4481-9a27-1e92edb3834a
 
 {
     "id": "8902c802-2b20-4481-9a27-1e92edb3834a",
@@ -89,15 +92,15 @@ PUT http://localhost:5198/data/ed-fi/educationContents/8902c802-2b20-4481-9a27-1
 
 ### Test GET of an EducationContent
 
-GET http://localhost:5198/data/ed-fi/educationContents/8902c802-2b20-4481-9a27-1e92edb3834a
+GET http://localhost:{{port}}/data/ed-fi/educationContents/8902c802-2b20-4481-9a27-1e92edb3834a
 
 
 ### Test DELETE of an EducationContent
 
-DELETE http://localhost:5198/data/ed-fi/educationContents/8902c802-2b20-4481-9a27-1e92edb3834a
+DELETE http://localhost:{{port}}/data/ed-fi/educationContents/8902c802-2b20-4481-9a27-1e92edb3834a
 
 ### Test POST of an EducationContent with two overposted fields
-POST http://localhost:5198/data/ed-fi/educationContents
+POST http://localhost:{{port}}/data/ed-fi/educationContents
 
 {
     "contentIdentifier": "933zsd4350",
@@ -112,7 +115,7 @@ POST http://localhost:5198/data/ed-fi/educationContents
 }
 
 #### Test POST of a Section
-POST http://localhost:5198/data/ed-fi/sections
+POST http://localhost:{{port}}/data/ed-fi/sections
 
 {
     "sectionIdentifier": "c00v",
@@ -146,7 +149,7 @@ POST http://localhost:5198/data/ed-fi/sections
 }
 
 #### Test POST of a Section with overposts in the classPeriods array
-POST http://localhost:5198/data/ed-fi/sections
+POST http://localhost:{{port}}/data/ed-fi/sections
 
 {
     "sectionIdentifier": "c00v",
@@ -184,7 +187,7 @@ POST http://localhost:5198/data/ed-fi/sections
 }
 
 #### Test POST of a Section with non-overpost error - missing classPeriodName in the classPeriods array
-POST http://localhost:5198/data/ed-fi/sections
+POST http://localhost:{{port}}/data/ed-fi/sections
 
 {
     "sectionIdentifier": "c00v",
