@@ -3,7 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -21,6 +23,13 @@ public interface ISqlAction
     public Task<Document?> FindDocumentByReferentialId(
         ReferentialId referentialId,
         PartitionKey partitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    public Task<JsonNode?> GetDocumentById(
+        Guid documentUuid,
+        int partitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     );
@@ -109,6 +118,42 @@ public class SqlAction : ISqlAction
             CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
             LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt"))
         );
+    }
+
+    /// <summary>
+    /// Returns a single Document from the database corresponding to the given Id,
+    /// or null if no matching Document was found.
+    /// </summary>
+    public async Task<JsonNode?> GetDocumentById(
+        Guid documentUuid,
+        int partitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction)
+    {
+        await using NpgsqlCommand command =
+            new(
+                @"SELECT EdfiDoc FROM public.Documents WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2;",
+                connection
+            )
+            {
+                Parameters =
+                {
+                    new() { Value = partitionKey },
+                    new() { Value = documentUuid },
+                }
+            };
+
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+
+        if (!reader.HasRows)
+        {
+            return null;
+        }
+
+        await reader.ReadAsync();
+        JsonNode? edfiDoc = (await reader.GetFieldValueAsync<JsonElement>(0)).Deserialize<JsonNode>();
+
+        return edfiDoc;
     }
 
     /// <summary>

@@ -33,7 +33,7 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration
 
         public static GetDocumentById CreateGetById(NpgsqlDataSource dataSource)
         {
-            return new GetDocumentById(dataSource, NullLogger<GetDocumentById>.Instance);
+            return new GetDocumentById(dataSource, new SqlAction(), NullLogger<GetDocumentById>.Instance);
         }
 
         public static T AsValueType<T, TU>(TU value)
