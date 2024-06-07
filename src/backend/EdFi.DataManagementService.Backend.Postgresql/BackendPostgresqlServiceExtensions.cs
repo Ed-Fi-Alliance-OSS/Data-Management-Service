@@ -30,6 +30,7 @@ public static class PostgresqlBackendServiceExtensions
         services.AddSingleton<IGetDocumentById, GetDocumentById>();
         services.AddSingleton<IUpdateDocumentById, UpdateDocumentById>();
         services.AddSingleton<IUpsertDocument, UpsertDocument>();
+        services.AddSingleton<IDeleteDocumentById, DeleteDocumentById>();
         return services;
     }
 }
