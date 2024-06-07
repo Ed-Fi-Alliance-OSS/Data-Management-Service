@@ -4,13 +4,13 @@ This is a suite of end to end tests that will cover different scenarios. They ar
 
 ## Building the DMS container
 
-From the `src` directory, run `docker build -t local/edfi-data-management-service . -f Dockerfile`. This will 
+From the `src` directory, run `docker build -t local/edfi-data-management-service . -f Dockerfile`. This will
 copy the current DMS solution into the container, build it and start it.
 
-## Running The Tests 
+## Running The Tests
 
-* Run from the Visual Studio Test Explorer.
-* cd into `/src/tests` and run `dotnet test EdFi.DataManagementService.Tests.E2E`.
+-   Run from the Visual Studio Test Explorer.
+-   cd into `/src/tests` and run `dotnet test EdFi.DataManagementService.Tests.E2E`.
 
 ## Test Environments
 
@@ -28,6 +28,10 @@ This project uses an Open Source fork of SpecFlow called [Reqnroll](https://reqn
 
 ### Syntax
 
-This runs the tests using the Gherkin syntax by setting the *Given*, *When* and *Then* conditions for the scenarios. These scenarios should be created in a non-technical way to clearly understand what the test does without having to worry about the implementation.
+This runs the tests using the Gherkin syntax by setting the _Given_, _When_ and _Then_ conditions for the scenarios. These scenarios should be created in a non-technical way to clearly understand what the test does without having to worry about the implementation.
 
 Additionally, the Hooks folder contains the Setup and Teardown instructions for the environment and for Playwright to run the tests.
+
+### Logging
+
+Test logs are output to the console as well as the file system according to `appsettings.json`. The API container logs are output to the same file system log at the end of the test run before the container is destroyed. You can find them by searching for `API stdout logs`
