@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
@@ -23,6 +22,13 @@ public interface ISqlAction
     public Task<Document?> FindDocumentByReferentialId(
         ReferentialId referentialId,
         PartitionKey partitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    public Task<Document?> FindDocumentByDocumentUuid(
+        int documentPartitionKey,
+        DocumentUuid documentUuid,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     );

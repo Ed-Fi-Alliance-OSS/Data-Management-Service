@@ -1,4 +1,4 @@
-﻿Feature: Resources "Read" Operation validations
+Feature: Resources "Read" Operation validations
 
         Background:
             Given the Data Management Service must receive a token issued by "http://localhost"
@@ -54,10 +54,8 @@
         Scenario: Verify response code 404 when ID does not exist
              When a GET request is made to "ed-fi/absenceEventCategoryDescriptors/123123123123"
              Then it should respond with 404
-
-        @ignore
+                     
         Scenario: Verify array records content on GET All
              When a GET request is made to "ed-fi/absenceEventCategoryDescriptors"
              Then it should respond with 200
-              And total of records should be "1"
-              And the record with ID {id} should exist
+              And total of records should be 1

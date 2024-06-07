@@ -113,6 +113,19 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration
             ).ActLike<IGetRequest>();
         }
 
+        public static IQueryRequest CreateGetRequestbyKey(Dictionary<string, string>? searchParameters, IPaginationParameters? paginationParameters)
+        {
+            return (
+                new
+                {
+                    resourceInfo = _resourceInfo,
+                    searchParameters,
+                    paginationParameters,
+                    TraceId = new TraceId("123")
+                }
+            ).ActLike<IQueryRequest>();
+        }
+
         public static IDeleteRequest CreateDeleteRequest(Guid documentUuidGuid)
         {
             return (
@@ -141,7 +154,12 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration
 
         public static GetDocumentById CreateGetById(NpgsqlDataSource dataSource)
         {
-            return new GetDocumentById(dataSource, NullLogger<GetDocumentById>.Instance);
+            return new GetDocumentById(dataSource, new SqlAction(), NullLogger<GetDocumentById>.Instance);
+        }
+
+        public static GetDocumentByKey GetDocumentByKey(NpgsqlDataSource dataSource)
+        {
+            return new GetDocumentByKey(dataSource, new SqlAction(), NullLogger<GetDocumentByKey>.Instance);
         }
 
         public static DeleteDocumentById CreateDeleteById(NpgsqlDataSource dataSource)

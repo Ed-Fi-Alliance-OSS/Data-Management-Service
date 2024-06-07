@@ -215,14 +215,12 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
         
         [NUnit.Framework.TestAttribute()]
         [NUnit.Framework.DescriptionAttribute("Verify array records content on GET All")]
-        [NUnit.Framework.IgnoreAttribute("Ignored scenario")]
         public async System.Threading.Tasks.Task VerifyArrayRecordsContentOnGETAll()
         {
-            string[] tagsOfScenario = new string[] {
-                    "ignore"};
+            string[] tagsOfScenario = ((string[])(null));
             System.Collections.Specialized.OrderedDictionary argumentsOfScenario = new System.Collections.Specialized.OrderedDictionary();
             global::Reqnroll.ScenarioInfo scenarioInfo = new global::Reqnroll.ScenarioInfo("Verify array records content on GET All", null, tagsOfScenario, argumentsOfScenario, featureTags);
-#line 59
+#line 58
         this.ScenarioInitialize(scenarioInfo);
 #line hidden
             if ((global::Reqnroll.TagHelper.ContainsIgnoreTag(scenarioInfo.CombinedTags) || global::Reqnroll.TagHelper.ContainsIgnoreTag(featureTags)))
@@ -235,17 +233,14 @@ namespace EdFi.DataManagementService.Tests.E2E.Features.Resources
 #line 3
         await this.FeatureBackgroundAsync();
 #line hidden
-#line 60
+#line 59
              await testRunner.WhenAsync("a GET request is made to \"ed-fi/absenceEventCategoryDescriptors\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "When ");
 #line hidden
-#line 61
+#line 60
              await testRunner.ThenAsync("it should respond with 200", ((string)(null)), ((global::Reqnroll.Table)(null)), "Then ");
 #line hidden
-#line 62
-              await testRunner.AndAsync("total of records should be \"1\"", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
-#line hidden
-#line 63
-              await testRunner.AndAsync("the record with ID {id} should exist", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
+#line 61
+              await testRunner.AndAsync("total of records should be 1", ((string)(null)), ((global::Reqnroll.Table)(null)), "And ");
 #line hidden
             }
             await this.ScenarioCleanupAsync();
