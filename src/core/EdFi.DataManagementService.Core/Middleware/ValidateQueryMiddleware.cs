@@ -28,7 +28,7 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
             limit = int.TryParse(context.FrontendRequest.QueryParameters["limit"], out int l) ? l : 25;
         }
 
-        context.PaginationParameters = new(limit: limit, offset: offset);
+        context.PaginationParameters = new(limit, offset);
 
 
         await next();

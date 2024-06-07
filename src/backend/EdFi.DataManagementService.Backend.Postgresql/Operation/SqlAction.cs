@@ -148,7 +148,7 @@ public class SqlAction : ISqlAction
                 {
                     new() { Value = resourceName},
                     new() { Value = paginationParameters.offset },
-                    new () { Value = paginationParameters.limit },
+                    new() { Value = paginationParameters.limit },
                 }
             };
 
