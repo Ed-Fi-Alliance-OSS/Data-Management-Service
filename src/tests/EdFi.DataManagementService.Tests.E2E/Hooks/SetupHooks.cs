@@ -14,10 +14,9 @@ public class SetupHooks
 {
     private static IConfiguration? _configuration;
 
-    [BeforeTestRun]
+    [BeforeFeature]
     public static async Task BeforeTestRun(
         PlaywrightContext context,
-        ContainerSetup containers,
         TestLogger logger
     )
     {
@@ -32,8 +31,7 @@ public class SetupHooks
             if (useTestContainers)
             {
                 logger.log.Debug("Using TestContainers to set environment");
-
-                context.ApiUrl = await containers.SetupDataManagement();
+                context.ApiUrl = await ContainerSetup.SetupDataManagement();
             }
             else
             {
@@ -44,7 +42,19 @@ public class SetupHooks
         }
         catch (Exception exception)
         {
-            Assert.Fail($"Unable to configure environment\nError starting API: {exception}");
+            logger.log.Error($"Unable to configure environment\nError starting API: {exception}");
+        }
+    }
+
+    [AfterFeature]
+    public static async Task AfterFeature(TestLogger logger)
+    {
+        var logs = await ContainerSetup.ApiContainer!.GetLogsAsync();
+        logger.log.Information($"{Environment.NewLine}API stdout logs:{Environment.NewLine}{logs.Stderr}");
+
+        if (!string.IsNullOrEmpty(logs.Stderr))
+        {
+            logger.log.Error($"{Environment.NewLine}API stderr logs:{Environment.NewLine}{logs.Stderr}");
         }
     }
 

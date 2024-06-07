@@ -4,12 +4,17 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using DotNet.Testcontainers.Builders;
+using DotNet.Testcontainers.Containers;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Tests.E2E.Management;
 
 public class ContainerSetup
 {
-    public async Task<string> SetupDataManagement()
+    public static IContainer? DbContainer;
+    public static IContainer? ApiContainer;
+
+    public static async Task<string> SetupDataManagement()
     {
         var network = new NetworkBuilder().Build();
 
@@ -21,16 +26,25 @@ public class ContainerSetup
         var dbPassword = "P@ssw0rd";
         var dbContainerName = "dmsdb";
 
-        var dbContainer = new ContainerBuilder()
+        var loggerFactory = LoggerFactory.Create(builder =>
+        {
+            builder
+                .SetMinimumLevel(LogLevel.Trace)
+                .AddDebug()
+                .AddConsole();
+        });
+
+        DbContainer = new ContainerBuilder()
             .WithImage(dbImageName)
             .WithPortBinding(5404, 5432)
             .WithNetwork(network)
             .WithNetworkAliases(dbContainerName)
             .WithEnvironment("POSTGRES_PASSWORD", dbPassword)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(5432))
+            .WithLogger(loggerFactory.CreateLogger("dbContainer"))
             .Build();
 
-        var apiContainer = new ContainerBuilder()
+        ApiContainer = new ContainerBuilder()
             .WithImage(apiImageName)
             .WithPortBinding(8080)
             .WithEnvironment("NEED_DATABASE_SETUP", "true")
@@ -43,15 +57,16 @@ public class ContainerSetup
             .WithEnvironment("LOG_LEVEL", "Debug")
             .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(8080)))
             .WithNetwork(network)
+            .WithLogger(loggerFactory.CreateLogger("apiContainer"))
             .Build();
-
+        
         await network.CreateAsync().ConfigureAwait(false);
-        await Task.WhenAll(dbContainer.StartAsync(), apiContainer.StartAsync()).ConfigureAwait(false);
+        await Task.WhenAll(DbContainer.StartAsync(), ApiContainer.StartAsync()).ConfigureAwait(false);
 
         return new UriBuilder(
             Uri.UriSchemeHttp,
-            apiContainer.Hostname,
-            apiContainer.GetMappedPublicPort(8080)
+            ApiContainer.Hostname,
+            ApiContainer.GetMappedPublicPort(8080)
         ).ToString();
     }
 }
