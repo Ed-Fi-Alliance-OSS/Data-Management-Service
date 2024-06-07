@@ -16,6 +16,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
     {
         private IAPIResponse _apiResponse = null!;
         private string _id = string.Empty;
+        private string _dependentId = string.Empty;
         private string _location = string.Empty;
 
         [Given("the Data Management Service must receive a token issued by {string}")]
@@ -56,6 +57,18 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             }
         }
 
+        [When("a POST request is made for dependent resource {string} with")]
+        public async Task WhenSendingAPOSTRequestForDependentResourceWithBody(string url, string body)
+        {
+            url = $"data/{url}";
+            _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
+            if (_apiResponse.Headers.ContainsKey("location"))
+            {
+                _location = _apiResponse.Headers["location"];
+                _dependentId = _apiResponse.Headers["location"].Split('/').Last();
+            }
+        }
+
         [When("a PUT request is made to {string} with")]
         public async Task WhenAPUTRequestIsMadeToWith(string url, string body)
         {
@@ -63,6 +76,13 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             body = body.Replace("{id}", _id);
             _logger.log.Information(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(url, new() { Data = body })!;
+        }
+
+        [When("a DELETE request is made to {string}")]
+        public async Task WhenADELETERequestIsMadeTo(string url)
+        {
+            url = $"data/{url.Replace("{id}", _id)}";
+            _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(url)!;
         }
 
         [When("a GET request is made to {string}")]
@@ -102,7 +122,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             foreach (var header in value.AsObject())
             {
                 if (header.Value != null)
-                    _apiResponse.Headers[header.Key].Should().EndWith("data" + header.Value.ToString().Replace("{id}", _id));
+                    _apiResponse
+                        .Headers[header.Key]
+                        .Should()
+                        .EndWith("data" + header.Value.ToString().Replace("{id}", _id));
             }
         }
 

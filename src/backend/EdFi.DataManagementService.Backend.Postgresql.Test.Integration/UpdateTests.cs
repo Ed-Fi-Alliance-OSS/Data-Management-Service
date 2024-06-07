@@ -4,68 +4,14 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.External.Backend;
-using EdFi.DataManagementService.Core.External.Model;
-using System.Text.Json.Nodes;
-using ImpromptuInterface;
-using NUnit.Framework;
 using FluentAssertions;
+using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
 
 [TestFixture]
 public class UpdateTests : DatabaseTest
 {
-    public static IUpsertRequest CreateUpsertRequest(Guid documentUuidGuid, string edFiDocString)
-    {
-        return (
-            new
-            {
-                ResourceInfo = ResourceInfo,
-                DocumentInfo = DocumentInfo,
-                EdfiDoc = JsonNode.Parse(edFiDocString),
-                TraceId = new TraceId("123"),
-                DocumentUuid = new DocumentUuid(documentUuidGuid)
-            }
-        ).ActLike<IUpsertRequest>();
-    }
-
-    public static IUpdateRequest CreateUpdateRequest(Guid documentUuidGuid, Guid referentialIdGuid, string edFiDocString)
-    {
-        return (
-            new
-            {
-                ResourceInfo = ResourceInfo,
-                DocumentInfo = (
-                    new
-                    {
-                        DocumentIdentity = (
-                            new { IdentityValue = "", IdentityJsonPath = AsValueType<IJsonPath, string>("$") }
-                        ).ActLike<IResourceInfo>(),
-                        ReferentialId = new ReferentialId(referentialIdGuid),
-                        DocumentReferences = new List<IDocumentReference>(),
-                        DescriptorReferences = new List<IDocumentReference>(),
-                        SuperclassIdentity = null as ISuperclassIdentity
-                    }
-                ).ActLike<IDocumentInfo>(),
-                EdfiDoc = JsonNode.Parse(edFiDocString),
-                TraceId = new TraceId("123"),
-                DocumentUuid = new DocumentUuid(documentUuidGuid)
-            }
-        ).ActLike<IUpdateRequest>();
-    }
-
-    public static IGetRequest CreateGetRequest(Guid documentUuidGuid)
-    {
-        return (
-            new
-            {
-                ResourceInfo = ResourceInfo,
-                TraceId = new TraceId("123"),
-                DocumentUuid = new DocumentUuid(documentUuidGuid)
-            }
-        ).ActLike<IGetRequest>();
-    }
-
     [TestFixture]
     public class GivenAnUpdateOfAnExistingDocument : UpdateTests
     {
@@ -84,7 +30,11 @@ public class UpdateTests : DatabaseTest
             await CreateUpsert(DataSource!).Upsert(upsertRequest);
 
             // Update
-            IUpdateRequest updateRequest = CreateUpdateRequest(_documentUuidGuid, upsertRequest.DocumentInfo.ReferentialId.Value, _edFiDocString2);
+            IUpdateRequest updateRequest = CreateUpdateRequest(
+                _documentUuidGuid,
+                upsertRequest.DocumentInfo.ReferentialId.Value,
+                _edFiDocString2
+            );
             _updateResult = await CreateUpdate(DataSource!).UpdateById(updateRequest);
 
             // Confirm change was made
@@ -126,7 +76,11 @@ public class UpdateTests : DatabaseTest
             await CreateUpsert(DataSource!).Upsert(upsertRequest);
 
             // Update
-            IUpdateRequest updateRequest = CreateUpdateRequest(_documentUuidGuid, _referentialIdGuid, _edFiDocString2);
+            IUpdateRequest updateRequest = CreateUpdateRequest(
+                _documentUuidGuid,
+                _referentialIdGuid,
+                _edFiDocString2
+            );
             _updateResult = await CreateUpdate(DataSource!).UpdateById(updateRequest);
 
             // Confirm change was made

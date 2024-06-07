@@ -65,9 +65,24 @@ public interface ISqlAction
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     );
+
+    public Task<int> DeleteAliasByDocumentId(
+        int documentPartitionKey,
+        long? documentId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    public Task<int> DeleteDocumentByDocumentId(
+        int documentPartitionKey,
+        long? documentId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
 }
 
 public record UpsertDocumentSqlResult(bool Inserted, long DocumentId);
+
 public record UpdateDocumentValidationResult(bool DocumentExists, bool ReferentialIdExists);
 
 /// <summary>
@@ -272,28 +287,30 @@ public class SqlAction : ISqlAction
         ReferentialId referentialId,
         PartitionKey referentialPartitionKey,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction)
+        NpgsqlTransaction transaction
+    )
     {
-        await using NpgsqlCommand validationCommand = new(
-            @"SELECT DocumentUuid, ReferentialId
+        await using NpgsqlCommand validationCommand =
+            new(
+                @"SELECT DocumentUuid, ReferentialId
                 FROM public.documents d
                 LEFT JOIN public.aliases a ON
                     a.DocumentId = d.Id
                     AND a.DocumentPartitionKey = d.DocumentPartitionKey
                     AND a.ReferentialId = $1 and a.ReferentialPartitionKey = $2
                 WHERE d.DocumentUuid = $3 AND d.DocumentPartitionKey = $4",
-            connection,
-            transaction
-        )
-        {
-            Parameters =
+                connection,
+                transaction
+            )
             {
-                new() { Value = referentialId.Value },
-                new() { Value = referentialPartitionKey.Value },
-                new() { Value = documentUuid.Value },
-                new() { Value = documentPartitionKey.Value },
-            }
-        };
+                Parameters =
+                {
+                    new() { Value = referentialId.Value },
+                    new() { Value = referentialPartitionKey.Value },
+                    new() { Value = documentUuid.Value },
+                    new() { Value = documentPartitionKey.Value },
+                }
+            };
 
         await using NpgsqlDataReader reader = await validationCommand.ExecuteReaderAsync();
 
@@ -342,5 +359,103 @@ public class SqlAction : ISqlAction
         };
 
         return Convert.ToInt64(await insertAliasCmd.ExecuteScalarAsync());
+    }
+
+    /// <summary>
+    /// Delete associated Alias records for a given DocumentId return the number of rows affected
+    /// </summary>
+    public async Task<int> DeleteAliasByDocumentId(
+        int documentPartitionKey,
+        long? documentId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command =
+            new(
+                @"DELETE from public.Aliases WHERE DocumentId = $1 AND DocumentPartitionKey = $2",
+                connection,
+                transaction
+            )
+            {
+                Parameters =
+                {
+                    new() { Value = documentId },
+                    new() { Value = documentPartitionKey }
+                }
+            };
+
+        int rowsAffected = await command.ExecuteNonQueryAsync();
+        return rowsAffected;
+    }
+
+    /// <summary>
+    /// Delete a document for a given Id and returns the number of rows affected
+    /// </summary>
+    public async Task<int> DeleteDocumentByDocumentId(
+        int documentPartitionKey,
+        long? documentId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command =
+            new(
+                @"DELETE from public.Documents WHERE Id = $1 AND DocumentPartitionKey = $2",
+                connection,
+                transaction
+            )
+            {
+                Parameters =
+                {
+                    new() { Value = documentId },
+                    new() { Value = documentPartitionKey }
+                }
+            };
+
+        int rowsAffected = await command.ExecuteNonQueryAsync();
+        return rowsAffected;
+    }
+
+    public async Task<Document?> FindDocumentByDocumentUuid(
+        int documentPartitionKey,
+        DocumentUuid documentUuid,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command =
+            new(
+                @"SELECT * from public.Documents WHERE DocumentUuid = $1 AND DocumentPartitionKey = $2",
+                connection,
+                transaction
+            )
+            {
+                Parameters =
+                {
+                    new() { Value = documentUuid.Value },
+                    new() { Value = documentPartitionKey }
+                }
+            };
+
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+
+        if (!reader.HasRows)
+        {
+            return null;
+        }
+        await reader.ReadAsync();
+
+        return new(
+            Id: reader.GetInt64(reader.GetOrdinal("Id")),
+            DocumentPartitionKey: reader.GetInt16(reader.GetOrdinal("DocumentPartitionKey")),
+            DocumentUuid: reader.GetGuid(reader.GetOrdinal("DocumentUuid")),
+            ResourceName: reader.GetString(reader.GetOrdinal("ResourceName")),
+            ResourceVersion: reader.GetString(reader.GetOrdinal("ResourceVersion")),
+            ProjectName: reader.GetString(reader.GetOrdinal("ProjectName")),
+            EdfiDoc: await reader.GetFieldValueAsync<JsonElement>(reader.GetOrdinal("EdfiDoc")),
+            CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
+            LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt"))
+        );
     }
 }
