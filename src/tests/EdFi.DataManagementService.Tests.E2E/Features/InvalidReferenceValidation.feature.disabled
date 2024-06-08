@@ -120,6 +120,6 @@ Feature: Invalid Reference Validation
                       "type": "urn:ed-fi:api:conflict:invalid-reference",
                       "title": "Resource Not Unique Conflict due to invalid-reference",
                       "status": 409,
-                      "correlationId": "76e6b75d-8df7-44ed-9ed5-94b4b06cee01"
+                      "correlationId": null
                   }
                   """
