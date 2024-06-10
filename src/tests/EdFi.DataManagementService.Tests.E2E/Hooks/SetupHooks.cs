@@ -15,7 +15,7 @@ public class SetupHooks
     private static IConfiguration? _configuration;
 
     [BeforeFeature]
-    public static async Task BeforeTestRun(
+    public static async Task BeforeFeature(
         PlaywrightContext context,
         TestLogger logger
     )
