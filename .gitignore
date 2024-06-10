@@ -408,3 +408,7 @@ app-secret.yaml
 
 # Coverage
 coveragereport
+
+# Reqnroll
+**/Features/*.feature.cs
+**/Features/**/*.feature.cs
