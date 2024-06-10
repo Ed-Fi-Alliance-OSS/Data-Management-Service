@@ -19,11 +19,11 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
 
         if (context.FrontendRequest.QueryParameters.ContainsKey("offset"))
         {
-            offset = int.TryParse(context.FrontendRequest.QueryParameters["offset"], out int offsetResult) ? offsetResult : 0;
+            offset = int.TryParse(context.FrontendRequest.QueryParameters["offset"], out int offsetResult) ? offsetResult : offset;
         }
         if (context.FrontendRequest.QueryParameters.ContainsKey("limit"))
         {
-            limit = int.TryParse(context.FrontendRequest.QueryParameters["limit"], out int limitResult) ? limitResult : 25;
+            limit = int.TryParse(context.FrontendRequest.QueryParameters["limit"], out int limitResult) ? limitResult : limit;
         }
 
         context.PaginationParameters = new(limit, offset);
