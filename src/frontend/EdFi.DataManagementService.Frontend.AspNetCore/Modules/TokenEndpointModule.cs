@@ -7,7 +7,6 @@ using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
-
 public class TokenEndpointModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
@@ -15,31 +14,12 @@ public class TokenEndpointModule : IEndpointModule
         endpoints.MapPost("/oauth/token", GenerateToken);
     }
 
-    internal async Task GenerateToken(HttpContext httpContext, AuthenticationRequest authenticationRequest)
+    internal async Task GenerateToken(HttpContext httpContext)
     {
-        if (
-            authenticationRequest == null
-            || (
-                string.IsNullOrEmpty(authenticationRequest.Key)
-                || string.IsNullOrEmpty(authenticationRequest.Secret)
-            )
-        )
-        {
-            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
-            await httpContext.Response.WriteAsync("Please provide valid key and secret.");
-            return;
-        }
-
         var tokenDetails = new TokenResponse("temporary-fake-token", 1800, "bearer");
         httpContext.Response.StatusCode = StatusCodes.Status200OK;
         await httpContext.Response.WriteAsSerializedJsonAsync(tokenDetails);
     }
-}
-
-public record AuthenticationRequest()
-{
-    public required string Key { get; set; }
-    public required string Secret { get; set; }
 }
 
 public record TokenResponse(string access_token, int expires_in, string token_type);
