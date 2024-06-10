@@ -33,7 +33,7 @@ jobs:
 
       - name: Notify Slack on success
         if: success()
-        uses: slackapi/slack-github-action@v1.23.0
+        uses: slackapi/slack-github-action@v1.26.0
         with:
           payload: '{"text":"✅ Build and tests passed for the scheduled run!"}'
         env:
@@ -41,7 +41,7 @@ jobs:
 
       - name: Notify Slack on failure
         if: failure()
-        uses: slackapi/slack-github-action@v1.23.0
+        uses: slackapi/slack-github-action@v1.26.0
         with:
           payload: '{"text":"❌ Build or tests failed for the scheduled run!"}'
         env:
