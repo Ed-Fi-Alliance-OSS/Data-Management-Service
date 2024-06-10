@@ -35,14 +35,18 @@ jobs:
         if: success()
         uses: slackapi/slack-github-action@v1.26.0
         with:
+          channel-id: 'team-b'
           payload: '{"text":"✅ Build and tests passed for the scheduled run!"}'
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
       - name: Notify Slack on failure
         if: failure()
         uses: slackapi/slack-github-action@v1.26.0
         with:
+          channel-id: 'team-b'
           payload: '{"text":"❌ Build or tests failed for the scheduled run!"}'
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
