@@ -47,20 +47,31 @@ public class SetupHooks
     }
 
     [AfterFeature]
-    public static async Task AfterFeature(TestLogger logger)
+    public static async Task AfterFeature(PlaywrightContext context, TestLogger logger)
     {
+
         var logs = await ContainerSetup.ApiContainer!.GetLogsAsync();
-        logger.log.Information($"{Environment.NewLine}API stdout logs:{Environment.NewLine}{logs.Stderr}");
+        logger.log.Information($"{Environment.NewLine}API stdout logs:{Environment.NewLine}{logs.Stdout}");
 
         if (!string.IsNullOrEmpty(logs.Stderr))
         {
             logger.log.Error($"{Environment.NewLine}API stderr logs:{Environment.NewLine}{logs.Stderr}");
         }
+
+        await ContainerSetup.DbContainer!.DisposeAsync();
+        await ContainerSetup.ApiContainer!.DisposeAsync();
     }
 
     [AfterTestRun]
-    public static void AfterTestRun(PlaywrightContext context)
+    public static async Task AfterTestRun(PlaywrightContext context, TestLogger logger)
     {
+        var logs = await ContainerSetup.ApiContainer!.GetLogsAsync();
+        logger.log.Information($"{Environment.NewLine}API stdout logs:{Environment.NewLine}{logs.Stdout}");
+
+        if (!string.IsNullOrEmpty(logs.Stderr))
+        {
+            logger.log.Error($"{Environment.NewLine}API stderr logs:{Environment.NewLine}{logs.Stderr}");
+        }
         context.Dispose();
     }
 }
