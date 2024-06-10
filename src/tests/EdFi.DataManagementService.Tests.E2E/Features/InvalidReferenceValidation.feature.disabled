@@ -1,0 +1,125 @@
+Feature: Invalid Reference Validation
+    POST requests validating invalid references
+
+    //Scenario needs to work with 409
+        @ignore
+        Scenario: PENDING Ensure clients cannot create a resource with an invalid reference
+             When a POST request is made to "ed-fi/studentEducationOrganizationAssociations" with
+                  """
+                  {
+                      "educationOrganizationReference": {
+                          "educationOrganizationId": 19255901
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "1000080"
+                      },
+                      "studentIndicators": [
+                          {
+                              "indicatorName": "Fake",
+                              "indicator": "Fake"
+                          }
+                      ]
+                  }
+                  """
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                      "detail": "Access to the resource could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' resource item.",
+                      "type": "urn:ed-fi:api:security:authorization",
+                      "title": "Authorization Denied",
+                      "status": 403,
+                      "correlationId": null,
+                      "errors": [
+                          "No relationships have been established between the caller's education organization id claims (255901, 19255901) and the resource item's 'StudentUniqueId' value."
+                      ]
+                  }
+                  """
+
+        @ignore
+        Scenario: Ensure clients cannot create a resource with correct information but an invalid value belonging to the reference
+             When a POST request is made to "ed-fi/studentCTEProgramAssociations" with
+                  """
+                  {
+                      "beginDate": "2020-06-05",
+                      "educationOrganizationReference": {
+                          "educationOrganizationId": 255901
+                      },
+                      "programReference": {
+                          "educationOrganizationId": 255901,
+                          "programName": "Fake",
+                          "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education"
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "604825"
+                      }
+                  }
+                  """
+             Then it should respond with 409
+              And the response body is
+                  """
+                  {
+                      "detail": "The referenced 'Program' resource does not exist.",
+                      "type": "urn:ed-fi:api:conflict:invalid-reference",
+                      "title": "Resource Not Unique Conflict due to invalid-reference",
+                      "status": 409,
+                      "correlationId": null
+                  }
+                  """
+
+        @ignore
+        Scenario: Ensure clients cannot create a resource using a reference that is out of range of the existing values
+             When a POST request is made to "ed-fi/graduationPlans" with
+                  """
+                  {
+                     "graduationPlanTypeDescriptor": "uri://ed-fi.org/GraduationPlanTypeDescriptor#Career and Technical Education",
+                     "educationOrganizationReference": {
+                         "educationOrganizationId": 255901
+                     },
+                     "graduationSchoolYearTypeReference": {
+                         "schoolYear": 1970
+                     },
+                     "totalRequiredCredits": 10
+                  }
+                  """
+             Then it should respond with 409
+              And the response body is
+                  """
+                  {
+                    "detail": "The referenced 'SchoolYearType' resource does not exist.",
+                    "type": "urn:ed-fi:api:conflict:invalid-reference",
+                    "title": "Resource Not Unique Conflict due to invalid-reference",
+                    "status": 409,
+                    "correlationId": null
+                  }
+                  """
+
+        @ignore
+        Scenario: Ensure clients cannot create a resource using an invalid reference inside of another reference
+             When a POST request is made to "ed-fi/studentSectionAssociations" with
+                  """
+                  {
+                      "beginDate": "2023-08-23",
+                      "sectionReference": {
+                          "localCourseCode": "ALG-1",
+                          "schoolId": 255901,
+                          "schoolYear": 2022,
+                          "sectionIdentifier": "25590100103Trad220ALG122011",
+                          "sessionName": "2021-2022 Spring Semester"
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "604824"
+                      }
+                  }
+                  """
+             Then it should respond with 409
+              And the response body is
+                  """
+                  {
+                      "detail": "The referenced 'Section' resource does not exist.",
+                      "type": "urn:ed-fi:api:conflict:invalid-reference",
+                      "title": "Resource Not Unique Conflict due to invalid-reference",
+                      "status": 409,
+                      "correlationId": null
+                  }
+                  """
