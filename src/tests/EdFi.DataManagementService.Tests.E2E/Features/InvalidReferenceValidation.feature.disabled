@@ -1,38 +1,28 @@
 Feature: Invalid Reference Validation
     POST requests validating invalid references
 
-    //Scenario needs to work with 409
         @ignore
-        Scenario: PENDING Ensure clients cannot create a resource with an invalid reference
+        Scenario: Ensure clients cannot create a resource with an invalid reference
              When a POST request is made to "ed-fi/studentEducationOrganizationAssociations" with
                   """
                   {
                       "educationOrganizationReference": {
-                          "educationOrganizationId": 19255901
+                          "educationOrganizationId": 1
                       },
                       "studentReference": {
                           "studentUniqueId": "1000080"
-                      },
-                      "studentIndicators": [
-                          {
-                              "indicatorName": "Fake",
-                              "indicator": "Fake"
-                          }
-                      ]
+                      }
                   }
                   """
-             Then it should respond with 403
+             Then it should respond with 409
               And the response body is
                   """
                   {
-                      "detail": "Access to the resource could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' resource item.",
-                      "type": "urn:ed-fi:api:security:authorization",
-                      "title": "Authorization Denied",
-                      "status": 403,
-                      "correlationId": null,
-                      "errors": [
-                          "No relationships have been established between the caller's education organization id claims (255901, 19255901) and the resource item's 'StudentUniqueId' value."
-                      ]
+                      "detail": "The referenced 'EducationOrganization' resource does not exist.",
+                      "type": "urn:ed-fi:api:conflict:invalid-reference",
+                      "title": "Resource Not Unique Conflict due to invalid-reference",
+                      "status": 409,
+                      "correlationId": null
                   }
                   """
 
