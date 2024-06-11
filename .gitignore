@@ -415,4 +415,3 @@ coveragereport
 
 # Development appsettings
 **/*.Test.Integration/appsettings.Test.json
-**/*.Frontend.AspNetCore/appsettings.Development.json
