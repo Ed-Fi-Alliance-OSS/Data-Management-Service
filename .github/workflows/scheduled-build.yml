@@ -31,22 +31,24 @@ jobs:
       - name: Run Unit Tests
         run: ./build.ps1 UnitTest -Configuration Debug
 
-      - name: Notify Slack on success
-        if: success()
-        uses: slackapi/slack-github-action@v1.26.0
-        with:
-          channel-id: 'team-b'
-          payload: '{"text":"✅ Build and tests passed for the scheduled run!"}'
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
-
       - name: Notify Slack on failure
         if: failure()
-        uses: slackapi/slack-github-action@v1.26.0
+        uses: slackapi/slack-github-action@483f51618ef5cbe37df7178a55e3e10188e2ff04 #v1.26.0
         with:
           channel-id: 'team-b'
-          payload: '{"text":"❌ Build or tests failed for the scheduled run!"}'
+          payload: |
+            {
+              "text": "❌ GitHub Action build result: ${{ job.status }}\n${{ github.event.pull_request.html_url || github.event.head_commit.url }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "GitHub Action build result: ${{ job.status }}\n${{ github.event.pull_request.html_url || github.event.head_commit.url }}"
+                  }
+                }
+              ]
+            }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
