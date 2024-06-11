@@ -16,13 +16,13 @@
 
 param(
   [string]
-  $Key = "sampleKey",
+  $Key = "minimalKey",
 
   [string]
-  $Secret = "sampleSecret",
+  $Secret = "minimalSecret",
 
   [string]
-  $BaseUrl = "http://localhost",
+  $BaseUrl = "http://localhost/api",
 
   [string]
   $SampleDataVersion = "5.0.0"
@@ -45,4 +45,4 @@ $parameters = @{
 }
 
 Write-Descriptors @parameters
-Write-PartialGrandBend  @parameters
+#Write-PartialGrandBend  @parameters

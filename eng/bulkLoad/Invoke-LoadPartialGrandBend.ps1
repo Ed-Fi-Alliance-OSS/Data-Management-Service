@@ -42,4 +42,4 @@ $parameters = @{
 }
 
 Write-Descriptors @parameters
-Write-PartialGrandBend  @parameters
+#Write-PartialGrandBend  @parameters
