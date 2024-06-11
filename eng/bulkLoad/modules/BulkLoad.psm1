@@ -88,7 +88,11 @@ function Write-XmlFiles {
         "-x", $Paths.XsdDirectory
     )
 
-    Write-Output -ForegroundColor Cyan $Paths.BulkLoaderExe $options
+    $previousForegroundColor = $host.UI.RawUI.ForegroundColor
+    $host.UI.RawUI.ForegroundColor = "Cyan"
+    Write-Output $Paths.BulkLoaderExe $options
+    $host.UI.RawUI.ForegroundColor = $previousForegroundColor
+
     &dotnet $Paths.BulkLoaderExe $options
 }
 
