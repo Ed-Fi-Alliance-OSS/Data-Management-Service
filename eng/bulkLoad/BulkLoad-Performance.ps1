@@ -9,7 +9,7 @@
 #>
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingInvokeExpression', '', Justification='This use is safe; the $Template is restricted to safe inputs.')]
 param(
-    [ValidateSet("GrandBend", "PartialGrandBend", "Southridge")]
+    [ValidateSet("GrandBend", "PartialGrandBend", "Southridge", "PartialGrandBend-ODSAPI")]
     $Template = "Southridge",
 
     [Switch]
