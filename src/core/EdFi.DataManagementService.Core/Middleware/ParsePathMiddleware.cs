@@ -18,23 +18,12 @@ internal record PathInfo(string ProjectNamespace, string EndpointName, string? D
 /// </summary>
 internal partial class ParsePathMiddleware(ILogger _logger) : IPipelineStep
 {
-    // Matches all of the following sample expressions:
-    // /ed-fi/sections
-    // /ed-fi/sections/
-    // /ed-fi/sections/idValue
-    [GeneratedRegex(@"\/(?<projectNamespace>[^/]+)\/(?<endpointName>[^/]+)(\/|$)((?<documentUuid>[^/]*$))?")]
-    private static partial Regex PathExpressionRegex();
-
-    // Regex for a UUID v4 string
-    [GeneratedRegex(@"^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")]
-    private static partial Regex Uuid4Regex();
-
     /// <summary>
     /// Uses a regex to split the path into PathComponents, or return null if the path is invalid
     /// </summary>
     private static PathInfo? PathInfoFrom(string path)
     {
-        Match match = PathExpressionRegex().Match(path);
+        Match match = UtilityService.PathExpressionRegex().Match(path);
 
         if (!match.Success)
         {
@@ -56,7 +45,7 @@ internal partial class ParsePathMiddleware(ILogger _logger) : IPipelineStep
     /// </summary>
     private static bool IsDocumentUuidWellFormed(string documentUuidString)
     {
-        return Uuid4Regex().IsMatch(documentUuidString.ToLower());
+        return UtilityService.Uuid4Regex().IsMatch(documentUuidString.ToLower());
     }
 
     public async Task Execute(PipelineContext context, Func<Task> next)

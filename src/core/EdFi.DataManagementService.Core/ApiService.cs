@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -13,6 +14,7 @@ using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Validation;
+using Microsoft.CodeAnalysis;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core;
@@ -25,6 +27,7 @@ internal class ApiService(
     IApiSchemaValidator _apiSchemaValidator,
     IDocumentStoreRepository _documentStoreRepository,
     IDocumentValidator _documentValidator,
+    IQueryHandler _queryHandler,
     IMatchingDocumentUuidsValidator matchingDocumentUuidsValidator,
     IEqualityConstraintValidator _equalityConstraintValidator,
     ILogger<ApiService> _logger
@@ -68,6 +71,26 @@ internal class ApiService(
                         new ValidateEndpointMiddleware(_logger),
                         new BuildResourceInfoMiddleware(_logger),
                         new GetByIdHandler(_documentStoreRepository, _logger)
+                    ]
+                )
+        );
+
+    /// <summary>
+    /// The pipeline steps to satisfy a get by resource name request
+    /// </summary>
+    private readonly Lazy<PipelineProvider> _getByKeySteps =
+        new(
+            () =>
+                new(
+                    [
+                        new CoreLoggingMiddleware(_logger),
+                        new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
+                        new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
+                        new ParsePathMiddleware(_logger),
+                        new ValidateEndpointMiddleware(_logger),
+                        new BuildResourceInfoMiddleware(_logger),
+                        new ValidateQueryMiddleware(_logger),
+                        new GetByKeyHandler(_queryHandler, _logger)
                     ]
                 )
         );
@@ -128,10 +151,29 @@ internal class ApiService(
     /// <summary>
     /// DMS entry point for all API GET by id requests
     /// </summary>
-    public async Task<IFrontendResponse> GetById(FrontendRequest frontendRequest)
+    public async Task<IFrontendResponse> Get(FrontendRequest frontendRequest)
     {
         PipelineContext pipelineContext = new(frontendRequest, RequestMethod.GET);
-        await _getByIdSteps.Value.Run(pipelineContext);
+
+        Match match = UtilityService.PathExpressionRegex().Match(frontendRequest.Path);
+
+        string documentUuidValue;
+        string? documentUuid = string.Empty;
+
+        if (match.Success)
+        {
+            documentUuidValue = match.Groups["documentUuid"].Value;
+            documentUuid = documentUuidValue == "" ? null : documentUuidValue;
+        }
+
+        if (documentUuid != null)
+        {
+            await _getByIdSteps.Value.Run(pipelineContext);
+        }
+        else
+        {
+            await _getByKeySteps.Value.Run(pipelineContext);
+        }
         return pipelineContext.FrontendResponse;
     }
 

@@ -12,7 +12,7 @@ public class CoreEndpointModule : IEndpointModule
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPost("/data/{**dmsPath}", Upsert);
-        endpoints.MapGet("/data/{**dmsPath}", GetById);
+        endpoints.MapGet("/data/{**dmsPath}", Get);
         endpoints.MapPut("/data/{**dmsPath}", UpdateById);
         endpoints.MapDelete("/data/{**dmsPath}", DeleteById);
     }

@@ -30,5 +30,5 @@ public interface IQueryRequest
     /// <summary>
     /// The request TraceId
     /// </summary>
-    TraceId TraceId { get; }
+    ITraceId TraceId { get; }
 }

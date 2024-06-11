@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
@@ -17,7 +16,10 @@ public interface IGetDocumentById
     public Task<GetResult> GetById(IGetRequest getRequest);
 }
 
-public class GetDocumentById(NpgsqlDataSource _dataSource, ILogger<GetDocumentById> _logger)
+public class GetDocumentById(
+    NpgsqlDataSource _dataSource,
+    ISqlAction _sqlAction,
+    ILogger<GetDocumentById> _logger)
     : IGetDocumentById
 {
     public async Task<GetResult> GetById(IGetRequest getRequest)
@@ -26,41 +28,23 @@ public class GetDocumentById(NpgsqlDataSource _dataSource, ILogger<GetDocumentBy
 
         try
         {
+            int documentPartitionKey = PartitionKeyFor(getRequest.DocumentUuid).Value;
+
             await using var connection = await _dataSource.OpenConnectionAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
 
-            await using NpgsqlCommand command =
-                new(
-                    @"SELECT EdfiDoc FROM public.Documents WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2;",
-                    connection
-                )
-                {
-                    Parameters =
-                    {
-                        new() { Value = PartitionKeyFor(getRequest.DocumentUuid).Value },
-                        new() { Value = getRequest.DocumentUuid.Value },
-                    }
-                };
+            JsonNode? edfiDoc = await _sqlAction.GetDocumentById(
+                getRequest.DocumentUuid.Value, documentPartitionKey, connection, transaction
+            );
 
-            await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
-
-            if (!reader.HasRows)
+            if (edfiDoc != null)
+            {
+                return new GetResult.GetSuccess(getRequest.DocumentUuid, edfiDoc, DateTime.Now);
+            }
+            else
             {
                 return new GetResult.GetFailureNotExists();
             }
-
-            // Assumes only one row returned
-            await reader.ReadAsync();
-            JsonNode? edfiDoc = (await reader.GetFieldValueAsync<JsonElement>(0)).Deserialize<JsonNode>();
-
-            if (edfiDoc == null)
-            {
-                return new GetResult.UnknownFailure(
-                    $"Unable to parse JSON for document {getRequest.DocumentUuid}."
-                );
-            }
-
-            // TODO: Documents table needs a last modified datetime
-            return new GetResult.GetSuccess(getRequest.DocumentUuid, edfiDoc, DateTime.Now);
         }
         catch (Exception ex)
         {

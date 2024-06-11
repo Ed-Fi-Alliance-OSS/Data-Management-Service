@@ -19,6 +19,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private string _dependentId = string.Empty;
         private string _location = string.Empty;
 
+        #region Given
+
         [Given("the Data Management Service must receive a token issued by {string}")]
         public void GivenTheDataManagementServiceMustReceiveATokenIssuedBy(string p0)
         {
@@ -43,6 +45,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 _id = _apiResponse.Headers["location"].Split('/').Last();
             }
         }
+
+        #endregion
+
+        #region When
 
         [When("a POST request is made to {string} with")]
         public async Task WhenSendingAPOSTRequestToWithBody(string url, string body)
@@ -93,6 +99,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(url)!;
         }
 
+        #endregion
+
+        #region Then
+
         [Then("it should respond with {int}")]
         public void ThenItShouldRespondWith(int statusCode)
         {
@@ -139,5 +149,37 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information(responseJson.ToString());
             JsonNode.DeepEquals(bodyJson, responseJson).Should().BeTrue();
         }
+
+        [Then("total of records should be {int}")]
+        public void ThenTotalOfRecordsShouldBe(int totalRecords)
+        {
+            JsonNode responseJson = JsonNode.Parse(_apiResponse.TextAsync().Result)!;
+            _logger.log.Information(responseJson.ToString());
+
+            int count = 0;
+            if (responseJson != null)
+            {
+                if (responseJson is JsonObject jsonObject)
+                {
+                    foreach (var property in jsonObject)
+                    {
+                        count += 1;
+                    }
+                }
+                // If the node is an array, count its elements
+                else if (responseJson is JsonArray jsonArray)
+                {
+                    foreach (var item in jsonArray)
+                    {
+                        count += 1;
+                    }
+                }
+            }
+
+            count.Should().Be(totalRecords);
+        }
+        #endregion
+
+
     }
 }

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -28,6 +29,20 @@ public interface ISqlAction
     public Task<Document?> FindDocumentByDocumentUuid(
         int documentPartitionKey,
         DocumentUuid documentUuid,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    public Task<JsonNode[]> GetDocumentsByKey(
+        string resourceName,
+        IPaginationParameters paginationParameters,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    public Task<JsonNode?> GetDocumentById(
+        Guid documentUuid,
+        int partitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     );
@@ -131,6 +146,84 @@ public class SqlAction : ISqlAction
             CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
             LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt"))
         );
+    }
+
+    /// <summary>
+    /// Returns Documents from the database corresponding to the given ResourceName,
+    /// or null if no matching Document was found.
+    /// </summary>
+    public async Task<JsonNode[]> GetDocumentsByKey(
+        string resourceName,
+        IPaginationParameters paginationParameters,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command =
+            new(
+                @"SELECT EdfiDoc FROM public.Documents WHERE resourcename = $1 ORDER BY createdat OFFSET $2 ROWS FETCH FIRST $3 ROWS ONLY;",
+                connection
+            )
+            {
+                Parameters =
+                {
+                    new() { Value = resourceName},
+                    new() { Value = paginationParameters.offset },
+                    new() { Value = paginationParameters.limit },
+                }
+            };
+
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+
+        var documents = new List<JsonNode>();
+
+        while (await reader.ReadAsync())
+        {
+            JsonNode? edfiDoc = (await reader.GetFieldValueAsync<JsonElement>(0)).Deserialize<JsonNode>();
+
+            if (edfiDoc != null)
+            {
+                documents.Add(edfiDoc);
+            }
+        }
+
+        return documents.ToArray();
+    }
+
+    /// <summary>
+    /// Returns a single Document from the database corresponding to the given Id,
+    /// or null if no matching Document was found.
+    /// </summary>
+    public async Task<JsonNode?> GetDocumentById(
+        Guid documentUuid,
+        int partitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction)
+    {
+        await using NpgsqlCommand command =
+            new(
+                @"SELECT EdfiDoc FROM public.Documents WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2;",
+                connection
+            )
+            {
+                Parameters =
+                {
+                    new() { Value = partitionKey },
+                    new() { Value = documentUuid },
+                }
+            };
+
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+
+        if (!reader.HasRows)
+        {
+            return null;
+        }
+
+        await reader.ReadAsync();
+        JsonNode? edfiDoc = (await reader.GetFieldValueAsync<JsonElement>(0)).Deserialize<JsonNode>();
+
+        return edfiDoc;
     }
 
     /// <summary>

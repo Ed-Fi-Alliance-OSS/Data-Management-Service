@@ -68,6 +68,65 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration
             ).ActLike<IUpsertRequest>();
         }
 
+        public static List<IUpsertRequest> CreateMultipleUpsertRequest(Dictionary<Guid, string> documents, string? resourceName)
+        {
+            var upsertRequests = new List<IUpsertRequest>();
+
+            foreach (var document in documents)
+            {
+                var documentUuidGuid = document.Key;
+                var edFiDocString = document.Value;
+
+                // To avoid being taken as an update
+                var documentInfo = (
+                    new
+                    {
+                        DocumentIdentity = (
+                            new { IdentityValue = "", IdentityJsonPath = AsValueType<IJsonPath, string>("$") }
+                        ).ActLike<IResourceInfo>(),
+                        ReferentialId = new ReferentialId(documentUuidGuid),
+                        DocumentReferences = new List<IDocumentReference>(),
+                        DescriptorReferences = new List<IDocumentReference>(),
+                        SuperclassIdentity = null as ISuperclassIdentity
+                    }
+                ).ActLike<IDocumentInfo>();
+
+                // To set a different resource name if necessary
+                IResourceInfo? resourceInfo;
+                if (resourceName == string.Empty)
+                {
+                    resourceInfo = _resourceInfo;
+                }
+                else
+                {
+                    resourceInfo = (
+                        new
+                        {
+                            ResourceVersion = AsValueType<ISemVer, string>("5.0.0"),
+                            AllowIdentityUpdates = false,
+                            ProjectName = AsValueType<IMetaEdProjectName, string>("ProjectName"),
+                            ResourceName = AsValueType<IMetaEdProjectName, string>(resourceName == null ? "" : resourceName),
+                            IsDescriptor = false
+                        }
+                        ).ActLike<IResourceInfo>();
+                }
+
+                var upsertRequest = (
+                    new
+                    {
+                        ResourceInfo = resourceInfo,
+                        DocumentInfo = documentInfo,
+                        EdfiDoc = JsonNode.Parse(edFiDocString),
+                        TraceId = new TraceId("123"),
+                        DocumentUuid = new DocumentUuid(documentUuidGuid)
+                    }
+                ).ActLike<IUpsertRequest>();
+
+                upsertRequests.Add(upsertRequest);
+            }
+            return upsertRequests;
+        }
+
         public static IUpdateRequest CreateUpdateRequest(
             Guid documentUuidGuid,
             Guid referentialIdGuid,
@@ -113,6 +172,37 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration
             ).ActLike<IGetRequest>();
         }
 
+        public static IQueryRequest CreateGetRequestbyKey(Dictionary<string, string>? searchParameters, IPaginationParameters? paginationParameters, string? resourceName)
+        {
+            // To set a different resource name if necessary
+            IResourceInfo? resourseInfo;
+            if (resourceName == string.Empty)
+            {
+                resourseInfo = _resourceInfo;
+            }
+            else
+            {
+                resourseInfo = (new
+                        {
+                            ResourceVersion = AsValueType<ISemVer, string>("5.0.0"),
+                            AllowIdentityUpdates = false,
+                            ProjectName = AsValueType<IMetaEdProjectName, string>("ProjectName"),
+                            ResourceName = AsValueType<IMetaEdProjectName, string>(resourceName == null ? "" : resourceName),
+                            IsDescriptor = false
+                        }
+                    ).ActLike<IResourceInfo>();
+            }
+            return (
+                new
+                {
+                    resourceInfo = resourseInfo,
+                    searchParameters,
+                    paginationParameters,
+                    TraceId = new TraceId("123")
+                }
+            ).ActLike<IQueryRequest>();
+        }
+
         public static IDeleteRequest CreateDeleteRequest(Guid documentUuidGuid)
         {
             return (
@@ -141,7 +231,12 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration
 
         public static GetDocumentById CreateGetById(NpgsqlDataSource dataSource)
         {
-            return new GetDocumentById(dataSource, NullLogger<GetDocumentById>.Instance);
+            return new GetDocumentById(dataSource, new SqlAction(), NullLogger<GetDocumentById>.Instance);
+        }
+
+        public static GetDocumentByKey GetDocumentByKey(NpgsqlDataSource dataSource)
+        {
+            return new GetDocumentByKey(dataSource, new SqlAction(), NullLogger<GetDocumentByKey>.Instance);
         }
 
         public static DeleteDocumentById CreateDeleteById(NpgsqlDataSource dataSource)

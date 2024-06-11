@@ -28,6 +28,7 @@ public static class PostgresqlBackendServiceExtensions
         services.AddSingleton<IDocumentStoreRepository, PostgresqlDocumentStoreRepository>();
         services.AddSingleton<ISqlAction, SqlAction>();
         services.AddSingleton<IGetDocumentById, GetDocumentById>();
+        services.AddSingleton<IQueryHandler, GetDocumentByKey>();
         services.AddSingleton<IUpdateDocumentById, UpdateDocumentById>();
         services.AddSingleton<IUpsertDocument, UpsertDocument>();
         services.AddSingleton<IDeleteDocumentById, DeleteDocumentById>();

@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
+using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 
@@ -47,6 +48,8 @@ internal static class No
     public static readonly ReferentialId ReferentialId = new(Guid.Empty);
 
     public static readonly JsonNode JsonNode = new JsonObject();
+
+    public static readonly PaginationParameters PaginationParameters = new(0, 0);
 
     /// <summary>
     /// The null object for PathComponents

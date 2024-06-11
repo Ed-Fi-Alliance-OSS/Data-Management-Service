@@ -101,10 +101,10 @@ public static class AspNetCoreFrontend
     /// <summary>
     /// ASP.NET Core entry point for all API GET by id requests to DMS
     /// </summary>
-    public static async Task<IResult> GetById(HttpContext httpContext, IApiService apiService, string dmsPath)
+    public static async Task<IResult> Get(HttpContext httpContext, IApiService apiService, string dmsPath)
     {
         return ToResult(
-            await apiService.GetById(await FromRequest(httpContext.Request, dmsPath)),
+            await apiService.Get(await FromRequest(httpContext.Request, dmsPath)),
             httpContext,
             dmsPath
         );
