@@ -1,0 +1,82 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+name: Scheduled Build
+
+on:
+  schedule:
+  - cron: '0 8 * * 6' # Scheduled the job to run every Saturday at 8 AM UTC
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Cache Nuget packages
+        uses: actions/cache@ab5e6d0c87105b4c9c2047343972218f562e4319 #v4.0.1
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Build
+        id: build_step
+        run: |
+          ./build.ps1 Build -Configuration Debug || {
+            echo "error_message=Command failed: ./build.ps1 Build -Configuration Debug: Permission denied" >> $GITHUB_ENV
+            exit 1
+          }
+        shell: bash
+
+      - name: Run Unit Tests
+        id: unit_test_step
+        run: |
+         ./build.ps1 UnitTest -Configuration Debug || {
+            echo "error_message=Command failed: ./build.ps1 UnitTest -Configuration Debug: Permission denied" >> $GITHUB_ENV
+            exit 1
+          }
+        shell: bash
+
+      - name: Set error message output
+        if: failure()
+        id: set_error_message
+        run: |
+          echo "::set-output name=error::${{ env.error_message }}"
+
+      - name: Notify Slack on success
+        if: success()
+        uses: slackapi/slack-github-action@483f51618ef5cbe37df7178a55e3e10188e2ff04 #v1.26.0
+        with:
+          channel-id: 'team-b'
+          payload: '{"text":"✅ Build and tests passed for the scheduled run!"}'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@483f51618ef5cbe37df7178a55e3e10188e2ff04 #v1.26.0
+        with:
+          channel-id: 'team-b'
+          payload: |
+            {
+              "text": "❌ GitHub Action build result: ${{ job.status }}\n${{ github.event.pull_request.html_url || github.event.head_commit.url }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "❌ GitHub Action build result: ${{ job.status }}\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Commit Message:* ${{ github.event.head_commit.message || 'No commit message available' }}\n*Error Message:* ${{ steps.set_error_message.outputs.error || 'No error message available' }}\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
