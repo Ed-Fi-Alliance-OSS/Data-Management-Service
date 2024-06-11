@@ -9,3 +9,4 @@ data:
     postgres-port: "5402"
     postgres-dbname: postgres
     need-db-setup: "true"
+    log-level: "Information"

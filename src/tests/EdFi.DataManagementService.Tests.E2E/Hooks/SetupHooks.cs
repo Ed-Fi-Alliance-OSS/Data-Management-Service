@@ -14,10 +14,9 @@ public class SetupHooks
 {
     private static IConfiguration? _configuration;
 
-    [BeforeTestRun]
-    public static async Task BeforeTestRun(
+    [BeforeFeature]
+    public static async Task BeforeFeature(
         PlaywrightContext context,
-        ContainerSetup containers,
         TestLogger logger
     )
     {
@@ -32,8 +31,7 @@ public class SetupHooks
             if (useTestContainers)
             {
                 logger.log.Debug("Using TestContainers to set environment");
-
-                context.ApiUrl = await containers.SetupDataManagement();
+                context.ApiUrl = await ContainerSetup.SetupDataManagement();
             }
             else
             {
@@ -44,13 +42,36 @@ public class SetupHooks
         }
         catch (Exception exception)
         {
-            Assert.Fail($"Unable to configure environment\nError starting API: {exception}");
+            logger.log.Error($"Unable to configure environment\nError starting API: {exception}");
         }
     }
 
-    [AfterTestRun]
-    public static void AfterTestRun(PlaywrightContext context)
+    [AfterFeature]
+    public static async Task AfterFeature(PlaywrightContext context, TestLogger logger)
     {
+
+        var logs = await ContainerSetup.ApiContainer!.GetLogsAsync();
+        logger.log.Information($"{Environment.NewLine}API stdout logs:{Environment.NewLine}{logs.Stdout}");
+
+        if (!string.IsNullOrEmpty(logs.Stderr))
+        {
+            logger.log.Error($"{Environment.NewLine}API stderr logs:{Environment.NewLine}{logs.Stderr}");
+        }
+
+        await ContainerSetup.DbContainer!.DisposeAsync();
+        await ContainerSetup.ApiContainer!.DisposeAsync();
+    }
+
+    [AfterTestRun]
+    public static async Task AfterTestRun(PlaywrightContext context, TestLogger logger)
+    {
+        var logs = await ContainerSetup.ApiContainer!.GetLogsAsync();
+        logger.log.Information($"{Environment.NewLine}API stdout logs:{Environment.NewLine}{logs.Stdout}");
+
+        if (!string.IsNullOrEmpty(logs.Stderr))
+        {
+            logger.log.Error($"{Environment.NewLine}API stderr logs:{Environment.NewLine}{logs.Stderr}");
+        }
         context.Dispose();
     }
 }
