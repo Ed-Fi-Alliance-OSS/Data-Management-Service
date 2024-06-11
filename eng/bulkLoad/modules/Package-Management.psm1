@@ -57,6 +57,7 @@ function Invoke-SemanticSort {
 #>
 function Get-NugetPackage {
     [CmdletBinding()]
+    [OutputType([String])]
     param(
         [Parameter(Mandatory=$true)]
         [string]

@@ -5,19 +5,28 @@
 
 # Runs the complete bulk upload of the Grand Bend dataset, aka "populated template"
 
+param(
+  [string]
+  $Key = "sampleKey",
+
+  [string]
+  $Secret = "sampleSecret",
+
+  # 8080 is the default k8s port
+  # 5198 is the default when running F5
+  [string]
+  $BaseUrl = "http://localhost:8080",
+
+  [string]
+  $SampleDataVersion = "5.0.0"
+)
+
 #Requires -Version 7
 $ErrorActionPreference = "Stop"
 
 Import-Module ./modules/Package-Management.psm1 -Force
 Import-Module ./modules/Get-XSD.psm1 -Force
 Import-Module ./modules/BulkLoad.psm1 -Force
-
-$baseUrl = "http://localhost:3000/local"
-$adminKey = "meadowlark_admin_key_1"
-$adminSecret = "meadowlark_admin_secret_1"
-$sampleDataVersion = "3.3.1-b"
-
-$newClient = New-MeadowlarkApiClient -BaseUrl $baseUrl -AdminKey $adminKey -AdminSecret $adminSecret
 
 $paths = Initialize-ToolsAndDirectories
 $paths.SampleDataDirectory = Import-SampleData -Template "GrandBend" -Version $sampleDataVersion

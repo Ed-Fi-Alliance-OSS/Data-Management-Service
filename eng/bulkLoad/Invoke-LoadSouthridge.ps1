@@ -3,29 +3,36 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-# Runs the complete bulk upload of the Southridge dataset
-
 #Requires -Version 7
+
+param(
+  [string]
+  $Key = "sampleKey",
+
+  [string]
+  $Secret = "sampleSecret",
+
+  # 8080 is the default k8s port
+  # 5198 is the default when running F5
+  [string]
+  $BaseUrl = "http://localhost:8080"
+)
+
 $ErrorActionPreference = "Stop"
 
 Import-Module ./modules/Package-Management.psm1 -Force
 Import-Module ./modules/Get-XSD.psm1 -Force
 Import-Module ./modules/BulkLoad.psm1 -Force
 
-$baseUrl = "http://localhost:3000/local"
-$adminKey = "meadowlark_admin_key_1"
-$adminSecret = "meadowlark_admin_secret_1"
-
-$newClient = New-MeadowlarkApiClient -BaseUrl $baseUrl -AdminKey $adminKey -AdminSecret $adminSecret
-
 $paths = Initialize-ToolsAndDirectories
 $paths.SampleDataDirectory = Import-SampleData -Template "Southridge"
 
 $parameters = @{
-  BaseUrl = $baseUrl
-  Key = $newClient.key
-  Secret = $newClient.secret
+  BaseUrl = $BaseUrl
+  Key = $Key
+  Secret = $Secret
   Paths = $paths
 }
 
-Write-Southridge  @parameters
+Write-Descriptors @parameters
+Write-PartialGrandBend  @parameters

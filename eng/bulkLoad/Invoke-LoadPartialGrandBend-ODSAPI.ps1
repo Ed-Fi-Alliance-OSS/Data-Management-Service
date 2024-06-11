@@ -22,7 +22,10 @@ param(
   $Secret = "sampleSecret",
 
   [string]
-  $BaseUrl = "http://localhost"
+  $BaseUrl = "http://localhost",
+
+  [string]
+  $SampleDataVersion = "5.0.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -30,10 +33,9 @@ $ErrorActionPreference = "Stop"
 Import-Module ./modules/Package-Management.psm1 -Force
 Import-Module ./modules/Get-XSD.psm1 -Force
 Import-Module ./modules/BulkLoad.psm1 -Force
-$sampleDataVersion = "3.3.1-b"
 
 $paths = Initialize-ToolsAndDirectories
-$paths.SampleDataDirectory = Import-SampleData -Template "GrandBend" -Version $sampleDataVersion
+$paths.SampleDataDirectory = Import-SampleData -Template "GrandBend" -Version $SampleDataVersion
 
 $parameters = @{
   BaseUrl = $BaseUrl

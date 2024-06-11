@@ -19,7 +19,7 @@ function Get-EdFiXsd {
         $XsdDirectory = ".packages/XSD"
     )
 
-    Write-Host "Downloading XSD files..."
+    Write-Output "Downloading XSD files..."
 
     $serviceBase = Invoke-RestMethod $OdsApiBaseUrl
     $xsdMetadata = $serviceBase.urls.xsdMetadata
@@ -36,12 +36,12 @@ function Get-EdFiXsd {
         $output = "$($XsdDirectory)/$($fileName)"
 
         if ($false -eq (Test-Path $output)) {
-            Write-host "Downloading $xsd"
+            Write-Output "Downloading $xsd"
             Invoke-RestMethod $xsd -OutFile $output
         }
     }
 
-    Write-Host "All XSD files have been retrieved."
+    Write-Output "All XSD files have been retrieved."
 
     return $XsdDirectory
 }

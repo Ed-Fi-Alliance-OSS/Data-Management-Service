@@ -7,6 +7,7 @@
 .DESCRIPTION
     Measure Bulk Load Performance
 #>
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingInvokeExpression', '', Justification='This use is safe; the $Template is restricted to safe inputs.')]
 param(
     [ValidateSet("GrandBend", "PartialGrandBend", "Southridge")]
     $Template = "Southridge",
@@ -17,11 +18,12 @@ param(
 
 if($Update) {
   # Run First to create the data (Without measuring)
-  Write-Host "Creating data"
+  Write-Output "Creating data"
+
   Invoke-Expression "./Invoke-Load$Template.ps1"
 }
 
-Write-Host "Starting Measure for $Template..."
+Write-Output "Starting Measure for $Template..."
 $timing = Measure-Command { Invoke-Expression "./Invoke-Load$Template.ps1"  }
 
 Write-Output "Total Time: $timing"
