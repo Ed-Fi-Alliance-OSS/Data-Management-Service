@@ -412,3 +412,7 @@ coveragereport
 # Reqnroll
 **/Features/*.feature.cs
 **/Features/**/*.feature.cs
+
+# Development appsettings
+**/*.Test.Integration/appsettings.Test.json
+**/*.Frontend.AspNetCore/appsettings.Development.json
