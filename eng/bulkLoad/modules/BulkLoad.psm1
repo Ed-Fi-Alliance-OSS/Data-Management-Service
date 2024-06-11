@@ -11,6 +11,7 @@ $bulkLoadVersion = "7.2"
 
 function Initialize-ToolsAndDirectories {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Overly aggressive rule.')]
+    param()
 
     $bulkLoader = (Join-Path -Path (Get-BulkLoadClient $bulkLoadVersion).Trim() -ChildPath "tools/net*/any/EdFi.BulkLoadClient.Console.dll")
     $bulkLoader = Resolve-Path $bulkLoader

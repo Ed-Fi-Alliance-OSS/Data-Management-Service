@@ -32,9 +32,9 @@ $paths = Initialize-ToolsAndDirectories
 $paths.SampleDataDirectory = Import-SampleData -Template "GrandBend" -Version $sampleDataVersion
 
 $parameters = @{
-  BaseUrl = $baseUrl
-  Key = $newClient.key
-  Secret = $newClient.secret
+  BaseUrl = $BaseUrl
+  Key = $Key
+  Secret = $Secret
   Paths = $paths
 }
 
