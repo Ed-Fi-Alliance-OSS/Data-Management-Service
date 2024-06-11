@@ -6,6 +6,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using Npgsql;
 
@@ -204,7 +205,7 @@ public class SqlAction : ISqlAction
     {
         await using NpgsqlCommand command =
             new(
-                @"SELECT EdfiDoc FROM public.Documents WHERE resourcename = $1 ORDER BY createdat OFFSET $2 ROWS FETCH FIRST $3 ROWS ONLY;",
+                @"SELECT EdfiDoc FROM public.Documents WHERE ResourceName = $1 ORDER BY CreatedAt OFFSET $2 ROWS FETCH FIRST $3 ROWS ONLY;",
                 connection
             )
             {

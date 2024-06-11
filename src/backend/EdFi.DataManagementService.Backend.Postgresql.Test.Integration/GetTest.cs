@@ -5,50 +5,53 @@
 
 using EdFi.DataManagementService.Core.External.Backend;
 using FluentAssertions;
+using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
-
-internal record PaginationParameters(
-    int? limit,
-
-    int? offset
-) : IPaginationParameters;
 
 [TestFixture]
 public class GetTest : DatabaseTest
 {
     [TestFixture]
-    public class Given_an_upsert_of_a_new_document : GetTest
+    public class Given_an_nonexistent_document : GetTest
     {
-        private UpsertResult? _upsertResult;
         private GetResult? _getResult;
-        private QueryResult? _getByKeyResult;
 
-        private static readonly Guid _documentUuidGuid = Guid.NewGuid();
-        private static readonly string _edFiDocString = """{"abc":1}""";
-        
         [SetUp]
         public async Task Setup()
         {
-            IUpsertRequest upsertRequest = CreateUpsertRequest(_documentUuidGuid, _edFiDocString);
-            _upsertResult = await CreateUpsert(DataSource!).Upsert(upsertRequest);
-
-            // Confirm it's there
-            IGetRequest getRequest = CreateGetRequest(_documentUuidGuid);
-            _getResult = await CreateGetById(DataSource!).GetById(getRequest);
-
-            Dictionary<string, string>? searchParameters = new Dictionary<string, string>();
-            PaginationParameters paginationParameters = new PaginationParameters(25, 0);
-
-            IQueryRequest queryRequest = CreateGetRequestbyKey(searchParameters, paginationParameters, string.Empty);
-            _getByKeyResult = await GetDocumentByKey(DataSource!).QueryDocuments(queryRequest);
+            IGetRequest getRequest = CreateGetRequest(Guid.NewGuid());
+            _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
         }
 
         [Test]
-        public void It_should_be_a_successful_insert()
+        public void It_should_not_be_found()
         {
-            _upsertResult!.Should().BeOfType<UpsertResult.InsertSuccess>();
+            _getResult!.Should().BeOfType<GetResult.GetFailureNotExists>();
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_existing_document : GetTest
+    {
+        private GetResult? _getResult;
+
+        private static readonly Guid _documentUuidGuid = Guid.NewGuid();
+        private static readonly string _edFiDocString = """{"abc":1}""";
+
+        [SetUp]
+        public async Task Setup()
+        {
+            IUpsertRequest upsertRequest = CreateUpsertRequest(
+                _documentUuidGuid,
+                Guid.NewGuid(),
+                _edFiDocString
+            );
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+
+            _getResult = await CreateGetById()
+                .GetById(CreateGetRequest(_documentUuidGuid), Connection!, Transaction!);
         }
 
         [Test]
@@ -58,111 +61,99 @@ public class GetTest : DatabaseTest
             (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
             (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Be(_edFiDocString);
         }
-
-        [Test]
-        public void It_should_be_found_by_get_by_key()
-        {
-            _getByKeyResult!.Should().BeOfType<QueryResult.QuerySuccess>();
-            (_getByKeyResult! as QueryResult.QuerySuccess)!.EdfiDocs.Length.Should().Be(1);
-        }
     }
 
     [TestFixture]
-    public class Given_multiple_upserts_of_a_document_whit_same_resource_name : GetTest
+    public class Given_an_overlapping_upsert_and_get_of_the_same_document_with_upsert_committed_first
+        : GetTest
     {
         private UpsertResult? _upsertResult;
-        private QueryResult? _getByKeyResults;
+        private GetResult? _getResult;
+        private static readonly Guid _documentUuidGuid = Guid.NewGuid();
+        private static readonly string _edFiDocString = """{"abc":1}""";
 
         [SetUp]
         public async Task Setup()
         {
-            var documents = new Dictionary<Guid, string>
-            {
-                { Guid.NewGuid(), """{"abc":1}""" },
-                { Guid.NewGuid(), """{"abc":2}""" },
-                { Guid.NewGuid(), """{"abc":3}""" }
-            };
-            
-            List<IUpsertRequest> upsertRequests = CreateMultipleUpsertRequest(documents, string.Empty);
-
-            foreach (var upsertRequest in upsertRequests)
-            {   
-                _upsertResult = await CreateUpsert(DataSource!).Upsert(upsertRequest);
-            }
-            
-            Dictionary<string, string>? searchParameters = new Dictionary<string, string>();
-            PaginationParameters paginationParameters = new PaginationParameters(25, 0);
-
-            IQueryRequest queryRequest = CreateGetRequestbyKey(searchParameters, paginationParameters, string.Empty);
-            _getByKeyResults = await GetDocumentByKey(DataSource!).QueryDocuments(queryRequest);
+            (_upsertResult, _getResult) = await OrchestrateOperations(
+                (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
+                {
+                    return Task.CompletedTask;
+                },
+                async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
+                {
+                    IUpsertRequest upsertRequest = CreateUpsertRequest(
+                        _documentUuidGuid,
+                        Guid.NewGuid(),
+                        _edFiDocString
+                    );
+                    return await CreateUpsert().Upsert(upsertRequest, connection, transaction);
+                },
+                async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
+                {
+                    return await CreateGetById()
+                        .GetById(CreateGetRequest(_documentUuidGuid), Connection!, Transaction!);
+                }
+            );
         }
 
         [Test]
-        public void It_should_be_found_by_get_by_key()
+        public void It_should_be_a_successful_insert_for_1st_transaction()
         {
-            _getByKeyResults!.Should().BeOfType<QueryResult.QuerySuccess>();
-            (_getByKeyResults! as QueryResult.QuerySuccess)!.EdfiDocs.Length.Should().Be(3);
+            _upsertResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+        }
+
+        [Test]
+        public void It_should_be_found_by_get()
+        {
+            (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
+            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Be(_edFiDocString);
         }
     }
 
     [TestFixture]
-    public class Given_multiple_upserts_of_a_document_whit_diferent_resource_name : GetTest
+    public class Given_an_overlapping_upsert_and_get_of_the_same_document_with_get_committed_first : GetTest
     {
         private UpsertResult? _upsertResult;
-        private QueryResult? _getByKeyResults;
-        private QueryResult? _getByKeyResults2;
+        private GetResult? _getResult;
+        private static readonly Guid _documentUuidGuid = Guid.NewGuid();
+        private static readonly string _edFiDocString = """{"abc":1}""";
 
         [SetUp]
         public async Task Setup()
         {
-            var resource1 = new Dictionary<Guid, string>
-            {
-                { Guid.NewGuid(), """{"abc":1}""" },
-                { Guid.NewGuid(), """{"abc":2}""" },
-                { Guid.NewGuid(), """{"abc":3}""" }
-            };
-
-            List<IUpsertRequest> upsertRequests = CreateMultipleUpsertRequest(resource1, string.Empty);
-
-            foreach (var upsertRequest in upsertRequests)
-            {
-                _upsertResult = await CreateUpsert(DataSource!).Upsert(upsertRequest);
-            }
-
-            var resource2 = new Dictionary<Guid, string>
-            {
-                { Guid.NewGuid(), """{"abcde":10}""" }
-            };
-
-            List<IUpsertRequest> upsertRequests2 = CreateMultipleUpsertRequest(resource2, "abc");
-
-            foreach (var upsertRequest2 in upsertRequests2)
-            {
-                _upsertResult = await CreateUpsert(DataSource!).Upsert(upsertRequest2);
-            }
-
-            Dictionary<string, string>? searchParameters = new Dictionary<string, string>();
-            PaginationParameters paginationParameters = new PaginationParameters(25, 0);
-
-            IQueryRequest queryRequest = CreateGetRequestbyKey(searchParameters, paginationParameters, string.Empty);
-            _getByKeyResults = await GetDocumentByKey(DataSource!).QueryDocuments(queryRequest);
-
-            IQueryRequest queryRequest2 = CreateGetRequestbyKey(searchParameters, paginationParameters, "abc");
-            _getByKeyResults2 = await GetDocumentByKey(DataSource!).QueryDocuments(queryRequest2);
+            (_getResult, _upsertResult) = await OrchestrateOperations(
+                (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
+                {
+                    return Task.CompletedTask;
+                },
+                async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
+                {
+                    return await CreateGetById()
+                        .GetById(CreateGetRequest(_documentUuidGuid), Connection!, Transaction!);
+                },
+                async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
+                {
+                    IUpsertRequest upsertRequest = CreateUpsertRequest(
+                        _documentUuidGuid,
+                        Guid.NewGuid(),
+                        _edFiDocString
+                    );
+                    return await CreateUpsert().Upsert(upsertRequest, connection, transaction);
+                }
+            );
         }
 
         [Test]
-        public void It_should_be_found_by_get_by_key_with_no_resource_name ()
+        public void It_should_be_a_successful_insert_for_1st_transaction()
         {
-            _getByKeyResults!.Should().BeOfType<QueryResult.QuerySuccess>();
-            (_getByKeyResults! as QueryResult.QuerySuccess)!.EdfiDocs.Length.Should().Be(3);
+            _upsertResult.Should().BeOfType<UpsertResult.InsertSuccess>();
         }
 
         [Test]
-        public void It_should_be_found_by_get_by_key_with_a_specific_resource_name()
+        public void It_should_not_be_found_by_get()
         {
-            _getByKeyResults2!.Should().BeOfType<QueryResult.QuerySuccess>();
-            (_getByKeyResults2! as QueryResult.QuerySuccess)!.EdfiDocs.Length.Should().Be(1);
+            _getResult.Should().BeOfType<GetResult.GetFailureNotExists>();
         }
     }
 }
