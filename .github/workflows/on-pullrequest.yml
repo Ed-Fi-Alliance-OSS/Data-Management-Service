@@ -38,6 +38,8 @@ jobs:
     uses: Ed-Fi-Alliance-OSS/Ed-Fi-Actions/.github/workflows/powershell-analyzer.yml@main
     permissions:
       security-events: write
+      actions: read
+      contents: read
 
   scan-actions-bidi:
     name: Scan Actions, scan all files for BIDI Trojan Attacks
