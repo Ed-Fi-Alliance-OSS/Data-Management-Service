@@ -26,6 +26,7 @@ public static class PostgresqlBackendServiceExtensions
     {
         services.AddSingleton((sp) => NpgsqlDataSource.Create(connectionString));
         services.AddSingleton<IDocumentStoreRepository, PostgresqlDocumentStoreRepository>();
+        services.AddSingleton<IQueryHandler, PostgresqlDocumentStoreRepository>();
         services.AddSingleton<ISqlAction, SqlAction>();
         services.AddSingleton<IGetDocumentById, GetDocumentById>();
         services.AddSingleton<IQueryDocument, QueryDocument>();
