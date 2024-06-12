@@ -16,6 +16,7 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
 
         int offset = 0;
         int limit = 25;
+        bool totalCount = false;
 
         if (context.FrontendRequest.QueryParameters.ContainsKey("offset"))
         {
@@ -25,7 +26,11 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
         {
             limit = int.TryParse(context.FrontendRequest.QueryParameters["limit"], out int limitResult) ? limitResult : limit;
         }
-
+        if (context.FrontendRequest.QueryParameters.ContainsKey("totalCount"))
+        {
+            totalCount = bool.TryParse(context.FrontendRequest.QueryParameters["totalCount"], out bool totalValue) ? totalValue : totalCount;
+        }
+        
         context.PaginationParameters = new(limit, offset);
 
 
