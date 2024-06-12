@@ -86,7 +86,7 @@ $projectName = "EdFi.DataManagementService.Api"
 $packageName = "EdFi.DataManagementService"
 $testResults = "$PSScriptRoot/TestResults"
 #Coverage
-$thresholdCoverage = 55
+$thresholdCoverage = 59
 $coverageOutputFile = "coverage.cobertura.xml"
 $targetDir = "coveragereport"
 
