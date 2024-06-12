@@ -11,6 +11,3 @@ data:
     need-db-setup: "true"
     log-level: "Information"
     oauth-token-endpoint: "http://localhost:8080/oauth/token"
-    rate-limit-permit-limit: "5000"
-    rate-limit-window: "10"
-    rate-limit-queue-limit: "0"
