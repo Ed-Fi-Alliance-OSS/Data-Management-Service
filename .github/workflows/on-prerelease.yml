@@ -71,7 +71,6 @@ jobs:
         shell: pwsh
     needs: pack
     permissions:
-      actions: read
       contents: write
     outputs:
       sbom-hash-code: ${{ steps.sbom-hash-code.outputs.sbom-hash-code }}
@@ -128,7 +127,6 @@ jobs:
       - sbom-create
       - pack
     permissions:
-      actions: read
       contents: write
     steps:
       - name: Download the SBOM
@@ -171,7 +169,6 @@ jobs:
     name: Create Provenance
     needs: pack
     permissions:
-      actions: read
       id-token: write
       contents: write
     uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@main
