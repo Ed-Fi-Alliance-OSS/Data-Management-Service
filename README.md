@@ -20,6 +20,7 @@ will replace [Ed-Fi ODS/API 7.x](https://techdocs.ed-fi.org/x/UQSUCg).
 ## Repository Metadata
 
 - [Code of Conduct](./CODE_OF_CONDUCT.md)
+- [How to Contribute](https://github.com/Ed-Fi-Alliance-OSS/Project-Tanager/blob/main/CONTRIBUTING.md)
 - [List of Contributors](./CONTRIBUTORS.md)
 - [Copyright and License Notices](./NOTICES.md)
 - [Security](./SECURITY.md)
