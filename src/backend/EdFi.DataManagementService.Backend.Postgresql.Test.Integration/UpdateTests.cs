@@ -172,7 +172,6 @@ public class UpdateTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            // These will overlap but are serializable so no conflict
             (_updateResult1, _updateResult2) = await OrchestrateOperations(
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
