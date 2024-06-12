@@ -27,6 +27,7 @@ Feature: Resources "Create" Operation validations
               And the record can be retrieved with a GET request
                   """
                   {
+                      "id": "{id}",
                       "codeValue": "Sick Leave",
                       "description": "Sick Leave",
                       "effectiveBeginDate": "2024-05-14",

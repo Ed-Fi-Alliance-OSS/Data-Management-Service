@@ -36,6 +36,7 @@ Feature: Validate Extra Properties are being removed
               And the response body is
                   """
                   {
+                    "id": "{id}",
                     "weekIdentifier": "LastWeek",
                     "schoolReference": {
                       "schoolId": 255901001

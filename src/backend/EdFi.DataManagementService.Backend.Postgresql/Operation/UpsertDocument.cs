@@ -37,6 +37,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
         // First insert into Documents
         try
         {
+            upsertRequest.EdfiDoc["id"] = upsertRequest.DocumentUuid.Value;
             newDocumentId = await _sqlAction.InsertDocument(
                 new(
                     DocumentPartitionKey: documentPartitionKey,
@@ -112,6 +113,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
         // Update the EdfiDoc of the Document
         try
         {
+            edfiDoc["id"] = documentUuid;
             await _sqlAction.UpdateDocumentEdfiDoc(
                 documentPartitionKey,
                 documentUuid,
