@@ -6,15 +6,16 @@ the codebase.
 
 ## Building the DMS container
 
-From the `src` directory, run `docker build -t
-local/edfi-data-management-service . -f Dockerfile`. This will copy the current
-DMS solution into the container, build it and start it.
+From the `src` directory, and run:
+`docker build -t local/edfi-data-management-service . -f Dockerfile`
+This will copy the current DMS solution into the container, build it and start
+it.
 
 ## Running The Tests
 
 - Run from the Visual Studio Test Explorer.
-- cd into `/src/tests` and run `dotnet test
-    EdFi.DataManagementService.Tests.E2E`.
+- cd into `/src/tests` and run:
+  `dotnet test EdFi.DataManagementService.Tests.E2E`.
 
 ## Test Environments
 

@@ -26,9 +26,10 @@ public static class PostgresqlBackendServiceExtensions
     {
         services.AddSingleton((sp) => NpgsqlDataSource.Create(connectionString));
         services.AddSingleton<IDocumentStoreRepository, PostgresqlDocumentStoreRepository>();
+        services.AddSingleton<IQueryHandler, PostgresqlDocumentStoreRepository>();
         services.AddSingleton<ISqlAction, SqlAction>();
         services.AddSingleton<IGetDocumentById, GetDocumentById>();
-        services.AddSingleton<IQueryHandler, GetDocumentByKey>();
+        services.AddSingleton<IQueryDocument, QueryDocument>();
         services.AddSingleton<IUpdateDocumentById, UpdateDocumentById>();
         services.AddSingleton<IUpsertDocument, UpsertDocument>();
         services.AddSingleton<IDeleteDocumentById, DeleteDocumentById>();

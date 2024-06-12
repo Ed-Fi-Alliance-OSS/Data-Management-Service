@@ -13,38 +13,44 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
 
 public interface IGetDocumentById
 {
-    public Task<GetResult> GetById(IGetRequest getRequest);
+    public Task<GetResult> GetById(
+        IGetRequest getRequest,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
 }
 
-public class GetDocumentById(
-    NpgsqlDataSource _dataSource,
-    ISqlAction _sqlAction,
-    ILogger<GetDocumentById> _logger)
-    : IGetDocumentById
+public class GetDocumentById(ISqlAction _sqlAction, ILogger<GetDocumentById> _logger) : IGetDocumentById
 {
-    public async Task<GetResult> GetById(IGetRequest getRequest)
+    /// <summary>
+    /// Takes a GetRequest and connection + transaction and returns the result of a get by id query.
+    ///
+    /// Connections and transactions are always managed by the caller based on the result.
+    /// </summary>
+    public async Task<GetResult> GetById(
+        IGetRequest getRequest,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
     {
         _logger.LogDebug("Entering GetDocumentById.GetById - {TraceId}", getRequest.TraceId);
 
         try
         {
-            int documentPartitionKey = PartitionKeyFor(getRequest.DocumentUuid).Value;
-
-            await using var connection = await _dataSource.OpenConnectionAsync();
-            await using var transaction = await connection.BeginTransactionAsync();
-
-            JsonNode? edfiDoc = await _sqlAction.GetDocumentById(
-                getRequest.DocumentUuid.Value, documentPartitionKey, connection, transaction
+            JsonNode? edfiDoc = await _sqlAction.FindDocumentEdfiDocByDocumentUuid(
+                getRequest.DocumentUuid,
+                PartitionKeyFor(getRequest.DocumentUuid),
+                connection,
+                transaction
             );
 
-            if (edfiDoc != null)
-            {
-                return new GetResult.GetSuccess(getRequest.DocumentUuid, edfiDoc, DateTime.Now);
-            }
-            else
+            if (edfiDoc == null)
             {
                 return new GetResult.GetFailureNotExists();
             }
+
+            // TODO: Documents table needs a last modified datetime
+            return new GetResult.GetSuccess(getRequest.DocumentUuid, edfiDoc, DateTime.Now);
         }
         catch (Exception ex)
         {
