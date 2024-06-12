@@ -10,7 +10,6 @@ using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
-using Json.Pointer;
 using Json.Schema;
 
 namespace EdFi.DataManagementService.Core.Validation;

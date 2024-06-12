@@ -13,25 +13,31 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
 
 public interface IUpdateDocumentById
 {
-    public Task<UpdateResult> UpdateById(IUpdateRequest updateRequest);
+    public Task<UpdateResult> UpdateById(
+        IUpdateRequest updateRequest,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
 }
 
-public class UpdateDocumentById(
-    NpgsqlDataSource _dataSource,
-    ISqlAction _sqlAction,
-    ILogger<UpdateDocumentById> _logger
-) : IUpdateDocumentById
+public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentById> _logger)
+    : IUpdateDocumentById
 {
-    public async Task<UpdateResult> UpdateById(IUpdateRequest updateRequest)
+    /// <summary>
+    /// Takes an UpdateRequest and connection + transaction and returns the result of an update operation.
+    ///
+    /// Connections and transactions are always managed by the caller based on the result.
+    /// </summary>
+    public async Task<UpdateResult> UpdateById(
+        IUpdateRequest updateRequest,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
     {
         _logger.LogDebug("Entering UpdateDocumentById.UpdateById - {TraceId}", updateRequest.TraceId);
 
-        await using var connection = await _dataSource.OpenConnectionAsync();
-        await using var transaction = await connection.BeginTransactionAsync();
-
         try
         {
-
             var validationResult = await _sqlAction.UpdateDocumentValidation(
                 updateRequest.DocumentUuid,
                 PartitionKeyFor(updateRequest.DocumentUuid),
@@ -55,21 +61,21 @@ public class UpdateDocumentById(
                     updateRequest.TraceId
                 );
                 return new UpdateResult.UpdateFailureImmutableIdentity(
-                    $"Identifying values for the {updateRequest.ResourceInfo.ResourceName.Value} resource cannot be changed. Delete and recreate the resource item instead.");
+                    $"Identifying values for the {updateRequest.ResourceInfo.ResourceName.Value} resource cannot be changed. Delete and recreate the resource item instead."
+                );
             }
 
-            int rowsAffected = await _sqlAction.UpdateDocumentEdFiDoc(
-                    PartitionKeyFor(updateRequest.DocumentUuid).Value,
-                    updateRequest.DocumentUuid.Value,
-                    JsonSerializer.Deserialize<JsonElement>(updateRequest.EdfiDoc),
-                    connection,
-                    transaction
-                );
+            int rowsAffected = await _sqlAction.UpdateDocumentEdfiDoc(
+                PartitionKeyFor(updateRequest.DocumentUuid).Value,
+                updateRequest.DocumentUuid.Value,
+                JsonSerializer.Deserialize<JsonElement>(updateRequest.EdfiDoc),
+                connection,
+                transaction
+            );
 
             switch (rowsAffected)
             {
                 case 1:
-                    await transaction.CommitAsync();
                     return new UpdateResult.UpdateSuccess(updateRequest.DocumentUuid);
 
                 case 0:
@@ -77,7 +83,6 @@ public class UpdateDocumentById(
                         "Failure: Record to update does not exist - {TraceId}",
                         updateRequest.TraceId
                     );
-                    await transaction.RollbackAsync();
                     return new UpdateResult.UpdateFailureNotExists();
                 default:
                     _logger.LogCritical(
@@ -86,10 +91,8 @@ public class UpdateDocumentById(
                         updateRequest.DocumentUuid,
                         updateRequest.TraceId
                     );
-                    await transaction.RollbackAsync();
                     return new UpdateResult.UnknownFailure("Unknown Failure");
             }
-
         }
         catch (PostgresException pe)
         {
@@ -100,21 +103,16 @@ public class UpdateDocumentById(
                     "Transaction conflict on Documents table update - {TraceId}",
                     updateRequest.TraceId
                 );
-                await transaction.RollbackAsync();
                 return new UpdateResult.UpdateFailureWriteConflict();
             }
 
             _logger.LogError(pe, "Failure on Documents table update - {TraceId}", updateRequest.TraceId);
-            await transaction.RollbackAsync();
             return new UpdateResult.UnknownFailure("Update failure");
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failure on Documents table update - {TraceId}", updateRequest.TraceId);
-            await transaction.RollbackAsync();
             return new UpdateResult.UnknownFailure("Update failure");
         }
     }
-
-
 }

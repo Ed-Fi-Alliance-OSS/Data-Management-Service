@@ -16,14 +16,14 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
 
 public interface IUpsertDocument
 {
-    public Task<UpsertResult> Upsert(IUpsertRequest upsertRequest);
+    public Task<UpsertResult> Upsert(
+        IUpsertRequest upsertRequest,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
 }
 
-public class UpsertDocument(
-    NpgsqlDataSource _dataSource,
-    ISqlAction _sqlAction,
-    ILogger<UpsertDocument> _logger
-) : IUpsertDocument
+public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logger) : IUpsertDocument
 {
     public async Task<UpsertResult> AsInsert(
         IUpsertRequest upsertRequest,
@@ -59,12 +59,10 @@ public class UpsertDocument(
                     "Transaction conflict on Documents table insert - {TraceId}",
                     upsertRequest.TraceId
                 );
-                await transaction.RollbackAsync();
                 return new UpsertResult.UpsertFailureWriteConflict();
             }
 
             _logger.LogError(pe, "Failure on Documents table insert - {TraceId}", upsertRequest.TraceId);
-            await transaction.RollbackAsync();
             return new UpsertResult.UnknownFailure("Upsert failure");
         }
 
@@ -91,17 +89,14 @@ public class UpsertDocument(
                     "Transaction conflict on Aliases table insert - {TraceId}",
                     upsertRequest.TraceId
                 );
-                await transaction.RollbackAsync();
                 return new UpsertResult.UpsertFailureWriteConflict();
             }
 
             _logger.LogError(pe, "Failure on Aliases table insert - {TraceId}", upsertRequest.TraceId);
-            await transaction.RollbackAsync();
             return new UpsertResult.UnknownFailure("Upsert failure");
         }
 
         _logger.LogDebug("Upsert success as insert - {TraceId}", upsertRequest.TraceId);
-        await transaction.CommitAsync();
         return new UpsertResult.InsertSuccess(upsertRequest.DocumentUuid);
     }
 
@@ -117,7 +112,7 @@ public class UpsertDocument(
         // Update the EdfiDoc of the Document
         try
         {
-            await _sqlAction.UpdateDocumentEdFiDoc(
+            await _sqlAction.UpdateDocumentEdfiDoc(
                 documentPartitionKey,
                 documentUuid,
                 JsonSerializer.Deserialize<JsonElement>(edfiDoc),
@@ -130,26 +125,29 @@ public class UpsertDocument(
             if (pe.SqlState == PostgresErrorCodes.SerializationFailure)
             {
                 _logger.LogDebug(pe, "Transaction conflict on Documents table update - {TraceId}", traceId);
-                await transaction.RollbackAsync();
                 return new UpsertResult.UpsertFailureWriteConflict();
             }
 
             _logger.LogError(pe, "Failure on on Documents table update - {TraceId}", traceId);
-            await transaction.RollbackAsync();
             return new UpsertResult.UnknownFailure("Upsert failure");
         }
 
         _logger.LogDebug("Upsert success as insert - {TraceId}", traceId);
-        await transaction.CommitAsync();
         return new UpsertResult.UpdateSuccess(new(documentUuid));
     }
 
-    public async Task<UpsertResult> Upsert(IUpsertRequest upsertRequest)
+    /// <summary>
+    /// Takes an UpsertRequest and connection + transaction and returns the result of an upsert operation.
+    ///
+    /// Connections and transactions are always managed by the caller based on the result.
+    /// </summary>
+    public async Task<UpsertResult> Upsert(
+        IUpsertRequest upsertRequest,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
     {
         _logger.LogDebug("Entering UpsertDocument.Upsert - {TraceId}", upsertRequest.TraceId);
-
-        await using var connection = await _dataSource.OpenConnectionAsync();
-        await using var transaction = await connection.BeginTransactionAsync();
 
         try
         {
@@ -179,7 +177,6 @@ public class UpsertDocument(
         catch (Exception ex)
         {
             _logger.LogError(ex, "Upsert failure - {TraceId}", upsertRequest.TraceId);
-            await transaction.RollbackAsync();
             return new UpsertResult.UnknownFailure("Unknown Failure");
         }
     }
