@@ -9,7 +9,7 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
 
-internal record PaginationParameters(int? limit, int? offset) : IPaginationParameters;
+internal record PaginationParameters(int? limit, int? offset, bool totalCount) : IPaginationParameters;
 
 [TestFixture]
 public class QueryTests : DatabaseTest
@@ -42,7 +42,7 @@ public class QueryTests : DatabaseTest
             _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
 
             Dictionary<string, string>? searchParameters = [];
-            PaginationParameters paginationParameters = new(25, 0);
+            PaginationParameters paginationParameters = new(25, 0, false);
 
             IQueryRequest queryRequest = CreateQueryRequest(
                 _defaultResourceName,
@@ -98,7 +98,7 @@ public class QueryTests : DatabaseTest
             }
 
             Dictionary<string, string>? searchParameters = [];
-            PaginationParameters paginationParameters = new(25, 0);
+            PaginationParameters paginationParameters = new(25, 0, false);
 
             IQueryRequest queryRequest = CreateQueryRequest(
                 _defaultResourceName,
@@ -153,7 +153,7 @@ public class QueryTests : DatabaseTest
                 );
 
             Dictionary<string, string>? searchParameters = [];
-            PaginationParameters paginationParameters = new(25, 0);
+            PaginationParameters paginationParameters = new(25, 0, false);
 
             IQueryRequest queryRequest = CreateQueryRequest(
                 "ResourceName1",

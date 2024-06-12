@@ -19,4 +19,9 @@ public interface IPaginationParameters
     /// The pagination offset
     /// </summary>
     int? offset { get; }
+
+    /// <summary>
+    /// The pagination totalCount
+    /// </summary>
+    bool totalCount { get; }
 }

@@ -38,7 +38,7 @@ public class QueryDocument(ISqlAction _sqlAction, ILogger<QueryDocument> _logger
                     connection,
                     transaction
                 ),
-                0
+                await _sqlAction.GetTotalDocumentsByKey(resourceName, connection, transaction)
             );
         }
         catch (Exception ex)

@@ -19,5 +19,10 @@ internal record PaginationParameters(
     /// <summary>
     /// The pagination offset
     /// </summary>
-    int? offset
+    int? offset,
+
+    /// <summary>
+    /// The pagination totalCount
+    /// </summary>
+    bool totalCount
 ) : IPaginationParameters;

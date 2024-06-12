@@ -30,9 +30,8 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
         {
             totalCount = bool.TryParse(context.FrontendRequest.QueryParameters["totalCount"], out bool totalValue) ? totalValue : totalCount;
         }
-        
-        context.PaginationParameters = new(limit, offset);
 
+        context.PaginationParameters = new(limit, offset, totalCount);
 
         await next();
     }

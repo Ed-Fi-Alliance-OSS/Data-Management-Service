@@ -41,7 +41,11 @@ internal class QueryRequestHandler(IQueryHandler _queryHandler, ILogger _logger)
                 => new FrontendResponse(
                     StatusCode: 200,
                     Body: new JsonArray(success.EdfiDocs).ToString(),
-                    Headers: []
+                    Headers:
+                        context.PaginationParameters.totalCount ? new Dictionary<string, string>
+                            {
+                                {"Total-Count", success.TotalCount.ToString()}
+                            } : []
                 ),
             QueryFailureInvalidQuery => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
             UnknownFailure failure
