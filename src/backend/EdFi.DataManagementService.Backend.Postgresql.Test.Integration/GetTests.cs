@@ -11,17 +11,19 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
 
 [TestFixture]
-public class GetTest : DatabaseTest
+public class GetTests : DatabaseTest
 {
+    private static readonly string _defaultResourceName = "DefaultResourceName";
+
     [TestFixture]
-    public class Given_an_nonexistent_document : GetTest
+    public class Given_an_nonexistent_document : GetTests
     {
         private GetResult? _getResult;
 
         [SetUp]
         public async Task Setup()
         {
-            IGetRequest getRequest = CreateGetRequest(Guid.NewGuid());
+            IGetRequest getRequest = CreateGetRequest(_defaultResourceName, Guid.NewGuid());
             _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
         }
 
@@ -33,7 +35,7 @@ public class GetTest : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_existing_document : GetTest
+    public class Given_an_existing_document : GetTests
     {
         private GetResult? _getResult;
 
@@ -44,6 +46,7 @@ public class GetTest : DatabaseTest
         public async Task Setup()
         {
             IUpsertRequest upsertRequest = CreateUpsertRequest(
+                _defaultResourceName,
                 _documentUuidGuid,
                 Guid.NewGuid(),
                 _edFiDocString
@@ -51,7 +54,11 @@ public class GetTest : DatabaseTest
             await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
 
             _getResult = await CreateGetById()
-                .GetById(CreateGetRequest(_documentUuidGuid), Connection!, Transaction!);
+                .GetById(
+                    CreateGetRequest(_defaultResourceName, _documentUuidGuid),
+                    Connection!,
+                    Transaction!
+                );
         }
 
         [Test]
@@ -64,8 +71,42 @@ public class GetTest : DatabaseTest
     }
 
     [TestFixture]
+    [Ignore("Fix in DMS-237")]
+    public class Given_an_existing_document_for_a_different_resource : GetTests
+    {
+        private GetResult? _getResult;
+
+        private static readonly string _resourceName1 = "ResourceName1";
+        private static readonly string _resourceName2 = "ResourceName2";
+
+        private static readonly Guid _documentUuidGuid = Guid.NewGuid();
+        private static readonly string _edFiDocString = """{"abc":1}""";
+
+        [SetUp]
+        public async Task Setup()
+        {
+            IUpsertRequest upsertRequest = CreateUpsertRequest(
+                _resourceName1,
+                _documentUuidGuid,
+                Guid.NewGuid(),
+                _edFiDocString
+            );
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+
+            _getResult = await CreateGetById()
+                .GetById(CreateGetRequest(_resourceName2, _documentUuidGuid), Connection!, Transaction!);
+        }
+
+        [Test]
+        public void It_should_not_be_found_by_get_by_id()
+        {
+            _getResult!.Should().BeOfType<GetResult.GetFailureNotExists>();
+        }
+    }
+
+    [TestFixture]
     public class Given_an_overlapping_upsert_and_get_of_the_same_document_with_upsert_committed_first
-        : GetTest
+        : GetTests
     {
         private UpsertResult? _upsertResult;
         private GetResult? _getResult;
@@ -83,6 +124,7 @@ public class GetTest : DatabaseTest
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
                     IUpsertRequest upsertRequest = CreateUpsertRequest(
+                        _defaultResourceName,
                         _documentUuidGuid,
                         Guid.NewGuid(),
                         _edFiDocString
@@ -92,7 +134,11 @@ public class GetTest : DatabaseTest
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
                     return await CreateGetById()
-                        .GetById(CreateGetRequest(_documentUuidGuid), Connection!, Transaction!);
+                        .GetById(
+                            CreateGetRequest(_defaultResourceName, _documentUuidGuid),
+                            Connection!,
+                            Transaction!
+                        );
                 }
             );
         }
@@ -104,15 +150,14 @@ public class GetTest : DatabaseTest
         }
 
         [Test]
-        public void It_should_be_found_by_get()
+        public void It_should_not_be_found_by_get()
         {
-            (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
-            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Be(_edFiDocString);
+            _getResult.Should().BeOfType<GetResult.GetFailureNotExists>();
         }
     }
 
     [TestFixture]
-    public class Given_an_overlapping_upsert_and_get_of_the_same_document_with_get_committed_first : GetTest
+    public class Given_an_overlapping_upsert_and_get_of_the_same_document_with_get_committed_first : GetTests
     {
         private UpsertResult? _upsertResult;
         private GetResult? _getResult;
@@ -130,11 +175,16 @@ public class GetTest : DatabaseTest
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
                     return await CreateGetById()
-                        .GetById(CreateGetRequest(_documentUuidGuid), Connection!, Transaction!);
+                        .GetById(
+                            CreateGetRequest(_defaultResourceName, _documentUuidGuid),
+                            Connection!,
+                            Transaction!
+                        );
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
                     IUpsertRequest upsertRequest = CreateUpsertRequest(
+                        _defaultResourceName,
                         _documentUuidGuid,
                         Guid.NewGuid(),
                         _edFiDocString

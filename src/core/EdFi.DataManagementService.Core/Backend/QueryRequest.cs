@@ -16,17 +16,17 @@ internal record QueryRequest(
     /// <summary>
     /// The ResourceInfo for the resource being retrieved
     /// </summary>
-    IResourceInfo resourceInfo,
+    IResourceInfo ResourceInfo,
 
     /// <summary>
     /// The search parameters for this query. This must not include pagination parameters.
     /// </summary>
-    IDictionary<string, string> searchParameters,
+    IDictionary<string, string> SearchParameters,
 
     /// <summary>
     /// The pagination parameters for this query
     /// </summary>
-    IPaginationParameters paginationParameters,
+    IPaginationParameters PaginationParameters,
 
     /// <summary>
     /// The request TraceId

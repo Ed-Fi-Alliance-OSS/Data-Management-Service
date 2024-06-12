@@ -49,12 +49,12 @@ public abstract class DatabaseTest : DatabaseTestBase
         return new GetDocumentById(new SqlAction(), NullLogger<GetDocumentById>.Instance);
     }
 
-    protected static GetDocumentByKey GetDocumentByKey(NpgsqlDataSource dataSource)
+    protected static QueryDocument CreateQueryDocument()
     {
-        return new GetDocumentByKey(dataSource, new SqlAction(), NullLogger<GetDocumentByKey>.Instance);
+        return new QueryDocument(new SqlAction(), NullLogger<QueryDocument>.Instance);
     }
 
-    protected static DeleteDocumentById CreateDeleteById(NpgsqlDataSource dataSource)
+    protected static DeleteDocumentById CreateDeleteById()
     {
         return new DeleteDocumentById(new SqlAction(), NullLogger<DeleteDocumentById>.Instance);
     }
@@ -65,29 +65,19 @@ public abstract class DatabaseTest : DatabaseTestBase
         return (new { Value = value }).ActLike<T>();
     }
 
-    public static readonly IResourceInfo ResourceInfo = (
-        new
-        {
-            ResourceVersion = AsValueType<ISemVer, string>("5.0.0"),
-            AllowIdentityUpdates = false,
-            ProjectName = AsValueType<IMetaEdProjectName, string>("ProjectName"),
-            ResourceName = AsValueType<IMetaEdResourceName, string>("ResourceName"),
-            IsDescriptor = false
-        }
-    ).ActLike<IResourceInfo>();
-
-    public static readonly IDocumentInfo DocumentInfo = (
-        new
-        {
-            DocumentIdentity = (
-                new { IdentityValue = "", IdentityJsonPath = AsValueType<IJsonPath, string>("$") }
-            ).ActLike<IResourceInfo>(),
-            ReferentialId = new ReferentialId(Guid.Empty),
-            DocumentReferences = new List<IDocumentReference>(),
-            DescriptorReferences = new List<IDocumentReference>(),
-            SuperclassIdentity = null as ISuperclassIdentity
-        }
-    ).ActLike<IDocumentInfo>();
+    protected static IResourceInfo CreateResourceInfo(string resourceName)
+    {
+        return (
+            new
+            {
+                ResourceVersion = AsValueType<ISemVer, string>("5.0.0"),
+                AllowIdentityUpdates = false,
+                ProjectName = AsValueType<IMetaEdProjectName, string>("ProjectName"),
+                ResourceName = AsValueType<IMetaEdResourceName, string>(resourceName),
+                IsDescriptor = false
+            }
+        ).ActLike<IResourceInfo>();
+    }
 
     protected static IDocumentInfo CreateDocumentInfo(Guid referentialId)
     {
@@ -106,88 +96,36 @@ public abstract class DatabaseTest : DatabaseTestBase
     }
 
     protected static IUpsertRequest CreateUpsertRequest(
+        string resourceName,
         Guid documentUuidGuid,
         Guid referentialId,
-        string edFiDocString
+        string edfiDocString
     )
     {
         return (
             new
             {
-                ResourceInfo,
+                ResourceInfo = CreateResourceInfo(resourceName),
                 DocumentInfo = CreateDocumentInfo(referentialId),
-                EdfiDoc = JsonNode.Parse(edFiDocString),
+                EdfiDoc = JsonNode.Parse(edfiDocString),
                 TraceId = new TraceId("123"),
                 DocumentUuid = new DocumentUuid(documentUuidGuid)
             }
         ).ActLike<IUpsertRequest>();
     }
 
-    protected static List<IUpsertRequest> CreateMultipleUpsertRequest(
-        Dictionary<Guid, string> documents,
-        string? resourceName
-    )
+    protected static List<IUpsertRequest> CreateMultipleInsertRequest(string resourceName, string[] documents)
     {
-        var upsertRequests = new List<IUpsertRequest>();
-
+        List<IUpsertRequest> result = [];
         foreach (var document in documents)
         {
-            var documentUuidGuid = document.Key;
-            var edFiDocString = document.Value;
-
-            // To avoid being taken as an update
-            var documentInfo = (
-                new
-                {
-                    DocumentIdentity = (
-                        new { IdentityValue = "", IdentityJsonPath = AsValueType<IJsonPath, string>("$") }
-                    ).ActLike<IResourceInfo>(),
-                    ReferentialId = new ReferentialId(documentUuidGuid),
-                    DocumentReferences = new List<IDocumentReference>(),
-                    DescriptorReferences = new List<IDocumentReference>(),
-                    SuperclassIdentity = null as ISuperclassIdentity
-                }
-            ).ActLike<IDocumentInfo>();
-
-            // To set a different resource name if necessary
-            IResourceInfo? resourceInfo;
-            if (resourceName == string.Empty)
-            {
-                resourceInfo = _resourceInfo;
-            }
-            else
-            {
-                resourceInfo = (
-                    new
-                    {
-                        ResourceVersion = AsValueType<ISemVer, string>("5.0.0"),
-                        AllowIdentityUpdates = false,
-                        ProjectName = AsValueType<IMetaEdProjectName, string>("ProjectName"),
-                        ResourceName = AsValueType<IMetaEdProjectName, string>(
-                            resourceName == null ? "" : resourceName
-                        ),
-                        IsDescriptor = false
-                    }
-                ).ActLike<IResourceInfo>();
-            }
-
-            var upsertRequest = (
-                new
-                {
-                    ResourceInfo = resourceInfo,
-                    DocumentInfo = documentInfo,
-                    EdfiDoc = JsonNode.Parse(edFiDocString),
-                    TraceId = new TraceId("123"),
-                    DocumentUuid = new DocumentUuid(documentUuidGuid)
-                }
-            ).ActLike<IUpsertRequest>();
-
-            upsertRequests.Add(upsertRequest);
+            result.Add(CreateUpsertRequest(resourceName, Guid.NewGuid(), Guid.NewGuid(), document));
         }
-        return upsertRequests;
+        return result;
     }
 
     protected static IUpdateRequest CreateUpdateRequest(
+        string resourceName,
         Guid documentUuidGuid,
         Guid referentialIdGuid,
         string edFiDocString
@@ -196,19 +134,8 @@ public abstract class DatabaseTest : DatabaseTestBase
         return (
             new
             {
-                ResourceInfo,
-                DocumentInfo = (
-                    new
-                    {
-                        DocumentIdentity = (
-                            new { IdentityValue = "", IdentityJsonPath = AsValueType<IJsonPath, string>("$") }
-                        ).ActLike<IResourceInfo>(),
-                        ReferentialId = new ReferentialId(referentialIdGuid),
-                        DocumentReferences = new List<IDocumentReference>(),
-                        DescriptorReferences = new List<IDocumentReference>(),
-                        SuperclassIdentity = null as ISuperclassIdentity
-                    }
-                ).ActLike<IDocumentInfo>(),
+                ResourceInfo = CreateResourceInfo(resourceName),
+                DocumentInfo = CreateDocumentInfo(referentialIdGuid),
                 EdfiDoc = JsonNode.Parse(edFiDocString),
                 TraceId = new TraceId("123"),
                 DocumentUuid = new DocumentUuid(documentUuidGuid)
@@ -216,62 +143,41 @@ public abstract class DatabaseTest : DatabaseTestBase
         ).ActLike<IUpdateRequest>();
     }
 
-    protected static IGetRequest CreateGetRequest(Guid documentUuidGuid)
+    protected static IGetRequest CreateGetRequest(string resourceName, Guid documentUuidGuid)
     {
         return (
             new
             {
-                ResourceInfo,
+                ResourceInfo = CreateResourceInfo(resourceName),
                 TraceId = new TraceId("123"),
                 DocumentUuid = new DocumentUuid(documentUuidGuid)
             }
         ).ActLike<IGetRequest>();
     }
 
-    protected static IQueryRequest CreateGetRequestByKey(
+    protected static IQueryRequest CreateQueryRequest(
+        string resourceName,
         Dictionary<string, string>? searchParameters,
-        IPaginationParameters? paginationParameters,
-        string? resourceName
+        IPaginationParameters? paginationParameters
     )
     {
-        // To set a different resource name if necessary
-        IResourceInfo? resourceInfo;
-        if (resourceName == string.Empty)
-        {
-            resourceInfo = _resourceInfo;
-        }
-        else
-        {
-            resourceInfo = (
-                new
-                {
-                    ResourceVersion = AsValueType<ISemVer, string>("5.0.0"),
-                    AllowIdentityUpdates = false,
-                    ProjectName = AsValueType<IMetaEdProjectName, string>("ProjectName"),
-                    ResourceName = AsValueType<IMetaEdProjectName, string>(
-                        resourceName == null ? "" : resourceName
-                    ),
-                    IsDescriptor = false
-                }
-            ).ActLike<IResourceInfo>();
-        }
         return (
             new
             {
-                resourceInfo,
-                searchParameters,
-                paginationParameters,
+                ResourceInfo = CreateResourceInfo(resourceName),
+                SearchParameters = searchParameters,
+                PaginationParameters = paginationParameters,
                 TraceId = new TraceId("123")
             }
         ).ActLike<IQueryRequest>();
     }
 
-    protected static IDeleteRequest CreateDeleteRequest(Guid documentUuidGuid)
+    protected static IDeleteRequest CreateDeleteRequest(string resourceName, Guid documentUuidGuid)
     {
         return (
             new
             {
-                ResourceInfo,
+                ResourceInfo = CreateResourceInfo(resourceName),
                 TraceId = new TraceId("123"),
                 DocumentUuid = new DocumentUuid(documentUuidGuid)
             }

@@ -18,7 +18,8 @@ public class PostgresqlDocumentStoreRepository(
     IGetDocumentById _getDocumentById,
     IUpdateDocumentById _updateDocumentById,
     IUpsertDocument _upsertDocument,
-    IDeleteDocumentById _deleteDocumentById
+    IDeleteDocumentById _deleteDocumentById,
+    IQueryDocument _queryDocument
 ) : IDocumentStoreRepository, IQueryHandler
 {
     public async Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
@@ -49,7 +50,7 @@ public class PostgresqlDocumentStoreRepository(
         }
         catch (Exception ex)
         {
-            _logger.LogCritical(ex, "Uncaught Upsert failure - {TraceId}", upsertRequest.TraceId);
+            _logger.LogCritical(ex, "Uncaught UpsertDocument failure - {TraceId}", upsertRequest.TraceId);
             return new UpsertResult.UnknownFailure("Unknown Failure");
         }
     }
@@ -81,7 +82,7 @@ public class PostgresqlDocumentStoreRepository(
         }
         catch (Exception ex)
         {
-            _logger.LogCritical(ex, "Uncaught GetById failure - {TraceId}", getRequest.TraceId);
+            _logger.LogCritical(ex, "Uncaught GetDocumentById failure - {TraceId}", getRequest.TraceId);
             return new GetResult.UnknownFailure("Unknown Failure");
         }
     }
@@ -117,7 +118,7 @@ public class PostgresqlDocumentStoreRepository(
         }
         catch (Exception ex)
         {
-            _logger.LogCritical(ex, "Uncaught UpdateById failure - {TraceId}", updateRequest.TraceId);
+            _logger.LogCritical(ex, "Uncaught UpdateDocumentById failure - {TraceId}", updateRequest.TraceId);
             return new UpdateResult.UnknownFailure("Unknown Failure");
         }
     }
@@ -152,17 +153,40 @@ public class PostgresqlDocumentStoreRepository(
         }
         catch (Exception ex)
         {
-            _logger.LogCritical(ex, "Uncaught DeleteById failure - {TraceId}", deleteRequest.TraceId);
+            _logger.LogCritical(ex, "Uncaught DeleteDocumentById failure - {TraceId}", deleteRequest.TraceId);
             return new DeleteResult.UnknownFailure("Unknown Failure");
         }
     }
 
     public async Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
     {
-        _logger.LogWarning(
-            "QueryDocuments(): Backend repository has been configured to always report success - {TraceId}",
+        _logger.LogDebug(
+            "Entering PostgresqlDocumentStoreRepository.QueryDocuments - {TraceId}",
             queryRequest.TraceId
         );
-        return await Task.FromResult<QueryResult>(new QueryResult.QuerySuccess(TotalCount: 0, EdfiDocs: []));
+
+        try
+        {
+            await using var connection = await _dataSource.OpenConnectionAsync();
+            await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable);
+
+            QueryResult result = await _queryDocument.QueryDocuments(queryRequest, connection, transaction);
+
+            switch (result)
+            {
+                case QueryResult.QuerySuccess:
+                    await transaction.CommitAsync();
+                    break;
+                default:
+                    await transaction.RollbackAsync();
+                    break;
+            }
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogCritical(ex, "Uncaught QueryDocuments failure - {TraceId}", queryRequest.TraceId);
+            return new QueryResult.UnknownFailure("Unknown Failure");
+        }
     }
 }

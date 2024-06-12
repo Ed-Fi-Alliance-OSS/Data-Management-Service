@@ -13,6 +13,8 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
 [TestFixture]
 public class UpsertTests : DatabaseTest
 {
+    private static readonly string _defaultResourceName = "DefaultResourceName";
+
     [TestFixture]
     public class Given_an_upsert_of_a_new_document : UpsertTests
     {
@@ -28,6 +30,7 @@ public class UpsertTests : DatabaseTest
         {
             // Try upsert as insert
             IUpsertRequest upsertRequest = CreateUpsertRequest(
+                _defaultResourceName,
                 _documentUuidGuid,
                 _referentialIdGuid,
                 _edFiDocString
@@ -35,7 +38,7 @@ public class UpsertTests : DatabaseTest
             _upsertResult = await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
 
             // Confirm it's there
-            IGetRequest getRequest = CreateGetRequest(_documentUuidGuid);
+            IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
             _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
         }
 
@@ -71,6 +74,7 @@ public class UpsertTests : DatabaseTest
         {
             // Create
             IUpsertRequest upsertRequest1 = CreateUpsertRequest(
+                _defaultResourceName,
                 _documentUuidGuid,
                 _referentialIdGuid,
                 _edFiDocString2
@@ -79,6 +83,7 @@ public class UpsertTests : DatabaseTest
 
             // Update
             IUpsertRequest upsertRequest2 = CreateUpsertRequest(
+                _defaultResourceName,
                 _documentUuidGuid,
                 _referentialIdGuid,
                 _edFiDocString3
@@ -86,7 +91,7 @@ public class UpsertTests : DatabaseTest
             _upsertResult2 = await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
 
             // Confirm change was made
-            IGetRequest getRequest = CreateGetRequest(_documentUuidGuid);
+            IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
             _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
         }
 
@@ -134,6 +139,7 @@ public class UpsertTests : DatabaseTest
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
                     IUpsertRequest upsertRequest1 = CreateUpsertRequest(
+                        _defaultResourceName,
                         _documentUuidGuid,
                         _referentialIdGuid,
                         _edFiDocString4
@@ -143,6 +149,7 @@ public class UpsertTests : DatabaseTest
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
                     IUpsertRequest upsertRequest2 = CreateUpsertRequest(
+                        _defaultResourceName,
                         _documentUuidGuid,
                         _referentialIdGuid,
                         _edFiDocString5
@@ -167,7 +174,7 @@ public class UpsertTests : DatabaseTest
         [Test]
         public async Task It_should_be_the_1st_transaction_document_found_by_get()
         {
-            IGetRequest getRequest = CreateGetRequest(_documentUuidGuid);
+            IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
             GetResult? _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
 
             (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
@@ -199,6 +206,7 @@ public class UpsertTests : DatabaseTest
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
                     IUpsertRequest upsertRequest1 = CreateUpsertRequest(
+                        _defaultResourceName,
                         _documentUuidGuid1,
                         _referentialIdGuid1,
                         _edFiDocStringA
@@ -209,6 +217,7 @@ public class UpsertTests : DatabaseTest
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
                     IUpsertRequest upsertRequest2 = CreateUpsertRequest(
+                        _defaultResourceName,
                         _documentUuidGuid2,
                         _referentialIdGuid2,
                         _edFiDocStringB
@@ -224,7 +233,11 @@ public class UpsertTests : DatabaseTest
             _upsertResult1!.Should().BeOfType<UpsertResult.InsertSuccess>();
 
             GetResult? _getResult = await CreateGetById()
-                .GetById(CreateGetRequest(_documentUuidGuid1), Connection!, Transaction!);
+                .GetById(
+                    CreateGetRequest(_defaultResourceName, _documentUuidGuid1),
+                    Connection!,
+                    Transaction!
+                );
             (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Be(_edFiDocStringA);
         }
 
@@ -234,7 +247,11 @@ public class UpsertTests : DatabaseTest
             _upsertResult2!.Should().BeOfType<UpsertResult.InsertSuccess>();
 
             GetResult? _getResult = await CreateGetById()
-                .GetById(CreateGetRequest(_documentUuidGuid2), Connection!, Transaction!);
+                .GetById(
+                    CreateGetRequest(_defaultResourceName, _documentUuidGuid2),
+                    Connection!,
+                    Transaction!
+                );
             (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Be(_edFiDocStringB);
         }
     }
@@ -260,7 +277,12 @@ public class UpsertTests : DatabaseTest
                     // Insert the original document
                     await CreateUpsert()
                         .Upsert(
-                            CreateUpsertRequest(_documentUuidGuid, _referentialIdGuid, _edFiDocString6),
+                            CreateUpsertRequest(
+                                _defaultResourceName,
+                                _documentUuidGuid,
+                                _referentialIdGuid,
+                                _edFiDocString6
+                            ),
                             connection,
                             transaction
                         );
@@ -268,6 +290,7 @@ public class UpsertTests : DatabaseTest
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
                     IUpsertRequest upsertRequest1 = CreateUpsertRequest(
+                        _defaultResourceName,
                         _documentUuidGuid,
                         _referentialIdGuid,
                         _edFiDocString7
@@ -277,6 +300,7 @@ public class UpsertTests : DatabaseTest
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
                     IUpsertRequest upsertRequest2 = CreateUpsertRequest(
+                        _defaultResourceName,
                         _documentUuidGuid,
                         _referentialIdGuid,
                         _edFiDocString8
@@ -301,7 +325,7 @@ public class UpsertTests : DatabaseTest
         [Test]
         public async Task It_should_be_the_1st_updated_document_found_by_get()
         {
-            IGetRequest getRequest = CreateGetRequest(_documentUuidGuid);
+            IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
             GetResult? _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
 
             (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);

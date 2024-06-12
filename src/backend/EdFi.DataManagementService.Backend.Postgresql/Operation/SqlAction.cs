@@ -40,7 +40,7 @@ public interface ISqlAction
         NpgsqlTransaction transaction
     );
 
-    public Task<JsonNode[]> GetDocumentsByKey(
+    public Task<JsonNode[]> GetAllDocuments(
         string resourceName,
         IPaginationParameters paginationParameters,
         NpgsqlConnection connection,
@@ -193,10 +193,9 @@ public class SqlAction : ISqlAction
     }
 
     /// <summary>
-    /// Returns Documents from the database corresponding to the given ResourceName,
-    /// or null if no matching Document was found.
+    /// Returns an array of Documents from the database corresponding to the given ResourceName
     /// </summary>
-    public async Task<JsonNode[]> GetDocumentsByKey(
+    public async Task<JsonNode[]> GetAllDocuments(
         string resourceName,
         IPaginationParameters paginationParameters,
         NpgsqlConnection connection,
@@ -206,7 +205,8 @@ public class SqlAction : ISqlAction
         await using NpgsqlCommand command =
             new(
                 @"SELECT EdfiDoc FROM public.Documents WHERE ResourceName = $1 ORDER BY CreatedAt OFFSET $2 ROWS FETCH FIRST $3 ROWS ONLY;",
-                connection
+                connection,
+                transaction
             )
             {
                 Parameters =
@@ -247,7 +247,8 @@ public class SqlAction : ISqlAction
         await using NpgsqlCommand command =
             new(
                 @"SELECT EdfiDoc FROM public.Documents WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2;",
-                connection
+                connection,
+                transaction
             )
             {
                 Parameters =

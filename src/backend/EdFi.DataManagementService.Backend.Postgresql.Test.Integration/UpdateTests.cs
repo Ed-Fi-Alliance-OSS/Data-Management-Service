@@ -13,6 +13,8 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
 [TestFixture]
 public class UpdateTests : DatabaseTest
 {
+    private static readonly string _defaultResourceName = "DefaultResourceName";
+
     [TestFixture]
     public class Given_an_update_of_a_nonexistent_document : UpdateTests
     {
@@ -24,6 +26,7 @@ public class UpdateTests : DatabaseTest
         public async Task Setup()
         {
             IUpdateRequest updateRequest = CreateUpdateRequest(
+                _defaultResourceName,
                 Guid.NewGuid(),
                 Guid.NewGuid(),
                 _edFiDocString
@@ -41,7 +44,11 @@ public class UpdateTests : DatabaseTest
         public async Task It_should_not_be_found_updated_by_get()
         {
             var getResult = await CreateGetById()
-                .GetById(CreateGetRequest(_documentUuidGuid), Connection!, Transaction!);
+                .GetById(
+                    CreateGetRequest(_defaultResourceName, _documentUuidGuid),
+                    Connection!,
+                    Transaction!
+                );
             getResult.Should().BeOfType<GetResult.GetFailureNotExists>();
         }
     }
@@ -62,6 +69,7 @@ public class UpdateTests : DatabaseTest
         {
             // Create
             IUpsertRequest upsertRequest = CreateUpsertRequest(
+                _defaultResourceName,
                 _documentUuidGuid,
                 _referentialIdGuid,
                 _edFiDocString1
@@ -70,6 +78,7 @@ public class UpdateTests : DatabaseTest
 
             // Update
             IUpdateRequest updateRequest = CreateUpdateRequest(
+                _defaultResourceName,
                 _documentUuidGuid,
                 _referentialIdGuid,
                 _edFiDocString2
@@ -77,7 +86,7 @@ public class UpdateTests : DatabaseTest
             _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
 
             // Confirm change was made
-            IGetRequest getRequest = CreateGetRequest(_documentUuidGuid);
+            IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
             _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
         }
 
@@ -112,6 +121,7 @@ public class UpdateTests : DatabaseTest
         {
             // Create
             IUpsertRequest upsertRequest = CreateUpsertRequest(
+                _defaultResourceName,
                 _documentUuidGuid,
                 _referentialIdGuid1,
                 _edFiDocString1
@@ -120,6 +130,7 @@ public class UpdateTests : DatabaseTest
 
             // Update
             IUpdateRequest updateRequest = CreateUpdateRequest(
+                _defaultResourceName,
                 _documentUuidGuid,
                 _referentialIdGuid2,
                 _edFiDocString2
@@ -137,7 +148,11 @@ public class UpdateTests : DatabaseTest
         public async Task It_should_not_have_changed_the_document()
         {
             var getResult = await CreateGetById()
-                .GetById(CreateGetRequest(_documentUuidGuid), Connection!, Transaction!);
+                .GetById(
+                    CreateGetRequest(_defaultResourceName, _documentUuidGuid),
+                    Connection!,
+                    Transaction!
+                );
             (getResult as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Be(_edFiDocString1);
         }
     }
@@ -164,7 +179,12 @@ public class UpdateTests : DatabaseTest
                     // Insert the original document
                     await CreateUpsert()
                         .Upsert(
-                            CreateUpsertRequest(_documentUuidGuid, _referentialIdGuid, _edFiDocString1),
+                            CreateUpsertRequest(
+                                _defaultResourceName,
+                                _documentUuidGuid,
+                                _referentialIdGuid,
+                                _edFiDocString1
+                            ),
                             connection,
                             transaction
                         );
@@ -172,6 +192,7 @@ public class UpdateTests : DatabaseTest
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
                     IUpdateRequest updateRequest = CreateUpdateRequest(
+                        _defaultResourceName,
                         _documentUuidGuid,
                         _referentialIdGuid,
                         _edFiDocString2
@@ -181,6 +202,7 @@ public class UpdateTests : DatabaseTest
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
                     IUpdateRequest updateRequest = CreateUpdateRequest(
+                        _defaultResourceName,
                         _documentUuidGuid,
                         _referentialIdGuid,
                         _edFiDocString3
@@ -205,7 +227,7 @@ public class UpdateTests : DatabaseTest
         [Test]
         public async Task It_should_be_the_1st_update_found_by_get()
         {
-            IGetRequest getRequest = CreateGetRequest(_documentUuidGuid);
+            IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
             GetResult? _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
 
             (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);

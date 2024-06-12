@@ -90,7 +90,7 @@ internal class ApiService(
                         new ValidateEndpointMiddleware(_logger),
                         new BuildResourceInfoMiddleware(_logger),
                         new ValidateQueryMiddleware(_logger),
-                        new GetByKeyHandler(_queryHandler, _logger)
+                        new QueryRequestHandler(_queryHandler, _logger)
                     ]
                 )
         );

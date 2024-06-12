@@ -13,6 +13,8 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
 [TestFixture]
 public class DeleteTests : DatabaseTest
 {
+    private static readonly string _defaultResourceName = "DefaultResourceName";
+
     [TestFixture]
     public class Given_a_delete_of_a_non_existing_document : DeleteTests
     {
@@ -23,8 +25,8 @@ public class DeleteTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            IDeleteRequest deleteRequest = CreateDeleteRequest(_documentUuidGuid);
-            _deleteResult = await CreateDeleteById(DataSource!)
+            IDeleteRequest deleteRequest = CreateDeleteRequest(_defaultResourceName, _documentUuidGuid);
+            _deleteResult = await CreateDeleteById()
                 .DeleteById(deleteRequest, Connection!, Transaction!);
         }
 
@@ -49,14 +51,15 @@ public class DeleteTests : DatabaseTest
         {
             // Insert document before deleting
             IUpsertRequest upsertRequest = CreateUpsertRequest(
+                _defaultResourceName,
                 _documentUuidGuid,
                 _referentialIdGuid,
                 _edFiDocString
             );
             await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
 
-            IDeleteRequest deleteRequest = CreateDeleteRequest(_documentUuidGuid);
-            _deleteResult = await CreateDeleteById(DataSource!)
+            IDeleteRequest deleteRequest = CreateDeleteRequest(_defaultResourceName, _documentUuidGuid);
+            _deleteResult = await CreateDeleteById()
                 .DeleteById(deleteRequest, Connection!, Transaction!);
         }
 
@@ -85,6 +88,7 @@ public class DeleteTests : DatabaseTest
                 {
                     // Insert document before deleting
                     IUpsertRequest upsertRequest = CreateUpsertRequest(
+                        _defaultResourceName,
                         _documentUuidGuid,
                         _referentialIdGuid,
                         _edFiDocString
@@ -93,13 +97,21 @@ public class DeleteTests : DatabaseTest
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
-                    return await CreateDeleteById(DataSource!)
-                        .DeleteById(CreateDeleteRequest(_documentUuidGuid), connection, transaction);
+                    return await CreateDeleteById()
+                        .DeleteById(
+                            CreateDeleteRequest(_defaultResourceName, _documentUuidGuid),
+                            connection,
+                            transaction
+                        );
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
-                    return await CreateDeleteById(DataSource!)
-                        .DeleteById(CreateDeleteRequest(_documentUuidGuid), connection, transaction);
+                    return await CreateDeleteById()
+                        .DeleteById(
+                            CreateDeleteRequest(_defaultResourceName, _documentUuidGuid),
+                            connection,
+                            transaction
+                        );
                 }
             );
         }
@@ -136,6 +148,7 @@ public class DeleteTests : DatabaseTest
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
                     IUpsertRequest upsertRequest = CreateUpsertRequest(
+                        _defaultResourceName,
                         _documentUuidGuid,
                         _referentialIdGuid,
                         _edFiDocString1
@@ -144,12 +157,17 @@ public class DeleteTests : DatabaseTest
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
-                    return await CreateDeleteById(DataSource!)
-                        .DeleteById(CreateDeleteRequest(_documentUuidGuid), connection, transaction);
+                    return await CreateDeleteById()
+                        .DeleteById(
+                            CreateDeleteRequest(_defaultResourceName, _documentUuidGuid),
+                            connection,
+                            transaction
+                        );
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
                     IUpdateRequest updateRequest = CreateUpdateRequest(
+                        _defaultResourceName,
                         _documentUuidGuid,
                         _referentialIdGuid,
                         _edFiDocString2
@@ -191,6 +209,7 @@ public class DeleteTests : DatabaseTest
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
                     IUpsertRequest upsertRequest = CreateUpsertRequest(
+                        _defaultResourceName,
                         _documentUuidGuid,
                         _referentialIdGuid,
                         _edFiDocString1
@@ -200,6 +219,7 @@ public class DeleteTests : DatabaseTest
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
                     IUpdateRequest updateRequest = CreateUpdateRequest(
+                        _defaultResourceName,
                         _documentUuidGuid,
                         _referentialIdGuid,
                         _edFiDocString2
@@ -208,8 +228,12 @@ public class DeleteTests : DatabaseTest
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
-                    return await CreateDeleteById(DataSource!)
-                        .DeleteById(CreateDeleteRequest(_documentUuidGuid), connection, transaction);
+                    return await CreateDeleteById()
+                        .DeleteById(
+                            CreateDeleteRequest(_defaultResourceName, _documentUuidGuid),
+                            connection,
+                            transaction
+                        );
                 }
             );
         }
@@ -246,6 +270,7 @@ public class DeleteTests : DatabaseTest
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
                     IUpsertRequest upsertRequest = CreateUpsertRequest(
+                        _defaultResourceName,
                         _documentUuidGuid,
                         _referentialIdGuid,
                         _edFiDocString1
@@ -254,12 +279,17 @@ public class DeleteTests : DatabaseTest
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
-                    return await CreateDeleteById(DataSource!)
-                        .DeleteById(CreateDeleteRequest(_documentUuidGuid), connection, transaction);
+                    return await CreateDeleteById()
+                        .DeleteById(
+                            CreateDeleteRequest(_defaultResourceName, _documentUuidGuid),
+                            connection,
+                            transaction
+                        );
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
                     IUpsertRequest upsertRequest = CreateUpsertRequest(
+                        _defaultResourceName,
                         _documentUuidGuid,
                         _referentialIdGuid,
                         _edFiDocString2
@@ -301,6 +331,7 @@ public class DeleteTests : DatabaseTest
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
                     IUpsertRequest upsertRequest = CreateUpsertRequest(
+                        _defaultResourceName,
                         _documentUuidGuid,
                         _referentialIdGuid,
                         _edFiDocString1
@@ -310,6 +341,7 @@ public class DeleteTests : DatabaseTest
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
                     IUpsertRequest upsertRequest = CreateUpsertRequest(
+                        _defaultResourceName,
                         _documentUuidGuid,
                         _referentialIdGuid,
                         _edFiDocString2
@@ -318,8 +350,12 @@ public class DeleteTests : DatabaseTest
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
-                    return await CreateDeleteById(DataSource!)
-                        .DeleteById(CreateDeleteRequest(_documentUuidGuid), connection, transaction);
+                    return await CreateDeleteById()
+                        .DeleteById(
+                            CreateDeleteRequest(_defaultResourceName, _documentUuidGuid),
+                            connection,
+                            transaction
+                        );
                 }
             );
         }
