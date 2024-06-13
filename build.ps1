@@ -159,28 +159,32 @@ function RunTests {
     $testAssemblies | ForEach-Object {
         Write-Output "Executing: dotnet test $($_)"
 
-        $fileName = Split-Path -Path  $($_) -Leaf
-        $fileNameNoExt = $fileName.subString(0, $fileName.length - 4)
+        $target = $_.FullName
 
-        Invoke-Execute {
-            if ($Filter.Equals("*.Tests.Unit")){
+        if ($Filter.Equals("*.Tests.Unit")) {
+            Invoke-Execute {
                 #Execution with coverage
                 # Threshold need to be defined
                 coverlet $($_) `
-                --target dotnet --targetargs "test $($_) --logger:trx --nologo"`
-                --threshold $thresholdCoverage `
-                --threshold-type line `
-                --threshold-type branch `
-                --threshold-stat total `
-                --format json `
-                --format cobertura `
-                --merge-with "coverage.json"
-            } else {
-                Invoke-Execute {
-                    dotnet test $($_) `
-                       --logger "trx;LogFileName=$testResults/$fileNameNoExt.trx" `
-                       --nologo
-                }
+                    --target dotnet --targetargs "test $target --logger:console --logger:trx --nologo"`
+                    --threshold $thresholdCoverage `
+                    --threshold-type line `
+                    --threshold-type branch `
+                    --threshold-stat total `
+                    --format json `
+                    --format cobertura `
+                    --merge-with "coverage.json"
+            }
+        }
+        else {
+            $fileNameNoExt = $_.Name.subString(0, $_.Name.length - 4)
+            $trx = "$testResults/$fileNameNoExt"
+
+            Invoke-Execute {
+                dotnet test $target `
+                    --logger "trx;LogFileName=$trx" `
+                    --logger "console" `
+                    --nologo
             }
         }
     }
@@ -250,9 +254,9 @@ function Invoke-Clean {
 
 function Invoke-TestExecution {
     param (
-        [ValidateSet("E2ETests","UnitTests",
-        ErrorMessage="Please specify a valid Test Type name from the list.",
-        IgnoreCase=$true)]
+        [ValidateSet("E2ETests", "UnitTests",
+            ErrorMessage = "Please specify a valid Test Type name from the list.",
+            IgnoreCase = $true)]
         # File search filter
         [string]
         $Filter
@@ -260,11 +264,11 @@ function Invoke-TestExecution {
     switch ($Filter) {
         E2ETests { Invoke-Step { E2ETests } }
         UnitTests { Invoke-Step { UnitTests } }
-        Default {"Unknow Test Type"}
+        Default { "Unknow Test Type" }
     }
 }
 
-function Invoke-Coverage{
+function Invoke-Coverage {
     reportgenerator -reports:"$coverageOutputFile" -targetdir:"$targetDir" -reporttypes:Html
 }
 
@@ -344,7 +348,7 @@ Invoke-Main {
         Push { Invoke-PushPackage }
         DockerBuild { Invoke-Step { DockerBuild } }
         DockerRun { Invoke-Step { DockerRun } }
-        Run { Invoke-Step { Run }}
+        Run { Invoke-Step { Run } }
         default { throw "Command '$Command' is not recognized" }
     }
 }
