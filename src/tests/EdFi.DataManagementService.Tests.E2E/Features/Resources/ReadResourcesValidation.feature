@@ -16,7 +16,6 @@ Feature: Resources "Read" Operation validations
                   """
              Then it should respond with 201 or 200
 
-        @ignore
         Scenario: Verify existing resources can be retrieved successfully
              When a GET request is made to "ed-fi/absenceEventCategoryDescriptors"
              Then it should respond with 200
@@ -25,23 +24,23 @@ Feature: Resources "Read" Operation validations
                     [
                         {
                             "id": "{id}",
-                            "codeValue": "Jury duty",
-                            "description": "Jury duty",
+                            "codeValue": "Sick Leave",
+                            "description": "Sick Leave",
                             "effectiveBeginDate": "2024-05-14",
                             "effectiveEndDate": "2024-05-14",
                             "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                            "shortDescription": "Jury duty"
+                            "shortDescription": "Sick Leave"
                         }
                     ]
                   """
 
         Scenario: Verify retrieving a single resource by ID
-        # Replace Endpoint with the required value, this is just an example to make sure Descriptors are working fine
              When a GET request is made to "ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 200
               And the response body is
                   """
                     {
+                      "id": "{id}",
                       "codeValue": "Sick Leave",
                       "description": "Sick Leave",
                       "effectiveBeginDate": "2024-05-14",
