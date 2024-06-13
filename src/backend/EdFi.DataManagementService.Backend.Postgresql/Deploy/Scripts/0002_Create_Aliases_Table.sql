@@ -9,8 +9,6 @@ CREATE TABLE Aliases (
   ReferentialId UUID NOT NULL,
   DocumentId BIGINT NOT NULL,
   DocumentPartitionKey SMALLINT NOT NULL,
-  CONSTRAINT FK_Aliases_Documents FOREIGN KEY (DocumentPartitionKey, DocumentId)
-    REFERENCES Documents (DocumentPartitionKey, Id),
   PRIMARY KEY (ReferentialPartitionKey, Id)
 ) PARTITION BY HASH(ReferentialPartitionKey);
 
