@@ -35,6 +35,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <AssemblyAttribute Include="System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverageAttribute" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Postgresql.Test.Integration" />
     <!-- For FakeItEasy unit test proxies-->
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
