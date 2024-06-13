@@ -5,7 +5,7 @@ This folder provides a basic setup of a set of
 
 ## Initial Kubernetes Setup
 
-### Option 1: Docker Desktop
+## Option 1: Docker Desktop
 
 Open Docker Desktop and click the Settings icon ⚙️. Look for Kubernetes on the
 left. Then enable Kubernetes.
@@ -74,10 +74,10 @@ cluster, by opening a connection to the
 [data-management-service](data-management-service.yaml).
 
 This container has the type LoadBalancer, meaning that this is the entry point
-for the load balancer provider. Access teh Data Management Service at base
+for the load balancer provider. Access the Data Management Service at base
 address [http://localhost:8080/](http://localhost:8080/.)
 
-> [TIP]
+> [!TIP]
 > If using minikube, you may need to open a tunnel between the local network
 > and the Kubernetes cluster: `minikube service data-management-service --url`.
 > The command will run continuously until you cancel it. Copy the URL displayed
