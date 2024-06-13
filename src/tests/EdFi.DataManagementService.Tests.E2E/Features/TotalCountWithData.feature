@@ -1,41 +1,50 @@
-Feature: Query Strings handling for GET requests
+Feature: Query Strings handling for GET requests with a given set of data
 
-        @ignore
-        Scenario: Validate totalCount value when there are no existing schools in the Database
-            Given there are no schools
+    Background: 
+        Given the following schools exist
+                  | schoolId  | nameOfInstitution                               | gradeLevels                                                         | educationOrganizationCategories |
+                  | 5         | School with max edorgId value                   | [ "Tenth grade", "Ninth grade", "Eleventh grade", "Twelfth grade" ] | [ "School" ]                    |
+                  | 6         | UT Austin College of Education Under Graduate   | [ "Eleventh grade" ]                                                | [ "School" ]                    |
+                  | 255901001 | Grand Bend High School                          | [ "Tenth grade" ]                                                   | [ "School" ]                    |
+                  | 255901044 | Grand Bend Middle School                        | [ "Ninth grade" ]                                                   | [ "School" ]                    |
+                  | 255901045 | UT Austin Extended Campus                       | [ "Twelfth grade" ]                                                 | [ "School" ]                    |
+
+        Scenario: Ensure that schools return the total count            
              When a GET request is made to "/ed-fi/schools?totalCount=true"
              Then it should respond with 200
-              And the response headers includes "totalCount: 0"
+              And the response headers includes total-count 5
 
-        @ignore
-        Scenario: Ensure that schools return the total count
-            Given the following schools exist
-                  | schoolId  | nameOfInstitution             | gradeLevels                                                         | educationOrganizationCategories |
-                  | 5         | School with max edorgId value | [ "Postsecondary" ]                                                 | [ "School" ]                    |
-                  | 255901001 | Grand Bend High School        | [ "Tenth grade", "Ninth grade", "Eleventh grade", "Twelfth grade" ] | [ "School" ]                    |
-             When a GET request is made to "/ed-fi/schools?totalCount=true"
-             Then it should respond with 200
-              And the response headers includes "totalCount: 2"
-
-        @ignore
         Scenario: Validate totalCount Header is not included when equals to false
-            Given the following schools exist
-                  | schoolId  | nameOfInstitution             | gradeLevels         | educationOrganizationCategories |
-                  | 5         | School with max edorgId value | [ "Postsecondary" ] | [ "School" ]                    |
-                  | 255901001 | Grand Bend High School        | [ "Tenth grade" ]   | [ "School" ]                    |
              When a GET request is made to "/ed-fi/schools?totalCount=false"
              Then it should respond with 200
-              And the response headers does not include "totalCount"
+              And the response headers does not include total-count
 
-        @ignore
         Scenario: Validate totalCount is not included when it is not present in the URL
-            Given the following schools exist
-                  | schoolId  | nameOfInstitution             | gradeLevels         | educationOrganizationCategories |
-                  | 5         | School with max edorgId value | [ "Postsecondary" ] | [ "School" ]                    |
-                  | 255901001 | Grand Bend High School        | [ "Tenth grade" ]   | [ "School" ]                    |
              When a GET request is made to "/ed-fi/schools"
              Then it should respond with 200
-              And the response headers does not include "totalCount"
+              And the response headers does not include total-count
+
+        Scenario: Ensure results can be limited and totalCount matches the actual number of existing records
+             When a GET request is made to "/ed-fi/schools?totalCount=true&limit=2"
+             Then getting less schools than the total-count
+              And the response headers includes total-count 5
+
+        Scenario: Ensure clients can get information when filtering by limit and and a valid offset
+             When a GET request is made to "/ed-fi/schools?offset=3&limit=5"
+             Then it should respond with 200
+              And schools returned
+                  | schoolId  | nameOfInstitution          |
+                  | 255901044 | Grand Bend Middle School   |
+                  | 255901045 | UT Austin Extended Campus  |
+
+        Scenario: Ensure clients can get information when filtering by limit and offset greater than the total
+             When a GET request is made to "/ed-fi/schools?offset=6&limit=5"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  []
+                  """
+# TODO GET by parameters
 
         @ignore
         Scenario: Ensure clients can GET information changing the casing of the query value to be all lowercase
@@ -68,17 +77,6 @@ Feature: Query Strings handling for GET requests
                   """
 
         @ignore
-        Scenario: Ensure results can be limited and totalCount matches the actual number of existing records
-            Given the following schools exist
-                  | schoolId  | nameOfInstitution         |
-                  | 255901001 | Grand Bend High School    |
-                  | 255901044 | Grand Bend Middle School  |
-                  | 255901045 | UT Austin Extended Campus |
-             When a GET request is made to "/ed-fi/schools?totalCount=true&limit=2"
-             Then getting less schools than the "totalCount"
-              And the response headers includes "totalCount: 3"
-
-        @ignore
         Scenario: Ensure clients can't GET information when filtering using invalid values
              When a GET request is made to "/ed-fi/schools?limit=-1" using values as
                   | Values                   |
@@ -102,39 +100,6 @@ Feature: Query Strings handling for GET requests
                        ]
                      }
                    }
-                  """
-
-        @ignore
-        Scenario: Ensure clients can get information when filtering by limit and and a valid offset
-            Given the following schools exist
-                  | schoolId  | nameOfInstitution                             |
-                  | 5         | School with max edorgId value                 |
-                  | 6         | UT Austin College of Education Under Graduate |
-                  | 7         | UT Austin Extended Campus                     |
-                  | 255901001 | Grand Bend High School                        |
-                  | 255901044 | Grand Bend Middle School                      |
-             When a GET request is made to "/ed-fi/schools?offset=3&limit=5"
-                  """
-                  """
-             Then it should respond with 200
-              And schools returned:
-                  | 255901001 | Grand Bend High School   |
-                  | 255901044 | Grand Bend Middle School |
-
-        @ignore
-        Scenario: Ensure clients can get information when filtering by limit and offset greater than the total
-            Given the following schools exist
-                  | schoolId  | nameOfInstitution                             |
-                  | 5         | School with max edorgId value                 |
-                  | 6         | UT Austin College of Education Under Graduate |
-                  | 7         | UT Austin Extended Campus                     |
-                  | 255901001 | Grand Bend High School                        |
-                  | 255901044 | Grand Bend Middle School                      |
-             When a GET request is made to  "/ed-fi/schools?offset=6&limit=5"
-             Then it should respond with 200
-              And the response body is
-                  """
-                  []
                   """
 
         @ignore
@@ -182,11 +147,3 @@ Feature: Query Strings handling for GET requests
                       },
                   }
                   """
-
-        @ignore
-        Scenario: Ensure clients can GET information when filtering with limits and properties
-            Given the following schools exist
-                  | schoolId | nameOfInstitution                             |
-                  | 5        | School with max edorgId value                 |
-                  | 6        | UT Austin College of Education Under Graduate |
-             When a GET request is made to "/ed-fi/schools?limit=2"
