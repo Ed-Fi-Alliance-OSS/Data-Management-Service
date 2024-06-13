@@ -37,6 +37,7 @@ cd ../
 > development environment testing. This file should be based on the
 > `appsettings.json` file on EdFi.DataManagementService.Api.Tests.Integration
 > folder.
+
 ## Running Unit Tests and Generate Code Coverage Report
 To run the unit tests locally, execute the following command in a PowerShell
 terminal:
@@ -48,7 +49,8 @@ terminal:
 
 The previous command should generate two files in the base directory, which
 contain all the merged results from the unit tests execution.
-```
+
+```none
 coverage.cobertura.xml
 coverage.json
 ```
@@ -72,7 +74,7 @@ coverage. If the total coverage is less than our threshold, the build will fail.
 Total: Ensures the total combined coverage result of all modules isn't less than
 the threshold
 
-```
+```none
     --threshold-type line
     --threshold-type branch
     --threshold-stat total
