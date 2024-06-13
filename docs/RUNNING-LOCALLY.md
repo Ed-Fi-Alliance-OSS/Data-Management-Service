@@ -39,6 +39,7 @@ cd ../
 > folder.
 
 ## Running Unit Tests and Generate Code Coverage Report
+
 To run the unit tests locally, execute the following command in a PowerShell
 terminal:
 
@@ -68,6 +69,7 @@ index.html file, which should contain a detailed report with the coverage
 results.
 
 ### Coverlet Parameters
+
 We are currently evaluating `line` and `branch` metrics from the Total
 coverage. If the total coverage is less than our threshold, the build will fail.
 
