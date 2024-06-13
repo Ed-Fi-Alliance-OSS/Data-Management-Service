@@ -29,7 +29,7 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
             if (!int.TryParse(context.FrontendRequest.QueryParameters["offset"], out int offserVal) ||
                 offserVal < 0)
             {
-                errors.Add("offset must be a numeric value greater than or equal to 0.");
+                errors.Add("Offset must be a numeric value greater than or equal to 0.");
             }
             else
             {
@@ -44,7 +44,7 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
             if (!int.TryParse(context.FrontendRequest.QueryParameters["limit"], out int limitVal) ||
                 limitVal < 0)
             {
-                errors.Add("limit must be a numeric value greater than or equal to 0.");
+                errors.Add("Limit must be a numeric value greater than or equal to 0.");
             }
             else
             {
@@ -58,7 +58,7 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
         {
             if (!bool.TryParse(context.FrontendRequest.QueryParameters["totalCount"], out totalCount))
             {
-                errors.Add("totalCount must be a boolean value.");
+                errors.Add("TotalCount must be a boolean value.");
             }
             else
             {

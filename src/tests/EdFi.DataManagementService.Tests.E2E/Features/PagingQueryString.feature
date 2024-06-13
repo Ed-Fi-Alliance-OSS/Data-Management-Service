@@ -1,7 +1,7 @@
 Feature: Paging Support for GET requests for Ed-Fi Resources
 
         Background:
-            Given these schools:
+            Given the following schools exist
                   | schoolId | nameOfInstitution | gradeLevels         | educationOrganizationCategories     |
                   | 1        | School 1          | [ "Postsecondary" ] | [ "Educator Preparation Provider" ] |
                   | 2        | School 2          | [ "Tenth grade" ]   | [ "School" ]                        |
@@ -10,7 +10,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                   | 6        | School 6          | [ "Postsecondary" ] | [ "Educator Preparation Provider" ] |
 
         @ignore
-        Scenario: Ensure clients can't GET information when filtering using invalid limit
+        Scenario: Ensure clients can not GET information when filtering using invalid limit
              When a GET request is made to "/ed-fi/schools?limit=<Value>"
              Then it should respond with 400
               And the response body is
@@ -21,7 +21,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                     "title": "Parameter Validation Failed",
                     "status": 400,
                     "correlationId": null,
-                    "errors": ["Limit must be omitted or set to a value between 0 and 500."]
+                    "errors": ["Limit must be a numeric value greater than or equal to 0."]
                   }
                   """
         Examples:
@@ -40,6 +40,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                   """
                     [
                         {
+                            "id": "{id}",
                             "schoolId": 5,
                             "nameOfInstitution": "School 5",
                             "educationOrganizationCategories": [
@@ -54,6 +55,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                             ]
                         },
                         {
+                            "id": "{id}",
                             "schoolId": 6,
                             "nameOfInstitution": "School 6",
                             "educationOrganizationCategories": [
@@ -70,7 +72,6 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                     ]
                   """
 
-        @ignore
         Scenario: Ensure clients can get information when filtering by limit and offset greater than the total
              When a GET request is made to "/ed-fi/schools?offset=6&limit=5"
              Then it should respond with 200
@@ -91,7 +92,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                     "title": "Parameter Validation Failed",
                     "status": 400,
                     "correlationId": null,
-                    "errors": ["Offset must be omitted or set to a value between 0 and 500."]
+                    "errors": ["Offset must be a numeric value greater than or equal to 0."]
                   }
                   """
         Examples:
@@ -110,6 +111,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                   """
                     [
                         {
+                            "id": "{id}",
                             "schoolId": 6,
                             "nameOfInstitution": "School 6",
                             "educationOrganizationCategories": [
