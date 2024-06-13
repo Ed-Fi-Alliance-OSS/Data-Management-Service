@@ -28,7 +28,7 @@ function Invoke-Execute {
     )
 
     $global:lastexitcode = 0
-    & $Command
+    Invoke-Command -ScriptBlock $Command | Out-Host
 
     if ($lastexitcode -ne 0) {
         throw "Error executing command: $Command"
