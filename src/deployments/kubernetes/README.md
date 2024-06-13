@@ -3,29 +3,57 @@
 This folder provides a basic setup of a set of
 [Kubernetes](https://kubernetes.io/) files to setup a cluster.
 
-## Local Development
+## Initial Kubernetes Setup
 
-For local development, you need to use
-[minikube](https://minikube.sigs.k8s.io/docs/start/).
+## Option 1: Docker Desktop
 
-* After installing, run `minikube start` to setup minikube in your local
-  environment.
-* Set the docker environment inside minikube:
+Open Docker Desktop and click the Settings icon ⚙️. Look for Kubernetes on the
+left. Then enable Kubernetes.
 
-`eval $(minikube docker-env)` for Unix shells or `minikube docker-env |
-Invoke-Expression` in PowerShell
+If you have previously used minikube, then change the Docker context in kubectl
+using
 
-* From the location of the [Dockerfile](src\Dockerfile), Build the data
-management service image: `docker build -t
-local/edfi-data-management-service:latest .`
+```shell
+kubectl config get-contexts
+kubectl config use-context docker-desktop
+```
 
-> [!WARNING]
-> The [deployment file](./data-management-service-deployment.yaml#L21) has a
-> policy of Never pull, which means that will use the locally built image instead of
-> trying to pull the image from Docker Hub which is the default behavior, remove
-> once the image is published to the registry.
+For more information, see [Deploy on Kubernetes with Docker
+Desktop](https://docs.docker.com/desktop/kubernetes/)
 
-* Set the terminal in the */deployments/kubernetes* folder.
+## Option 2: Minikube
+
+1. Install [minikube](https://minikube.sigs.k8s.io/docs/start/).
+2. After installing, run `minikube start` to setup minikube in your local
+   environment.
+3. Set the docker environment inside minikube:
+   * PowerShell users: `minikube docker-env | Invoke-Expression`
+   * Bash users: `eval $(minikube docker-env)`
+  
+Also see [Minikube Troubleshooting](#minikube-troubleshooting) below.
+  
+## Initializing Pods
+
+### Build a Local Image
+
+First, build a locally-tagged image of the Data Management Service. Two ways:
+
+1. From `src` directory:
+
+   ```shell
+   docker build -t local/edfi-data-management-service:latest .
+   ```
+
+2. Or use the PowerShell script from the base directory:
+
+   ```shell
+   ./build.ps1 DockerBuild
+   ```
+
+### Configure the Deployment
+
+In `src/deployments/kubernetes`:
+
 * Create an app-secret.yaml file with a encrypted password, see
   [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/) for more
   information.
@@ -33,22 +61,29 @@ local/edfi-data-management-service:latest .`
 * After done, inspect with `kubectl get pods`, and verify that all pods have
   status **RUNNING** (This can take a couple of minutes).
 
+> [!TIP]
+> The [deployment file](./data-management-service-deployment.yaml#L21) has a
+> policy of Never pull, which means that will use the locally built image instead of
+> trying to pull the image from Docker Hub which is the default behavior, remove
+> once the image is published to the registry.
+
 This will start the kubernetes infrastructure to run without exposing any
-connection to the external network. When installing in a cloud provider the
+connection to the _external_ network. When installing in a cloud provider the
 clouds Load Balancing service will take care of making the connection to the
 cluster, by opening a connection to the
 [data-management-service](data-management-service.yaml).
 
 This container has the type LoadBalancer, meaning that this is the entry point
-for the load balancer provider.
+for the load balancer provider. Access the Data Management Service at base
+address [http://localhost:8080/](http://localhost:8080/.)
 
-To test this in the local environment, we need to open *tunnel* between the
-local network and the Kubernetes cluster. To do so, run `minikube service
-data-management-service --url`.
+> [!TIP]
+> If using minikube, you may need to open a tunnel between the local network
+> and the Kubernetes cluster: `minikube service data-management-service --url`.
+> The command will run continuously until you cancel it. Copy the URL displayed
+> in the terminal and use it to connect to the Data Management Service.
 
-Copy the URL and connect to the Data Management Service.
-
-### Useful commands
+## Useful Commands
 
 | Command                                         | Description                      |
 | ----------------------------------------------- | ---------------------------------|
@@ -65,10 +100,6 @@ Copy the URL and connect to the Data Management Service.
 > In Kubernetes you can reference another pod by IP address or by hostname,
 > where the host name is the name of the pod.
 
-> [!IMPORTANT]
-> At the moment, the postgres infrastructure is only for demo purposes and does not connect
-> to the Data Management Service.
-
 ## File Description
 
 The folder includes a series of YAML files to handle the Kubernetes Setup, this
@@ -81,7 +112,7 @@ includes:
 * Config Map: Environment variables
 * Secrets: Encrypted secret values example.
 
-## Troubleshooting
+## Minikube Troubleshooting
 
 ### Network has an untrusted certificate
 

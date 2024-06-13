@@ -57,8 +57,14 @@ spec:
                   key: postgres-port
             - name: LOG_LEVEL
               valueFrom:
-                configMapKeyRef: app-configmap
-                key: log-level
+                configMapKeyRef:
+                  name: app-configmap
+                  key: log-level
+            - name: OAUTH_TOKEN_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: app-configmap
+                  key: oauth-token-endpoint
           livenessProbe:
             exec:
               command:
