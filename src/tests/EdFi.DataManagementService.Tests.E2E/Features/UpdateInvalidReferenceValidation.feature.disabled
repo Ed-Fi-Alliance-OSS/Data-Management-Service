@@ -97,7 +97,6 @@ Feature: Invalid Reference Validation
                   {
                       "beginDate": "2020-06-05",
                       "programReference": {
-                        //"educationOrganizationId": 255901,
                         "programName": "Career and Technical Education",
                         "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education"
                       },
@@ -128,7 +127,6 @@ Feature: Invalid Reference Validation
                           "educationOrganizationId": 255901
                       },
                       "programReference": {
-                        //"educationOrganizationId": 255901,
                         "programName": "Career and Technical Education",
                         "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education"
                       }
