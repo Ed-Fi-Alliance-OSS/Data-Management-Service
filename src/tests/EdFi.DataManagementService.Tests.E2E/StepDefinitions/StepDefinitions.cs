@@ -3,9 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System;
 using System.Net.Http;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Tests.E2E.Management;
 using FluentAssertions;
 using Microsoft.Playwright;
@@ -143,14 +146,13 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a GET request is made to {string} using values as")]
         public async Task WhenAGETRequestIsMadeToUsingValuesAs(string url, Table table)
         {
-            url = $"data/{url.Replace("{id}", _id)}";
+            url = $"data/{url}";
             foreach (var row in table.Rows)
             {
                 var value = row["Values"];
                 var requestUrl = $"{url}{value}";
                 _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(url)!;
             }
-
         }
 
 
@@ -173,11 +175,35 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Then("the response body is")]
         public void ThenTheResponseBodyIs(string body)
         {
-            body = body.Replace("{id}", _id);
-            JsonNode bodyJson = JsonNode.Parse(body)!;
+            // Parse the API response to JsonNode
             JsonNode responseJson = JsonNode.Parse(_apiResponse.TextAsync().Result)!;
+
+            body = ReplacePlaceholders(body, responseJson);
+            JsonNode bodyJson = JsonNode.Parse(body)!;
+
             _logger.log.Information(responseJson.ToString());
+            
             JsonNode.DeepEquals(bodyJson, responseJson).Should().BeTrue();
+        }
+
+        // Use Regex to find all occurrences of {id} in the body
+        private static readonly Regex _findIds = new Regex(@"\{id\}", RegexOptions.Compiled);
+
+        private string ReplacePlaceholders(string body, JsonNode responseJson)
+        {
+            int index = 0;
+
+            string replacedBody = _findIds.Replace(body, match =>
+            {
+                var idValue = responseJson[index]?["id"]?.ToString();
+
+                index++;
+
+                return idValue ?? match.ToString();
+            });
+
+
+            return replacedBody;
         }
 
         [Then("the response headers includes")]
@@ -266,4 +292,5 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         #endregion
 
     }
+
 }
