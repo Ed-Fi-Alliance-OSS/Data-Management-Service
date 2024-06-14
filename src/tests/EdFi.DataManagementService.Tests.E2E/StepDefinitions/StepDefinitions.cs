@@ -191,18 +191,27 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
         private string ReplacePlaceholders(string body, JsonNode responseJson)
         {
-            int index = 0;
-
-            string replacedBody = _findIds.Replace(body, match =>
+            string replacedBody = "";
+            if (body.TrimStart().StartsWith("["))
             {
-                var idValue = responseJson[index]?["id"]?.ToString();
+                int index = 0;
 
-                index++;
+                replacedBody = _findIds.Replace(body, match =>
+                {
+                    var idValue = responseJson[index]?["id"]?.ToString();
+                    index++;
+                    return idValue ?? match.ToString();
+                });
+            }
+            else
+            {
+                replacedBody = _findIds.Replace(body, match =>
+                {
+                    var idValue = responseJson["id"]?.ToString();
 
-                return idValue ?? match.ToString();
-            });
-
-
+                    return idValue ?? match.ToString();
+                });
+            }
             return replacedBody;
         }
 
