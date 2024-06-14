@@ -5,8 +5,10 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Model;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
@@ -53,7 +55,7 @@ public class ExtractDocumentIdentityTests
 
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
-            documentIdentity = resourceSchema.ExtractDocumentIdentity(
+            (documentIdentity, _) = new IdentityExtractor(resourceSchema).Extract(
                 JsonNode.Parse(
                     """
                     {
@@ -66,7 +68,8 @@ public class ExtractDocumentIdentityTests
                         }
                     }
 """
-                )!
+                )!,
+                NullLogger.Instance
             );
         }
 
@@ -132,7 +135,7 @@ public class ExtractDocumentIdentityTests
                 "staffEducationOrganizationAssignmentAssociations"
             );
 
-            documentIdentity = resourceSchema.ExtractDocumentIdentity(
+            (documentIdentity, _) = new IdentityExtractor(resourceSchema).Extract(
                 JsonNode.Parse(
                     """
                     {
@@ -140,7 +143,8 @@ public class ExtractDocumentIdentityTests
                         "endDate": "2030-01-01"
                     }
 """
-                )!
+                )!,
+                NullLogger.Instance
             );
         }
 
@@ -182,7 +186,7 @@ public class ExtractDocumentIdentityTests
 
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "gradingPeriods");
 
-            documentIdentity = resourceSchema.ExtractDocumentIdentity(
+            (documentIdentity, _) = new IdentityExtractor(resourceSchema).Extract(
                 JsonNode.Parse(
                     """
                     {
@@ -192,7 +196,8 @@ public class ExtractDocumentIdentityTests
                         "endDate": "2030-01-01"
                     }
 """
-                )!
+                )!,
+                NullLogger.Instance
             );
         }
 

@@ -5,8 +5,10 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Model;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
@@ -42,7 +44,7 @@ public class DeriveSuperclassIdentityFromTests
 
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "schools");
 
-            DocumentIdentity documentIdentity = resourceSchema.ExtractDocumentIdentity(
+            (_, superclassIdentity) = new IdentityExtractor(resourceSchema).Extract(
                 JsonNode.Parse(
                     """
                     {
@@ -50,9 +52,7 @@ public class DeriveSuperclassIdentityFromTests
                     }
 """
                 )!
-            );
-
-            superclassIdentity = resourceSchema.DeriveSuperclassIdentityFrom(documentIdentity);
+            , NullLogger.Instance);
         }
 
         [Test]
@@ -94,7 +94,7 @@ public class DeriveSuperclassIdentityFromTests
 
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
-            DocumentIdentity documentIdentity = resourceSchema.ExtractDocumentIdentity(
+            (_, superclassIdentity) = new IdentityExtractor(resourceSchema).Extract(
                 JsonNode.Parse(
                     """
                     {
@@ -102,9 +102,7 @@ public class DeriveSuperclassIdentityFromTests
                     }
 """
                 )!
-            );
-
-            superclassIdentity = resourceSchema.DeriveSuperclassIdentityFrom(documentIdentity);
+            , NullLogger.Instance);
         }
 
         [Test]

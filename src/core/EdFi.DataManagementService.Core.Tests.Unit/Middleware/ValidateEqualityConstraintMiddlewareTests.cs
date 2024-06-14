@@ -5,15 +5,15 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.External.Frontend;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
-using EdFi.DataManagementService.Core.Validation;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Validation;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
-using EdFi.DataManagementService.Core.External.Frontend;
-using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
@@ -66,8 +66,7 @@ public class ValidateEqualityConstraintMiddlewareTests
             NullLogger.Instance
         );
         _context.ResourceSchema = new ResourceSchema(
-            _context.ProjectSchema.FindResourceSchemaNode(new("bellSchedules")) ?? new JsonObject(),
-            NullLogger.Instance
+            _context.ProjectSchema.FindResourceSchemaNode(new("bellSchedules")) ?? new JsonObject()
         );
         return _context;
     }

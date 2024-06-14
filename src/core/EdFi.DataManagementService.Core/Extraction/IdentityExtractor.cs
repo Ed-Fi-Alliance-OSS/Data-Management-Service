@@ -22,7 +22,7 @@ internal class IdentityExtractor(ResourceSchema ResourceSchema)
     /// <summary>
     /// Takes an API JSON body for the resource and extracts the document identity information from the JSON body.
     /// </summary>
-    public DocumentIdentity ExtractDocumentIdentity(JsonNode documentBody, ILogger _logger)
+    private DocumentIdentity ExtractDocumentIdentity(JsonNode documentBody, ILogger _logger)
     {
         _logger.LogDebug("IdentityExtractor.ExtractDocumentIdentity");
 
@@ -55,7 +55,7 @@ internal class IdentityExtractor(ResourceSchema ResourceSchema)
     /// to schoolId. An example document identity for a School is { name: schoolId, value: 123 }. The
     /// equivalent superclass identity for this School would be { name: educationOrganizationId, value: 123 }.
     /// </summary>
-    public SuperclassIdentity? DeriveSuperclassIdentityFrom(
+    private SuperclassIdentity? DeriveSuperclassIdentityFrom(
         DocumentIdentity documentIdentity,
         ILogger _logger
     )
