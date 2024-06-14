@@ -5,11 +5,11 @@
 
 using System.Diagnostics;
 using System.Text.Json.Nodes;
-using Microsoft.Extensions.Logging;
 using EdFi.DataManagementService.Core.ApiSchema.Extensions;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
-using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Model;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.ApiSchema;
 
@@ -385,8 +385,38 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
     /// </summary>
     public DocumentReference[] ExtractDescriptorValues(JsonNode documentBody)
     {
-        // DMS-37
+        _logger.LogDebug("ExtractDocumentReferences");
 
-        return [];
+        List<DocumentReference> result = [];
+
+        foreach (DocumentPath documentPath in DocumentPaths)
+        {
+            if (!documentPath.IsReference)
+                continue;
+            if (!documentPath.IsDescriptor)
+                continue;
+
+            // Extract the descriptor URIs from the document
+            string[] descriptorUris = documentBody
+                .SelectNodesFromArrayPathCoerceToStrings(documentPath.Path.Value, _logger)
+                .ToArray();
+
+            // Path can be empty if descriptor reference is optional
+            if (descriptorUris.Length == 0)
+                continue;
+
+            BaseResourceInfo resourceInfo =
+                new(documentPath.ProjectName, documentPath.ResourceName, documentPath.IsDescriptor);
+
+            foreach (string descriptorUri in descriptorUris)
+            {
+                // One descriptor reference per Uri
+                DocumentIdentityElement documentIdentityElement =
+                    new(DocumentIdentity.DescriptorIdentityJsonPath, descriptorUri);
+                result.Add(new(resourceInfo, new DocumentIdentity([documentIdentityElement])));
+            }
+        }
+
+        return result.ToArray();
     }
 }
