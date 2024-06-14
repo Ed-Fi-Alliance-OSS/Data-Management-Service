@@ -98,7 +98,7 @@ public class QueryTests : DatabaseTest
             }
 
             Dictionary<string, string>? searchParameters = [];
-            PaginationParameters paginationParameters = new(25, 0, false);
+            PaginationParameters paginationParameters = new(25, 0, true);
 
             IQueryRequest queryRequest = CreateQueryRequest(
                 _defaultResourceName,
@@ -114,6 +114,13 @@ public class QueryTests : DatabaseTest
         {
             _queryResults!.Should().BeOfType<QueryResult.QuerySuccess>();
             (_queryResults! as QueryResult.QuerySuccess)!.EdfiDocs.Length.Should().Be(3);
+        }
+
+        [Test]
+        public void It_should_be_found_by_query_and_total_count_in_header()
+        {
+            _queryResults!.Should().BeOfType<QueryResult.QuerySuccess>();
+            (_queryResults! as QueryResult.QuerySuccess)!.TotalCount.Should().Be(3);
         }
     }
 
