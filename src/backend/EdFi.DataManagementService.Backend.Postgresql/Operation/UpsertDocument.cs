@@ -80,6 +80,20 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 connection,
                 transaction
             );
+
+            if (upsertRequest.DocumentInfo.SuperclassReferentialId != null)
+            {
+                await _sqlAction.InsertAlias(
+                    new(
+                        DocumentPartitionKey: documentPartitionKey,
+                        DocumentId: newDocumentId,
+                        ReferentialId: upsertRequest.DocumentInfo.SuperclassReferentialId.Value.Value,
+                        ReferentialPartitionKey: PartitionKeyFor(upsertRequest.DocumentInfo.SuperclassReferentialId.Value).Value
+                    ),
+                    connection,
+                    transaction
+                );
+            }
         }
         catch (PostgresException pe)
         {

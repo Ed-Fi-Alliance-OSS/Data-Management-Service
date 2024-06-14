@@ -77,7 +77,8 @@ internal static class No
             ReferentialId: new(Guid.Empty),
             DocumentReferences: [],
             DescriptorReferences: [],
-            SuperclassIdentity: null
+            SuperclassIdentity: null,
+            SuperclassReferentialId: null
         );
 
     /// <summary>
