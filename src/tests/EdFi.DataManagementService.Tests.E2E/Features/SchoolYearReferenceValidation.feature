@@ -2,34 +2,37 @@ Feature: School Year Reference Validation
   Reference validation on School Years
 
         Background:
+
             Given the Data Management Service must receive a token issued by "http://localhost"
               And user is already authorized
-             When a POST request is made to "/ed-fi/schoolYearTypes" with
-                  """
-                    {
-                      "schoolYear": 2024,
-                      "currentSchoolYear": true,
-                      "schoolYearDescription": "Current School Year 2024"
-                    }
-                  """
-             Then it should respond with 201 or 200
-              When a POST request is made to "/ed-fi/schoolYearTypes" with
-                  """
-                    {
-                      "schoolYear": 2029,
-                      "currentSchoolYear": true,
-                      "schoolYearDescription": "Current School Year 2029"
-                    }
-                  """
-             Then it should respond with 201 or 200
+
+            When a POST request with list of required descriptors
+                  | descriptorname                           | codeValue         | description       | namespace                                               | shortDescription  |
+                  | educationOrganizationCategoryDescriptors | School            | School            | uri://ed-fi.org/EducationOrganizationCategoryDescriptor | School            |
+                  | calendarTypeDescriptors                  | Student Specific  | Student Specific  | uri://ed-fi.org/CalendarTypeDescriptor                  | Student Specific  |
+                  | gradeLevelDescriptors                    | Tenth grade       | Tenth grade       | uri://ed-fi.org/GradeLevelDescriptor                    | Tenth grade       |
+                  | calendarEventDescriptors                 | Instructional day | Instructional day | uri://ed-fi.org/CalendarEventDescriptor                 | Instructional day |
+
+              Then all responses should be 201 or 200
+
+              When a POST request with list of required resources
+                  | resourcename | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories |
+                  | schools      | 535      | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+              Then all responses should be 201 or 200
+
+              When a POST request with list of required resources
+                  | resourcename    | schoolYear | currentSchoolYear | schoolYearDescription |
+                  | schoolYearTypes | 2024       | true              | School Year 2024      |
+                  | schoolYearTypes | 2029       | false             | School Year 2029      |
+              Then all responses should be 201 or 200
 
         Scenario: Try creating a resource using a valid school year
              When a POST request is made to "/ed-fi/calendars" with
                   """
                   {
-                      "calendarCode": "2010605675",
+                      "calendarCode": "321",
                       "schoolReference": {
-                        "schoolId": 255901001
+                        "schoolId": 535
                       },
                       "schoolYearTypeReference": {
                         "schoolYear": 2024
@@ -38,19 +41,19 @@ Feature: School Year Reference Validation
                       "gradeLevels": []
                   }
                   """
-             Then it should respond with 201
+             Then it should respond with 201 or 200
 
         @Ignore
         Scenario: Try creating a resource using an invalid school year
              When a POST request is made to "/ed-fi/calendars" with
                    """
                   {
-                      "calendarCode": "2010605675",
+                      "calendarCode": "325",
                       "schoolReference": {
-                        "schoolId": 255901001
+                        "schoolId": 535
                       },
                       "schoolYearTypeReference": {
-                        "schoolYear": 3029
+                        "schoolYear": 2099
                       },
                       "calendarTypeDescriptor": "uri://ed-fi.org/CalendarTypeDescriptor#Student Specific",
                       "gradeLevels": []
@@ -72,12 +75,12 @@ Feature: School Year Reference Validation
         @Ignore
         Scenario: Try creating a CalendarDate using a valid Calendar reference
               
-              When a POST request is made to "/ed-fi/calendarDates" with
+              When a POST request is made to "/ed-fi/calendars" with
                   """
                   {
-                      "calendarCode": "2010605987",
+                      "calendarCode": "451",
                       "schoolReference": {
-                        "schoolId": 255901001
+                        "schoolId": 535
                       },
                       "schoolYearTypeReference": {
                         "schoolYear": 2029
@@ -86,13 +89,13 @@ Feature: School Year Reference Validation
                       "gradeLevels": []
                   }
                   """
-             Then it should respond with 201
+             Then it should respond with 201 or 200
              When a POST request is made to "/ed-fi/calendarDates" with
                   """
                      {
                         "calendarReference": {
-                          "calendarCode": "2010605987",
-                          "schoolId": 255901001,
+                          "calendarCode": "451",
+                          "schoolId": 535,
                           "schoolYear": 2029
                         },
                         "date": "2029-06-23",
@@ -103,7 +106,7 @@ Feature: School Year Reference Validation
                         ]
                     }
                   """
-             Then it should respond with 201
+             Then it should respond with 201 or 200
 
         @Ignore
         Scenario: Try creating a CalendarDate using an invalid Calendar reference with an invalid School year
@@ -111,9 +114,9 @@ Feature: School Year Reference Validation
                   """
                      {
                         "calendarReference": {
-                          "calendarCode": "2010605675",
-                          "schoolId": 255901001,
-                          "schoolYear": 3024
+                          "calendarCode": "321",
+                          "schoolId": 535,
+                          "schoolYear": 2059
                         },
                         "date": "2024-06-23",
                         "calendarEvents": [

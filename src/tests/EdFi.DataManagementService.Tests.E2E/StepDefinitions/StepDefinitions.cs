@@ -3,9 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+
 using System;
+using System.Globalization;
 using System.Net.Http;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -21,6 +24,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
     public class StepDefinitions(PlaywrightContext _playwrightContext, TestLogger _logger)
     {
         private IAPIResponse _apiResponse = null!;
+        private List<IAPIResponse> _apiResponses = null!;
         private string _id = string.Empty;
         private string _dependentId = string.Empty;
         private string _location = string.Empty;
@@ -62,33 +66,40 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         public async Task GivenTheFollowingSchoolsExist(Table table)
         {
             var url = $"data/ed-fi/schools";
-            var schools = table.Rows.Select(row =>
-            {
-                var gradeLevels = JsonSerializer.Deserialize<List<string>>(row["gradeLevels"])
-                    ?.Select(descriptor => new GradeLevel(descriptor))
-                    .ToList();
+            var schools = table
+                .Rows.Select(row =>
+                {
+                    var gradeLevels = JsonSerializer
+                        .Deserialize<List<string>>(row["gradeLevels"])
+                        ?.Select(descriptor => new GradeLevel(descriptor))
+                        .ToList();
 
-                var educationOrgCategories = JsonSerializer.Deserialize<List<string>>(row["educationOrganizationCategories"])
-                    ?.Select(descriptor => new EducationOrganizationCategory(descriptor))
-                    .ToList();
+                    var educationOrgCategories = JsonSerializer
+                        .Deserialize<List<string>>(row["educationOrganizationCategories"])
+                        ?.Select(descriptor => new EducationOrganizationCategory(descriptor))
+                        .ToList();
 
-                var schoolId = row["schoolId"] != null ? int.Parse(row["schoolId"]) : (int?)null;
-                var nameOfInstitution = row["nameOfInstitution"];
+                    var schoolId = row["schoolId"] != null ? int.Parse(row["schoolId"]) : (int?)null;
+                    var nameOfInstitution = row["nameOfInstitution"];
 
-                return new School(
-                    schoolId: schoolId,
-                    nameOfInstitution: nameOfInstitution,
-                    gradeLevels: gradeLevels,
-                    educationOrganizationCategories: educationOrgCategories
-                );
-            }).ToList();
+                    return new School(
+                        schoolId: schoolId,
+                        nameOfInstitution: nameOfInstitution,
+                        gradeLevels: gradeLevels,
+                        educationOrganizationCategories: educationOrgCategories
+                    );
+                })
+                .ToList();
 
             var apiResponses = new List<IAPIResponse>();
 
             foreach (var school in schools)
             {
                 var data = JsonSerializer.Serialize(school);
-                _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = data })!;
+                _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
+                    url,
+                    new() { Data = data }
+                )!;
                 apiResponses.Add(_apiResponse);
             }
             foreach (var response in apiResponses)
@@ -100,6 +111,84 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         #endregion
 
         #region When
+
+        [When("a POST request with list of required descriptors")]
+        public async Task WhenAPOSTRequestWithListOfRequiredDescriptors(DataTable requiredDescriptors)
+        {
+            await PostDataRows(requiredDescriptors, "descriptorname");
+        }
+
+        [When("a POST request with list of required resources")]
+        public async Task WhenAPOSTRequestWithListOfRequiredResources(DataTable requiredResources)
+        {
+            await PostDataRows(requiredResources, "resourcename");
+        }
+
+        private async Task PostDataRows(DataTable dataTable, string typeName)
+        {
+            var options = new JsonSerializerOptions
+            {
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+                WriteIndented = true
+            };
+
+            _apiResponses = new List<IAPIResponse>();
+            var baseUrl = $"data/ed-fi";
+
+            foreach (var row in dataTable.Rows)
+            {
+                var dataUrl = $"{baseUrl}/{row[typeName]}";
+                var rowDict = new Dictionary<string, object>();
+                foreach (var column in dataTable.Header)
+                {
+                    if (!column.Equals(typeName))
+                    {
+                        rowDict[column] = ConvertValueToCorrectType(row[column]);
+                    }
+                }
+                string body = JsonSerializer
+                    .Serialize(rowDict, options)
+                    .Replace("\"[", "[")
+                    .Replace("]\"", "]")
+                    .Replace("\\\"", "\"");
+
+                _logger.log.Information(dataUrl);
+                _apiResponses.Add(
+                    await _playwrightContext.ApiRequestContext?.PostAsync(dataUrl, new() { Data = body })!
+                );
+            }
+        }
+
+        private object ConvertValueToCorrectType(string value)
+        {
+            if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
+                return intValue;
+
+            if (
+                decimal.TryParse(
+                    value,
+                    NumberStyles.Number,
+                    CultureInfo.InvariantCulture,
+                    out var decimalValue
+                )
+            )
+                return decimalValue;
+
+            if (
+                DateTime.TryParse(
+                    value,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out var dateTimeValue
+                )
+            )
+                return dateTimeValue;
+
+            if (bool.TryParse(value, out var boolValue))
+                return boolValue;
+
+            return value;
+        }
 
         [When("a POST request is made to {string} with")]
         public async Task WhenSendingAPOSTRequestToWithBody(string url, string body)
@@ -162,7 +251,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             }
         }
 
-
         #endregion
 
         #region Then
@@ -189,7 +277,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             JsonNode bodyJson = JsonNode.Parse(body)!;
 
             _logger.log.Information(responseJson.ToString());
-            
+
             JsonNode.DeepEquals(bodyJson, responseJson).Should().BeTrue();
         }
 
@@ -203,21 +291,27 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             {
                 int index = 0;
 
-                replacedBody = _findIds.Replace(body, match =>
-                {
-                    var idValue = responseJson[index]?["id"]?.ToString();
-                    index++;
-                    return idValue ?? match.ToString();
-                });
+                replacedBody = _findIds.Replace(
+                    body,
+                    match =>
+                    {
+                        var idValue = responseJson[index]?["id"]?.ToString();
+                        index++;
+                        return idValue ?? match.ToString();
+                    }
+                );
             }
             else
             {
-                replacedBody = _findIds.Replace(body, match =>
-                {
-                    var idValue = responseJson["id"]?.ToString();
+                replacedBody = _findIds.Replace(
+                    body,
+                    match =>
+                    {
+                        var idValue = responseJson["id"]?.ToString();
 
-                    return idValue ?? match.ToString();
-                });
+                        return idValue ?? match.ToString();
+                    }
+                );
             }
             return replacedBody;
         }
@@ -245,6 +339,15 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             JsonNode responseJson = JsonNode.Parse(_apiResponse.TextAsync().Result)!;
             _logger.log.Information(responseJson.ToString());
             JsonNode.DeepEquals(bodyJson, responseJson).Should().BeTrue();
+        }
+
+        [Then("all responses should be {int} or {int}")]
+        public void ThenAllResponsesShouldBe(int statusCode1, int statusCode2)
+        {
+            foreach (var response in _apiResponses)
+            {
+                response.Status.Should().BeOneOf([statusCode1, statusCode2]);
+            }
         }
 
         [Then("total of records should be {int}")]
@@ -297,8 +400,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 var expectedSchoolId = row["schoolId"];
                 var expectedNameOfInstitution = row["nameOfInstitution"];
 
-                var matchSchoolId = responseArray.Any(school => school["schoolId"]?.ToString() == expectedSchoolId);
-                var matchNameOfInstitution = responseArray.Any(school => school["nameOfInstitution"]?.ToString() == expectedNameOfInstitution);
+                var matchSchoolId = responseArray.Any(school =>
+                    school["schoolId"]?.ToString() == expectedSchoolId
+                );
+                var matchNameOfInstitution = responseArray.Any(school =>
+                    school["nameOfInstitution"]?.ToString() == expectedNameOfInstitution
+                );
 
                 matchSchoolId.Should().BeTrue();
                 matchNameOfInstitution.Should().BeTrue();
@@ -306,7 +413,5 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         }
 
         #endregion
-
     }
-
 }
