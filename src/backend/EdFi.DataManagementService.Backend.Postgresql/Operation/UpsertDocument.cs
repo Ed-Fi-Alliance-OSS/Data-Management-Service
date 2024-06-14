@@ -107,6 +107,15 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 return new UpsertResult.UpsertFailureWriteConflict();
             }
 
+            if (pe.SqlState == PostgresErrorCodes.UniqueViolation)
+            {
+                _logger.LogInformation(
+                    "Failure: Record already exists - {TraceId}",
+                    upsertRequest.TraceId
+                );
+                return new UpsertResult.UpsertFailureIdentityConflict("TODO: SET MESSAGE");
+            }
+
             _logger.LogError(pe, "Failure on Aliases table insert - {TraceId}", upsertRequest.TraceId);
             return new UpsertResult.UnknownFailure("Upsert failure");
         }
