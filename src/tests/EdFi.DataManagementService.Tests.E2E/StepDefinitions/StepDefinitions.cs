@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Tests.E2E.Management;
@@ -138,6 +139,20 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(url)!;
         }
+
+        [When("a GET request is made to {string} using values as")]
+        public async Task WhenAGETRequestIsMadeToUsingValuesAs(string url, Table table)
+        {
+            url = $"data/{url.Replace("{id}", _id)}";
+            foreach (var row in table.Rows)
+            {
+                var value = row["Values"];
+                var requestUrl = $"{url}{value}";
+                _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(url)!;
+            }
+
+        }
+
 
         #endregion
 
