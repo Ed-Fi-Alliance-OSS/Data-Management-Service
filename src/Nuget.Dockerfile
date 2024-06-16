@@ -8,16 +8,20 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0.3-alpine3.19-amd64@sha256:a531d9d123928
 FROM runtimebase AS setup
 
 ENV LOG_LEVEL=${LOG_LEVEL}
+# TODO Version should be passed as parameter
+ARG VERSION=latest
 
-WORKDIR /TBD
+WORKDIR /app
 
+# TODO review version in the URL, currently we are getting the the following error
+# "The package's version isn't formatted correctly."
 RUN umask 0077 && \
-    # wget -nv -O /app/AdminApi.zip "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_apis/packaging/feeds/EdFi/nuget/packages/EdFi.Suite3.ODS.AdminApi/versions/${VERSION}/content" && \
-    wget -nv -O /app/<FILENAME_HERE>.zip "" && \
-    unzip /app/FILENAME_HERE.zip AdminApi/* -d /app/ && \
-    cp -r /app/FILENAME_HERE/. /app/ && \
-    rm -f /app/FILENAME_HERE.zip && \
-    rm -r /app/FILENAME_HERE && \
+    wget -nv -O /app/AdminApi.zip "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_apis/packaging/feeds/EdFi/nuget/packages/EdFi.Suite3.ODS.AdminApi/versions/${VERSION}/content" && \
+    wget -nv -O /app/AdminApi.zip "" && \
+    unzip /app/AdminApi.zip AdminApi/* -d /app/ && \
+    cp -r /app/AdminApi/. /app/ && \
+    rm -f /app/AdminApi.zip && \
+    rm -r /app/AdminApi && \
     cp /app/log4net.txt /app/log4net.config && \
     dos2unix /app/*.json && \
     dos2unix /app/*.sh && \
@@ -27,6 +31,7 @@ RUN umask 0077 && \
     apk del unzip dos2unix curl && \
     chown -R edfi /app
 
+EXPOSE ${ASPNETCORE_HTTP_PORTS}
 USER edfi
 
 ENTRYPOINT [ "/app/run.sh" ]
