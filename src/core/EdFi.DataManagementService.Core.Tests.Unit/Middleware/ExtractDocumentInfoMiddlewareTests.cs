@@ -13,7 +13,6 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
-using EdFi.DataManagementService.Core.External.Frontend;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
@@ -26,7 +25,7 @@ public class ExtractDocumentInfoMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_Pipeline_Context_Has_Resource_Schemas_And_Document_Body
+    public class Given_a_school_that_is_a_subclass_with_no_outbound_references
         : ExtractDocumentInfoMiddlewareTests
     {
         private PipelineContext context = No.PipelineContext();
@@ -72,19 +71,19 @@ public class ExtractDocumentInfoMiddlewareTests
         }
 
         [Test]
-        public void It_has_built_the_document_info_document_references()
+        public void It_has_no_document_references()
         {
             context.DocumentInfo.DocumentReferences.Should().HaveCount(0);
         }
 
         [Test]
-        public void It_has_built_the_document_info_descriptor_references()
+        public void It_has_no_descriptor_references()
         {
             context.DocumentInfo.DescriptorReferences.Should().HaveCount(0);
         }
 
         [Test]
-        public void It_has_built_the_document_info_document_identity()
+        public void It_has_built_the_document_identity()
         {
             var identityElements = context.DocumentInfo.DocumentIdentity.DocumentIdentityElements;
             identityElements.Should().HaveCount(1);

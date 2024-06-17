@@ -58,7 +58,7 @@ internal class ValidateEndpointMiddleware(ILogger _logger) : IPipelineStep
             return;
         }
 
-        context.ResourceSchema = new(resourceSchemaNode, _logger);
+        context.ResourceSchema = new(resourceSchemaNode);
 
         await next();
     }

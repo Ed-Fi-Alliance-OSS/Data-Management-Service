@@ -3,17 +3,17 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Core.ApiSchema;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Validation;
+using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
-using FluentAssertions;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
 {
@@ -34,9 +34,13 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 .ToApiSchemaDocument();
         }
 
-        internal static IPipelineStep Middleware(){
+        internal static IPipelineStep Middleware()
+        {
             var immutableIdentityValidator = new MatchingDocumentUuidsValidator();
-            return new ValidateMatchingDocumentUuidsMiddleware(NullLogger.Instance, immutableIdentityValidator);
+            return new ValidateMatchingDocumentUuidsMiddleware(
+                NullLogger.Instance,
+                immutableIdentityValidator
+            );
         }
 
         internal PipelineContext Context(FrontendRequest frontendRequest, RequestMethod method)
@@ -56,8 +60,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 NullLogger.Instance
             );
             _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNode(new("academicweeks")) ?? new JsonObject(),
-                NullLogger.Instance
+                _context.ProjectSchema.FindResourceSchemaNode(new("academicweeks")) ?? new JsonObject()
             );
             return _context;
         }
@@ -72,21 +75,21 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
             public async Task Setup()
             {
                 var jsonData = $$"""
-                               {
-                                "id": "{{id}}",
-                                "weekIdentifier": "12345",
-                                "schoolReference": {
-                                  "schoolId": 17012391,
-                                  "add": {
-                                       "test": "test"
-                                  }
-                                },
-                                "beginDate": "2023-09-11",
-                                "endDate": "2023-09-11",
-                                "totalInstructionalDays": 300,
-                                "additionalField": "test"
-                               }
-                               """;
+                    {
+                     "id": "{{id}}",
+                     "weekIdentifier": "12345",
+                     "schoolReference": {
+                       "schoolId": 17012391,
+                       "add": {
+                            "test": "test"
+                       }
+                     },
+                     "beginDate": "2023-09-11",
+                     "endDate": "2023-09-11",
+                     "totalInstructionalDays": 300,
+                     "additionalField": "test"
+                    }
+                    """;
                 var frontEndRequest = new FrontendRequest(
                     $"ed-fi/academicweeks/{id}",
                     Body: jsonData,
@@ -99,7 +102,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 {
                     DocumentUuid = new DocumentUuid(new(id))
                 };
-                
+
                 await Middleware().Execute(_context, Next());
             }
 
@@ -121,21 +124,21 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
             public async Task Setup()
             {
                 var jsonData = $$"""
-                                 {
-                                  "id": "{{id}}",
-                                  "weekIdentifier": "12345",
-                                  "schoolReference": {
-                                    "schoolId": 17012391,
-                                    "add": {
-                                         "test": "test"
-                                    }
-                                  },
-                                  "beginDate": "2023-09-11",
-                                  "endDate": "2023-09-11",
-                                  "totalInstructionalDays": 300,
-                                  "additionalField": "test"
-                                 }
-                                 """;
+                    {
+                     "id": "{{id}}",
+                     "weekIdentifier": "12345",
+                     "schoolReference": {
+                       "schoolId": 17012391,
+                       "add": {
+                            "test": "test"
+                       }
+                     },
+                     "beginDate": "2023-09-11",
+                     "endDate": "2023-09-11",
+                     "totalInstructionalDays": 300,
+                     "additionalField": "test"
+                    }
+                    """;
                 var frontEndRequest = new FrontendRequest(
                     $"ed-fi/academicweeks/{differentId}",
                     Body: jsonData,
@@ -158,6 +161,5 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 _context?.FrontendResponse.StatusCode.Should().Be(400);
             }
         }
-
     }
 }

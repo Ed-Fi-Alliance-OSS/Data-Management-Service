@@ -24,6 +24,9 @@ internal record DocumentIdentity(IList<IDocumentIdentityElement> _documentIdenti
     /// </summary>
     public static readonly Guid EdFiUuidv5Namespace = new("edf1edf1-3df1-3df1-3df1-3df1edf1edf1");
 
+    // Use this synthetic, hardcoded identity JsonPath for all descriptors
+    public static readonly JsonPath DescriptorIdentityJsonPath = new("$.descriptor");
+
     /// <summary>
     /// An immutable version of the underlying identity elements, mostly for testability
     /// </summary>
