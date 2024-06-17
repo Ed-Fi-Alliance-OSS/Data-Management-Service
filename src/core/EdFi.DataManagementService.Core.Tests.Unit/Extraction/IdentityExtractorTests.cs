@@ -12,7 +12,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
-namespace EdFi.DataManagementService.Core.Tests.Unit.ApiSchema;
+namespace EdFi.DataManagementService.Core.Tests.Unit.Extraction;
 
 [TestFixture]
 public class ExtractDocumentIdentityTests
@@ -119,11 +119,7 @@ public class ExtractDocumentIdentityTests
                 .WithStartResource("StaffEducationOrganizationAssignmentAssociation")
                 .WithIdentityJsonPaths(["$.staffClassificationDescriptor"])
                 .WithStartDocumentPathsMapping()
-                .WithDocumentPathReference(
-                    "StaffClassification",
-                    [new(DescriptorDocument.DescriptorIdentityPath.Value, "$.staffClassificationDescriptor")],
-                    true
-                )
+                .WithDocumentPathDescriptor("StaffClassification", "$.staffClassificationDescriptor")
                 .WithDocumentPathScalar("EndDate", "$.endDate")
                 .WithEndDocumentPathsMapping()
                 .WithEndResource()

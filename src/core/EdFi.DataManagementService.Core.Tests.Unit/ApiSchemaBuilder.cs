@@ -223,7 +223,7 @@ public class ApiSchemaBuilder
     /// <summary>
     /// Adds a DocumentPath to a DocumentPathsMapping for a scalar path
     ///
-    /// Example for parameters ("OfficialAttendancePeriod", "officialAttendancePeriod", "$.officialAttendancePeriod")
+    /// Example for parameters ("OfficialAttendancePeriod", "$.officialAttendancePeriod")
     ///
     /// "OfficialAttendancePeriod": {
     ///   "isReference": false,
@@ -298,7 +298,6 @@ public class ApiSchemaBuilder
     public ApiSchemaBuilder WithDocumentPathReference(
         string pathFullName,
         KeyValuePair<string, string>[] referenceJsonPaths,
-        bool isDescriptor = false,
         string referenceProjectName = "Ed-Fi"
     )
     {
@@ -318,7 +317,7 @@ public class ApiSchemaBuilder
         _currentDocumentPathsMappingNode[pathFullName] = new JsonObject
         {
             ["isReference"] = true,
-            ["isDescriptor"] = isDescriptor,
+            ["isDescriptor"] = false,
             ["projectName"] = referenceProjectName,
             ["resourceName"] = pathFullName,
             ["referenceJsonPaths"] = new JsonArray(
@@ -330,6 +329,50 @@ public class ApiSchemaBuilder
                     })
                     .ToArray()
             )
+        };
+
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a DocumentPath to a DocumentPathsMapping for a descriptor path
+    ///
+    /// Example for parameters ("GradingPeriodDescriptor", "$.gradingPeriodDescriptor")
+    ///
+    /// "GradingPeriodDescriptor": {
+    ///   "isReference": false,
+    ///   "isDescriptor": true,
+    ///   "path": "$.officialAttendancePeriod",
+    ///   "projectName": "Ed-Fi",
+    ///   "resourceName": "CourseOffering"
+    /// },
+    /// </summary>
+    public ApiSchemaBuilder WithDocumentPathDescriptor(
+        string pathFullName,
+        string jsonPath,
+        string referenceProjectName = "Ed-Fi"
+    )
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentDocumentPathsMappingNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentDocumentPathsMappingNode[pathFullName] = new JsonObject
+        {
+            ["isReference"] = true,
+            ["isDescriptor"] = true,
+            ["projectName"] = referenceProjectName,
+            ["resourceName"] = pathFullName,
+            ["path"] = jsonPath
         };
 
         return this;
