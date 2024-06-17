@@ -5,12 +5,14 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Model;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
-namespace EdFi.DataManagementService.Core.Tests.Unit.ApiSchema;
+namespace EdFi.DataManagementService.Core.Tests.Unit.Extraction;
 
 [TestFixture]
 public class ExtractDocumentIdentityTests
@@ -53,7 +55,7 @@ public class ExtractDocumentIdentityTests
 
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
-            documentIdentity = resourceSchema.ExtractDocumentIdentity(
+            (documentIdentity, _) = resourceSchema.ExtractIdentities(
                 JsonNode.Parse(
                     """
                     {
@@ -66,7 +68,8 @@ public class ExtractDocumentIdentityTests
                         }
                     }
 """
-                )!
+                )!,
+                NullLogger.Instance
             );
         }
 
@@ -116,11 +119,7 @@ public class ExtractDocumentIdentityTests
                 .WithStartResource("StaffEducationOrganizationAssignmentAssociation")
                 .WithIdentityJsonPaths(["$.staffClassificationDescriptor"])
                 .WithStartDocumentPathsMapping()
-                .WithDocumentPathReference(
-                    "StaffClassification",
-                    [new(DescriptorDocument.DescriptorIdentityPath.Value, "$.staffClassificationDescriptor")],
-                    true
-                )
+                .WithDocumentPathDescriptor("StaffClassification", "$.staffClassificationDescriptor")
                 .WithDocumentPathScalar("EndDate", "$.endDate")
                 .WithEndDocumentPathsMapping()
                 .WithEndResource()
@@ -132,7 +131,7 @@ public class ExtractDocumentIdentityTests
                 "staffEducationOrganizationAssignmentAssociations"
             );
 
-            documentIdentity = resourceSchema.ExtractDocumentIdentity(
+            (documentIdentity, _) = resourceSchema.ExtractIdentities(
                 JsonNode.Parse(
                     """
                     {
@@ -140,7 +139,8 @@ public class ExtractDocumentIdentityTests
                         "endDate": "2030-01-01"
                     }
 """
-                )!
+                )!,
+                NullLogger.Instance
             );
         }
 
@@ -182,7 +182,7 @@ public class ExtractDocumentIdentityTests
 
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "gradingPeriods");
 
-            documentIdentity = resourceSchema.ExtractDocumentIdentity(
+            (documentIdentity, _) = resourceSchema.ExtractIdentities(
                 JsonNode.Parse(
                     """
                     {
@@ -192,7 +192,8 @@ public class ExtractDocumentIdentityTests
                         "endDate": "2030-01-01"
                     }
 """
-                )!
+                )!,
+                NullLogger.Instance
             );
         }
 

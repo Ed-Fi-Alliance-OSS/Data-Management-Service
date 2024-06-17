@@ -43,8 +43,7 @@ public class BuildResourceInfoMiddlewareTests
                 NullLogger.Instance
             );
             context.ResourceSchema = new ResourceSchema(
-                context.ProjectSchema.FindResourceSchemaNode(new("schools")) ?? new JsonObject(),
-                NullLogger.Instance
+                context.ProjectSchema.FindResourceSchemaNode(new("schools")) ?? new JsonObject()
             );
 
             await BuildMiddleware().Execute(context, NullNext);

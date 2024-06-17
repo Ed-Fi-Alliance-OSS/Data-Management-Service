@@ -5,12 +5,14 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Model;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
-namespace EdFi.DataManagementService.Core.Tests.Unit.ApiSchema;
+namespace EdFi.DataManagementService.Core.Tests.Unit.Extraction;
 
 [TestFixture]
 public class ExtractDocumentReferencesTests
@@ -65,7 +67,7 @@ public class ExtractDocumentReferencesTests
             ApiSchemaDocument apiSchemaDocument = BuildApiSchemaDocument();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
-            documentReferences = resourceSchema.ExtractDocumentReferences(
+            documentReferences = resourceSchema.ExtractReferences(
                 JsonNode.Parse(
                     """
                     {
@@ -92,7 +94,8 @@ public class ExtractDocumentReferencesTests
                         ]
                     }
 """
-                )!
+                )!,
+                NullLogger.Instance
             );
         }
 
@@ -165,8 +168,7 @@ public class ExtractDocumentReferencesTests
         {
             ApiSchemaDocument apiSchemaDocument = BuildApiSchemaDocument();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
-
-            documentReferences = resourceSchema.ExtractDocumentReferences(
+            documentReferences = resourceSchema.ExtractReferences(
                 JsonNode.Parse(
                     """
                     {
@@ -187,7 +189,8 @@ public class ExtractDocumentReferencesTests
                         ]
                     }
 """
-                )!
+                )!,
+                NullLogger.Instance
             );
         }
 
@@ -240,7 +243,7 @@ public class ExtractDocumentReferencesTests
             ApiSchemaDocument apiSchemaDocument = BuildApiSchemaDocument();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
-            documentReferences = resourceSchema.ExtractDocumentReferences(
+            documentReferences = resourceSchema.ExtractReferences(
                 JsonNode.Parse(
                     """
                     {
@@ -255,7 +258,8 @@ public class ExtractDocumentReferencesTests
                         ]
                     }
 """
-                )!
+                )!,
+                NullLogger.Instance
             );
         }
 
@@ -293,7 +297,7 @@ public class ExtractDocumentReferencesTests
             ApiSchemaDocument apiSchemaDocument = BuildApiSchemaDocument();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
-            documentReferences = resourceSchema.ExtractDocumentReferences(
+            documentReferences = resourceSchema.ExtractReferences(
                 JsonNode.Parse(
                     """
                     {
@@ -302,7 +306,8 @@ public class ExtractDocumentReferencesTests
                         ]
                     }
 """
-                )!
+                )!,
+                NullLogger.Instance
             );
         }
 
@@ -325,7 +330,7 @@ public class ExtractDocumentReferencesTests
             ApiSchemaDocument apiSchemaDocument = BuildApiSchemaDocument();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
-            documentReferences = resourceSchema.ExtractDocumentReferences(
+            documentReferences = resourceSchema.ExtractReferences(
                 JsonNode.Parse(
                     """
                     {
@@ -338,7 +343,8 @@ public class ExtractDocumentReferencesTests
                         }
                     }
 """
-                )!
+                )!,
+                NullLogger.Instance
             );
         }
 
@@ -382,14 +388,15 @@ public class ExtractDocumentReferencesTests
             ApiSchemaDocument apiSchemaDocument = BuildApiSchemaDocument();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
-            documentReferences = resourceSchema.ExtractDocumentReferences(
+            documentReferences = resourceSchema.ExtractReferences(
                 JsonNode.Parse(
                     """
                     {
                         "sectionIdentifier": "Bob"
                     }
 """
-                )!
+                )!,
+                NullLogger.Instance
             );
         }
 
