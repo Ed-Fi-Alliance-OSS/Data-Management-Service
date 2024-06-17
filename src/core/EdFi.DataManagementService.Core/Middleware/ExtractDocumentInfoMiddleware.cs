@@ -26,17 +26,17 @@ internal class ExtractDocumentInfoMiddleware(ILogger _logger) : IPipelineStep
 
         Trace.Assert(context.ParsedBody != null, "Body was null, pipeline config invalid");
 
-        var (documentIdentity, superclassIdentity) = new IdentityExtractor(context.ResourceSchema).Extract(
+        var (documentIdentity, superclassIdentity) = context.ResourceSchema.ExtractIdentities(
             context.ParsedBody,
             _logger
         );
 
         context.DocumentInfo = new(
-            DocumentReferences: new ReferenceExtractor(context.ResourceSchema).Extract(
+            DocumentReferences: context.ResourceSchema.ExtractReferences(
                 context.ParsedBody,
                 _logger
             ),
-            DescriptorReferences: new DescriptorExtractor(context.ResourceSchema).Extract(
+            DescriptorReferences: context.ResourceSchema.ExtractDescriptors(
                 context.ParsedBody,
                 _logger
             ),

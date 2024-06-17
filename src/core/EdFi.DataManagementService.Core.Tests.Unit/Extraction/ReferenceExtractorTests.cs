@@ -67,7 +67,7 @@ public class ExtractDocumentReferencesTests
             ApiSchemaDocument apiSchemaDocument = BuildApiSchemaDocument();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
-            documentReferences = new ReferenceExtractor(resourceSchema).Extract(
+            documentReferences = resourceSchema.ExtractReferences(
                 JsonNode.Parse(
                     """
                     {
@@ -168,7 +168,7 @@ public class ExtractDocumentReferencesTests
         {
             ApiSchemaDocument apiSchemaDocument = BuildApiSchemaDocument();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
-            documentReferences = new ReferenceExtractor(resourceSchema).Extract(
+            documentReferences = resourceSchema.ExtractReferences(
                 JsonNode.Parse(
                     """
                     {
@@ -243,7 +243,7 @@ public class ExtractDocumentReferencesTests
             ApiSchemaDocument apiSchemaDocument = BuildApiSchemaDocument();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
-            documentReferences = new ReferenceExtractor(resourceSchema).Extract(
+            documentReferences = resourceSchema.ExtractReferences(
                 JsonNode.Parse(
                     """
                     {
@@ -297,7 +297,7 @@ public class ExtractDocumentReferencesTests
             ApiSchemaDocument apiSchemaDocument = BuildApiSchemaDocument();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
-            documentReferences = new ReferenceExtractor(resourceSchema).Extract(
+            documentReferences = resourceSchema.ExtractReferences(
                 JsonNode.Parse(
                     """
                     {
@@ -330,7 +330,7 @@ public class ExtractDocumentReferencesTests
             ApiSchemaDocument apiSchemaDocument = BuildApiSchemaDocument();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
-            documentReferences = new ReferenceExtractor(resourceSchema).Extract(
+            documentReferences = resourceSchema.ExtractReferences(
                 JsonNode.Parse(
                     """
                     {
@@ -388,7 +388,7 @@ public class ExtractDocumentReferencesTests
             ApiSchemaDocument apiSchemaDocument = BuildApiSchemaDocument();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
-            documentReferences = new ReferenceExtractor(resourceSchema).Extract(
+            documentReferences = resourceSchema.ExtractReferences(
                 JsonNode.Parse(
                     """
                     {

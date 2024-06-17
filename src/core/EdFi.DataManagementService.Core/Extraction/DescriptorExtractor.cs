@@ -14,14 +14,16 @@ namespace EdFi.DataManagementService.Core.Extraction;
 /// <summary>
 /// Extracts descriptor references for a resource
 /// </summary>
-///
-/// <param name="ResourceSchema">The ResourceSchema for the resource</params>
-internal class DescriptorExtractor(ResourceSchema ResourceSchema)
+internal static class DescriptorExtractor
 {
     /// <summary>
     /// Takes an API JSON body for the resource and extracts the descriptor URI reference information from the JSON body.
     /// </summary>
-    public DocumentReference[] Extract(JsonNode documentBody, ILogger _logger)
+    public static DocumentReference[] ExtractDescriptors(
+        this ResourceSchema ResourceSchema,
+        JsonNode documentBody,
+        ILogger _logger
+    )
     {
         _logger.LogDebug("DescriptorExtractor.Extract");
 

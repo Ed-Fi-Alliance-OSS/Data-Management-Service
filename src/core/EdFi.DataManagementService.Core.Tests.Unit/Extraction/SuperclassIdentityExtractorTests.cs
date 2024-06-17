@@ -44,7 +44,7 @@ public class DeriveSuperclassIdentityFromTests
 
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "schools");
 
-            (_, superclassIdentity) = new IdentityExtractor(resourceSchema).Extract(
+            (_, superclassIdentity) = resourceSchema.ExtractIdentities(
                 JsonNode.Parse(
                     """
                     {
@@ -94,7 +94,7 @@ public class DeriveSuperclassIdentityFromTests
 
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
-            (_, superclassIdentity) = new IdentityExtractor(resourceSchema).Extract(
+            (_, superclassIdentity) = resourceSchema.ExtractIdentities(
                 JsonNode.Parse(
                     """
                     {

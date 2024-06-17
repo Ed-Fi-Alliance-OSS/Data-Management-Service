@@ -15,30 +15,32 @@ namespace EdFi.DataManagementService.Core.Extraction;
 /// <summary>
 /// Extracts the document identity for a resource
 /// </summary>
-///
-/// <param name="ResourceSchema">The ResourceSchema for the resource</params>
-internal class IdentityExtractor(ResourceSchema ResourceSchema)
+internal static class IdentityExtractor
 {
     /// <summary>
     /// Takes an API JSON body for the resource and extracts the document identity information from the JSON body.
     /// </summary>
-    private DocumentIdentity ExtractDocumentIdentity(JsonNode documentBody, ILogger _logger)
+    public static DocumentIdentity ExtractDocumentIdentity(
+        ResourceSchema resourceSchema,
+        JsonNode documentBody,
+        ILogger _logger
+    )
     {
         _logger.LogDebug("IdentityExtractor.ExtractDocumentIdentity");
 
-        if (ResourceSchema.IsDescriptor)
+        if (resourceSchema.IsDescriptor)
         {
             return new DescriptorDocument(documentBody).ToDocumentIdentity();
         }
 
-        if (ResourceSchema.IsSchoolYearEnumeration)
+        if (resourceSchema.IsSchoolYearEnumeration)
         {
             return new SchoolYearEnumerationDocument(documentBody).ToDocumentIdentity();
         }
 
         // Build up documentIdentity in order
         IEnumerable<IDocumentIdentityElement> documentIdentityElements =
-            ResourceSchema.IdentityJsonPaths.Select(identityJsonPath => new DocumentIdentityElement(
+            resourceSchema.IdentityJsonPaths.Select(identityJsonPath => new DocumentIdentityElement(
                 identityJsonPath,
                 documentBody.SelectRequiredNodeFromPathCoerceToString(identityJsonPath.Value, _logger)
             ));
@@ -55,7 +57,8 @@ internal class IdentityExtractor(ResourceSchema ResourceSchema)
     /// to schoolId. An example document identity for a School is { name: schoolId, value: 123 }. The
     /// equivalent superclass identity for this School would be { name: educationOrganizationId, value: 123 }.
     /// </summary>
-    private SuperclassIdentity? DeriveSuperclassIdentityFrom(
+    public static SuperclassIdentity? DeriveSuperclassIdentityFrom(
+        ResourceSchema resourceSchema,
         DocumentIdentity documentIdentity,
         ILogger _logger
     )
@@ -63,18 +66,18 @@ internal class IdentityExtractor(ResourceSchema ResourceSchema)
         _logger.LogDebug("IdentityExtractor.DeriveSuperclassIdentityFrom");
 
         // Only applies to subclasses
-        if (!ResourceSchema.IsSubclass)
+        if (!resourceSchema.IsSubclass)
         {
             return null;
         }
 
         // Associations do not rename the identity fields in MetaEd, so the DocumentIdentity portion is the same
-        if (ResourceSchema.SubclassType == "association")
+        if (resourceSchema.SubclassType == "association")
         {
             return new(
                 ResourceInfo: new BaseResourceInfo(
-                    ResourceName: ResourceSchema.SuperclassResourceName,
-                    ProjectName: ResourceSchema.SuperclassProjectName,
+                    ResourceName: resourceSchema.SuperclassResourceName,
+                    ProjectName: resourceSchema.SuperclassProjectName,
                     IsDescriptor: false
                 ),
                 DocumentIdentity: documentIdentity
@@ -82,13 +85,13 @@ internal class IdentityExtractor(ResourceSchema ResourceSchema)
         }
 
         DocumentIdentity superclassIdentity = documentIdentity.IdentityRename(
-            ResourceSchema.SuperclassIdentityJsonPath
+            resourceSchema.SuperclassIdentityJsonPath
         );
 
         return new(
             ResourceInfo: new BaseResourceInfo(
-                ResourceName: ResourceSchema.SuperclassResourceName,
-                ProjectName: ResourceSchema.SuperclassProjectName,
+                ResourceName: resourceSchema.SuperclassResourceName,
+                ProjectName: resourceSchema.SuperclassProjectName,
                 IsDescriptor: false
             ),
             DocumentIdentity: superclassIdentity
@@ -100,9 +103,13 @@ internal class IdentityExtractor(ResourceSchema ResourceSchema)
     /// as a SuperclassIdentity derived from the DocumentIdentity, if the resource
     /// is a subclass.
     /// </summary>
-    public (DocumentIdentity, SuperclassIdentity?) Extract(JsonNode documentBody, ILogger _logger)
+    public static (DocumentIdentity, SuperclassIdentity?) ExtractIdentities(
+        this ResourceSchema resourceSchema,
+        JsonNode documentBody,
+        ILogger _logger
+    )
     {
-        DocumentIdentity documentIdentity = ExtractDocumentIdentity(documentBody, _logger);
-        return (documentIdentity, DeriveSuperclassIdentityFrom(documentIdentity, _logger));
+        DocumentIdentity documentIdentity = ExtractDocumentIdentity(resourceSchema, documentBody, _logger);
+        return (documentIdentity, DeriveSuperclassIdentityFrom(resourceSchema, documentIdentity, _logger));
     }
 }

@@ -16,20 +16,18 @@ namespace EdFi.DataManagementService.Core.Extraction;
 /// <summary>
 /// Extracts document references for a resource
 /// </summary>
-///
-/// <param name="ResourceSchema">The ResourceSchema for the resource</params>
-internal class ReferenceExtractor(ResourceSchema ResourceSchema)
+internal static class ReferenceExtractor
 {
     /// <summary>
     /// Takes an API JSON body for the resource and extracts the document reference information from the JSON body.
     /// </summary>
-    public DocumentReference[] Extract(JsonNode documentBody, ILogger _logger)
+    public static DocumentReference[] ExtractReferences(this ResourceSchema resourceSchema, JsonNode documentBody, ILogger _logger)
     {
         _logger.LogDebug("ReferenceExtractor.Extract");
 
         List<DocumentReference> result = [];
 
-        foreach (DocumentPath documentPath in ResourceSchema.DocumentPaths)
+        foreach (DocumentPath documentPath in resourceSchema.DocumentPaths)
         {
             if (!documentPath.IsReference)
                 continue;

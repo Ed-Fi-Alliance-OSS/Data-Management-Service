@@ -55,7 +55,7 @@ public class ExtractDocumentIdentityTests
 
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
-            (documentIdentity, _) = new IdentityExtractor(resourceSchema).Extract(
+            (documentIdentity, _) = resourceSchema.ExtractIdentities(
                 JsonNode.Parse(
                     """
                     {
@@ -135,7 +135,7 @@ public class ExtractDocumentIdentityTests
                 "staffEducationOrganizationAssignmentAssociations"
             );
 
-            (documentIdentity, _) = new IdentityExtractor(resourceSchema).Extract(
+            (documentIdentity, _) = resourceSchema.ExtractIdentities(
                 JsonNode.Parse(
                     """
                     {
@@ -186,7 +186,7 @@ public class ExtractDocumentIdentityTests
 
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "gradingPeriods");
 
-            (documentIdentity, _) = new IdentityExtractor(resourceSchema).Extract(
+            (documentIdentity, _) = resourceSchema.ExtractIdentities(
                 JsonNode.Parse(
                     """
                     {
