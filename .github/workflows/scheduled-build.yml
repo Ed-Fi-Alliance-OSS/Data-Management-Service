@@ -53,7 +53,7 @@ jobs:
 
       - name: Notify Slack on success
         if: success()
-        uses: slackapi/slack-github-action@483f51618ef5cbe37df7178a55e3e10188e2ff04 #v1.26.0
+        uses: slackapi/slack-github-action@70cd7be8e40a46e8b0eced40b0de447bdb42f68e #v1.26.0
         with:
           channel-id: 'team-b'
           payload: '{"text":"✅ Build and tests passed for the scheduled run!"}'
@@ -63,7 +63,7 @@ jobs:
 
       - name: Notify Slack on failure
         if: failure()
-        uses: slackapi/slack-github-action@483f51618ef5cbe37df7178a55e3e10188e2ff04 #v1.26.0
+        uses: slackapi/slack-github-action@70cd7be8e40a46e8b0eced40b0de447bdb42f68e #v1.26.0
         with:
           channel-id: 'team-b'
           payload: |
