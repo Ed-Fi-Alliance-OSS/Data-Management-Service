@@ -73,6 +73,13 @@ public class QueryTests : DatabaseTest
             _queryResult!.Should().BeOfType<QueryResult.QuerySuccess>();
             (_queryResult! as QueryResult.QuerySuccess)!.EdfiDocs.Length.Should().Be(1);
         }
+
+        [Test]
+        public void It_should_not_be_total_count()
+        {
+            _queryResult!.Should().BeOfType<QueryResult.QuerySuccess>();
+            (_queryResult! as QueryResult.QuerySuccess)!.TotalCount.Should().Be(0);
+        }
     }
 
     [TestFixture]
@@ -197,6 +204,13 @@ public class QueryTests : DatabaseTest
             QueryResult.QuerySuccess success = (_queryResults2! as QueryResult.QuerySuccess)!;
             success.EdfiDocs.Length.Should().Be(1);
             success.EdfiDocs[0].ToJsonString().Should().Be(_edFiDocString4);
+        }
+
+        [Test]
+        public void It_should_not_be_total_count()
+        {
+            _queryResults2!.Should().BeOfType<QueryResult.QuerySuccess>();
+            (_queryResults2! as QueryResult.QuerySuccess)!.TotalCount.Should().Be(0);
         }
     }
 }

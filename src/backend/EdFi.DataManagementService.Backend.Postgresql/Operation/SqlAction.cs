@@ -47,7 +47,7 @@ public interface ISqlAction
         NpgsqlTransaction transaction
     );
 
-    public Task<int> GetTotalDocumentsByKey(
+    public Task<int> GetTotalDocuments(
         string resourceName,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
@@ -244,7 +244,7 @@ public class SqlAction : ISqlAction
     /// Returns total number of Documents from the database corresponding to the given ResourceName,
     /// or 0 if no matching Document was found.
     /// </summary>
-    public async Task<int> GetTotalDocumentsByKey(
+    public async Task<int> GetTotalDocuments(
         string resourceName,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction

@@ -42,7 +42,7 @@ internal class QueryRequestHandler(IQueryHandler _queryHandler, ILogger _logger)
                     StatusCode: 200,
                     Body: new JsonArray(success.EdfiDocs).ToString(),
                     Headers:
-                        context.PaginationParameters.totalCount ? new Dictionary<string, string>
+                        context.PaginationParameters.totalCount ? new()
                             {
                                 {"Total-Count", success.TotalCount.ToString()}
                             } : []
