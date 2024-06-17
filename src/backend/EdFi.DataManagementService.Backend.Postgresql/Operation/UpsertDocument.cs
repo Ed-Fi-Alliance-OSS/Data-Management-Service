@@ -110,10 +110,14 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             if (pe.SqlState == PostgresErrorCodes.UniqueViolation)
             {
                 _logger.LogInformation(
-                    "Failure: Record already exists - {TraceId}",
+                    "Failure: alias identity already exists - {TraceId}",
                     upsertRequest.TraceId
                 );
-                return new UpsertResult.UpsertFailureAliasIdentityConflict("TODO: SET MESSAGE");
+                var duplicates =
+                    upsertRequest.DocumentInfo.DocumentIdentity.DocumentIdentityElements.Select(d =>
+                        $"({d.IdentityJsonPath.Value.Substring(d.IdentityJsonPath.Value.LastIndexOf('.') + 1)} = {d.IdentityValue})");
+                return new UpsertResult.UpsertFailureIdentityConflict(
+                    $"A natural key conflict occurred when attempting to create a new resource {upsertRequest.ResourceInfo.ResourceName.Value} with a duplicate key. The duplicate keys and values are {string.Join(',', duplicates)}");
             }
 
             _logger.LogError(pe, "Failure on Aliases table insert - {TraceId}", upsertRequest.TraceId);

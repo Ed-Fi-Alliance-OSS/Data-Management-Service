@@ -51,6 +51,7 @@ internal record FailureResponse(
     private const string BadRequestTypePrefix = $"{BaseTypePrefix}:bad-request";
     private const string DataValidationTypePrefix = $"{BadRequestTypePrefix}:data";
     private const string NotFoundTypePrefix = $"{BaseTypePrefix}:not-found";
+    private const string IdentityConflictTypePrefix = $"{BaseTypePrefix}:identity-conflict";
 
     public static FailureResponse ForDataValidation(
         string Detail,
@@ -93,6 +94,19 @@ internal record FailureResponse(
             correlationId: null,
             validationErrors: null,
             errors: null
+        );
+
+    public static FailureResponse ForIdentityConflict(
+        string[]? Errors
+    ) =>
+        new(
+            detail: "The identifying value(s) of the item are the same as another item that already exists.",
+            type: IdentityConflictTypePrefix,
+            title: "Identifying Values Are Not Unique",
+            status: 409,
+            correlationId: null,
+            validationErrors: null,
+            errors: Errors
         );
 
     public static string GenerateFrontendErrorResponse(string errorDetail)

@@ -112,7 +112,7 @@ public class UpsertHandlerTests
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(400);
+            context.FrontendResponse.StatusCode.Should().Be(409);
             context.FrontendResponse.Body.Should().Contain(Repository.ResponseBody);
             context.FrontendResponse.Headers.Should().BeEmpty();
             context.FrontendResponse.LocationHeaderPath.Should().BeNull();
