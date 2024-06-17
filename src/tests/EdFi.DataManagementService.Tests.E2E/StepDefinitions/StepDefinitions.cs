@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-
 using System;
 using System.Globalization;
 using System.Net.Http;
@@ -12,6 +11,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using EdFi.DataManagementService.Tests.E2E.Extensions;
 using EdFi.DataManagementService.Tests.E2E.Management;
 using FluentAssertions;
 using Microsoft.Playwright;
@@ -112,82 +112,30 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
         #region When
 
-        [When("a POST request with list of required descriptors")]
-        public async Task WhenAPOSTRequestWithListOfRequiredDescriptors(DataTable requiredDescriptors)
+        [When("a POST request with list of required {string}")]
+        public async Task WhenAPOSTRequestWithListOfRequiredItems(string entityType, DataTable dataTable)
         {
-            await PostDataRows(requiredDescriptors, "descriptorname");
-        }
-
-        [When("a POST request with list of required resources")]
-        public async Task WhenAPOSTRequestWithListOfRequiredResources(DataTable requiredResources)
-        {
-            await PostDataRows(requiredResources, "resourcename");
-        }
-
-        private async Task PostDataRows(DataTable dataTable, string typeName)
-        {
-            var options = new JsonSerializerOptions
-            {
-                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-                WriteIndented = true
-            };
-
             _apiResponses = new List<IAPIResponse>();
             var baseUrl = $"data/ed-fi";
+            var columnName = "descriptorname";
+
+            var columnHeaders = entityType.Equals("descriptors")
+                ? dataTable.Header.Where(x => !x.Equals(columnName))
+                : dataTable.Header;
 
             foreach (var row in dataTable.Rows)
             {
-                var dataUrl = $"{baseUrl}/{row[typeName]}";
-                var rowDict = new Dictionary<string, object>();
-                foreach (var column in dataTable.Header)
-                {
-                    if (!column.Equals(typeName))
-                    {
-                        rowDict[column] = ConvertValueToCorrectType(row[column]);
-                    }
-                }
-                string body = JsonSerializer
-                    .Serialize(rowDict, options)
-                    .Replace("\"[", "[")
-                    .Replace("]\"", "]")
-                    .Replace("\\\"", "\"");
+                var dataUrl = entityType.Equals("descriptors")
+                    ? $"{baseUrl}/{row[columnName]}"
+                    : $"{baseUrl}/{entityType}";
+
+                string body = row.Parse(columnHeaders.ToList());
 
                 _logger.log.Information(dataUrl);
                 _apiResponses.Add(
                     await _playwrightContext.ApiRequestContext?.PostAsync(dataUrl, new() { Data = body })!
                 );
             }
-        }
-
-        private object ConvertValueToCorrectType(string value)
-        {
-            if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
-                return intValue;
-
-            if (
-                decimal.TryParse(
-                    value,
-                    NumberStyles.Number,
-                    CultureInfo.InvariantCulture,
-                    out var decimalValue
-                )
-            )
-                return decimalValue;
-
-            if (
-                DateTime.TryParse(
-                    value,
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.None,
-                    out var dateTimeValue
-                )
-            )
-                return dateTimeValue;
-
-            if (bool.TryParse(value, out var boolValue))
-                return boolValue;
-
-            return value;
         }
 
         [When("a POST request is made to {string} with")]

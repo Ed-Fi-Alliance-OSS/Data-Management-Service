@@ -6,24 +6,23 @@ Feature: School Year Reference Validation
             Given the Data Management Service must receive a token issued by "http://localhost"
               And user is already authorized
 
-            When a POST request with list of required descriptors
+            When a POST request with list of required "descriptors"
                   | descriptorname                           | codeValue         | description       | namespace                                               | shortDescription  |
                   | educationOrganizationCategoryDescriptors | School            | School            | uri://ed-fi.org/EducationOrganizationCategoryDescriptor | School            |
                   | calendarTypeDescriptors                  | Student Specific  | Student Specific  | uri://ed-fi.org/CalendarTypeDescriptor                  | Student Specific  |
                   | gradeLevelDescriptors                    | Tenth grade       | Tenth grade       | uri://ed-fi.org/GradeLevelDescriptor                    | Tenth grade       |
                   | calendarEventDescriptors                 | Instructional day | Instructional day | uri://ed-fi.org/CalendarEventDescriptor                 | Instructional day |
-
               Then all responses should be 201 or 200
 
-              When a POST request with list of required resources
-                  | resourcename | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories |
-                  | schools      | 535      | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+              When a POST request with list of required "schools"
+                  | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories |
+                  | 535      | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
               Then all responses should be 201 or 200
 
-              When a POST request with list of required resources
-                  | resourcename    | schoolYear | currentSchoolYear | schoolYearDescription |
-                  | schoolYearTypes | 2024       | true              | School Year 2024      |
-                  | schoolYearTypes | 2029       | false             | School Year 2029      |
+              When a POST request with list of required "schoolYearTypes"
+                  | schoolYear | currentSchoolYear | schoolYearDescription |
+                  | 2024       | true              | School Year 2024      |
+                  | 2029       | false             | School Year 2029      |
               Then all responses should be 201 or 200
 
         Scenario: Try creating a resource using a valid school year
