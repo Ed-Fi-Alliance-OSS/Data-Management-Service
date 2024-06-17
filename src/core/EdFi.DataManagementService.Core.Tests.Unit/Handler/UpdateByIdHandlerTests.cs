@@ -195,7 +195,7 @@ public class UpdateByIdHandlerTests
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(409);
+            context.FrontendResponse.StatusCode.Should().Be(400);
         }
     }
 

@@ -36,6 +36,12 @@ public record UpsertResult
     public record UpsertFailureIdentityConflict(string ReferencingDocumentInfo) : UpsertResult();
 
     /// <summary>
+    /// A failure because there is another subclass using the same identity
+    /// </summary>
+    /// <param name="ReferencingDocumentInfo"></param>
+    public record UpsertFailureAliasIdentityConflict(string ReferencingDocumentInfo) : UpsertResult();
+
+    /// <summary>
     /// A transient failure due to a transaction write conflict
     /// </summary>
     public record UpsertFailureWriteConflict() : UpsertResult();

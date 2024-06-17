@@ -113,7 +113,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                     "Failure: Record already exists - {TraceId}",
                     upsertRequest.TraceId
                 );
-                return new UpsertResult.UpsertFailureIdentityConflict("TODO: SET MESSAGE");
+                return new UpsertResult.UpsertFailureAliasIdentityConflict("TODO: SET MESSAGE");
             }
 
             _logger.LogError(pe, "Failure on Aliases table insert - {TraceId}", upsertRequest.TraceId);

@@ -81,6 +81,18 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
                     ),
                     Headers: []
                 ),
+            UpsertFailureAliasIdentityConflict failure
+                => new FrontendResponse(
+                    StatusCode: 409,
+                    Body: JsonSerializer.Serialize(
+                        FailureResponse.ForBadRequest(
+                            "The request could not be processed. See 'errors' for details.",
+                            null,
+                            [failure.ReferencingDocumentInfo]
+                        )
+                    ),
+                    Headers: []
+                ),
             UpsertFailureWriteConflict
                 => new(StatusCode: 409, Body: null, Headers: []),
             UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage, Headers: []),
