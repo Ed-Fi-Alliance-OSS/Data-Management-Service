@@ -1,0 +1,35 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <IsPackable>true</IsPackable>
+        <RootNamespace>EdFi.ApiSchema</RootNamespace>
+        <NoWarn>NU5110,NU5111</NoWarn>
+        <PackageReadmeFile>docs\README.md</PackageReadmeFile>
+        <Version>$(Version)</Version>
+        <NuspecProperties>version=$(PackageVersion)</NuspecProperties>
+        <id>EdFi.ApiSchema</id>
+        <title>Ed-Fi API Schema definition</title>
+        <authors>Ed-Fi Alliance</authors>
+        <projectUrl>https://github.com/Ed-Fi-Alliance-OSS</projectUrl>
+        <copyright>Copyright © 2024, Ed-Fi Alliance, LLC and contributors.</copyright>
+        <summary>API Schema definition file representing the core Ed-Fi Data Standard, without extensions.</summary>
+        <description>The API Schema definition file can be used to generate a full API stack representing the Ed-Fi Data Standard. The file definition includes JSON Schema, along with other information required to build an Ed-Fi compatible application.</description>
+
+    </PropertyGroup>
+
+    <ItemGroup>
+      <None Remove="*.json" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <EmbeddedResource Include="*.json" />
+      <EmbeddedResource Include="xsd/*.xsd" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="README.md" Pack="true" PackagePath="docs\" />
+        <None Include="LICENSE" Pack="true" PackagePath="docs\" />
+    </ItemGroup>
+
+</Project>
