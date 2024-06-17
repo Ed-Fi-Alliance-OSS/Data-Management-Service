@@ -21,9 +21,13 @@ internal static class ReferenceExtractor
     /// <summary>
     /// Takes an API JSON body for the resource and extracts the document reference information from the JSON body.
     /// </summary>
-    public static DocumentReference[] ExtractReferences(this ResourceSchema resourceSchema, JsonNode documentBody, ILogger _logger)
+    public static DocumentReference[] ExtractReferences(
+        this ResourceSchema resourceSchema,
+        JsonNode documentBody,
+        ILogger logger
+    )
     {
-        _logger.LogDebug("ReferenceExtractor.Extract");
+        logger.LogDebug("ReferenceExtractor.Extract");
 
         List<DocumentReference> result = [];
 
@@ -42,16 +46,12 @@ internal static class ReferenceExtractor
                         documentBody
                             .SelectNodesFromArrayPathCoerceToStrings(
                                 referenceJsonPathsElement.ReferenceJsonPath.Value,
-                                _logger
+                                logger
                             )
                             .ToArray()
                     )
                 )
                 .ToArray();
-
-            // If a JsonPath selection had no results, we can assume an optional reference wasn't there
-            if (Array.Exists(intermediateReferenceElements, x => x.ValueSlice.Length == 0))
-                continue;
 
             int valueSliceLength = intermediateReferenceElements[0].ValueSlice.Length;
 
@@ -60,6 +60,10 @@ internal static class ReferenceExtractor
                 Array.TrueForAll(intermediateReferenceElements, x => x.ValueSlice.Length == valueSliceLength),
                 "Length of document value slices are not equal"
             );
+
+            // If a JsonPath selection had no results, we can assume an optional reference wasn't there
+            if (valueSliceLength == 0)
+                continue;
 
             BaseResourceInfo resourceInfo =
                 new(documentPath.ProjectName, documentPath.ResourceName, documentPath.IsDescriptor);

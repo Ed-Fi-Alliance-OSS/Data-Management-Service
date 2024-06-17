@@ -23,10 +23,10 @@ internal static class IdentityExtractor
     public static DocumentIdentity ExtractDocumentIdentity(
         ResourceSchema resourceSchema,
         JsonNode documentBody,
-        ILogger _logger
+        ILogger logger
     )
     {
-        _logger.LogDebug("IdentityExtractor.ExtractDocumentIdentity");
+        logger.LogDebug("IdentityExtractor.ExtractDocumentIdentity");
 
         if (resourceSchema.IsDescriptor)
         {
@@ -42,7 +42,7 @@ internal static class IdentityExtractor
         IEnumerable<IDocumentIdentityElement> documentIdentityElements =
             resourceSchema.IdentityJsonPaths.Select(identityJsonPath => new DocumentIdentityElement(
                 identityJsonPath,
-                documentBody.SelectRequiredNodeFromPathCoerceToString(identityJsonPath.Value, _logger)
+                documentBody.SelectRequiredNodeFromPathCoerceToString(identityJsonPath.Value, logger)
             ));
 
         return new DocumentIdentity(documentIdentityElements.ToList());
@@ -60,10 +60,10 @@ internal static class IdentityExtractor
     public static SuperclassIdentity? DeriveSuperclassIdentityFrom(
         ResourceSchema resourceSchema,
         DocumentIdentity documentIdentity,
-        ILogger _logger
+        ILogger logger
     )
     {
-        _logger.LogDebug("IdentityExtractor.DeriveSuperclassIdentityFrom");
+        logger.LogDebug("IdentityExtractor.DeriveSuperclassIdentityFrom");
 
         // Only applies to subclasses
         if (!resourceSchema.IsSubclass)
@@ -106,10 +106,10 @@ internal static class IdentityExtractor
     public static (DocumentIdentity, SuperclassIdentity?) ExtractIdentities(
         this ResourceSchema resourceSchema,
         JsonNode documentBody,
-        ILogger _logger
+        ILogger logger
     )
     {
-        DocumentIdentity documentIdentity = ExtractDocumentIdentity(resourceSchema, documentBody, _logger);
-        return (documentIdentity, DeriveSuperclassIdentityFrom(resourceSchema, documentIdentity, _logger));
+        DocumentIdentity documentIdentity = ExtractDocumentIdentity(resourceSchema, documentBody, logger);
+        return (documentIdentity, DeriveSuperclassIdentityFrom(resourceSchema, documentIdentity, logger));
     }
 }

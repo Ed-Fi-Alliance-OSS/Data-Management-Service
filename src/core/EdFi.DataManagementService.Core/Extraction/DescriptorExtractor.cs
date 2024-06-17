@@ -20,16 +20,16 @@ internal static class DescriptorExtractor
     /// Takes an API JSON body for the resource and extracts the descriptor URI reference information from the JSON body.
     /// </summary>
     public static DocumentReference[] ExtractDescriptors(
-        this ResourceSchema ResourceSchema,
+        this ResourceSchema resourceSchema,
         JsonNode documentBody,
-        ILogger _logger
+        ILogger logger
     )
     {
-        _logger.LogDebug("DescriptorExtractor.Extract");
+        logger.LogDebug("DescriptorExtractor.Extract");
 
         List<DocumentReference> result = [];
 
-        foreach (DocumentPath documentPath in ResourceSchema.DocumentPaths)
+        foreach (DocumentPath documentPath in resourceSchema.DocumentPaths)
         {
             if (!documentPath.IsReference)
                 continue;
@@ -38,7 +38,7 @@ internal static class DescriptorExtractor
 
             // Extract the descriptor URIs from the document
             string[] descriptorUris = documentBody
-                .SelectNodesFromArrayPathCoerceToStrings(documentPath.Path.Value, _logger)
+                .SelectNodesFromArrayPathCoerceToStrings(documentPath.Path.Value, logger)
                 .ToArray();
 
             // Path can be empty if descriptor reference is optional
