@@ -41,13 +41,21 @@ jobs:
           Import-Module ./github-builder.psm1
           Get-VersionNumber
 
+      - name: Publish .NET Assemblies
+        run: |
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}"
+
+          ./build.ps1 -Command BuildAndPublish `
+              -Configuration Release `
+              -DMSVersion $packageVersion
+
       - name: Create NuGet Package
         run: |
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}"
 
-          Import-Module ./github-builder.psm1
-
-          Invoke-DotnetPack $packageVersion
+          ./build.ps1 -Command Package `
+              -DMSVersion $packageVersion `
+              -Configuration Release
 
       - name: Generate hash for NuGet package
         id: hash-code
@@ -202,5 +210,14 @@ jobs:
 
       - name: Push Package to Azure Artifacts
         run: |
-          Import-Module ./github-builder.psm1
-          Invoke-NuGetPush -NuGetFeed ${{ env.ARTIFACTS_FEED_URL }} -NuGetApiKey ${{ env.ARTIFACTS_API_KEY }}
+          $artifact = (Get-ChildItem -Path $_ -Name -Include *.nupkg)
+            $arguments = @{
+              NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+              EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
+              DryRun = true
+            }
+
+            $artifact | ForEach-Object {
+                $arguments.PackageFile = $_
+                ./build.ps1 Push @arguments
+            }

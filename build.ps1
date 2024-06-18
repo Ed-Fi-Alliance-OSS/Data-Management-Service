@@ -81,8 +81,10 @@ param(
 
 $solutionRoot = "$PSScriptRoot/src"
 $defaultSolution = "$solutionRoot/EdFi.DataManagementService.sln"
-$servicesRoot = "$solutionRoot/services"
-$projectName = "EdFi.DataManagementService.Api"
+$applicationRoot = "$solutionRoot/frontend"
+$backendRoot = "$solutionRoot/backend"
+$projectName = "EdFi.DataManagementService.Frontend.AspNetCore"
+$installerProjectName = "EdFi.DataManagementService.Backend.Installer"
 $packageName = "EdFi.DataManagementService"
 $testResults = "$PSScriptRoot/TestResults"
 #Coverage
@@ -132,9 +134,19 @@ function Compile {
 
 function PublishApi {
     Invoke-Execute {
-        $project = "$servicesRoot/$projectName/"
+        Write-Host "$applicationRoot/$projectName/"
+        $project = "$applicationRoot/$projectName/"
         $outputPath = "$project/publish"
-        dotnet publish $project -c $Configuration /p:EnvironmentName=Production -o $outputPath --no-build --nologo
+        dotnet publish $project -c $Configuration -o $outputPath --nologo
+    }
+}
+
+function PublishBackendInstaller {
+    Invoke-Execute {
+        Write-Host "$backendRoot/$installerProjectName/"
+        $installerProject = "$backendRoot/$installerProjectName/"
+        $outputPath = "$installerProject/publish"
+        dotnet publish $installerProject -c $Configuration -o $outputPath --nologo
     }
 }
 
@@ -219,11 +231,12 @@ function RunNuGetPack {
     # NU5100 is the warning about DLLs outside of a "lib" folder. We're
     # deliberately using that pattern, therefore we bypass the
     # warning.
-    dotnet pack $ProjectPath --output $PSScriptRoot -p:NuspecFile=$nuspecPath -p:NuspecProperties="version=$PackageVersion;year=$copyrightYear" /p:NoWarn=NU5100
+    dotnet pack $ProjectPath --no-build --no-restore --output $PSScriptRoot -p:NuspecFile=$nuspecPath -p:NuspecProperties="version=$PackageVersion;year=$copyrightYear" /p:NoWarn=NU5100
 }
 
 function BuildPackage {
-    $mainPath = "$servicesRoot/$projectName"
+    $mainPath = "$applicationRoot/$projectName"
+    Write-Host $mainPath
     $projectPath = "$mainPath/$projectName.csproj"
     $nugetSpecPath = "$mainPath/publish/$projectName.nuspec"
 
@@ -246,6 +259,7 @@ function Invoke-Publish {
     Write-Output "Building Version ($DMSVersion)"
 
     Invoke-Step { PublishApi }
+    Invoke-Step { PublishBackendInstaller }
 }
 
 function Invoke-Clean {
