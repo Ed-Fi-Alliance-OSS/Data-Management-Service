@@ -16,11 +16,11 @@ internal record UpsertRequest(
     /// <summary>
     /// The ResourceInfo of the document to upsert
     /// </summary>
-    IResourceInfo ResourceInfo,
+    ResourceInfo ResourceInfo,
     /// <summary>
     /// The DocumentInfo of the document to upsert
     /// </summary>
-    IDocumentInfo DocumentInfo,
+    DocumentInfo DocumentInfo,
     /// <summary>
     /// The EdfiDoc of the document to upsert, as a JsonNode
     /// </summary>
@@ -28,18 +28,10 @@ internal record UpsertRequest(
     /// <summary>
     /// The request TraceId
     /// </summary>
-    ITraceId TraceId,
+    TraceId TraceId,
     /// <summary>
     /// A candidate DocumentUuid of the document to upsert, used only
     /// if the upsert happens as an insert
     /// </summary>
     DocumentUuid DocumentUuid
-)
-    : UpdateRequest(
-        ResourceInfo,
-        DocumentInfo,
-        EdfiDoc,
-        TraceId,
-        DocumentUuid
-    ),
-        IUpsertRequest;
+) : UpdateRequest(ResourceInfo, DocumentInfo, EdfiDoc, TraceId, DocumentUuid), IUpsertRequest;

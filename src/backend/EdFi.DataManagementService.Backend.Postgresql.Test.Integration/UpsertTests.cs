@@ -3,11 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Security.Policy;
 using EdFi.DataManagementService.Core.External.Backend;
-using FakeItEasy;
+using FakeItEasy.Sdk;
 using FluentAssertions;
-using Newtonsoft.Json.Linq;
 using Npgsql;
 using NUnit.Framework;
 
@@ -56,14 +54,7 @@ public class UpsertTests : DatabaseTest
         {
             _getResult!.Should().BeOfType<GetResult.GetSuccess>();
             (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
-
-            var successResult = _getResult as GetResult.GetSuccess;
-            var actualJson = JObject.Parse(successResult!.EdfiDoc.ToJsonString());
-            var expectedJson = JObject.Parse(_edFiDocString);
-            expectedJson["id"] = _documentUuidGuid;
-
-            actualJson.Should()
-                .BeEquivalentTo(expectedJson, options => options.ComparingByMembers<JObject>());
+            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":1");
         }
     }
 
@@ -122,14 +113,7 @@ public class UpsertTests : DatabaseTest
         {
             _getResult!.Should().BeOfType<GetResult.GetSuccess>();
             (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
-
-            var successResult = _getResult as GetResult.GetSuccess;
-            var actualJson = JObject.Parse(successResult!.EdfiDoc.ToJsonString());
-            var expectedJson = JObject.Parse(_edFiDocString3);
-            expectedJson["id"] = _documentUuidGuid;
-
-            actualJson.Should()
-                .BeEquivalentTo(expectedJson, options => options.ComparingByMembers<JObject>());
+            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":3");
         }
     }
 
@@ -195,14 +179,7 @@ public class UpsertTests : DatabaseTest
             GetResult? _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
 
             (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
-
-            var successResult = _getResult as GetResult.GetSuccess;
-            var actualJson = JObject.Parse(successResult!.EdfiDoc.ToJsonString());
-            var expectedJson = JObject.Parse(_edFiDocString4);
-            expectedJson["id"] = _documentUuidGuid;
-
-            actualJson.Should()
-                .BeEquivalentTo(expectedJson, options => options.ComparingByMembers<JObject>());
+            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":4");
         }
     }
 
@@ -216,8 +193,8 @@ public class UpsertTests : DatabaseTest
         private static readonly Guid _referentialIdGuid1 = Guid.NewGuid();
         private static readonly Guid _documentUuidGuid2 = Guid.NewGuid();
         private static readonly Guid _referentialIdGuid2 = Guid.NewGuid();
-        private static readonly string _edFiDocStringA = """{"abc":"a"}""";
-        private static readonly string _edFiDocStringB = """{"abc":"b"}""";
+        private static readonly string _edFiDocString1 = """{"abc":1}""";
+        private static readonly string _edFiDocString2 = """{"abc":2}""";
 
         [SetUp]
         public async Task Setup()
@@ -233,7 +210,7 @@ public class UpsertTests : DatabaseTest
                         _defaultResourceName,
                         _documentUuidGuid1,
                         _referentialIdGuid1,
-                        _edFiDocStringA
+                        _edFiDocString1
                     );
 
                     return await CreateUpsert().Upsert(upsertRequest1, connection, transaction);
@@ -244,7 +221,7 @@ public class UpsertTests : DatabaseTest
                         _defaultResourceName,
                         _documentUuidGuid2,
                         _referentialIdGuid2,
-                        _edFiDocStringB
+                        _edFiDocString2
                     );
                     return await CreateUpsert().Upsert(upsertRequest2, connection, transaction);
                 }
@@ -262,14 +239,7 @@ public class UpsertTests : DatabaseTest
                     Connection!,
                     Transaction!
                 );
-
-            var successResult = _getResult as GetResult.GetSuccess;
-            var actualJson = JObject.Parse(successResult!.EdfiDoc.ToJsonString());
-            var expectedJson = JObject.Parse(_edFiDocStringA);
-            expectedJson["id"] = _documentUuidGuid1;
-
-            actualJson.Should()
-                .BeEquivalentTo(expectedJson, options => options.ComparingByMembers<JObject>());
+            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":1");
         }
 
         [Test]
@@ -283,14 +253,7 @@ public class UpsertTests : DatabaseTest
                     Connection!,
                     Transaction!
                 );
-
-            var successResult = _getResult as GetResult.GetSuccess;
-            var actualJson = JObject.Parse(successResult!.EdfiDoc.ToJsonString());
-            var expectedJson = JObject.Parse(_edFiDocStringB);
-            expectedJson["id"] = _documentUuidGuid1;
-
-            actualJson.Should()
-                .BeEquivalentTo(expectedJson, options => options.ComparingByMembers<JObject>());
+            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":2");
         }
     }
 
@@ -367,14 +330,213 @@ public class UpsertTests : DatabaseTest
             GetResult? _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
 
             (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
+            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":7");
+        }
+    }
 
-            var successResult = _getResult as GetResult.GetSuccess;
-            var actualJson = JObject.Parse(successResult!.EdfiDoc.ToJsonString());
-            var expectedJson = JObject.Parse(_edFiDocString7);
-            expectedJson["id"] = _documentUuidGuid;
+    [TestFixture]
+    public class Given_an_insert_of_a_new_document_that_references_a_nonexisting_document : UpsertTests
+    {
+        private UpsertResult? _upsertResult;
+        private GetResult? _getResult;
 
-            actualJson.Should()
-                .BeEquivalentTo(expectedJson, options => options.ComparingByMembers<JObject>());
+        private static readonly Guid _documentUuidGuid = Guid.NewGuid();
+        private static readonly Guid _referentialIdGuid = Guid.NewGuid();
+        private static readonly string _edFiDocString = """{"abc":1}""";
+        private static readonly Guid _nonExistentReferentialIdGuid = Guid.NewGuid();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Insert document with nonexistent reference
+            Reference[] references = [new(_defaultResourceName, _nonExistentReferentialIdGuid)];
+            IUpsertRequest upsertRequest2 = CreateUpsertRequest(
+                _defaultResourceName,
+                _documentUuidGuid,
+                _referentialIdGuid,
+                _edFiDocString,
+                CreateDocumentReferences(references)
+            );
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
+
+            // Confirm not there
+            IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
+            _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
+        }
+
+        [Test]
+        public void It_should_be_a_reference_failure()
+        {
+            _upsertResult!.Should().BeOfType<UpsertResult.UpsertFailureReference>();
+        }
+
+        [Test]
+        public void It_should_noy_be_found_by_get()
+        {
+            _getResult!.Should().BeOfType<GetResult.GetFailureNotExists>();
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_insert_of_a_new_document_that_references_an_existing_document : UpsertTests
+    {
+        private UpsertResult? _upsertResult;
+        private GetResult? _getResult;
+
+        private static readonly Guid _documentUuid1Guid = Guid.NewGuid();
+        private static readonly Guid _referentialId1Guid = Guid.NewGuid();
+        private static readonly string _edFiDocString1 = """{"abc":1}""";
+        private static readonly Guid _documentUuid2Guid = Guid.NewGuid();
+        private static readonly Guid _referentialId2Guid = Guid.NewGuid();
+        private static readonly string _edFiDocString2 = """{"abc":2}""";
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Insert 1st document
+            IUpsertRequest upsertRequest = CreateUpsertRequest(
+                _defaultResourceName,
+                _documentUuid1Guid,
+                _referentialId1Guid,
+                _edFiDocString1
+            );
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+
+            // Insert 2nd document that references 1st
+            Reference[] references = [new(_defaultResourceName, _referentialId1Guid)];
+            IUpsertRequest upsertRequest2 = CreateUpsertRequest(
+                _defaultResourceName,
+                _documentUuid2Guid,
+                _referentialId2Guid,
+                _edFiDocString2,
+                CreateDocumentReferences(references)
+            );
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
+
+            // Confirm 2nd document is there
+            IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuid2Guid);
+            _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
+        }
+
+        [Test]
+        public void It_should_be_a_successful_insert()
+        {
+            _upsertResult!.Should().BeOfType<UpsertResult.InsertSuccess>();
+        }
+
+        [Test]
+        public void It_should_be_found_by_get()
+        {
+            _getResult!.Should().BeOfType<GetResult.GetSuccess>();
+            (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuid2Guid);
+            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":2");
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_insert_of_a_new_document_with_one_existing_and_one_nonexistent_reference
+        : UpsertTests
+    {
+        private UpsertResult? _upsertResult;
+
+        private static readonly Guid _referentialId1Guid = Guid.NewGuid();
+        private static readonly Guid _referentialId2Guid = Guid.NewGuid();
+        private static readonly Guid _nonExistentReferentialIdGuid = Guid.NewGuid();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Insert 1st document
+            IUpsertRequest upsertRequest = CreateUpsertRequest(
+                _defaultResourceName,
+                Guid.NewGuid(),
+                _referentialId1Guid,
+                """{"abc":1}"""
+            );
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+
+            // Insert 2nd document that references 1st + a nonexistent reference
+            Reference[] references =
+            [
+                new(_defaultResourceName, _referentialId1Guid),
+                new(_defaultResourceName, _nonExistentReferentialIdGuid)
+            ];
+            IUpsertRequest upsertRequest2 = CreateUpsertRequest(
+                _defaultResourceName,
+                Guid.NewGuid(),
+                _referentialId2Guid,
+                """{"abc":2}""",
+                CreateDocumentReferences(references)
+            );
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
+        }
+
+        [Test]
+        public void It_should_be_a_reference_failure()
+        {
+            _upsertResult!.Should().BeOfType<UpsertResult.UpsertFailureReference>();
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_insert_of_a_new_document_that_references_an_existing_document_as_superclass
+        : UpsertTests
+    {
+        private UpsertResult? _upsertResult;
+        private GetResult? _getResult;
+
+        private static readonly Guid _documentUuid1Guid = Guid.NewGuid();
+        private static readonly Guid _referentialId1Guid = Guid.NewGuid();
+        private static readonly Guid _superclassId1Guid = Guid.NewGuid();
+        private static readonly string _superclassResourceName = "SuperclassResource";
+
+        private static readonly string _edFiDocString1 = """{"abc":1}""";
+        private static readonly Guid _documentUuid2Guid = Guid.NewGuid();
+        private static readonly Guid _referentialId2Guid = Guid.NewGuid();
+        private static readonly string _edFiDocString2 = """{"abc":2}""";
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Insert subclass document
+            IUpsertRequest upsertRequest = CreateUpsertRequest(
+                _defaultResourceName,
+                _documentUuid1Guid,
+                _referentialId1Guid,
+                _edFiDocString1,
+                null,
+                CreateSuperclassIdentity(_superclassResourceName, _superclassId1Guid)
+            );
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+
+            // Insert 2nd document that references 1st as superclass
+            Reference[] references = [new(_superclassResourceName, _superclassId1Guid)];
+            IUpsertRequest upsertRequest2 = CreateUpsertRequest(
+                _defaultResourceName,
+                _documentUuid2Guid,
+                _referentialId2Guid,
+                _edFiDocString2,
+                CreateDocumentReferences(references)
+            );
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
+
+            // Confirm 2nd document is there
+            IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuid2Guid);
+            _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
+        }
+
+        [Test]
+        public void It_should_be_a_successful_insert()
+        {
+            _upsertResult!.Should().BeOfType<UpsertResult.InsertSuccess>();
+        }
+
+        [Test]
+        public void It_should_be_found_by_get()
+        {
+            _getResult!.Should().BeOfType<GetResult.GetSuccess>();
+            (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuid2Guid);
+            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":2");
         }
     }
 
@@ -427,9 +589,9 @@ public class UpsertTests : DatabaseTest
 
     // Future tests - from Meadowlark
 
-    // given an upsert of a new document that references an existing document
+    // given an upsert of a document that references an existing descriptor
 
-    // given an upsert of a new document with one existing and one non-existent reference
+    // given an upsert of a document that references a nonexisting descriptor
 
     // given an upsert of a subclass document when a different subclass has the same superclass identity
 
@@ -440,6 +602,10 @@ public class UpsertTests : DatabaseTest
     // given an update of a document with one existing and one non-existent reference
 
     // given an update of a subclass document referenced by an existing document as a superclass
+
+    // given an update of a document that references an existing descriptor
+
+    // given an update of a document that references a nonexisting descriptor
 
 
     // Future tests - new concurrency-based

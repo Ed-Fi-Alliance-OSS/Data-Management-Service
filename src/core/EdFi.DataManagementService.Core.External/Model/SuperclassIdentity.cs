@@ -2,14 +2,14 @@
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
+
 namespace EdFi.DataManagementService.Core.External.Model;
 
 /// <summary>
 /// The optional superclass information for a DocumentInfo. Applies only to documents that are subclasses,
 /// providing superclass identity information. (Note that only a single level of subclassing is permitted.)
 /// </summary>
-public interface ISuperclassIdentity : IDocumentReference
-{
+public record SuperclassIdentity(
     /// <summary>
     /// The base API resource information for the superclass of the document.
     ///
@@ -25,8 +25,7 @@ public interface ISuperclassIdentity : IDocumentReference
     /// Example for ResourceInfo.IsDescriptor:
     /// It should always be false as descriptors cannot be subclassed.
     /// </summary>
-    new IBaseResourceInfo ResourceInfo { get; }
-
+    BaseResourceInfo ResourceInfo,
     /// <summary>
     /// This is the identity of the document, but in the form of the superclass
     /// identity. This differs from the regular identity because the subclass will have an
@@ -37,5 +36,9 @@ public interface ISuperclassIdentity : IDocumentReference
     ///          from educationOrganizationId to schoolId.
     ///          This documentIdentity will use educationOrganizationId instead of schoolId.
     /// </summary>
-    new IDocumentIdentity DocumentIdentity { get; }
-}
+    IDocumentIdentity DocumentIdentity,
+    /// <summary>
+    /// The referentialId derived from the DocumentIdentity
+    /// </summary>
+    ReferentialId ReferentialId
+) : DocumentReference(ResourceInfo, DocumentIdentity, ReferentialId);

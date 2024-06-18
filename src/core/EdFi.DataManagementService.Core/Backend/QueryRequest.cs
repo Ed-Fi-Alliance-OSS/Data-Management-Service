@@ -16,7 +16,7 @@ internal record QueryRequest(
     /// <summary>
     /// The ResourceInfo for the resource being retrieved
     /// </summary>
-    IResourceInfo ResourceInfo,
+    ResourceInfo ResourceInfo,
 
     /// <summary>
     /// The search parameters for this query. This must not include pagination parameters.
@@ -31,5 +31,5 @@ internal record QueryRequest(
     /// <summary>
     /// The request TraceId
     /// </summary>
-    ITraceId TraceId
+    TraceId TraceId
 ) : IQueryRequest;

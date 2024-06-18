@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Core.ApiSchema.Extensions;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using Microsoft.Extensions.Logging;
+using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
 
 namespace EdFi.DataManagementService.Core.Extraction;
 
@@ -85,7 +86,8 @@ internal static class ReferenceExtractor
                     );
                 }
 
-                result.Add(new(resourceInfo, new DocumentIdentity(documentIdentityElements)));
+                DocumentIdentity documentIdentity = new(documentIdentityElements);
+                result.Add(new(resourceInfo, documentIdentity, ReferentialIdFrom(resourceInfo, documentIdentity)));
             }
         }
 

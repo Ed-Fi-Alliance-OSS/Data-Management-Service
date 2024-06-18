@@ -16,7 +16,7 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// <param name="TraceId">The request TraceId</param>
 internal record DeleteRequest(
     DocumentUuid DocumentUuid,
-    IResourceInfo ResourceInfo,
+    ResourceInfo ResourceInfo,
     bool validateNoReferencesToDocument,
-    ITraceId TraceId
+    TraceId TraceId
 ) : IDeleteRequest;

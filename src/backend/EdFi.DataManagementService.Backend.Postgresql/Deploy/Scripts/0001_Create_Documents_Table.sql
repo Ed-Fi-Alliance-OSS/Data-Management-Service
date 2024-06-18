@@ -34,4 +34,4 @@ CREATE TABLE Documents_14 PARTITION OF Documents FOR VALUES WITH (MODULUS 16, RE
 CREATE TABLE Documents_15 PARTITION OF Documents FOR VALUES WITH (MODULUS 16, REMAINDER 15);
 
 -- GET/UPDATE/DELETE by id lookup support, DocumentUuid uniqueness validation
-CREATE UNIQUE INDEX UX_Documents_DocumentUuid ON Documents(DocumentPartitionKey, DocumentUuid)
+CREATE UNIQUE INDEX UX_Documents_DocumentUuid ON Documents(DocumentPartitionKey, DocumentUuid);

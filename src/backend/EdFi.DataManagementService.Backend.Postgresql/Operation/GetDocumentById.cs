@@ -41,7 +41,8 @@ public class GetDocumentById(ISqlAction _sqlAction, ILogger<GetDocumentById> _lo
                 getRequest.DocumentUuid,
                 PartitionKeyFor(getRequest.DocumentUuid),
                 connection,
-                transaction
+                transaction,
+                LockOption.None
             );
 
             if (edfiDoc == null)

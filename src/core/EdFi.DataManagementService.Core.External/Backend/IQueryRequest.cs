@@ -15,7 +15,7 @@ public interface IQueryRequest
     /// <summary>
     /// The ResourceInfo for the resource being retrieved
     /// </summary>
-    IResourceInfo ResourceInfo { get; }
+    ResourceInfo ResourceInfo { get; }
 
     /// <summary>
     /// The search parameters for this query. This must not include pagination parameters.
@@ -30,5 +30,5 @@ public interface IQueryRequest
     /// <summary>
     /// The request TraceId
     /// </summary>
-    ITraceId TraceId { get; }
+    TraceId TraceId { get; }
 }

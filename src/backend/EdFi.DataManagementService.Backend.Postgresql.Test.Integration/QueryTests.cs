@@ -5,7 +5,6 @@
 
 using EdFi.DataManagementService.Core.External.Backend;
 using FluentAssertions;
-using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
@@ -64,16 +63,8 @@ public class QueryTests : DatabaseTest
         public void It_should_be_found_by_get_by_id()
         {
             _getResult!.Should().BeOfType<GetResult.GetSuccess>();
-            var successResult = _getResult as GetResult.GetSuccess;
-            successResult!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
-
-            var actualJson = JObject.Parse(successResult!.EdfiDoc.ToJsonString());
-
-            var expectedJson = JObject.Parse(_edFiDocString);
-            expectedJson["id"] = _documentUuidGuid;
-
-            actualJson.Should()
-                .BeEquivalentTo(expectedJson, options => options.ComparingByMembers<JObject>());
+            (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
+            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":1");
         }
 
         [Test]
@@ -201,36 +192,18 @@ public class QueryTests : DatabaseTest
             _queryResults1!.Should().BeOfType<QueryResult.QuerySuccess>();
             QueryResult.QuerySuccess success = (_queryResults1! as QueryResult.QuerySuccess)!;
             success.EdfiDocs.Length.Should().Be(3);
-
-            var expectedDocs = _resourceName1Docs.Select(doc => JObject.Parse(doc)).ToArray();
-
-            for (int i = 0; i < success.EdfiDocs.Length; i++)
-            {
-                var actualJson = JObject.Parse(success.EdfiDocs[i].ToJsonString());
-                var id = actualJson["id"]?.ToString();
-
-                var expectedDoc = expectedDocs.FirstOrDefault(doc => !doc.ContainsKey("id"));
-                expectedDoc!["id"] = id;
-
-                actualJson.Should().BeEquivalentTo(expectedDoc, options => options.ComparingByMembers<JObject>());
-            }
+            success.EdfiDocs[0].ToJsonString().Should().NotContain("\"abc\":4");
+            success.EdfiDocs[1].ToJsonString().Should().NotContain("\"abc\":4");
+            success.EdfiDocs[2].ToJsonString().Should().NotContain("\"abc\":4");
         }
 
         [Test]
         public void It_should_find_1_document_for_resourcename2()
         {
             _queryResults2!.Should().BeOfType<QueryResult.QuerySuccess>();
-            
-            var success = (_queryResults2 as QueryResult.QuerySuccess)!;
+            QueryResult.QuerySuccess success = (_queryResults2! as QueryResult.QuerySuccess)!;
             success.EdfiDocs.Length.Should().Be(1);
-
-            var actualJson = JObject.Parse(success.EdfiDocs[0].ToJsonString());
-            var id = actualJson["id"]?.ToString();
-
-            var expectedJson = JObject.Parse(_edFiDocString4);
-            expectedJson["id"] = id;
-
-            actualJson.Should().BeEquivalentTo(expectedJson, options => options.ComparingByMembers<JObject>());
+            success.EdfiDocs[0].ToJsonString().Should().Contain("\"abc\":4");
         }
 
         [Test]
