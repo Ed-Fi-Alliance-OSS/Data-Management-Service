@@ -262,7 +262,7 @@ public class UpsertTests : DatabaseTest
                     Connection!,
                     Transaction!
                 );
-            
+
             var successResult = _getResult as GetResult.GetSuccess;
             var actualJson = JObject.Parse(successResult!.EdfiDoc.ToJsonString());
             var expectedJson = JObject.Parse(_edFiDocStringA);

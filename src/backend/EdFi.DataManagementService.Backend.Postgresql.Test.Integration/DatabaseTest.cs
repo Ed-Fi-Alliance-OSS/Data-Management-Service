@@ -98,7 +98,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                 DocumentReferences = new List<IDocumentReference>(),
                 DescriptorReferences = new List<IDocumentReference>(),
                 SuperclassIdentity = null as ISuperclassIdentity,
-                SuperclassReferentialId = superclassReferentialIdentity != null ?new ReferentialId(superclassReferentialIdentity.Value): (ReferentialId?)null
+                SuperclassReferentialId = superclassReferentialIdentity != null ? new ReferentialId(superclassReferentialIdentity.Value) : (ReferentialId?)null
             }
         ).ActLike<IDocumentInfo>();
     }
