@@ -31,6 +31,12 @@ namespace EdFi.DataManagementService.Tests.E2E.Extensions
 
         private static object ConvertValueToCorrectType(string value)
         {
+            // When other data type treated as string (ex: CalenderCode: "255901107")
+            if (value.StartsWith('"') && value.EndsWith('"'))
+            {
+                return value.Trim('"');
+            }
+
             if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
                 return intValue;
 
@@ -57,7 +63,7 @@ namespace EdFi.DataManagementService.Tests.E2E.Extensions
             if (bool.TryParse(value, out var boolValue))
                 return boolValue;
 
-            if (value.Contains("[") && value.Contains("]"))
+            if (value.StartsWith("[") && value.EndsWith("]") || value.StartsWith("{") && value.EndsWith("}"))
             {
                 using var document =
                     JsonDocument.Parse(value) ?? throw new Exception($"Error while parsing {value}");

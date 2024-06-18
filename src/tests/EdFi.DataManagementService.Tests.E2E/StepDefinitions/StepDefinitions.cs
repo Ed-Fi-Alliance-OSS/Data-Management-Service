@@ -24,7 +24,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
     public class StepDefinitions(PlaywrightContext _playwrightContext, TestLogger _logger)
     {
         private IAPIResponse _apiResponse = null!;
-        private List<IAPIResponse> _apiResponses = null!;
         private string _id = string.Empty;
         private string _dependentId = string.Empty;
         private string _location = string.Empty;
@@ -108,14 +107,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             }
         }
 
-        #endregion
-
-        #region When
-
-        [When("a POST request with list of required {string}")]
-        public async Task WhenAPOSTRequestWithListOfRequiredItems(string entityType, DataTable dataTable)
+        [Given("the system has these {string}")]
+        public async Task GivenAPOSTRequestWithListOfRequiredItems(string entityType, DataTable dataTable)
         {
-            _apiResponses = new List<IAPIResponse>();
+            var _apiResponses = new List<IAPIResponse>();
             var baseUrl = $"data/ed-fi";
             var columnName = "descriptorname";
 
@@ -136,7 +131,16 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     await _playwrightContext.ApiRequestContext?.PostAsync(dataUrl, new() { Data = body })!
                 );
             }
+
+            // Verify all the responses
+            foreach (var response in _apiResponses)
+            {
+                response.Status.Should().BeOneOf([201, 200]);
+            }
         }
+        #endregion
+
+        #region When
 
         [When("a POST request is made to {string} with")]
         public async Task WhenSendingAPOSTRequestToWithBody(string url, string body)
@@ -287,15 +291,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             JsonNode responseJson = JsonNode.Parse(_apiResponse.TextAsync().Result)!;
             _logger.log.Information(responseJson.ToString());
             JsonNode.DeepEquals(bodyJson, responseJson).Should().BeTrue();
-        }
-
-        [Then("all responses should be {int} or {int}")]
-        public void ThenAllResponsesShouldBe(int statusCode1, int statusCode2)
-        {
-            foreach (var response in _apiResponses)
-            {
-                response.Status.Should().BeOneOf([statusCode1, statusCode2]);
-            }
         }
 
         [Then("total of records should be {int}")]
