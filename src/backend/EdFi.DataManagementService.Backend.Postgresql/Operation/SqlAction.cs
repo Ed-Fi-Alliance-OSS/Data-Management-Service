@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
@@ -23,21 +24,24 @@ public interface ISqlAction
         DocumentUuid documentUuid,
         PartitionKey partitionKey,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction transaction,
+        LockOption lockOption
     );
 
     public Task<Document?> FindDocumentByReferentialId(
         ReferentialId referentialId,
         PartitionKey partitionKey,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction transaction,
+        LockOption lockOption
     );
 
     public Task<Document?> FindDocumentByDocumentUuid(
         int documentPartitionKey,
         DocumentUuid documentUuid,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction transaction,
+        LockOption lockOption
     );
 
     public Task<JsonNode[]> GetAllDocuments(
@@ -51,13 +55,14 @@ public interface ISqlAction
         string resourceName,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
-        );
+    );
 
     public Task<JsonNode?> GetDocumentById(
         Guid documentUuid,
         int partitionKey,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction transaction,
+        LockOption lockOption
     );
 
     public Task<long> InsertDocument(
@@ -67,6 +72,32 @@ public interface ISqlAction
     );
 
     public Task<long> InsertAlias(Alias alias, NpgsqlConnection connection, NpgsqlTransaction transaction);
+
+    public Task<int> DeleteAliasByDocumentId(
+        int documentPartitionKey,
+        long? documentId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    /// <summary>
+    /// Insert a set of rows into the References table and return the number of rows affected
+    /// </summary>
+    public Task<int> InsertReferences(
+        BulkReferences bulkReferences,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    /// <summary>
+    /// Delete associated Reference records for a given DocumentId return the number of rows affected
+    /// </summary>
+    public Task<int> DeleteReferenceByDocumentId(
+        int parentDocumentPartitionKey,
+        long? parentDocumentId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
 
     public Task<int> UpdateDocumentEdfiDoc(
         int documentPartitionKey,
@@ -82,14 +113,8 @@ public interface ISqlAction
         ReferentialId referentialId,
         PartitionKey referentialPartitionKey,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
-    );
-
-    public Task<int> DeleteAliasByDocumentId(
-        int documentPartitionKey,
-        long? documentId,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction transaction,
+        LockOption lockOption
     );
 
     public Task<int> DeleteDocumentByDocumentId(
@@ -111,6 +136,17 @@ public record UpdateDocumentValidationResult(bool DocumentExists, bool Referenti
 /// </summary>
 public class SqlAction : ISqlAction
 {
+    private static string SqlFor(LockOption lockOption)
+    {
+        return lockOption switch
+        {
+            LockOption.None => "",
+            LockOption.BlockUpdateDelete => "FOR SHARE",
+            LockOption.BlockAll => "FOR UPDATE",
+            _ => throw new InvalidOperationException("Unknown lock option type"),
+        };
+    }
+
     /// <summary>
     /// Returns the EdfiDoc of single Document from the database corresponding to the given DocumentUuid,
     /// or null if no matching Document was found.
@@ -119,12 +155,13 @@ public class SqlAction : ISqlAction
         DocumentUuid documentUuid,
         PartitionKey partitionKey,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction transaction,
+        LockOption lockOption
     )
     {
         await using NpgsqlCommand command =
             new(
-                @"SELECT EdfiDoc FROM public.Documents WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2;",
+                $@"SELECT EdfiDoc FROM public.Documents WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 {SqlFor(lockOption)};",
                 connection,
                 transaction
             )
@@ -156,14 +193,15 @@ public class SqlAction : ISqlAction
         ReferentialId referentialId,
         PartitionKey partitionKey,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction transaction,
+        LockOption lockOption
     )
     {
         await using NpgsqlCommand command =
             new(
-                @"SELECT * FROM public.Documents d
+                $@"SELECT * FROM public.Documents d
                 INNER JOIN public.Aliases a ON a.DocumentId = d.Id AND a.DocumentPartitionKey = d.DocumentPartitionKey
-                WHERE a.ReferentialPartitionKey = $1 AND a.ReferentialId = $2;",
+                WHERE a.ReferentialPartitionKey = $1 AND a.ReferentialId = $2 {SqlFor(lockOption)};",
                 connection,
                 transaction
             )
@@ -217,7 +255,7 @@ public class SqlAction : ISqlAction
             {
                 Parameters =
                 {
-                    new() { Value = resourceName},
+                    new() { Value = resourceName },
                     new() { Value = paginationParameters.offset },
                     new() { Value = paginationParameters.limit },
                 }
@@ -251,15 +289,9 @@ public class SqlAction : ISqlAction
     )
     {
         await using NpgsqlCommand command =
-            new(
-                @"SELECT Count(1) Total FROM public.Documents WHERE resourcename = $1",
-                connection
-            )
+            new(@"SELECT Count(1) Total FROM public.Documents WHERE resourcename = $1;", connection)
             {
-                Parameters =
-                {
-                    new() { Value = resourceName},
-                }
+                Parameters = { new() { Value = resourceName }, }
             };
 
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
@@ -282,11 +314,13 @@ public class SqlAction : ISqlAction
         Guid documentUuid,
         int partitionKey,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction)
+        NpgsqlTransaction transaction,
+        LockOption lockOption
+    )
     {
         await using NpgsqlCommand command =
             new(
-                @"SELECT EdfiDoc FROM public.Documents WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2;",
+                $@"SELECT EdfiDoc FROM public.Documents WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 {SqlFor(lockOption)};",
                 connection,
                 transaction
             )
@@ -378,18 +412,26 @@ public class SqlAction : ISqlAction
         ReferentialId referentialId,
         PartitionKey referentialPartitionKey,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction transaction,
+        LockOption lockOption
     )
     {
+        string sqlForLockOption = SqlFor(lockOption);
+        if (sqlForLockOption != "")
+        {
+            // Only lock the Documents table
+            sqlForLockOption += " OF d";
+        }
+
         await using NpgsqlCommand validationCommand =
             new(
-                @"SELECT DocumentUuid, ReferentialId
+                $@"SELECT DocumentUuid, ReferentialId
                 FROM public.documents d
                 LEFT JOIN public.aliases a ON
                     a.DocumentId = d.Id
                     AND a.DocumentPartitionKey = d.DocumentPartitionKey
                     AND a.ReferentialId = $1 and a.ReferentialPartitionKey = $2
-                WHERE d.DocumentUuid = $3 AND d.DocumentPartitionKey = $4",
+                WHERE d.DocumentUuid = $3 AND d.DocumentPartitionKey = $4 {sqlForLockOption};",
                 connection,
                 transaction
             )
@@ -408,7 +450,7 @@ public class SqlAction : ISqlAction
         if (!reader.HasRows)
         {
             // Document does not exist
-            return (new UpdateDocumentValidationResult(false, false));
+            return new UpdateDocumentValidationResult(false, false);
         }
 
         // Assumes only one row returned (should never be more due to DB unique constraint)
@@ -417,10 +459,10 @@ public class SqlAction : ISqlAction
         if (await reader.IsDBNullAsync(reader.GetOrdinal("ReferentialId")))
         {
             // Extracted referential id does not match stored. Must be attempting to change natural key.
-            return (new UpdateDocumentValidationResult(true, false));
+            return new UpdateDocumentValidationResult(true, false);
         }
 
-        return (new UpdateDocumentValidationResult(true, true));
+        return new UpdateDocumentValidationResult(true, true);
     }
 
     /// <summary>
@@ -464,7 +506,7 @@ public class SqlAction : ISqlAction
     {
         await using NpgsqlCommand command =
             new(
-                @"DELETE from public.Aliases WHERE DocumentId = $1 AND DocumentPartitionKey = $2",
+                @"DELETE from public.Aliases WHERE DocumentId = $1 AND DocumentPartitionKey = $2;",
                 connection,
                 transaction
             )
@@ -473,6 +515,73 @@ public class SqlAction : ISqlAction
                 {
                     new() { Value = documentId },
                     new() { Value = documentPartitionKey }
+                }
+            };
+
+        int rowsAffected = await command.ExecuteNonQueryAsync();
+        return rowsAffected;
+    }
+
+    /// <summary>
+    /// Insert a set of rows into the References table and return the number of rows affected
+    /// </summary>
+    public async Task<int> InsertReferences(
+        BulkReferences bulkReferences,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        Trace.Assert(
+            bulkReferences.ReferentialIds.Length == bulkReferences.ReferentialPartitionKeys.Length,
+            "Arrays of ReferentialIds and ReferentialPartitionKeys must be the same length"
+        );
+
+        long[] parentDocumentIds = new long[bulkReferences.ReferentialIds.Length];
+        Array.Fill(parentDocumentIds, bulkReferences.ParentDocumentId);
+
+        int[] parentDocumentPartitionKeys = new int[bulkReferences.ReferentialIds.Length];
+        Array.Fill(parentDocumentPartitionKeys, bulkReferences.ParentDocumentPartitionKey);
+
+        await using var insertBulkReferencesCmd = new NpgsqlCommand(
+            @"INSERT INTO public.""references""(ParentDocumentId, ParentDocumentPartitionKey, ReferentialId, ReferentialPartitionKey)
+                    SELECT * FROM unnest($1, $2, $3, $4)",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = parentDocumentIds },
+                new() { Value = parentDocumentPartitionKeys },
+                new() { Value = bulkReferences.ReferentialIds },
+                new() { Value = bulkReferences.ReferentialPartitionKeys },
+            }
+        };
+
+        return await insertBulkReferencesCmd.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>
+    /// Delete associated Reference records for a given DocumentId return the number of rows affected
+    /// </summary>
+    public async Task<int> DeleteReferenceByDocumentId(
+        int parentDocumentPartitionKey,
+        long? parentDocumentId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command =
+            new(
+                @"DELETE from public.""references"" WHERE ParentDocumentPartitionKey = $1 AND ParentDocumentId = $2;",
+                connection,
+                transaction
+            )
+            {
+                Parameters =
+                {
+                    new() { Value = parentDocumentId },
+                    new() { Value = parentDocumentPartitionKey }
                 }
             };
 
@@ -492,7 +601,7 @@ public class SqlAction : ISqlAction
     {
         await using NpgsqlCommand command =
             new(
-                @"DELETE from public.Documents WHERE Id = $1 AND DocumentPartitionKey = $2",
+                @"DELETE from public.Documents WHERE Id = $1 AND DocumentPartitionKey = $2;",
                 connection,
                 transaction
             )
@@ -512,12 +621,13 @@ public class SqlAction : ISqlAction
         int documentPartitionKey,
         DocumentUuid documentUuid,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction transaction,
+        LockOption lockOption
     )
     {
         await using NpgsqlCommand command =
             new(
-                @"SELECT * from public.Documents WHERE DocumentUuid = $1 AND DocumentPartitionKey = $2",
+                $@"SELECT * from public.Documents WHERE DocumentUuid = $1 AND DocumentPartitionKey = $2 {SqlFor(lockOption)};",
                 connection,
                 transaction
             )

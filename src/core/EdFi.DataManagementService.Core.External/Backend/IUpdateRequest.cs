@@ -15,12 +15,12 @@ public interface IUpdateRequest
     /// <summary>
     /// The ResourceInfo of the document to update
     /// </summary>
-    IResourceInfo ResourceInfo { get; }
+    ResourceInfo ResourceInfo { get; }
 
     /// <summary>
     /// The DocumentInfo of the document to update
     /// </summary>
-    IDocumentInfo DocumentInfo { get; }
+    DocumentInfo DocumentInfo { get; }
 
     /// <summary>
     /// The EdfiDoc of the document to update, as a JsonNode
@@ -30,7 +30,7 @@ public interface IUpdateRequest
     /// <summary>
     /// The request TraceId
     /// </summary>
-    ITraceId TraceId { get; }
+    TraceId TraceId { get; }
 
     /// <summary>
     /// The DocumentUuid of the document to update

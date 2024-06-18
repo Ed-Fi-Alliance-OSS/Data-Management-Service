@@ -32,7 +32,7 @@ public class PostgresqlDocumentStoreRepository(
         try
         {
             await using var connection = await _dataSource.OpenConnectionAsync();
-            await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable);
+            await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.RepeatableRead);
 
             UpsertResult result = await _upsertDocument.Upsert(upsertRequest, connection, transaction);
 
@@ -65,7 +65,7 @@ public class PostgresqlDocumentStoreRepository(
         try
         {
             await using var connection = await _dataSource.OpenConnectionAsync();
-            await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable);
+            await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.RepeatableRead);
 
             GetResult result = await _getDocumentById.GetById(getRequest, connection, transaction);
 
@@ -97,7 +97,7 @@ public class PostgresqlDocumentStoreRepository(
         try
         {
             await using var connection = await _dataSource.OpenConnectionAsync();
-            await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable);
+            await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.RepeatableRead);
 
             UpdateResult result = await _updateDocumentById.UpdateById(
                 updateRequest,
@@ -133,7 +133,7 @@ public class PostgresqlDocumentStoreRepository(
         try
         {
             await using var connection = await _dataSource.OpenConnectionAsync();
-            await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable);
+            await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.RepeatableRead);
             DeleteResult result = await _deleteDocumentById.DeleteById(
                 deleteRequest,
                 connection,
@@ -168,7 +168,7 @@ public class PostgresqlDocumentStoreRepository(
         try
         {
             await using var connection = await _dataSource.OpenConnectionAsync();
-            await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.Serializable);
+            await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.RepeatableRead);
 
             QueryResult result = await _queryDocument.QueryDocuments(queryRequest, connection, transaction);
 

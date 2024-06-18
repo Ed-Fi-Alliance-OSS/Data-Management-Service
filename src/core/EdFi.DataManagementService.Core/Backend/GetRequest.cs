@@ -14,5 +14,5 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// <param name="DocumentUuid">The document UUID to get</param>
 /// <param name="ResourceInfo">The ResourceInfo for the resource being retrieved</param>
 /// <param name="TraceId">The request TraceId</param>
-internal record GetRequest(DocumentUuid DocumentUuid, IResourceInfo ResourceInfo, ITraceId TraceId)
+internal record GetRequest(DocumentUuid DocumentUuid, ResourceInfo ResourceInfo, TraceId TraceId)
     : IGetRequest;

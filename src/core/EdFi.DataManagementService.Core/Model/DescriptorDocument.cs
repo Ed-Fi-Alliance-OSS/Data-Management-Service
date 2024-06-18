@@ -5,6 +5,8 @@
 
 using System.Diagnostics;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Model;
+using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
 
 namespace EdFi.DataManagementService.Core.Model;
 
@@ -49,7 +51,7 @@ internal class DescriptorDocument(JsonNode _document)
 
         return new(
             DocumentIdentity: documentIdentity,
-            ReferentialId: documentIdentity.ToReferentialId(resourceInfo),
+            ReferentialId: ReferentialIdFrom(resourceInfo, documentIdentity),
             DocumentReferences: [],
             DescriptorReferences: [],
             SuperclassIdentity: null,
