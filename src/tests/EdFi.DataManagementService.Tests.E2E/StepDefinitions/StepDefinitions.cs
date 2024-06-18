@@ -4,11 +4,14 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System;
+using System.Globalization;
 using System.Net.Http;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using EdFi.DataManagementService.Tests.E2E.Extensions;
 using EdFi.DataManagementService.Tests.E2E.Management;
 using FluentAssertions;
 using Microsoft.Playwright;
@@ -62,33 +65,40 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         public async Task GivenTheFollowingSchoolsExist(Table table)
         {
             var url = $"data/ed-fi/schools";
-            var schools = table.Rows.Select(row =>
-            {
-                var gradeLevels = JsonSerializer.Deserialize<List<string>>(row["gradeLevels"])
-                    ?.Select(descriptor => new GradeLevel(descriptor))
-                    .ToList();
+            var schools = table
+                .Rows.Select(row =>
+                {
+                    var gradeLevels = JsonSerializer
+                        .Deserialize<List<string>>(row["gradeLevels"])
+                        ?.Select(descriptor => new GradeLevel(descriptor))
+                        .ToList();
 
-                var educationOrgCategories = JsonSerializer.Deserialize<List<string>>(row["educationOrganizationCategories"])
-                    ?.Select(descriptor => new EducationOrganizationCategory(descriptor))
-                    .ToList();
+                    var educationOrgCategories = JsonSerializer
+                        .Deserialize<List<string>>(row["educationOrganizationCategories"])
+                        ?.Select(descriptor => new EducationOrganizationCategory(descriptor))
+                        .ToList();
 
-                var schoolId = row["schoolId"] != null ? int.Parse(row["schoolId"]) : (int?)null;
-                var nameOfInstitution = row["nameOfInstitution"];
+                    var schoolId = row["schoolId"] != null ? int.Parse(row["schoolId"]) : (int?)null;
+                    var nameOfInstitution = row["nameOfInstitution"];
 
-                return new School(
-                    schoolId: schoolId,
-                    nameOfInstitution: nameOfInstitution,
-                    gradeLevels: gradeLevels,
-                    educationOrganizationCategories: educationOrgCategories
-                );
-            }).ToList();
+                    return new School(
+                        schoolId: schoolId,
+                        nameOfInstitution: nameOfInstitution,
+                        gradeLevels: gradeLevels,
+                        educationOrganizationCategories: educationOrgCategories
+                    );
+                })
+                .ToList();
 
             var apiResponses = new List<IAPIResponse>();
 
             foreach (var school in schools)
             {
                 var data = JsonSerializer.Serialize(school);
-                _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = data })!;
+                _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
+                    url,
+                    new() { Data = data }
+                )!;
                 apiResponses.Add(_apiResponse);
             }
             foreach (var response in apiResponses)
@@ -97,6 +107,37 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             }
         }
 
+        [Given("the system has these {string}")]
+        public async Task GivenAPOSTRequestWithListOfRequiredItems(string entityType, DataTable dataTable)
+        {
+            var _apiResponses = new List<IAPIResponse>();
+            var baseUrl = $"data/ed-fi";
+            var columnName = "descriptorname";
+
+            var columnHeaders = entityType.Equals("descriptors")
+                ? dataTable.Header.Where(x => !x.Equals(columnName))
+                : dataTable.Header;
+
+            foreach (var row in dataTable.Rows)
+            {
+                var dataUrl = entityType.Equals("descriptors")
+                    ? $"{baseUrl}/{row[columnName]}"
+                    : $"{baseUrl}/{entityType}";
+
+                string body = row.Parse(columnHeaders.ToList());
+
+                _logger.log.Information(dataUrl);
+                _apiResponses.Add(
+                    await _playwrightContext.ApiRequestContext?.PostAsync(dataUrl, new() { Data = body })!
+                );
+            }
+
+            // Verify all the responses
+            foreach (var response in _apiResponses)
+            {
+                response.Status.Should().BeOneOf([201, 200]);
+            }
+        }
         #endregion
 
         #region When
@@ -162,7 +203,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             }
         }
 
-
         #endregion
 
         #region Then
@@ -189,7 +229,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             JsonNode bodyJson = JsonNode.Parse(body)!;
 
             _logger.log.Information(responseJson.ToString());
-            
+
             JsonNode.DeepEquals(bodyJson, responseJson).Should().BeTrue();
         }
 
@@ -203,21 +243,27 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             {
                 int index = 0;
 
-                replacedBody = _findIds.Replace(body, match =>
-                {
-                    var idValue = responseJson[index]?["id"]?.ToString();
-                    index++;
-                    return idValue ?? match.ToString();
-                });
+                replacedBody = _findIds.Replace(
+                    body,
+                    match =>
+                    {
+                        var idValue = responseJson[index]?["id"]?.ToString();
+                        index++;
+                        return idValue ?? match.ToString();
+                    }
+                );
             }
             else
             {
-                replacedBody = _findIds.Replace(body, match =>
-                {
-                    var idValue = responseJson["id"]?.ToString();
+                replacedBody = _findIds.Replace(
+                    body,
+                    match =>
+                    {
+                        var idValue = responseJson["id"]?.ToString();
 
-                    return idValue ?? match.ToString();
-                });
+                        return idValue ?? match.ToString();
+                    }
+                );
             }
             return replacedBody;
         }
@@ -297,8 +343,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 var expectedSchoolId = row["schoolId"];
                 var expectedNameOfInstitution = row["nameOfInstitution"];
 
-                var matchSchoolId = responseArray.Any(school => school["schoolId"]?.ToString() == expectedSchoolId);
-                var matchNameOfInstitution = responseArray.Any(school => school["nameOfInstitution"]?.ToString() == expectedNameOfInstitution);
+                var matchSchoolId = responseArray.Any(school =>
+                    school["schoolId"]?.ToString() == expectedSchoolId
+                );
+                var matchNameOfInstitution = responseArray.Any(school =>
+                    school["nameOfInstitution"]?.ToString() == expectedNameOfInstitution
+                );
 
                 matchSchoolId.Should().BeTrue();
                 matchNameOfInstitution.Should().BeTrue();
@@ -306,7 +356,5 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         }
 
         #endregion
-
     }
-
 }
