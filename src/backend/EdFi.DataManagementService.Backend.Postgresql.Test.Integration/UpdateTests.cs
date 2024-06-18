@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Core.External.Backend;
 using FluentAssertions;
+using Newtonsoft.Json.Linq;
 using Npgsql;
 using NUnit.Framework;
 
@@ -153,7 +154,14 @@ public class UpdateTests : DatabaseTest
                     Connection!,
                     Transaction!
                 );
-            (getResult as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Be(_edFiDocString1);
+
+            var successResult = getResult as GetResult.GetSuccess;
+            var actualJson = JObject.Parse(successResult!.EdfiDoc.ToJsonString());
+            var expectedJson = JObject.Parse(_edFiDocString1);
+            expectedJson["id"] = _documentUuidGuid;
+
+            actualJson.Should()
+                .BeEquivalentTo(expectedJson, options => options.ComparingByMembers<JObject>());
         }
     }
 

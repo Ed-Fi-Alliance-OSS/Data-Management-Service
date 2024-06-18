@@ -5,11 +5,12 @@
 
 using EdFi.DataManagementService.Core.External.Backend;
 using FluentAssertions;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
 
-internal record PaginationParameters(int? limit, int? offset) : IPaginationParameters;
+internal record PaginationParameters(int? limit, int? offset, bool totalCount) : IPaginationParameters;
 
 [TestFixture]
 public class QueryTests : DatabaseTest
@@ -42,7 +43,7 @@ public class QueryTests : DatabaseTest
             _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
 
             Dictionary<string, string>? searchParameters = [];
-            PaginationParameters paginationParameters = new(25, 0);
+            PaginationParameters paginationParameters = new(25, 0, false);
 
             IQueryRequest queryRequest = CreateQueryRequest(
                 _defaultResourceName,
@@ -63,8 +64,16 @@ public class QueryTests : DatabaseTest
         public void It_should_be_found_by_get_by_id()
         {
             _getResult!.Should().BeOfType<GetResult.GetSuccess>();
-            (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
-            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Be(_edFiDocString);
+            var successResult = _getResult as GetResult.GetSuccess;
+            successResult!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
+
+            var actualJson = JObject.Parse(successResult!.EdfiDoc.ToJsonString());
+
+            var expectedJson = JObject.Parse(_edFiDocString);
+            expectedJson["id"] = _documentUuidGuid;
+
+            actualJson.Should()
+                .BeEquivalentTo(expectedJson, options => options.ComparingByMembers<JObject>());
         }
 
         [Test]
@@ -72,6 +81,13 @@ public class QueryTests : DatabaseTest
         {
             _queryResult!.Should().BeOfType<QueryResult.QuerySuccess>();
             (_queryResult! as QueryResult.QuerySuccess)!.EdfiDocs.Length.Should().Be(1);
+        }
+
+        [Test]
+        public void It_should_not_be_total_count()
+        {
+            _queryResult!.Should().BeOfType<QueryResult.QuerySuccess>();
+            (_queryResult! as QueryResult.QuerySuccess)!.TotalCount.Should().Be(null);
         }
     }
 
@@ -98,7 +114,7 @@ public class QueryTests : DatabaseTest
             }
 
             Dictionary<string, string>? searchParameters = [];
-            PaginationParameters paginationParameters = new(25, 0);
+            PaginationParameters paginationParameters = new(25, 0, true);
 
             IQueryRequest queryRequest = CreateQueryRequest(
                 _defaultResourceName,
@@ -114,6 +130,13 @@ public class QueryTests : DatabaseTest
         {
             _queryResults!.Should().BeOfType<QueryResult.QuerySuccess>();
             (_queryResults! as QueryResult.QuerySuccess)!.EdfiDocs.Length.Should().Be(3);
+        }
+
+        [Test]
+        public void It_should_be_found_by_query_and_total_count_in_header()
+        {
+            _queryResults!.Should().BeOfType<QueryResult.QuerySuccess>();
+            (_queryResults! as QueryResult.QuerySuccess)!.TotalCount.Should().Be(3);
         }
     }
 
@@ -153,7 +176,7 @@ public class QueryTests : DatabaseTest
                 );
 
             Dictionary<string, string>? searchParameters = [];
-            PaginationParameters paginationParameters = new(25, 0);
+            PaginationParameters paginationParameters = new(25, 0, false);
 
             IQueryRequest queryRequest = CreateQueryRequest(
                 "ResourceName1",
@@ -178,18 +201,43 @@ public class QueryTests : DatabaseTest
             _queryResults1!.Should().BeOfType<QueryResult.QuerySuccess>();
             QueryResult.QuerySuccess success = (_queryResults1! as QueryResult.QuerySuccess)!;
             success.EdfiDocs.Length.Should().Be(3);
-            success.EdfiDocs[0].ToJsonString().Should().BeOneOf(_resourceName1Docs);
-            success.EdfiDocs[1].ToJsonString().Should().BeOneOf(_resourceName1Docs);
-            success.EdfiDocs[2].ToJsonString().Should().BeOneOf(_resourceName1Docs);
+
+            var expectedDocs = _resourceName1Docs.Select(doc => JObject.Parse(doc)).ToArray();
+
+            for (int i = 0; i < success.EdfiDocs.Length; i++)
+            {
+                var actualJson = JObject.Parse(success.EdfiDocs[i].ToJsonString());
+                var id = actualJson["id"]?.ToString();
+
+                var expectedDoc = expectedDocs.FirstOrDefault(doc => !doc.ContainsKey("id"));
+                expectedDoc!["id"] = id;
+
+                actualJson.Should().BeEquivalentTo(expectedDoc, options => options.ComparingByMembers<JObject>());
+            }
         }
 
         [Test]
         public void It_should_find_1_document_for_resourcename2()
         {
             _queryResults2!.Should().BeOfType<QueryResult.QuerySuccess>();
-            QueryResult.QuerySuccess success = (_queryResults2! as QueryResult.QuerySuccess)!;
+            
+            var success = (_queryResults2 as QueryResult.QuerySuccess)!;
             success.EdfiDocs.Length.Should().Be(1);
-            success.EdfiDocs[0].ToJsonString().Should().Be(_edFiDocString4);
+
+            var actualJson = JObject.Parse(success.EdfiDocs[0].ToJsonString());
+            var id = actualJson["id"]?.ToString();
+
+            var expectedJson = JObject.Parse(_edFiDocString4);
+            expectedJson["id"] = id;
+
+            actualJson.Should().BeEquivalentTo(expectedJson, options => options.ComparingByMembers<JObject>());
+        }
+
+        [Test]
+        public void It_should_not_be_total_count()
+        {
+            _queryResults2!.Should().BeOfType<QueryResult.QuerySuccess>();
+            (_queryResults2! as QueryResult.QuerySuccess)!.TotalCount.Should().Be(null);
         }
     }
 }

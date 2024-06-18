@@ -48,7 +48,7 @@ internal static class No
 
     public static readonly JsonNode JsonNode = new JsonObject();
 
-    public static readonly PaginationParameters PaginationParameters = new(0, 0);
+    public static readonly PaginationParameters PaginationParameters = new(0, 0, false);
 
     /// <summary>
     /// The null object for PathComponents

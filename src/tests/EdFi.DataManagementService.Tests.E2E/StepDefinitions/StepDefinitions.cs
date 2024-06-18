@@ -3,10 +3,16 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Tests.E2E.Management;
 using FluentAssertions;
 using Microsoft.Playwright;
+using Newtonsoft.Json.Linq;
 using Reqnroll;
 
 namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
@@ -43,6 +49,51 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             {
                 _location = _apiResponse.Headers["location"];
                 _id = _apiResponse.Headers["location"].Split('/').Last();
+            }
+        }
+
+        [Given("there are no schools")]
+        public void GivenThereAreNoSchools()
+        {
+            //throw new PendingStepException();
+        }
+
+        [Given("the following schools exist")]
+        public async Task GivenTheFollowingSchoolsExist(Table table)
+        {
+            var url = $"data/ed-fi/schools";
+            var schools = table.Rows.Select(row =>
+            {
+                var gradeLevels = JsonSerializer.Deserialize<List<string>>(row["gradeLevels"])
+                    ?.Select(descriptor => new GradeLevel(descriptor))
+                    .ToList();
+
+                var educationOrgCategories = JsonSerializer.Deserialize<List<string>>(row["educationOrganizationCategories"])
+                    ?.Select(descriptor => new EducationOrganizationCategory(descriptor))
+                    .ToList();
+
+                var schoolId = row["schoolId"] != null ? int.Parse(row["schoolId"]) : (int?)null;
+                var nameOfInstitution = row["nameOfInstitution"];
+
+                return new School(
+                    schoolId: schoolId,
+                    nameOfInstitution: nameOfInstitution,
+                    gradeLevels: gradeLevels,
+                    educationOrganizationCategories: educationOrgCategories
+                );
+            }).ToList();
+
+            var apiResponses = new List<IAPIResponse>();
+
+            foreach (var school in schools)
+            {
+                var data = JsonSerializer.Serialize(school);
+                _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = data })!;
+                apiResponses.Add(_apiResponse);
+            }
+            foreach (var response in apiResponses)
+            {
+                response.Status.Should().BeOneOf([200, 201]);
             }
         }
 
@@ -99,6 +150,19 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(url)!;
         }
 
+        [When("a GET request is made to {string} using values as")]
+        public async Task WhenAGETRequestIsMadeToUsingValuesAs(string url, Table table)
+        {
+            url = $"data/{url}";
+            foreach (var row in table.Rows)
+            {
+                var value = row["Values"];
+                var requestUrl = $"{url}{value}";
+                _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(url)!;
+            }
+        }
+
+
         #endregion
 
         #region Then
@@ -118,11 +182,44 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Then("the response body is")]
         public void ThenTheResponseBodyIs(string body)
         {
-            body = body.Replace("{id}", _id);
-            JsonNode bodyJson = JsonNode.Parse(body)!;
+            // Parse the API response to JsonNode
             JsonNode responseJson = JsonNode.Parse(_apiResponse.TextAsync().Result)!;
+
+            body = ReplacePlaceholders(body, responseJson);
+            JsonNode bodyJson = JsonNode.Parse(body)!;
+
             _logger.log.Information(responseJson.ToString());
+            
             JsonNode.DeepEquals(bodyJson, responseJson).Should().BeTrue();
+        }
+
+        // Use Regex to find all occurrences of {id} in the body
+        private static readonly Regex _findIds = new Regex(@"\{id\}", RegexOptions.Compiled);
+
+        private string ReplacePlaceholders(string body, JsonNode responseJson)
+        {
+            string replacedBody = "";
+            if (body.TrimStart().StartsWith("["))
+            {
+                int index = 0;
+
+                replacedBody = _findIds.Replace(body, match =>
+                {
+                    var idValue = responseJson[index]?["id"]?.ToString();
+                    index++;
+                    return idValue ?? match.ToString();
+                });
+            }
+            else
+            {
+                replacedBody = _findIds.Replace(body, match =>
+                {
+                    var idValue = responseJson["id"]?.ToString();
+
+                    return idValue ?? match.ToString();
+                });
+            }
+            return replacedBody;
         }
 
         [Then("the response headers includes")]
@@ -156,30 +253,60 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             JsonNode responseJson = JsonNode.Parse(_apiResponse.TextAsync().Result)!;
             _logger.log.Information(responseJson.ToString());
 
-            int count = 0;
-            if (responseJson != null)
-            {
-                if (responseJson is JsonObject jsonObject)
-                {
-                    foreach (var property in jsonObject)
-                    {
-                        count += 1;
-                    }
-                }
-                // If the node is an array, count its elements
-                else if (responseJson is JsonArray jsonArray)
-                {
-                    foreach (var item in jsonArray)
-                    {
-                        count += 1;
-                    }
-                }
-            }
-
+            int count = responseJson.AsArray().Count();
             count.Should().Be(totalRecords);
         }
+
+        [Then("the response headers includes total-count {int}")]
+        public void ThenTheResponseHeadersIncludesTotalCount(string totalCount)
+        {
+            var headers = _apiResponse.Headers;
+            headers.GetValueOrDefault("total-count").Should().Be(totalCount);
+        }
+
+        [Then("the response headers does not include total-count")]
+        public void ThenTheResponseHeadersDoesNotIncludeTotalCount()
+        {
+            var headers = _apiResponse.Headers;
+            headers.ContainsKey("total-count").Should().BeFalse();
+        }
+
+        [Then("getting less schools than the total-count")]
+        public void ThenGettingLessSchoolsThanTheTotalCount()
+        {
+            var headers = _apiResponse.Headers;
+
+            JsonNode responseJson = JsonNode.Parse(_apiResponse.TextAsync().Result)!;
+            _logger.log.Information(responseJson.ToString());
+
+            int count = responseJson.AsArray().Count();
+
+            headers.GetValueOrDefault("total-count").Should().NotBe(count.ToString());
+        }
+
+        [Then("schools returned")]
+        public void ThenSchoolsReturned(Table table)
+        {
+            var url = $"data/ed-fi/schools?offset=3&limit=5";
+
+            var jsonResponse = _apiResponse.TextAsync().Result;
+            var responseArray = JArray.Parse(jsonResponse);
+
+            foreach (var row in table.Rows)
+            {
+                var expectedSchoolId = row["schoolId"];
+                var expectedNameOfInstitution = row["nameOfInstitution"];
+
+                var matchSchoolId = responseArray.Any(school => school["schoolId"]?.ToString() == expectedSchoolId);
+                var matchNameOfInstitution = responseArray.Any(school => school["nameOfInstitution"]?.ToString() == expectedNameOfInstitution);
+
+                matchSchoolId.Should().BeTrue();
+                matchNameOfInstitution.Should().BeTrue();
+            }
+        }
+
         #endregion
 
-
     }
+
 }
