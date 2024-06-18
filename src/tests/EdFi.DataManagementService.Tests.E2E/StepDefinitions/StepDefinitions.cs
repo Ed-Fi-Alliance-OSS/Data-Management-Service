@@ -83,10 +83,17 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 );
             }).ToList();
 
+            var apiResponses = new List<IAPIResponse>();
+
             foreach (var school in schools)
             {
                 var data = JsonSerializer.Serialize(school);
                 _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = data })!;
+                apiResponses.Add(_apiResponse);
+            }
+            foreach (var response in apiResponses)
+            {
+                response.Status.Should().BeOneOf([200, 201]);
             }
         }
 
