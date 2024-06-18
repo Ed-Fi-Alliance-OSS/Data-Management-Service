@@ -134,7 +134,6 @@ function Compile {
 
 function PublishApi {
     Invoke-Execute {
-        Write-Host "$applicationRoot/$projectName/"
         $project = "$applicationRoot/$projectName/"
         $outputPath = "$project/publish"
         dotnet publish $project -c $Configuration -o $outputPath --nologo
@@ -143,7 +142,6 @@ function PublishApi {
 
 function PublishBackendInstaller {
     Invoke-Execute {
-        Write-Host "$backendRoot/$installerProjectName/"
         $installerProject = "$backendRoot/$installerProjectName/"
         $outputPath = "$installerProject/publish"
         dotnet publish $installerProject -c $Configuration -o $outputPath --nologo
@@ -236,7 +234,6 @@ function RunNuGetPack {
 
 function BuildPackage {
     $mainPath = "$applicationRoot/$projectName"
-    Write-Host $mainPath
     $projectPath = "$mainPath/$projectName.csproj"
     $nugetSpecPath = "$mainPath/publish/$projectName.nuspec"
 

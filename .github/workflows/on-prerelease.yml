@@ -214,7 +214,6 @@ jobs:
             $arguments = @{
               NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
               EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-              DryRun = true
             }
 
             $artifact | ForEach-Object {
