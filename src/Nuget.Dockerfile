@@ -8,30 +8,41 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0.3-alpine3.19-amd64@sha256:a531d9d123928
 FROM runtimebase AS setup
 
 ENV LOG_LEVEL=${LOG_LEVEL}
-# TODO Version should be passed as parameter
-ARG VERSION=latest
+ARG VERSION=0.0.0-alpha.0.102
 
 WORKDIR /app
 
-# TODO review version in the URL, currently we are getting the the following error
-# "The package's version isn't formatted correctly."
 RUN umask 0077 && \
-    wget -nv -O /app/AdminApi.zip "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_apis/packaging/feeds/EdFi/nuget/packages/EdFi.Suite3.ODS.AdminApi/versions/${VERSION}/content" && \
-    wget -nv -O /app/AdminApi.zip "" && \
-    unzip /app/AdminApi.zip AdminApi/* -d /app/ && \
-    cp -r /app/AdminApi/. /app/ && \
-    rm -f /app/AdminApi.zip && \
-    rm -r /app/AdminApi && \
-    cp /app/log4net.txt /app/log4net.config && \
-    dos2unix /app/*.json && \
-    dos2unix /app/*.sh && \
-    dos2unix /app/log4net.config && \
-    chmod 700 /app/*.sh -- ** && \
-    rm -f /app/*.exe && \
-    apk del unzip dos2unix curl && \
-    chown -R edfi /app
+    #wget -O /app/EdFi.DataManagementService.nupkg "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_apis/packaging/feeds/EdFi/nuget/packages/EdFi.DataManagementService.Frontend.AspNetCore/versions/${VERSION}/content" && \
+    wget -O /app/EdFi.DataManagementService.nupkg "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_apis/packaging/feeds/EdFi/nuget/packages/EdFi.DataManagementService.Frontend.AspNetCore/versions/${VERSION}/content" && \
+    unzip /app/EdFi.DataManagementService.nupkg -d /app/ && \
+    #nuget install /app/EdFi.DataManagementService.nupkg -Source %cd% -Nuget packages
+    rm -f /app/EdFi.DataManagementService.nupkg && \
+    #cp /app/log4net.txt /app/log4net.config && \
+    dos2unix /app/content/*.json
+    #dos2unix /app/*.sh && \
+    #dos2unix /app/log4net.config && \
+    #chmod 700 /app/*.sh -- ** && \
+    #rm -f /app/*.exe && \
+    #apk del unzip dos2unix curl && \
+    #chown -R edfi /app
 
-EXPOSE ${ASPNETCORE_HTTP_PORTS}
-USER edfi
+    #wget -nv -O /app/EdFi.DataManagementService.zip "https://dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_artifacts/feed/EdFi/NuGet/EdFi.DataManagementService/overview/0.0.0-alpha.0.8" && \
+    #wget -nv -O /app/EdFi.DataManagementService.zip "" && \
+    #unzip /app/EdFi.DataManagementService.zip EdFi.DataManagementService/* -d /app/ && \
+    #cp -r /app/EdFi.DataManagementService/* /app/ && \
+    #rm -f /app/EdFi.DataManagementService.zip && \
+    #rm -r /app/EdFi.DataManagementService && \
+    ##cp /app/log4net.txt /app/log4net.config && \
+    #dos2unix /app/*.json && \
+    #dos2unix /app/*.sh && \
+    ##dos2unix /app/log4net.config && \
+    #chmod 700 /app/*.sh -- ** && \
+    #rm -f /app/*.exe && \
+    #apk del unzip dos2unix curl && \
+    #chown -R edfi /app
 
-ENTRYPOINT [ "/app/run.sh" ]
+#EXPOSE ${ASPNETCORE_HTTP_PORTS}
+#USER edfi
+
+ENTRYPOINT [ "ls" ]
