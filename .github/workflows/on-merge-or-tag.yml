@@ -37,7 +37,7 @@ jobs:
       - name: Set Version Numbers
         id: versions
         run: |
-          Import-Module ./github-builder.psm1
+          Import-Module ./package-helpers.psm1
           Get-VersionNumber
 
       - name: Create Dms API Pre-Release

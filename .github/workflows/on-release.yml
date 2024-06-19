@@ -76,5 +76,5 @@ jobs:
             Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
           }
 
-          Import-Module ./github-builder.psm1
+          Import-Module ./package-helpers.psm1
           Invoke-Promote @arguments

@@ -3,7 +3,6 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-
 #requires -version 7
 
 $ErrorActionPreference = "Stop"
@@ -24,45 +23,6 @@ function Get-VersionNumber {
 
     "dms-v=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
     "dms-semver=$($version -Replace $prefix)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-}
-
-<#
-.DESCRIPTION
-Builds the EdFi.DataManagementService NuGet package.
-#>
-function Invoke-DotnetPack {
-    [CmdletBinding()]
-    param (
-        # Package version number
-        [string]
-        [Parameter(Mandatory = $true)]
-        $Version
-    )
-
-    &dotnet pack ./src/EdFi.DataManagementService.sln -p:PackageVersion=$Version -o ./
-}
-
-<#
-.DESCRIPTION
-PUblishes any local NuGet packages to the given feed.
-#>
-function Invoke-NuGetPush {
-    [CmdletBinding()]
-    param (
-        # NuGet package feed / source
-        [string]
-        [Parameter(Mandatory = $true)]
-        $NuGetFeed,
-
-        # API key for authentication
-        [string]
-        [Parameter(Mandatory = $true)]
-        $NuGetApiKey
-    )
-
-    (Get-ChildItem -Path $_ -Name -Include *.nupkg) | ForEach-Object {
-        &dotnet nuget push $_ --api-key $NuGetApiKey --source $NuGetFeed
-    }
 }
 
 <#
@@ -166,4 +126,4 @@ function Invoke-Promote {
     $response | ConvertTo-Json -Depth 10 | Out-Host
 }
 
-Export-ModuleMember -Function Get-VersionNumber, Invoke-DotnetPack, Invoke-NuGetPush, Invoke-Promote
+Export-ModuleMember -Function Get-VersionNumber, Invoke-Promote
