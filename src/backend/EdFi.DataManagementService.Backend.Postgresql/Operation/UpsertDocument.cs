@@ -113,11 +113,13 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                     "Failure: alias identity already exists - {TraceId}",
                     upsertRequest.TraceId
                 );
-                var duplicates =
-                    upsertRequest.DocumentInfo.DocumentIdentity.DocumentIdentityElements.Select(d =>
-                        $"({d.IdentityJsonPath.Value.Substring(d.IdentityJsonPath.Value.LastIndexOf('.') + 1)} = {d.IdentityValue})");
+
                 return new UpsertResult.UpsertFailureIdentityConflict(
-                    $"A natural key conflict occurred when attempting to create a new resource {upsertRequest.ResourceInfo.ResourceName.Value} with a duplicate key. The duplicate keys and values are {string.Join(',', duplicates)}");
+                    upsertRequest.ResourceInfo.ResourceName.Value,
+                    upsertRequest.DocumentInfo.DocumentIdentity.DocumentIdentityElements.Select(d =>
+                        new KeyValuePair<string, string>(d.IdentityJsonPath.Value.Substring(d.IdentityJsonPath.Value.LastIndexOf('.') + 1), d.IdentityValue)
+                    )
+                );
             }
 
             _logger.LogError(pe, "Failure on Aliases table insert - {TraceId}", upsertRequest.TraceId);

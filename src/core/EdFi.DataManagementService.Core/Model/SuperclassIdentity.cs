@@ -42,11 +42,6 @@ internal record SuperclassIdentity(
 ) : DocumentReference(ResourceInfo, DocumentIdentity), ISuperclassIdentity
 {
     /// <summary>
-    /// A UUID namespace for generating UUIDv5-compliant deterministic UUIDs per RFC 4122.
-    /// </summary>
-    public static readonly Guid EdFiUuidv5Namespace = new("edf1edf1-3df1-3df1-3df1-3df1edf1edf1");
-
-    /// <summary>
     /// Returns the string form of a ResourceInfo for identity hashing.
     /// </summary>
     private static string ResourceInfoString(IBaseResourceInfo resourceInfo)
@@ -75,7 +70,7 @@ internal record SuperclassIdentity(
     {
         return new(
             Deterministic.Create(
-                EdFiUuidv5Namespace,
+                Model.DocumentIdentity.EdFiUuidv5Namespace,
                 $"{ResourceInfoString(resourceInfo)}{DocumentIdentityString()}"
             )
         );

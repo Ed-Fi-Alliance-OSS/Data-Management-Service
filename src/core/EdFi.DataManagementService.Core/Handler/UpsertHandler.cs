@@ -74,7 +74,10 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
                     StatusCode: 409,
                     Body: JsonSerializer.Serialize(
                         FailureResponse.ForIdentityConflict(
-                            [failure.ReferencingDocumentInfo]
+                            [
+                                $"A natural key conflict occurred when attempting to create a new resource {failure.ResourceName} with a duplicate key. "
+                                + $"The duplicate keys and values are {string.Join(',', failure.DuplicateIdentityValues.Select(d => $"({d.Key} = {d.Value})"))}"
+                            ]
                         )
                     ),
                     Headers: []

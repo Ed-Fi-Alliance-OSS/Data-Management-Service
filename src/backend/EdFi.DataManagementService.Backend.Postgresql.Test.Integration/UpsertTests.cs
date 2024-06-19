@@ -418,7 +418,7 @@ public class UpsertTests : DatabaseTest
         }
 
         [Test]
-        public void It_should_be_a_write_conflict_for_2nd_transaction()
+        public void It_should_be_an_identity_conflict_for_2nd_transaction()
         {
             _subclass1UpsertResult!.Should().BeOfType<UpsertResult.InsertSuccess>();
             _subclass2UpsertResult!.Should().BeOfType<UpsertResult.UpsertFailureIdentityConflict>();
