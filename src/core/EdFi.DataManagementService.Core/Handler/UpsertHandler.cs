@@ -3,12 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Response;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.External.Backend.UpsertResult;
 
@@ -68,7 +70,18 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
             UpsertFailureReference failure
                 => new(StatusCode: 409, Body: failure.ReferencingDocumentInfo, Headers: []),
             UpsertFailureIdentityConflict failure
-                => new(StatusCode: 400, Body: failure.ReferencingDocumentInfo, Headers: []),
+                => new FrontendResponse(
+                    StatusCode: 409,
+                    Body: JsonSerializer.Serialize(
+                        FailureResponse.ForIdentityConflict(
+                            [
+                                $"A natural key conflict occurred when attempting to create a new resource {failure.ResourceName} with a duplicate key. "
+                                + $"The duplicate keys and values are {string.Join(',', failure.DuplicateIdentityValues.Select(d => $"({d.Key} = {d.Value})"))}"
+                            ]
+                        )
+                    ),
+                    Headers: []
+                ),
             UpsertFailureWriteConflict
                 => new(StatusCode: 409, Body: null, Headers: []),
             UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage, Headers: []),

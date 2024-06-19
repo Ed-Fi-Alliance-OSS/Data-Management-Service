@@ -30,5 +30,9 @@ internal record DocumentInfo(
     /// <summary>
     /// If this document is a subclass, this provides the document superclass identity information.
     /// </summary>
-    ISuperclassIdentity? SuperclassIdentity
+    ISuperclassIdentity? SuperclassIdentity,
+    /// <summary>
+    /// If this document is a subclass, this provides the document superclass referential id.
+    /// </summary>
+    ReferentialId? SuperclassReferentialId
 ) : IDocumentInfo;

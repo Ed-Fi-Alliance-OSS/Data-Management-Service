@@ -80,6 +80,20 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 connection,
                 transaction
             );
+
+            if (upsertRequest.DocumentInfo.SuperclassReferentialId != null)
+            {
+                await _sqlAction.InsertAlias(
+                    new(
+                        DocumentPartitionKey: documentPartitionKey,
+                        DocumentId: newDocumentId,
+                        ReferentialId: upsertRequest.DocumentInfo.SuperclassReferentialId.Value.Value,
+                        ReferentialPartitionKey: PartitionKeyFor(upsertRequest.DocumentInfo.SuperclassReferentialId.Value).Value
+                    ),
+                    connection,
+                    transaction
+                );
+            }
         }
         catch (PostgresException pe)
         {
@@ -91,6 +105,21 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                     upsertRequest.TraceId
                 );
                 return new UpsertResult.UpsertFailureWriteConflict();
+            }
+
+            if (pe.SqlState == PostgresErrorCodes.UniqueViolation)
+            {
+                _logger.LogInformation(
+                    "Failure: alias identity already exists - {TraceId}",
+                    upsertRequest.TraceId
+                );
+
+                return new UpsertResult.UpsertFailureIdentityConflict(
+                    upsertRequest.ResourceInfo.ResourceName.Value,
+                    upsertRequest.DocumentInfo.DocumentIdentity.DocumentIdentityElements.Select(d =>
+                        new KeyValuePair<string, string>(d.IdentityJsonPath.Value.Substring(d.IdentityJsonPath.Value.LastIndexOf('.') + 1), d.IdentityValue)
+                    )
+                );
             }
 
             _logger.LogError(pe, "Failure on Aliases table insert - {TraceId}", upsertRequest.TraceId);

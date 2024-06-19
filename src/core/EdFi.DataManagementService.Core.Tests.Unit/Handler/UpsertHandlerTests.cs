@@ -96,7 +96,7 @@ public class UpsertHandlerTests
 
             public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
-                return Task.FromResult<UpsertResult>(new UpsertFailureIdentityConflict(ResponseBody));
+                return Task.FromResult<UpsertResult>(new UpsertFailureIdentityConflict("", [new KeyValuePair<string, string>("key", "value")]));
             }
         }
 
@@ -112,8 +112,8 @@ public class UpsertHandlerTests
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(400);
-            context.FrontendResponse.Body.Should().Be(Repository.ResponseBody);
+            context.FrontendResponse.StatusCode.Should().Be(409);
+            context.FrontendResponse.Body.Should().Contain("key = value");
             context.FrontendResponse.Headers.Should().BeEmpty();
             context.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }

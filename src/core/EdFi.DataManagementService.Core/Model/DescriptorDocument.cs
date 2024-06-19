@@ -52,7 +52,8 @@ internal class DescriptorDocument(JsonNode _document)
             ReferentialId: documentIdentity.ToReferentialId(resourceInfo),
             DocumentReferences: [],
             DescriptorReferences: [],
-            SuperclassIdentity: null
+            SuperclassIdentity: null,
+            SuperclassReferentialId: null
         );
     }
 }

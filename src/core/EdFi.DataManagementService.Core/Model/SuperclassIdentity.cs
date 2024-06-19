@@ -2,6 +2,7 @@
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
+using Be.Vlaanderen.Basisregisters.Generators.Guid;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Model;
@@ -38,4 +39,40 @@ internal record SuperclassIdentity(
     ///          This documentIdentity will use educationOrganizationId instead of schoolId.
     /// </summary>
     IDocumentIdentity DocumentIdentity
-) : DocumentReference(ResourceInfo, DocumentIdentity), ISuperclassIdentity;
+) : DocumentReference(ResourceInfo, DocumentIdentity), ISuperclassIdentity
+{
+    /// <summary>
+    /// Returns the string form of a ResourceInfo for identity hashing.
+    /// </summary>
+    private static string ResourceInfoString(IBaseResourceInfo resourceInfo)
+    {
+        return $"{resourceInfo.ProjectName.Value}{resourceInfo.ResourceName.Value}";
+    }
+
+    /// <summary>
+    /// Returns the string form of a DocumentIdentity.
+    /// </summary>
+    private string DocumentIdentityString()
+    {
+        return string.Join(
+            "#",
+            DocumentIdentity.DocumentIdentityElements.Select(
+                (IDocumentIdentityElement element) =>
+                    $"${element.IdentityJsonPath.Value}=${element.IdentityValue}"
+            )
+        );
+    }
+
+    /// <summary>
+    /// Returns a ReferentialId as a UUIDv5-compliant deterministic UUID per RFC 4122.
+    /// </summary>
+    public ReferentialId ToReferentialId(IBaseResourceInfo resourceInfo)
+    {
+        return new(
+            Deterministic.Create(
+                Model.DocumentIdentity.EdFiUuidv5Namespace,
+                $"{ResourceInfoString(resourceInfo)}{DocumentIdentityString()}"
+            )
+        );
+    }
+};
