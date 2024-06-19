@@ -184,10 +184,36 @@ internal static class JsonObjectExtensions
             return jsonObject;
         }
 
-        var node = jsonObject[segments[0]];
-        Trace.Assert(node != null, "PointerSegment not found on JsonObject");
-        var nodeObj = node.AsObject();
-        nodeObj.RemoveProperty(segments.Skip(1).ToArray());
+        var currentSegment = segments[0];
+        var remainingSegments = segments.Skip(1).ToArray();
+        var node = jsonObject[currentSegment];
+
+        Trace.Assert(node != null, $"PointerSegment '{currentSegment}' not found on JsonObject");
+
+        if (node is JsonObject nodeObj)
+        {
+            nodeObj.RemoveProperty(remainingSegments);
+        }
+        else if (node is JsonArray nodeArray && int.TryParse(remainingSegments[0], out int index))
+        {
+            if (index >= 0 && index < nodeArray.Count)
+            {
+                var item = nodeArray[index];
+                if (item is JsonObject itemObj)
+                {
+                    itemObj.RemoveProperty(remainingSegments.Skip(1).ToArray());
+                }
+            }
+            else
+            {
+                Trace.Assert(false, $"Index '{index}' out of bounds for JsonArray");
+            }
+        }
+        else
+        {
+            Trace.Assert(false, $"Node is not a JsonObject or JsonArray or invalid index for array: {currentSegment}");
+        }
+
         return jsonObject;
     }
 }
