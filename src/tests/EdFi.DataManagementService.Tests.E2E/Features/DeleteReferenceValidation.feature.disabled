@@ -1,0 +1,93 @@
+Feature: Validation of DELETE requests that would cause a foreign key violation
+
+        Background:
+            Given this School Year Type exists
+                  | id                               | schoolYear | currentSchoolYear | schoolYearDescription |
+                  | 20906a639ed04dfa9db77107f2c7834a | 2022       | false             | 2021-2022             |
+              And this Education Organization Category Descriptor exists
+                  | id                               | codeValue              | namespace                                               | shortDescription       |
+                  | 8f2be92ff82641cc99ebff0d14c29176 | Local Education Agency | uri://ed-fi.org/EducationOrganizationCategoryDescriptor | Local Education Agency |
+              And this Student exists
+                  | id                               | studentUniqueId | birthDate  | firstName | lastSurname |
+                  | 64dc6d7916064379a5c0be1f6e5195a5 | 604824          | 2010-01-13 | Traci     | Mathews     |
+              And this Education Organization (Local Education Agency) exists
+                  | id                               | categories                 | localEducationAgencyId | localEducationAgencyCategoryDescriptor | nameOfInstitution |
+                  | d9d973856819497e81e6e18a4d8f721d | ["Local Education Agency"] | 255901                 | ["Independent"]                        | Grand Bend ISD    |
+              And this program exists
+                  | id                               | programName                    | programTypeDescriptor              | educationOrganizationId |
+                  | 4dbd101cde9942f09276ebe0628e5096 | Career and Technical Education | ["Career and Technical Education"] | 255901                  |
+
+        @ignore
+        Scenario: Ensure clients cannot delete a year that is used by another item
+             When a DELETE request is made to "ed-fi/schoolYearTypes/20906a639ed04dfa9db77107f2c7834a"
+             Then it should respond with 409
+              And response body is
+                  """
+                  {
+                      "detail": "The requested action cannot be performed because this item is referenced by an existing item",
+                      "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
+                      "title": "Dependent Item Exists",
+                      "status": 409,
+                      "correlationId": null
+                  }
+                  """
+
+        @ignore
+        Scenario: Ensure clients cannot delete a descriptor that is used by another item
+             When a DELETE request is made to "ed-fi/educationOrganizationCategoryDescriptors/8f2be92ff82641cc99ebff0d14c29176"
+             Then it should respond with 409
+              And response body is
+                  """
+                  {
+                      "detail": "The requested action cannot be performed because this item is referenced by an existing 'EducationOrganizationCategory' item.",
+                      "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
+                      "title": "Dependent Item Exists",
+                      "status": 409,
+                      "correlationId": null
+                  }
+                  """
+
+        @ignore
+        Scenario: Ensure clients cannot delete a dependent element for an item
+             When a DELETE request is made to "ed-fi/students/64dc6d7916064379a5c0be1f6e5195a5"
+             Then it should respond with 409
+              And response body is
+                  """
+                  {
+                      "detail": "The requested action cannot be performed because this item is referenced by an existing 'StudentContactAssociation' item.",
+                      "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
+                      "title": "Dependent Item Exists",
+                      "status": 409,
+                      "correlationId": null
+                  }
+                  """
+
+        @ignore
+        Scenario: Ensure clients cannot delete an element that is reference to an abstract entity that is used by another items
+             When a DELETE request is made to "ed-fi/localEducationAgencies/d9d973856819497e81e6e18a4d8f721d"
+             Then it should respond with 409
+              And response body is
+                  """
+                  {
+                      "detail": "The requested action cannot be performed because this item is referenced by an existing 'School' item.",
+                      "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
+                      "title": "Dependent Item Exists",
+                      "status": 409,
+                      "correlationId": null
+                  }
+                  """
+
+        @ignore
+        Scenario: Ensure clients cannot delete a resource that is used by another items
+             When a DELETE request is made to "ed-fi/programs/4dbd101cde9942f09276ebe0628e5096"
+             Then it should respond with 409
+              And response body is
+                  """
+                  {
+                      "detail": "The requested action cannot be performed because this item is referenced by an existing 'GeneralStudentProgramAssociation' item.",
+                      "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
+                      "title": "Dependent Item Exists",
+                      "status": 409,
+                      "correlationId": null
+                  }
+                  """
