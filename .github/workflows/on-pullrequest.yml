@@ -50,6 +50,8 @@ jobs:
   code-analysis:
     name: Code Analysis
     runs-on: ubuntu-latest
+    permissions:
+        security-events: write
     defaults:
       run:
         shell: pwsh
