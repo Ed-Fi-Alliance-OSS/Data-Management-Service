@@ -21,7 +21,7 @@ Feature: Validation of DELETE requests that would cause a foreign key violation
         Scenario: Ensure clients cannot delete a year that is used by another item
              When a DELETE request is made to "ed-fi/schoolYearTypes/20906a639ed04dfa9db77107f2c7834a"
              Then it should respond with 409
-              And response body is
+              And the response body is
                   """
                   {
                       "detail": "The requested action cannot be performed because this item is referenced by an existing item",
@@ -36,7 +36,7 @@ Feature: Validation of DELETE requests that would cause a foreign key violation
         Scenario: Ensure clients cannot delete a descriptor that is used by another item
              When a DELETE request is made to "ed-fi/educationOrganizationCategoryDescriptors/8f2be92ff82641cc99ebff0d14c29176"
              Then it should respond with 409
-              And response body is
+              And the response body is
                   """
                   {
                       "detail": "The requested action cannot be performed because this item is referenced by an existing 'EducationOrganizationCategory' item.",
@@ -51,7 +51,7 @@ Feature: Validation of DELETE requests that would cause a foreign key violation
         Scenario: Ensure clients cannot delete a dependent element for an item
              When a DELETE request is made to "ed-fi/students/64dc6d7916064379a5c0be1f6e5195a5"
              Then it should respond with 409
-              And response body is
+              And the response body is
                   """
                   {
                       "detail": "The requested action cannot be performed because this item is referenced by an existing 'StudentContactAssociation' item.",
@@ -66,7 +66,7 @@ Feature: Validation of DELETE requests that would cause a foreign key violation
         Scenario: Ensure clients cannot delete an element that is reference to an abstract entity that is used by another items
              When a DELETE request is made to "ed-fi/localEducationAgencies/d9d973856819497e81e6e18a4d8f721d"
              Then it should respond with 409
-              And response body is
+              And the response body is
                   """
                   {
                       "detail": "The requested action cannot be performed because this item is referenced by an existing 'School' item.",
@@ -81,7 +81,7 @@ Feature: Validation of DELETE requests that would cause a foreign key violation
         Scenario: Ensure clients cannot delete a resource that is used by another items
              When a DELETE request is made to "ed-fi/programs/4dbd101cde9942f09276ebe0628e5096"
              Then it should respond with 409
-              And response body is
+              And the response body is
                   """
                   {
                       "detail": "The requested action cannot be performed because this item is referenced by an existing 'GeneralStudentProgramAssociation' item.",
