@@ -4,13 +4,13 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-using Microsoft.Extensions.Logging.Abstractions;
 using EdFi.DataManagementService.Core.ApiSchema;
-using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Pipeline;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DataManagementService.Core.Model;
 
@@ -34,8 +34,7 @@ internal static class No
     /// <summary>
     /// The null object for ResourceSchema
     /// </summary>
-    public static readonly ResourceSchema ResourceSchema =
-        new(new JsonObject(), NullLogger<ResourceSchema>.Instance);
+    public static readonly ResourceSchema ResourceSchema = new(new JsonObject());
 
     /// <summary>
     /// The null object for DocumentUuid
@@ -49,7 +48,7 @@ internal static class No
 
     public static readonly JsonNode JsonNode = new JsonObject();
 
-    public static readonly PaginationParameters PaginationParameters = new(0, 0);
+    public static readonly PaginationParameters PaginationParameters = new(0, 0, false);
 
     /// <summary>
     /// The null object for PathComponents
@@ -78,7 +77,8 @@ internal static class No
             ReferentialId: new(Guid.Empty),
             DocumentReferences: [],
             DescriptorReferences: [],
-            SuperclassIdentity: null
+            SuperclassIdentity: null,
+            SuperclassReferentialId: null
         );
 
     /// <summary>
@@ -90,7 +90,11 @@ internal static class No
     /// <summary>
     /// The null object for FrontendResponse
     /// </summary>
-    public static readonly IFrontendResponse FrontendResponse = new FrontendResponse(StatusCode: 503, Body: "", Headers: []);
+    public static readonly IFrontendResponse FrontendResponse = new FrontendResponse(
+        StatusCode: 503,
+        Body: "",
+        Headers: []
+    );
 
     /// <summary>
     /// A constructor of a PipelineContext initialized with null objects

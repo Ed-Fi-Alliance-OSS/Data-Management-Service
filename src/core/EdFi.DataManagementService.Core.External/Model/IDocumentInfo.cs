@@ -34,4 +34,9 @@ public interface IDocumentInfo
     /// If this document is a subclass, this provides the document superclass identity information.
     /// </summary>
     ISuperclassIdentity? SuperclassIdentity { get; }
+
+    /// <summary>
+    /// If this document is a subclass, this provides the document superclass referential id.
+    /// </summary>
+    ReferentialId? SuperclassReferentialId { get; }
 }

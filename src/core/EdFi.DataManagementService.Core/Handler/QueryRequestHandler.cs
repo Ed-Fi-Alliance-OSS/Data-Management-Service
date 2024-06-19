@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using Json.More;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.External.Backend.QueryResult;
 
@@ -38,10 +39,15 @@ internal class QueryRequestHandler(IQueryHandler _queryHandler, ILogger _logger)
         context.FrontendResponse = result switch
         {
             QuerySuccess success
-                => new FrontendResponse(
+                =>
+                new FrontendResponse(
                     StatusCode: 200,
                     Body: new JsonArray(success.EdfiDocs).ToString(),
-                    Headers: []
+                    Headers:
+                        context.PaginationParameters.totalCount ? new()
+                        {
+                        {"Total-Count", (success.TotalCount ?? 0).ToString()}
+                    } : []
                 ),
             QueryFailureInvalidQuery => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
             UnknownFailure failure

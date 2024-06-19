@@ -15,10 +15,18 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
 public partial class MetadataEndpointModule : IEndpointModule
 {
+    private sealed record SpecificationSection(string name, string prefix);
+
     [GeneratedRegex(@"specifications\/(?<section>[^-]+)-spec.json?")]
     private static partial Regex PathExpression();
 
-    private readonly string[] Sections = ["resources", "descriptors", "discovery"];
+    private readonly SpecificationSection[] Sections =
+    [
+        new SpecificationSection("resources", string.Empty),
+        new SpecificationSection("descriptors", string.Empty),
+        new SpecificationSection("discovery", "Other")
+    ];
+
     private readonly string ErrorResourcePath = "Invalid resource path";
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
@@ -55,7 +63,11 @@ public partial class MetadataEndpointModule : IEndpointModule
         foreach (var section in Sections)
         {
             sections.Add(
-                new RouteInformation(section, $"{baseUrl}/{section.ToLower()}-spec.json", string.Empty)
+                new RouteInformation(
+                    section.name,
+                    $"{baseUrl}/{section.name.ToLower()}-spec.json",
+                    section.prefix
+                )
             );
         }
 
@@ -83,7 +95,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         if (
             Array.Exists(
                 Sections,
-                x => x.ToLowerInvariant().Equals(section, StringComparison.InvariantCultureIgnoreCase)
+                x => x.name.ToLowerInvariant().Equals(section, StringComparison.InvariantCultureIgnoreCase)
             )
         )
         {

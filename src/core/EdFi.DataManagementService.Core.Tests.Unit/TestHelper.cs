@@ -27,9 +27,6 @@ public static class TestHelper
     {
         JsonNode projectSchemaNode = apiSchemaDocument.FindProjectSchemaNode(new(projectNamespace))!;
         ProjectSchema projectSchema = new(projectSchemaNode, NullLogger.Instance);
-        return new ResourceSchema(
-            projectSchema.FindResourceSchemaNode(new(endpointName))!,
-            NullLogger.Instance
-        );
+        return new ResourceSchema(projectSchema.FindResourceSchemaNode(new(endpointName))!);
     }
 }

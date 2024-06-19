@@ -79,18 +79,26 @@ public abstract class DatabaseTest : DatabaseTestBase
         ).ActLike<IResourceInfo>();
     }
 
-    protected static IDocumentInfo CreateDocumentInfo(Guid referentialId)
+    protected static IDocumentInfo CreateDocumentInfo(Guid referentialId, Guid? superclassReferentialIdentity = null)
     {
         return (
             new
             {
-                DocumentIdentity = (
-                    new { IdentityValue = "", IdentityJsonPath = AsValueType<IJsonPath, string>("$") }
-                ).ActLike<IResourceInfo>(),
+                DocumentIdentity = new
+                {
+                    DocumentIdentityElements = new List<IDocumentIdentityElement>
+                    {
+                        new {
+                            IdentityValue = "1",
+                            IdentityJsonPath = AsValueType<IJsonPath, string>("$.identityPath")
+                        }.ActLike<IDocumentIdentityElement>()
+                    }
+                },
                 ReferentialId = new ReferentialId(referentialId),
                 DocumentReferences = new List<IDocumentReference>(),
                 DescriptorReferences = new List<IDocumentReference>(),
-                SuperclassIdentity = null as ISuperclassIdentity
+                SuperclassIdentity = null as ISuperclassIdentity,
+                SuperclassReferentialId = superclassReferentialIdentity != null ? new ReferentialId(superclassReferentialIdentity.Value) : (ReferentialId?)null
             }
         ).ActLike<IDocumentInfo>();
     }
@@ -99,14 +107,15 @@ public abstract class DatabaseTest : DatabaseTestBase
         string resourceName,
         Guid documentUuidGuid,
         Guid referentialId,
-        string edfiDocString
+        string edfiDocString,
+        Guid? superclassReferentialIdentity = null
     )
     {
         return (
             new
             {
                 ResourceInfo = CreateResourceInfo(resourceName),
-                DocumentInfo = CreateDocumentInfo(referentialId),
+                DocumentInfo = CreateDocumentInfo(referentialId, superclassReferentialIdentity),
                 EdfiDoc = JsonNode.Parse(edfiDocString),
                 TraceId = new TraceId("123"),
                 DocumentUuid = new DocumentUuid(documentUuidGuid)

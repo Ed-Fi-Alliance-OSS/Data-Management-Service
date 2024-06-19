@@ -38,7 +38,7 @@ public class QueryDocument(ISqlAction _sqlAction, ILogger<QueryDocument> _logger
                     connection,
                     transaction
                 ),
-                0
+                queryRequest.PaginationParameters.totalCount ? await _sqlAction.GetTotalDocuments(resourceName, connection, transaction) : null
             );
         }
         catch (Exception ex)

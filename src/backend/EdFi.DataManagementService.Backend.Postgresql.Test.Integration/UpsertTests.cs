@@ -3,8 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Security.Policy;
 using EdFi.DataManagementService.Core.External.Backend;
+using FakeItEasy;
 using FluentAssertions;
+using Newtonsoft.Json.Linq;
 using Npgsql;
 using NUnit.Framework;
 
@@ -53,7 +56,14 @@ public class UpsertTests : DatabaseTest
         {
             _getResult!.Should().BeOfType<GetResult.GetSuccess>();
             (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
-            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Be(_edFiDocString);
+
+            var successResult = _getResult as GetResult.GetSuccess;
+            var actualJson = JObject.Parse(successResult!.EdfiDoc.ToJsonString());
+            var expectedJson = JObject.Parse(_edFiDocString);
+            expectedJson["id"] = _documentUuidGuid;
+
+            actualJson.Should()
+                .BeEquivalentTo(expectedJson, options => options.ComparingByMembers<JObject>());
         }
     }
 
@@ -112,7 +122,14 @@ public class UpsertTests : DatabaseTest
         {
             _getResult!.Should().BeOfType<GetResult.GetSuccess>();
             (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
-            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Be(_edFiDocString3);
+
+            var successResult = _getResult as GetResult.GetSuccess;
+            var actualJson = JObject.Parse(successResult!.EdfiDoc.ToJsonString());
+            var expectedJson = JObject.Parse(_edFiDocString3);
+            expectedJson["id"] = _documentUuidGuid;
+
+            actualJson.Should()
+                .BeEquivalentTo(expectedJson, options => options.ComparingByMembers<JObject>());
         }
     }
 
@@ -178,7 +195,14 @@ public class UpsertTests : DatabaseTest
             GetResult? _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
 
             (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
-            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Be(_edFiDocString4);
+
+            var successResult = _getResult as GetResult.GetSuccess;
+            var actualJson = JObject.Parse(successResult!.EdfiDoc.ToJsonString());
+            var expectedJson = JObject.Parse(_edFiDocString4);
+            expectedJson["id"] = _documentUuidGuid;
+
+            actualJson.Should()
+                .BeEquivalentTo(expectedJson, options => options.ComparingByMembers<JObject>());
         }
     }
 
@@ -238,7 +262,14 @@ public class UpsertTests : DatabaseTest
                     Connection!,
                     Transaction!
                 );
-            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Be(_edFiDocStringA);
+
+            var successResult = _getResult as GetResult.GetSuccess;
+            var actualJson = JObject.Parse(successResult!.EdfiDoc.ToJsonString());
+            var expectedJson = JObject.Parse(_edFiDocStringA);
+            expectedJson["id"] = _documentUuidGuid1;
+
+            actualJson.Should()
+                .BeEquivalentTo(expectedJson, options => options.ComparingByMembers<JObject>());
         }
 
         [Test]
@@ -252,7 +283,14 @@ public class UpsertTests : DatabaseTest
                     Connection!,
                     Transaction!
                 );
-            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Be(_edFiDocStringB);
+
+            var successResult = _getResult as GetResult.GetSuccess;
+            var actualJson = JObject.Parse(successResult!.EdfiDoc.ToJsonString());
+            var expectedJson = JObject.Parse(_edFiDocStringB);
+            expectedJson["id"] = _documentUuidGuid1;
+
+            actualJson.Should()
+                .BeEquivalentTo(expectedJson, options => options.ComparingByMembers<JObject>());
         }
     }
 
@@ -329,7 +367,61 @@ public class UpsertTests : DatabaseTest
             GetResult? _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
 
             (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
-            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Be(_edFiDocString7);
+
+            var successResult = _getResult as GetResult.GetSuccess;
+            var actualJson = JObject.Parse(successResult!.EdfiDoc.ToJsonString());
+            var expectedJson = JObject.Parse(_edFiDocString7);
+            expectedJson["id"] = _documentUuidGuid;
+
+            actualJson.Should()
+                .BeEquivalentTo(expectedJson, options => options.ComparingByMembers<JObject>());
+        }
+    }
+
+    [TestFixture]
+    public class
+        Given_an_upsert_of_a_subclass_document_when_a_different_subclass_has_the_same_superclass_identity : UpsertTests
+    {
+        private UpsertResult? _subclass1UpsertResult;
+        private UpsertResult? _subclass2UpsertResult;
+
+        private static readonly Guid _subclass1DocumentUuidGuid = Guid.NewGuid();
+        private static readonly Guid _subclass2DocumentUuidGuid = Guid.NewGuid();
+        private static readonly Guid _subclass1ReferentialIdGuid = Guid.NewGuid();
+        private static readonly Guid _subclass2ReferentialIdGuid = Guid.NewGuid();
+        private static readonly Guid _superclassReferentialIdGuid = Guid.NewGuid();
+        private static readonly string _subclass1EdFiDocString = """{"abc":1}""";
+        private static readonly string _subclass2EdFiDocString = """{"abc":1}""";
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Try upsert as insert
+            IUpsertRequest subclass1UpsertRequest = CreateUpsertRequest(
+                _defaultResourceName,
+                _subclass1DocumentUuidGuid,
+                _subclass1ReferentialIdGuid,
+                _subclass1EdFiDocString,
+                _superclassReferentialIdGuid
+            );
+            _subclass1UpsertResult = await CreateUpsert().Upsert(subclass1UpsertRequest, Connection!, Transaction!);
+
+            // Try upsert a different subclass with same superclass identity
+            IUpsertRequest subclass2UpsertRequest = CreateUpsertRequest(
+                "AnotherResourceName",
+                _subclass2DocumentUuidGuid,
+                _subclass2ReferentialIdGuid,
+                _subclass2EdFiDocString,
+                _superclassReferentialIdGuid
+            );
+            _subclass2UpsertResult = await CreateUpsert().Upsert(subclass2UpsertRequest, Connection!, Transaction!);
+        }
+
+        [Test]
+        public void It_should_be_an_identity_conflict_for_2nd_transaction()
+        {
+            _subclass1UpsertResult!.Should().BeOfType<UpsertResult.InsertSuccess>();
+            _subclass2UpsertResult!.Should().BeOfType<UpsertResult.UpsertFailureIdentityConflict>();
         }
     }
 

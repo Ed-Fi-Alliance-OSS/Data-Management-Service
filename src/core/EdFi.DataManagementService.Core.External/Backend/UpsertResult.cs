@@ -32,8 +32,9 @@ public record UpsertResult
     /// <summary>
     /// A failure because there is a different document with the same identity
     /// </summary>
-    /// <param name="ReferencingDocumentInfo">Information about the existing document</param>
-    public record UpsertFailureIdentityConflict(string ReferencingDocumentInfo) : UpsertResult();
+    /// <param name="ResourceName">The name of the resource that failed to upsert</param>
+    /// <param name="DuplicateIdentityValues">The identity names and values on the attempted upsert</param>
+    public record UpsertFailureIdentityConflict(string ResourceName, IEnumerable<KeyValuePair<string, string>> DuplicateIdentityValues) : UpsertResult();
 
     /// <summary>
     /// A transient failure due to a transaction write conflict

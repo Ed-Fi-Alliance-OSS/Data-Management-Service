@@ -47,6 +47,12 @@ public interface ISqlAction
         NpgsqlTransaction transaction
     );
 
+    public Task<int> GetTotalDocuments(
+        string resourceName,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+        );
+
     public Task<JsonNode?> GetDocumentById(
         Guid documentUuid,
         int partitionKey,
@@ -232,6 +238,40 @@ public class SqlAction : ISqlAction
         }
 
         return documents.ToArray();
+    }
+
+    /// <summary>
+    /// Returns total number of Documents from the database corresponding to the given ResourceName,
+    /// or 0 if no matching Document was found.
+    /// </summary>
+    public async Task<int> GetTotalDocuments(
+        string resourceName,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command =
+            new(
+                @"SELECT Count(1) Total FROM public.Documents WHERE resourcename = $1",
+                connection
+            )
+            {
+                Parameters =
+                {
+                    new() { Value = resourceName},
+                }
+            };
+
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+
+        if (!reader.HasRows)
+        {
+            return 0;
+        }
+
+        await reader.ReadAsync();
+
+        return reader.GetInt16(reader.GetOrdinal("Total"));
     }
 
     /// <summary>

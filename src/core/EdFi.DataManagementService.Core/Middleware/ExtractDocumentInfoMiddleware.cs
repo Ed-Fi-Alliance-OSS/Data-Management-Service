@@ -3,8 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Diagnostics;
-using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 
@@ -25,16 +24,26 @@ internal class ExtractDocumentInfoMiddleware(ILogger _logger) : IPipelineStep
             context.FrontendRequest.TraceId
         );
 
-        Debug.Assert(context.ParsedBody != null, "Body was null, pipeline config invalid");
+        Trace.Assert(context.ParsedBody != null, "Body was null, pipeline config invalid");
 
-        var (documentIdentity, superclassIdentity) = context.ResourceSchema.ExtractIdentities(context.ParsedBody);
+        var (documentIdentity, superclassIdentity) = context.ResourceSchema.ExtractIdentities(
+            context.ParsedBody,
+            _logger
+        );
 
         context.DocumentInfo = new(
-            DocumentReferences: context.ResourceSchema.ExtractDocumentReferences(context.ParsedBody),
-            DescriptorReferences: context.ResourceSchema.ExtractDescriptorValues(context.ParsedBody),
+            DocumentReferences: context.ResourceSchema.ExtractReferences(
+                context.ParsedBody,
+                _logger
+            ),
+            DescriptorReferences: context.ResourceSchema.ExtractDescriptors(
+                context.ParsedBody,
+                _logger
+            ),
             DocumentIdentity: documentIdentity,
             ReferentialId: documentIdentity.ToReferentialId(context.ResourceInfo),
-            SuperclassIdentity: superclassIdentity
+            SuperclassIdentity: superclassIdentity,
+            SuperclassReferentialId: superclassIdentity?.ToReferentialId(superclassIdentity.ResourceInfo)
         );
 
         await next();

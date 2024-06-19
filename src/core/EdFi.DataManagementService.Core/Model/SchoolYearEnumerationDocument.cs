@@ -46,7 +46,8 @@ internal record SchoolYearEnumerationDocument(JsonNode _document)
             ReferentialId: documentIdentity.ToReferentialId(resourceInfo),
             DocumentReferences: [],
             DescriptorReferences: [],
-            SuperclassIdentity: null
+            SuperclassIdentity: null,
+            SuperclassReferentialId: null
         );
     }
 }

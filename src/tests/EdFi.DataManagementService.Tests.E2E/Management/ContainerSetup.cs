@@ -55,11 +55,12 @@ public class ContainerSetup
             .WithEnvironment("POSTGRES_PORT", "5432")
             .WithEnvironment("POSTGRES_HOST", dbContainerName)
             .WithEnvironment("LOG_LEVEL", "Debug")
+            .WithEnvironment("OAUTH_TOKEN_ENDPOINT", "http://localhost/oauth/token")
             .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(8080)))
             .WithNetwork(network)
             .WithLogger(loggerFactory.CreateLogger("apiContainer"))
             .Build();
-        
+
         await network.CreateAsync().ConfigureAwait(false);
         await Task.WhenAll(DbContainer.StartAsync(), ApiContainer.StartAsync()).ConfigureAwait(false);
 

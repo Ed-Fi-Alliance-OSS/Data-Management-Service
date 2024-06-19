@@ -5,16 +5,16 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.External.Frontend;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
-using EdFi.DataManagementService.Core.Validation;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Validation;
 using FluentAssertions;
 using Json.Schema;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
-using EdFi.DataManagementService.Core.External.Frontend;
-using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
@@ -82,8 +82,7 @@ public class ValidateDocumentMiddlewareTests
             NullLogger.Instance
         );
         _context.ResourceSchema = new ResourceSchema(
-            _context.ProjectSchema.FindResourceSchemaNode(new("schools")) ?? new JsonObject(),
-            NullLogger.Instance
+            _context.ProjectSchema.FindResourceSchemaNode(new("schools")) ?? new JsonObject()
         );
 
         if (_context.FrontendRequest.Body != null)
@@ -150,7 +149,7 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: jsonData,
                 QueryParameters: [],
-               new TraceId("traceId")
+                new TraceId("traceId")
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());

@@ -3,20 +3,17 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Diagnostics;
 using System.Text.Json.Nodes;
-using Microsoft.Extensions.Logging;
 using EdFi.DataManagementService.Core.ApiSchema.Extensions;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.Model;
-using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.ApiSchema;
 
 /// <summary>
 /// Provides information from the ResourceSchema portion of an ApiSchema.json document
 /// </summary>
-internal class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
+internal class ResourceSchema(JsonNode _resourceSchemaNode)
 {
     private readonly Lazy<MetaEdResourceName> _resourceName =
         new(() =>
@@ -215,178 +212,43 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode, ILogger _logger)
 
     public IEnumerable<DocumentPath> DocumentPaths => _documentPaths.Value;
 
-    /// <summary>
-    /// Takes an API JSON body for the resource and extracts the document identity information from the JSON body.
-    /// </summary>
-    public DocumentIdentity ExtractDocumentIdentity(JsonNode documentBody)
-    {
-        _logger.LogDebug("ExtractDocumentIdentity");
-
-        if (IsDescriptor)
+    private readonly Lazy<bool> _isSubclass =
+        new(() =>
         {
-            return new DescriptorDocument(documentBody).ToDocumentIdentity();
-        }
-
-        if (IsSchoolYearEnumeration)
-        {
-            return new SchoolYearEnumerationDocument(documentBody).ToDocumentIdentity();
-        }
-
-        // Build up documentIdentity in order
-        IEnumerable<IDocumentIdentityElement> documentIdentityElements = IdentityJsonPaths.Select(
-            identityJsonPath => new DocumentIdentityElement(
-                identityJsonPath,
-                documentBody.SelectRequiredNodeFromPathCoerceToString(identityJsonPath.Value, _logger)
-            )
-        );
-
-        return new DocumentIdentity(documentIdentityElements.ToList());
-    }
+            return _resourceSchemaNode["isSubclass"]?.GetValue<bool>()
+                ?? throw new InvalidOperationException(
+                    "Expected isSubclass to be on ResourceSchema, invalid ApiSchema"
+                );
+        });
 
     /// <summary>
-    /// Create a SuperclassIdentity from an already constructed DocumentIdentity, if the entity should have one.
-    /// If the entity is a subclass with an identity rename, replace the renamed identity property with the
-    /// original superclass identity property name, thereby putting it in superclass form.
-    ///
-    /// For example, School is a subclass of EducationOrganization which renames educationOrganizationId
-    /// to schoolId. An example document identity for a School is { name: schoolId, value: 123 }. The
-    /// equivalent superclass identity for this School would be { name: educationOrganizationId, value: 123 }.
+    /// Whether the resource is a subclass, taken from isSubclass
     /// </summary>
-    public SuperclassIdentity? DeriveSuperclassIdentityFrom(DocumentIdentity documentIdentity)
-    {
-        bool isSubclass = _resourceSchemaNode.SelectNodeValue<bool>("isSubclass");
-
-        // Only applies to subclasses
-        if (!isSubclass)
-        {
-            return null;
-        }
-
-        string subclassType = _resourceSchemaNode.SelectNodeValue<string>("subclassType");
-
-        string superclassResourceName = _resourceSchemaNode.SelectNodeValue<string>("superclassResourceName");
-
-        string superclassProjectName = _resourceSchemaNode.SelectNodeValue<string>("superclassProjectName");
-
-        // Associations do not rename the identity fields in MetaEd, so the DocumentIdentity portion is the same
-        if (subclassType == "association")
-        {
-            return new(
-                ResourceInfo: new BaseResourceInfo(
-                    ResourceName: new MetaEdResourceName(superclassResourceName),
-                    ProjectName: new MetaEdProjectName(superclassProjectName),
-                    IsDescriptor: false
-                ),
-                DocumentIdentity: documentIdentity
-            );
-        }
-
-        string superclassIdentityJsonPath = _resourceSchemaNode.SelectNodeValue<string>(
-            "superclassIdentityJsonPath"
-        );
-
-        DocumentIdentity superclassIdentity = documentIdentity.IdentityRename(
-            new(superclassIdentityJsonPath)
-        );
-
-        return new(
-            ResourceInfo: new BaseResourceInfo(
-                ResourceName: new MetaEdResourceName(superclassResourceName),
-                ProjectName: new MetaEdProjectName(superclassProjectName),
-                IsDescriptor: false
-            ),
-            DocumentIdentity: superclassIdentity
-        );
-    }
+    public bool IsSubclass => _isSubclass.Value;
 
     /// <summary>
-    /// Return both a DocumentIdentity extracted from the document body as well
-    /// as a SuperclassIdentity derived from the DocumentIdentity, if the resource
-    /// is a subclass.
+    /// The subclass type of this resource, such as "association", taken from subclassType
     /// </summary>
-    public (DocumentIdentity, SuperclassIdentity?) ExtractIdentities(JsonNode documentBody)
-    {
-        DocumentIdentity documentIdentity = ExtractDocumentIdentity(documentBody);
-        return (documentIdentity, DeriveSuperclassIdentityFrom(documentIdentity));
-    }
+    public string SubclassType => _resourceSchemaNode.SelectNodeValue<string>("subclassType");
 
     /// <summary>
-    /// Takes an API JSON body for the resource and extracts the document reference information from the JSON body.
+    /// The superclass resource name, such as "EducationOrganization", of this resource,
+    /// taken from superclassResourceName
     /// </summary>
-    public DocumentReference[] ExtractDocumentReferences(JsonNode documentBody)
-    {
-        _logger.LogDebug("ExtractDocumentReferences");
-
-        List<DocumentReference> result = [];
-
-        foreach (DocumentPath documentPath in DocumentPaths)
-        {
-            if (!documentPath.IsReference)
-                continue;
-            if (documentPath.IsDescriptor)
-                continue;
-
-            // Extract the reference values from the document
-            IntermediateReferenceElement[] intermediateReferenceElements = documentPath
-                .ReferenceJsonPathsElements.Select(
-                    referenceJsonPathsElement => new IntermediateReferenceElement(
-                        referenceJsonPathsElement.IdentityJsonPath,
-                        documentBody
-                            .SelectNodesFromArrayPathCoerceToStrings(
-                                referenceJsonPathsElement.ReferenceJsonPath.Value,
-                                _logger
-                            )
-                            .ToArray()
-                    )
-                )
-                .ToArray();
-
-            // If a JsonPath selection had no results, we can assume an optional reference wasn't there
-            if (Array.Exists(intermediateReferenceElements, x => x.ValueSlice.Length == 0))
-                continue;
-
-            int valueSliceLength = intermediateReferenceElements[0].ValueSlice.Length;
-
-            // Number of document values from resolved JsonPaths should all be the same, otherwise something is very wrong
-            Trace.Assert(
-                Array.TrueForAll(intermediateReferenceElements, x => x.ValueSlice.Length == valueSliceLength),
-                "Length of document value slices are not equal"
-            );
-
-            BaseResourceInfo resourceInfo =
-                new(documentPath.ProjectName, documentPath.ResourceName, documentPath.IsDescriptor);
-
-            // Reorient intermediateReferenceElements into actual DocumentReferences
-            for (var index = 0; index < valueSliceLength; index += 1)
-            {
-                List<IDocumentIdentityElement> documentIdentityElements = [];
-
-                foreach (
-                    IntermediateReferenceElement intermediateReferenceElement in intermediateReferenceElements
-                )
-                {
-                    documentIdentityElements.Add(
-                        new DocumentIdentityElement(
-                            intermediateReferenceElement.IdentityJsonPath,
-                            intermediateReferenceElement.ValueSlice[index]
-                        )
-                    );
-                }
-
-                result.Add(new(resourceInfo, new DocumentIdentity(documentIdentityElements)));
-            }
-        }
-
-        return result.ToArray();
-    }
+    public MetaEdResourceName SuperclassResourceName =>
+        new(_resourceSchemaNode.SelectNodeValue<string>("superclassResourceName"));
 
     /// <summary>
-    /// Takes an API JSON body for the resource and extracts the descriptor URI reference information from the JSON body.
+    /// The superclass project name, such as "EdFi", of this resource,
+    /// taken from superclassProjectName
     /// </summary>
-    public DocumentReference[] ExtractDescriptorValues(JsonNode documentBody)
-    {
-        // DMS-37
+    public MetaEdProjectName SuperclassProjectName =>
+        new(_resourceSchemaNode.SelectNodeValue<string>("superclassProjectName"));
 
-        return [];
-    }
+    /// <summary>
+    /// The superclass version of the identity JsonPath, such as "$.educationOrganizationId", of this resource,
+    /// taken from superclassIdentityJsonPath
+    /// </summary>
+    public JsonPath SuperclassIdentityJsonPath =>
+        new(_resourceSchemaNode.SelectNodeValue<string>("superclassIdentityJsonPath"));
 }
