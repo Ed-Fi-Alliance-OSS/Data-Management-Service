@@ -127,6 +127,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
     }
 
     public async Task<UpsertResult> AsUpdate(
+        long documentId,
         int documentPartitionKey,
         Guid documentUuid,
         IUpsertRequest upsertRequest,
@@ -144,7 +145,39 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             transaction
         );
 
-        _logger.LogDebug("Upsert success as insert - {TraceId}", upsertRequest.TraceId);
+        DocumentReference[] documentReferences = upsertRequest.DocumentInfo.DocumentReferences;
+
+        if (documentReferences.Length > 0)
+        {
+            // First clear out all the existing references, as they may have changed
+            await _sqlAction.DeleteReferencesByDocumentUuid(
+                documentPartitionKey,
+                documentUuid,
+                connection,
+                transaction
+            );
+
+            // Next insert current references
+            int numberOfRowsInserted = await _sqlAction.InsertReferences(
+                new(
+                    ParentDocumentPartitionKey: documentPartitionKey,
+                    ParentDocumentId: documentId,
+                    ReferentialIds: documentReferences.Select(x => x.ReferentialId.Value).ToArray(),
+                    ReferentialPartitionKeys: documentReferences
+                        .Select(x => PartitionKeyFor(x.ReferentialId).Value)
+                        .ToArray()
+                ),
+                connection,
+                transaction
+            );
+
+            Trace.Assert(
+                numberOfRowsInserted == documentReferences.Length,
+                "Database did not insert all references"
+            );
+        }
+
+        _logger.LogDebug("Upsert success as update - {TraceId}", upsertRequest.TraceId);
         return new UpsertResult.UpdateSuccess(new(documentUuid));
     }
 
@@ -191,7 +224,12 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 return await AsInsert(upsertRequest, connection, transaction);
             }
 
+            long documentId =
+                documentFromDb.Id
+                ?? throw new InvalidOperationException("documentFromDb.Id should never be null");
+
             return await AsUpdate(
+                documentId,
                 documentFromDb.DocumentPartitionKey,
                 documentFromDb.DocumentUuid,
                 upsertRequest,

@@ -90,11 +90,22 @@ public interface ISqlAction
     );
 
     /// <summary>
-    /// Delete associated Reference records for a given DocumentId return the number of rows affected
+    /// Delete associated Reference records for a given DocumentUuid, returning the number of rows affected
     /// </summary>
-    public Task<int> DeleteReferenceByDocumentId(
+    public Task<int> DeleteReferencesByDocumentUuid(
         int parentDocumentPartitionKey,
-        long? parentDocumentId,
+        Guid parentDocumentUuidGuid,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    /// <summary>
+    /// Delete a document for a given documentUuid and returns the number of rows affected.
+    /// Delete cascades to Aliases and References tables
+    /// </summary>
+    public Task<int> DeleteDocumentByDocumentUuid(
+        int documentPartitionKey,
+        DocumentUuid documentUuid,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     );
@@ -115,13 +126,6 @@ public interface ISqlAction
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         LockOption lockOption
-    );
-
-    public Task<int> DeleteDocumentByDocumentId(
-        int documentPartitionKey,
-        long? documentId,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction
     );
 }
 
@@ -390,7 +394,8 @@ public class SqlAction : ISqlAction
         await using var upsertDocumentCmd = new NpgsqlCommand(
             @"UPDATE public.Documents
               SET EdfiDoc = $1
-              WHERE DocumentPartitionKey = $2 AND DocumentUuid = $3;",
+              WHERE DocumentPartitionKey = $2 AND DocumentUuid = $3
+              RETURNING Id;",
             connection,
             transaction
         )
@@ -562,26 +567,28 @@ public class SqlAction : ISqlAction
     }
 
     /// <summary>
-    /// Delete associated Reference records for a given DocumentId return the number of rows affected
+    /// Delete associated Reference records for a given DocumentUuid, returning the number of rows affected
     /// </summary>
-    public async Task<int> DeleteReferenceByDocumentId(
+    public async Task<int> DeleteReferencesByDocumentUuid(
         int parentDocumentPartitionKey,
-        long? parentDocumentId,
+        Guid parentDocumentUuidGuid,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     )
     {
         await using NpgsqlCommand command =
             new(
-                @"DELETE from public.""references"" WHERE ParentDocumentPartitionKey = $1 AND ParentDocumentId = $2;",
+                @"DELETE from public.""references"" r
+                  INNER JOIN public.Documents d ON d.Id = r.ParentDocumentId AND d.DocumentPartitionKey = r.ParentDocumentPartitionKey
+                  WHERE d.DocumentPartitionKey = $1 AND d.DocumentUuid = $2;",
                 connection,
                 transaction
             )
             {
                 Parameters =
                 {
-                    new() { Value = parentDocumentId },
-                    new() { Value = parentDocumentPartitionKey }
+                    new() { Value = parentDocumentPartitionKey },
+                    new() { Value = parentDocumentUuidGuid }
                 }
             };
 
@@ -590,26 +597,27 @@ public class SqlAction : ISqlAction
     }
 
     /// <summary>
-    /// Delete a document for a given Id and returns the number of rows affected
+    /// Delete a document for a given documentUuid and returns the number of rows affected.
+    /// Delete cascades to Aliases and References tables
     /// </summary>
-    public async Task<int> DeleteDocumentByDocumentId(
+    public async Task<int> DeleteDocumentByDocumentUuid(
         int documentPartitionKey,
-        long? documentId,
+        DocumentUuid documentUuid,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     )
     {
         await using NpgsqlCommand command =
             new(
-                @"DELETE from public.Documents WHERE Id = $1 AND DocumentPartitionKey = $2;",
+                @"DELETE from public.Documents WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2;",
                 connection,
                 transaction
             )
             {
                 Parameters =
                 {
-                    new() { Value = documentId },
-                    new() { Value = documentPartitionKey }
+                    new() { Value = documentPartitionKey },
+                    new() { Value = documentUuid.Value },
                 }
             };
 

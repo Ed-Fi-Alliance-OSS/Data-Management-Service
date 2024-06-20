@@ -34,44 +34,9 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
         {
             int documentPartitionKey = PartitionKeyFor(deleteRequest.DocumentUuid).Value;
 
-            Document? document = await _sqlAction.FindDocumentByDocumentUuid(
+            int rowsAffectedOnDocumentDelete = await _sqlAction.DeleteDocumentByDocumentUuid(
                 documentPartitionKey,
                 deleteRequest.DocumentUuid,
-                connection,
-                transaction,
-                LockOption.BlockAll
-            );
-
-            if (document == null)
-            {
-                _logger.LogInformation(
-                    "Failure: Record to delete does not exist - {TraceId}",
-                    deleteRequest.TraceId
-                );
-                return new DeleteResult.DeleteFailureNotExists();
-            }
-
-            int rowsAffectedOnAliasDelete = await _sqlAction.DeleteAliasByDocumentId(
-                documentPartitionKey,
-                document.Id,
-                connection,
-                transaction
-            );
-
-            if (rowsAffectedOnAliasDelete == 0)
-            {
-                _logger.LogCritical(
-                    "Failure: Associated Alias records are not available for the Document {DocumentId} - {TraceId}",
-                    deleteRequest.DocumentUuid,
-                    deleteRequest.TraceId
-                );
-
-                // We will still try to delete from Documents table
-            }
-
-            int rowsAffectedOnDocumentDelete = await _sqlAction.DeleteDocumentByDocumentId(
-                documentPartitionKey,
-                document.Id,
                 connection,
                 transaction
             );
@@ -98,12 +63,12 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
         }
         catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.SerializationFailure)
         {
-            _logger.LogDebug(pe, "Transaction conflict on UpdateById - {TraceId}", deleteRequest.TraceId);
+            _logger.LogDebug(pe, "Transaction conflict on DeleteById - {TraceId}", deleteRequest.TraceId);
             return new DeleteResult.DeleteFailureWriteConflict();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "DeleteDocumentById failure - {TraceId}", deleteRequest.TraceId);
+            _logger.LogError(ex, "DeleteById failure - {TraceId}", deleteRequest.TraceId);
             return new DeleteResult.UnknownFailure("Unknown Failure");
         }
     }

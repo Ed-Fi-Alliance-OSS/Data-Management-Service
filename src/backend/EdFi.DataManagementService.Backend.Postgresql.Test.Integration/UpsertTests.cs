@@ -530,8 +530,8 @@ public class UpsertTests : DatabaseTest
     }
 
     [TestFixture]
-    public class
-        Given_an_upsert_of_a_subclass_document_when_a_different_subclass_has_the_same_superclass_identity : UpsertTests
+    public class Given_an_upsert_of_a_subclass_document_when_a_different_subclass_has_the_same_superclass_identity
+        : UpsertTests
     {
         private UpsertResult? _subclass1UpsertResult;
         private UpsertResult? _subclass2UpsertResult;
@@ -557,7 +557,8 @@ public class UpsertTests : DatabaseTest
                 null,
                 CreateSuperclassIdentity(_superclassResourceName, _superclassReferentialIdGuid)
             );
-            _subclass1UpsertResult = await CreateUpsert().Upsert(subclass1UpsertRequest, Connection!, Transaction!);
+            _subclass1UpsertResult = await CreateUpsert()
+                .Upsert(subclass1UpsertRequest, Connection!, Transaction!);
 
             // Try upsert a different subclass with same superclass identity
             IUpsertRequest subclass2UpsertRequest = CreateUpsertRequest(
@@ -568,7 +569,8 @@ public class UpsertTests : DatabaseTest
                 null,
                 CreateSuperclassIdentity(_superclassResourceName, _superclassReferentialIdGuid)
             );
-            _subclass2UpsertResult = await CreateUpsert().Upsert(subclass2UpsertRequest, Connection!, Transaction!);
+            _subclass2UpsertResult = await CreateUpsert()
+                .Upsert(subclass2UpsertRequest, Connection!, Transaction!);
         }
 
         [Test]

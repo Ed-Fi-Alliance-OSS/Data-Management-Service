@@ -34,4 +34,4 @@ CREATE INDEX UX_References_DocumentId ON "references"(ParentDocumentPartitionKey
 
 ALTER TABLE "references"
 ADD CONSTRAINT FK_References_Documents FOREIGN KEY (ParentDocumentPartitionKey, ParentDocumentId)
-REFERENCES Documents (DocumentPartitionKey, Id);
+REFERENCES Documents (DocumentPartitionKey, Id) ON DELETE CASCADE;
