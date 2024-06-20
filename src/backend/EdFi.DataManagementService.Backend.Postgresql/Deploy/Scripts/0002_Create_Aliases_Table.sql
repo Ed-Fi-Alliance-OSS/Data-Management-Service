@@ -34,4 +34,4 @@ CREATE UNIQUE INDEX UX_Aliases_ReferentialId ON Aliases(ReferentialPartitionKey,
 
 ALTER TABLE Aliases
 ADD CONSTRAINT FK_Aliases_Documents FOREIGN KEY (DocumentPartitionKey, DocumentId)
-REFERENCES Documents (DocumentPartitionKey, Id);
+REFERENCES Documents (DocumentPartitionKey, Id) ON DELETE CASCADE;
