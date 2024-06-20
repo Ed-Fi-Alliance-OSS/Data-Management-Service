@@ -191,6 +191,46 @@ public class ValidateDocumentMiddlewareTests
     }
 
     [TestFixture]
+    public class Given_A_Request_With_Overposted_Object_Property : ValidateDocumentMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            string jsonData =
+                """{"schoolId": 989, "gradeLevels":{"gradeLevelDescriptor": "grade1", "gradeLevelOverPost": "overPostedValue"},"nameOfInstitution":"school12", "objectOverpost": { "x": "overPostedValue"}}""";
+
+            var frontEndRequest = new FrontendRequest(
+                "ed-fi/schools",
+                Body: jsonData,
+                QueryParameters: [],
+                new TraceId("traceId")
+            );
+            _context = Context(frontEndRequest, RequestMethod.POST);
+            await Middleware().Execute(_context, Next());
+        }
+
+        [Test]
+        public void It_should_not_have_response()
+        {
+            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+
+        [Test]
+        public void It_should_not_be_equal_than_parsed_body()
+        {
+            _context?.FrontendRequest.Body.Should().NotBe(_context?.ParsedBody.ToJsonString());
+        }
+
+        [Test]
+        public void It_should_not_contain_objectOverpost()
+        {
+            _context?.ParsedBody.ToJsonString().Should().NotContain("\"objectOverpost\": { \"x\": \"overPostedValue\"}");
+        }
+    }
+
+    [TestFixture]
     public class Given_A_Request_With_No_Required_Property : ValidateDocumentMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
