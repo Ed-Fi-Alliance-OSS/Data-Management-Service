@@ -226,3 +226,19 @@ Feature: Resources "Create" Operation validations
                         ]
                     }
                   """
+
+        Scenario: Verify Post when adding a overposting object
+            When a POST request is made to "ed-fi/educationContents" with
+                """
+                {
+                  "contentIdentifier": "Testing",
+                   "namespace": "Testing",
+                  "learningStandardReference": {
+                    "learningStandardId": "Testing"
+                  },
+                   "objectOverpost": {
+                     "x": 1
+                  }
+                }
+                """
+            Then it should respond with 201 or 200

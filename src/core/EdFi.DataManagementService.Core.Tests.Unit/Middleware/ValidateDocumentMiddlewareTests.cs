@@ -228,6 +228,12 @@ public class ValidateDocumentMiddlewareTests
         {
             _context?.ParsedBody.ToJsonString().Should().NotContain("\"objectOverpost\": { \"x\": \"overPostedValue\"}");
         }
+
+        [Test]
+        public void It_should_contain_objectOverpost()
+        {
+            _context?.FrontendRequest.Body.Should().Contain(""""objectOverpost": { "x": "overPostedValue"}"""");
+        }
     }
 
     [TestFixture]
