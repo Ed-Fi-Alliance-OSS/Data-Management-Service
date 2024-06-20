@@ -1,6 +1,8 @@
 # Remove reference validation
 
-If a user wants to remove referential integrity checking to facilitate faster loading of test data, the following database scripts can be used to remove the foreign key constraints on the tables.
+If a user wants to remove referential integrity checking to facilitate faster
+loading of test data, the following database scripts can be used to remove the
+foreign key constraints on the tables.
 
 ## Getting the list of foreign key constraints on the table
 
