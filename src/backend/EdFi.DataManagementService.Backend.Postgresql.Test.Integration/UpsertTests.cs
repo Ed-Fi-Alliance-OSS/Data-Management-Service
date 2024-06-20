@@ -349,14 +349,14 @@ public class UpsertTests : DatabaseTest
         {
             // Insert document with nonexistent reference
             Reference[] references = [new(_defaultResourceName, _nonExistentReferentialIdGuid)];
-            IUpsertRequest upsertRequest2 = CreateUpsertRequest(
+            IUpsertRequest upsertRequest = CreateUpsertRequest(
                 _defaultResourceName,
                 _documentUuidGuid,
                 _referentialIdGuid,
                 _edFiDocString,
                 CreateDocumentReferences(references)
             );
-            _upsertResult = await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
         }
 
         [Test]
@@ -581,21 +581,229 @@ public class UpsertTests : DatabaseTest
         }
     }
 
+    [TestFixture]
+    public class Given_an_update_of_a_document_to_reference_a_nonexisting_document : UpsertTests
+    {
+        private UpsertResult? _upsertResult;
+
+        private static readonly Guid _documentUuidGuid = Guid.NewGuid();
+        private static readonly Guid _referentialIdGuid = Guid.NewGuid();
+        private static readonly string _edFiDocString = """{"abc":1}""";
+        private static readonly Guid _nonExistentReferentialIdGuid = Guid.NewGuid();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Insert document
+            IUpsertRequest upsertRequest = CreateUpsertRequest(
+                _defaultResourceName,
+                _documentUuidGuid,
+                _referentialIdGuid,
+                _edFiDocString
+            );
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+
+            // Update document with nonexistent reference
+            Reference[] references = [new(_defaultResourceName, _nonExistentReferentialIdGuid)];
+            IUpsertRequest upsertRequest2 = CreateUpsertRequest(
+                _defaultResourceName,
+                _documentUuidGuid,
+                _referentialIdGuid,
+                _edFiDocString,
+                CreateDocumentReferences(references)
+            );
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
+        }
+
+        [Test]
+        public void It_should_be_a_reference_failure()
+        {
+            _upsertResult!.Should().BeOfType<UpsertResult.UpsertFailureReference>();
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_update_of_a_document_to_reference_an_existing_document : UpsertTests
+    {
+        private UpsertResult? _upsertResult;
+        private GetResult? _getResult;
+
+        private static readonly Guid _documentUuid1Guid = Guid.NewGuid();
+        private static readonly Guid _referentialId1Guid = Guid.NewGuid();
+        private static readonly string _edFiDocString1 = """{"abc":1}""";
+        private static readonly Guid _documentUuid2Guid = Guid.NewGuid();
+        private static readonly Guid _referentialId2Guid = Guid.NewGuid();
+        private static readonly string _edFiDocString2 = """{"abc":2}""";
+        private static readonly string _edFiDocString3 = """{"abc":3}""";
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Insert document
+            IUpsertRequest upsertRequest = CreateUpsertRequest(
+                _defaultResourceName,
+                _documentUuid1Guid,
+                _referentialId1Guid,
+                _edFiDocString1
+            );
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+
+            // Insert document to reference
+            IUpsertRequest upsertRequest2 = CreateUpsertRequest(
+                _defaultResourceName,
+                _documentUuid2Guid,
+                _referentialId2Guid,
+                _edFiDocString2
+            );
+            await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
+
+            // Update 2nd document to reference other document
+            Reference[] references = [new(_defaultResourceName, _referentialId2Guid)];
+            IUpsertRequest upsertRequest3 = CreateUpsertRequest(
+                _defaultResourceName,
+                _documentUuid1Guid,
+                _referentialId1Guid,
+                _edFiDocString3,
+                CreateDocumentReferences(references)
+            );
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest3, Connection!, Transaction!);
+
+            // Confirm document is updated
+            IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuid1Guid);
+            _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
+        }
+
+        [Test]
+        public void It_should_be_a_successful_update()
+        {
+            _upsertResult!.Should().BeOfType<UpsertResult.UpdateSuccess>();
+        }
+
+        [Test]
+        public void It_should_be_found_by_get()
+        {
+            _getResult!.Should().BeOfType<GetResult.GetSuccess>();
+            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":3");
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_update_of_a_document_with_one_existing_and_one_nonexistent_reference : UpsertTests
+    {
+        private UpsertResult? _upsertResult;
+
+        private static readonly Guid _referentialId1Guid = Guid.NewGuid();
+        private static readonly Guid _referentialId2Guid = Guid.NewGuid();
+        private static readonly Guid _nonExistentReferentialIdGuid = Guid.NewGuid();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Insert document
+            IUpsertRequest upsertRequest = CreateUpsertRequest(
+                _defaultResourceName,
+                Guid.NewGuid(),
+                _referentialId1Guid,
+                """{"abc":1}"""
+            );
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+
+            // Insert document to reference
+            IUpsertRequest upsertRequest2 = CreateUpsertRequest(
+                _defaultResourceName,
+                Guid.NewGuid(),
+                _referentialId2Guid,
+                """{"abc":2}"""
+            );
+            await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
+
+            // Update 1st document to reference 2nd + a nonexistent reference
+            Reference[] references =
+            [
+                new(_defaultResourceName, _referentialId2Guid),
+                new(_defaultResourceName, _nonExistentReferentialIdGuid)
+            ];
+            IUpsertRequest upsertRequest3 = CreateUpsertRequest(
+                _defaultResourceName,
+                Guid.NewGuid(),
+                _referentialId1Guid,
+                """{"abc":3}""",
+                CreateDocumentReferences(references)
+            );
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest3, Connection!, Transaction!);
+        }
+
+        [Test]
+        public void It_should_be_a_reference_failure()
+        {
+            _upsertResult!.Should().BeOfType<UpsertResult.UpsertFailureReference>();
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_update_of_a_document_to_reference_an_existing_document_as_superclass : UpsertTests
+    {
+        private UpsertResult? _upsertResult;
+
+        private static readonly Guid _documentUuid1Guid = Guid.NewGuid();
+        private static readonly Guid _referentialId1Guid = Guid.NewGuid();
+        private static readonly Guid _superclassId1Guid = Guid.NewGuid();
+        private static readonly string _superclassResourceName = "SuperclassResource";
+        private static readonly string _edFiDocString1 = """{"abc":1}""";
+
+        private static readonly Guid _documentUuid2Guid = Guid.NewGuid();
+        private static readonly Guid _referentialId2Guid = Guid.NewGuid();
+        private static readonly string _edFiDocString2 = """{"abc":2}""";
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Insert subclass document
+            IUpsertRequest upsertRequest = CreateUpsertRequest(
+                _defaultResourceName,
+                _documentUuid1Guid,
+                _referentialId1Guid,
+                _edFiDocString1,
+                null,
+                CreateSuperclassIdentity(_superclassResourceName, _superclassId1Guid)
+            );
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+
+            // Insert 2nd document referencing 1st as subclass
+            Reference[] subclassReferences = [new(_defaultResourceName, _referentialId1Guid)];
+            IUpsertRequest upsertRequest2 = CreateUpsertRequest(
+                _defaultResourceName,
+                _documentUuid2Guid,
+                _referentialId2Guid,
+                _edFiDocString2,
+                CreateDocumentReferences(subclassReferences)
+            );
+            await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
+
+            // Update 2nd document to reference 1st as superclass
+            Reference[] superclassReferences = [new(_superclassResourceName, _superclassId1Guid)];
+            IUpsertRequest upsertRequest3 = CreateUpsertRequest(
+                _defaultResourceName,
+                _documentUuid2Guid,
+                _referentialId2Guid,
+                _edFiDocString2,
+                CreateDocumentReferences(superclassReferences)
+            );
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest3, Connection!, Transaction!);
+        }
+
+        [Test]
+        public void It_should_be_a_successful_update()
+        {
+            _upsertResult!.Should().BeOfType<UpsertResult.UpdateSuccess>();
+        }
+    }
+
     // Future tests - from Meadowlark
 
     // given an upsert of a document that references an existing descriptor
 
     // given an upsert of a document that references a nonexisting descriptor
-
-    // given an upsert of a subclass document when a different subclass has the same superclass identity
-
-    // given an update of a document that references a non-existent document
-
-    // given an update of a document that references an existing document
-
-    // given an update of a document with one existing and one non-existent reference
-
-    // given an update of a subclass document referenced by an existing document as a superclass
 
     // given an update of a document that references an existing descriptor
 

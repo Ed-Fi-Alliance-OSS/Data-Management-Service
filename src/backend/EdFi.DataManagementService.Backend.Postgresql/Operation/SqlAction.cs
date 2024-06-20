@@ -579,8 +579,9 @@ public class SqlAction : ISqlAction
         await using NpgsqlCommand command =
             new(
                 @"DELETE from public.""references"" r
-                  INNER JOIN public.Documents d ON d.Id = r.ParentDocumentId AND d.DocumentPartitionKey = r.ParentDocumentPartitionKey
-                  WHERE d.DocumentPartitionKey = $1 AND d.DocumentUuid = $2;",
+                  USING public.Documents d
+                  WHERE d.Id = r.ParentDocumentId AND d.DocumentPartitionKey = r.ParentDocumentPartitionKey
+                  AND d.DocumentPartitionKey = $1 AND d.DocumentUuid = $2;",
                 connection,
                 transaction
             )
