@@ -14,7 +14,6 @@ using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Validation;
-using Microsoft.CodeAnalysis;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core;
@@ -47,6 +46,7 @@ internal class ApiService(
                         new ParsePathMiddleware(_logger),
                         new ParseBodyMiddleware(_logger),
                         new ValidateEndpointMiddleware(_logger),
+                        new CoerceStringTypeMiddleware(_logger),
                         new ValidateDocumentMiddleware(_logger, _documentValidator),
                         new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
                         new ExtractDocumentInfoMiddleware(_logger),
@@ -109,6 +109,7 @@ internal class ApiService(
                         new ParsePathMiddleware(_logger),
                         new ParseBodyMiddleware(_logger),
                         new ValidateEndpointMiddleware(_logger),
+                        new CoerceStringTypeMiddleware(_logger),
                         new ValidateDocumentMiddleware(_logger, _documentValidator),
                         new ValidateMatchingDocumentUuidsMiddleware(_logger, matchingDocumentUuidsValidator),
                         new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
