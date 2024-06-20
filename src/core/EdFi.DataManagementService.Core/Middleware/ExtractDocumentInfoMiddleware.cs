@@ -43,8 +43,7 @@ internal class ExtractDocumentInfoMiddleware(ILogger _logger) : IPipelineStep
             ),
             DocumentIdentity: documentIdentity,
             ReferentialId: ReferentialIdFrom(context.ResourceInfo, documentIdentity),
-            SuperclassIdentity: superclassIdentity,
-            SuperclassReferentialId: superclassIdentity == null ? null : ReferentialIdFrom(superclassIdentity.ResourceInfo, superclassIdentity)
+            SuperclassIdentity: superclassIdentity
         );
 
         await next();

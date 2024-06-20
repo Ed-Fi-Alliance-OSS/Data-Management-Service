@@ -36,7 +36,7 @@ public record SuperclassIdentity(
     ///          from educationOrganizationId to schoolId.
     ///          This documentIdentity will use educationOrganizationId instead of schoolId.
     /// </summary>
-    IDocumentIdentity DocumentIdentity,
+    DocumentIdentity DocumentIdentity,
     /// <summary>
     /// The referentialId derived from the DocumentIdentity
     /// </summary>

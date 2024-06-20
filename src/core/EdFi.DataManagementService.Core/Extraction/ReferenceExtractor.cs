@@ -72,7 +72,7 @@ internal static class ReferenceExtractor
             // Reorient intermediateReferenceElements into actual DocumentReferences
             for (int index = 0; index < valueSliceLength; index += 1)
             {
-                List<IDocumentIdentityElement> documentIdentityElements = [];
+                List<DocumentIdentityElement> documentIdentityElements = [];
 
                 foreach (
                     IntermediateReferenceElement intermediateReferenceElement in intermediateReferenceElements
@@ -86,7 +86,7 @@ internal static class ReferenceExtractor
                     );
                 }
 
-                DocumentIdentity documentIdentity = new(documentIdentityElements);
+                DocumentIdentity documentIdentity = new(documentIdentityElements.ToArray());
                 result.Add(new(resourceInfo, documentIdentity, ReferentialIdFrom(resourceInfo, documentIdentity)));
             }
         }

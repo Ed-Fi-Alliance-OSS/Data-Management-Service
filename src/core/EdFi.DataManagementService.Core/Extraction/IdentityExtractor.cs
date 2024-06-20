@@ -40,13 +40,13 @@ internal static class IdentityExtractor
         }
 
         // Build up documentIdentity in order
-        IEnumerable<IDocumentIdentityElement> documentIdentityElements =
+        IEnumerable<DocumentIdentityElement> documentIdentityElements =
             resourceSchema.IdentityJsonPaths.Select(identityJsonPath => new DocumentIdentityElement(
                 identityJsonPath,
                 documentBody.SelectRequiredNodeFromPathCoerceToString(identityJsonPath.Value, logger)
             ));
 
-        return new DocumentIdentity(documentIdentityElements.ToList());
+        return new DocumentIdentity(documentIdentityElements.ToArray());
     }
 
     /// <summary>
@@ -55,14 +55,14 @@ internal static class IdentityExtractor
     /// </summary>
     public static DocumentIdentity IdentityRename(
         JsonPath superclassIdentityJsonPath,
-        IDocumentIdentityElement identityElement
+        DocumentIdentityElement identityElement
     )
     {
-        IDocumentIdentityElement[] newElementList =
+        DocumentIdentityElement[] newElementArray =
         [
             new DocumentIdentityElement(superclassIdentityJsonPath, identityElement.IdentityValue)
         ];
-        return new(newElementList.ToList());
+        return new(newElementArray);
     }
 
     /// <summary>

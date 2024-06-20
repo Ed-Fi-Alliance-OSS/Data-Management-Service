@@ -82,17 +82,13 @@ public abstract class DatabaseTest : DatabaseTestBase
         SuperclassIdentity? superclassIdentity = null
     )
     {
-        return
-            new
-            (
-                DocumentIdentity: (
-                    new { IdentityValue = "", IdentityJsonPath = AsValueType<IJsonPath, string>("$") }
-                ).ActLike<IDocumentIdentity>(),
-                ReferentialId: new ReferentialId(referentialId),
-                DocumentReferences: documentReferences ?? [],
-                DescriptorReferences: [],
-                SuperclassIdentity: superclassIdentity
-            );
+        return new(
+            DocumentIdentity: new([new(IdentityValue: "", IdentityJsonPath: new("$"))]),
+            ReferentialId: new ReferentialId(referentialId),
+            DocumentReferences: documentReferences ?? [],
+            DescriptorReferences: [],
+            SuperclassIdentity: superclassIdentity
+        );
     }
 
     public record Reference(string ResourceName, Guid ReferentialIdGuid);
@@ -101,9 +97,7 @@ public abstract class DatabaseTest : DatabaseTestBase
     {
         return new(
             ResourceInfo: CreateResourceInfo(reference.ResourceName),
-            DocumentIdentity: (
-                new { DocumentIdentityElements = new List<IDocumentIdentityElement>() }
-            ).ActLike<IDocumentIdentity>(),
+            DocumentIdentity: new([]),
             ReferentialId: new ReferentialId(reference.ReferentialIdGuid)
         );
     }
@@ -112,9 +106,7 @@ public abstract class DatabaseTest : DatabaseTestBase
     {
         return new(
             ResourceInfo: CreateResourceInfo(resourceName),
-            DocumentIdentity: (
-                new { DocumentIdentityElements = new List<IDocumentIdentityElement>() }
-            ).ActLike<IDocumentIdentity>(),
+            DocumentIdentity: new([]),
             ReferentialId: new ReferentialId(referentialIdGuid)
         );
     }

@@ -12,7 +12,7 @@ public record DocumentInfo(
     /// <summary>
     /// The identity elements extracted from the API document
     /// </summary>
-    IDocumentIdentity DocumentIdentity,
+    DocumentIdentity DocumentIdentity,
     /// <summary>
     /// The identity of the API document expressed as a ReferentialId
     /// </summary>
@@ -29,8 +29,4 @@ public record DocumentInfo(
     /// If this document is a subclass, this provides the document superclass identity information.
     /// </summary>
     SuperclassIdentity? SuperclassIdentity
-    /// <summary>
-    /// If this document is a subclass, this provides the document superclass referential id.
-    /// </summary>
-    ReferentialId? SuperclassReferentialId
 );

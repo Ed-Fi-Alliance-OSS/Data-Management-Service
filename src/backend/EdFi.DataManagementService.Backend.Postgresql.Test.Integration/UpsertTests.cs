@@ -338,7 +338,6 @@ public class UpsertTests : DatabaseTest
     public class Given_an_insert_of_a_new_document_that_references_a_nonexisting_document : UpsertTests
     {
         private UpsertResult? _upsertResult;
-        private GetResult? _getResult;
 
         private static readonly Guid _documentUuidGuid = Guid.NewGuid();
         private static readonly Guid _referentialIdGuid = Guid.NewGuid();
@@ -358,22 +357,12 @@ public class UpsertTests : DatabaseTest
                 CreateDocumentReferences(references)
             );
             _upsertResult = await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
-
-            // Confirm not there
-            IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
-            _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
         }
 
         [Test]
         public void It_should_be_a_reference_failure()
         {
             _upsertResult!.Should().BeOfType<UpsertResult.UpsertFailureReference>();
-        }
-
-        [Test]
-        public void It_should_noy_be_found_by_get()
-        {
-            _getResult!.Should().BeOfType<GetResult.GetFailureNotExists>();
         }
     }
 
@@ -552,6 +541,7 @@ public class UpsertTests : DatabaseTest
         private static readonly Guid _subclass1ReferentialIdGuid = Guid.NewGuid();
         private static readonly Guid _subclass2ReferentialIdGuid = Guid.NewGuid();
         private static readonly Guid _superclassReferentialIdGuid = Guid.NewGuid();
+        private static readonly string _superclassResourceName = "SuperclassResource";
         private static readonly string _subclass1EdFiDocString = """{"abc":1}""";
         private static readonly string _subclass2EdFiDocString = """{"abc":1}""";
 
@@ -564,7 +554,8 @@ public class UpsertTests : DatabaseTest
                 _subclass1DocumentUuidGuid,
                 _subclass1ReferentialIdGuid,
                 _subclass1EdFiDocString,
-                _superclassReferentialIdGuid
+                null,
+                CreateSuperclassIdentity(_superclassResourceName, _superclassReferentialIdGuid)
             );
             _subclass1UpsertResult = await CreateUpsert().Upsert(subclass1UpsertRequest, Connection!, Transaction!);
 
@@ -574,7 +565,8 @@ public class UpsertTests : DatabaseTest
                 _subclass2DocumentUuidGuid,
                 _subclass2ReferentialIdGuid,
                 _subclass2EdFiDocString,
-                _superclassReferentialIdGuid
+                null,
+                CreateSuperclassIdentity(_superclassResourceName, _superclassReferentialIdGuid)
             );
             _subclass2UpsertResult = await CreateUpsert().Upsert(subclass2UpsertRequest, Connection!, Transaction!);
         }

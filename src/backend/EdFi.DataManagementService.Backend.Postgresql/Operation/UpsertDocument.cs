@@ -61,35 +61,42 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             transaction
         );
 
-		try {	
-	        if (upsertRequest.DocumentInfo.SuperclassReferentialId != null)
-	        {
-	            await _sqlAction.InsertAlias(
-	                new(
-	                    DocumentPartitionKey: documentPartitionKey,
-	                    DocumentId: newDocumentId,
-	                    ReferentialId: upsertRequest.DocumentInfo.SuperclassReferentialId.Value.Value,
-	                    ReferentialPartitionKey: PartitionKeyFor(upsertRequest.DocumentInfo.SuperclassReferentialId.Value).Value
-	                ),
-	                connection,
-	                transaction
-	            );
-	        }
-		catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.UniqueViolation)
-        {
+        SuperclassIdentity? superclassIdentity = upsertRequest.DocumentInfo.SuperclassIdentity;
 
+        try
+        {
+            if (superclassIdentity != null)
+            {
+                await _sqlAction.InsertAlias(
+                    new(
+                        DocumentPartitionKey: documentPartitionKey,
+                        DocumentId: newDocumentId,
+                        ReferentialId: superclassIdentity.ReferentialId.Value,
+                        ReferentialPartitionKey: PartitionKeyFor(superclassIdentity.ReferentialId).Value
+                    ),
+                    connection,
+                    transaction
+                );
+            }
+        }
+        catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
             _logger.LogInformation(
+                pe,
                 "Failure: alias identity already exists - {TraceId}",
                 upsertRequest.TraceId
             );
 
             return new UpsertResult.UpsertFailureIdentityConflict(
                 upsertRequest.ResourceInfo.ResourceName.Value,
-                upsertRequest.DocumentInfo.DocumentIdentity.DocumentIdentityElements.Select(d =>
-                    new KeyValuePair<string, string>(d.IdentityJsonPath.Value.Substring(d.IdentityJsonPath.Value.LastIndexOf('.') + 1), d.IdentityValue)
+                upsertRequest.DocumentInfo.DocumentIdentity.DocumentIdentityElements.Select(
+                    d => new KeyValuePair<string, string>(
+                        d.IdentityJsonPath.Value.Substring(d.IdentityJsonPath.Value.LastIndexOf('.') + 1),
+                        d.IdentityValue
+                    )
                 )
             );
-		}
+        }
 
         DocumentReference[] documentReferences = upsertRequest.DocumentInfo.DocumentReferences;
 
