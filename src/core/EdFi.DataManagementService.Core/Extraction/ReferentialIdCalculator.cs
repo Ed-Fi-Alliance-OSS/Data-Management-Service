@@ -5,7 +5,6 @@
 
 using Be.Vlaanderen.Basisregisters.Generators.Guid;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Model;
 
 namespace EdFi.DataManagementService.Core.Extraction;
 
@@ -35,7 +34,7 @@ internal static class ReferentialIdCalculator
         return string.Join(
             "#",
             documentIdentity.DocumentIdentityElements.Select(
-                (IDocumentIdentityElement element) =>
+                (DocumentIdentityElement element) =>
                     $"${element.IdentityJsonPath.Value}=${element.IdentityValue}"
             )
         );

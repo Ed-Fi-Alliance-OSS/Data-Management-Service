@@ -15,7 +15,7 @@ public record DocumentReference(
     /// <summary>
     /// The document identity representing this reference.
     /// </summary>
-    IDocumentIdentity DocumentIdentity,
+    DocumentIdentity DocumentIdentity,
     /// <summary>
     /// The referentialId derived from the DocumentIdentity
     /// </summary>

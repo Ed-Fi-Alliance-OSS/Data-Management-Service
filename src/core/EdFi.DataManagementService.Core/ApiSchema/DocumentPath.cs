@@ -5,7 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
-using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.ApiSchema;
 
