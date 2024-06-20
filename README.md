@@ -31,7 +31,7 @@ will replace [Ed-Fi ODS/API 7.x](https://techdocs.ed-fi.org/x/UQSUCg).
 - [Running in Local Context](./docs/RUNNING-LOCALLY.md)
 - [Configuration](./docs/CONFIGURATION.md)
 - [Docker](./docs/DOCKER.md)
-- [Reference-Validation](./docs/REFERENCE-VALIDATION.md)
+- [Removing reference validation](./docs/REFERENCE-VALIDATION.md)
 
 ## Legal Information
 
