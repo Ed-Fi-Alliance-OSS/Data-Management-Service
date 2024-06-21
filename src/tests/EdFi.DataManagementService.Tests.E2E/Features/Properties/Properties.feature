@@ -30,7 +30,7 @@ Feature: Validate Extra Properties are being removed
                   """
 
         @properties
-        Scenario: Validate extra properties are being removed on POST
+        Scenario: 01 Validate extra properties are being removed on POST
              When a GET request is made to "ed-fi/academicWeeks/{id}"
              Then it should respond with 200
               And the response body is
@@ -48,7 +48,7 @@ Feature: Validate Extra Properties are being removed
                   """
 
         @properties
-        Scenario: Validate extra properties are being removed on PUT
+        Scenario: 02 Validate extra properties are being removed on PUT
              When a PUT request is made to "ed-fi/academicWeeks/{id}" with
                   """
                   {

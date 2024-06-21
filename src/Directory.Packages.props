@@ -49,5 +49,6 @@
     <PackageVersion Include="Reqnroll" Version="2.0.3" />
     <PackageVersion Include="Reqnroll.NUnit" Version="2.0.3" />
     <PackageVersion Include="Testcontainers" Version="3.8.0" />
+    <PackageVersion Include="Allure.Reqnroll" Version="2.12.1"/>
   </ItemGroup>
 </Project>

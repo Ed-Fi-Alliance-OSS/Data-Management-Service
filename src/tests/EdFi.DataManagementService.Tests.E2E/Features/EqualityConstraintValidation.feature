@@ -7,7 +7,7 @@ Feature: Equality Constraint Validation
         }
     ]
 
-        Scenario: Post a valid bell schedule no equality constraint violations.
+        Scenario: 01 Post a valid bell schedule no equality constraint violations.
              When a POST request is made to "ed-fi/bellschedules" with
                   """
                   {
@@ -36,7 +36,7 @@ Feature: Equality Constraint Validation
                   """
              Then it should respond with 201 or 200
 
-        Scenario: Post an invalid bell schedule with equality constraint violations.
+        Scenario: 02 Post an invalid bell schedule with equality constraint violations.
              When a POST request is made to "ed-fi/bellschedules" with
                   """
                   {
@@ -69,7 +69,7 @@ Feature: Equality Constraint Validation
                   {"detail":"The request could not be processed. See 'errors' for details.","type":"urn:ed-fi:api:bad-request","title":"Bad Request","status":400,"correlationId":null,"validationErrors":null,"errors":["Constraint failure: document paths $.classPeriods[*].classPeriodReference.schoolId and $.schoolReference.schoolId must have the same values"]}
                   """
 
-        Scenario: Making a Post request when value does not match the same value in an array
+        Scenario: 03 Making a Post request when value does not match the same value in an array
              When a POST request is made to "ed-fi/sections" with
                   """
                   {
@@ -106,7 +106,7 @@ Feature: Equality Constraint Validation
                   }
                   """
 
-        Scenario: Making a Post request when a value matches the first scenario in an array but not the second
+        Scenario: 04 Making a Post request when a value matches the first scenario in an array but not the second
              When a POST request is made to "ed-fi/sections" with
                   """
                   {
@@ -150,7 +150,7 @@ Feature: Equality Constraint Validation
                   """
 
         @ignore
-        Scenario: Making a Post request when value does not match the same value in a single other reference
+        Scenario: 05 Making a Post request when value does not match the same value in a single other reference
              When a POST request is made to "ed-fi/sections" with
                   """
                   {

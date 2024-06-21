@@ -5,7 +5,7 @@ Feature: Resources "Create" Operation validations
             Given the Data Management Service must receive a token issued by "http://localhost"
               And user is already authorized
 
-        Scenario: Verify new resource can be created successfully
+        Scenario: 01 Verify new resource can be created successfully
              When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                   {
@@ -37,7 +37,7 @@ Feature: Resources "Create" Operation validations
                   }
                   """
 
-        Scenario: Verify error handling with POST using invalid data
+        Scenario: 02 Verify error handling with POST using invalid data
              When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
@@ -67,7 +67,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         @ignore
-        Scenario: Verify error handling with POST using invalid data Forbidden
+        Scenario: 03 Verify error handling with POST using invalid data Forbidden
              When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
@@ -89,7 +89,7 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
-        Scenario: Verify error handling with POST using empty body
+        Scenario: 04 Verify error handling with POST using empty body
              When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
@@ -120,7 +120,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         @ignore
-        Scenario: Verify error handling with POST using blank spaces in the required fields
+        Scenario: 05 Verify error handling with POST using blank spaces in the required fields
              When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
@@ -156,7 +156,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         @ignore
-        Scenario: Verify POST of existing record without changes
+        Scenario: 06 Verify POST of existing record without changes
             Given a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
@@ -187,7 +187,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         @ignore
-        Scenario: Verify POST of existing record (change non-key field) works
+        Scenario: 07 Verify POST of existing record (change non-key field) works
              When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
@@ -200,7 +200,7 @@ Feature: Resources "Create" Operation validations
              Then it should respond with 200
 
         @ignore
-        Scenario: Verify error handling when resource ID is included in body on POST
+        Scenario: 08 Verify error handling when resource ID is included in body on POST
             # The id value should be replaced with the resource created in the Background section
              When a POST request is made to "ed-fi/absenceEventCategoryDescriptors/" with
                   """
