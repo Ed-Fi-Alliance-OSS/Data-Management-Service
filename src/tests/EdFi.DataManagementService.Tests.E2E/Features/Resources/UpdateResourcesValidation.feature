@@ -258,3 +258,14 @@ Feature: Resources "Update" Operation validations
                 }
                 """
             Then it should respond with 204
+            And the record can be retrieved with a GET request
+            """
+            {
+                "id": "{id}",
+                "contentIdentifier": "Testing",
+                "namespace": "Testing PUT",
+                "learningStandardReference": {
+                    "learningStandardId": "Testing"
+                }
+            }
+            """
