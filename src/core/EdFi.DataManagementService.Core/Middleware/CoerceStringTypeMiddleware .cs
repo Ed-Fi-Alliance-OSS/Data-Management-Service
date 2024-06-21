@@ -22,14 +22,20 @@ namespace EdFi.DataManagementService.Core.Middleware
 
             foreach (var path in context.ResourceSchema.BooleanJsonPaths.Select(path => path.Value))
             {
-                var jsonNode = context.ParsedBody.SelectNodeFromPath(path, _logger);
-                jsonNode?.TryCoerceBooleanToBoolean();
+                var jsonNodes = context.ParsedBody.SelectNodesFromArrayPath(path, _logger);
+                foreach (var jsonNode in jsonNodes)
+                {
+                    jsonNode.TryCoerceBooleanToBoolean();
+                }
             }
 
             foreach (var path in context.ResourceSchema.NumericJsonPaths.Select(path => path.Value))
             {
-                var jsonNode = context.ParsedBody.SelectNodeFromPath(path, _logger);
-                jsonNode?.TryCoerceStringToNumber();
+                var jsonNodes = context.ParsedBody.SelectNodesFromArrayPath(path, _logger);
+                foreach (var jsonNode in jsonNodes)
+                {
+                    jsonNode.TryCoerceStringToNumber();
+                }
             }
 
             await next();

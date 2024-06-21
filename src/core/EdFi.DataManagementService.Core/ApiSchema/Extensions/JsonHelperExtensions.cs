@@ -237,9 +237,9 @@ internal static class JsonHelperExtensions
             }
             else
             {
-                if (int.TryParse(stringValue, out int intValue))
+                if (long.TryParse(stringValue, out long longValue))
                 {
-                    jsonNode.ReplaceWith(intValue);
+                    jsonNode.ReplaceWith(longValue);
                 }
             }
         }
