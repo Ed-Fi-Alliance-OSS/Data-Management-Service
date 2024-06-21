@@ -6,6 +6,7 @@
 using Microsoft.Extensions.Logging;
 using System.Text.Json.Nodes;
 using Json.Path;
+using System.Text.Json;
 
 namespace EdFi.DataManagementService.Core.ApiSchema.Extensions;
 
@@ -194,5 +195,53 @@ internal static class JsonHelperExtensions
         JsonValue? resultNode =
             jsonNode[jsonPathString]?.AsValue() ?? throw new InvalidOperationException(errorMessage);
         return resultNode.GetValue<T>();
+    }
+
+    /// <summary>
+    /// Helper to replace a boolean data type that was submitted as a string with its actual
+    /// boolean value. Does not handle parsing failures as these will be dealt with in validation.
+    /// </summary>
+    /// <param name="jsonNode"></param>
+    public static void TryCoerceBooleanToBoolean(this JsonNode jsonNode)
+    {
+        var jsonValue = jsonNode.AsValue();
+        if (jsonValue.GetValueKind() == JsonValueKind.String)
+        {
+            // Boolean value was submitted as string, must fix.
+            string stringValue = jsonValue.GetValue<string>();
+            if (Boolean.TryParse(stringValue, out bool booleanValue))
+            {
+                jsonNode.ReplaceWith(booleanValue);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Helper to replace a numeric data type that was submitted as a string with its actual
+    /// numeric value. Does not handle parsing failures as these will be dealt with in validation.
+    /// </summary>
+    /// <param name="jsonNode"></param>
+    public static void TryCoerceStringToNumber(this JsonNode jsonNode)
+    {
+        var jsonValue = jsonNode.AsValue();
+        if (jsonValue.GetValueKind() == JsonValueKind.String)
+        {
+            // Numeric value was passed in as string, must fix.
+            string stringValue = jsonValue.GetValue<string>();
+            if (stringValue.Contains('.'))
+            {
+                if (decimal.TryParse(stringValue, out decimal decimalValue))
+                {
+                    jsonNode.ReplaceWith(decimalValue);
+                }
+            }
+            else
+            {
+                if (long.TryParse(stringValue, out long longValue))
+                {
+                    jsonNode.ReplaceWith(longValue);
+                }
+            }
+        }
     }
 }

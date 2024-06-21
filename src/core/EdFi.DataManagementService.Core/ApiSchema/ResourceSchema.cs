@@ -159,6 +159,40 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
     /// </summary>
     public IEnumerable<JsonPath> IdentityJsonPaths => _identityJsonPaths.Value;
 
+    private readonly Lazy<IEnumerable<JsonPath>> _booleanJsonPaths =
+        new(() =>
+        {
+            return _resourceSchemaNode["booleanJsonPaths"]
+                    ?.AsArray()
+                    .GetValues<string>()
+                    .Select(x => new JsonPath(x))
+                ?? throw new InvalidOperationException(
+                    "Expected booleanJsonPaths to be on ResourceSchema, invalid ApiSchema"
+                );
+        });
+
+    /// <summary>
+    /// An ordered list of the JsonPaths that are of type boolean, for use in type coercion
+    /// </summary>
+    public IEnumerable<JsonPath> BooleanJsonPaths => _booleanJsonPaths.Value;
+
+    private readonly Lazy<IEnumerable<JsonPath>> _numericJsonPaths =
+        new(() =>
+        {
+            return _resourceSchemaNode["numericJsonPaths"]
+                       ?.AsArray()
+                       .GetValues<string>()
+                       .Select(x => new JsonPath(x))
+                   ?? throw new InvalidOperationException(
+                       "Expected numericJsonPaths to be on ResourceSchema, invalid ApiSchema"
+                   );
+        });
+
+    /// <summary>
+    /// An ordered list of the JsonPaths that are of type boolean, for use in type coercion
+    /// </summary>
+    public IEnumerable<JsonPath> NumericJsonPaths => _numericJsonPaths.Value;
+
     private readonly Lazy<IEnumerable<DocumentPath>> _documentPaths =
         new(() =>
         {

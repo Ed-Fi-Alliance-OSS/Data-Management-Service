@@ -8,8 +8,8 @@
     <PackageVersion Include="dbup-core" Version="5.0.87" />
     <PackageVersion Include="dbup-postgresql" Version="5.0.40" />
     <PackageVersion Include="dbup-sqlserver" Version="5.0.40" />
-    <PackageVersion Include="EdFi.ApiSchema" Version="5.1.0-alpha.0" />
-    <PackageVersion Include="Microsoft.CodeAnalysis" Version="4.9.2" />
+    <PackageVersion Include="Microsoft.CodeAnalysis" Version="4.10.0" />
+    <PackageVersion Include="EdFi.ApiSchema" Version="5.1.0-alpha.2" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.CodeStyle" Version="4.9.2" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.1" />
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="8.0.0" />
@@ -21,11 +21,11 @@
     <PackageVersion Include="Respawn" Version="6.2.1" />
     <PackageVersion Include="Serilog" Version="4.0.0" />
     <PackageVersion Include="Serilog.Extensions.Logging" Version="8.0.0" />
-    <PackageVersion Include="Serilog.Settings.Configuration" Version="8.0.0" />
-    <PackageVersion Include="Serilog.Sinks.Console" Version="5.0.1" />
+    <PackageVersion Include="Serilog.Settings.Configuration" Version="8.0.1" />
+    <PackageVersion Include="Serilog.Sinks.Console" Version="6.0.0" />
     <PackageVersion Include="Serilog.Sinks.File" Version="5.0.0" />
     <PackageVersion Include="SonarAnalyzer.CSharp" Version="9.26.0.92422" />
-    <PackageVersion Include="JsonSchema.Net" Version="7.0.2" />
+    <PackageVersion Include="JsonSchema.Net" Version="7.0.4" />
     <PackageVersion Include="JsonPath.Net" Version="1.1.0" />
   </ItemGroup>
   <!-- Testing Packages -->
@@ -46,8 +46,8 @@
     <PackageVersion Include="NUnit" Version="4.1.0" />
     <PackageVersion Include="NUnit3TestAdapter" Version="4.5.0" />
     <PackageVersion Include="NUnit.Analyzers" Version="4.2.0" />
-    <PackageVersion Include="Reqnroll" Version="2.0.2" />
-    <PackageVersion Include="Reqnroll.NUnit" Version="2.0.2" />
+    <PackageVersion Include="Reqnroll" Version="2.0.3" />
+    <PackageVersion Include="Reqnroll.NUnit" Version="2.0.3" />
     <PackageVersion Include="Testcontainers" Version="3.8.0" />
   </ItemGroup>
 </Project>

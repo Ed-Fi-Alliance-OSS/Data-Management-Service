@@ -1,0 +1,108 @@
+Feature: Validation of DELETE requests that would cause a foreign key violation
+
+        Background:
+            Given this School Year exists
+                  | schoolYear | currentSchoolYear | schoolYearDescription |
+                  | 2022       | false             | 2021-2022             |
+              And this Calendar exists
+                  | calendarCode | schoolId  | schoolYear | calendarTypeDescriptor |
+                  | 2010605675   | 255901107 | 2022       | ["Student Specific"]   |
+              And this School exists
+                  | educationOrganizationCategoryDescriptor | gradeLevels     | schoolId  | nameOfInstitution            |
+                  | ["School"]                              | ["First grade"] | 255901107 | Grand Bend Elementary School |
+              And this Education Organization Category Descriptor exists
+                  | codeValue | namespace                                               | shortDescription |
+                  | School    | uri://ed-fi.org/EducationOrganizationCategoryDescriptor | School           |
+              And this Student exists
+                  | studentUniqueId | birthDate  | firstName | lastSurname |
+                  | 604824          | 2010-01-13 | Traci     | Mathews     |
+              And this Local Education Agency exists
+                  | educationOrganizationCategoryDescriptor | localEducationAgencyId | localEducationAgencyCategoryDescriptor | nameOfInstitution |
+                  | ["School"]                              | 255901                 | ["Independent"]                        | Grand Bend ISD    |
+              And this program exists
+                  | programName                    | programTypeDescriptor              | educationOrganizationId |
+                  | Career and Technical Education | ["Career and Technical Education"] | 255901                  |
+              And this Student Program Association exists
+                  | beginDate  | educationOrganizationId | programName                    | programTypeDescriptor              | studentUniqueId |
+                  | 2024-06-20 | 255901                  | Career and Technical Education | ["Career and Technical Education"] | 604824          |
+
+        @ignore
+        Scenario: Ensure clients cannot delete a year that is used by another item
+            Given School Year 2022
+              # set value to <{id}>
+             When a DELETE request is made to "ed-fi/schoolYearTypes/{id}"
+             Then it should respond with 409
+              And the response body is
+                  """
+                  {
+                      "detail": "The requested action cannot be performed because this item is referenced by an existing 'Calendar' item.",
+                      "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
+                      "title": "Dependent Item Exists",
+                      "status": 409,
+                      "correlationId": null
+                  }
+                  """
+
+        @ignore
+        Scenario: Ensure clients cannot delete a descriptor that is used by another item
+            Given Education Organization Category Descriptor School
+             When a DELETE request is made to "ed-fi/educationOrganizationCategoryDescriptors/{id}"
+             Then it should respond with 409
+              And the response body is
+                  """
+                  {
+                      "detail": "The requested action cannot be performed because this item is referenced by an existing 'School' item.",
+                      "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
+                      "title": "Dependent Item Exists",
+                      "status": 409,
+                      "correlationId": null
+                  }
+                  """
+
+        @ignore
+        Scenario: Ensure clients cannot delete a dependent element for an item
+            Given Student 604824
+             When a DELETE request is made to "ed-fi/students/{id}"
+             Then it should respond with 409
+              And the response body is
+                  """
+                  {
+                      "detail": "The requested action cannot be performed because this item is referenced by an existing 'StudentProgramAssociation' item.",
+                      "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
+                      "title": "Dependent Item Exists",
+                      "status": 409,
+                      "correlationId": null
+                  }
+                  """
+
+        @ignore
+        Scenario: Ensure clients cannot delete an element that is reference to an Education Organization that is used by another items
+            Given Local Education Agency 255901
+             When a DELETE request is made to "ed-fi/localEducationAgencies/{id}"
+             Then it should respond with 409
+              And the response body is
+                  """
+                  {
+                      "detail": "The requested action cannot be performed because this item is referenced by an existing 'School' item.",
+                      "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
+                      "title": "Dependent Item Exists",
+                      "status": 409,
+                      "correlationId": null
+                  }
+                  """
+
+        @ignore
+        Scenario: Ensure clients cannot delete a resource that is used by another items
+            Given Program Career and Technical Education
+             When a DELETE request is made to "ed-fi/programs/4dbd101cde9942f09276ebe0628e5096"
+             Then it should respond with 409
+              And the response body is
+                  """
+                  {
+                      "detail": "The requested action cannot be performed because this item is referenced by an existing 'StudentProgramAssociation' item.",
+                      "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
+                      "title": "Dependent Item Exists",
+                      "status": 409,
+                      "correlationId": null
+                  }
+                  """
