@@ -46,7 +46,22 @@ public class ValidateDocumentMiddlewareTests
                         .AdditionalProperties(false)
                 ),
                 ("nameOfInstitution", new JsonSchemaBuilder().Type(SchemaValueType.String)),
-                ("webSite", new JsonSchemaBuilder().Type(SchemaValueType.String).MinLength(5).MaxLength(10))
+                ("webSite", new JsonSchemaBuilder().Type(SchemaValueType.String).MinLength(5).MaxLength(10)),
+                (
+                    "educationOrganizationCategories",
+                    new JsonSchemaBuilder()
+                        .Type(SchemaValueType.Array)
+                        .Items(
+                            new JsonSchemaBuilder()
+                                .Type(SchemaValueType.Object)
+                                .Properties(
+                                    ("educationOrganizationCategoryDescriptor", new JsonSchemaBuilder().Type(SchemaValueType.String))
+                                )
+                                .Required("educationOrganizationCategoryDescriptor")
+                                .AdditionalProperties(false)
+                        )
+                        .MinItems(1)
+                )
             )
             .Required("schoolId", "gradeLevels", "nameOfInstitution");
 
@@ -187,6 +202,64 @@ public class ValidateDocumentMiddlewareTests
         public void It_should_not_have_response()
         {
             _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Request_With_Overposted_Object_Property : ValidateDocumentMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            string jsonData =
+                """{"schoolId": 989, "gradeLevels":{"gradeLevelDescriptor": "grade1", "gradeLevelOverPost": "overPostedValue" },"nameOfInstitution":"school12", "objectOverpost": { "x": "overPostedValue"}, "educationOrganizationCategories":[{"educationOrganizationCategoryDescriptor": "School", "newOverposted":{"objectOverposted":"y"}}]}""";
+
+            var frontEndRequest = new FrontendRequest(
+                "ed-fi/schools",
+                Body: jsonData,
+                QueryParameters: [],
+                new TraceId("traceId")
+            );
+            _context = Context(frontEndRequest, RequestMethod.POST);
+            await Middleware().Execute(_context, Next());
+        }
+
+        [Test]
+        public void It_should_not_have_response()
+        {
+            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+
+        [Test]
+        public void It_should_not_be_equal_than_parsed_body()
+        {
+            _context?.FrontendRequest.Body.Should().NotBe(_context?.ParsedBody.ToJsonString());
+        }
+
+        [Test]
+        public void It_should_not_contain_objectOverpost()
+        {
+            _context?.ParsedBody.ToJsonString().Should().NotContain("\"objectOverpost\": { \"x\": \"overPostedValue\"}");
+        }
+
+        [Test]
+        public void It_should_contain_objectOverpost()
+        {
+            _context?.FrontendRequest.Body.Should().Contain(""""objectOverpost": { "x": "overPostedValue"}"""");
+        }
+
+        [Test]
+        public void It_should_be_correct_parsed_body()
+        {
+            _context?.ParsedBody.ToJsonString().Should().Be("""{"schoolId":989,"gradeLevels":{"gradeLevelDescriptor":"grade1"},"nameOfInstitution":"school12","educationOrganizationCategories":[{"educationOrganizationCategoryDescriptor":"School"}]}""");
+        }
+
+        [Test]
+        public void It_should_not_contain_newOverposted_in_educationOrganizationCategories()
+        {
+            _context?.ParsedBody.ToJsonString().Should().Contain("""educationOrganizationCategories":[{"educationOrganizationCategoryDescriptor":"School"}]""");
         }
     }
 

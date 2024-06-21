@@ -227,6 +227,33 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
+        Scenario: Verify Post when adding a overposting object
+            When a POST request is made to "ed-fi/educationContents" with
+                """
+                {
+                  "contentIdentifier": "Testing",
+                   "namespace": "Testing",
+                  "learningStandardReference": {
+                    "learningStandardId": "Testing"
+                  },
+                   "objectOverpost": {
+                     "x": 1
+                  }
+                }
+                """
+            Then it should respond with 201 or 200
+            And the record can be retrieved with a GET request
+            """
+            {
+                "id": "{id}",
+                "contentIdentifier": "Testing",
+                "namespace": "Testing",
+                "learningStandardReference": {
+                    "learningStandardId": "Testing"
+                }
+            }
+            """
+
         Scenario: Verify POST of numeric and boolean fields as strings are coerced
             # In this example schoolId is numeric and doNotPublishIndicator are boolean, yet posted in quotes as strings
             # In the GET request you can see they are coerced to their proper types
