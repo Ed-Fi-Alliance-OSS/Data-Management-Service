@@ -5,7 +5,7 @@
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0.3-alpine3.19-amd64@sha256:a531d9d123928514405b9da9ff28a3aa81bd6f7d7d8cfb6207b66c007e7b3075 AS runtimebase
 
-RUN apk --no-cache unzip=~6 dos2unix=~7 bash=~5
+RUN apk --no-cache add bash=~5 postgresql16-client=~16 gettext=~0
 
 FROM runtimebase AS setup
 LABEL maintainer="Ed-Fi Alliance, LLC and Contributors <techsupport@ed-fi.org>"
@@ -20,16 +20,37 @@ ENV POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 ENV POSTGRES_PORT=${POSTGRES_PORT}
 ENV POSTGRES_HOST=${POSTGRES_HOST}
 
+ENV NEED_DATABASE_SETUP=${NEED_DATABASE_SETUP}
+ENV POSTGRES_ADMIN_USER=${POSTGRES_ADMIN_USER}
+ENV POSTGRES_ADMIN_PASSWORD=${POSTGRES_ADMIN_PASSWORD}
+
+ENV POSTGRES_PORT=${POSTGRES_PORT}
+ENV POSTGRES_HOST=${POSTGRES_HOST}
+ENV LOG_LEVEL=${LOG_LEVEL}
+
 WORKDIR /app
 
 RUN umask 0077 && \
     wget -O /app/EdFi.DataManagementService.zip "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_apis/packaging/feeds/EdFi/nuget/packages/EdFi.DataManagementService/versions/${VERSION}/content" && \
     unzip /app/EdFi.DataManagementService.zip -d /app/ && \
+    cp -r /app/DataManagementService/. /app/ && \
+    cp -r /app/Installer/. /app/ && \
     rm -f /app/EdFi.DataManagementService.zip && \
-    chmod 777 /app/* -- ** && \
-    dos2unix /app/DataManagementService/*.json && \
-    apk del unzip dos2unix curl
+    rm -r /app/DataManagementService
 
+
+COPY --chmod=600 appsettings.template.json /app/appsettings.template.json
+
+#COPY --from=build /app/EdFi.DataManagementService.Frontend.AspNetCore.dll ./
+#COPY --from=build /app/Installer/*.* ./Installer/
+#COPY --from=build /app/Frontend/ApiSchema/*.json ./ApiSchema/
+#COPY --from=build /app/Frontend/*.pdb ./
+#COPY --from=build /app/Frontend/appsettings.json ./
+#COPY --from=build /app/Frontend/*runtimeconfig.json ./
+#COPY --from=build /app/Frontend/*.deps.json ./
+
+COPY --chmod=700 run.sh /app/run.sh
 EXPOSE ${ASPNETCORE_HTTP_PORTS}
-#CMD ["dotnet", "/app/DataManagementService/EdFi.DataManagementService.Frontend.AspNetCore.dll"]
-ENTRYPOINT [ "dotnet", "/app/DataManagementService/EdFi.DataManagementService.Frontend.AspNetCore.dll"]
+ENTRYPOINT ["/app/run.sh"]
+#ENTRYPOINT [ "dotnet", "/app/EdFi.DataManagementService.Frontend.AspNetCore.dll"]
+
