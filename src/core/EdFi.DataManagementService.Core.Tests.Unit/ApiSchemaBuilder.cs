@@ -180,6 +180,48 @@ public class ApiSchemaBuilder
     }
 
     /// <summary>
+    /// Adds an booleanJsonPaths section to a resource
+    /// </summary>
+    public ApiSchemaBuilder WithBooleanJsonPaths(string[] booleanJsonPaths)
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentResourceNode["booleanJsonPaths"] = new JsonArray(
+            booleanJsonPaths.Select(x => JsonValue.Create(x)).ToArray()
+        );
+
+        return this;
+    }
+
+    /// <summary>
+    /// Adds an numericJsonPaths section to a resource
+    /// </summary>
+    public ApiSchemaBuilder WithNumericJsonPaths(string[] numericJsonPaths)
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentResourceNode["numericJsonPaths"] = new JsonArray(
+            numericJsonPaths.Select(x => JsonValue.Create(x)).ToArray()
+        );
+
+        return this;
+    }
+
+    /// <summary>
     /// Define resource schema. Can only be done inside a project definition.
     /// Always end a resource definition when finished.
     ///

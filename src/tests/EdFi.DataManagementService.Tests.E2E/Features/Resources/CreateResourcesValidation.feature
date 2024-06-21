@@ -226,3 +226,73 @@ Feature: Resources "Create" Operation validations
                         ]
                     }
                   """
+
+        Scenario: Verify POST of numeric and boolean fields as strings are coerced
+            # In this example schoolId is numeric and doNotPublishIndicator are boolean, yet posted in quotes as strings
+            # In the GET request you can see they are coerced to their proper types
+             When a POST request is made to "ed-fi/schools/" with
+                  """
+                  {
+                      "schoolId": "99",
+                      "nameOfInstitution": "UT Austin College of Education Graduate",
+                      "addresses": [
+                          {
+                          "addressTypeDescriptor": "uri://ed-fi.org/AddressTypeDescriptor#Physical",
+                          "city": "Austin",
+                          "postalCode": "78712",
+                          "stateAbbreviationDescriptor": "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
+                          "streetNumberName": "1912 Speedway Stop D5000",
+                          "nameOfCounty": "Travis",
+                          "doNotPublishIndicator": "true"
+                          }
+                      ],
+                      "educationOrganizationCategories": [
+                          {
+                          "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"
+                          }
+                      ],
+                      "schoolCategories": [],
+                      "gradeLevels": [
+                          {
+                          "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
+                          }
+                      ]
+                    }
+                  """
+             Then it should respond with 201
+              And the response headers includes
+                  """
+                    {
+                        "location": "/ed-fi/schools/{id}"
+                    }
+                  """
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": "{id}",
+                    "schoolId": 99,
+                    "addresses": [
+                        {
+                            "city": "Austin",
+                            "postalCode": "78712",
+                            "nameOfCounty": "Travis",
+                            "streetNumberName": "1912 Speedway Stop D5000",
+                            "addressTypeDescriptor": "uri://ed-fi.org/AddressTypeDescriptor#Physical",
+                            "doNotPublishIndicator": true,
+                            "stateAbbreviationDescriptor": "uri://ed-fi.org/StateAbbreviationDescriptor#TX"
+                        }
+                    ],
+                    "gradeLevels": [
+                        {
+                            "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
+                        }
+                    ],
+                    "schoolCategories": [],
+                    "nameOfInstitution": "UT Austin College of Education Graduate",
+                    "educationOrganizationCategories": [
+                        {
+                            "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"
+                        }
+                    ]
+                  }
+                  """
