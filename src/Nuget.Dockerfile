@@ -34,23 +34,13 @@ RUN umask 0077 && \
     wget -O /app/EdFi.DataManagementService.zip "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_apis/packaging/feeds/EdFi/nuget/packages/EdFi.DataManagementService/versions/${VERSION}/content" && \
     unzip /app/EdFi.DataManagementService.zip -d /app/ && \
     cp -r /app/DataManagementService/. /app/ && \
-    cp -r /app/Installer/. /app/ && \
+    cp -r /app/Installer/. /app/. && \
     rm -f /app/EdFi.DataManagementService.zip && \
     rm -r /app/DataManagementService
 
-
+#COPY --from=setup /app/Installer/*.* ./Installer/
 COPY --chmod=600 appsettings.template.json /app/appsettings.template.json
-
-#COPY --from=build /app/EdFi.DataManagementService.Frontend.AspNetCore.dll ./
-#COPY --from=build /app/Installer/*.* ./Installer/
-#COPY --from=build /app/Frontend/ApiSchema/*.json ./ApiSchema/
-#COPY --from=build /app/Frontend/*.pdb ./
-#COPY --from=build /app/Frontend/appsettings.json ./
-#COPY --from=build /app/Frontend/*runtimeconfig.json ./
-#COPY --from=build /app/Frontend/*.deps.json ./
 
 COPY --chmod=700 run.sh /app/run.sh
 EXPOSE ${ASPNETCORE_HTTP_PORTS}
 ENTRYPOINT ["/app/run.sh"]
-#ENTRYPOINT [ "dotnet", "/app/EdFi.DataManagementService.Frontend.AspNetCore.dll"]
-
