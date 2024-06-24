@@ -5,13 +5,15 @@
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0.3-alpine3.19-amd64@sha256:a531d9d123928514405b9da9ff28a3aa81bd6f7d7d8cfb6207b66c007e7b3075 AS runtimebase
 
-RUN apk --no-cache add bash=~5 postgresql16-client=~16 gettext=~0
-
-FROM runtimebase AS setup
 LABEL maintainer="Ed-Fi Alliance, LLC and Contributors <techsupport@ed-fi.org>"
 
+RUN apk --no-cache add bash=~5 gettext=~0 postgresql16-client=~16
+
+FROM runtimebase AS setup
+
 ENV LOG_LEVEL=${LOG_LEVEL}
-ARG VERSION=0.0.0-alpha.0.108
+#replace with latest
+ARG VERSION=0.0.0-alpha.0.113
 ENV ASPNETCORE_HTTP_PORTS=8080
 
 ENV POSTGRES_USER=${POSTGRES_USER}
@@ -30,15 +32,13 @@ ENV LOG_LEVEL=${LOG_LEVEL}
 
 WORKDIR /app
 
-RUN umask 0077 && \
-    wget -O /app/EdFi.DataManagementService.zip "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_apis/packaging/feeds/EdFi/nuget/packages/EdFi.DataManagementService/versions/${VERSION}/content" && \
+RUN wget -O /app/EdFi.DataManagementService.zip "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_apis/packaging/feeds/EdFi/nuget/packages/EdFi.DataManagementService/versions/${VERSION}/content" && \
     unzip /app/EdFi.DataManagementService.zip -d /app/ && \
     cp -r /app/DataManagementService/. /app/ && \
     cp -r /app/Installer/. /app/. && \
     rm -f /app/EdFi.DataManagementService.zip && \
     rm -r /app/DataManagementService
 
-#COPY --from=setup /app/Installer/*.* ./Installer/
 COPY --chmod=600 appsettings.template.json /app/appsettings.template.json
 
 COPY --chmod=700 run.sh /app/run.sh
