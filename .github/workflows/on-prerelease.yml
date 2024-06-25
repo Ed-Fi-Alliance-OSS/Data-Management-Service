@@ -15,6 +15,9 @@ env:
   VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
   MANIFEST_FILE: "_manifest/spdx_2.2/manifest.spdx.json"
   PACKAGE_NAME: "EdFi.DataManagementService"
+  IMAGE_NAME: ${{ vars.IMAGE_NAME }}
+  DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME }}
+  DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
   REF: ${{ github.ref_name }}
 
 permissions: read-all
@@ -210,13 +213,72 @@ jobs:
 
       - name: Push Package to Azure Artifacts
         run: |
-          $artifact = (Get-ChildItem -Path $_ -Name -Include *.nupkg)
-            $arguments = @{
-              NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
-              EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-            }
+         $artifact = (Get-ChildItem -Path $_ -Name -Include *.nupkg)
+         $arguments = @{
+           EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
+           NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+         }
 
-            $artifact | ForEach-Object {
-                $arguments.PackageFile = $_
-                ./build.ps1 Push @arguments
-            }
+         $artifact | ForEach-Object {
+             $arguments.PackageFile = $_
+             ./build.ps1 Push @arguments
+          }
+
+  docker-publish:
+    name: Publish to Docker Hub
+    runs-on: ubuntu-latest
+    needs:
+      - publish-package
+    steps:
+      - name: Wait 20s
+        # Give Azure Artifacts caching a moment to catch up
+        run: sleep 20
+
+      - name: Prepare Tags
+        id: prepare-tags
+        run: |
+          REF="${{ env.REF }}"
+          PACKAGEVERSION=${REF}
+
+          if [[ $PACKAGEVERSION =~ "alpha" ]]
+          then
+            # Pre-releases get the tag "pre"
+            DMSTAGS="${{ env.IMAGE_NAME }}:pre"
+          else
+            # Releases get the version, plus shortened form for minor release.
+            # We are not using shortened form for major or using "latest"
+            # because they are too imprecise.
+            MINOR=`echo ${PACKAGEVERSION} | awk -F"." '{print $1"."$2}'`
+            DMSTAGS="${{ env.IMAGE_NAME }}:${PACKAGEVERSION},${{ env.IMAGE_NAME }}:${MINOR}"
+          fi
+
+          SEMVERSION=${PACKAGEVERSION}  # strip off the leading 'v'
+          echo "DMSTAGS=$DMSTAGS" >> $GITHUB_OUTPUT
+          echo "VERSION=$SEMVERSION" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226  # v3.0.0
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d  # v3.0.0
+        with:
+          username: ${{ env.DOCKER_USERNAME }}
+          password: ${{ env.DOCKER_HUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Data Management Service image
+        id: metadatamanagementservice
+        uses: docker/metadata-action@96383f45573cb7f253c731d3b3ab81c87ef81934  # v5.0.0
+        with:
+          images: ${{ env.IMAGE_NAME }}
+
+      - name: Build and push DMS image
+        uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09  # v5.0.0
+        with:
+          context: "{{defaultContext}}:src"
+          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:pre
+          cache-to: type=inline
+          build-args: VERSION=${{ steps.prepare-tags.outputs.VERSION }}
+          file: Nuget.Dockerfile
+          tags: ${{ steps.prepare-tags.outputs.DMSTAGS }}
+          labels: ${{ steps.metadatamanagementservice.outputs.labels }}
+          push: true

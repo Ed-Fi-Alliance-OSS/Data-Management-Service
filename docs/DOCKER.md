@@ -3,10 +3,11 @@
 ## Dockerfile
 
 The [Dockerfile](../src/Dockerfile) in `src` builds the Ed-Fi Data Management
-Service (DMS) from source code. It includes both the API application and the
-database installer. This is primarily used in local and end-to-end testing; a
-future production release of a DMS image will be built from pre-compiled NuGet
-packages, rather than being built from source code.
+Service (DMS) image directly from source code, and [Nuget.Dockerfile](../src/Nuget.Dockerfile)
+build the image from the pre-built NuGet packages. Both versions include both the API
+application and the database installer. The source code version is primarily used in local and 
+end-to-end testing; the NuGet package version is intended for production-like environments
+and for publishing to [Docker Hub](https://hub.docker.com/u/edfialliance).
 
 The runtime base image is `mcr.microsoft.com/dotnet/aspnet` on Alpine, running
 .NET 8. This image is maintained by Microsoft and considered trusted. Use of the
@@ -34,6 +35,7 @@ POSTGRES_PASSWORD=<Non-admin user password>
 POSTGRES_PORT=<Port for postgres server Eg. 5432>
 POSTGRES_HOST=<DNS or IP address of the PostgreSQL Server, i.e. sql.somedns.org Eg. 172.25.32.1>
 LOG_LEVEL=<serilog log level i.e. Information>
+OAUTH_TOKEN_ENDPOINT=<Authentication service url>
 ```
 
 For example, you might have a `.env` file like the following:
@@ -47,6 +49,7 @@ POSTGRES_PASSWORD=P@ssw0rd
 POSTGRES_PORT=5432
 POSTGRES_HOST=localhost
 LOG_LEVEL=Information
+OAUTH_TOKEN_ENDPOINT=http://localhost:8080/oauth/token
 ```
 
 ## Orchestration
