@@ -49,18 +49,15 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
                       }
                   }
                   """
-             Then it should respond with 403
+             Then it should respond with 409
               And the response body is
                   """
                   {
-                      "detail": "Access to the requested data could not be authorized.",
-                      "type": "urn:ed-fi:api:security:authorization",
-                      "title": "Authorization Denied",
-                      "status": 403,
-                      "correlationId": null,
-                      "errors": [
-                          "No relationships have been established between the caller's education organization id claims (255901, 19255901) and the resource item's 'EducationOrganizationId' value."
-                      ]
+                      "detail": "The referenced 'educationOrganizationId' resource does not exist.",
+                      "type": "urn:ed-fi:api:conflict:invalid-reference",
+                      "title": "Resource Not Unique Conflict due to invalid-reference",
+                      "status": 409,
+                      "correlationId": null
                   }
                   """
         @ignore
@@ -93,16 +90,23 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
                       }
                   }
                   """
-             Then it should respond with 40
+             Then it should respond with 409
                   """
+                  {
+                      "detail": "The referenced 'educationOrganizationId' resource does not exist.",
+                      "type": "urn:ed-fi:api:conflict:invalid-reference",
+                      "title": "Resource Not Unique Conflict due to invalid-reference",
+                      "status": 409,
+                      "correlationId": null
+                  }
                   """
 
         @ignore
         Scenario: Ensure clients cannot delete and existing Education Organization that is referenced to a Program
             Given localEducationAgencyId 101
-            #
+            #set value to {id}
              When a DELETE request is made to "ed-fi/localEducationAgencies/{id}"
-             Then it sohould respond with 409
+             Then it should respond with 409
               And the response body is
                   """
                   {
