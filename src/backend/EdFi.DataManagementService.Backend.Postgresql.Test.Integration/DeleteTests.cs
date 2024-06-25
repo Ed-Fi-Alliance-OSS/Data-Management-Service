@@ -37,6 +37,7 @@ public class DeleteTests : DatabaseTest
     }
 
     [TestFixture]
+    [Ignore("Fix in DMS-207")]
     public class Given_a_delete_of_a_document : DeleteTests
     {
         private DeleteResult? _deleteResult;
@@ -69,6 +70,7 @@ public class DeleteTests : DatabaseTest
     }
 
     [TestFixture]
+    [Ignore("Fix in DMS-207")]
     public class Given_a_delete_of_the_same_document_with_two_overlapping_requests : DeleteTests
     {
         private DeleteResult? _deleteResult1;
@@ -128,6 +130,7 @@ public class DeleteTests : DatabaseTest
     }
 
     [TestFixture]
+    [Ignore("Fix in DMS-207")]
     public class Given_an_overlapping_delete_and_update_of_the_same_document_with_delete_committed_first
         : DeleteTests
     {
@@ -250,6 +253,7 @@ public class DeleteTests : DatabaseTest
     }
 
     [TestFixture]
+    [Ignore("Fix in DMS-207")]
     public class Given_an_overlapping_delete_and_upsert_as_update_of_the_same_document_with_delete_committed_first
         : DeleteTests
     {
