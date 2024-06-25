@@ -7,7 +7,7 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0.3-alpine3.19-amd64@sha256:a531d9d123928
 
 LABEL maintainer="Ed-Fi Alliance, LLC and Contributors <techsupport@ed-fi.org>"
 
-RUN apk --no-cache add bash=~5 gettext=~0 postgresql16-client=~16
+RUN apk --no-cache add gettext=~0 postgresql16-client=~16
 
 FROM runtimebase AS setup
 
@@ -43,4 +43,4 @@ COPY --chmod=600 appsettings.template.json /app/appsettings.template.json
 
 COPY --chmod=700 run.sh /app/run.sh
 EXPOSE ${ASPNETCORE_HTTP_PORTS}
-ENTRYPOINT ["/app/run.sh"]
+ENTRYPOINT ["/bin/ash","/app/run.sh"]
