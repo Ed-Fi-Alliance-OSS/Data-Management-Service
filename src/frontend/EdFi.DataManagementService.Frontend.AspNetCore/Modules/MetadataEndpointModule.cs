@@ -22,9 +22,9 @@ public partial class MetadataEndpointModule : IEndpointModule
 
     private readonly SpecificationSection[] Sections =
     [
-        new SpecificationSection("resources", string.Empty),
-        new SpecificationSection("descriptors", string.Empty),
-        new SpecificationSection("discovery", "Other")
+        new SpecificationSection("Resources", string.Empty),
+        new SpecificationSection("Descriptors", string.Empty),
+        new SpecificationSection("Discovery", "Other")
     ];
 
     private readonly string ErrorResourcePath = "Invalid resource path";

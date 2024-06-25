@@ -3,13 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using Microsoft.Extensions.Logging;
-using EdFi.DataManagementService.Core.Pipeline;
-using static EdFi.DataManagementService.Core.External.Backend.DeleteResult;
-using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.Pipeline;
+using Microsoft.Extensions.Logging;
+using static EdFi.DataManagementService.Core.External.Backend.DeleteResult;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
@@ -40,9 +40,10 @@ internal class DeleteByIdHandler(IDocumentStoreRepository _documentStoreReposito
 
         context.FrontendResponse = result switch
         {
-            DeleteSuccess => new FrontendResponse(StatusCode: 200, Body: null, Headers: []),
+            DeleteSuccess => new FrontendResponse(StatusCode: 204, Body: null, Headers: []),
             DeleteFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
-            DeleteFailureReference failure => new FrontendResponse(StatusCode: 409, Body: failure.ReferencingDocumentInfo, Headers: []),
+            DeleteFailureReference failure
+                => new FrontendResponse(StatusCode: 409, Body: failure.ReferencingDocumentInfo, Headers: []),
             DeleteFailureWriteConflict => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),
             UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage, Headers: []),
             _ => new(StatusCode: 500, Body: "Unknown DeleteResult", Headers: [])
