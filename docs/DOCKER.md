@@ -34,6 +34,7 @@ POSTGRES_PASSWORD=<Non-admin user password>
 POSTGRES_PORT=<Port for postgres server Eg. 5432>
 POSTGRES_HOST=<DNS or IP address of the PostgreSQL Server, i.e. sql.somedns.org Eg. 172.25.32.1>
 LOG_LEVEL=<serilog log level i.e. Information>
+OAUTH_TOKEN_ENDPOINT=<Authentication service url>
 ```
 
 For example, you might have a `.env` file like the following:
@@ -47,6 +48,7 @@ POSTGRES_PASSWORD=P@ssw0rd
 POSTGRES_PORT=5432
 POSTGRES_HOST=localhost
 LOG_LEVEL=Information
+OAUTH_TOKEN_ENDPOINT=http://localhost:8080/oauth/token
 ```
 
 ## Orchestration

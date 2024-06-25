@@ -12,8 +12,7 @@ RUN apk --no-cache add gettext=~0 postgresql16-client=~16
 FROM runtimebase AS setup
 
 ENV LOG_LEVEL=${LOG_LEVEL}
-#replace with latest
-ARG VERSION=0.0.0-alpha.0.113
+ARG VERSION=0.0.0
 ENV ASPNETCORE_HTTP_PORTS=8080
 ENV OAUTH_TOKEN_ENDPOINT=${OAUTH_TOKEN_ENDPOINT}
 
@@ -32,6 +31,8 @@ ENV POSTGRES_HOST=${POSTGRES_HOST}
 ENV LOG_LEVEL=${LOG_LEVEL}
 
 WORKDIR /app
+
+RUN echo "Tag Version:" $VERSION
 
 RUN wget -O /app/EdFi.DataManagementService.zip "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_apis/packaging/feeds/EdFi/nuget/packages/EdFi.DataManagementService/versions/${VERSION}/content" && \
     unzip /app/EdFi.DataManagementService.zip -d /app/ && \
