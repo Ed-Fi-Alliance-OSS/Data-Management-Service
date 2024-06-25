@@ -3,7 +3,7 @@
 ## Dockerfile
 
 The [Dockerfile](../src/Dockerfile) in `src` builds the Ed-Fi Data Management
-Service (DMS) image directly from source code, and [nuget.Dockerfile](../src/nuget.Dockerfile)
+Service (DMS) image directly from source code, and [Nuget.Dockerfile](../src/Nuget.Dockerfile)
 build the image from the pre-built NuGet packages. Both versions include both the API
 application and the database installer. The source code version is primarily used in local and 
 end-to-end testing; the NuGet package version is intended for production-like environments
