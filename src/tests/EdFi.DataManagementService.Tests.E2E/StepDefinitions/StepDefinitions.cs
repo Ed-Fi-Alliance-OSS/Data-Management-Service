@@ -288,7 +288,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             body = body.Replace("{id}", _id);
             JsonNode bodyJson = JsonNode.Parse(body)!;
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(_location)!;
-            JsonNode responseJson = JsonNode.Parse(_apiResponse.TextAsync().Result)!;
+            string responseJsonString = _apiResponse.TextAsync().Result;
+            JsonNode responseJson = JsonNode.Parse(responseJsonString)!;
             _logger.log.Information(responseJson.ToString());
             JsonNode.DeepEquals(bodyJson, responseJson).Should().BeTrue();
         }
