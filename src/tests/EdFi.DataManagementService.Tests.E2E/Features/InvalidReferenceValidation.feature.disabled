@@ -2,7 +2,7 @@ Feature: Invalid Reference Validation
     POST requests validating invalid references
 
         @ignore
-        Scenario: Ensure clients cannot create a resource with an invalid reference
+        Scenario: 01 Ensure clients cannot create a resource with an invalid reference
              When a POST request is made to "ed-fi/studentEducationOrganizationAssociations" with
                   """
                   {
@@ -27,7 +27,7 @@ Feature: Invalid Reference Validation
                   """
 
         @ignore
-        Scenario: Ensure clients cannot create a resource with correct information but an invalid value belonging to the reference
+        Scenario: 02 Ensure clients cannot create a resource with correct information but an invalid value belonging to the reference
              When a POST request is made to "ed-fi/studentCTEProgramAssociations" with
                   """
                   {
@@ -58,7 +58,7 @@ Feature: Invalid Reference Validation
                   """
 
         @ignore
-        Scenario: Ensure clients cannot create a resource using a reference that is out of range of the existing values
+        Scenario: 03 Ensure clients cannot create a resource using a reference that is out of range of the existing values
              When a POST request is made to "ed-fi/graduationPlans" with
                   """
                   {
@@ -85,7 +85,7 @@ Feature: Invalid Reference Validation
                   """
 
         @ignore
-        Scenario: Ensure clients cannot create a resource using an invalid reference inside of another reference
+        Scenario: 04 Ensure clients cannot create a resource using an invalid reference inside of another reference
              When a POST request is made to "ed-fi/studentSectionAssociations" with
                   """
                   {

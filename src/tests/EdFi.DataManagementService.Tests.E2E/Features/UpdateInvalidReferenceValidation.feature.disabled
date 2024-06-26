@@ -20,7 +20,7 @@ Feature: Invalid Reference Validation
 
 
         @ignore
-        Scenario: Ensure clients cannot update a resource with a Descriptor that does not exist
+        Scenario: 01 Ensure clients cannot update a resource with a Descriptor that does not exist
              When a PUT request is made to "ed-fi/localEducationAgencies/d59e135ad9864e7392e737fd382c8607" with
                   """
                   {
@@ -47,7 +47,7 @@ Feature: Invalid Reference Validation
                   """
 
         @ignore
-        Scenario: Ensure clients cannot update a resource missing a direct reference
+        Scenario: 02 Ensure clients cannot update a resource missing a direct reference
              When a PUT request is made to "ed-fi/studentEducationOrganizationAssociations/1b57dcf9955f4bf987cebea2075c0ed6" with
                   """
                   {
@@ -69,7 +69,7 @@ Feature: Invalid Reference Validation
                   """
 
         @ignore
-        Scenario: Ensure clients cannot update a resource using a correct reference but missing the other one
+        Scenario: 03 Ensure clients cannot update a resource using a correct reference but missing the other one
              When a PUT request is made to "ed-fi/studentEducationOrganizationAssociations/1b57dcf9955f4bf987cebea2075c0ed6" with
                   """
                   {
@@ -91,7 +91,7 @@ Feature: Invalid Reference Validation
                   """
 
         @ignore
-        Scenario: Ensure clients cannot update a resource that uses a reference more than once
+        Scenario: 04 Ensure clients cannot update a resource that uses a reference more than once
              When a PUT request is made to "ed-fi/studentCTEProgramAssociations/9aa43c870d244c939d366fbfd5ecab10" with
                   """
                   {
@@ -118,7 +118,7 @@ Feature: Invalid Reference Validation
                   """
 
         @ignore
-        Scenario: Ensure clients cannot update a resource that uses a reference more than once and misses another required reference
+        Scenario: 05 Ensure clients cannot update a resource that uses a reference more than once and misses another required reference
              When a PUT request is made to "ed-fi/studentCTEProgramAssociations/9aa43c870d244c939d366fbfd5ecab10" with
                   """
                   {
@@ -145,7 +145,7 @@ Feature: Invalid Reference Validation
                   """
 
         @ignore
-        Scenario: Ensure clients cannot update a resource that uses an invalid date from a reference
+        Scenario: 06 Ensure clients cannot update a resource that uses an invalid date from a reference
              When a PUT request is made to "ed-fi/graduationPlans/f0627865bc5847159757dbc15ec5a375" with
                   """
                   {
@@ -172,7 +172,7 @@ Feature: Invalid Reference Validation
                   """
 
         @ignore
-        Scenario: Ensure clients cannot update a resource that is incorrect from a deep reference
+        Scenario: 07 Ensure clients cannot update a resource that is incorrect from a deep reference
              When a PUT request is made to "ed-fi/studentSectionAssociations/2d22aeab7b5c4ccebb0de7edd67844c2" with
                   """
                   {

@@ -16,7 +16,7 @@ Feature: Resources "Read" Operation validations
                   """
              Then it should respond with 201 or 200
 
-        Scenario: Verify existing resources can be retrieved successfully
+        Scenario: 01 Verify existing resources can be retrieved successfully
              When a GET request is made to "ed-fi/absenceEventCategoryDescriptors"
              Then it should respond with 200
               And the response body is
@@ -34,7 +34,7 @@ Feature: Resources "Read" Operation validations
                     ]
                   """
 
-        Scenario: Verify retrieving a single resource by ID
+        Scenario: 02 Verify retrieving a single resource by ID
              When a GET request is made to "ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 200
               And the response body is
@@ -50,11 +50,11 @@ Feature: Resources "Read" Operation validations
                     }
                   """
 
-        Scenario: Verify response code 404 when ID does not exist
+        Scenario: 03 Verify response code 404 when ID does not exist
              When a GET request is made to "ed-fi/absenceEventCategoryDescriptors/123123123123"
              Then it should respond with 404
-                     
-        Scenario: Verify array records content on GET All
+
+        Scenario: 04 Verify array records content on GET All
              When a GET request is made to "ed-fi/absenceEventCategoryDescriptors"
              Then it should respond with 200
               And total of records should be 1

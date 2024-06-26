@@ -27,7 +27,7 @@ Feature: Validation of DELETE requests that would cause a foreign key violation
                   | 2024-06-20 | 255901                  | Career and Technical Education | ["Career and Technical Education"] | 604824          |
 
         @ignore
-        Scenario: Ensure clients cannot delete a year that is used by another item
+        Scenario: 01 Ensure clients cannot delete a year that is used by another item
             Given School Year 2022
               # set value to <{id}>
              When a DELETE request is made to "ed-fi/schoolYearTypes/{id}"
@@ -44,7 +44,7 @@ Feature: Validation of DELETE requests that would cause a foreign key violation
                   """
 
         @ignore
-        Scenario: Ensure clients cannot delete a descriptor that is used by another item
+        Scenario: 02 Ensure clients cannot delete a descriptor that is used by another item
             Given Education Organization Category Descriptor School
              When a DELETE request is made to "ed-fi/educationOrganizationCategoryDescriptors/{id}"
              Then it should respond with 409
@@ -60,7 +60,7 @@ Feature: Validation of DELETE requests that would cause a foreign key violation
                   """
 
         @ignore
-        Scenario: Ensure clients cannot delete a dependent element for an item
+        Scenario: 03 Ensure clients cannot delete a dependent element for an item
             Given Student 604824
              When a DELETE request is made to "ed-fi/students/{id}"
              Then it should respond with 409
@@ -76,7 +76,7 @@ Feature: Validation of DELETE requests that would cause a foreign key violation
                   """
 
         @ignore
-        Scenario: Ensure clients cannot delete an element that is reference to an Education Organization that is used by another items
+        Scenario: 04 Ensure clients cannot delete an element that is reference to an Education Organization that is used by another items
             Given Local Education Agency 255901
              When a DELETE request is made to "ed-fi/localEducationAgencies/{id}"
              Then it should respond with 409
@@ -92,7 +92,7 @@ Feature: Validation of DELETE requests that would cause a foreign key violation
                   """
 
         @ignore
-        Scenario: Ensure clients cannot delete a resource that is used by another items
+        Scenario: 05 Ensure clients cannot delete a resource that is used by another items
             Given Program Career and Technical Education
              When a DELETE request is made to "ed-fi/programs/4dbd101cde9942f09276ebe0628e5096"
              Then it should respond with 409

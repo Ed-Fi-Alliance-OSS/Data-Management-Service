@@ -7,7 +7,7 @@ Feature: Validate the reference of descriptors when creating resources
 
 
         @ignore
-        Scenario: User CAN'T create a resource when descriptor doesn't exist
+        Scenario: 01 User CAN'T create a resource when descriptor doesn't exist
              When a POST request is made to "/ed-fi/localEducationAgencies" with
                   """
                   {
@@ -28,7 +28,7 @@ Feature: Validate the reference of descriptors when creating resources
                   """
 
         @ignore
-        Scenario: User can POST a resource when descriptor exists
+        Scenario: 02 User can POST a resource when descriptor exists
              When a POST request is made to "/ed-fi/localEducationAgencies" with
                   """
                   {
@@ -46,7 +46,7 @@ Feature: Validate the reference of descriptors when creating resources
 
 
         @ignore
-        Scenario: User can UPDATE a resource when descriptor exists
+        Scenario: 03 User can UPDATE a resource when descriptor exists
              When a PUT request is made to "/ed-fi/students/{id}" with
                   """
                   {
@@ -62,7 +62,7 @@ Feature: Validate the reference of descriptors when creating resources
 
 
         @ignore
-        Scenario: User CANNOT update a resource using a descriptor that does not exist
+        Scenario: 04 User CANNOT update a resource using a descriptor that does not exist
              When a PUT request is made to "/ed-fi/students/{id}" with
                   """
                   {
@@ -92,7 +92,7 @@ Feature: Validate the reference of descriptors when creating resources
                   """
 
         @ignore
-        Scenario: User CANNOT create (upsert) a resource using a descriptor that does not exist
+        Scenario: 05 User CANNOT create (upsert) a resource using a descriptor that does not exist
              When a POST request is made to "/ed-fi/students" with
                   """
                   {

@@ -17,7 +17,7 @@ Feature: Resources "Update" Operation validations
                   """
              Then it should respond with 201 or 200
 
-        Scenario: Verify that existing resources can be updated successfully
+        Scenario: 01 Verify that existing resources can be updated successfully
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -31,7 +31,7 @@ Feature: Resources "Update" Operation validations
                   """
              Then it should respond with 204
 
-        Scenario: Verify updating a resource with valid data
+        Scenario: 02 Verify updating a resource with valid data
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -57,7 +57,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        Scenario: Verify updating a non existing resource with valid data
+        Scenario: 03 Verify updating a non existing resource with valid data
              # The id value should be replaced with a non existing resource
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/00000000-0000-4000-a000-000000000000" with
                   """
@@ -82,7 +82,7 @@ Feature: Resources "Update" Operation validations
                       "errors": null
                   }
                   """
-        Scenario: Verify error handling updating the document identity
+        Scenario: 04 Verify error handling updating the document identity
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -110,7 +110,7 @@ Feature: Resources "Update" Operation validations
                     }
                   """
 
-        Scenario: Verify that response contains the updated resource ID and data
+        Scenario: 05 Verify that response contains the updated resource ID and data
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -131,7 +131,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        Scenario: Verify error handling when updating a resource with empty body
+        Scenario: 06 Verify error handling when updating a resource with empty body
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -165,7 +165,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        Scenario: Verify error handling when resource ID is different in body on PUT
+        Scenario: 07 Verify error handling when resource ID is different in body on PUT
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -193,7 +193,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
         @ignore
-        Scenario: Verify error handling when resource ID is not included in body on PUT
+        Scenario: 08 Verify error handling when resource ID is not included in body on PUT
             # The id value should be replaced with the resource created in the Background section
              When a POST request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
