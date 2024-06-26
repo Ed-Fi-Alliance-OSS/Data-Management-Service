@@ -38,5 +38,3 @@ $parameters = @{
 }
 
 RunApiTests @parameters
-
-
