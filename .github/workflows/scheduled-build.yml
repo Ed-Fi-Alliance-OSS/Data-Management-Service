@@ -6,6 +6,7 @@
 name: Scheduled Build
 
 on:
+  workflow_dispatch:
   schedule:
   - cron: '0 8 * * 6' # Scheduled the job to run every Saturday at 8 AM UTC
 
@@ -27,6 +28,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
+      - name: Grant execute permission for build script
+        run: chmod +x ./build.ps1
+
       - name: Build
         id: build_step
         run: |
@@ -35,6 +39,12 @@ jobs:
             exit 1
           }
         shell: bash
+
+      - name: Install Coverlet Reference
+        if: success()
+        run: |
+          dotnet tool install --global coverlet.console
+          dotnet tool install --global dotnet-reportgenerator-globaltool
 
       - name: Run Unit Tests
         id: unit_test_step
