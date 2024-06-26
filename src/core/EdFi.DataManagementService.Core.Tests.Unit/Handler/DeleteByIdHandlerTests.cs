@@ -48,7 +48,7 @@ public class DeleteByIdHandlerTests
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(200);
+            context.FrontendResponse.StatusCode.Should().Be(204);
             context.FrontendResponse.Body.Should().BeNull();
         }
     }

@@ -20,7 +20,7 @@ Feature: Resources "Delete" Operation validations
 
         Scenario: 01 Verify deleting a specific resource by ID
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
-             Then it should respond with 200
+             Then it should respond with 204
 
         Scenario: 02 Verify error handling when deleting using a invalid id
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/00112233445566"
@@ -29,14 +29,14 @@ Feature: Resources "Delete" Operation validations
         Scenario: 03 Verify error handling when deleting a non existing resource
             # The id value should be replaced with the resource created in the Background section
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
-             Then it should respond with 200
+             Then it should respond with 204
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 404
 
         Scenario: 04 Verify response code when GET a deleted resource
             # The id value should be replaced with the resource created in the Background section
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
-             Then it should respond with 200
+             Then it should respond with 204
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 404
 

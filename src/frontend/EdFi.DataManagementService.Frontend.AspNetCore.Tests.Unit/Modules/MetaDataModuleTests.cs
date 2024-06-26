@@ -97,9 +97,9 @@ public class MetadataModuleTests
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         jsonContent.Should().NotBeNull();
-        section1.Should().Contain("resources");
-        section2.Should().Contain("descriptors");
-        section3.Should().Contain("discovery");
+        section1.Should().Contain("Resources");
+        section2.Should().Contain("Descriptors");
+        section3.Should().Contain("Discovery");
     }
 
     [Test]
