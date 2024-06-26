@@ -1,7 +1,7 @@
 Feature: ValidationErrors
     POST a request that has an invalid payload.
 
-        Scenario: Post an empty request object
+        Scenario: 01 Post an empty request object
              When a POST request is made to "ed-fi/schools" with
                   """
                   """
@@ -11,7 +11,7 @@ Feature: ValidationErrors
                   {"detail":"The request could not be processed. See 'errors' for details.","type":"urn:ed-fi:api:bad-request","title":"Bad Request","status":400,"correlationId":null,"validationErrors":{},"errors":["A non-empty request body is required."]}
                   """
 
-        Scenario: Post an invalid body for academicWeeks when weekIdentifier length should be at least 5 characters
+        Scenario: 02 Post an invalid body for academicWeeks when weekIdentifier length should be at least 5 characters
              When a POST request is made to "ed-fi/academicWeeks" with
                   """
                   {
@@ -42,7 +42,7 @@ Feature: ValidationErrors
                     }
                   """
 
-        Scenario: Post an invalid body for academicWeeks missing schoolid for schoolReference and totalInstructionalDays
+        Scenario: 03 Post an invalid body for academicWeeks missing schoolid for schoolReference and totalInstructionalDays
              When a POST request is made to "ed-fi/academicWeeks" with
                   """
                   {
@@ -74,7 +74,7 @@ Feature: ValidationErrors
                     }
                   """"
 
-        Scenario: Post a valid Descriptor
+        Scenario: 04 Post a valid Descriptor
              When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                   {
@@ -85,8 +85,7 @@ Feature: ValidationErrors
                   """
              Then it should respond with 201 or 200
 
-
-        Scenario: Post an invalid body for academicWeeks missing more than one required field
+        Scenario: 05 Post an invalid body for academicWeeks missing more than one required field
              When a POST request is made to "ed-fi/academicWeeks" with
                   """
                   {
@@ -105,7 +104,7 @@ Feature: ValidationErrors
                   {"detail":"Data validation failed. See 'validationErrors' for details.","type":"urn:ed-fi:api:bad-request:data","title":"Data Validation Failed","status":400,"correlationId":null,"validationErrors":{"$.schoolReference":["schoolReference is required."],"$.weekIdentifier":["weekIdentifier is required."],"$.beginDate":["beginDate is required."],"$.endDate":["endDate is required."],"$.totalInstructionalDays":["totalInstructionalDays is required."]},"errors":[]}
                   """
 
-        Scenario: Post an invalid body for academicWeeks missing a required field in a nested object schoolid for schoolReference
+        Scenario: 06 Post an invalid body for academicWeeks missing a required field in a nested object schoolid for schoolReference
              When a POST request is made to "ed-fi/academicWeeks" with
                   """
                   {
@@ -124,7 +123,7 @@ Feature: ValidationErrors
                   {"detail":"Data validation failed. See 'validationErrors' for details.","type":"urn:ed-fi:api:bad-request:data","title":"Data Validation Failed","status":400,"correlationId":null,"validationErrors":{"$.schoolReference.schoolId":["schoolId is required."]},"errors":[]}
                   """
 
-        Scenario: Post an invalid body for academicWeeks missing a comma before beginDate
+        Scenario: 07 Post an invalid body for academicWeeks missing a comma before beginDate
              When a POST request is made to "ed-fi/academicWeeks" with
                   """
                   {
@@ -143,7 +142,7 @@ Feature: ValidationErrors
                   {"detail":"Data validation failed. See 'validationErrors' for details.","type":"urn:ed-fi:api:bad-request:data","title":"Data Validation Failed","status":400,"correlationId":null,"validationErrors":{"$.":["'\"' is invalid after a value. Expected either ',', '}', or ']'. LineNumber: 5 | BytePositionInLine: 2."]},"errors":[]}
                   """
 
-        Scenario: Post an invalid body for courseOfferings missing a two required fields for a nested object CourseReference and also schoolReference
+        Scenario: 08 Post an invalid body for courseOfferings missing a two required fields for a nested object CourseReference and also schoolReference
              When a POST request is made to "ed-fi/courseOfferings" with
                   """
                   {
