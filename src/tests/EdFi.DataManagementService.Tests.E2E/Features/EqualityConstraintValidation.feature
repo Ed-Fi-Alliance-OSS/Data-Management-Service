@@ -6,8 +6,6 @@ Feature: Equality Constraint Validation
     "targetJsonPath": "$.schoolReference.schoolId"
     }
     ]
-        @ignore
-        # See DMS-259 - Error inserting references
         Scenario: 01 Post a valid bell schedule no equality constraint violations.
             Given the system has these "descriptors"
                   | descriptorname                           | codeValue         | description       | namespace                                               | shortDescription  |
