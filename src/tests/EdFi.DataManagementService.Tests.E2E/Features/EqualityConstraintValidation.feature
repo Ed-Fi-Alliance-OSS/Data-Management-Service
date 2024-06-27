@@ -10,10 +10,10 @@ Feature: Equality Constraint Validation
             Given the system has these "descriptors"
                   | descriptorname                           | codeValue         | description       | namespace                                               | shortDescription  |
                   | educationOrganizationCategoryDescriptors | School            | School            | uri://ed-fi.org/EducationOrganizationCategoryDescriptor | School            |
-            Given the system has these "schools"
+            And the system has these "schools"
                   | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
                   | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
-            Given the system has these "classPeriods"
+            And the system has these "classPeriods"
                   | classPeriodName  | schoolReference           |
                   | 01 - Traditional | { "schoolId": 255901001 } |
                   | 02 - Traditional | { "schoolId": 255901001 } |

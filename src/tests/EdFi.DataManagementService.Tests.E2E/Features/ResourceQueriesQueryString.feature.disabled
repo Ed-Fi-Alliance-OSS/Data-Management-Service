@@ -1,7 +1,7 @@
 Feature: Query String handling for GET requests for Resource Queries
 
         Background:
-            Given these schools
+            Given the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels       | educationOrganizationCategories |
                   | 2        | School 2          | [ "Tenth grade" ] | [ "School" ]                    |
               And there is a valid AcademicWeek
