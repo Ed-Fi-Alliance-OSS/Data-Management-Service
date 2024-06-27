@@ -68,10 +68,9 @@ jobs:
         shell: pwsh
         run: |
           $arguments = @{
-            FeedsURL    = "${{ env.ARTIFACTS_FEED_URL }}"
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
             Username    = "${{ env.ARTIFACTS_USERNAME }}"
-            View        = "release"
+            ViewId        = "release"
             ReleaseRef  = "${{ github.ref_name }}"
             Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
           }
