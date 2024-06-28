@@ -26,8 +26,7 @@ public class DeleteTests : DatabaseTest
         public async Task Setup()
         {
             IDeleteRequest deleteRequest = CreateDeleteRequest(_defaultResourceName, _documentUuidGuid);
-            _deleteResult = await CreateDeleteById()
-                .DeleteById(deleteRequest, Connection!, Transaction!);
+            _deleteResult = await CreateDeleteById().DeleteById(deleteRequest, Connection!, Transaction!);
         }
 
         [Test]
@@ -59,8 +58,7 @@ public class DeleteTests : DatabaseTest
             await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
 
             IDeleteRequest deleteRequest = CreateDeleteRequest(_defaultResourceName, _documentUuidGuid);
-            _deleteResult = await CreateDeleteById()
-                .DeleteById(deleteRequest, Connection!, Transaction!);
+            _deleteResult = await CreateDeleteById().DeleteById(deleteRequest, Connection!, Transaction!);
         }
 
         [Test]

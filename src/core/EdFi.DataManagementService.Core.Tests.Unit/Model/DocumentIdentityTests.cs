@@ -8,6 +8,8 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using FluentAssertions;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
+using static EdFi.DataManagementService.Core.Extraction.IdentityExtractor;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Model;
 
@@ -22,9 +24,10 @@ public class DocumentIdentityTests
         [SetUp]
         public void Setup()
         {
+            DocumentIdentityElement documentIdentityElement = new DocumentIdentityElement(new JsonPath("$.schoolId"), "123");
             DocumentIdentity documentIdentity =
-                new([new DocumentIdentityElement(new JsonPath("$.schoolId"), "123")]);
-            superclassIdentity = documentIdentity.IdentityRename(new("$.educationOrganizationId"));
+                new([documentIdentityElement]);
+            superclassIdentity = IdentityRename(new("$.educationOrganizationId"), documentIdentityElement);
         }
 
         [Test]
@@ -47,7 +50,7 @@ public class DocumentIdentityTests
         {
             DocumentIdentity documentIdentity = new([new DocumentIdentityElement(new JsonPath("$.schoolId"), "123")]);
             BaseResourceInfo resourceInfo = new(new MetaEdProjectName("Ed-Fi"), new MetaEdResourceName("School"), false);
-            referentialId = documentIdentity.ToReferentialId(resourceInfo);
+            referentialId = ReferentialIdFrom(resourceInfo, documentIdentity);
         }
 
         [Test]
@@ -76,7 +79,7 @@ public class DocumentIdentityTests
                     ]
                 );
             BaseResourceInfo resourceInfo = new(new MetaEdProjectName("Ed-Fi"), new MetaEdResourceName("Section"), false);
-            referentialId = documentIdentity.ToReferentialId(resourceInfo);
+            referentialId = ReferentialIdFrom(resourceInfo, documentIdentity);
         }
 
         [Test]

@@ -3,12 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System;
-using System.Globalization;
-using System.Net.Http;
-using System.Text;
-using System.Text.Encodings.Web;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Tests.E2E.Extensions;
@@ -61,51 +55,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             //throw new PendingStepException();
         }
 
-        [Given("the following schools exist")]
-        public async Task GivenTheFollowingSchoolsExist(Table table)
-        {
-            var url = $"data/ed-fi/schools";
-            var schools = table
-                .Rows.Select(row =>
-                {
-                    var gradeLevels = JsonSerializer
-                        .Deserialize<List<string>>(row["gradeLevels"])
-                        ?.Select(descriptor => new GradeLevel(descriptor))
-                        .ToList();
-
-                    var educationOrgCategories = JsonSerializer
-                        .Deserialize<List<string>>(row["educationOrganizationCategories"])
-                        ?.Select(descriptor => new EducationOrganizationCategory(descriptor))
-                        .ToList();
-
-                    var schoolId = row["schoolId"] != null ? int.Parse(row["schoolId"]) : (int?)null;
-                    var nameOfInstitution = row["nameOfInstitution"];
-
-                    return new School(
-                        schoolId: schoolId,
-                        nameOfInstitution: nameOfInstitution,
-                        gradeLevels: gradeLevels,
-                        educationOrganizationCategories: educationOrgCategories
-                    );
-                })
-                .ToList();
-
-            var apiResponses = new List<IAPIResponse>();
-
-            foreach (var school in schools)
-            {
-                var data = JsonSerializer.Serialize(school);
-                _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
-                    url,
-                    new() { Data = data }
-                )!;
-                apiResponses.Add(_apiResponse);
-            }
-            foreach (var response in apiResponses)
-            {
-                response.Status.Should().BeOneOf([200, 201]);
-            }
-        }
 
         [Given("the system has these {string}")]
         public async Task GivenAPOSTRequestWithListOfRequiredItems(string entityType, DataTable dataTable)
@@ -288,7 +237,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             body = body.Replace("{id}", _id);
             JsonNode bodyJson = JsonNode.Parse(body)!;
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(_location)!;
-            JsonNode responseJson = JsonNode.Parse(_apiResponse.TextAsync().Result)!;
+            string responseJsonString = _apiResponse.TextAsync().Result;
+            JsonNode responseJson = JsonNode.Parse(responseJsonString)!;
             _logger.log.Information(responseJson.ToString());
             JsonNode.DeepEquals(bodyJson, responseJson).Should().BeTrue();
         }

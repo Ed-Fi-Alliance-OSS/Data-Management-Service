@@ -1,4 +1,3 @@
-# This is a rough draft feature for future use.
 Feature: Resources "Update" Operation validations
 
         Background:
@@ -229,43 +228,43 @@ Feature: Resources "Update" Operation validations
               And a POST request is made to "ed-fi/educationContents" with
                   """
                   {
-                      "contentIdentifier": "Testing",
-                       "namespace": "Testing",
-                      "learningStandardReference": {
-                        "learningStandardId": "Testing"
-                      },
+                    "contentIdentifier": "Testing",
+                    "namespace": "Testing",
+                    "shortDescription": "Testing",
+                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                    "learningResourceMetadataURI": "Testing",
                        "objectOverpost": {
                          "x": 1
                       }
-                 }
-                 """
+                  }
+                  """
              Then it should respond with 201 or 200
 
-        Scenario: Verify Put when adding a overposting object
-            When a PUT request is made to "ed-fi/educationContents/{id}" with
-                """
-                {
-                  "id": "{id}",
-                  "contentIdentifier": "Testing",
-                   "namespace": "Testing PUT",
-                  "learningStandardReference": {
-                    "learningStandardId": "Testing",
-                    "scalarOverpost": "x"
-                  },
-                   "objectOverpost": {
-                     "x": 1
+        Scenario: 09 Verify Put when adding a overposting object
+             When a PUT request is made to "ed-fi/educationContents/{id}" with
+                  """
+                  {
+                    "id": "{id}",
+                    "contentIdentifier": "Testing",
+                    "namespace": "Testing",
+                    "shortDescription": "Testing",
+                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                    "learningResourceMetadataURI": "Testing",
+                    "scalarOverpost": "x",
+                    "objectOverpost": {
+                       "x": 1
+                    }
                   }
-                }
-                """
-            Then it should respond with 204
-            And the record can be retrieved with a GET request
-            """
-            {
-                "id": "{id}",
-                "contentIdentifier": "Testing",
-                "namespace": "Testing PUT",
-                "learningStandardReference": {
-                    "learningStandardId": "Testing"
-                }
-            }
-            """
+                  """
+             Then it should respond with 204
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": "{id}",
+                    "contentIdentifier": "Testing",
+                    "namespace": "Testing",
+                    "shortDescription": "Testing",
+                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                    "learningResourceMetadataURI": "Testing"
+                  }
+                  """

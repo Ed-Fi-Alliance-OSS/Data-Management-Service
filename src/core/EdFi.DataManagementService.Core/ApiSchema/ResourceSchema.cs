@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema.Extensions;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 
 namespace EdFi.DataManagementService.Core.ApiSchema;
@@ -130,8 +131,8 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
 
             return equalityConstraintsJsonArray.Select(x =>
             {
-                var sourceJsonPath = new JsonPath(x!["sourceJsonPath"]!.GetValue<string>());
-                var targetJsonPath = new JsonPath(x!["targetJsonPath"]!.GetValue<string>());
+                JsonPath sourceJsonPath = new(x!["sourceJsonPath"]!.GetValue<string>());
+                JsonPath targetJsonPath = new(x!["targetJsonPath"]!.GetValue<string>());
 
                 return new EqualityConstraint(sourceJsonPath, targetJsonPath);
             });

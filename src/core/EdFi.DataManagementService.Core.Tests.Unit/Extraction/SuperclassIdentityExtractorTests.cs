@@ -5,8 +5,8 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
-using EdFi.DataManagementService.Core.Model;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;

@@ -16,12 +16,12 @@ public interface IUpsertRequest
     /// <summary>
     /// The ResourceInfo of the document to upsert
     /// </summary>
-    IResourceInfo ResourceInfo { get; }
+    ResourceInfo ResourceInfo { get; }
 
     /// <summary>
     /// The DocumentInfo of the document to upsert
     /// </summary>
-    IDocumentInfo DocumentInfo { get; }
+    DocumentInfo DocumentInfo { get; }
 
     /// <summary>
     /// The EdfiDoc of the document to upsert, as a JsonNode
@@ -31,7 +31,7 @@ public interface IUpsertRequest
     /// <summary>
     /// The request TraceId
     /// </summary>
-    ITraceId TraceId { get; }
+    TraceId TraceId { get; }
 
     /// <summary>
     /// A candidate DocumentUuid of the document to upsert, used only

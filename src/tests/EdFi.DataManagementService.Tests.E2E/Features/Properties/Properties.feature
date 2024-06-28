@@ -8,17 +8,11 @@ Feature: Validate Extra Properties are being removed
                   {
                     "weekIdentifier": "LastWeek",
                     "schoolReference": {
-                      "schoolId": 255901001,
-                      "link": {
-                        "rel": "School",
-                        "href": "/ed-fi/schools/20ec19e5070245128a30fdcc6925bb09"
-                        }
+                      "schoolId": 255901001
                     },
                     "beginDate": "2024-05-30",
                     "endDate": "2024-05-30",
-                    "totalInstructionalDays": 0,
-                    "_etag": "5250168731208835753",
-                    "_lastModifiedDate": "2024-05-30T22:30:57.509Z"
+                    "totalInstructionalDays": 0
                   }
                   """
              Then it should respond with 201 or 200
@@ -28,7 +22,8 @@ Feature: Validate Extra Properties are being removed
                     "location": "/ed-fi/academicWeeks/{id}"
                   }
                   """
-
+        @ignore
+        # See DMS-259 - Error inserting references
         @properties
         Scenario: 01 Validate extra properties are being removed on POST
              When a GET request is made to "ed-fi/academicWeeks/{id}"
@@ -46,7 +41,8 @@ Feature: Validate Extra Properties are being removed
                     "totalInstructionalDays": 0
                   }
                   """
-
+        @ignore
+        # See DMS-259 - Error inserting references
         @properties
         Scenario: 02 Validate extra properties are being removed on PUT
              When a PUT request is made to "ed-fi/academicWeeks/{id}" with

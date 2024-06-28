@@ -19,7 +19,7 @@ public interface IDeleteRequest
     /// <summary>
     /// The ResourceInfo for the resource being deleted
     /// </summary>
-    IResourceInfo ResourceInfo { get; }
+    ResourceInfo ResourceInfo { get; }
 
     /// <summary>
     /// If true, validates there are no references to the document
@@ -29,5 +29,5 @@ public interface IDeleteRequest
     /// <summary>
     /// The request TraceId
     /// </summary>
-    ITraceId TraceId { get; }
+    TraceId TraceId { get; }
 }

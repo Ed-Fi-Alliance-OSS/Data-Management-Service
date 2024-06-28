@@ -49,8 +49,8 @@ internal class ApiService(
                         new CoerceStringTypeMiddleware(_logger),
                         new ValidateDocumentMiddleware(_logger, _documentValidator),
                         new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
-                        new ExtractDocumentInfoMiddleware(_logger),
                         new BuildResourceInfoMiddleware(_logger),
+                        new ExtractDocumentInfoMiddleware(_logger),
                         new UpsertHandler(_documentStoreRepository, _logger)
                     ]
                 )
@@ -113,8 +113,8 @@ internal class ApiService(
                         new ValidateDocumentMiddleware(_logger, _documentValidator),
                         new ValidateMatchingDocumentUuidsMiddleware(_logger, matchingDocumentUuidsValidator),
                         new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
-                        new ExtractDocumentInfoMiddleware(_logger),
                         new BuildResourceInfoMiddleware(_logger),
+                        new ExtractDocumentInfoMiddleware(_logger),
                         new UpdateByIdHandler(_documentStoreRepository, _logger)
                     ]
                 )
