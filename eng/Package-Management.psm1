@@ -259,15 +259,14 @@ function Get-ApiSdkDll {
 
     $resourceUrl = "https://odsassets.blob.core.windows.net/public/project-tanager/sdk/5.1.0/$zip"
 
-    $directory = "$PSScriptRoot\smoke_test\sdk"
+    $directory = "sdk"
     $file = "EdFi.OdsApi.Sdk.dll"
 
     if (!(Test-Path $directory -PathType Container)) {
-        New-Item -ItemType Directory -Force -Path $directory
+        New-Item -ItemType Directory -Force -Path $directory | Out-Null
     }
 
     Push-Location $directory
-
     $fullPath = Join-Path -Path $directory -ChildPath $file
 
     if ($null -ne (Get-ChildItem $file -ErrorAction SilentlyContinue)) {
@@ -277,8 +276,9 @@ function Get-ApiSdkDll {
 
     try {
         Invoke-WebRequest $resourceUrl -OutFile $zip
-        Expand-Archive $zip -Force -DestinationPath $directory
+        Expand-Archive $zip -DestinationPath $(Get-Location)
         Remove-Item $zip
+        return $fullPath
     }
     catch {
         throw $_
@@ -286,7 +286,6 @@ function Get-ApiSdkDll {
     finally {
         Pop-Location
     }
-    return $fullPath
 }
 
 <#
