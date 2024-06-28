@@ -15,24 +15,22 @@ param(
   # 8080 is the default k8s port
   # 5198 is the default when running F5
   [string]
-  $BaseUrl = "http://localhost:8080"
+  $BaseUrl = "http://localhost:5198"
 )
 
 $ErrorActionPreference = "Stop"
 
 Import-Module ../Package-Management.psm1 -Force
-Import-Module ./modules/Get-XSD.psm1 -Force
-Import-Module ./modules/BulkLoad.psm1 -Force
+Import-Module ./modules/SmokeTest.psm1
 
-$paths = Initialize-ToolsAndDirectories
-$paths.SampleDataDirectory = Import-SampleData -Template "Southridge"
+$path = Get-SmokeTestTool -PackageVersion '7.2.413'
 
 $parameters = @{
   BaseUrl = $BaseUrl
   Key = $Key
   Secret = $Secret
-  Paths = $paths
+  ToolPath = $path
+  TestSet = "NonDestructiveApi"
 }
 
-Write-Descriptors @parameters
-Write-PartialGrandBend  @parameters
+Invoke-SmokeTestUtility @parameters

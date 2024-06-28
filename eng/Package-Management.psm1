@@ -215,6 +215,81 @@ function Get-BulkLoadClient {
 
 <#
 .SYNOPSIS
+    Download and extract the Ed-Fi SmokeTest Console.
+
+.OUTPUTS
+    String containing the name of the created directory, e.g.
+    `.packages/edfi.suite3.smoketest.3.3.1`.
+
+.EXAMPLE
+    Get-SmokeTestTool -PackageVersion 5
+
+.EXAMPLE
+    Get-SmokeTestTool -PackageVersion 6 -PreRelease
+
+#>
+function Get-SmokeTestTool {
+    param (
+        # Requested version, example: "5" (latest 5.x.y), "5.3" (latest 5.3.y), "5.3.123" (exact)
+        [Parameter(Mandatory=$true)]
+        [string]
+        $PackageVersion,
+
+        # Enable usage of prereleases
+        [Switch]
+        $PreRelease
+    )
+
+    Get-NugetPackage -PackageName "EdFi.Suite3.SmokeTest.Console" `
+        -PreRelease:$PreRelease `
+        -PackageVersion $PackageVersion | Out-String
+}
+
+<#
+.SYNOPSIS
+    Download the Ed-Fi Api Sdk dll.
+
+.OUTPUTS
+    String containing the sdk dll path, e.g.
+    `sdk/EdFi.OdsApi.Sdk.dll`.
+#>
+function Get-ApiSdkDll {
+
+    $zip = "EdFi.OdsApi.Sdk.zip"
+
+    $resourceUrl = "https://odsassets.blob.core.windows.net/public/project-tanager/sdk/5.1.0/$zip"
+
+    $directory = "sdk"
+    $file = "EdFi.OdsApi.Sdk.dll"
+
+    if (!(Test-Path $directory -PathType Container)) {
+        New-Item -ItemType Directory -Force -Path $directory | Out-Null
+    }
+
+    Push-Location $directory
+    $fullPath = Join-Path -Path $directory -ChildPath $file
+
+    if ($null -ne (Get-ChildItem $file -ErrorAction SilentlyContinue)) {
+        Pop-Location
+        return $fullPath
+    }
+
+    try {
+        Invoke-WebRequest $resourceUrl -OutFile $zip
+        Expand-Archive $zip -DestinationPath $(Get-Location)
+        Remove-Item $zip
+        return $fullPath
+    }
+    catch {
+        throw $_
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+<#
+.SYNOPSIS
     Download and extract the Southridge Data.
 
 .OUTPUTS
@@ -266,4 +341,4 @@ function Get-SouthridgeSampleData {
 
 }
 
-Export-ModuleMember -Function Get-SampleData, Get-NugetPackage, Get-BulkLoadClient, Get-SouthridgeSampleData
+Export-ModuleMember -Function Get-SampleData, Get-NugetPackage, Get-BulkLoadClient, Get-SouthridgeSampleData, Get-SmokeTestTool, Get-ApiSdkDll

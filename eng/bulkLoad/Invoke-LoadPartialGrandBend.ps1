@@ -27,7 +27,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-Import-Module ./modules/Package-Management.psm1 -Force
+Import-Module ../Package-Management.psm1 -Force
 Import-Module ./modules/Get-XSD.psm1 -Force
 Import-Module ./modules/BulkLoad.psm1 -Force
 
@@ -42,4 +42,4 @@ $parameters = @{
 }
 
 Write-Descriptors @parameters
-#Write-PartialGrandBend  @parameters
+Write-PartialGrandBend  @parameters
