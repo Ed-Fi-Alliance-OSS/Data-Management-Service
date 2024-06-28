@@ -116,10 +116,10 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 transaction
             );
 
-            Trace.Assert(
-                numberOfRowsInserted == documentReferences.Length,
-                "Database did not insert all references"
-            );
+            if (numberOfRowsInserted != documentReferences.Length)
+            {
+                throw new InvalidOperationException("Database did not insert all references");
+            }
         }
 
         _logger.LogDebug("Upsert success as insert - {TraceId}", upsertRequest.TraceId);
@@ -171,10 +171,10 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 transaction
             );
 
-            Trace.Assert(
-                numberOfRowsInserted == documentReferences.Length,
-                "Database did not insert all references"
-            );
+            if (numberOfRowsInserted != documentReferences.Length)
+            {
+                throw new InvalidOperationException("Database did not insert all references");
+            }
         }
 
         _logger.LogDebug("Upsert success as update - {TraceId}", upsertRequest.TraceId);
