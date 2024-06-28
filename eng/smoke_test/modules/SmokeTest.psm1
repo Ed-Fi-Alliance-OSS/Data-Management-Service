@@ -6,8 +6,7 @@
 #Requires -Version 7
 $ErrorActionPreference = "Stop"
 
-function RunApiTests {
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Overly aggressive rule.')]
+function Invoke-SmokeTestUtility {
 
     [CmdletBinding()]
     param (

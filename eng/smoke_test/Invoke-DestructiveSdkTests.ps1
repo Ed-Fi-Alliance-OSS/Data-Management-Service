@@ -23,7 +23,7 @@ $ErrorActionPreference = "Stop"
 Import-Module ../Package-Management.psm1 -Force
 Import-Module ./modules/SmokeTest.psm1
 
-$sdkPath = "$PSScriptRoot/sdk/EdFi.OdsApi.Sdk.dll"
+$sdkPath = Get-ApiSdkDll
 $path = Get-SmokeTestTool -PackageVersion '7.2.413'
 
 $parameters = @{
@@ -35,4 +35,4 @@ $parameters = @{
   SdkPath = $sdkPath
 }
 
-RunApiTests @parameters
+Invoke-SmokeTestUtility @parameters

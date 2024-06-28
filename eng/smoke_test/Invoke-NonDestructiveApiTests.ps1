@@ -33,4 +33,4 @@ $parameters = @{
   TestSet = "NonDestructiveApi"
 }
 
-RunApiTests @parameters
+Invoke-SmokeTestUtility @parameters

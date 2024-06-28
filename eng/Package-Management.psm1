@@ -247,34 +247,46 @@ function Get-SmokeTestTool {
 
 <#
 .SYNOPSIS
-    Download and extract the Ed-Fi Api Sdk.
+    Download the Ed-Fi Api Sdk dll.
 
 .OUTPUTS
-    String containing the name of the created directory, e.g.
-    `.packages/edfi.suite3.odsapi.testsdk.standard.3.3.1`.
-
-.EXAMPLE
-    Get-ApiSdk -PackageVersion 5
-
-.EXAMPLE
-    Get-ApiSdk -PackageVersion 6 -PreRelease
-
+    String containing the sdk dll path, e.g.
+    `sdk/EdFi.OdsApi.Sdk.dll`.
 #>
-function Get-ApiSdk {
-    param (
-        # Requested version, example: "5" (latest 5.x.y), "5.3" (latest 5.3.y), "5.3.123" (exact)
-        [Parameter(Mandatory=$true)]
-        [string]
-        $PackageVersion,
+function Get-ApiSdkDll {
 
-        # Enable usage of prereleases
-        [Switch]
-        $PreRelease
-    )
+    $zip = "EdFi.OdsApi.Sdk.zip"
 
-    Get-NugetPackage -PackageName "EdFi.Suite3.OdsApi.TestSdk.Standard.5.1.0" `
-        -PreRelease:$PreRelease `
-        -PackageVersion $PackageVersion | Out-String
+    $resourceUrl = "https://odsassets.blob.core.windows.net/public/project-tanager/sdk/5.1.0/$zip"
+
+    $directory = "$PSScriptRoot\smoke_test\sdk"
+    $file = "EdFi.OdsApi.Sdk.dll"
+
+    if (!(Test-Path $directory -PathType Container)) {
+        New-Item -ItemType Directory -Force -Path $directory
+    }
+
+    Push-Location $directory
+
+    $fullPath = Join-Path -Path $directory -ChildPath $file
+
+    if ($null -ne (Get-ChildItem $file -ErrorAction SilentlyContinue)) {
+        Pop-Location
+        return $fullPath
+    }
+
+    try {
+        Invoke-WebRequest $resourceUrl -OutFile $zip
+        Expand-Archive $zip -Force -DestinationPath $directory
+        Remove-Item $zip
+    }
+    catch {
+        throw $_
+    }
+    finally {
+        Pop-Location
+    }
+    return $fullPath
 }
 
 <#
@@ -330,4 +342,4 @@ function Get-SouthridgeSampleData {
 
 }
 
-Export-ModuleMember -Function Get-SampleData, Get-NugetPackage, Get-BulkLoadClient, Get-SouthridgeSampleData, Get-SmokeTestTool, Get-ApiSdk
+Export-ModuleMember -Function Get-SampleData, Get-NugetPackage, Get-BulkLoadClient, Get-SouthridgeSampleData, Get-SmokeTestTool, Get-ApiSdkDll
