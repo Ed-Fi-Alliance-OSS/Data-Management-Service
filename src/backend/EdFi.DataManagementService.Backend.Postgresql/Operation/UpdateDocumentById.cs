@@ -44,7 +44,8 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 updateRequest.DocumentInfo.ReferentialId,
                 PartitionKeyFor(updateRequest.DocumentInfo.ReferentialId),
                 connection,
-                transaction
+                transaction,
+                LockOption.BlockAll
             );
 
             if (!validationResult.DocumentExists)
@@ -94,20 +95,10 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                     return new UpdateResult.UnknownFailure("Unknown Failure");
             }
         }
-        catch (PostgresException pe)
+        catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.SerializationFailure)
         {
-            if (pe.SqlState == PostgresErrorCodes.SerializationFailure)
-            {
-                _logger.LogDebug(
-                    pe,
-                    "Transaction conflict on Documents table update - {TraceId}",
-                    updateRequest.TraceId
-                );
-                return new UpdateResult.UpdateFailureWriteConflict();
-            }
-
-            _logger.LogError(pe, "Failure on Documents table update - {TraceId}", updateRequest.TraceId);
-            return new UpdateResult.UnknownFailure("Update failure");
+            _logger.LogDebug(pe, "Transaction conflict on UpdateById - {TraceId}", updateRequest.TraceId);
+            return new UpdateResult.UpdateFailureWriteConflict();
         }
         catch (Exception ex)
         {

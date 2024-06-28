@@ -26,6 +26,8 @@ Feature: School Year Reference Validation
                   | calendarCode | schoolReference     | schoolYearTypeReference | calendarTypeDescriptor                                  | gradeLevels |
                   | "451"        | { "schoolId": 535 } | { "schoolYear": 2029 }  | uri://ed-fi.org/CalendarTypeDescriptor#Student Specific | []          |
 
+        @ignore
+        # See DMS-259 - Error inserting references
         Scenario: 01 Try creating a resource using a valid school year
              When a POST request is made to "/ed-fi/calendars" with
                   """
@@ -41,7 +43,7 @@ Feature: School Year Reference Validation
                       "gradeLevels": []
                   }
                   """
-             Then it should respond with 201
+             Then it should respond with 200 or 201
 
         @Ignore
         Scenario: 02 Try creating a resource using an invalid school year

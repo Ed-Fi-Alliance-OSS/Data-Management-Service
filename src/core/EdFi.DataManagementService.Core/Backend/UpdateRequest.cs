@@ -15,11 +15,11 @@ internal record UpdateRequest(
     /// <summary>
     /// The ResourceInfo of the document to update
     /// </summary>
-    IResourceInfo ResourceInfo,
+    ResourceInfo ResourceInfo,
     /// <summary>
     /// The DocumentInfo of the document to update
     /// </summary>
-    IDocumentInfo DocumentInfo,
+    DocumentInfo DocumentInfo,
     /// <summary>
     /// The EdfiDoc of the document to update, as a JsonNode
     /// </summary>
@@ -27,7 +27,7 @@ internal record UpdateRequest(
     /// <summary>
     /// The request TraceId
     /// </summary>
-    ITraceId TraceId,
+    TraceId TraceId,
     /// <summary>
     /// The DocumentUuid of the document to update
     /// </summary>

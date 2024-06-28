@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.ApiSchema.Extensions;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using Microsoft.Extensions.Logging;
+using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
 
 namespace EdFi.DataManagementService.Core.Extraction;
 
@@ -39,13 +40,29 @@ internal static class IdentityExtractor
         }
 
         // Build up documentIdentity in order
-        IEnumerable<IDocumentIdentityElement> documentIdentityElements =
+        IEnumerable<DocumentIdentityElement> documentIdentityElements =
             resourceSchema.IdentityJsonPaths.Select(identityJsonPath => new DocumentIdentityElement(
                 identityJsonPath,
                 documentBody.SelectRequiredNodeFromPathCoerceToString(identityJsonPath.Value, logger)
             ));
 
-        return new DocumentIdentity(documentIdentityElements.ToList());
+        return new DocumentIdentity(documentIdentityElements.ToArray());
+    }
+
+    /// <summary>
+    /// For a DocumentIdentity with a single element, returns a new DocumentIdentity with the
+    /// element DocumentObjectKey replaced with a new DocumentObjectKey.
+    /// </summary>
+    public static DocumentIdentity IdentityRename(
+        JsonPath superclassIdentityJsonPath,
+        DocumentIdentityElement identityElement
+    )
+    {
+        DocumentIdentityElement[] newElementArray =
+        [
+            new DocumentIdentityElement(superclassIdentityJsonPath, identityElement.IdentityValue)
+        ];
+        return new(newElementArray);
     }
 
     /// <summary>
@@ -71,30 +88,32 @@ internal static class IdentityExtractor
             return null;
         }
 
+        BaseResourceInfo superclassResourceInfo =
+            new(
+                ResourceName: resourceSchema.SuperclassResourceName,
+                ProjectName: resourceSchema.SuperclassProjectName,
+                IsDescriptor: false
+            );
+
         // Associations do not rename the identity fields in MetaEd, so the DocumentIdentity portion is the same
         if (resourceSchema.SubclassType == "association")
         {
             return new(
-                ResourceInfo: new BaseResourceInfo(
-                    ResourceName: resourceSchema.SuperclassResourceName,
-                    ProjectName: resourceSchema.SuperclassProjectName,
-                    IsDescriptor: false
-                ),
-                DocumentIdentity: documentIdentity
+                superclassResourceInfo,
+                documentIdentity,
+                ReferentialIdFrom(superclassResourceInfo, documentIdentity)
             );
         }
 
-        DocumentIdentity superclassIdentity = documentIdentity.IdentityRename(
-            resourceSchema.SuperclassIdentityJsonPath
+        DocumentIdentity superclassIdentity = IdentityRename(
+            resourceSchema.SuperclassIdentityJsonPath,
+            documentIdentity.DocumentIdentityElements[0]
         );
 
         return new(
-            ResourceInfo: new BaseResourceInfo(
-                ResourceName: resourceSchema.SuperclassResourceName,
-                ProjectName: resourceSchema.SuperclassProjectName,
-                IsDescriptor: false
-            ),
-            DocumentIdentity: superclassIdentity
+            superclassResourceInfo,
+            superclassIdentity,
+            ReferentialIdFrom(superclassResourceInfo, superclassIdentity)
         );
     }
 

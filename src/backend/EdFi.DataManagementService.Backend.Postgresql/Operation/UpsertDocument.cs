@@ -3,8 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -35,95 +35,91 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
         long newDocumentId;
 
         // First insert into Documents
-        try
-        {
-            upsertRequest.EdfiDoc["id"] = upsertRequest.DocumentUuid.Value;
-            newDocumentId = await _sqlAction.InsertDocument(
-                new(
-                    DocumentPartitionKey: documentPartitionKey,
-                    DocumentUuid: upsertRequest.DocumentUuid.Value,
-                    ResourceName: upsertRequest.ResourceInfo.ResourceName.Value,
-                    ResourceVersion: upsertRequest.ResourceInfo.ResourceVersion.Value,
-                    ProjectName: upsertRequest.ResourceInfo.ProjectName.Value,
-                    EdfiDoc: JsonSerializer.Deserialize<JsonElement>(upsertRequest.EdfiDoc)
-                ),
-                connection,
-                transaction
-            );
-        }
-        catch (PostgresException pe)
-        {
-            if (pe.SqlState == PostgresErrorCodes.SerializationFailure)
-            {
-                _logger.LogDebug(
-                    pe,
-                    "Transaction conflict on Documents table insert - {TraceId}",
-                    upsertRequest.TraceId
-                );
-                return new UpsertResult.UpsertFailureWriteConflict();
-            }
-
-            _logger.LogError(pe, "Failure on Documents table insert - {TraceId}", upsertRequest.TraceId);
-            return new UpsertResult.UnknownFailure("Upsert failure");
-        }
+        upsertRequest.EdfiDoc["id"] = upsertRequest.DocumentUuid.Value;
+        newDocumentId = await _sqlAction.InsertDocument(
+            new(
+                DocumentPartitionKey: documentPartitionKey,
+                DocumentUuid: upsertRequest.DocumentUuid.Value,
+                ResourceName: upsertRequest.ResourceInfo.ResourceName.Value,
+                ResourceVersion: upsertRequest.ResourceInfo.ResourceVersion.Value,
+                ProjectName: upsertRequest.ResourceInfo.ProjectName.Value,
+                EdfiDoc: JsonSerializer.Deserialize<JsonElement>(upsertRequest.EdfiDoc)
+            ),
+            connection,
+            transaction
+        );
 
         // Next insert into Aliases
+        await _sqlAction.InsertAlias(
+            new(
+                DocumentPartitionKey: documentPartitionKey,
+                DocumentId: newDocumentId,
+                ReferentialId: upsertRequest.DocumentInfo.ReferentialId.Value,
+                ReferentialPartitionKey: PartitionKeyFor(upsertRequest.DocumentInfo.ReferentialId).Value
+            ),
+            connection,
+            transaction
+        );
+
+        SuperclassIdentity? superclassIdentity = upsertRequest.DocumentInfo.SuperclassIdentity;
+
         try
         {
-            await _sqlAction.InsertAlias(
-                new(
-                    DocumentPartitionKey: documentPartitionKey,
-                    DocumentId: newDocumentId,
-                    ReferentialId: upsertRequest.DocumentInfo.ReferentialId.Value,
-                    ReferentialPartitionKey: PartitionKeyFor(upsertRequest.DocumentInfo.ReferentialId).Value
-                ),
-                connection,
-                transaction
-            );
-
-            if (upsertRequest.DocumentInfo.SuperclassReferentialId != null)
+            if (superclassIdentity != null)
             {
                 await _sqlAction.InsertAlias(
                     new(
                         DocumentPartitionKey: documentPartitionKey,
                         DocumentId: newDocumentId,
-                        ReferentialId: upsertRequest.DocumentInfo.SuperclassReferentialId.Value.Value,
-                        ReferentialPartitionKey: PartitionKeyFor(upsertRequest.DocumentInfo.SuperclassReferentialId.Value).Value
+                        ReferentialId: superclassIdentity.ReferentialId.Value,
+                        ReferentialPartitionKey: PartitionKeyFor(superclassIdentity.ReferentialId).Value
                     ),
                     connection,
                     transaction
                 );
             }
         }
-        catch (PostgresException pe)
+        catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.UniqueViolation)
         {
-            if (pe.SqlState == PostgresErrorCodes.SerializationFailure)
-            {
-                _logger.LogDebug(
-                    pe,
-                    "Transaction conflict on Aliases table insert - {TraceId}",
-                    upsertRequest.TraceId
-                );
-                return new UpsertResult.UpsertFailureWriteConflict();
-            }
+            _logger.LogInformation(
+                pe,
+                "Failure: alias identity already exists - {TraceId}",
+                upsertRequest.TraceId
+            );
 
-            if (pe.SqlState == PostgresErrorCodes.UniqueViolation)
-            {
-                _logger.LogInformation(
-                    "Failure: alias identity already exists - {TraceId}",
-                    upsertRequest.TraceId
-                );
-
-                return new UpsertResult.UpsertFailureIdentityConflict(
-                    upsertRequest.ResourceInfo.ResourceName.Value,
-                    upsertRequest.DocumentInfo.DocumentIdentity.DocumentIdentityElements.Select(d =>
-                        new KeyValuePair<string, string>(d.IdentityJsonPath.Value.Substring(d.IdentityJsonPath.Value.LastIndexOf('.') + 1), d.IdentityValue)
+            return new UpsertResult.UpsertFailureIdentityConflict(
+                upsertRequest.ResourceInfo.ResourceName.Value,
+                upsertRequest.DocumentInfo.DocumentIdentity.DocumentIdentityElements.Select(
+                    d => new KeyValuePair<string, string>(
+                        d.IdentityJsonPath.Value.Substring(d.IdentityJsonPath.Value.LastIndexOf('.') + 1),
+                        d.IdentityValue
                     )
-                );
-            }
+                )
+            );
+        }
 
-            _logger.LogError(pe, "Failure on Aliases table insert - {TraceId}", upsertRequest.TraceId);
-            return new UpsertResult.UnknownFailure("Upsert failure");
+        DocumentReference[] documentReferences = upsertRequest.DocumentInfo.DocumentReferences;
+
+        if (documentReferences.Length > 0)
+        {
+            // Next insert into References
+            int numberOfRowsInserted = await _sqlAction.InsertReferences(
+                new(
+                    ParentDocumentPartitionKey: documentPartitionKey,
+                    ParentDocumentId: newDocumentId,
+                    ReferentialIds: documentReferences.Select(x => x.ReferentialId.Value).ToArray(),
+                    ReferentialPartitionKeys: documentReferences
+                        .Select(x => PartitionKeyFor(x.ReferentialId).Value)
+                        .ToArray()
+                ),
+                connection,
+                transaction
+            );
+
+            if (numberOfRowsInserted != documentReferences.Length)
+            {
+                throw new InvalidOperationException("Database did not insert all references");
+            }
         }
 
         _logger.LogDebug("Upsert success as insert - {TraceId}", upsertRequest.TraceId);
@@ -131,39 +127,57 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
     }
 
     public async Task<UpsertResult> AsUpdate(
+        long documentId,
         int documentPartitionKey,
         Guid documentUuid,
-        JsonNode edfiDoc,
-        ITraceId traceId,
+        IUpsertRequest upsertRequest,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     )
     {
         // Update the EdfiDoc of the Document
-        try
+        upsertRequest.EdfiDoc["id"] = documentUuid;
+        await _sqlAction.UpdateDocumentEdfiDoc(
+            documentPartitionKey,
+            documentUuid,
+            JsonSerializer.Deserialize<JsonElement>(upsertRequest.EdfiDoc),
+            connection,
+            transaction
+        );
+
+        DocumentReference[] documentReferences = upsertRequest.DocumentInfo.DocumentReferences;
+
+        if (documentReferences.Length > 0)
         {
-            edfiDoc["id"] = documentUuid;
-            await _sqlAction.UpdateDocumentEdfiDoc(
+            // First clear out all the existing references, as they may have changed
+            await _sqlAction.DeleteReferencesByDocumentUuid(
                 documentPartitionKey,
                 documentUuid,
-                JsonSerializer.Deserialize<JsonElement>(edfiDoc),
                 connection,
                 transaction
             );
-        }
-        catch (PostgresException pe)
-        {
-            if (pe.SqlState == PostgresErrorCodes.SerializationFailure)
+
+            // Next insert current references
+            int numberOfRowsInserted = await _sqlAction.InsertReferences(
+                new(
+                    ParentDocumentPartitionKey: documentPartitionKey,
+                    ParentDocumentId: documentId,
+                    ReferentialIds: documentReferences.Select(x => x.ReferentialId.Value).ToArray(),
+                    ReferentialPartitionKeys: documentReferences
+                        .Select(x => PartitionKeyFor(x.ReferentialId).Value)
+                        .ToArray()
+                ),
+                connection,
+                transaction
+            );
+
+            if (numberOfRowsInserted != documentReferences.Length)
             {
-                _logger.LogDebug(pe, "Transaction conflict on Documents table update - {TraceId}", traceId);
-                return new UpsertResult.UpsertFailureWriteConflict();
+                throw new InvalidOperationException("Database did not insert all references");
             }
-
-            _logger.LogError(pe, "Failure on on Documents table update - {TraceId}", traceId);
-            return new UpsertResult.UnknownFailure("Upsert failure");
         }
 
-        _logger.LogDebug("Upsert success as insert - {TraceId}", traceId);
+        _logger.LogDebug("Upsert success as update - {TraceId}", upsertRequest.TraceId);
         return new UpsertResult.UpdateSuccess(new(documentUuid));
     }
 
@@ -182,13 +196,27 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
 
         try
         {
-            // Attempt to get the document, to see whether this is an insert or update
-            Document? documentFromDb = await _sqlAction.FindDocumentByReferentialId(
-                upsertRequest.DocumentInfo.ReferentialId,
-                PartitionKeyFor(upsertRequest.DocumentInfo.ReferentialId),
-                connection,
-                transaction
-            );
+            Document? documentFromDb;
+            try
+            {
+                // Attempt to get the document, to see whether this is an insert or update
+                documentFromDb = await _sqlAction.FindDocumentByReferentialId(
+                    upsertRequest.DocumentInfo.ReferentialId,
+                    PartitionKeyFor(upsertRequest.DocumentInfo.ReferentialId),
+                    connection,
+                    transaction,
+                    LockOption.BlockUpdateDelete
+                );
+            }
+            catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.SerializationFailure)
+            {
+                _logger.LogDebug(
+                    pe,
+                    "Transaction conflict on Documents table read - {TraceId}",
+                    upsertRequest.TraceId
+                );
+                return new UpsertResult.UpsertFailureWriteConflict();
+            }
 
             // Either get the existing document uuid or use the new one provided
             if (documentFromDb == null)
@@ -196,14 +224,31 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 return await AsInsert(upsertRequest, connection, transaction);
             }
 
+            long documentId =
+                documentFromDb.Id
+                ?? throw new InvalidOperationException("documentFromDb.Id should never be null");
+
             return await AsUpdate(
+                documentId,
                 documentFromDb.DocumentPartitionKey,
                 documentFromDb.DocumentUuid,
-                upsertRequest.EdfiDoc,
-                upsertRequest.TraceId,
+                upsertRequest,
                 connection,
                 transaction
             );
+        }
+        catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.SerializationFailure)
+        {
+            _logger.LogDebug(pe, "Transaction conflict on Upsert - {TraceId}", upsertRequest.TraceId);
+            return new UpsertResult.UpsertFailureWriteConflict();
+        }
+        catch (PostgresException pe)
+            when (pe.SqlState == PostgresErrorCodes.ForeignKeyViolation
+                && pe.ConstraintName == "fk_references_referencedalias"
+            )
+        {
+            _logger.LogDebug(pe, "Foreign key violation on Upsert - {TraceId}", upsertRequest.TraceId);
+            return new UpsertResult.UpsertFailureReference("See DMS-259");
         }
         catch (Exception ex)
         {

@@ -1,13 +1,20 @@
 Feature: Paging Support for GET requests for Ed-Fi Resources
 
         Background:
-            Given the following schools exist
-                  | schoolId | nameOfInstitution | gradeLevels         | educationOrganizationCategories     |
-                  | 1        | School 1          | [ "Postsecondary" ] | [ "Educator Preparation Provider" ] |
-                  | 2        | School 2          | [ "Tenth grade" ]   | [ "School" ]                        |
-                  | 3        | School 3          | [ "Seventh grade" ] | [ "School" ]                        |
-                  | 4        | School 4          | [ "Postsecondary" ] | [ "School" ]                        |
-                  | 5        | School 5          | [ "Postsecondary" ] | [ "Educator Preparation Provider" ] |
+            Given the system has these "descriptors"
+                | descriptorname                           | codeValue                       | description                   | namespace                                               | shortDescription               |
+                | educationOrganizationCategoryDescriptors | School                          | School                        | uri://ed-fi.org/EducationOrganizationCategoryDescriptor | School                         |
+                | educationOrganizationCategoryDescriptors | Educator Preparation Provider   | Educator Preparation Provider | uri://ed-fi.org/EducationOrganizationCategoryDescriptor | Educator Preparation Provider  |
+                | gradeLevelDescriptors                    | Tenth grade                     | Tenth grade                   | uri://ed-fi.org/GradeLevelDescriptors                   | Tenth grade                    |
+                | gradeLevelDescriptors                    | Seventh grade                   | Seventh grade                 | uri://ed-fi.org/GradeLevelDescriptors                   | Seventh grade                  |
+                | gradeLevelDescriptors                    | Postsecondary                   | Postsecondary                 | uri://ed-fi.org/GradeLevelDescriptors                   | Postsecondary                  |
+            And the system has these "schools"
+                | schoolId | nameOfInstitution | gradeLevels                                                                        | educationOrganizationCategories                                                                                                               |
+                | 1        | School 1          | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"} ] |
+                | 2        | School 2          | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"} ]   | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ]                        |
+                | 3        | School 3          | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Seventh grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ]                        |
+                | 4        | School 4          | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ]                        |
+                | 5        | School 5          | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"} ] |
 
         Scenario: 01 Ensure clients can get information when filtering by limit and and a valid offset
              When a GET request is made to "/ed-fi/schools?offset=3&limit=5"
@@ -21,12 +28,12 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                             "nameOfInstitution": "School 4",
                             "educationOrganizationCategories": [
                             {
-                                "educationOrganizationCategoryDescriptor": "School"
+                                "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"
                             }
                             ],
                             "gradeLevels": [
                             {
-                                "gradeLevelDescriptor": "Postsecondary"
+                                "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
                             }
                             ]
                         },
@@ -36,12 +43,12 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                             "nameOfInstitution": "School 5",
                             "educationOrganizationCategories": [
                             {
-                                "educationOrganizationCategoryDescriptor": "Educator Preparation Provider"
+                                "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"
                             }
                             ],
                             "gradeLevels": [
                             {
-                                "gradeLevelDescriptor": "Postsecondary"
+                                "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
                             }
                             ]
                         }
@@ -68,12 +75,12 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                             "nameOfInstitution": "School 5",
                             "educationOrganizationCategories": [
                             {
-                                "educationOrganizationCategoryDescriptor": "Educator Preparation Provider"
+                                "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"
                             }
                             ],
                             "gradeLevels": [
                             {
-                                "gradeLevelDescriptor": "Postsecondary"
+                                "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
                             }
                             ]
                         }
@@ -94,12 +101,12 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                             "nameOfInstitution": "School 2",
                             "educationOrganizationCategories": [
                             {
-                                "educationOrganizationCategoryDescriptor": "School"
+                                "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"
                             }
                             ],
                             "gradeLevels": [
                             {
-                                "gradeLevelDescriptor": "Tenth grade"
+                                "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"
                             }
                             ]
                         }
