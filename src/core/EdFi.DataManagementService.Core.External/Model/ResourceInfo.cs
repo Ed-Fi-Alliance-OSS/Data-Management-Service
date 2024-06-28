@@ -3,14 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Core.External.Model;
-
-namespace EdFi.DataManagementService.Core.Model;
+namespace EdFi.DataManagementService.Core.External.Model;
 
 /// <summary>
 /// API resource information including version
 /// </summary>
-internal record ResourceInfo(
+public record ResourceInfo(
     IMetaEdProjectName ProjectName,
     IMetaEdResourceName ResourceName,
     bool IsDescriptor,
@@ -22,4 +20,4 @@ internal record ResourceInfo(
     /// Whether the resource allows the identity fields of a document to be updated (changed)
     /// </summary>
     bool AllowIdentityUpdates
-) : BaseResourceInfo(ProjectName, ResourceName, IsDescriptor), IResourceInfo;
+) : BaseResourceInfo(ProjectName, ResourceName, IsDescriptor);

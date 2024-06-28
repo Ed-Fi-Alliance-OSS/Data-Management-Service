@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Response;
 using Json.Schema;
 
@@ -59,9 +58,7 @@ internal class ApiSchemaValidator(IApiSchemaSchemaProvider _apiSchemaSchemaProvi
                     {
                         errors.Add(error.Value);
                     }
-                    validationErrors.Add(
-                        new SchemaValidationFailure(new JsonPath(propertyPathAndName), errors)
-                    );
+                    validationErrors.Add(new(new(propertyPathAndName), errors));
                 }
             }
         }

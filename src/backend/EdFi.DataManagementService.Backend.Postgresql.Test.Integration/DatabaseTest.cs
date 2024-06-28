@@ -65,42 +65,55 @@ public abstract class DatabaseTest : DatabaseTestBase
         return (new { Value = value }).ActLike<T>();
     }
 
-    protected static IResourceInfo CreateResourceInfo(string resourceName)
+    protected static ResourceInfo CreateResourceInfo(string resourceName)
     {
-        return (
-            new
-            {
-                ResourceVersion = AsValueType<ISemVer, string>("5.0.0"),
-                AllowIdentityUpdates = false,
-                ProjectName = AsValueType<IMetaEdProjectName, string>("ProjectName"),
-                ResourceName = AsValueType<IMetaEdResourceName, string>(resourceName),
-                IsDescriptor = false
-            }
-        ).ActLike<IResourceInfo>();
+        return new(
+            ResourceVersion: AsValueType<ISemVer, string>("5.0.0"),
+            AllowIdentityUpdates: false,
+            ProjectName: AsValueType<IMetaEdProjectName, string>("ProjectName"),
+            ResourceName: AsValueType<IMetaEdResourceName, string>(resourceName),
+            IsDescriptor: false
+        );
     }
 
-    protected static IDocumentInfo CreateDocumentInfo(Guid referentialId, Guid? superclassReferentialIdentity = null)
+    protected static DocumentInfo CreateDocumentInfo(
+        Guid referentialId,
+        DocumentReference[]? documentReferences = null,
+        SuperclassIdentity? superclassIdentity = null
+    )
     {
-        return (
-            new
-            {
-                DocumentIdentity = new
-                {
-                    DocumentIdentityElements = new List<IDocumentIdentityElement>
-                    {
-                        new {
-                            IdentityValue = "1",
-                            IdentityJsonPath = AsValueType<IJsonPath, string>("$.identityPath")
-                        }.ActLike<IDocumentIdentityElement>()
-                    }
-                },
-                ReferentialId = new ReferentialId(referentialId),
-                DocumentReferences = new List<IDocumentReference>(),
-                DescriptorReferences = new List<IDocumentReference>(),
-                SuperclassIdentity = null as ISuperclassIdentity,
-                SuperclassReferentialId = superclassReferentialIdentity != null ? new ReferentialId(superclassReferentialIdentity.Value) : (ReferentialId?)null
-            }
-        ).ActLike<IDocumentInfo>();
+        return new(
+            DocumentIdentity: new([new(IdentityValue: "", IdentityJsonPath: new("$"))]),
+            ReferentialId: new ReferentialId(referentialId),
+            DocumentReferences: documentReferences ?? [],
+            DescriptorReferences: [],
+            SuperclassIdentity: superclassIdentity
+        );
+    }
+
+    public record Reference(string ResourceName, Guid ReferentialIdGuid);
+
+    protected static DocumentReference CreateDocumentReference(Reference reference)
+    {
+        return new(
+            ResourceInfo: CreateResourceInfo(reference.ResourceName),
+            DocumentIdentity: new([]),
+            ReferentialId: new ReferentialId(reference.ReferentialIdGuid)
+        );
+    }
+
+    protected static SuperclassIdentity CreateSuperclassIdentity(string resourceName, Guid referentialIdGuid)
+    {
+        return new(
+            ResourceInfo: CreateResourceInfo(resourceName),
+            DocumentIdentity: new([]),
+            ReferentialId: new ReferentialId(referentialIdGuid)
+        );
+    }
+
+    protected static DocumentReference[] CreateDocumentReferences(Reference[] references)
+    {
+        return references.Select(x => CreateDocumentReference(x)).ToArray();
     }
 
     protected static IUpsertRequest CreateUpsertRequest(
@@ -108,14 +121,15 @@ public abstract class DatabaseTest : DatabaseTestBase
         Guid documentUuidGuid,
         Guid referentialId,
         string edfiDocString,
-        Guid? superclassReferentialIdentity = null
+        DocumentReference[]? documentReferences = null,
+        SuperclassIdentity? superclassIdentity = null
     )
     {
         return (
             new
             {
                 ResourceInfo = CreateResourceInfo(resourceName),
-                DocumentInfo = CreateDocumentInfo(referentialId, superclassReferentialIdentity),
+                DocumentInfo = CreateDocumentInfo(referentialId, documentReferences, superclassIdentity),
                 EdfiDoc = JsonNode.Parse(edfiDocString),
                 TraceId = new TraceId("123"),
                 DocumentUuid = new DocumentUuid(documentUuidGuid)

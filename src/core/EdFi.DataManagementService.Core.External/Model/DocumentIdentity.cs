@@ -13,10 +13,8 @@ namespace EdFi.DataManagementService.Core.External.Model;
 ///
 /// This can be an array of key-value pairs because many documents have multiple values as part of their identity.
 /// </summary>
-public interface IDocumentIdentity
+public record DocumentIdentity(DocumentIdentityElement[] DocumentIdentityElements)
 {
-    /// <summary>
-    /// An immutable version of the underlying identity elements, mostly for testability
-    /// </summary>
-    public IList<IDocumentIdentityElement> DocumentIdentityElements { get; }
+    // Use this synthetic, hardcoded identity JsonPath for all descriptors
+    public static readonly JsonPath DescriptorIdentityJsonPath = new("$.descriptor");
 }

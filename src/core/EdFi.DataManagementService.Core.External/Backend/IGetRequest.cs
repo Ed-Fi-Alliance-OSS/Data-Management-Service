@@ -20,10 +20,10 @@ public interface IGetRequest
     /// <summary>
     /// The ResourceInfo for the resource being retrieved
     /// </summary>
-    IResourceInfo ResourceInfo { get; }
+    ResourceInfo ResourceInfo { get; }
 
     /// <summary>
     /// The request TraceId
     /// </summary>
-    ITraceId TraceId { get; }
+    TraceId TraceId { get; }
 }

@@ -34,7 +34,12 @@ public abstract class DatabaseTestBase
             _respawnerConnection,
             new RespawnerOptions
             {
-                TablesToInclude = [new("public", "documents"), new("public", "aliases")],
+                TablesToInclude =
+                [
+                    new("public", "documents"),
+                    new("public", "aliases"),
+                    new("public", "references")
+                ],
                 DbAdapter = DbAdapter.Postgres
             }
         );

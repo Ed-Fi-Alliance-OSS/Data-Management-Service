@@ -27,5 +27,5 @@ public record FrontendRequest(
     /// <summary>
     /// A request identifier provided by the frontend service, used for log tracing
     /// </summary>
-    ITraceId TraceId
+    TraceId TraceId
 );

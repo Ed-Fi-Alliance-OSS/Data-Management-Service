@@ -30,4 +30,8 @@ CREATE TABLE Aliases_14 PARTITION OF Aliases FOR VALUES WITH (MODULUS 16, REMAIN
 CREATE TABLE Aliases_15 PARTITION OF Aliases FOR VALUES WITH (MODULUS 16, REMAINDER 15);
 
 -- Referential ID uniqueness validation and reference insert into References support
-CREATE UNIQUE INDEX UX_Aliases_ReferentialId ON Aliases(ReferentialPartitionKey, ReferentialId)
+CREATE UNIQUE INDEX UX_Aliases_ReferentialId ON Aliases(ReferentialPartitionKey, ReferentialId);
+
+ALTER TABLE Aliases
+ADD CONSTRAINT FK_Aliases_Documents FOREIGN KEY (DocumentPartitionKey, DocumentId)
+REFERENCES Documents (DocumentPartitionKey, Id) ON DELETE CASCADE;

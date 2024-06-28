@@ -20,14 +20,21 @@ Feature: Query Strings handling for GET requests
               And the response headers does not include total-count
 
     Rule: Thesting with data upload 
-    Background: 
-        Given the following schools exist
-                  | schoolId  | nameOfInstitution                               | gradeLevels                                                         | educationOrganizationCategories |
-                  | 5         | School with max edorgId value                   | [ "Tenth grade", "Ninth grade", "Eleventh grade", "Twelfth grade" ] | [ "School" ]                    |
-                  | 6         | UT Austin College of Education Under Graduate   | [ "Eleventh grade" ]                                                | [ "School" ]                    |
-                  | 255901001 | Grand Bend High School                          | [ "Tenth grade" ]                                                   | [ "School" ]                    |
-                  | 255901044 | Grand Bend Middle School                        | [ "Ninth grade" ]                                                   | [ "School" ]                    |
-                  | 255901045 | UT Austin Extended Campus                       | [ "Twelfth grade" ]                                                 | [ "School" ]                    |
+    Background:
+        Given the system has these "descriptors"
+            | descriptorname                           | codeValue         | description       | namespace                                               | shortDescription  |
+            | educationOrganizationCategoryDescriptors | School            | School            | uri://ed-fi.org/EducationOrganizationCategoryDescriptor | School            |
+            | gradeLevelDescriptors                    | Tenth grade       | Tenth grade       | uri://ed-fi.org/GradeLevelDescriptors                   | Tenth grade       |
+            | gradeLevelDescriptors                    | Ninth grade       | Ninth grade       | uri://ed-fi.org/GradeLevelDescriptors                   | Ninth grade       |
+            | gradeLevelDescriptors                    | Eleventh grade    | Eleventh grade    | uri://ed-fi.org/GradeLevelDescriptors                   | Eleventh grade    |
+            | gradeLevelDescriptors                    | Twelfth grade     | Twelfth grade     | uri://ed-fi.org/GradeLevelDescriptors                   | Twelfth grade     |
+        And the system has these "schools"
+            | schoolId  | nameOfInstitution                               | gradeLevels                                                                         | educationOrganizationCategories                                                                                         |
+            | 5         | School with max edorgId value                   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"} ]    | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ]  |
+            | 6         | UT Austin College of Education Under Graduate   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ]  |
+            | 255901001 | Grand Bend High School                          | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"} ]    | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ]  |
+            | 255901044 | Grand Bend Middle School                        | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"} ]    | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ]  |
+            | 255901045 | UT Austin Extended Campus                       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Twelfth grade"} ]  | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ]  |
 
         Scenario: 04 Ensure that schools return the total count            
              When a GET request is made to "/ed-fi/schools?totalCount=true"

@@ -27,47 +27,11 @@ function Get-VersionNumber {
 
 <#
 .DESCRIPTION
-Retrieves a list package versions previously published to Azure Artifacts.
-#>
-function Get-PackagesFromAzure {
-    param(
-        # Array of packages to look up
-        [Parameter(Mandatory=$true)]
-        [String[]]
-        $Packages
-    )
-
-    $uri = "$FeedsURL/packages?api-version=6.0-preview.1"
-    $result = @{ }
-
-    foreach ($packageName in $Packages) {
-        $packageQueryUrl = "$uri&packageNameQuery=$packageName"
-        $packagesResponse = (Invoke-WebRequest -Uri $packageQueryUrl -UseBasicParsing).Content | ConvertFrom-Json
-        $latestPackageVersion = ($packagesResponse.value.versions | Where-Object { $_.isLatest -eq $True } | Select-Object -ExpandProperty version)
-
-        Write-Output "Package Name: $packageName"
-        Write-Output "Package Version: $latestPackageVersion"
-
-        $result.add(
-            $packageName.ToLower().Trim(),
-            $latestPackageVersion
-        )
-    }
-    return $result
-}
-
-<#
-.DESCRIPTION
 Promotes a package in Azure Artifacts to a view, e.g. pre-release or release.
 #>
 function Invoke-Promote {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'False positive')]
     param(
-        # NuGet package feed / source
-        [Parameter(Mandatory = $true)]
-        [String]
-        $FeedsURL,
-
         # NuGet Packages API URL
         [Parameter(Mandatory = $true)]
         [String]
@@ -86,41 +50,40 @@ function Invoke-Promote {
         # View to promote into
         [Parameter(Mandatory = $true)]
         [String]
-        $View
+        $ViewId,
+
+        # Git ref (short) for the release tag ex: v1.3.5
+        [Parameter(Mandatory = $true)]
+        $ReleaseRef
     )
 
 
-    $packages = @("EdFi.DataManagement.Service")
+    $package = "EdFi.DataManagementService"
+    $version = $ReleaseRef -replace "v", ""
 
     $body = @{
         data      = @{
-            viewId = $View
+            viewId = $ViewId
         }
         operation = 0
-        packages  = $packages
-    }
-
-    $latestPackages = Get-PackagesFromAzure -Packages $packages
-
-    foreach ($key in $latestPackages.Keys) {
-        $body.packages += @{
-            id           = $key
-            version      = $latestPackages[$key]
-            protocolType = "NuGet"
-        }
-    }
+        packages  = @(
+            @{
+                id = $package
+                version = $version
+            }
+        )
+    } | ConvertTo-Json
 
     $parameters = @{
         Method      = "POST"
         ContentType = "application/json"
         Credential  = New-Object -TypeName PSCredential -ArgumentList $Username, $Password
-        URI         = "$PackagesURL/nuget/packagesBatch?api-version=5.0-preview.1"
-        Body        = ConvertTo-Json $Body -Depth 10
+        URI         = $PackagesURL
+        Body        = $body
     }
 
+    Write-Output "Web request parameters:"
     $parameters | Out-Host
-    $parameters.URI | Out-Host
-    $parameters.Body | Out-Host
 
     $response = Invoke-WebRequest @parameters -UseBasicParsing
     $response | ConvertTo-Json -Depth 10 | Out-Host
