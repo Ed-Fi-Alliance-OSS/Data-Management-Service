@@ -21,14 +21,7 @@ Feature: Query Strings handling for GET requests
 
     Rule: Thesting with data upload 
     Background:
-        Given the system has these "descriptors"
-            | descriptorname                           | codeValue         | description       | namespace                                               | shortDescription  |
-            | educationOrganizationCategoryDescriptors | School            | School            | uri://ed-fi.org/EducationOrganizationCategoryDescriptor | School            |
-            | gradeLevelDescriptors                    | Tenth grade       | Tenth grade       | uri://ed-fi.org/GradeLevelDescriptors                   | Tenth grade       |
-            | gradeLevelDescriptors                    | Ninth grade       | Ninth grade       | uri://ed-fi.org/GradeLevelDescriptors                   | Ninth grade       |
-            | gradeLevelDescriptors                    | Eleventh grade    | Eleventh grade    | uri://ed-fi.org/GradeLevelDescriptors                   | Eleventh grade    |
-            | gradeLevelDescriptors                    | Twelfth grade     | Twelfth grade     | uri://ed-fi.org/GradeLevelDescriptors                   | Twelfth grade     |
-        And the system has these "schools"
+        Given the system has these "schools"
             | schoolId  | nameOfInstitution                               | gradeLevels                                                                         | educationOrganizationCategories                                                                                         |
             | 5         | School with max edorgId value                   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"} ]    | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ]  |
             | 6         | UT Austin College of Education Under Graduate   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ]  |
