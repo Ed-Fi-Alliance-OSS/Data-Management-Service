@@ -1,14 +1,7 @@
 Feature: Paging Support for GET requests for Ed-Fi Resources
 
         Background:
-            Given the system has these "descriptors"
-                | descriptorname                           | codeValue                       | description                   | namespace                                               | shortDescription               |
-                | educationOrganizationCategoryDescriptors | School                          | School                        | uri://ed-fi.org/EducationOrganizationCategoryDescriptor | School                         |
-                | educationOrganizationCategoryDescriptors | Educator Preparation Provider   | Educator Preparation Provider | uri://ed-fi.org/EducationOrganizationCategoryDescriptor | Educator Preparation Provider  |
-                | gradeLevelDescriptors                    | Tenth grade                     | Tenth grade                   | uri://ed-fi.org/GradeLevelDescriptors                   | Tenth grade                    |
-                | gradeLevelDescriptors                    | Seventh grade                   | Seventh grade                 | uri://ed-fi.org/GradeLevelDescriptors                   | Seventh grade                  |
-                | gradeLevelDescriptors                    | Postsecondary                   | Postsecondary                 | uri://ed-fi.org/GradeLevelDescriptors                   | Postsecondary                  |
-            And the system has these "schools"
+            Given the system has these "schools"
                 | schoolId | nameOfInstitution | gradeLevels                                                                        | educationOrganizationCategories                                                                                                               |
                 | 1        | School 1          | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"} ] |
                 | 2        | School 2          | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"} ]   | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ]                        |

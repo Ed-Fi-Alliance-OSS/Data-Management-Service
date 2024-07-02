@@ -55,25 +55,24 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             //throw new PendingStepException();
         }
 
-
         [Given("the system has these {string}")]
-        public async Task GivenAPOSTRequestWithListOfRequiredItems(string entityType, DataTable dataTable)
+        public async Task GivenTheSystemHasThese(string entityType, DataTable dataTable)
         {
             var _apiResponses = new List<IAPIResponse>();
             var baseUrl = $"data/ed-fi";
-            var columnName = "descriptorname";
 
-            var columnHeaders = entityType.Equals("descriptors")
-                ? dataTable.Header.Where(x => !x.Equals(columnName))
-                : dataTable.Header;
+            foreach (var descriptor in dataTable.ExtractDescriptors())
+            {
+                _apiResponses.Add(await _playwrightContext.ApiRequestContext?.PostAsync(
+                    $"{baseUrl}/{descriptor["descriptorName"]}", new() { DataObject = descriptor })!
+                );
+            }
 
             foreach (var row in dataTable.Rows)
             {
-                var dataUrl = entityType.Equals("descriptors")
-                    ? $"{baseUrl}/{row[columnName]}"
-                    : $"{baseUrl}/{entityType}";
+                var dataUrl = $"{baseUrl}/{entityType}";
 
-                string body = row.Parse(columnHeaders.ToList());
+                string body = row.Parse();
 
                 _logger.log.Information(dataUrl);
                 _apiResponses.Add(

@@ -10,9 +10,9 @@ using Reqnroll;
 
 namespace EdFi.DataManagementService.Tests.E2E.Extensions
 {
-    internal static class DataRowExtensions
+    internal static class DataTableRowExtensions
     {
-        public static string Parse(this DataTableRow dataRow, IList<string> columnHeaders)
+        public static string Parse(this DataTableRow dataRow)
         {
             var options = new JsonSerializerOptions
             {
@@ -21,7 +21,7 @@ namespace EdFi.DataManagementService.Tests.E2E.Extensions
             };
 
             var rowDict = new Dictionary<string, object>();
-            foreach (var column in columnHeaders)
+            foreach (var column in dataRow.Keys)
             {
                 rowDict[column] = ConvertValueToCorrectType(dataRow[column]);
             }
