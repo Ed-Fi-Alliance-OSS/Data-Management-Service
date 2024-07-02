@@ -16,10 +16,10 @@ namespace EdFi.DataManagementService.Core.ApiSchema;
 /// </summary>
 internal class ProjectSchema(JsonNode _projectSchemaNode, ILogger _logger)
 {
-    private readonly Lazy<MetaEdProjectName> _projectName =
+    private readonly Lazy<ProjectName> _projectName =
         new(() =>
         {
-            return new MetaEdProjectName(
+            return new ProjectName(
                 _projectSchemaNode.SelectRequiredNodeFromPathAs<string>("$.projectName", _logger)
             );
         });
@@ -27,7 +27,7 @@ internal class ProjectSchema(JsonNode _projectSchemaNode, ILogger _logger)
     /// <summary>
     /// The ProjectName for this ProjectSchema, taken from the projectName
     /// </summary>
-    public IMetaEdProjectName ProjectName => _projectName.Value;
+    public ProjectName ProjectName => _projectName.Value;
 
     private readonly Lazy<SemVer> _resourceVersion =
         new(() =>
@@ -40,7 +40,7 @@ internal class ProjectSchema(JsonNode _projectSchemaNode, ILogger _logger)
     /// <summary>
     /// The ResourceVersion for this ProjectSchema, taken from the projectVersion
     /// </summary>
-    public ISemVer ResourceVersion => _resourceVersion.Value;
+    public SemVer ResourceVersion => _resourceVersion.Value;
 
     /// <summary>
     /// Finds the ResourceSchemaNode that represents the given REST resource path. Returns null if not found.

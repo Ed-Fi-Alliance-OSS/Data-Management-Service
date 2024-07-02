@@ -57,8 +57,8 @@ public class DescriptorDocumentTests
         {
             var documentInfo = descriptorDocument!.ToDocumentInfo(
                 new BaseResourceInfo(
-                    ProjectName: new MetaEdProjectName("ProjectName"),
-                    ResourceName: new MetaEdResourceName("ResourceName"),
+                    ProjectName: new ProjectName("ProjectName"),
+                    ResourceName: new ResourceName("ResourceName"),
                     IsDescriptor: true
                 )
             );

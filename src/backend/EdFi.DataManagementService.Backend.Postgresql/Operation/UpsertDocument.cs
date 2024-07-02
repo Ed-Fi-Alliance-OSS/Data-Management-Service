@@ -88,7 +88,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             );
 
             return new UpsertResult.UpsertFailureIdentityConflict(
-                upsertRequest.ResourceInfo.ResourceName.Value,
+                upsertRequest.ResourceInfo.ResourceName,
                 upsertRequest.DocumentInfo.DocumentIdentity.DocumentIdentityElements.Select(
                     d => new KeyValuePair<string, string>(
                         d.IdentityJsonPath.Value.Substring(d.IdentityJsonPath.Value.LastIndexOf('.') + 1),

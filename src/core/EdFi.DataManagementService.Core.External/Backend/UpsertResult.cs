@@ -34,7 +34,7 @@ public record UpsertResult
     /// </summary>
     /// <param name="ResourceName">The name of the resource that failed to upsert</param>
     /// <param name="DuplicateIdentityValues">The identity names and values on the attempted upsert</param>
-    public record UpsertFailureIdentityConflict(string ResourceName, IEnumerable<KeyValuePair<string, string>> DuplicateIdentityValues) : UpsertResult();
+    public record UpsertFailureIdentityConflict(ResourceName ResourceName, IEnumerable<KeyValuePair<string, string>> DuplicateIdentityValues) : UpsertResult();
 
     /// <summary>
     /// A transient failure due to a transaction write conflict

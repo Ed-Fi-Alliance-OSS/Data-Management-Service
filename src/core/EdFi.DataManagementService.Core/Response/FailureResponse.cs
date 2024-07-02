@@ -5,6 +5,8 @@
 
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using EdFi.DataManagementService.Core.ApiSchema.Model;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Response;
 
@@ -47,35 +49,37 @@ internal record FailureResponse(
     string[]? errors
 )
 {
-    private const string BaseTypePrefix = "urn:ed-fi:api";
-    private const string BadRequestTypePrefix = $"{BaseTypePrefix}:bad-request";
-    private const string DataValidationTypePrefix = $"{BadRequestTypePrefix}:data";
-    private const string NotFoundTypePrefix = $"{BaseTypePrefix}:not-found";
-    private const string IdentityConflictTypePrefix = $"{BaseTypePrefix}:identity-conflict";
+    private static readonly string _typePrefix = "urn:ed-fi:api";
+    private static readonly string _badRequestTypePrefix = $"{_typePrefix}:bad-request";
+
+    private static readonly JsonSerializerOptions _serializerOptions = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
 
     public static FailureResponse ForDataValidation(
-        string Detail,
-        Dictionary<string, string[]>? ValidationErrors,
-        string[]? Errors
+        string detail,
+        Dictionary<string, string[]>? validationErrors,
+        string[]? errors
     ) =>
         new(
-            detail: Detail,
-            type: DataValidationTypePrefix,
+            detail,
+            type: $"{_badRequestTypePrefix}:data",
             title: "Data Validation Failed",
             status: 400,
             correlationId: null,
-            validationErrors: ValidationErrors,
-            errors: Errors
+            validationErrors,
+            errors
         );
 
     public static FailureResponse ForBadRequest(
-        string Detail,
+        string detail,
         Dictionary<string, string[]>? ValidationErrors,
         string[]? Errors
     ) =>
         new(
-            detail: Detail,
-            type: BadRequestTypePrefix,
+            detail,
+            type: _badRequestTypePrefix,
             title: "Bad Request",
             status: 400,
             correlationId: null,
@@ -83,12 +87,10 @@ internal record FailureResponse(
             errors: Errors
         );
 
-    public static FailureResponse ForNotFound(
-        string Detail
-    ) =>
+    public static FailureResponse ForNotFound(string detail) =>
         new(
-            detail: Detail,
-            type: NotFoundTypePrefix,
+            detail,
+            type: $"{_typePrefix}:not-found",
             title: "Not Found",
             status: 404,
             correlationId: null,
@@ -96,40 +98,41 @@ internal record FailureResponse(
             errors: null
         );
 
-    public static FailureResponse ForIdentityConflict(
-        string[]? Errors
-    ) =>
+    public static FailureResponse ForIdentityConflict(string[]? errors) =>
         new(
             detail: "The identifying value(s) of the item are the same as another item that already exists.",
-            type: IdentityConflictTypePrefix,
+            type: $"{_typePrefix}:identity-conflict",
             title: "Identifying Values Are Not Unique",
             status: 409,
             correlationId: null,
             validationErrors: null,
-            errors: Errors
+            errors
+        );
+
+    public static FailureResponse ForReferenceMissing(ResourceName resourceName, TraceId traceId) =>
+        new(
+            detail: $"The referenced '{resourceName}' item does not exist.",
+            type: $"{_typePrefix}:data-conflict:unresolved-reference",
+            title: "Unresolved Reference",
+            status: 409,
+            correlationId: traceId.Value,
+            validationErrors: null,
+            errors: null
         );
 
     public static string GenerateFrontendErrorResponse(string errorDetail)
     {
         var validationErrors = new Dictionary<string, string[]>();
 
-        var value = new List<string>
-        {
-            errorDetail
-        };
+        var value = new List<string> { errorDetail };
         validationErrors.Add("$.", value.ToArray());
-
-        var options = new JsonSerializerOptions
-        {
-            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-        };
 
         var response = ForDataValidation(
             "Data validation failed. See 'validationErrors' for details.",
             validationErrors,
-            new List<string>().ToArray()
+            []
         );
 
-        return JsonSerializer.Serialize(response, options);
+        return JsonSerializer.Serialize(response, _serializerOptions);
     }
 }

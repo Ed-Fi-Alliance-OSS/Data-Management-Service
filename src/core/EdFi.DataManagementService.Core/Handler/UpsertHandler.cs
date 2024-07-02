@@ -13,6 +13,7 @@ using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.External.Backend.UpsertResult;
+using static EdFi.DataManagementService.Core.Response.FailureResponse;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
@@ -73,7 +74,7 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
                 => new FrontendResponse(
                     StatusCode: 409,
                     Body: JsonSerializer.Serialize(
-                        FailureResponse.ForIdentityConflict(
+                        ForIdentityConflict(
                             [
                                 $"A natural key conflict occurred when attempting to create a new resource {failure.ResourceName} with a duplicate key. "
                                 + $"The duplicate keys and values are {string.Join(',', failure.DuplicateIdentityValues.Select(d => $"({d.Key} = {d.Value})"))}"

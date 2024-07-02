@@ -79,7 +79,7 @@ internal class DocumentPath(JsonNode _documentPathsNode)
     /// </summary>
     public JsonPath Path => _path.Value;
 
-    private readonly Lazy<MetaEdProjectName> _projectName =
+    private readonly Lazy<ProjectName> _projectName =
         new(() =>
         {
             string projectNameString =
@@ -93,9 +93,9 @@ internal class DocumentPath(JsonNode _documentPathsNode)
     /// <summary>
     /// The project name of a reference, taken from projectName
     /// </summary>
-    public MetaEdProjectName ProjectName => _projectName.Value;
+    public ProjectName ProjectName => _projectName.Value;
 
-    private readonly Lazy<MetaEdResourceName> _resourceName =
+    private readonly Lazy<ResourceName> _resourceName =
         new(() =>
         {
             string resourceNameString =
@@ -109,7 +109,7 @@ internal class DocumentPath(JsonNode _documentPathsNode)
     /// <summary>
     /// The resource name of a reference, taken from projectName
     /// </summary>
-    public MetaEdResourceName ResourceName => _resourceName.Value;
+    public ResourceName ResourceName => _resourceName.Value;
 
     private readonly Lazy<IEnumerable<ReferenceJsonPathsElement>> _referenceJsonPathsElements =
         new(() =>

@@ -62,7 +62,7 @@ public class ApiSchemaBuilder
     /// as projects are at the top level and contain all resources.
     /// Always end a project definition when finished.
     ///
-    /// projectName should be the MetaEdProjectName for a project, e.g. Ed-Fi, TPDM, Michigan
+    /// projectName should be the ProjectName for a project, e.g. Ed-Fi, TPDM, Michigan
     /// </summary>
     public ApiSchemaBuilder WithStartProject(string projectName = "Ed-Fi", string projectVersion = "5.0.0")
     {

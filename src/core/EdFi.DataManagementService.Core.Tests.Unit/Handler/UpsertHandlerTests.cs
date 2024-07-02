@@ -96,7 +96,7 @@ public class UpsertHandlerTests
 
             public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
-                return Task.FromResult<UpsertResult>(new UpsertFailureIdentityConflict("", [new KeyValuePair<string, string>("key", "value")]));
+                return Task.FromResult<UpsertResult>(new UpsertFailureIdentityConflict(new(""), [new KeyValuePair<string, string>("key", "value")]));
             }
         }
 
