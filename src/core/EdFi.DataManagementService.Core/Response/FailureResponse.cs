@@ -5,6 +5,7 @@
 
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace EdFi.DataManagementService.Core.Response;
 
@@ -52,6 +53,7 @@ internal record FailureResponse(
     private const string DataValidationTypePrefix = $"{BadRequestTypePrefix}:data";
     private const string NotFoundTypePrefix = $"{BaseTypePrefix}:not-found";
     private const string IdentityConflictTypePrefix = $"{BaseTypePrefix}:identity-conflict";
+    private const string KeyChangeNotSupported = $"{BadRequestTypePrefix}:data-validation-failed:key-change-not-supported";
 
     public static FailureResponse ForDataValidation(
         string Detail,
@@ -107,6 +109,17 @@ internal record FailureResponse(
             correlationId: null,
             validationErrors: null,
             errors: Errors
+        );
+
+    public static FailureResponse ForKeyChangeNotSupported(string error) =>
+        new(
+            detail: error,
+            type: KeyChangeNotSupported,
+            title: "Key Change Not Supported",
+            status: 400,
+            correlationId: null,
+            validationErrors: null,
+            errors: null
         );
 
     public static string GenerateFrontendErrorResponse(string errorDetail)

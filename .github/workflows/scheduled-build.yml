@@ -38,7 +38,7 @@ jobs:
             echo "error_message=Command failed: ./build.ps1 Build -Configuration Debug: Permission denied" >> $GITHUB_ENV
             exit 1
           }
-        shell: bash
+        shell: pwsh
 
       - name: Install Coverlet Reference
         if: success()
@@ -53,7 +53,7 @@ jobs:
             echo "error_message=Command failed: ./build.ps1 UnitTest -Configuration Debug: Permission denied" >> $GITHUB_ENV
             exit 1
           }
-        shell: bash
+        shell: pwsh
 
       - name: Set error message output
         if: failure()
