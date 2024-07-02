@@ -1,0 +1,189 @@
+Feature: Validation of Natural and Foreign Keys
+
+        Background
+            Given the system has this School
+                  | schoolId  | nameOfInstitution      | educationOrganizationCategoryDescriptor | gradeLevelDescriptor |
+                  | 255901001 | Grand Bend High School | ["School"]                              | ["Eleventh grade"]   |
+              And the system has this Session
+                  | sessionName               | schoolId  | schoolYear | beginDate  | endDate    | termDescriptor      | totalInstructionalDays |
+                  | 2021-2022 Spring Semester | 255901001 | 2022       | 2022-01-04 | 2022-05-27 | ["Spring Semester"] | 88                     |
+              And the system has this Course
+                  | courseCode | courseIdentificationSystemDescriptor | identificationCode | educationOrganizationId | courseTitle |
+                  | ALG-1      | ["LEA course code"]                  | ALG-1              | 255901001               | Algebra I   |
+
+        @ignore
+        Scenario: 01 Verify clients can create a resource that contains repeated values from different references
+             When a POST request is made to "ed-fi/courseOfferings" with
+                  """
+                  {
+                      "localCourseCode": "ALG-1 TEST-101",
+                      "courseReference": {
+                          "courseCode": "ALG-1",
+                          "educationOrganizationId": 255901001
+                      },
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      },
+                      "sessionReference": {
+                          "schoolId": 255901001,
+                          "schoolYear": 2022,
+                          "sessionName": "2021-2022 Spring Semester"
+                      }
+                  }
+                  """
+             Then it should respond with 201
+
+        @ignore
+        Scenario: 02 Verify clients cannot create a resource using mismatching key values that are supposed to be the same
+             When a POST request is made to "ed-fi/courseOfferings" with
+                  """
+                  {
+                      "localCourseCode": "ALG-1 TEST-101",
+                      "courseReference": {
+                          "courseCode": "ALG-1",
+                          "educationOrganizationId": 255901001
+                      },
+                      "schoolReference": {
+                          "schoolId": 725
+                      },
+                      "sessionReference": {
+                          "schoolId": 999,
+                          "schoolYear": 2022,
+                          "sessionName": "2021-2022 Spring Semester"
+                      }
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                          "$.schoolReference.schoolId": [
+                              "All values supplied for 'schoolId' must match. Review all references and align the following conflicting values: '725', '999'"
+                          ],
+                          "$.sessionReference.schoolId": [
+                              "All values supplied for 'schoolId' must match. Review all references and align the following conflicting values: '725', '999'"
+                          ]
+                      }
+                  }
+                  """
+
+        @ignore
+        Scenario: 03 Verify clients cannot update a resource using mismatching key values that are supposed to be the same
+            Given Local Course Code "ALG-1 TEST-101"
+            #set value to {id}
+             When a PUT request is made to "ed-fi/courseOfferings/{id}" with
+                  """
+                  {
+                      "localCourseCode": "ALG-1 TEST-101",
+                      "courseReference": {
+                          "courseCode": "ALG-1",
+                          "educationOrganizationId": 255901001
+                      },
+                      "schoolReference": {
+                          "schoolId": 725
+                      },
+                      "sessionReference": {
+                          "schoolId": 999,
+                          "schoolYear": 2022,
+                          "sessionName": "2021-2022 Spring Semester"
+                      }
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                          "$.schoolReference.schoolId": [
+                              "All values supplied for 'schoolId' must match. Review all references and align the following conflicting values: '725', '999'"
+                          ],
+                          "$.sessionReference.schoolId": [
+                              "All values supplied for 'schoolId' must match. Review all references and align the following conflicting values: '725', '999'"
+                          ]
+                      }
+                  }
+                  """
+
+        @ignore
+        Scenario: Verify clients cannot create a resource that is missing a reference
+             When a POST request is made to "ed-fi/courseOfferings" with
+                  """
+                  {
+                      "localCourseCode": "ALG-1 TEST-101",
+                      "courseReference": {
+                          "courseCode": "ALG-1",
+                          "educationOrganizationId": 255901001
+                      },
+                      "sessionReference": {
+                          "schoolId": 255901001,
+                          "schoolYear": 2022,
+                          "sessionName": "2021-2022 Spring Semester"
+                      }
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                          "$.schoolReference": [
+                              "SchoolReference is required."
+                          ]
+                      }
+                  }
+                  """
+
+        @ignore
+        Scenario: Verify clients cannot update a resource that is missing a reference
+            Given Local Course Code "ALG-1 TEST-101"
+            #set value to {id}
+             When a PUT request is made to "ed-fi/courseOfferings/{id}"
+                  """
+                  {
+                      "localCourseCode": "ALG-1 TEST-101",
+                      "courseReference": {
+                          "courseCode": "ALG-1",
+                          "educationOrganizationId": 255901001
+                      },
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      }
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                          "$.sessionReference": [
+                              "SessionReference is required."
+                          ]
+                      }
+                  }
+                  """
+
+
+
+
+
