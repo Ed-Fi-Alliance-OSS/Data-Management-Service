@@ -72,11 +72,7 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
                 => new FrontendResponse(
                     StatusCode: 400,
                     Body: JsonSerializer.Serialize(
-                        FailureResponse.ForBadRequest(
-                            "The request could not be processed. See 'errors' for details.",
-                            null,
-                            [failure.FailureMessage]
-                        )
+                        FailureResponse.ForKeyChangeNotSupported(failure.FailureMessage)
                     ),
                     Headers: []
                 ),

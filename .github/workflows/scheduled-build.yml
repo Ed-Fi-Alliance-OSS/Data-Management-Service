@@ -32,7 +32,12 @@ jobs:
 
       - name: Build
         id: build_step
-        run: ./build.ps1 Build -Configuration Debug
+        run: |
+          ./build.ps1 Build -Configuration Debug || {
+            echo "error_message=Command failed: ./build.ps1 Build -Configuration Debug: Permission denied" >> $GITHUB_ENV
+            exit 1
+          }
+        shell: pwsh
 
       - name: Install Coverlet Reference
         if: success()
@@ -42,7 +47,18 @@ jobs:
 
       - name: Run Unit Tests
         id: unit_test_step
-        run: ./build.ps1 UnitTest -Configuration Debug
+        run: |
+         ./build.ps1 UnitTest -Configuration Debug || {
+            echo "error_message=Command failed: ./build.ps1 UnitTest -Configuration Debug: Permission denied" >> $GITHUB_ENV
+            exit 1
+          }
+        shell: pwsh
+
+      - name: Set error message output
+        if: failure()
+        id: set_error_message
+        run: |
+          echo "::set-output name=error::${{ env.error_message }}"
 
       - name: Notify Slack on success
         if: success()
