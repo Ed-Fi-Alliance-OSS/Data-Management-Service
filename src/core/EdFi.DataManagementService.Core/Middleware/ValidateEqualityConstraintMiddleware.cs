@@ -51,7 +51,8 @@ internal class ValidateEqualityConstraintMiddleware(
             var failureResponse = FailureResponse.ForBadRequest(
                 "The request could not be processed. See 'errors' for details.",
                 null,
-                errors
+                errors,
+                context.FrontendRequest.TraceId
             );
 
             _logger.LogDebug(

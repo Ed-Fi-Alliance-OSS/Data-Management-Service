@@ -26,8 +26,8 @@ public record UpsertResult
     /// <summary>
     /// A failure because referenced documents in the upserted document do not exist
     /// </summary>
-    /// <param name="ReferencingDocumentInfo">Information about the referencing documents</param>
-    public record UpsertFailureReference(string ReferencingDocumentInfo) : UpsertResult();
+    /// <param name="ResourceName">One of the referenced documents ResourceName</param>
+    public record UpsertFailureReference(ResourceName ResourceName) : UpsertResult();
 
     /// <summary>
     /// A failure because there is a different document with the same identity

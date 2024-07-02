@@ -3,9 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Encodings.Web;
-using System.Text.Json;
-using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Response;
@@ -52,22 +49,18 @@ internal record FailureResponse(
     private static readonly string _typePrefix = "urn:ed-fi:api";
     private static readonly string _badRequestTypePrefix = $"{_typePrefix}:bad-request";
 
-    private static readonly JsonSerializerOptions _serializerOptions = new()
-    {
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-    };
-
     public static FailureResponse ForDataValidation(
         string detail,
         Dictionary<string, string[]>? validationErrors,
-        string[]? errors
+        string[]? errors,
+        TraceId traceId
     ) =>
         new(
             detail,
             type: $"{_badRequestTypePrefix}:data",
             title: "Data Validation Failed",
             status: 400,
-            correlationId: null,
+            correlationId: traceId.Value,
             validationErrors,
             errors
         );
@@ -75,36 +68,37 @@ internal record FailureResponse(
     public static FailureResponse ForBadRequest(
         string detail,
         Dictionary<string, string[]>? ValidationErrors,
-        string[]? Errors
+        string[]? Errors,
+        TraceId traceId
     ) =>
         new(
             detail,
             type: _badRequestTypePrefix,
             title: "Bad Request",
             status: 400,
-            correlationId: null,
+            correlationId: traceId.Value,
             validationErrors: ValidationErrors,
             errors: Errors
         );
 
-    public static FailureResponse ForNotFound(string detail) =>
+    public static FailureResponse ForNotFound(string detail, TraceId traceId) =>
         new(
             detail,
             type: $"{_typePrefix}:not-found",
             title: "Not Found",
             status: 404,
-            correlationId: null,
+            correlationId: traceId.Value,
             validationErrors: null,
             errors: null
         );
 
-    public static FailureResponse ForIdentityConflict(string[]? errors) =>
+    public static FailureResponse ForIdentityConflict(string[]? errors, TraceId traceId) =>
         new(
             detail: "The identifying value(s) of the item are the same as another item that already exists.",
             type: $"{_typePrefix}:identity-conflict",
             title: "Identifying Values Are Not Unique",
             status: 409,
-            correlationId: null,
+            correlationId: traceId.Value,
             validationErrors: null,
             errors
         );
@@ -119,20 +113,4 @@ internal record FailureResponse(
             validationErrors: null,
             errors: null
         );
-
-    public static string GenerateFrontendErrorResponse(string errorDetail)
-    {
-        var validationErrors = new Dictionary<string, string[]>();
-
-        var value = new List<string> { errorDetail };
-        validationErrors.Add("$.", value.ToArray());
-
-        var response = ForDataValidation(
-            "Data validation failed. See 'validationErrors' for details.",
-            validationErrors,
-            []
-        );
-
-        return JsonSerializer.Serialize(response, _serializerOptions);
-    }
 }

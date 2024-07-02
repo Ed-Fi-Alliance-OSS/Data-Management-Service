@@ -10,7 +10,6 @@ using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
-using EdFi.DataManagementService.Core.Response;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.External.Backend.UpsertResult;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
@@ -69,7 +68,13 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
                     )
                 ),
             UpsertFailureReference failure
-                => new(StatusCode: 409, Body: failure.ReferencingDocumentInfo, Headers: []),
+                => new(
+                    StatusCode: 409,
+                    Body: JsonSerializer.Serialize(
+                        ForReferenceMissing(failure.ResourceName, context.FrontendRequest.TraceId)
+                    ),
+                    Headers: []
+                ),
             UpsertFailureIdentityConflict failure
                 => new FrontendResponse(
                     StatusCode: 409,
@@ -77,14 +82,14 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
                         ForIdentityConflict(
                             [
                                 $"A natural key conflict occurred when attempting to create a new resource {failure.ResourceName} with a duplicate key. "
-                                + $"The duplicate keys and values are {string.Join(',', failure.DuplicateIdentityValues.Select(d => $"({d.Key} = {d.Value})"))}"
-                            ]
+                                    + $"The duplicate keys and values are {string.Join(',', failure.DuplicateIdentityValues.Select(d => $"({d.Key} = {d.Value})"))}"
+                            ],
+                            context.FrontendRequest.TraceId
                         )
                     ),
                     Headers: []
                 ),
-            UpsertFailureWriteConflict
-                => new(StatusCode: 409, Body: null, Headers: []),
+            UpsertFailureWriteConflict => new(StatusCode: 409, Body: null, Headers: []),
             UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage, Headers: []),
             _ => new(StatusCode: 500, Body: "Unknown UpsertResult", Headers: [])
         };
