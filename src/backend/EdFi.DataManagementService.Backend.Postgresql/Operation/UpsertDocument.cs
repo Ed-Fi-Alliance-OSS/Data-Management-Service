@@ -25,8 +25,51 @@ public interface IUpsertDocument
 
 public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logger) : IUpsertDocument
 {
+    private static readonly string _beforeInsertReferences = "BeforeInsertReferences";
+
+    /// <summary>
+    /// Returns the ReferentialId Guids and corresponding partition keys for all of the document
+    /// references in the UpsertRequest.
+    /// </summary>
+    public static DocumentReferenceIds DocumentReferenceIdsFrom(IUpsertRequest upsertRequest)
+    {
+        DocumentReference[] documentReferences = upsertRequest.DocumentInfo.DocumentReferences;
+        Guid[] referentialIds = documentReferences.Select(x => x.ReferentialId.Value).ToArray();
+        int[] referentialPartitionKeys = documentReferences
+            .Select(x => PartitionKeyFor(x.ReferentialId).Value)
+            .ToArray();
+        return new(referentialIds, referentialPartitionKeys);
+    }
+
+    /// <summary>
+    /// Returns the unique ResourceNames of all DocumentReferences that have the given ReferentialId Guids
+    /// </summary>
+    private ResourceName[] ResourceNamesFrom(DocumentReference[] documentReferences, Guid[] referentialIds)
+    {
+        Dictionary<Guid, string> guidToResourceNameMap =
+            new(
+                documentReferences.Select(x => new KeyValuePair<Guid, string>(
+                    x.ReferentialId.Value,
+                    x.ResourceInfo.ResourceName.Value
+                ))
+            );
+
+        HashSet<string> uniqueResourceNames = [];
+
+        foreach (Guid referentialId in referentialIds)
+        {
+            if (guidToResourceNameMap.TryGetValue(referentialId, out string? value))
+            {
+                uniqueResourceNames.Add(value);
+            }
+        }
+
+        return uniqueResourceNames.Select(x => new ResourceName(x)).ToArray();
+    }
+
     public async Task<UpsertResult> AsInsert(
         IUpsertRequest upsertRequest,
+        DocumentReferenceIds documentReferenceIds,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     )
@@ -65,6 +108,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
 
         try
         {
+            // If subclass, also insert superclass version of identity into Aliases
             if (superclassIdentity != null)
             {
                 await _sqlAction.InsertAlias(
@@ -88,7 +132,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             );
 
             return new UpsertResult.UpsertFailureIdentityConflict(
-                upsertRequest.ResourceInfo.ResourceName.Value,
+                upsertRequest.ResourceInfo.ResourceName,
                 upsertRequest.DocumentInfo.DocumentIdentity.DocumentIdentityElements.Select(
                     d => new KeyValuePair<string, string>(
                         d.IdentityJsonPath.Value.Substring(d.IdentityJsonPath.Value.LastIndexOf('.') + 1),
@@ -98,25 +142,22 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             );
         }
 
-        DocumentReference[] documentReferences = upsertRequest.DocumentInfo.DocumentReferences;
-
-        if (documentReferences.Length > 0)
+        if (documentReferenceIds.ReferentialIds.Length > 0)
         {
-            // Next insert into References
+            // Create a transaction savepoint in case insert into References fails due to invalid references
+            await transaction.SaveAsync(_beforeInsertReferences);
             int numberOfRowsInserted = await _sqlAction.InsertReferences(
                 new(
                     ParentDocumentPartitionKey: documentPartitionKey,
                     ParentDocumentId: newDocumentId,
-                    ReferentialIds: documentReferences.Select(x => x.ReferentialId.Value).ToArray(),
-                    ReferentialPartitionKeys: documentReferences
-                        .Select(x => PartitionKeyFor(x.ReferentialId).Value)
-                        .ToArray()
+                    ReferentialIds: documentReferenceIds.ReferentialIds,
+                    ReferentialPartitionKeys: documentReferenceIds.ReferentialPartitionKeys
                 ),
                 connection,
                 transaction
             );
 
-            if (numberOfRowsInserted != documentReferences.Length)
+            if (numberOfRowsInserted != documentReferenceIds.ReferentialIds.Length)
             {
                 throw new InvalidOperationException("Database did not insert all references");
             }
@@ -131,6 +172,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
         int documentPartitionKey,
         Guid documentUuid,
         IUpsertRequest upsertRequest,
+        DocumentReferenceIds documentReferenceIds,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     )
@@ -145,9 +187,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             transaction
         );
 
-        DocumentReference[] documentReferences = upsertRequest.DocumentInfo.DocumentReferences;
-
-        if (documentReferences.Length > 0)
+        if (documentReferenceIds.ReferentialIds.Length > 0)
         {
             // First clear out all the existing references, as they may have changed
             await _sqlAction.DeleteReferencesByDocumentUuid(
@@ -157,21 +197,20 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 transaction
             );
 
-            // Next insert current references
+            // Create a transaction savepoint in case insert into References fails due to invalid references
+            await transaction.SaveAsync(_beforeInsertReferences);
             int numberOfRowsInserted = await _sqlAction.InsertReferences(
                 new(
                     ParentDocumentPartitionKey: documentPartitionKey,
                     ParentDocumentId: documentId,
-                    ReferentialIds: documentReferences.Select(x => x.ReferentialId.Value).ToArray(),
-                    ReferentialPartitionKeys: documentReferences
-                        .Select(x => PartitionKeyFor(x.ReferentialId).Value)
-                        .ToArray()
+                    ReferentialIds: documentReferenceIds.ReferentialIds,
+                    ReferentialPartitionKeys: documentReferenceIds.ReferentialPartitionKeys
                 ),
                 connection,
                 transaction
             );
 
-            if (numberOfRowsInserted != documentReferences.Length)
+            if (numberOfRowsInserted != documentReferenceIds.ReferentialIds.Length)
             {
                 throw new InvalidOperationException("Database did not insert all references");
             }
@@ -193,6 +232,8 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
     )
     {
         _logger.LogDebug("Entering UpsertDocument.Upsert - {TraceId}", upsertRequest.TraceId);
+
+        DocumentReferenceIds documentReferenceIds = DocumentReferenceIdsFrom(upsertRequest);
 
         try
         {
@@ -221,7 +262,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             // Either get the existing document uuid or use the new one provided
             if (documentFromDb == null)
             {
-                return await AsInsert(upsertRequest, connection, transaction);
+                return await AsInsert(upsertRequest, documentReferenceIds, connection, transaction);
             }
 
             long documentId =
@@ -233,6 +274,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 documentFromDb.DocumentPartitionKey,
                 documentFromDb.DocumentUuid,
                 upsertRequest,
+                documentReferenceIds,
                 connection,
                 transaction
             );
@@ -248,7 +290,22 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             )
         {
             _logger.LogDebug(pe, "Foreign key violation on Upsert - {TraceId}", upsertRequest.TraceId);
-            return new UpsertResult.UpsertFailureReference("See DMS-259");
+
+            // Restore transaction savepoint to continue using transaction
+            await transaction.RollbackAsync(_beforeInsertReferences);
+
+            Guid[] invalidReferentialIds = await _sqlAction.FindInvalidReferentialIds(
+                documentReferenceIds,
+                connection,
+                transaction
+            );
+
+            ResourceName[] invalidResourceNames = ResourceNamesFrom(
+                upsertRequest.DocumentInfo.DocumentReferences,
+                invalidReferentialIds
+            );
+
+            return new UpsertResult.UpsertFailureReference(invalidResourceNames);
         }
         catch (Exception ex)
         {

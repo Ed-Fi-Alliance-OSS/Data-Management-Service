@@ -46,6 +46,11 @@ public class SetupHooks
     [AfterFeature]
     public static async Task AfterFeature(PlaywrightContext context, TestLogger logger)
     {
+        if (ContainerSetup.ApiContainer == null || ContainerSetup.DbContainer == null)
+        {
+            return;
+        }
+
         var logs = await ContainerSetup.ApiContainer!.GetLogsAsync();
         logger.log.Information($"{Environment.NewLine}API stdout logs:{Environment.NewLine}{logs.Stdout}");
 

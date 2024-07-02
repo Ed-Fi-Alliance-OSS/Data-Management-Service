@@ -56,15 +56,16 @@ public class UpsertHandlerTests
     }
 
     [TestFixture]
-    public class Given_A_Repository_That_Returns_Failure_Reference : UpsertHandlerTests
+    public class Given_A_Repository_That_Returns_Failure_References : UpsertHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public static readonly string ResponseBody = "ReferencingDocumentInfo";
+            public static readonly string BadResourceName1 = "BadResourceName1";
+            public static readonly string BadResourceName2 = "BadResourceName2";
 
             public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
-                return Task.FromResult<UpsertResult>(new UpsertFailureReference(ResponseBody));
+                return Task.FromResult<UpsertResult>(new UpsertFailureReference([new(BadResourceName1), new(BadResourceName2)]));
             }
         }
 
@@ -81,7 +82,11 @@ public class UpsertHandlerTests
         public void It_has_the_correct_response()
         {
             context.FrontendResponse.StatusCode.Should().Be(409);
-            context.FrontendResponse.Body.Should().Be(Repository.ResponseBody);
+            context.FrontendResponse.Body.Should().Be(
+                """
+                {"detail":"The referenced BadResourceName1,BadResourceName2 item(s) do not exist.","type":"urn:ed-fi:api:data-conflict:unresolved-reference","title":"Unresolved Reference","status":409,"correlationId":null,"validationErrors":null,"errors":null}
+                """
+            );
             context.FrontendResponse.Headers.Should().BeEmpty();
             context.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }
@@ -96,7 +101,7 @@ public class UpsertHandlerTests
 
             public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
-                return Task.FromResult<UpsertResult>(new UpsertFailureIdentityConflict("", [new KeyValuePair<string, string>("key", "value")]));
+                return Task.FromResult<UpsertResult>(new UpsertFailureIdentityConflict(new(""), [new KeyValuePair<string, string>("key", "value")]));
             }
         }
 

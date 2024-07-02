@@ -16,10 +16,10 @@ namespace EdFi.DataManagementService.Core.ApiSchema;
 /// </summary>
 internal class ResourceSchema(JsonNode _resourceSchemaNode)
 {
-    private readonly Lazy<MetaEdResourceName> _resourceName =
+    private readonly Lazy<ResourceName> _resourceName =
         new(() =>
         {
-            return new MetaEdResourceName(
+            return new ResourceName(
                 _resourceSchemaNode["resourceName"]?.GetValue<string>()
                     ?? throw new InvalidOperationException(
                         "Expected resourceName to be on ResourceSchema, invalid ApiSchema"
@@ -30,7 +30,7 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
     /// <summary>
     /// The ResourceName of this resource, taken from the resourceName
     /// </summary>
-    public MetaEdResourceName ResourceName => _resourceName.Value;
+    public ResourceName ResourceName => _resourceName.Value;
 
     private readonly Lazy<bool> _isSchoolYearEnumeration =
         new(() =>
@@ -270,14 +270,14 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
     /// The superclass resource name, such as "EducationOrganization", of this resource,
     /// taken from superclassResourceName
     /// </summary>
-    public MetaEdResourceName SuperclassResourceName =>
+    public ResourceName SuperclassResourceName =>
         new(_resourceSchemaNode.SelectNodeValue<string>("superclassResourceName"));
 
     /// <summary>
     /// The superclass project name, such as "EdFi", of this resource,
     /// taken from superclassProjectName
     /// </summary>
-    public MetaEdProjectName SuperclassProjectName =>
+    public ProjectName SuperclassProjectName =>
         new(_resourceSchemaNode.SelectNodeValue<string>("superclassProjectName"));
 
     /// <summary>

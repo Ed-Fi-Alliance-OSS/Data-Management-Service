@@ -12,12 +12,12 @@ public record BaseResourceInfo(
     /// <summary>
     /// The project name the API document resource is defined in e.g. "EdFi" for a data standard entity
     /// </summary>
-    IMetaEdProjectName ProjectName,
+    ProjectName ProjectName,
     /// <summary>
     /// The name of the resource. Typically, this is the same as the corresponding MetaEd entity name. However,
     /// there are exceptions, for example descriptors have a "Descriptor" suffix on their resource name.
     /// </summary>
-    IMetaEdResourceName ResourceName,
+    ResourceName ResourceName,
     /// <summary>
     /// Whether this resource is a descriptor. Descriptors are treated differently from other documents
     /// </summary>

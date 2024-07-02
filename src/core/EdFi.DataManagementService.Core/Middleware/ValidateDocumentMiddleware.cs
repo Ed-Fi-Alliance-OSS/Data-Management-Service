@@ -5,11 +5,11 @@
 
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using Microsoft.Extensions.Logging;
+using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Validation;
-using EdFi.DataManagementService.Core.Pipeline;
-using EdFi.DataManagementService.Core.Model;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
@@ -19,6 +19,9 @@ namespace EdFi.DataManagementService.Core.Middleware;
 internal class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _documentValidator)
     : IPipelineStep
 {
+    private static readonly JsonSerializerOptions _serializerOptions =
+        new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         _logger.LogDebug("Entering ValidateDocumentMiddleware- {TraceId}", context.FrontendRequest.TraceId);
@@ -57,14 +60,9 @@ internal class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _d
                 context.FrontendRequest.TraceId
             );
 
-            var options = new JsonSerializerOptions
-            {
-                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-            };
-
             context.FrontendResponse = new FrontendResponse(
                 StatusCode: failureResponse.status,
-                Body: JsonSerializer.Serialize(failureResponse, options),
+                Body: JsonSerializer.Serialize(failureResponse, _serializerOptions),
                 Headers: []
             );
         }

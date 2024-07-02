@@ -1,0 +1,133 @@
+### Test POST of invalid resource
+
+#@port = 8080
+@port = 5198
+
+### POST School Year 2025
+POST http://localhost:{{port}}/data/ed-fi/schoolYearTypes
+
+{
+    "schoolYear": 2025,
+    "currentSchoolYear": false,
+    "schoolYearDescription": "Year 2025"
+}
+
+### POST School1
+POST http://localhost:{{port}}/data/ed-fi/schools
+
+{
+    "schoolId": 123,
+    "nameOfInstitution": "School1",
+    "educationOrganizationCategories": [
+        {
+            "educationOrganizationCategoryDescriptor": "string"
+        }
+    ],
+    "gradeLevels": [
+        {
+            "gradeLevelDescriptor": "string"
+        }
+    ]
+}
+
+### POST Session1, depending on School1 and SchoolYear 2025
+
+POST http://localhost:{{port}}/data/ed-fi/sessions
+
+{
+    "sessionName": "Session1",
+    "schoolYearTypeReference": {
+        "schoolYear": 2025
+    },
+    "beginDate": "2025-01-01",
+    "endDate": "2025-12-12",
+    "termDescriptor": "uri://ed-fi.org/TermDescriptor#Presentation",
+    "totalInstructionalDays": 365,
+    "schoolReference": {
+        "schoolId": 123
+    }
+}
+
+### POST a bad Session2, invalid school
+
+POST http://localhost:{{port}}/data/ed-fi/sessions
+
+{
+    "sessionName": "Session2",
+    "schoolYearTypeReference": {
+        "schoolYear": 2025
+    },
+    "beginDate": "2025-01-01",
+    "endDate": "2025-12-12",
+    "termDescriptor": "uri://ed-fi.org/TermDescriptor#Presentation",
+    "totalInstructionalDays": 365,
+    "schoolReference": {
+        "schoolId": 999
+    }
+}
+
+### POST a bad Session3, invalid school year
+
+POST http://localhost:{{port}}/data/ed-fi/sessions
+
+{
+    "sessionName": "Session2",
+    "schoolYearTypeReference": {
+        "schoolYear": 2100
+    },
+    "beginDate": "2025-01-01",
+    "endDate": "2025-12-12",
+    "termDescriptor": "uri://ed-fi.org/TermDescriptor#Presentation",
+    "totalInstructionalDays": 365,
+    "schoolReference": {
+        "schoolId": 123
+    }
+}
+
+### POST a bad Session3, invalid school and school year
+
+POST http://localhost:{{port}}/data/ed-fi/sessions
+
+{
+    "sessionName": "Session2",
+    "schoolYearTypeReference": {
+        "schoolYear": 2100
+    },
+    "beginDate": "2025-01-01",
+    "endDate": "2025-12-12",
+    "termDescriptor": "uri://ed-fi.org/TermDescriptor#Presentation",
+    "totalInstructionalDays": 365,
+    "schoolReference": {
+        "schoolId": 999
+    }
+}
+
+### POST AccountabilityRating1, depending on School1 as EducationOrganization and SchoolYear 2025
+
+POST http://localhost:{{port}}/data/ed-fi/accountabilityRatings
+
+{
+    "ratingTitle": "AccountabilityRating1",
+    "rating": "Good",
+    "schoolYearTypeReference": {
+        "schoolYear": 2025
+    },
+    "educationOrganizationReference": {
+        "educationOrganizationId": 123
+    }
+}
+
+### POST bad AccountabilityRating2, with invalid EducationOrganization
+
+POST http://localhost:{{port}}/data/ed-fi/accountabilityRatings
+
+{
+    "ratingTitle": "AccountabilityRating1",
+    "rating": "Good",
+    "schoolYearTypeReference": {
+        "schoolYear": 2025
+    },
+    "educationOrganizationReference": {
+        "educationOrganizationId": 999
+    }
+}

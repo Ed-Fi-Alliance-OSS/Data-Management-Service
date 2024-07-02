@@ -28,7 +28,7 @@ Feature: Invalid Reference Validation
                   """
                   {
                       "detail": "The referenced 'School' resource does not exist.",
-                      "type": "urn:ed-fi:api:conflict:invalid-reference",
+                      "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Resource Not Unique Conflict due to invalid-reference",
                       "status": 409,
                       "correlationId": null
@@ -59,7 +59,7 @@ Feature: Invalid Reference Validation
                   """
                   {
                       "detail": "The referenced 'Program' resource does not exist.",
-                      "type": "urn:ed-fi:api:conflict:invalid-reference",
+                      "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Resource Not Unique Conflict due to invalid-reference",
                       "status": 409,
                       "correlationId": null
@@ -86,7 +86,7 @@ Feature: Invalid Reference Validation
                   """
                   {
                     "detail": "The referenced 'SchoolYearType' resource does not exist.",
-                    "type": "urn:ed-fi:api:conflict:invalid-reference",
+                    "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                     "title": "Resource Not Unique Conflict due to invalid-reference",
                     "status": 409,
                     "correlationId": null
@@ -116,7 +116,7 @@ Feature: Invalid Reference Validation
                   """
                   {
                       "detail": "The referenced 'Section' resource does not exist.",
-                      "type": "urn:ed-fi:api:conflict:invalid-reference",
+                      "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Resource Not Unique Conflict due to invalid-reference",
                       "status": 409,
                       "correlationId": null
@@ -146,7 +146,7 @@ Feature: Invalid Reference Validation
                   """
                   {
                       "detail": "The referenced 'SessionReference' resource does not exist.",
-                      "type": "urn:ed-fi:api:conflict:invalid-reference",
+                      "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Resource Not Unique Conflict due to invalid-reference",
                       "status": 409,
                       "correlationId": null

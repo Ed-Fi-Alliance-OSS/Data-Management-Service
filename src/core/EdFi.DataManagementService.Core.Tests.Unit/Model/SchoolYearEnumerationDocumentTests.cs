@@ -49,8 +49,8 @@ public class SchoolYearEnumerationDocumentTests
         public void It_has_derived_the_document_info()
         {
             var documentInfo = document!.ToDocumentInfo(new BaseResourceInfo(
-                    ProjectName: new MetaEdProjectName("ProjectName"),
-                    ResourceName: new MetaEdResourceName("SchoolYear"),
+                    ProjectName: new ProjectName("ProjectName"),
+                    ResourceName: new ResourceName("SchoolYear"),
                     IsDescriptor: false
                 ));
             documentInfo.DocumentReferences.Should().BeEmpty();

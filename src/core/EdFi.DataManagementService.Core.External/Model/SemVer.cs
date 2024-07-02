@@ -6,11 +6,7 @@
 namespace EdFi.DataManagementService.Core.External.Model;
 
 /// <summary>
-/// A string type branded as a MetaEdResourceName, which is the name of an API resource. Typically, this is the same
-/// as the corresponding MetaEd entity name. However, there are exceptions, for example descriptors have a
-/// "Descriptor" suffix on their resource name.
+/// A string type branded as a SemVer, which is a semantic version string.
+/// See https://semver.org/spec/v2.0.0.html
 /// </summary>
-public interface IMetaEdResourceName
-{
-    string Value { get; }
-}
+public record struct SemVer(string Value);
