@@ -116,7 +116,7 @@ Feature: Validation of Natural and Foreign Keys
                   """
 
         @ignore
-        Scenario: Verify clients cannot create a resource that is missing a reference
+        Scenario: 04 Verify clients cannot create a resource that is missing a reference
              When a POST request is made to "ed-fi/courseOfferings" with
                   """
                   {
@@ -150,7 +150,7 @@ Feature: Validation of Natural and Foreign Keys
                   """
 
         @ignore
-        Scenario: Verify clients cannot update a resource that is missing a reference
+        Scenario: 05 Verify clients cannot update a resource that is missing a reference
             Given Local Course Code "ALG-1 TEST-101"
             #set value to {id}
              When a PUT request is made to "ed-fi/courseOfferings/{id}"
