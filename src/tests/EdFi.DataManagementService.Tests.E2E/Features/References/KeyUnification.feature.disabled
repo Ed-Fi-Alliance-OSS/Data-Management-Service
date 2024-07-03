@@ -1,4 +1,4 @@
-Feature: Validation of Natural and Foreign Keys
+Feature: Validation of Natural Key Unification
 
         Background
             Given the system has these Schools
@@ -148,42 +148,3 @@ Feature: Validation of Natural and Foreign Keys
                       }
                   }
                   """
-
-        @ignore
-        Scenario: 05 Verify clients cannot update a resource that is missing a reference
-            Given Local Course Code "ALG-1 TEST-101"
-            #set value to {id}
-             When a PUT request is made to "ed-fi/courseOfferings/{id}"
-                  """
-                  {
-                      "localCourseCode": "ALG-1 TEST-101",
-                      "courseReference": {
-                          "courseCode": "ALG-1",
-                          "educationOrganizationId": 255901001
-                      },
-                      "schoolReference": {
-                          "schoolId": 255901001
-                      }
-                  }
-                  """
-             Then it should respond with 400
-              And the response body is
-                  """
-                  {
-                      "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-                      "title": "Data Validation Failed",
-                      "status": 400,
-                      "correlationId": null,
-                      "validationErrors": {
-                          "$.sessionReference": [
-                              "SessionReference is required."
-                          ]
-                      }
-                  }
-                  """
-
-
-
-
-
