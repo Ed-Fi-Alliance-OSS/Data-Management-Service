@@ -13,28 +13,37 @@ namespace EdFi.DataManagementService.Core.Middleware
     /// For boolean and numeric properties that were submitted as strings, i.e. surrounded with double quotes,
     /// this middleware tries to coerce those back to their proper ValueKind. 
     /// </summary>
-    /// <param name="_logger"></param>
-    internal class CoerceStringTypeMiddleware(ILogger _logger) : IPipelineStep
+    /// <param name="logger"></param>
+    /// <param name="bypassStringTypeCoercion">If true exit immediately without attempting coercion</param>
+    internal class CoerceStringTypeMiddleware(ILogger logger, bool bypassStringTypeCoercion) : IPipelineStep
     {
         public async Task Execute(PipelineContext context, Func<Task> next)
         {
-            _logger.LogDebug("Entering CoerceStringTypeMiddleware - {TraceId}", context.FrontendRequest.TraceId);
+            logger.LogDebug("Entering CoerceStringTypeMiddleware - {TraceId}", context.FrontendRequest.TraceId);
 
-            foreach (var path in context.ResourceSchema.BooleanJsonPaths.Select(path => path.Value))
+            if (bypassStringTypeCoercion)
             {
-                var jsonNodes = context.ParsedBody.SelectNodesFromArrayPath(path, _logger);
-                foreach (var jsonNode in jsonNodes)
-                {
-                    jsonNode.TryCoerceBooleanToBoolean();
-                }
+                logger.LogDebug("Bypassing string type coercion - {TraceId}",
+                    context.FrontendRequest.TraceId);
             }
-
-            foreach (var path in context.ResourceSchema.NumericJsonPaths.Select(path => path.Value))
+            else
             {
-                var jsonNodes = context.ParsedBody.SelectNodesFromArrayPath(path, _logger);
-                foreach (var jsonNode in jsonNodes)
+                foreach (var path in context.ResourceSchema.BooleanJsonPaths.Select(path => path.Value))
                 {
-                    jsonNode.TryCoerceStringToNumber();
+                    var jsonNodes = context.ParsedBody.SelectNodesFromArrayPath(path, logger);
+                    foreach (var jsonNode in jsonNodes)
+                    {
+                        jsonNode.TryCoerceBooleanToBoolean();
+                    }
+                }
+
+                foreach (var path in context.ResourceSchema.NumericJsonPaths.Select(path => path.Value))
+                {
+                    var jsonNodes = context.ParsedBody.SelectNodesFromArrayPath(path, logger);
+                    foreach (var jsonNode in jsonNodes)
+                    {
+                        jsonNode.TryCoerceStringToNumber();
+                    }
                 }
             }
 

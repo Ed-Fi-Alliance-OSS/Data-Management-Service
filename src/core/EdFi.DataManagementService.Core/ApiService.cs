@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
@@ -15,6 +16,7 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Validation;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Core;
 
@@ -29,7 +31,8 @@ internal class ApiService(
     IQueryHandler _queryHandler,
     IMatchingDocumentUuidsValidator matchingDocumentUuidsValidator,
     IEqualityConstraintValidator _equalityConstraintValidator,
-    ILogger<ApiService> _logger
+    ILogger<ApiService> _logger,
+    IOptions<AppSettings> _appSettings
 ) : IApiService
 {
     /// <summary>
@@ -46,7 +49,7 @@ internal class ApiService(
                         new ParsePathMiddleware(_logger),
                         new ParseBodyMiddleware(_logger),
                         new ValidateEndpointMiddleware(_logger),
-                        new CoerceStringTypeMiddleware(_logger),
+                        new CoerceStringTypeMiddleware(_logger, _appSettings.Value.BypassStringTypeCoercion),
                         new ValidateDocumentMiddleware(_logger, _documentValidator),
                         new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
                         new BuildResourceInfoMiddleware(_logger),
@@ -109,7 +112,7 @@ internal class ApiService(
                         new ParsePathMiddleware(_logger),
                         new ParseBodyMiddleware(_logger),
                         new ValidateEndpointMiddleware(_logger),
-                        new CoerceStringTypeMiddleware(_logger),
+                        new CoerceStringTypeMiddleware(_logger, _appSettings.Value.BypassStringTypeCoercion),
                         new ValidateDocumentMiddleware(_logger, _documentValidator),
                         new ValidateMatchingDocumentUuidsMiddleware(_logger, matchingDocumentUuidsValidator),
                         new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),

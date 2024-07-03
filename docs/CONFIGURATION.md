@@ -4,10 +4,11 @@ The sections below describe custom configuration options in the `appSettings` fi
 
 ## AppSettings
 
-| Parameter               | Description                                                                                                    |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------- |
-| DatabaseEngine          | The database engine used by the DataManagementService. Valid values are `postgresql` and `mssql`               |
-| DeployDatabaseOnStartup | When `true` the database in `ConnectionStrings:DatabaseConnection` will be created and initialized on startup. |
+| Parameter                | Description                                                                                                                                                                                             |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| DatabaseEngine           | The database engine used by the DataManagementService. Valid values are `postgresql` and `mssql`                                                                                                        |
+| DeployDatabaseOnStartup  | When `true` the database in `ConnectionStrings:DatabaseConnection` will be created and initialized on startup.                                                                                          |
+| BypassStringTypeCoercion | String type coercion attempts to coerce boolean and numeric strings to their proper type on `POST` and `PUT` requests. For example `"true"` becomes `true`. This setting bypasses that for performance. |
 
 ## RateLimit
 

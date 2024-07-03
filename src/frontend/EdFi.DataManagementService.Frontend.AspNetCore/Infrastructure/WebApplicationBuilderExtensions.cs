@@ -5,9 +5,9 @@
 
 using System.Net;
 using System.Threading.RateLimiting;
-using Microsoft.Extensions.Logging;
 using EdFi.DataManagementService.Backend.Deploy;
 using EdFi.DataManagementService.Backend.Postgresql;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using Microsoft.Extensions.Options;
