@@ -44,7 +44,7 @@ public class APISchemaFileTests
                 new MatchingDocumentUuidsValidator(),
                 new EqualityConstraintValidator(),
                 NullLogger<ApiService>.Instance,
-                Options.Create(new AppSettings() { DatabaseEngine = "", AuthenticationService = "", BypassStringTypeCoercion = false })
+                Options.Create(new AppSettings())
             );
         }
 

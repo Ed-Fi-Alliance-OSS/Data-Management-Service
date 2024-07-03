@@ -7,12 +7,12 @@ using System.Net;
 using System.Threading.RateLimiting;
 using EdFi.DataManagementService.Backend.Deploy;
 using EdFi.DataManagementService.Backend.Postgresql;
-using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using Microsoft.Extensions.Options;
 using Serilog;
 using static EdFi.DataManagementService.Core.DmsCoreServiceExtensions;
+using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 
@@ -30,6 +30,7 @@ public static class WebApplicationBuilderExtensions
             .AddTransient<IVersionProvider, VersionProvider>()
             .AddTransient<IAssemblyProvider, AssemblyProvider>()
             .Configure<AppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"))
+            .Configure<CoreAppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"))
             .AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>()
             .Configure<ConnectionStrings>(webAppBuilder.Configuration.GetSection("ConnectionStrings"))
             .AddSingleton<IValidateOptions<ConnectionStrings>, ConnectionStringsValidator>();
