@@ -69,9 +69,9 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 .ToApiSchemaDocument();
         }
 
-        internal static IPipelineStep Middleware(bool bypassCoercion)
+        internal static IPipelineStep Middleware()
         {
-            return new CoerceStringTypeMiddleware(NullLogger.Instance, bypassCoercion);
+            return new CoerceStringTypeMiddleware(NullLogger.Instance);
         }
 
         internal PipelineContext Context(FrontendRequest frontendRequest, RequestMethod method)
@@ -124,7 +124,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     new TraceId("traceId")
                 );
                 _context = Context(frontEndRequest, RequestMethod.POST);
-                await Middleware(false).Execute(_context, Next());
+                await Middleware().Execute(_context, Next());
             }
 
             [Test]
@@ -144,48 +144,6 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 {
                     _context.ParsedBody.SelectNodeFromPath(path, NullLogger.Instance)!.AsValue().GetValueKind().Should()
                         .BeOneOf([JsonValueKind.True, JsonValueKind.False]);
-                }
-            }
-        }
-
-        [TestFixture]
-        public class Given_A_Request_With_Boolean_And_Numeric_Property_As_String_And_Bypass : CoerceStringTypeMiddlewareTests
-        {
-            private PipelineContext _context = No.PipelineContext();
-
-            [SetUp]
-            public async Task Setup()
-            {
-                string jsonData =
-                    """{"schoolId": "1","gradeLevels":[{"gradeLevelDescriptor": "grade1", "isSecondary": "false"}],"nameOfInstitution":"school12"}""";
-
-                var frontEndRequest = new FrontendRequest(
-                    "ed-fi/schools",
-                    Body: jsonData,
-                    QueryParameters: [],
-                    new TraceId("traceId")
-                );
-                _context = Context(frontEndRequest, RequestMethod.POST);
-                await Middleware(true).Execute(_context, Next());
-            }
-
-            [Test]
-            public void It_coerces_numbers()
-            {
-                foreach (string path in _context.ResourceSchema.NumericJsonPaths.Select(s => s.Value))
-                {
-                    _context.ParsedBody.SelectNodeFromPath(path, NullLogger.Instance)!.AsValue().GetValueKind().Should()
-                        .Be(JsonValueKind.String);
-                }
-            }
-
-            [Test]
-            public void It_coerces_booleans()
-            {
-                foreach (string path in _context.ResourceSchema.BooleanJsonPaths.Select(s => s.Value))
-                {
-                    _context.ParsedBody.SelectNodeFromPath(path, NullLogger.Instance)!.AsValue().GetValueKind().Should()
-                        .Be(JsonValueKind.String);
                 }
             }
         }

@@ -15,35 +15,27 @@ namespace EdFi.DataManagementService.Core.Middleware
     /// </summary>
     /// <param name="logger"></param>
     /// <param name="bypassStringTypeCoercion">If true exit immediately without attempting coercion</param>
-    internal class CoerceStringTypeMiddleware(ILogger logger, bool bypassStringTypeCoercion) : IPipelineStep
+    internal class CoerceStringTypeMiddleware(ILogger logger) : IPipelineStep
     {
         public async Task Execute(PipelineContext context, Func<Task> next)
         {
             logger.LogDebug("Entering CoerceStringTypeMiddleware - {TraceId}", context.FrontendRequest.TraceId);
 
-            if (bypassStringTypeCoercion)
+            foreach (var path in context.ResourceSchema.BooleanJsonPaths.Select(path => path.Value))
             {
-                logger.LogDebug("Bypassing string type coercion - {TraceId}",
-                    context.FrontendRequest.TraceId);
-            }
-            else
-            {
-                foreach (var path in context.ResourceSchema.BooleanJsonPaths.Select(path => path.Value))
+                var jsonNodes = context.ParsedBody.SelectNodesFromArrayPath(path, logger);
+                foreach (var jsonNode in jsonNodes)
                 {
-                    var jsonNodes = context.ParsedBody.SelectNodesFromArrayPath(path, logger);
-                    foreach (var jsonNode in jsonNodes)
-                    {
-                        jsonNode.TryCoerceBooleanToBoolean();
-                    }
+                    jsonNode.TryCoerceBooleanToBoolean();
                 }
+            }
 
-                foreach (var path in context.ResourceSchema.NumericJsonPaths.Select(path => path.Value))
+            foreach (var path in context.ResourceSchema.NumericJsonPaths.Select(path => path.Value))
+            {
+                var jsonNodes = context.ParsedBody.SelectNodesFromArrayPath(path, logger);
+                foreach (var jsonNode in jsonNodes)
                 {
-                    var jsonNodes = context.ParsedBody.SelectNodesFromArrayPath(path, logger);
-                    foreach (var jsonNode in jsonNodes)
-                    {
-                        jsonNode.TryCoerceStringToNumber();
-                    }
+                    jsonNode.TryCoerceStringToNumber();
                 }
             }
 
