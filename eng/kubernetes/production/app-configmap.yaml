@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: app-configmap
+data:
+    postgres-user: postgres
+    postgres-admin-user: postgres
+    postgres-host: postgres-service
+    postgres-port: "5402"
+    postgres-dbname: postgres
+    need-db-setup: "true"
+    log-level: "Information"
+    oauth-token-endpoint: "http://localhost:8080/oauth/token"
