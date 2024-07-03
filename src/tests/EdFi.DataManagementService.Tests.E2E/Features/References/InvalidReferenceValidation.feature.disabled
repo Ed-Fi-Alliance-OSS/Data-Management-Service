@@ -1,6 +1,14 @@
 Feature: Invalid Reference Validation
     POST requests validating invalid references
 
+        Background
+            Given the system has these Schools
+                  | schoolId  | nameOfInstitution      | educationOrganizationCategoryDescriptor | gradeLevelDescriptor |
+                  | 255901001 | Grand Bend High School | ["School"]                              | ["Eleventh grade"]   |
+              And the system has these Courses
+                  | courseCode | courseIdentificationSystemDescriptor | identificationCode | educationOrganizationId | courseTitle |
+                  | ALG-1      | ["LEA course code"]                  | ALG-1              | 255901001               | Algebra I   |
+
         @ignore
         Scenario: 01 Ensure clients cannot create a resource with an invalid reference
              When a POST request is made to "ed-fi/studentEducationOrganizationAssociations" with
@@ -111,5 +119,40 @@ Feature: Invalid Reference Validation
                       "title": "Resource Not Unique Conflict due to invalid-reference",
                       "status": 409,
                       "correlationId": null
+                  }
+                  """
+
+        @ignore
+        Scenario: 05 Verify clients cannot update a resource that is missing a reference
+        # CourseOffering should also have `sessionReference`, which has been omitted in the JSON below
+            Given Local Course Code "ALG-1 TEST-101"
+            #set value to {id}
+             When a PUT request is made to "ed-fi/courseOfferings/{id}"
+                  """
+                  {
+                      "localCourseCode": "ALG-1 TEST-101",
+                      "courseReference": {
+                          "courseCode": "ALG-1",
+                          "educationOrganizationId": 255901001
+                      },
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      }
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                          "$.sessionReference": [
+                              "SessionReference is required."
+                          ]
+                      }
                   }
                   """
