@@ -5,9 +5,6 @@ Feature: Invalid Reference Validation
             Given the system has these Schools
                   | schoolId  | nameOfInstitution      | educationOrganizationCategoryDescriptor | gradeLevelDescriptor |
                   | 255901001 | Grand Bend High School | ["School"]                              | ["Eleventh grade"]   |
-              And the system has these Sessions
-                  | sessionName               | schoolId  | schoolYear | beginDate  | endDate    | termDescriptor      | totalInstructionalDays |
-                  | 2021-2022 Spring Semester | 255901001 | 2022       | 2022-01-04 | 2022-05-27 | ["Spring Semester"] | 88                     |
               And the system has these Courses
                   | courseCode | courseIdentificationSystemDescriptor | identificationCode | educationOrganizationId | courseTitle |
                   | ALG-1      | ["LEA course code"]                  | ALG-1              | 255901001               | Algebra I   |
@@ -127,6 +124,7 @@ Feature: Invalid Reference Validation
 
         @ignore
         Scenario: 05 Verify clients cannot update a resource that is missing a reference
+        # CourseOffering should also have `sessionReference`, which has been omitted in the JSON below
             Given Local Course Code "ALG-1 TEST-101"
             #set value to {id}
              When a PUT request is made to "ed-fi/courseOfferings/{id}"
