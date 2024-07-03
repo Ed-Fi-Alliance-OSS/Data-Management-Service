@@ -36,6 +36,14 @@ public interface ISqlAction
         LockOption lockOption
     );
 
+    public Task<string?> FindReferencingResourceNameByDocumentUuid(
+        DocumentUuid documentUuid,
+        int documentPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        LockOption lockOption
+    );
+
     public Task<Document?> FindDocumentByDocumentUuid(
         int documentPartitionKey,
         DocumentUuid documentUuid,
@@ -667,5 +675,48 @@ public class SqlAction : ISqlAction
             CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
             LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt"))
         );
+    }
+
+    public async Task<string?> FindReferencingResourceNameByDocumentUuid(
+        DocumentUuid documentUuid,
+        int documentPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        LockOption lockOption
+    )
+    {
+        await using NpgsqlCommand command =
+            new(
+                $@"SELECT  d.ResourceName FROM public.Documents d INNER JOIN (
+                   SELECT ParentDocumentId, ParentDocumentPartitionKey FROM public.""references"" r
+                   INNER JOIN public.Aliases a ON r.ReferentialId = a.ReferentialId AND r.ReferentialPartitionKey = a.ReferentialPartitionKey
+                   INNER JOIN public.Documents d2 ON d2.Id = a.DocumentId AND d2.DocumentPartitionKey = a.DocumentPartitionKey
+                   WHERE d2.DocumentUuid =$1 AND d2.DocumentPartitionKey = $2) AS re
+                   ON re.ParentDocumentId = d.id AND re.ParentDocumentPartitionKey = d.DocumentPartitionKey {SqlFor(lockOption)};",
+                connection,
+                transaction
+            )
+            {
+                Parameters =
+                {
+                    new() { Value = documentUuid.Value },
+                    new() { Value = documentPartitionKey }
+                }
+            };
+        try
+        {
+            await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+            if (!reader.HasRows)
+            {
+                return null;
+            }
+            await reader.ReadAsync();
+
+            return reader.GetString(reader.GetOrdinal("ResourceName"));
+        }
+        catch (Exception ex)
+        {
+            throw new NpgsqlException(ex.Message, ex);
+        }
     }
 }
