@@ -9,7 +9,7 @@
     <PackageVersion Include="dbup-postgresql" Version="5.0.40" />
     <PackageVersion Include="dbup-sqlserver" Version="5.0.40" />
     <PackageVersion Include="Microsoft.CodeAnalysis" Version="4.10.0" />
-    <PackageVersion Include="EdFi.ApiSchema" Version="5.1.0-alpha.7" />
+    <PackageVersion Include="EdFi.ApiSchema" Version="5.1.0-alpha.8" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.CodeStyle" Version="4.9.2" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.1" />
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="8.0.0" />
