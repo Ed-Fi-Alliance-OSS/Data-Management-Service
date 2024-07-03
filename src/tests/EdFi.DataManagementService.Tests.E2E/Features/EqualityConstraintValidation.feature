@@ -7,10 +7,7 @@ Feature: Equality Constraint Validation
     }
     ]
         Scenario: 01 Post a valid bell schedule no equality constraint violations.
-            Given the system has these "descriptors"
-                  | descriptorname                           | codeValue         | description       | namespace                                               | shortDescription  |
-                  | educationOrganizationCategoryDescriptors | School            | School            | uri://ed-fi.org/EducationOrganizationCategoryDescriptor | School            |
-            And the system has these "schools"
+            Given the system has these "schools"
                   | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
                   | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
             And the system has these "classPeriods"
