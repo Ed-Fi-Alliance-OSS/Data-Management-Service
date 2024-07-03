@@ -56,11 +56,11 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 .WithStartProject("Ed-Fi", "5.0.0")
                 .WithStartResource("School")
                 .WithJsonSchemaForInsert(builder.Build()!)
-                .WithBooleanJsonPaths(new []
+                .WithBooleanJsonPaths(new[]
                 {
                     "$.gradeLevels[*].isSecondary"
                 })
-                .WithNumericJsonPaths(new []
+                .WithNumericJsonPaths(new[]
                 {
                     "$.schoolId"
                 })
@@ -126,7 +126,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 _context = Context(frontEndRequest, RequestMethod.POST);
                 await Middleware().Execute(_context, Next());
             }
-            
+
             [Test]
             public void It_coerces_numbers()
             {

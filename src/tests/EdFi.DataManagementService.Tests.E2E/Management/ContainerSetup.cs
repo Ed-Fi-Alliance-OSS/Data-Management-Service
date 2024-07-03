@@ -56,6 +56,7 @@ public class ContainerSetup
             .WithEnvironment("POSTGRES_HOST", dbContainerName)
             .WithEnvironment("LOG_LEVEL", "Debug")
             .WithEnvironment("OAUTH_TOKEN_ENDPOINT", "http://localhost/oauth/token")
+            .WithEnvironment("BYPASS_STRING_COERCION", "false")
             .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(8080)))
             .WithNetwork(network)
             .WithLogger(loggerFactory.CreateLogger("apiContainer"))

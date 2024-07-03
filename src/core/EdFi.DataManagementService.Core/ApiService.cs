@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
@@ -15,6 +16,7 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Validation;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Core;
 
@@ -29,7 +31,8 @@ internal class ApiService(
     IQueryHandler _queryHandler,
     IMatchingDocumentUuidsValidator matchingDocumentUuidsValidator,
     IEqualityConstraintValidator _equalityConstraintValidator,
-    ILogger<ApiService> _logger
+    ILogger<ApiService> _logger,
+    IOptions<AppSettings> _appSettings
 ) : IApiService
 {
     /// <summary>
@@ -38,22 +41,38 @@ internal class ApiService(
     private readonly Lazy<PipelineProvider> _upsertSteps =
         new(
             () =>
-                new(
-                    [
-                        new CoreLoggingMiddleware(_logger),
-                        new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
-                        new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
-                        new ParsePathMiddleware(_logger),
-                        new ParseBodyMiddleware(_logger),
-                        new ValidateEndpointMiddleware(_logger),
-                        new CoerceStringTypeMiddleware(_logger),
-                        new ValidateDocumentMiddleware(_logger, _documentValidator),
-                        new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
-                        new BuildResourceInfoMiddleware(_logger),
-                        new ExtractDocumentInfoMiddleware(_logger),
-                        new UpsertHandler(_documentStoreRepository, _logger)
-                    ]
-                )
+            {
+                var steps = new List<IPipelineStep>();
+                steps.AddRange(
+                [
+                    new CoreLoggingMiddleware(_logger),
+                    new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
+                    new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
+                    new ParsePathMiddleware(_logger),
+                    new ParseBodyMiddleware(_logger),
+                    new ValidateEndpointMiddleware(_logger)
+                ]);
+
+                // CoerceStringTypeMiddleware should be immediately before ValidateDocumentMiddleware
+                if (_appSettings.Value.BypassStringTypeCoercion)
+                {
+                    _logger.LogDebug("Bypassing CoerceStringTypeMiddleware");
+                }
+                else
+                {
+                    steps.Add(new CoerceStringTypeMiddleware(_logger));
+                }
+
+                steps.AddRange(
+                [
+                    new ValidateDocumentMiddleware(_logger, _documentValidator),
+                    new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
+                    new BuildResourceInfoMiddleware(_logger),
+                    new ExtractDocumentInfoMiddleware(_logger),
+                    new UpsertHandler(_documentStoreRepository, _logger)
+                ]);
+                return new PipelineProvider(steps);
+            }
         );
 
     /// <summary>
@@ -101,23 +120,39 @@ internal class ApiService(
     private readonly Lazy<PipelineProvider> _updateSteps =
         new(
             () =>
-                new(
-                    [
-                        new CoreLoggingMiddleware(_logger),
-                        new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
-                        new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
-                        new ParsePathMiddleware(_logger),
-                        new ParseBodyMiddleware(_logger),
-                        new ValidateEndpointMiddleware(_logger),
-                        new CoerceStringTypeMiddleware(_logger),
-                        new ValidateDocumentMiddleware(_logger, _documentValidator),
-                        new ValidateMatchingDocumentUuidsMiddleware(_logger, matchingDocumentUuidsValidator),
-                        new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
-                        new BuildResourceInfoMiddleware(_logger),
-                        new ExtractDocumentInfoMiddleware(_logger),
-                        new UpdateByIdHandler(_documentStoreRepository, _logger)
-                    ]
-                )
+            {
+                var steps = new List<IPipelineStep>();
+                steps.AddRange(
+                [
+                    new CoreLoggingMiddleware(_logger),
+                    new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
+                    new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
+                    new ParsePathMiddleware(_logger),
+                    new ParseBodyMiddleware(_logger),
+                    new ValidateEndpointMiddleware(_logger)
+                ]);
+
+                // CoerceStringTypeMiddleware should be immediately before ValidateDocumentMiddleware
+                if (_appSettings.Value.BypassStringTypeCoercion)
+                {
+                    _logger.LogDebug("Bypassing CoerceStringTypeMiddleware");
+                }
+                else
+                {
+                    steps.Add(new CoerceStringTypeMiddleware(_logger));
+                }
+
+                steps.AddRange(
+                [
+                    new ValidateDocumentMiddleware(_logger, _documentValidator),
+                    new ValidateMatchingDocumentUuidsMiddleware(_logger, matchingDocumentUuidsValidator),
+                    new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
+                    new BuildResourceInfoMiddleware(_logger),
+                    new ExtractDocumentInfoMiddleware(_logger),
+                    new UpdateByIdHandler(_documentStoreRepository, _logger)
+                ]);
+                return new PipelineProvider(steps);
+            }
         );
 
     /// <summary>

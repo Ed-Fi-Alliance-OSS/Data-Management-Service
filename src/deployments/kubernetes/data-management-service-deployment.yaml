@@ -65,6 +65,11 @@ spec:
                 configMapKeyRef:
                   name: app-configmap
                   key: oauth-token-endpoint
+            - name: BYPASS_STRING_COERCION
+              valueFrom:
+                configMapKeyRef:
+                  name: app-configmap
+                  key: bypass-string-coercion
           livenessProbe:
             exec:
               command:

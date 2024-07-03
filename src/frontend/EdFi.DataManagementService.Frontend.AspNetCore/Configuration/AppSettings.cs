@@ -9,8 +9,6 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 
 public class AppSettings
 {
-    public int BeginAllowedSchoolYear { get; set; }
-    public int EndAllowedSchoolYear { get; set; }
     public required string AuthenticationService { get; set; }
     public required string DatabaseEngine { get; set; }
     public bool DeployDatabaseOnStartup { get; set; }
