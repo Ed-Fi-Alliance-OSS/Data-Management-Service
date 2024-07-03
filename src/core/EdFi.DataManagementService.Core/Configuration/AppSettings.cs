@@ -7,8 +7,6 @@ namespace EdFi.DataManagementService.Core.Configuration
 {
     public class AppSettings
     {
-        public int BeginAllowedSchoolYear { get; set; }
-        public int EndAllowedSchoolYear { get; set; }
         public bool BypassStringTypeCoercion { get; set; }
     }
 }
