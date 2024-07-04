@@ -10,23 +10,24 @@ Feature: Invalid Reference Validation
                   | ALG-1      | ["LEA course code"]                  | ALG-1              | 255901001               | Algebra I   |
 
         @ignore
-        Scenario: 01 Ensure clients cannot create a resource with an invalid reference
-             When a POST request is made to "ed-fi/studentEducationOrganizationAssociations" with
+        Scenario: 01 Ensure clients cannot create a resource with a non existing reference
+             When a POST request is made to "ed-fi/academicWeeks" with
                   """
                   {
-                      "educationOrganizationReference": {
-                          "educationOrganizationId": 1
-                      },
-                      "studentReference": {
-                          "studentUniqueId": "1000080"
-                      }
+                   "weekIdentifier": "one",
+                   "schoolReference": {
+                     "schoolId": 9999
+                   },
+                   "beginDate": "2023-09-11",
+                   "endDate": "2023-09-11",
+                   "totalInstructionalDays": 300
                   }
                   """
              Then it should respond with 409
               And the response body is
                   """
                   {
-                      "detail": "The referenced 'EducationOrganization' resource does not exist.",
+                      "detail": "The referenced 'schoolId' resource does not exist.",
                       "type": "urn:ed-fi:api:conflict:invalid-reference",
                       "title": "Resource Not Unique Conflict due to invalid-reference",
                       "status": 409,
