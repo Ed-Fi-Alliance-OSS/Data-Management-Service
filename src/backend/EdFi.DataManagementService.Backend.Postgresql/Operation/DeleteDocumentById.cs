@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Data;
 using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -34,6 +33,9 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
 
         try
         {
+            // Create a transaction save point
+            await transaction.SaveAsync("beforeDelete");
+
             int rowsAffectedOnDocumentDelete = await _sqlAction.DeleteDocumentByDocumentUuid(
                 documentPartitionKey,
                 deleteRequest.DocumentUuid,
@@ -68,23 +70,14 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
         }
         catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.ForeignKeyViolation)
         {
-            // The current transaction has been aborted due to an error,
-            // and no further commands can be executed until the transaction is ended.
-            // To resolve this, need to rollback the current transaction and then start a new one.
-            // Please note that any data retrieved or manipulated may be stale because
-            // it will be part of a new transaction.
-
-            await transaction.RollbackAsync();
-
-            await using var dbTransaction = await connection.BeginTransactionAsync(
-                IsolationLevel.RepeatableRead
-            );
+            // Restore transaction save point to continue using transaction
+            await transaction.RollbackAsync("beforeDelete");
 
             var referencingDocumentName = await _sqlAction.FindReferencingResourceNameByDocumentUuid(
                 deleteRequest.DocumentUuid,
                 documentPartitionKey,
                 connection,
-                dbTransaction,
+                transaction,
                 LockOption.BlockUpdateDelete
             );
             _logger.LogDebug(pe, "Foreign key violation on Delete - {TraceId}", deleteRequest.TraceId);

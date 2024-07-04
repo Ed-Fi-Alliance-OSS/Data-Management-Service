@@ -58,7 +58,7 @@ namespace EdFi.DataManagementService.Tests.E2E.Extensions
                     out var dateTimeValue
                 )
             )
-                return dateTimeValue;
+                return dateTimeValue.Date.ToString("yyyy-MM-dd");
 
             if (bool.TryParse(value, out var boolValue))
                 return boolValue;

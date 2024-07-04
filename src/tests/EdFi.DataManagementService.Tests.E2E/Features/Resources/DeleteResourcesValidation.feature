@@ -40,76 +40,88 @@ Feature: Resources "Delete" Operation validations
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 404
 
-        @ignore
-        Scenario: 05 Verify response code when deleting a referenced descriptor
-             When a POST request is made to "/ed-fi/gradingPeriodDescriptors" with
-                  """
-                   {
-                     "codeValue": "First Six Weeks",
-                     "description": "First Six Weeks",
-                     "namespace": "uri://ed-fi.org/GradingPeriodDescriptor",
-                     "shortDescription": "First Six Weeks"
-                   }
-                  """
-             Then it should respond with 201 or 200
-             When a POST request is made for dependent resource "/ed-fi/gradingPeriods" with
-                  """
-                   {
-                     "schoolReference": {
-                       "schoolId": 255901001
-                     },
-                     "schoolYearTypeReference": {
-                       "schoolYear": 2022
-                     },
-                     "gradingPeriodDescriptor": "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks",
-                     "gradingPeriodName": "2021-2022 Fall Semester Exam 1",
-                     "beginDate": "2021-08-23",
-                     "endDate": "2021-10-03",
-                     "periodSequence": 1,
-                     "totalInstructionalDays": 29
-                   }
-                  """
-             Then it should respond with 201 or 200
-             When a DELETE request is made to "/ed-fi/gradingPeriodDescriptors/{id}"
-             Then it should respond with 409
 
-        @ignore
-        Scenario: 06 Verify response code when deleting a referenced resource
-             When a POST request is made to "/ed-fi/schools" with
+        Scenario: 05 Verify response when deleting a referenced school
+             Given the system has this "schools" reference
+                  | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
+                  | 4003     | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+
+             Given the system has these "schoolYearTypes"
+                  | schoolYear | currentSchoolYear | schoolYearDescription |
+                  | 2022       | false             | School Year 2022      |
+
+             Given the system has these "gradingPeriods"
+                  | schoolReference    | schoolYearTypeReference | gradingPeriodDescriptor                                 | gradingPeriodName              | beginDate  | endDate    | periodSequence | totalInstructionalDays |
+                  | {"schoolId": 4003} | {"schoolYear": 2022}    | uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks | 2021-2022 Fall Semester Exam 1 | 2021-08-23 | 2021-10-03 | 1              | 29                     |
+
+             When a DELETE request is made to referenced resource "/ed-fi/schools/{id}"
+             Then it should respond with 409
+             And the response body is
                   """
                     {
-                      "schoolId": 255901001,
-                      "nameOfInstitution": "testschool",
-                       "educationOrganizationCategories": [
-                         {
-                           "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Other"
-                         }
-                       ],
-                       "schoolCategories": [
-                         {
-                           "schoolCategoryDescriptor": "uri://ed-fi.org/SchoolCategoryDescriptor#All Levels"
-                         }
-                       ],
-                       "gradeLevels": [
-                         {
-                           "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#First Grade"
-                         }
-                       ]
+                        "detail": "The requested action cannot be performed because this item is referenced by an existing 'GradingPeriod' item.",
+                        "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
+                        "title": "Dependent Item Exists",
+                        "status": 409,
+                        "correlationId": null,
+                        "validationErrors":null,
+                        "errors":null
                     }
                   """
-             Then it should respond with 201 or 200
-             When a POST request is made to "ed-fi/academicWeeks" with
-                  """
-                   {
-                    "weekIdentifier": "abcdef",
-                    "schoolReference": {
-                        "schoolId": 255901001 },
-                    "beginDate": "2024-04-04",
-                    "endDate": "2024-04-04",
-                    "totalInstructionalDays": 300
-                   }
-                  """
-             Then it should respond with 201 or 200
-             When a DELETE request is made to "/ed-fi/schools/{id}"
+
+        Scenario: 06 Verify response when deleting a referenced schoolyeartype
+             Given the system has these "schools"
+                  | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
+                  | 4003     | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+
+             Given the system has this "schoolYearTypes" reference
+                  | schoolYear | currentSchoolYear | schoolYearDescription |
+                  | 2022       | false             | School Year 2022      |
+
+             Given the system has these "gradingPeriods"
+                  | schoolReference    | schoolYearTypeReference | gradingPeriodDescriptor                                 | gradingPeriodName              | beginDate  | endDate    | periodSequence | totalInstructionalDays |
+                  | {"schoolId": 4003} | {"schoolYear": 2022}    | uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks | 2021-2022 Fall Semester Exam 1 | 2021-08-23 | 2021-10-03 | 1              | 29                     |
+
+             When a DELETE request is made to referenced resource "/ed-fi/schoolYearTypes/{id}"
              Then it should respond with 409
+             And the response body is
+                  """
+                    {
+                        "detail": "The requested action cannot be performed because this item is referenced by an existing 'GradingPeriod' item.",
+                        "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
+                        "title": "Dependent Item Exists",
+                        "status": 409,
+                        "correlationId": null,
+                        "validationErrors":null,
+                        "errors":null
+                    }
+                  """
+
+       Scenario: 07 Verify response when deleting a referenced student
+             Given the system has these "schools"
+                  | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
+                  | 4005     | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#First Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+
+             Given the system has this "students" reference
+                  | studentUniqueId | birthDate  | firstName   | lastSurname |
+                  | "987"             | 2017-08-23 | "firstname" | "lastname"  |
+
+             Given the system has these "studentSchoolAssociations"
+                  | entryDate  | schoolReference    | studentReference           | entryGradeLevelDescriptor                        |
+                  | 2021-07-23 | {"schoolId": 4005} | {"studentUniqueId": "987"} | uri://ed-fi.org/GradeLevelDescriptor#First grade |
+
+             When a DELETE request is made to referenced resource "/ed-fi/students/{id}"
+             Then it should respond with 409
+             And the response body is
+                  """
+                    {
+                        "detail": "The requested action cannot be performed because this item is referenced by an existing 'StudentSchoolAssociation' item.",
+                        "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
+                        "title": "Dependent Item Exists",
+                        "status": 409,
+                        "correlationId": null,
+                        "validationErrors":null,
+                        "errors":null
+                    }
+                  """
 
