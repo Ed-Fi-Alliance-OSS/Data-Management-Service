@@ -98,20 +98,19 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             }
         }
 
-        [Given("the system has this {string} reference")]
-        public async Task GivenTheSystemHasThisReference(string entityType, DataTable dataTable)
+        [Given("the system has these {string} references")]
+        public async Task GivenTheSystemHasTheseReferences(string entityType, DataTable dataTable)
         {
             var _apiResponses = await ProcessData(entityType, dataTable);
 
-            foreach (
-                var response in _apiResponses.Where(x =>
-                    x.Url.Contains(entityType, StringComparison.InvariantCultureIgnoreCase)
-                )
-            )
+            foreach (var response in _apiResponses)
             {
                 response.Status.Should().BeOneOf([201, 200]);
 
-                if (response.Headers.ContainsKey("location"))
+                if (
+                    response.Headers.ContainsKey("location")
+                    && response.Url.Contains(entityType, StringComparison.InvariantCultureIgnoreCase)
+                )
                 {
                     _location = response.Headers["location"];
                     _referencedResourceId = response.Headers["location"].Split('/').Last();

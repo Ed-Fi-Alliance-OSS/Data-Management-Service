@@ -42,7 +42,7 @@ Feature: Resources "Delete" Operation validations
 
 
         Scenario: 05 Verify response when deleting a referenced school
-             Given the system has this "schools" reference
+             Given the system has these "schools" references
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
                   | 4003     | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
 
@@ -74,7 +74,7 @@ Feature: Resources "Delete" Operation validations
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
                   | 4003     | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
 
-             Given the system has this "schoolYearTypes" reference
+             Given the system has these "schoolYearTypes" references
                   | schoolYear | currentSchoolYear | schoolYearDescription |
                   | 2022       | false             | School Year 2022      |
 
@@ -102,9 +102,9 @@ Feature: Resources "Delete" Operation validations
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
                   | 4005     | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#First Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
 
-             Given the system has this "students" reference
+             Given the system has these "students" references
                   | studentUniqueId | birthDate  | firstName   | lastSurname |
-                  | "987"             | 2017-08-23 | "firstname" | "lastname"  |
+                  | "987"           | 2017-08-23 | "firstname" | "lastname"  |
 
              Given the system has these "studentSchoolAssociations"
                   | entryDate  | schoolReference    | studentReference           | entryGradeLevelDescriptor                        |
