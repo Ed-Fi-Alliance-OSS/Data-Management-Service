@@ -67,8 +67,8 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
             }
 
             int rowsAffected = await _sqlAction.UpdateDocumentEdfiDoc(
-                PartitionKeyFor(updateRequest.DocumentUuid).Value,
-                updateRequest.DocumentUuid.Value,
+                PartitionKeyFor(updateRequest.DocumentUuid),
+                updateRequest.DocumentUuid,
                 JsonSerializer.Deserialize<JsonElement>(updateRequest.EdfiDoc),
                 connection,
                 transaction

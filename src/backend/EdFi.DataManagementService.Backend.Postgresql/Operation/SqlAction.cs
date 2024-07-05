@@ -78,8 +78,8 @@ public interface ISqlAction
     /// Delete associated Reference records for a given DocumentUuid, returning the number of rows affected
     /// </summary>
     public Task<int> DeleteReferencesByDocumentUuid(
-        int parentDocumentPartitionKey,
-        Guid parentDocumentUuidGuid,
+        PartitionKey parentDocumentPartitionKey,
+        DocumentUuid parentDocumentUuidGuid,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     );
@@ -96,8 +96,8 @@ public interface ISqlAction
     );
 
     public Task<int> UpdateDocumentEdfiDoc(
-        int documentPartitionKey,
-        Guid documentUuid,
+        PartitionKey documentPartitionKey,
+        DocumentUuid documentUuid,
         JsonElement edfiDoc,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
@@ -214,8 +214,8 @@ public class SqlAction : ISqlAction
 
         return new(
             Id: reader.GetInt64(reader.GetOrdinal("Id")),
-            DocumentPartitionKey: reader.GetInt16(reader.GetOrdinal("DocumentPartitionKey")),
-            DocumentUuid: reader.GetGuid(reader.GetOrdinal("DocumentUuid")),
+            DocumentPartitionKey: new PartitionKey(reader.GetInt32(reader.GetOrdinal("DocumentPartitionKey"))),
+            DocumentUuid: new DocumentUuid(reader.GetGuid(reader.GetOrdinal("DocumentUuid"))),
             ResourceName: reader.GetString(reader.GetOrdinal("ResourceName")),
             ResourceVersion: reader.GetString(reader.GetOrdinal("ResourceVersion")),
             ProjectName: reader.GetString(reader.GetOrdinal("ProjectName")),
@@ -330,8 +330,8 @@ public class SqlAction : ISqlAction
     /// Update the EdfiDoc of a Document and return the number of rows affected
     /// </summary>
     public async Task<int> UpdateDocumentEdfiDoc(
-        int documentPartitionKey,
-        Guid documentUuid,
+        PartitionKey documentPartitionKey,
+        DocumentUuid documentUuid,
         JsonElement edfiDoc,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
@@ -488,8 +488,8 @@ public class SqlAction : ISqlAction
     /// Delete associated Reference records for a given DocumentUuid, returning the number of rows affected
     /// </summary>
     public async Task<int> DeleteReferencesByDocumentUuid(
-        int parentDocumentPartitionKey,
-        Guid parentDocumentUuidGuid,
+        PartitionKey parentDocumentPartitionKey,
+        DocumentUuid parentDocumentUuidGuid,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     )

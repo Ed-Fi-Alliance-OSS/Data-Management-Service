@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Diagnostics;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -32,14 +31,13 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
     )
     {
         int documentPartitionKey = PartitionKeyFor(upsertRequest.DocumentUuid).Value;
-        long newDocumentId;
 
         // First insert into Documents
         upsertRequest.EdfiDoc["id"] = upsertRequest.DocumentUuid.Value;
-        newDocumentId = await _sqlAction.InsertDocument(
+        long newDocumentId = await _sqlAction.InsertDocument(
             new(
-                DocumentPartitionKey: documentPartitionKey,
-                DocumentUuid: upsertRequest.DocumentUuid.Value,
+                DocumentPartitionKey: new PartitionKey(documentPartitionKey),
+                DocumentUuid: new DocumentUuid(upsertRequest.DocumentUuid.Value),
                 ResourceName: upsertRequest.ResourceInfo.ResourceName.Value,
                 ResourceVersion: upsertRequest.ResourceInfo.ResourceVersion.Value,
                 ProjectName: upsertRequest.ResourceInfo.ProjectName.Value,
@@ -128,15 +126,15 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
 
     public async Task<UpsertResult> AsUpdate(
         long documentId,
-        int documentPartitionKey,
-        Guid documentUuid,
+        PartitionKey documentPartitionKey,
+        DocumentUuid documentUuid,
         IUpsertRequest upsertRequest,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     )
     {
         // Update the EdfiDoc of the Document
-        upsertRequest.EdfiDoc["id"] = documentUuid;
+        upsertRequest.EdfiDoc["id"] = documentUuid.Value;
         await _sqlAction.UpdateDocumentEdfiDoc(
             documentPartitionKey,
             documentUuid,
@@ -160,7 +158,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             // Next insert current references
             int numberOfRowsInserted = await _sqlAction.InsertReferences(
                 new(
-                    ParentDocumentPartitionKey: documentPartitionKey,
+                    ParentDocumentPartitionKey: documentPartitionKey.Value,
                     ParentDocumentId: documentId,
                     ReferentialIds: documentReferences.Select(x => x.ReferentialId.Value).ToArray(),
                     ReferentialPartitionKeys: documentReferences
@@ -178,7 +176,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
         }
 
         _logger.LogDebug("Upsert success as update - {TraceId}", upsertRequest.TraceId);
-        return new UpsertResult.UpdateSuccess(new(documentUuid));
+        return new UpsertResult.UpdateSuccess(documentUuid);
     }
 
     /// <summary>

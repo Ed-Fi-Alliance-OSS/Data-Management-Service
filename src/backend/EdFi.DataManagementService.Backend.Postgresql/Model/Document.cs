@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Model;
 
@@ -14,11 +15,11 @@ public record Document(
     /// <summary>
     /// The partition key for this Document
     /// </summary>
-    int DocumentPartitionKey,
+    PartitionKey DocumentPartitionKey,
     /// <summary>
     /// The externally known UUID for this Document
     /// </summary>
-    Guid DocumentUuid,
+    DocumentUuid DocumentUuid,
     /// <summary>
     /// The ResourceName for this document
     /// </summary>
