@@ -29,7 +29,7 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
     )
     {
         _logger.LogDebug("Entering DeleteDocumentById.DeleteById - {TraceId}", deleteRequest.TraceId);
-        int documentPartitionKey = PartitionKeyFor(deleteRequest.DocumentUuid).Value;
+        var documentPartitionKey = PartitionKeyFor(deleteRequest.DocumentUuid);
 
         try
         {
@@ -73,7 +73,7 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
             // Restore transaction save point to continue using transaction
             await transaction.RollbackAsync("beforeDelete");
 
-            var referencingDocumentName = await _sqlAction.FindReferencingResourceNameByDocumentUuid(
+            string? referencingDocumentName = await _sqlAction.FindReferencingResourceNameByDocumentUuid(
                 deleteRequest.DocumentUuid,
                 documentPartitionKey,
                 connection,
