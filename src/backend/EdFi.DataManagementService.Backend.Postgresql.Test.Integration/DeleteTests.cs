@@ -521,12 +521,12 @@ public class DeleteTests : DatabaseTest
         private List<UpsertResult> _upsertResults;
 
         private static readonly string _subclassName = "SubClass";
-        private static readonly Guid _subClassdocumentUuidGuid = Guid.NewGuid();
+        private static readonly Guid _subClassDocumentUuidGuid = Guid.NewGuid();
         private static readonly Guid _subClassRefIdGuid = Guid.NewGuid();
         private static readonly string _subClassDocString = """{"abc":1}""";
 
         private static readonly string _superClassName = "SuperClass";
-        private static readonly Guid _superClassreferentialIdGuid = Guid.NewGuid();
+        private static readonly Guid _superClassReferentialIdGuid = Guid.NewGuid();
 
         private static readonly string _referencingClassName = "Class";
         private static readonly Guid _documentUuidGuid = Guid.NewGuid();
@@ -539,16 +539,16 @@ public class DeleteTests : DatabaseTest
             _upsertResults = new List<UpsertResult>();
             IUpsertRequest subClassUpsertRequest = CreateUpsertRequest(
                 _subclassName,
-                _subClassdocumentUuidGuid,
+                _subClassDocumentUuidGuid,
                 _subClassRefIdGuid,
                 _subClassDocString,
                 null,
-                CreateSuperclassIdentity(_superClassName, _superClassreferentialIdGuid)
+                CreateSuperclassIdentity(_superClassName, _superClassReferentialIdGuid)
             );
             _upsertResults.Add(await CreateUpsert().Upsert(subClassUpsertRequest, Connection!, Transaction!));
 
             // Add references
-            Reference[] references = [new(_referencingClassName, _superClassreferentialIdGuid)];
+            Reference[] references = [new(_referencingClassName, _superClassReferentialIdGuid)];
 
             IUpsertRequest upsertRequest = CreateUpsertRequest(
                 _referencingClassName,
@@ -566,7 +566,7 @@ public class DeleteTests : DatabaseTest
 
             _deleteResult = await CreateDeleteById()
                 .DeleteById(
-                    CreateDeleteRequest(_subclassName, _subClassdocumentUuidGuid),
+                    CreateDeleteRequest(_subclassName, _subClassDocumentUuidGuid),
                     Connection!,
                     Transaction!
                 );
