@@ -15,7 +15,9 @@ permissions: read-all
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    defaults:
+      run:
+        shell: pwsh
     steps:
       - name: Checkout the repo
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -28,17 +30,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: Grant execute permission for build script
-        run: chmod +x ./build.ps1
-
       - name: Build
         id: build_step
-        run: |
-          ./build.ps1 Build -Configuration Debug || {
-            echo "error_message=Command failed: ./build.ps1 Build -Configuration Debug: Permission denied" >> $GITHUB_ENV
-            exit 1
-          }
-        shell: bash
+        run: ./build.ps1 Build -Configuration Debug
 
       - name: Install Coverlet Reference
         if: success()
@@ -48,18 +42,7 @@ jobs:
 
       - name: Run Unit Tests
         id: unit_test_step
-        run: |
-         ./build.ps1 UnitTest -Configuration Debug || {
-            echo "error_message=Command failed: ./build.ps1 UnitTest -Configuration Debug: Permission denied" >> $GITHUB_ENV
-            exit 1
-          }
-        shell: bash
-
-      - name: Set error message output
-        if: failure()
-        id: set_error_message
-        run: |
-          echo "::set-output name=error::${{ env.error_message }}"
+        run: ./build.ps1 UnitTest -Configuration Debug
 
       - name: Notify Slack on success
         if: success()
@@ -84,7 +67,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "❌ GitHub Action build result: ${{ job.status }}\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Commit Message:* ${{ github.event.head_commit.message || 'No commit message available' }}\n*Error Message:* ${{ steps.set_error_message.outputs.error || 'No error message available' }}\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    "text": "❌ GitHub Action build result: ${{ job.status }}\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Commit Message:* ${{ github.event.head_commit.message || 'No commit message available' }}\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                   }
                 }
               ]
