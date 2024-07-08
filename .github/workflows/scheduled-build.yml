@@ -18,6 +18,8 @@ jobs:
     defaults:
       run:
         shell: pwsh
+    outputs:
+      error: ${{ steps.set_error_message.outputs.error }}
 
     steps:
       - name: Checkout the repo
@@ -53,7 +55,8 @@ jobs:
         if: failure()
         id: set_error_message
         run: |
-          Write-Output "::error::$env:ERROR"
+          Write-Output "::error::$($env:ERROR)"
+          "error=$($env:ERROR)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Notify Slack on success
         if: success()
