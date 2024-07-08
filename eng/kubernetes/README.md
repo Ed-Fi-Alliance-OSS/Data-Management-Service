@@ -55,8 +55,8 @@ First, build a locally-tagged image of the Data Management Service. Two ways:
 In `eng/kubernetes/<folder>` where `<folder>` could be development or production:
 
 > [!TIP]
-> development folder will use the local data-management-service;
-> production folder will pull the published image from the docker hub
+> development folder will use the local data-management-service docker image `image: local/edfi-data-management-service:latest`;
+> production folder will pull the published image from the docker hub `image: edfialliance/data-management-service:pre`
 
 * Create an app-secret.yaml file with a encrypted password, see
   [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/) for more
