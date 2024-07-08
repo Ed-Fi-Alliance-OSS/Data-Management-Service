@@ -18,10 +18,6 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    outputs:
-      build_error: ${{ steps.build_step.outputs.error }}
-      test_error:  ${{ steps.unit_test_step.outputs.error }}
-
     steps:
       - name: Checkout the repo
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -75,7 +71,7 @@ jobs:
       #             "type": "section",
       #             "text": {
       #               "type": "mrkdwn",
-      #               "text": "❌ GitHub Action build result: ${{ job.status }}\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Commit Message:* ${{ github.event.head_commit.message || 'No commit message available' }}\n*Error Message:* ${{ steps.set_error_message.outputs.error || 'No error message available' }}\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+      #               "text": "❌ GitHub Action build result: ${{ job.status }}\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Commit Message:* ${{ github.event.head_commit.message || 'No commit message available' }}\n*Error Message:* ${{ steps.build_step.outputs.error || steps.unit_test_step.outputs.error || 'No error message available' }}\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
       #             }
       #           }
       #         ]
@@ -86,7 +82,5 @@ jobs:
 
       - name: Temporary reporting
         if: failure()
-        env:
-          BUILD_ERROR: ${{ steps.build_step.outputs.error }}
-          TEST_ERROR: ${{ steps.unit_test_step.outputs.error }}
-        run: Write-Output $( $env:BUILD_ERROR ?? $env:TEST_ERROR ?? "No error message available")
+        run: echo ${{ steps.build_step.outputs.error || steps.unit_test_step.outputs.error || 'No error message available' }}
+        shell: bash
