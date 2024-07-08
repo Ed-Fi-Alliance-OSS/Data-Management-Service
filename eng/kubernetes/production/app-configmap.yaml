@@ -11,3 +11,4 @@ data:
     need-db-setup: "true"
     log-level: "Information"
     oauth-token-endpoint: "http://localhost:8080/oauth/token"
+    bypass-string-coercion: "false"

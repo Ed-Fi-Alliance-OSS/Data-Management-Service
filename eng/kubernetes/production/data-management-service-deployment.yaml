@@ -23,7 +23,7 @@ spec:
       containers:
         - name: data-management-service
           image: edfialliance/data-management-service:pre
-          port:
+          ports:
             - containerPort: 8080
           env:
             - name: NEED_DATABASE_SETUP
@@ -71,6 +71,11 @@ spec:
                 configMapKeyRef:
                   name: app-configmap
                   key: oauth-token-endpoint
+            - name: BYPASS_STRING_COERCION
+              valueFrom:
+                configMapKeyRef:
+                  name: app-configmap
+                  key: bypass-string-coercion
           livenessProbe:
             exec:
               command:
