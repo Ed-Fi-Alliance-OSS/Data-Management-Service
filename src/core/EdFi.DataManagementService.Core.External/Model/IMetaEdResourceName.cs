@@ -14,3 +14,5 @@ public interface IMetaEdResourceName
 {
     string Value { get; }
 }
+
+public record struct ResourceName(string Value);

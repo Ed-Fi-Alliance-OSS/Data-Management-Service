@@ -5,6 +5,7 @@
 
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using EdFi.DataManagementService.Core.External.Model;
 using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace EdFi.DataManagementService.Core.Response;
@@ -124,6 +125,18 @@ internal record FailureResponse(
             errors: null
         );
     }
+
+    public static FailureResponse ForInvalidReferences(ResourceName[] resourceNames) =>
+        new(
+            detail:
+            $"The referenced {string.Join(",", resourceNames.Select(x => x.Value))} item(s) do not exist.",
+            type: $"{BaseTypePrefix}:data-conflict:unresolved-reference",
+            title: "Unresolved Reference",
+            status: 409,
+            correlationId: null,
+            validationErrors: null,
+            errors: null
+        );
 
     public static FailureResponse ForKeyChangeNotSupported(string error) =>
         new(

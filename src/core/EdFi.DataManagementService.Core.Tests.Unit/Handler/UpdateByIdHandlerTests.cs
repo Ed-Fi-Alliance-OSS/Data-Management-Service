@@ -94,7 +94,7 @@ public class UpdateByIdHandlerTests
 
             public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
             {
-                return Task.FromResult<UpdateResult>(new UpdateFailureReference(ResponseBody));
+                return Task.FromResult<UpdateResult>(new UpdateFailureReference([new(ResponseBody)]));
             }
         }
 

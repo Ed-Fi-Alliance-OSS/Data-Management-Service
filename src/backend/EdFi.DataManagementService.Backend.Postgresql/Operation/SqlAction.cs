@@ -75,6 +75,16 @@ public interface ISqlAction
     );
 
     /// <summary>
+    /// Given an array of referentialId guids and a parallel array of partition keys, returns
+    /// an array of invalid referentialId guids, if any
+    /// </summary>
+    public Task<Guid[]> FindInvalidReferentialIds(
+        DocumentReferenceIds documentReferenceIds,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    /// <summary>
     /// Delete associated Reference records for a given DocumentUuid, returning the number of rows affected
     /// </summary>
     public Task<int> DeleteReferencesByDocumentUuid(
@@ -381,7 +391,8 @@ public class SqlAction : ISqlAction
                 LEFT JOIN public.aliases a ON
                     a.DocumentId = d.Id
                     AND a.DocumentPartitionKey = d.DocumentPartitionKey
-                    AND a.ReferentialId = $1 and a.ReferentialPartitionKey = $2
+                    AND a.ReferentialId = $1
+                    AND a.ReferentialPartitionKey = $2
                 WHERE d.DocumentUuid = $3 AND d.DocumentPartitionKey = $4 {sqlForLockOption};",
                 connection,
                 transaction
@@ -482,6 +493,52 @@ public class SqlAction : ISqlAction
         };
 
         return await insertBulkReferencesCmd.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>
+    /// Given an array of referentialId guids and a parallel array of partition keys, returns
+    /// an array of invalid referentialId guids, if any.
+    ///
+    /// Note the db command is run in a separate transaction because the original transaction
+    /// is invalidated by FK violations. This means there is a slight chance of staleness,
+    /// which should be acceptable.
+    /// </summary>
+    public async Task<Guid[]> FindInvalidReferentialIds(
+        DocumentReferenceIds documentReferenceIds,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using var command = new NpgsqlCommand(
+            @$"SELECT r.ReferentialId
+               FROM ROWS FROM
+                 (unnest($1::uuid[]), unnest($2::integer[]))
+                 AS r (ReferentialId, ReferentialPartitionKey)
+               WHERE NOT EXISTS (
+                 SELECT 1
+                 FROM Aliases a
+                 WHERE r.ReferentialId = a.ReferentialId
+                 AND r.ReferentialPartitionKey = a.ReferentialPartitionKey)",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = documentReferenceIds.ReferentialIds },
+                new() { Value = documentReferenceIds.ReferentialPartitionKeys },
+            }
+        };
+
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+
+        List<Guid> result = [];
+        while (await reader.ReadAsync())
+        {
+            result.Add(reader.GetGuid(reader.GetOrdinal("ReferentialId")));
+        }
+
+        return result.ToArray();
     }
 
     /// <summary>
