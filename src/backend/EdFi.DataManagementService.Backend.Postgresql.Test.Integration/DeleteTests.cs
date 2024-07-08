@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using EdFi.DataManagementService.Core.External.Backend;
 using FluentAssertions;
 using Npgsql;
@@ -371,11 +372,226 @@ public class DeleteTests : DatabaseTest
         }
     }
 
-    // Future tests - from Meadowlark
+    [TestFixture]
+    public class Given_the_delete_of_a_document_referenced_by_another_document : DeleteTests
+    {
+        private DeleteResult? _deleteResult;
+        private List<UpsertResult> _upsertResults;
 
-    // given the delete of a document referenced by another document
+        private static readonly string _referencedResourceName = "ReferencedResource";
+        private static readonly Guid _resourcedDocUuidGuid = Guid.NewGuid();
+        private static readonly Guid _referencedRefIdGuid = Guid.NewGuid();
+        private static readonly string _referencedDocString = """{"abc":1}""";
 
-    // given the delete of a document with outbound reference only
+        private static readonly string _referencingResourceName = "ReferencingResource";
+        private static readonly Guid _documentUuidGuid = Guid.NewGuid();
+        private static readonly Guid _referentialIdGuid = Guid.NewGuid();
+        private static readonly string _edFiDocString = """{"abc":2}""";
 
-    // given delete of a subclass document referenced by another document as a superclass
+        [SetUp]
+        public async Task Setup()
+        {
+            _upsertResults = new List<UpsertResult>();
+            IUpsertRequest refUpsertRequest = CreateUpsertRequest(
+                _referencedResourceName,
+                _resourcedDocUuidGuid,
+                _referencedRefIdGuid,
+                _referencedDocString
+            );
+            _upsertResults.Add(await CreateUpsert().Upsert(refUpsertRequest, Connection!, Transaction!));
+
+            // Add references
+            Reference[] references = [new(_referencingResourceName, _referencedRefIdGuid)];
+
+            IUpsertRequest upsertRequest = CreateUpsertRequest(
+                _referencingResourceName,
+                _documentUuidGuid,
+                _referentialIdGuid,
+                _edFiDocString,
+                CreateDocumentReferences(references)
+            );
+
+            _upsertResults.Add(await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!));
+
+            await Transaction!.CommitAsync();
+            Transaction = await Connection!.BeginTransactionAsync(IsolationLevel.Serializable);
+
+            _deleteResult = await CreateDeleteById()
+                .DeleteById(
+                    CreateDeleteRequest(_referencedResourceName, _resourcedDocUuidGuid),
+                    Connection!,
+                    Transaction!
+                );
+        }
+
+        [Test]
+        public void It_should_be_a_successful_inserts()
+        {
+            _upsertResults.Should().HaveCount(2);
+            _upsertResults.ForEach(x => x.Should().BeOfType<UpsertResult.InsertSuccess>());
+        }
+
+        [Test]
+        public void It_should_be_a_delete_failure_reference()
+        {
+            _deleteResult.Should().BeOfType<DeleteResult.DeleteFailureReference>();
+        }
+
+        [Test]
+        public void It_should_be_equal_to_referencing_resource_name()
+        {
+            var result = _deleteResult as DeleteResult.DeleteFailureReference;
+            result.Should().NotBeNull();
+            result?.ReferencingDocumentInfo.Should().NotBeNull();
+            result?.ReferencingDocumentInfo.Should().Be(_referencingResourceName);
+        }
+    }
+
+    [TestFixture]
+    public class Given_the_delete_of_a_document_with_outbound_reference_only : DeleteTests
+    {
+        private DeleteResult? _deleteResult;
+        private List<UpsertResult> _upsertResults;
+
+        private static readonly string _referencedResourceName = "ReferencedResource";
+        private static readonly Guid _resourcedDocUuidGuid = Guid.NewGuid();
+        private static readonly Guid _referencedRefIdGuid = Guid.NewGuid();
+        private static readonly string _referencedDocString = """{"abc":1}""";
+
+        private static readonly string _referencingResourceName = "ReferencingResource";
+        private static readonly Guid _documentUuidGuid = Guid.NewGuid();
+        private static readonly Guid _referentialIdGuid = Guid.NewGuid();
+        private static readonly string _edFiDocString = """{"abc":2}""";
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _upsertResults = new List<UpsertResult>();
+            IUpsertRequest refUpsertRequest = CreateUpsertRequest(
+                _referencedResourceName,
+                _resourcedDocUuidGuid,
+                _referencedRefIdGuid,
+                _referencedDocString
+            );
+            _upsertResults.Add(await CreateUpsert().Upsert(refUpsertRequest, Connection!, Transaction!));
+
+            // Add references
+            Reference[] references = [new(_referencingResourceName, _referencedRefIdGuid)];
+
+            IUpsertRequest upsertRequest = CreateUpsertRequest(
+                _referencingResourceName,
+                _documentUuidGuid,
+                _referentialIdGuid,
+                _edFiDocString,
+                CreateDocumentReferences(references)
+            );
+
+            _upsertResults.Add(await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!));
+
+            await Transaction!.CommitAsync();
+            Transaction = await Connection!.BeginTransactionAsync(IsolationLevel.Serializable);
+
+            _deleteResult = await CreateDeleteById()
+                .DeleteById(
+                    CreateDeleteRequest(_referencingResourceName, _documentUuidGuid),
+                    Connection!,
+                    Transaction!
+                );
+        }
+
+        [Test]
+        public void It_should_be_a_successful_inserts()
+        {
+            _upsertResults.Should().HaveCount(2);
+            _upsertResults.ForEach(x => x.Should().BeOfType<UpsertResult.InsertSuccess>());
+        }
+
+        [Test]
+        public void It_should_be_a_delete_success()
+        {
+            _deleteResult.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        }
+    }
+
+    [TestFixture]
+    public class Given_delete_of_a_subclass_document_referenced_by_another_document_as_a_superclass
+        : DeleteTests
+    {
+        private DeleteResult? _deleteResult;
+        private List<UpsertResult> _upsertResults;
+
+        private static readonly string _subclassName = "SubClass";
+        private static readonly Guid _subClassDocumentUuidGuid = Guid.NewGuid();
+        private static readonly Guid _subClassRefIdGuid = Guid.NewGuid();
+        private static readonly string _subClassDocString = """{"abc":1}""";
+
+        private static readonly string _superClassName = "SuperClass";
+        private static readonly Guid _superClassReferentialIdGuid = Guid.NewGuid();
+
+        private static readonly string _referencingClassName = "Class";
+        private static readonly Guid _documentUuidGuid = Guid.NewGuid();
+        private static readonly Guid _referentialIdGuid = Guid.NewGuid();
+        private static readonly string _edFiDocString = """{"abc":2}""";
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _upsertResults = new List<UpsertResult>();
+            IUpsertRequest subClassUpsertRequest = CreateUpsertRequest(
+                _subclassName,
+                _subClassDocumentUuidGuid,
+                _subClassRefIdGuid,
+                _subClassDocString,
+                null,
+                CreateSuperclassIdentity(_superClassName, _superClassReferentialIdGuid)
+            );
+            _upsertResults.Add(await CreateUpsert().Upsert(subClassUpsertRequest, Connection!, Transaction!));
+
+            // Add references
+            Reference[] references = [new(_referencingClassName, _superClassReferentialIdGuid)];
+
+            IUpsertRequest upsertRequest = CreateUpsertRequest(
+                _referencingClassName,
+                _documentUuidGuid,
+                _referentialIdGuid,
+                _edFiDocString,
+                CreateDocumentReferences(references)
+            );
+
+            _upsertResults.Add(await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!));
+
+            await Transaction!.CommitAsync();
+
+            Transaction = await Connection!.BeginTransactionAsync(IsolationLevel.Serializable);
+
+            _deleteResult = await CreateDeleteById()
+                .DeleteById(
+                    CreateDeleteRequest(_subclassName, _subClassDocumentUuidGuid),
+                    Connection!,
+                    Transaction!
+                );
+        }
+
+        [Test]
+        public void It_should_be_a_successful_inserts()
+        {
+            _upsertResults.Should().HaveCount(2);
+            _upsertResults.ForEach(x => x.Should().BeOfType<UpsertResult.InsertSuccess>());
+        }
+
+        [Test]
+        public void It_should_be_a_delete_failure_reference()
+        {
+            _deleteResult.Should().BeOfType<DeleteResult.DeleteFailureReference>();
+        }
+
+        [Test]
+        public void It_should_be_equal_to_referencing_resource_name()
+        {
+            var result = _deleteResult as DeleteResult.DeleteFailureReference;
+            result.Should().NotBeNull();
+            result?.ReferencingDocumentInfo.Should().NotBeNull();
+            result?.ReferencingDocumentInfo.Should().Be(_referencingClassName);
+        }
+    }
 }

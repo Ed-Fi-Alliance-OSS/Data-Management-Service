@@ -36,9 +36,9 @@ public interface ISqlAction
         LockOption lockOption
     );
 
-    public Task<Document?> FindDocumentByDocumentUuid(
-        int documentPartitionKey,
+    public Task<string?> FindReferencingResourceNameByDocumentUuid(
         DocumentUuid documentUuid,
+        PartitionKey documentPartitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         LockOption lockOption
@@ -57,14 +57,6 @@ public interface ISqlAction
         NpgsqlTransaction transaction
     );
 
-    public Task<JsonNode?> GetDocumentById(
-        Guid documentUuid,
-        int partitionKey,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        LockOption lockOption
-    );
-
     public Task<long> InsertDocument(
         Document document,
         NpgsqlConnection connection,
@@ -72,13 +64,6 @@ public interface ISqlAction
     );
 
     public Task<long> InsertAlias(Alias alias, NpgsqlConnection connection, NpgsqlTransaction transaction);
-
-    public Task<int> DeleteAliasByDocumentId(
-        int documentPartitionKey,
-        long? documentId,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction
-    );
 
     /// <summary>
     /// Insert a set of rows into the References table and return the number of rows affected
@@ -104,7 +89,7 @@ public interface ISqlAction
     /// Delete cascades to Aliases and References tables
     /// </summary>
     public Task<int> DeleteDocumentByDocumentUuid(
-        int documentPartitionKey,
+        PartitionKey documentPartitionKey,
         DocumentUuid documentUuid,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
@@ -311,45 +296,6 @@ public class SqlAction : ISqlAction
     }
 
     /// <summary>
-    /// Returns a single Document from the database corresponding to the given Id,
-    /// or null if no matching Document was found.
-    /// </summary>
-    public async Task<JsonNode?> GetDocumentById(
-        Guid documentUuid,
-        int partitionKey,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        LockOption lockOption
-    )
-    {
-        await using NpgsqlCommand command =
-            new(
-                $@"SELECT EdfiDoc FROM public.Documents WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 {SqlFor(lockOption)};",
-                connection,
-                transaction
-            )
-            {
-                Parameters =
-                {
-                    new() { Value = partitionKey },
-                    new() { Value = documentUuid },
-                }
-            };
-
-        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
-
-        if (!reader.HasRows)
-        {
-            return null;
-        }
-
-        await reader.ReadAsync();
-        JsonNode? edfiDoc = (await reader.GetFieldValueAsync<JsonElement>(0)).Deserialize<JsonNode>();
-
-        return edfiDoc;
-    }
-
-    /// <summary>
     /// Insert a single Document into the database and return the Id of the new document
     /// </summary>
     public async Task<long> InsertDocument(
@@ -500,34 +446,6 @@ public class SqlAction : ISqlAction
     }
 
     /// <summary>
-    /// Delete associated Alias records for a given DocumentId return the number of rows affected
-    /// </summary>
-    public async Task<int> DeleteAliasByDocumentId(
-        int documentPartitionKey,
-        long? documentId,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction
-    )
-    {
-        await using NpgsqlCommand command =
-            new(
-                @"DELETE from public.Aliases WHERE DocumentId = $1 AND DocumentPartitionKey = $2;",
-                connection,
-                transaction
-            )
-            {
-                Parameters =
-                {
-                    new() { Value = documentId },
-                    new() { Value = documentPartitionKey }
-                }
-            };
-
-        int rowsAffected = await command.ExecuteNonQueryAsync();
-        return rowsAffected;
-    }
-
-    /// <summary>
     /// Insert a set of rows into the References table and return the number of rows affected
     /// </summary>
     public async Task<int> InsertReferences(
@@ -602,7 +520,7 @@ public class SqlAction : ISqlAction
     /// Delete cascades to Aliases and References tables
     /// </summary>
     public async Task<int> DeleteDocumentByDocumentUuid(
-        int documentPartitionKey,
+        PartitionKey documentPartitionKey,
         DocumentUuid documentUuid,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
@@ -617,7 +535,7 @@ public class SqlAction : ISqlAction
             {
                 Parameters =
                 {
-                    new() { Value = documentPartitionKey },
+                    new() { Value = documentPartitionKey.Value },
                     new() { Value = documentUuid.Value },
                 }
             };
@@ -626,9 +544,9 @@ public class SqlAction : ISqlAction
         return rowsAffected;
     }
 
-    public async Task<Document?> FindDocumentByDocumentUuid(
-        int documentPartitionKey,
+    public async Task<string?> FindReferencingResourceNameByDocumentUuid(
         DocumentUuid documentUuid,
+        PartitionKey documentPartitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         LockOption lockOption
@@ -636,7 +554,12 @@ public class SqlAction : ISqlAction
     {
         await using NpgsqlCommand command =
             new(
-                $@"SELECT * from public.Documents WHERE DocumentUuid = $1 AND DocumentPartitionKey = $2 {SqlFor(lockOption)};",
+                $@"SELECT  d.ResourceName FROM public.Documents d INNER JOIN (
+                   SELECT ParentDocumentId, ParentDocumentPartitionKey FROM public.""references"" r
+                   INNER JOIN public.Aliases a ON r.ReferentialId = a.ReferentialId AND r.ReferentialPartitionKey = a.ReferentialPartitionKey
+                   INNER JOIN public.Documents d2 ON d2.Id = a.DocumentId AND d2.DocumentPartitionKey = a.DocumentPartitionKey
+                   WHERE d2.DocumentUuid =$1 AND d2.DocumentPartitionKey = $2) AS re
+                   ON re.ParentDocumentId = d.id AND re.ParentDocumentPartitionKey = d.DocumentPartitionKey {SqlFor(lockOption)};",
                 connection,
                 transaction
             )
@@ -644,28 +567,23 @@ public class SqlAction : ISqlAction
                 Parameters =
                 {
                     new() { Value = documentUuid.Value },
-                    new() { Value = documentPartitionKey }
+                    new() { Value = documentPartitionKey.Value }
                 }
             };
-
-        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
-
-        if (!reader.HasRows)
+        try
         {
-            return null;
-        }
-        await reader.ReadAsync();
+            await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+            if (!reader.HasRows)
+            {
+                return null;
+            }
+            await reader.ReadAsync();
 
-        return new(
-            Id: reader.GetInt64(reader.GetOrdinal("Id")),
-            DocumentPartitionKey: reader.GetInt16(reader.GetOrdinal("DocumentPartitionKey")),
-            DocumentUuid: reader.GetGuid(reader.GetOrdinal("DocumentUuid")),
-            ResourceName: reader.GetString(reader.GetOrdinal("ResourceName")),
-            ResourceVersion: reader.GetString(reader.GetOrdinal("ResourceVersion")),
-            ProjectName: reader.GetString(reader.GetOrdinal("ProjectName")),
-            EdfiDoc: await reader.GetFieldValueAsync<JsonElement>(reader.GetOrdinal("EdfiDoc")),
-            CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
-            LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt"))
-        );
+            return reader.GetString(reader.GetOrdinal("ResourceName"));
+        }
+        catch (Exception ex)
+        {
+            throw new NpgsqlException(ex.Message, ex);
+        }
     }
 }

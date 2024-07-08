@@ -21,6 +21,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private string _id = string.Empty;
         private string _dependentId = string.Empty;
         private string _location = string.Empty;
+        private string _referencedResourceId = string.Empty;
 
         #region Given
 
@@ -55,16 +56,18 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             //throw new PendingStepException();
         }
 
-        [Given("the system has these {string}")]
-        public async Task GivenTheSystemHasThese(string entityType, DataTable dataTable)
+        private async Task<List<IAPIResponse>> ProcessData(string entityType, DataTable dataTable)
         {
             var _apiResponses = new List<IAPIResponse>();
             var baseUrl = $"data/ed-fi";
 
             foreach (var descriptor in dataTable.ExtractDescriptors())
             {
-                _apiResponses.Add(await _playwrightContext.ApiRequestContext?.PostAsync(
-                    $"{baseUrl}/{descriptor["descriptorName"]}", new() { DataObject = descriptor })!
+                _apiResponses.Add(
+                    await _playwrightContext.ApiRequestContext?.PostAsync(
+                        $"{baseUrl}/{descriptor["descriptorName"]}",
+                        new() { DataObject = descriptor }
+                    )!
                 );
             }
 
@@ -80,12 +83,41 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 );
             }
 
+            return _apiResponses;
+        }
+
+        [Given("the system has these {string}")]
+        public async Task GivenTheSystemHasThese(string entityType, DataTable dataTable)
+        {
+            var _apiResponses = await ProcessData(entityType, dataTable);
+
             // Verify all the responses
             foreach (var response in _apiResponses)
             {
                 response.Status.Should().BeOneOf([201, 200]);
             }
         }
+
+        [Given("the system has these {string} references")]
+        public async Task GivenTheSystemHasTheseReferences(string entityType, DataTable dataTable)
+        {
+            var _apiResponses = await ProcessData(entityType, dataTable);
+
+            foreach (var response in _apiResponses)
+            {
+                response.Status.Should().BeOneOf([201, 200]);
+
+                if (
+                    response.Headers.ContainsKey("location")
+                    && response.Url.Contains(entityType, StringComparison.InvariantCultureIgnoreCase)
+                )
+                {
+                    _location = response.Headers["location"];
+                    _referencedResourceId = response.Headers["location"].Split('/').Last();
+                }
+            }
+        }
+
         #endregion
 
         #region When
@@ -128,6 +160,13 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         public async Task WhenADELETERequestIsMadeTo(string url)
         {
             url = $"data/{url.Replace("{id}", _id)}";
+            _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(url)!;
+        }
+
+        [When("a DELETE request is made to referenced resource {string}")]
+        public async Task WhenADELETERequestIsMadeToReferencedResource(string url)
+        {
+            url = $"data/{url.Replace("{id}", _referencedResourceId)}";
             _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(url)!;
         }
 

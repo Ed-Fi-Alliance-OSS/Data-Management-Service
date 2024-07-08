@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -30,9 +29,12 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
     )
     {
         _logger.LogDebug("Entering DeleteDocumentById.DeleteById - {TraceId}", deleteRequest.TraceId);
+        var documentPartitionKey = PartitionKeyFor(deleteRequest.DocumentUuid);
+
         try
         {
-            int documentPartitionKey = PartitionKeyFor(deleteRequest.DocumentUuid).Value;
+            // Create a transaction save point
+            await transaction.SaveAsync("beforeDelete");
 
             int rowsAffectedOnDocumentDelete = await _sqlAction.DeleteDocumentByDocumentUuid(
                 documentPartitionKey,
@@ -65,6 +67,21 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
         {
             _logger.LogDebug(pe, "Transaction conflict on DeleteById - {TraceId}", deleteRequest.TraceId);
             return new DeleteResult.DeleteFailureWriteConflict();
+        }
+        catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.ForeignKeyViolation)
+        {
+            // Restore transaction save point to continue using transaction
+            await transaction.RollbackAsync("beforeDelete");
+
+            string? referencingDocumentName = await _sqlAction.FindReferencingResourceNameByDocumentUuid(
+                deleteRequest.DocumentUuid,
+                documentPartitionKey,
+                connection,
+                transaction,
+                LockOption.BlockUpdateDelete
+            );
+            _logger.LogDebug(pe, "Foreign key violation on Delete - {TraceId}", deleteRequest.TraceId);
+            return new DeleteResult.DeleteFailureReference(referencingDocumentName ?? string.Empty);
         }
         catch (Exception ex)
         {

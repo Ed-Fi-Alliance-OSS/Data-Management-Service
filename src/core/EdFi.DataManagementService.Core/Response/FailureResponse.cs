@@ -52,6 +52,7 @@ internal record FailureResponse(
     private const string DataValidationTypePrefix = $"{BadRequestTypePrefix}:data";
     private const string NotFoundTypePrefix = $"{BaseTypePrefix}:not-found";
     private const string IdentityConflictTypePrefix = $"{BaseTypePrefix}:identity-conflict";
+    private const string DataConflictTypePrefix = $"{BaseTypePrefix}:data-conflict:dependent-item-exists";
 
     public static FailureResponse ForDataValidation(
         string Detail,
@@ -83,9 +84,7 @@ internal record FailureResponse(
             errors: Errors
         );
 
-    public static FailureResponse ForNotFound(
-        string Detail
-    ) =>
+    public static FailureResponse ForNotFound(string Detail) =>
         new(
             detail: Detail,
             type: NotFoundTypePrefix,
@@ -96,9 +95,7 @@ internal record FailureResponse(
             errors: null
         );
 
-    public static FailureResponse ForIdentityConflict(
-        string[]? Errors
-    ) =>
+    public static FailureResponse ForIdentityConflict(string[]? Errors) =>
         new(
             detail: "The identifying value(s) of the item are the same as another item that already exists.",
             type: IdentityConflictTypePrefix,
@@ -109,20 +106,31 @@ internal record FailureResponse(
             errors: Errors
         );
 
+    public static FailureResponse ForDataConflict(string dependentItemName)
+    {
+        dependentItemName = !string.IsNullOrEmpty(dependentItemName)
+            ? $"'{dependentItemName}'"
+            : string.Empty;
+
+        return new(
+            detail: $"The requested action cannot be performed because this item is referenced by an existing {dependentItemName} item.",
+            type: DataConflictTypePrefix,
+            title: "Dependent Item Exists",
+            status: 409,
+            correlationId: null,
+            validationErrors: null,
+            errors: null
+        );
+    }
+
     public static string GenerateFrontendErrorResponse(string errorDetail)
     {
         var validationErrors = new Dictionary<string, string[]>();
 
-        var value = new List<string>
-        {
-            errorDetail
-        };
+        var value = new List<string> { errorDetail };
         validationErrors.Add("$.", value.ToArray());
 
-        var options = new JsonSerializerOptions
-        {
-            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-        };
+        var options = new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
         var response = ForDataValidation(
             "Data validation failed. See 'validationErrors' for details.",
