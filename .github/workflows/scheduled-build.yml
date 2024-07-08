@@ -15,6 +15,9 @@ permissions: read-all
 jobs:
   build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
 
     steps:
       - name: Checkout the repo
@@ -28,38 +31,29 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: Grant execute permission for build script
-        run: chmod +x ./build.ps1
-
       - name: Build
         id: build_step
         run: |
-          ./build.ps1 Build -Configuration Debug || {
-            echo "error_message=Command failed: ./build.ps1 Build -Configuration Debug: Permission denied" >> $GITHUB_ENV
-            exit 1
+          $err = $( ./build.ps1 Build -Configuration Debug ) 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            $env.ERROR = $err
           }
-        shell: bash
-
-      - name: Install Coverlet Reference
-        if: success()
-        run: |
-          dotnet tool install --global coverlet.console
-          dotnet tool install --global dotnet-reportgenerator-globaltool
+          Write-Output $err
 
       - name: Run Unit Tests
         id: unit_test_step
         run: |
-         ./build.ps1 UnitTest -Configuration Debug || {
-            echo "error_message=Command failed: ./build.ps1 UnitTest -Configuration Debug: Permission denied" >> $GITHUB_ENV
-            exit 1
+          $err = $( ./build.ps1 UnitTest -Configuration Debug ) 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            $env.ERROR = $err
           }
-        shell: bash
+          Write-Output $err
 
       - name: Set error message output
         if: failure()
         id: set_error_message
         run: |
-          echo "::set-output name=error::${{ env.error_message }}"
+          Write-Output "::error::$env.ERROR"
 
       - name: Notify Slack on success
         if: success()
