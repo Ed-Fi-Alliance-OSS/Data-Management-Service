@@ -14,6 +14,6 @@ public class CoreEndpointModule : IEndpointModule
         endpoints.MapPost("/data/{**dmsPath}", Upsert);
         endpoints.MapGet("/data/{**dmsPath}", Get);
         endpoints.MapPut("/data/{**dmsPath}", UpdateById);
-        endpoints.MapDelete("/data/{**dmsPath}", DeleteById);
+        endpoints.MapDelete("/data/{**dmsPath}", DeleteById);;
     }
 }
