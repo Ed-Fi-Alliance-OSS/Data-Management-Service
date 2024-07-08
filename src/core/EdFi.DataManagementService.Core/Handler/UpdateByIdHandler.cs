@@ -45,7 +45,8 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
 
         context.FrontendResponse = result switch
         {
-            UpdateSuccess => new FrontendResponse(
+            UpdateSuccess
+                => new FrontendResponse(
                     StatusCode: 204,
                     Body: null,
                     Headers: [],
@@ -54,13 +55,14 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
                             ((UpdateSuccess)result).ExistingDocumentUuid
                     )
                 ),
-            UpdateFailureNotExists => new FrontendResponse(
+            UpdateFailureNotExists
+                => new FrontendResponse(
                     StatusCode: 404,
                     Body: JsonSerializer.Serialize(FailureResponse.ForNotFound("Resource to update was not found")),
                     Headers: []
                 ),
             UpdateFailureReference failure
-                => new FrontendResponse(StatusCode: 409, Body: failure.ReferencingDocumentInfo, Headers: []),
+                => new FrontendResponse(StatusCode: 409, Body: JsonSerializer.Serialize(FailureResponse.ForInvalidReferences(failure.ReferencingDocumentInfo)), Headers: []),
             UpdateFailureIdentityConflict failure
                 => new FrontendResponse(StatusCode: 400, Body: failure.ReferencingDocumentInfo, Headers: []),
             UpdateFailureWriteConflict
@@ -73,7 +75,8 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
                     ),
                     Headers: []
                 ),
-            UpdateFailureCascadeRequired => new FrontendResponse(StatusCode: 400, Body: null, Headers: []),
+            UpdateFailureCascadeRequired
+                => new FrontendResponse(StatusCode: 400, Body: null, Headers: []),
             UnknownFailure failure
                 => new FrontendResponse(StatusCode: 500, Body: failure.FailureMessage, Headers: []),
             _ => new FrontendResponse(StatusCode: 500, Body: "Unknown UpdateResult", Headers: [])
