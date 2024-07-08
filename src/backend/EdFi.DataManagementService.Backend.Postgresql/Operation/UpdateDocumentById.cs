@@ -85,7 +85,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
 
             DocumentReferenceIds documentReferenceIds = DocumentReferenceIdsFrom(updateRequest);
 
-            if (documentReferenceIds != null)
+            if (documentReferenceIds.ReferentialIds.Any())
             {
                 Guid[] invalidReferentialIds = await _sqlAction.FindInvalidReferentialIds(
                     documentReferenceIds,
