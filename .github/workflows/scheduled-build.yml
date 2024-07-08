@@ -34,6 +34,12 @@ jobs:
         id: build_step
         run: ./build.ps1 Build -Configuration Debug
 
+      - name: Install Coverlet Reference
+        if: success()
+        run: |
+          dotnet tool install --global coverlet.console
+          dotnet tool install --global dotnet-reportgenerator-globaltool
+
       - name: Run Unit Tests
         id: unit_test_step
         run: ./build.ps1 UnitTest -Configuration Debug
