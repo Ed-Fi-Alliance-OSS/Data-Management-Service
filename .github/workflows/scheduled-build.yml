@@ -19,7 +19,8 @@ jobs:
       run:
         shell: pwsh
     outputs:
-      error: ${{ steps.set_error_message.outputs.error }}
+      build_error: ${{ steps.build_step.outputs.error }}
+      test_error:  ${{ steps.unit_test_step.outputs.error }}
 
     steps:
       - name: Checkout the repo
@@ -38,7 +39,7 @@ jobs:
         run: |
           $err = $( ./build.ps1 Build -Configuration Debug ) 2>&1
           if ($LASTEXITCODE -ne 0) {
-            $env:ERROR = $err
+            "error=$err" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           }
           Write-Output $err
 
@@ -47,16 +48,9 @@ jobs:
         run: |
           $err = $( ./build.ps1 UnitTest -Configuration Debug ) 2>&1
           if ($LASTEXITCODE -ne 0) {
-            $env:ERROR = $err
+            "error=$err" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           }
           Write-Output $err
-
-      - name: Set error message output
-        if: failure()
-        id: set_error_message
-        run: |
-          Write-Output "::error::$($env:ERROR)"
-          "error=$($env:ERROR)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Notify Slack on success
         if: success()
@@ -68,24 +62,28 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
-      - name: Notify Slack on failure
+      # - name: Notify Slack on failure
+      #   if: failure()
+      #   uses: slackapi/slack-github-action@70cd7be8e40a46e8b0eced40b0de447bdb42f68e #v1.26.0
+      #   with:
+      #     channel-id: 'team-b'
+      #     payload: |
+      #       {
+      #         "text": "❌ GitHub Action build result: ${{ job.status }}\n${{ github.event.pull_request.html_url || github.event.head_commit.url }}",
+      #         "blocks": [
+      #           {
+      #             "type": "section",
+      #             "text": {
+      #               "type": "mrkdwn",
+      #               "text": "❌ GitHub Action build result: ${{ job.status }}\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Commit Message:* ${{ github.event.head_commit.message || 'No commit message available' }}\n*Error Message:* ${{ steps.set_error_message.outputs.error || 'No error message available' }}\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+      #             }
+      #           }
+      #         ]
+      #       }
+      #   env:
+      #     SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      #     SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+      - name: Temporary reporting
         if: failure()
-        uses: slackapi/slack-github-action@70cd7be8e40a46e8b0eced40b0de447bdb42f68e #v1.26.0
-        with:
-          channel-id: 'team-b'
-          payload: |
-            {
-              "text": "❌ GitHub Action build result: ${{ job.status }}\n${{ github.event.pull_request.html_url || github.event.head_commit.url }}",
-              "blocks": [
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "❌ GitHub Action build result: ${{ job.status }}\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Commit Message:* ${{ github.event.head_commit.message || 'No commit message available' }}\n*Error Message:* ${{ steps.set_error_message.outputs.error || 'No error message available' }}\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-                  }
-                }
-              ]
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        run: echo "${{ steps.build_step.outputs.error || steps.unit_test_step.outputs.error || 'No error message available' }}"
