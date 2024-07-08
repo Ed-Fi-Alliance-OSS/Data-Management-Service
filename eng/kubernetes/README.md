@@ -52,7 +52,11 @@ First, build a locally-tagged image of the Data Management Service. Two ways:
 
 ### Configure the Deployment
 
-In `src/deployments/kubernetes`:
+In `eng/kubernetes/<folder>` where `<folder>` could be development or production:
+
+> [!TIP]
+> development folder will use the local data-management-service;
+> production folder will pull the published image from the docker hub
 
 * Create an app-secret.yaml file with a encrypted password, see
   [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/) for more
