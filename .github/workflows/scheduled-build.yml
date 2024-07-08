@@ -36,7 +36,7 @@ jobs:
         run: |
           $err = $( ./build.ps1 Build -Configuration Debug ) 2>&1
           if ($LASTEXITCODE -ne 0) {
-            $env.ERROR = $err
+            $env:ERROR = $err
           }
           Write-Output $err
 
@@ -45,7 +45,7 @@ jobs:
         run: |
           $err = $( ./build.ps1 UnitTest -Configuration Debug ) 2>&1
           if ($LASTEXITCODE -ne 0) {
-            $env.ERROR = $err
+            $env:ERROR = $err
           }
           Write-Output $err
 
@@ -53,7 +53,7 @@ jobs:
         if: failure()
         id: set_error_message
         run: |
-          Write-Output "::error::$env.ERROR"
+          Write-Output "::error::$env:ERROR"
 
       - name: Notify Slack on success
         if: success()
