@@ -87,6 +87,6 @@ jobs:
       - name: Temporary reporting
         if: failure()
         env:
-          BUILD_ERROR: ${{ steps.build_step-selector.outputs.error }}
-          TEST_ERROR: ${{ steps.build_step-selector.outputs.error }}
+          BUILD_ERROR: ${{ steps.build_step.outputs.error }}
+          TEST_ERROR: ${{ steps.unit_test_step.outputs.error }}
         run: Write-Output $( $env:BUILD_ERROR ?? $env:TEST_ERROR ?? "No error message available")
