@@ -52,7 +52,11 @@ First, build a locally-tagged image of the Data Management Service. Two ways:
 
 ### Configure the Deployment
 
-In `src/deployments/kubernetes`:
+In `eng/kubernetes/<folder>` where `<folder>` could be development or production:
+
+> [!TIP]
+> development folder will use the local data-management-service docker image `image: local/edfi-data-management-service:latest`;
+> production folder will pull the published image from the docker hub `image: edfialliance/data-management-service:pre`
 
 * Create an app-secret.yaml file with a encrypted password, see
   [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/) for more
@@ -85,16 +89,17 @@ address [http://localhost:8080/](http://localhost:8080/.)
 
 ## Useful Commands
 
-| Command                                         | Description                      |
-| ----------------------------------------------- | ---------------------------------|
-| `minikube start`                                | Start minikube cluster           |
-| `minikube delete`                               | Clean minikube cluster           |
-| `kubectl get pods`                              | Get all pods                     |
-| `kubectl get deployments`                       | Get all deployments              |
-| `kubectl get services`                          | Get all services                 |
-| `kubectl describe service postgres`             | Get description of a service     |
-| `kubectl exec -it POD_NAME -- psql -U postgres` | Execute a command in a pod       |
-| `kubectl logs POD_NAME`                         | Get the log information of a pod |
+| Command                                                            | Description                                         |
+| -------------------------------------------------------------------| ----------------------------------------------------|
+| `minikube start`                                                   | Start minikube cluster                              |
+| `minikube delete`                                                  | Clean minikube cluster                              |
+| `kubectl get pods`                                                 | Get all pods                                        |
+| `kubectl get deployments`                                          | Get all deployments                                 |
+| `kubectl get services`                                             | Get all services                                    |
+| `kubectl describe service postgres`                                | Get description of a service                        |
+| `kubectl exec -it POD_NAME -- psql -U postgres`                    | Execute a command in a pod                          |
+| `kubectl logs POD_NAME`                                            | Get the log information of a pod                    |
+| `kubectl set image deployment/my-deployment mycontainer=myimage`   | Update the current image for an existing deployment |
 
 > [!NOTE]
 > In Kubernetes you can reference another pod by IP address or by hostname,
@@ -137,3 +142,12 @@ Docker CLI context "default"`:
 3. Otherwise, reconnect to whatever other named instance is there (likely
    "default"): `docker context use default`.
 4. Delete the minikube instance and start over.
+
+### Pods image status
+
+If you are facing the following errors with the Pods Status `kubectl get pods`
+
+`ErrImagePull` or `ImagePullBackOff`
+
+1. Review the status of the image, if you are using the local version make sure the image already exist; and if you are using the production configuration make sure the `image name` is valid. 
+2. Another useful command to get more details about the Pod Status `kubectl describe <POD_NAME>`
