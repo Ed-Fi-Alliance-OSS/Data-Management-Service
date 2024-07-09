@@ -5,12 +5,12 @@ Feature: Invalid Reference Validation
             Given the system has these School Years
                   | schoolYear | currentSchoolYear | schoolYearDescription |
                   | 2022       | false             | 2021-2022             |
-              And the system has these Calendars
-                  | calendarCode | schoolId  | schoolYear | calendarTypeDescriptor |
-                  | 2010605675   | 255901107 | 2022       | ["Student Specific"]   |
               And the system has these Schools
                   | educationOrganizationCategoryDescriptor | gradeLevels     | schoolId  | nameOfInstitution            |
                   | ["School"]                              | ["First grade"] | 255901107 | Grand Bend Elementary School |
+              And the system has these "programs"
+                  | programName                    | programTypeDescriptor                                                  | educationOrganizationReference     | programId |
+                  | Career and Technical Education | "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education" | {"educationOrganizationId":255901} | "100"     |
               And the system has these Education Organization Category Descriptors
                   | codeValue | namespace                                               | shortDescription |
                   | School    | uri://ed-fi.org/EducationOrganizationCategoryDescriptor | School           |
@@ -109,7 +109,7 @@ Feature: Invalid Reference Validation
 
         @ignore
         Scenario: 04 Ensure clients cannot update a resource that uses a reference more than once
-            Given Studen Unique ID 604825
+            Given Student Unique ID 604825
              When a PUT request is made to "ed-fi/studentCTEProgramAssociations/9aa43c870d244c939d366fbfd5ecab10" with
                   """
                   {
@@ -220,3 +220,28 @@ Feature: Invalid Reference Validation
                       "correlationId": null
                   }
                   """
+
+        @ignore
+        Scenario: 08 Ensure clients cannot update a resource that is used by another reference
+            Given Program Career and Technical Education
+             When a PUT request is made to "ed-fi/programs/{id}" with
+                  """
+                  "programName": "Career and Technical Education Test",
+                  "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education",
+                  "educationOrganizationReference": {
+                      "educationOrganizationId": 255901
+                  },
+                  "programId": "100"
+                  """
+             Then it should respond with 409
+              And the response body is
+                  """
+                  {
+                      "detail": "The requested action cannot be performed because this item is referenced by an existing 'StudentProgramAssociation' item.",
+                      "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
+                      "title": "Dependent Item Exists",
+                      "status": 409,
+                      "correlationId": null
+                  }
+                  """
+
