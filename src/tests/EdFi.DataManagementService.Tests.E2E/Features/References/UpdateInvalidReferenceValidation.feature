@@ -62,6 +62,7 @@ Feature: Invalid Reference Validation
              When a PUT request is made to "ed-fi/studentEducationOrganizationAssociations/{id}" with
                   """
                   {
+                      "id": "{id}",
                       "educationOrganizationReference": {
                           "educationOrganizationId": 255901
                       }
@@ -84,6 +85,7 @@ Feature: Invalid Reference Validation
              When a PUT request is made to "ed-fi/studentEducationOrganizationAssociations/{id}" with
                   """
                   {
+                      "id": "{id}",
                       "studentReference": {
                         "studentUniqueId":"604834"
                       }
@@ -103,9 +105,10 @@ Feature: Invalid Reference Validation
 
         @ignore
         Scenario: 04 Ensure clients cannot update a resource that uses a reference more than once
-             When a PUT request is made to "ed-fi/studentCTEProgramAssociations/9aa43c870d244c939d366fbfd5ecab10" with
+             When a PUT request is made to "ed-fi/studentCTEProgramAssociations/{id}" with
                   """
                   {
+                      "id": "{id}",
                       "beginDate": "2020-06-05",
                       "programReference": {
                         "programName": "Career and Technical Education",
@@ -133,6 +136,7 @@ Feature: Invalid Reference Validation
              When a PUT request is made to "ed-fi/studentCTEProgramAssociations/{id}" with
                   """
                   {
+                      "id": "{id}",
                       "beginDate": "2020-06-05",
                       "educationOrganizationReference": {
                           "educationOrganizationId": 255901
@@ -160,6 +164,7 @@ Feature: Invalid Reference Validation
              When a PUT request is made to "ed-fi/graduationPlans/{id}" with
                   """
                   {
+                      "id": "{id}",
                       "educationOrganizationReference": {
                           "educationOrganizationId": 255901
                       },
@@ -187,6 +192,7 @@ Feature: Invalid Reference Validation
              When a PUT request is made to "ed-fi/studentSectionAssociations/{id}" with
                   """
                   {
+                      "id": "{id}",
                       "sectionReference": {
                           "localCourseCode": "ALG-1",
                           "schoolYear": 2022,
