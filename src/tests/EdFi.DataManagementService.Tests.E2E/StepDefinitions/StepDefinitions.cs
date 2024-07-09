@@ -201,6 +201,14 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(url, new() { Data = body })!;
         }
 
+        [When("a PUT request is made to referenced resource {string} with")]
+        public async Task WhenAPUTRequestIsMadeToReferencedResourceWith(string url, string body)
+        {
+            url = $"data/{url.Replace("{id}", _referencedResourceId)}";
+            body = body.Replace("{id}", _referencedResourceId);
+            _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(url, new() {Data = body})!;
+        }
+
         [When("a DELETE request is made to {string}")]
         public async Task WhenADELETERequestIsMadeTo(string url)
         {
