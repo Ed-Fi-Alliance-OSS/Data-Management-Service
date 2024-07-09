@@ -1,29 +1,50 @@
 Feature: Invalid Reference Validation
     PUT requests validation for invalid references
 
-        Background:
-            Given this Local Education Agency exists
-                  | id                               | localEducationAgencyId | nameOfInstitution | localEducationAgencyCategoryDescriptor | categories                 |
-                  | c709bb13bc0c4967a3ebf51df5aa5aca | 10203040               | Institution Test  | ["Federal operated agency"]            | ["Local Education Agency"] |
-              And this Student Education Organization Association exists
-                  | id                               | educationOrganizationId | studentUniqueId |
-                  | 1b57dcf9955f4bf987cebea2075c0ed6 | 255901                  | 604834          |
-              And this Student CTE Program Association exists
-                  | id                               | beginDate  | educationOrganizationId | educationOrganizationId | programName                    | programTypeDescriptor              | studentUniqueId |
-                  | 9aa43c870d244c939d366fbfd5ecab10 | 2020-06-05 | 255901                  | 255901                  | Career and Technical Education | ["Career and Technical Education"] | 604825          |
-              And this Graduation Plan exists
-                  | id                               | graduationPlanTypeDescriptor   | educationOrganizationId | schoolYear | totalRequiredCredits |
-                  | f0627865bc5847159757dbc15ec5a375 | Career and Technical Education | 255901                  | 2022       | 10.000               |
-              And this Student Section Association exists
-                  | id                               | beginDate  | localCourseCode | schoolId  | schoolYear | sectionIdentifier           | sessionName             | studentUniqueId |
-                  | 2d22aeab7b5c4ccebb0de7edd67844c2 | 2021-08-23 | ALG-1           | 255901001 | 2022       | 25590100102Trad220ALG112011 | 2021-2022 Fall Semester | 604874          |
+        Background:            
+            Given the system has these "localEducationAgencies"
+                  | localEducationAgencyId | nameOfInstitution | localEducationAgencyCategoryDescriptor                                          | categories                                                                                                                              |
+                  | 10203040               | Institution Test  | "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Federal operated agency | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency" }]  |
+              And the system has these "schools"
+                  | schoolId     | nameOfInstitution | gradeLevels                                                                        | educationOrganizationCategories                                                                                        |
+                  | 255901       | School Test       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"} ] | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School" }] |
+              And the system has these "students"
+                  | studentUniqueId   | birthDate   | firstName   | lastSurname  |
+                  | "604834"          | 2000-01-01  | Thomas      | Johnson      |
+              And the system has these "studentEducationOrganizationAssociations"
+                  | educationOrganizationReference           | studentReference                  |
+                  | {"educationOrganizationId":255901}       | {"studentUniqueId":"604834"}      |
+              And the system has these "programs"
+                  | programName                        | programTypeDescriptor                                                  | educationOrganizationReference        | programId |
+                  | Career and Technical Education     | "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education" | {"educationOrganizationId":255901}    | "100"     |
+              And the system has these "studentCTEProgramAssociations"
+                  | beginDate  | educationOrganizationReference     | programReference                                                                                                                                                                     |  studentReference               |
+                  | 2020-06-05 | {"educationOrganizationId":255901} | {"educationOrganizationId":255901, "programName":"Career and Technical Education", "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education"}  | {"studentUniqueId":"604834"}    |
+              And the system has these "schoolYearTypes"
+                  | schoolYear | currentSchoolYear | schoolYearDescription |
+                  | 2022       | true              | 2021-2022             |
+              And the system has these "graduationPlans"
+                  | graduationPlanTypeDescriptor   | educationOrganizationReference      | graduationSchoolYearTypeReference | totalRequiredCredits |
+                  | Career and Technical Education | {"educationOrganizationId":255901}  | {"schoolYear":2022}               | 10.000               |
+              And the system has these "courses"
+                  | courseCode | identificationCodes                                                                                                                                  | educationOrganizationReference        | courseTitle | numberOfParts |
+                  | ALG-1      | [{"identificationCode": "ALG-1", "courseIdentificationSystemDescriptor":"uri://ed-fi.org/CourseIdentificationSystemDescriptor#State course code"}]   | {"educationOrganizationId":255901}    | Algebra I   | 1             |
+              And the system has these "sessions"
+                  | sessionName               | schoolReference     | schoolYearTypeReference | beginDate  | endDate    | totalInstructionalDays | termDescriptor                                 |
+                  | "2021-2022 Fall Semester" | {"schoolId":255901} | {"schoolYear":2022}     | 2021-08-23 | 2021-12-17 | 81                     | "uri://ed-fi.org/TermDescriptor#Fall Semester" |
+           #   And the system has these "courseOfferings"
+           #   And the system has these "sections"
+           #   And the system has these "studentSectionAssociations"
+           #       | beginDate  | sectionReference                                                                                                                                                  | studentReference               |
+           #       | 2021-08-23 | {"localCourseCode":"ALG-1", "schoolId":255901, "schoolYear": 2022, "sectionIdentifier":"25590100102Trad220ALG112011", "sessionName":"2021-2022 Fall Semester"  }  | {"studentUniqueId":"604834"}   |
 
 
-        @ignore
+        
         Scenario: 01 Ensure clients cannot update a resource with a Descriptor that does not exist
-             When a PUT request is made to "ed-fi/localEducationAgencies/d59e135ad9864e7392e737fd382c8607" with
+             When a PUT request is made to "ed-fi/localEducationAgencies/{id}" with
                   """
                   {
+                      "id": "{id}",
                       "localEducationAgencyId": 10203040,
                       "nameOfInstitution": "Institution Test",
                       "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Federal operated agency",
@@ -48,9 +69,10 @@ Feature: Invalid Reference Validation
 
         @ignore
         Scenario: 02 Ensure clients cannot update a resource missing a direct reference
-             When a PUT request is made to "ed-fi/studentEducationOrganizationAssociations/1b57dcf9955f4bf987cebea2075c0ed6" with
+             When a PUT request is made to "ed-fi/studentEducationOrganizationAssociations/{id}" with
                   """
                   {
+                      "id": "{id}",
                       "educationOrganizationReference": {
                           "educationOrganizationId": 255901
                       }
@@ -70,9 +92,10 @@ Feature: Invalid Reference Validation
 
         @ignore
         Scenario: 03 Ensure clients cannot update a resource using a correct reference but missing the other one
-             When a PUT request is made to "ed-fi/studentEducationOrganizationAssociations/1b57dcf9955f4bf987cebea2075c0ed6" with
+             When a PUT request is made to "ed-fi/studentEducationOrganizationAssociations/{id}" with
                   """
                   {
+                      "id": "{id}",
                       "studentReference": {
                         "studentUniqueId":"604834"
                       }
@@ -92,9 +115,10 @@ Feature: Invalid Reference Validation
 
         @ignore
         Scenario: 04 Ensure clients cannot update a resource that uses a reference more than once
-             When a PUT request is made to "ed-fi/studentCTEProgramAssociations/9aa43c870d244c939d366fbfd5ecab10" with
+             When a PUT request is made to "ed-fi/studentCTEProgramAssociations/{id}" with
                   """
                   {
+                      "id": "{id}",
                       "beginDate": "2020-06-05",
                       "programReference": {
                         "programName": "Career and Technical Education",
@@ -119,9 +143,10 @@ Feature: Invalid Reference Validation
 
         @ignore
         Scenario: 05 Ensure clients cannot update a resource that uses a reference more than once and misses another required reference
-             When a PUT request is made to "ed-fi/studentCTEProgramAssociations/9aa43c870d244c939d366fbfd5ecab10" with
+             When a PUT request is made to "ed-fi/studentCTEProgramAssociations/{id}" with
                   """
                   {
+                      "id": "{id}",
                       "beginDate": "2020-06-05",
                       "educationOrganizationReference": {
                           "educationOrganizationId": 255901
@@ -146,9 +171,10 @@ Feature: Invalid Reference Validation
 
         @ignore
         Scenario: 06 Ensure clients cannot update a resource that uses an invalid date from a reference
-             When a PUT request is made to "ed-fi/graduationPlans/f0627865bc5847159757dbc15ec5a375" with
+             When a PUT request is made to "ed-fi/graduationPlans/{id}" with
                   """
                   {
+                      "id": "{id}",
                       "educationOrganizationReference": {
                           "educationOrganizationId": 255901
                       },
@@ -173,9 +199,10 @@ Feature: Invalid Reference Validation
 
         @ignore
         Scenario: 07 Ensure clients cannot update a resource that is incorrect from a deep reference
-             When a PUT request is made to "ed-fi/studentSectionAssociations/2d22aeab7b5c4ccebb0de7edd67844c2" with
+             When a PUT request is made to "ed-fi/studentSectionAssociations/{id}" with
                   """
                   {
+                      "id": "{id}",
                       "sectionReference": {
                           "localCourseCode": "ALG-1",
                           "schoolYear": 2022,
