@@ -9,13 +9,13 @@ using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
 
-internal class ReferenceHelper
+internal static class ReferenceHelper
 {
     /// <summary>
     /// Returns the ReferentialId Guids and corresponding partition keys for all of the document
     /// references in the UpdateRequest.
     /// </summary>
-    public DocumentReferenceIds DocumentReferenceIdsFrom(IUpdateRequest updateRequest)
+    public static DocumentReferenceIds DocumentReferenceIdsFrom(IUpdateRequest updateRequest)
     {
         DocumentReference[] documentReferences = updateRequest.DocumentInfo.DocumentReferences;
         Guid[] referentialIds = documentReferences.Select(x => x.ReferentialId.Value).ToArray();
@@ -28,7 +28,7 @@ internal class ReferenceHelper
     /// <summary>
     /// Returns the unique ResourceNames of all DocumentReferences that have the given ReferentialId Guids
     /// </summary>
-    public ResourceName[] ResourceNamesFrom(DocumentReference[] documentReferences, Guid[] referentialIds)
+    public static ResourceName[] ResourceNamesFrom(DocumentReference[] documentReferences, Guid[] referentialIds)
     {
 
         Dictionary<Guid, string> guidToResourceNameMap =
