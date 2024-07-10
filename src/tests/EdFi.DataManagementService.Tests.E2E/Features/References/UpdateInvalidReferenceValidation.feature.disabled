@@ -2,31 +2,31 @@ Feature: Invalid Reference Validation
     PUT requests validation for invalid references
 
         Background:
-            Given the system has these schoolYears
+            Given the system has these "schoolYears"""
                   | schoolYear | currentSchoolYear | schoolYearDescription |
                   | 2022       | false             | 2021-2022             |
-              And the system has these schools
+              And the system has these "schools"
                   | educationOrganizationCategoryDescriptor | gradeLevels     | schoolId  | nameOfInstitution            |
                   | ["School"]                              | ["First grade"] | 255901107 | Grand Bend Elementary School |
               And the system has these "programs"
                   | programName                    | programTypeDescriptor                                                  | educationOrganizationReference     | programId |
                   | Career and Technical Education | "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education" | {"educationOrganizationId":255901} | "100"     |
-              And the system has these students
+              And the system has these "students"
                   | studentUniqueId | birthDate  | firstName | lastSurname |
                   | 604824          | 2010-01-13 | Traci     | Mathews     |
-              And the system has these localEducationAgencies
+              And the system has these "localEducationAgencies"
                   | educationOrganizationCategoryDescriptor | localEducationAgencyId | localEducationAgencyCategoryDescriptor | nameOfInstitution |
                   | ["School"]                              | 255901                 | ["Independent"]                        | Grand Bend ISD    |
-              And the system has these studentEducationOrganizationAssociations
+              And the system has these "studentEducationOrganizationAssociations"
                   | educationOrganizationId | studentUniqueId |
                   | 255901                  | 604834          |
-              And the system has these studentCTEProgramAssociations
+              And the system has these "studentCTEProgramAssociations"
                   | beginDate  | educationOrganizationId | educationOrganizationId | programName                    | programTypeDescriptor              | studentUniqueId |
                   | 2020-06-05 | 255901                  | 255901                  | Career and Technical Education | ["Career and Technical Education"] | 604825          |
-              And the system has these graduationPlans
+              And the system has these "graduationPlans"
                   | graduationPlanTypeDescriptor   | educationOrganizationId | schoolYear | totalRequiredCredits |
                   | Career and Technical Education | 255901                  | 2022       | 10.000               |
-              And the system has these studentSectionAssociations
+              And the system has these "studentSectionAssociations"
                   | beginDate  | localCourseCode | schoolId  | schoolYear | sectionIdentifier           | sessionName             | studentUniqueId |
                   | 2021-08-23 | ALG-1           | 255901001 | 2022       | 25590100102Trad220ALG112011 | 2021-2022 Fall Semester | 604874          |
 
