@@ -56,20 +56,34 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             //throw new PendingStepException();
         }
 
-        private async Task<List<IAPIResponse>> ProcessData(string entityType, DataTable dataTable)
+        private static (string, Dictionary<string, object>) ExtractDescriptorBody(string descriptorValue)
         {
-            var _apiResponses = new List<IAPIResponse>();
-            var baseUrl = $"data/ed-fi";
+            // build the descriptor object with string splitting operations
 
-            foreach (var descriptor in dataTable.ExtractDescriptors())
-            {
-                _apiResponses.Add(
-                    await _playwrightContext.ApiRequestContext?.PostAsync(
-                        $"{baseUrl}/{descriptor["descriptorName"]}",
-                        new() { DataObject = descriptor }
-                    )!
-                );
-            }
+            // eg: "GradeLevelDescriptors"
+            var descriptorName =
+                descriptorValue.Split('#')[0][(descriptorValue.LastIndexOf('/') + 1)..] + 's';
+            // eg: "Tenth Grade"
+            var codeValue = descriptorValue.Split('#')[1];
+            // eg: "uri://ed-fi.org/GradeLevelDescriptor"
+            var namespaceName = descriptorValue.Split('#')[0];
+
+            return (
+                descriptorName,
+                new Dictionary<string, object>()
+                {
+                    { "codeValue", codeValue },
+                    { "description", codeValue },
+                    { "namespace", namespaceName },
+                    { "shortDescription", codeValue }
+                }
+            );
+        }
+
+        private async Task<List<IAPIResponse>> ProcessDataTable(string entityType, DataTable dataTable)
+        {
+            List<IAPIResponse> _apiResponses = [];
+            var baseUrl = $"data/ed-fi";
 
             foreach (var row in dataTable.Rows)
             {
@@ -89,22 +103,50 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Given("the system has these {string}")]
         public async Task GivenTheSystemHasThese(string entityType, DataTable dataTable)
         {
-            var _apiResponses = await ProcessData(entityType, dataTable);
+            var _apiResponses = await ProcessDataTable(entityType, dataTable);
+
+            _logger.log.Information($"Responses for Given(the system has these {entityType})");
 
             // Verify all the responses
             foreach (var response in _apiResponses)
             {
-                response.Status.Should().BeOneOf([201, 200]);
+                _logger.log.Information(response.TextAsync().Result);
+            }
+        }
+
+        [Given("the system has these descriptors")]
+        public async Task GivenTheSystemHasTheseDescriptors(DataTable dataTable)
+        {
+            _logger.log.Information($"Responses for Given(the system has these descriptors)");
+
+            string baseUrl = $"data/ed-fi";
+
+            foreach (DataTableRow row in dataTable.Rows)
+            {
+                string descriptorValue = row.Parse();
+                var (descriptorName, descriptorBody) = ExtractDescriptorBody(descriptorValue);
+
+                IAPIResponse apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
+                    $"{baseUrl}/{descriptorName}",
+                    new() { DataObject = descriptorBody }
+                )!;
+
+                _logger.log.Information(apiResponse.TextAsync().Result);
+
+                apiResponse.Status.Should().BeOneOf([201, 200]);
             }
         }
 
         [Given("the system has these {string} references")]
         public async Task GivenTheSystemHasTheseReferences(string entityType, DataTable dataTable)
         {
-            var _apiResponses = await ProcessData(entityType, dataTable);
+            var _apiResponses = await ProcessDataTable(entityType, dataTable);
+
+            _logger.log.Information($"Responses for Given(the system has these {entityType} references");
 
             foreach (var response in _apiResponses)
             {
+                _logger.log.Information(response.TextAsync().Result);
                 response.Status.Should().BeOneOf([201, 200]);
 
                 if (
@@ -126,8 +168,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         public async Task WhenSendingAPOSTRequestToWithBody(string url, string body)
         {
             url = $"data/{url}";
-            _logger.log.Information(url);
+            _logger.log.Information($"POST url: {url}");
+            _logger.log.Information($"POST body: {body}");
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
+            _logger.log.Information(_apiResponse.TextAsync().Result);
             if (_apiResponse.Headers.ContainsKey("location"))
             {
                 _location = _apiResponse.Headers["location"];
@@ -152,7 +196,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         {
             url = $"data/{url.Replace("{id}", _id)}";
             body = body.Replace("{id}", _id);
-            _logger.log.Information(url);
+            _logger.log.Information($"PUT url: {url}");
+            _logger.log.Information($"PUT body: {body}");
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(url, new() { Data = body })!;
         }
 

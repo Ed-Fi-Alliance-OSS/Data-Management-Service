@@ -75,6 +75,16 @@ public interface ISqlAction
     );
 
     /// <summary>
+    /// Given an array of referentialId guids and a parallel array of partition keys, returns
+    /// an array of invalid referentialId guids, if any
+    /// </summary>
+    public Task<Guid[]> FindInvalidReferentialIds(
+        DocumentReferenceIds documentReferenceIds,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    /// <summary>
     /// Delete associated Reference records for a given DocumentUuid, returning the number of rows affected
     /// </summary>
     public Task<int> DeleteReferencesByDocumentUuid(
@@ -304,7 +314,7 @@ public class SqlAction : ISqlAction
         NpgsqlTransaction transaction
     )
     {
-        await using var insertDocumentCmd = new NpgsqlCommand(
+        await using var command = new NpgsqlCommand(
             @"INSERT INTO public.Documents(DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, ProjectName, EdfiDoc)
                     VALUES ($1, $2, $3, $4, $5, $6)
               RETURNING Id;",
@@ -323,7 +333,7 @@ public class SqlAction : ISqlAction
             }
         };
 
-        return Convert.ToInt64(await insertDocumentCmd.ExecuteScalarAsync());
+        return Convert.ToInt64(await command.ExecuteScalarAsync());
     }
 
     /// <summary>
@@ -337,7 +347,7 @@ public class SqlAction : ISqlAction
         NpgsqlTransaction transaction
     )
     {
-        await using var upsertDocumentCmd = new NpgsqlCommand(
+        await using var command = new NpgsqlCommand(
             @"UPDATE public.Documents
               SET EdfiDoc = $1
               WHERE DocumentPartitionKey = $2 AND DocumentUuid = $3
@@ -354,7 +364,7 @@ public class SqlAction : ISqlAction
             }
         };
 
-        return await upsertDocumentCmd.ExecuteNonQueryAsync();
+        return await command.ExecuteNonQueryAsync();
     }
 
     public async Task<UpdateDocumentValidationResult> UpdateDocumentValidation(
@@ -374,7 +384,7 @@ public class SqlAction : ISqlAction
             sqlForLockOption += " OF d";
         }
 
-        await using NpgsqlCommand validationCommand =
+        await using NpgsqlCommand command =
             new(
                 $@"SELECT DocumentUuid, ReferentialId
                 FROM public.documents d
@@ -396,7 +406,7 @@ public class SqlAction : ISqlAction
                 }
             };
 
-        await using NpgsqlDataReader reader = await validationCommand.ExecuteReaderAsync();
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
         if (!reader.HasRows)
         {
@@ -425,7 +435,7 @@ public class SqlAction : ISqlAction
         NpgsqlTransaction transaction
     )
     {
-        await using var insertAliasCmd = new NpgsqlCommand(
+        await using var command = new NpgsqlCommand(
             @"INSERT INTO public.Aliases(ReferentialPartitionKey, ReferentialId, DocumentId, DocumentPartitionKey)
                     VALUES ($1, $2, $3, $4)
               RETURNING Id;",
@@ -442,7 +452,7 @@ public class SqlAction : ISqlAction
             }
         };
 
-        return Convert.ToInt64(await insertAliasCmd.ExecuteScalarAsync());
+        return Convert.ToInt64(await command.ExecuteScalarAsync());
     }
 
     /// <summary>
@@ -465,7 +475,7 @@ public class SqlAction : ISqlAction
         int[] parentDocumentPartitionKeys = new int[bulkReferences.ReferentialIds.Length];
         Array.Fill(parentDocumentPartitionKeys, bulkReferences.ParentDocumentPartitionKey);
 
-        await using var insertBulkReferencesCmd = new NpgsqlCommand(
+        await using var command = new NpgsqlCommand(
             @"INSERT INTO public.""references""(ParentDocumentId, ParentDocumentPartitionKey, ReferentialId, ReferentialPartitionKey)
                     SELECT * FROM unnest($1, $2, $3, $4)",
             connection,
@@ -481,7 +491,49 @@ public class SqlAction : ISqlAction
             }
         };
 
-        return await insertBulkReferencesCmd.ExecuteNonQueryAsync();
+        return await command.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>
+    /// Given an array of referentialId guids and a parallel array of partition keys, returns
+    /// an array of invalid referentialId guids, if any.
+    /// </summary>
+    public async Task<Guid[]> FindInvalidReferentialIds(
+        DocumentReferenceIds documentReferenceIds,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using var command = new NpgsqlCommand(
+            @$"SELECT r.ReferentialId
+               FROM ROWS FROM
+                 (unnest($1::uuid[]), unnest($2::integer[]))
+                 AS r (ReferentialId, ReferentialPartitionKey)
+               WHERE NOT EXISTS (
+                 SELECT 1
+                 FROM Aliases a
+                 WHERE r.ReferentialId = a.ReferentialId
+                 AND r.ReferentialPartitionKey = a.ReferentialPartitionKey)",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = documentReferenceIds.ReferentialIds },
+                new() { Value = documentReferenceIds.ReferentialPartitionKeys },
+            }
+        };
+
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+
+        List<Guid> result = [];
+        while (await reader.ReadAsync())
+        {
+            result.Add(reader.GetGuid(reader.GetOrdinal("ReferentialId")));
+        }
+
+        return result.ToArray();
     }
 
     /// <summary>

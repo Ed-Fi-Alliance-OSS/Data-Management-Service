@@ -61,8 +61,8 @@ internal static class No
     /// </summary>
     public static readonly ResourceInfo ResourceInfo =
         new(
-            ProjectName: new MetaEdProjectName(""),
-            ResourceName: new MetaEdResourceName(""),
+            ProjectName: new ProjectName(""),
+            ResourceName: new ResourceName(""),
             IsDescriptor: false,
             ResourceVersion: new SemVer(""),
             AllowIdentityUpdates: false

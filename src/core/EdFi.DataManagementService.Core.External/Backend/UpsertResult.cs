@@ -26,15 +26,15 @@ public record UpsertResult
     /// <summary>
     /// A failure because referenced documents in the upserted document do not exist
     /// </summary>
-    /// <param name="ReferencingDocumentInfo">Information about the referencing documents</param>
-    public record UpsertFailureReference(string ReferencingDocumentInfo) : UpsertResult();
+    /// <param name="ResourceNames">The unique ResourceNames of the invalid references</param>
+    public record UpsertFailureReference(ResourceName[] ResourceNames) : UpsertResult();
 
     /// <summary>
     /// A failure because there is a different document with the same identity
     /// </summary>
     /// <param name="ResourceName">The name of the resource that failed to upsert</param>
     /// <param name="DuplicateIdentityValues">The identity names and values on the attempted upsert</param>
-    public record UpsertFailureIdentityConflict(string ResourceName, IEnumerable<KeyValuePair<string, string>> DuplicateIdentityValues) : UpsertResult();
+    public record UpsertFailureIdentityConflict(ResourceName ResourceName, IEnumerable<KeyValuePair<string, string>> DuplicateIdentityValues) : UpsertResult();
 
     /// <summary>
     /// A transient failure due to a transaction write conflict

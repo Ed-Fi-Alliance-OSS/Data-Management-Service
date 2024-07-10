@@ -68,10 +68,10 @@ public abstract class DatabaseTest : DatabaseTestBase
     protected static ResourceInfo CreateResourceInfo(string resourceName)
     {
         return new(
-            ResourceVersion: AsValueType<ISemVer, string>("5.0.0"),
+            ResourceVersion: new("5.0.0"),
             AllowIdentityUpdates: false,
-            ProjectName: AsValueType<IMetaEdProjectName, string>("ProjectName"),
-            ResourceName: AsValueType<IMetaEdResourceName, string>(resourceName),
+            ProjectName: new("ProjectName"),
+            ResourceName: new(resourceName),
             IsDescriptor: false
         );
     }

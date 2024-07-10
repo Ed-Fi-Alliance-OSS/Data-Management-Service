@@ -4,16 +4,38 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
-using EdFi.DataManagementService.Core.Response;
 using Microsoft.Extensions.Logging;
+using static EdFi.DataManagementService.Core.Response.FailureResponse;
 
 namespace EdFi.DataManagementService.Core.Middleware
 {
     internal class ParseBodyMiddleware(ILogger _logger) : IPipelineStep
     {
+        private static readonly JsonSerializerOptions _serializerOptions =
+            new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
+        public static string GenerateFrontendErrorResponse(string errorDetail)
+        {
+            var validationErrors = new Dictionary<string, string[]>();
+
+            var value = new List<string> { errorDetail };
+            validationErrors.Add("$.", value.ToArray());
+
+            var response = ForDataValidation(
+                "Data validation failed. See 'validationErrors' for details.",
+                validationErrors,
+                []
+            );
+
+            return JsonSerializer.Serialize(response, _serializerOptions);
+        }
+
         public async Task Execute(PipelineContext context, Func<Task> next)
         {
             _logger.LogDebug("Entering ParseBodyMiddleware - {TraceId}", context.FrontendRequest.TraceId);
@@ -38,7 +60,7 @@ namespace EdFi.DataManagementService.Core.Middleware
 
                     context.FrontendResponse = new FrontendResponse(
                         StatusCode: 400,
-                        FailureResponse.GenerateFrontendErrorResponse(ex.Message),
+                        GenerateFrontendErrorResponse(ex.Message),
                         Headers: []
                     );
                     return;

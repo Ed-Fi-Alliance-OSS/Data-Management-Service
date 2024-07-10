@@ -26,8 +26,10 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
 
         if (context.FrontendRequest.QueryParameters.ContainsKey("offset"))
         {
-            if (!int.TryParse(context.FrontendRequest.QueryParameters["offset"], out int offserVal) ||
-                offserVal < 0)
+            if (
+                !int.TryParse(context.FrontendRequest.QueryParameters["offset"], out int offserVal)
+                || offserVal < 0
+            )
             {
                 errors.Add("Offset must be a numeric value greater than or equal to 0.");
             }
@@ -41,8 +43,10 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
 
         if (context.FrontendRequest.QueryParameters.ContainsKey("limit"))
         {
-            if (!int.TryParse(context.FrontendRequest.QueryParameters["limit"], out int limitVal) ||
-                limitVal < 0)
+            if (
+                !int.TryParse(context.FrontendRequest.QueryParameters["limit"], out int limitVal)
+                || limitVal < 0
+            )
             {
                 errors.Add("Limit must be a numeric value greater than or equal to 0.");
             }
@@ -62,16 +66,18 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
             }
             else
             {
-                totalCount =
-                    bool.TryParse(context.FrontendRequest.QueryParameters["totalCount"], out bool totalValue)
-                        ? totalValue
-                        : totalCount;
+                totalCount = bool.TryParse(
+                    context.FrontendRequest.QueryParameters["totalCount"],
+                    out bool totalValue
+                )
+                    ? totalValue
+                    : totalCount;
             }
         }
 
         if (errors.Count > 0)
         {
-            FailureResponse failureResponse = FailureResponse.ForBadRequest(
+            FailureResponseWithErrors failureResponse = FailureResponse.ForBadRequest(
                 "The request could not be processed. See 'errors' for details.",
                 null,
                 errors.ToArray()

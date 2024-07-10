@@ -49,7 +49,7 @@ public class DocumentIdentityTests
         public void Setup()
         {
             DocumentIdentity documentIdentity = new([new DocumentIdentityElement(new JsonPath("$.schoolId"), "123")]);
-            BaseResourceInfo resourceInfo = new(new MetaEdProjectName("Ed-Fi"), new MetaEdResourceName("School"), false);
+            BaseResourceInfo resourceInfo = new(new ProjectName("Ed-Fi"), new ResourceName("School"), false);
             referentialId = ReferentialIdFrom(resourceInfo, documentIdentity);
         }
 
@@ -78,7 +78,7 @@ public class DocumentIdentityTests
                         new DocumentIdentityElement(new JsonPath("$.sessionReference.sessionName"), "d")
                     ]
                 );
-            BaseResourceInfo resourceInfo = new(new MetaEdProjectName("Ed-Fi"), new MetaEdResourceName("Section"), false);
+            BaseResourceInfo resourceInfo = new(new ProjectName("Ed-Fi"), new ResourceName("Section"), false);
             referentialId = ReferentialIdFrom(resourceInfo, documentIdentity);
         }
 

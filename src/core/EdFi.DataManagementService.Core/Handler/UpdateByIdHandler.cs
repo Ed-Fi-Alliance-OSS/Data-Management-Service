@@ -45,26 +45,29 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
 
         context.FrontendResponse = result switch
         {
-            UpdateSuccess => new FrontendResponse(
+            UpdateSuccess
+                => new FrontendResponse(
                     StatusCode: 204,
                     Body: null,
                     Headers: [],
                     LocationHeaderPath: PathComponents.ToResourcePath(
-                            context.PathComponents,
-                            ((UpdateSuccess)result).ExistingDocumentUuid
+                        context.PathComponents,
+                        ((UpdateSuccess)result).ExistingDocumentUuid
                     )
                 ),
-            UpdateFailureNotExists => new FrontendResponse(
+            UpdateFailureNotExists
+                => new FrontendResponse(
                     StatusCode: 404,
-                    Body: JsonSerializer.Serialize(FailureResponse.ForNotFound("Resource to update was not found")),
+                    Body: JsonSerializer.Serialize(
+                        FailureResponse.ForNotFound("Resource to update was not found")
+                    ),
                     Headers: []
                 ),
             UpdateFailureReference failure
                 => new FrontendResponse(StatusCode: 409, Body: failure.ReferencingDocumentInfo, Headers: []),
             UpdateFailureIdentityConflict failure
                 => new FrontendResponse(StatusCode: 400, Body: failure.ReferencingDocumentInfo, Headers: []),
-            UpdateFailureWriteConflict
-                => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),
+            UpdateFailureWriteConflict => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),
             UpdateFailureImmutableIdentity failure
                 => new FrontendResponse(
                     StatusCode: 400,

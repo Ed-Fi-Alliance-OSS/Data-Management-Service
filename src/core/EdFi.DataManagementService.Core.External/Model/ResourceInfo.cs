@@ -9,13 +9,13 @@ namespace EdFi.DataManagementService.Core.External.Model;
 /// API resource information including version
 /// </summary>
 public record ResourceInfo(
-    IMetaEdProjectName ProjectName,
-    IMetaEdResourceName ResourceName,
+    ProjectName ProjectName,
+    ResourceName ResourceName,
     bool IsDescriptor,
     /// <summary>
     /// The project version the resource belongs to.
     /// </summary>
-    ISemVer ResourceVersion,
+    SemVer ResourceVersion,
     /// <summary>
     /// Whether the resource allows the identity fields of a document to be updated (changed)
     /// </summary>
