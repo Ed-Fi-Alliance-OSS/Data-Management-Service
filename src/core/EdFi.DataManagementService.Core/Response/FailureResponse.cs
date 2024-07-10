@@ -126,7 +126,7 @@ internal record FailureResponse(
         );
     }
 
-    public static FailureResponse ForInvalidReferences(ResourceName[] resourceNames) =>
+    public static FailureResponse ForImmutableIdentity(ResourceName[] resourceNames) =>
         new(
             detail:
             $"The referenced {string.Join(",", resourceNames.Select(x => x.Value))} item(s) do not exist.",

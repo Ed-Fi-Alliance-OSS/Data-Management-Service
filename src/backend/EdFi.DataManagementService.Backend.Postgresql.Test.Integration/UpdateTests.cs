@@ -3,10 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using EdFi.DataManagementService.Core.External.Backend;
+using FakeItEasy;
 using FluentAssertions;
 using Npgsql;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Backend.Postgresql.Test.Integration.DatabaseTest;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
 
@@ -234,11 +237,75 @@ public class UpdateTests : DatabaseTest
         }
     }
 
+    [TestFixture]
+    public class Given_an_update_of_a_document_that_references_a_non_existent_document : UpdateTests
+    {
+        private UpdateResult? _updateResult;
+        private List<UpsertResult> _upsertResults;
+
+        private static readonly string _referencedResourceName = "ReferencedResource";
+        private static readonly Guid _resourcedDocUuidGuid = Guid.NewGuid();
+        private static readonly Guid _referencedRefIdGuid = Guid.NewGuid();
+        private static readonly string _referencedDocString = """{"abc":1}""";
+
+        private static readonly string _referencingResourceName = "ReferencingResource";
+        private static readonly Guid _documentUuidGuid = Guid.NewGuid();
+        private static readonly Guid _referentialIdGuid = Guid.NewGuid();
+        private static readonly string _edFiDocString = """{"abc":2}""";
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _upsertResults = new List<UpsertResult>();
+            IUpsertRequest refUpsertRequest = CreateUpsertRequest(
+                _referencedResourceName,
+                _resourcedDocUuidGuid,
+                _referencedRefIdGuid,
+                _referencedDocString
+            );
+            _upsertResults.Add(await CreateUpsert().Upsert(refUpsertRequest, Connection!, Transaction!));
+
+            // Add references
+            Reference[] references = [new(_referencingResourceName, _referencedRefIdGuid)];
+
+            IUpsertRequest upsertRequest = CreateUpsertRequest(
+                _referencingResourceName,
+                _documentUuidGuid,
+                _referentialIdGuid,
+                _edFiDocString,
+                CreateDocumentReferences(references)
+            );
+
+            _upsertResults.Add(await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!));
+
+            // Update
+            string updatedReferencedDocString = """{"abc":3}""";
+            IUpdateRequest updateRequest = CreateUpdateRequest(
+                _referencedResourceName,
+                _resourcedDocUuidGuid,
+                _referentialIdGuid,
+                updatedReferencedDocString
+            );
+            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
+        }
+
+        [Test]
+        public void It_should_be_a_successful_inserts()
+        {
+            _upsertResults.Should().HaveCount(2);
+            _upsertResults.ForEach(x => x.Should().BeOfType<UpsertResult.InsertSuccess>());
+        }
+
+        [Test]
+        public void It_should_be_a_update_failure_reference()
+        {
+            _updateResult.Should().BeOfType<UpdateResult.UpdateFailureImmutableIdentity>();
+        }
+    }
+
     // Future tests - from Meadowlark
 
     // Given_an_update_of_the_same_document_with_two_overlapping_request but also with different references
-
-    // given an update of a document that references a non-existent document
 
     // given an update of a document that references an existing document
 
