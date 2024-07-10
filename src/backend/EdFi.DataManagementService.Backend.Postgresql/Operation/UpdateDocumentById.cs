@@ -25,7 +25,6 @@ public interface IUpdateDocumentById
 public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentById> _logger)
     : IUpdateDocumentById
 {
-    private readonly ReferenceHelper _referenceHelper = new();
 
     /// <summary>
     /// Takes an UpdateRequest and connection + transaction and returns the result of an update operation.
@@ -43,8 +42,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
 
         try
         {
-
-            DocumentReferenceIds documentReferenceIds = _referenceHelper.DocumentReferenceIdsFrom(updateRequest);
+            DocumentReferenceIds documentReferenceIds = ReferenceHelper.DocumentReferenceIdsFrom(updateRequest);
 
             if (documentReferenceIds.ReferentialIds.Any())
             {
@@ -54,7 +52,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                     transaction
                 );
 
-                ResourceName[] invalidResourceNames = _referenceHelper.ResourceNamesFrom(
+                ResourceName[] invalidResourceNames = ReferenceHelper.ResourceNamesFrom(
                     updateRequest.DocumentInfo.DocumentReferences,
                     invalidReferentialIds
                 );
