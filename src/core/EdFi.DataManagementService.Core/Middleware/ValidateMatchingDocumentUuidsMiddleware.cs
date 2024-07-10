@@ -33,7 +33,7 @@ namespace EdFi.DataManagementService.Core.Middleware
             }
             else
             {
-                FailureResponse failureResponse = FailureResponse.ForBadRequest(
+                FailureResponseWithErrors failureResponse = FailureResponse.ForBadRequest(
                     "The request could not be processed. See 'errors' for details.",
                     null,
                     ["Request body id must match the id in the url."]

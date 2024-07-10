@@ -34,7 +34,7 @@ internal class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _d
         }
         else
         {
-            FailureResponse failureResponse;
+            FailureResponseWithErrors failureResponse;
 
             if (errors.Length > 0)
             {

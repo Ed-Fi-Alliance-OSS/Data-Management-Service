@@ -1,20 +1,26 @@
-Feature: Invalid Reference Validation
-    POST requests validating invalid references
+Feature: Create Reference Validation
+    POST requests testing invalid references
 
-        Background
-            Given the system has these Schools
-                  | schoolId  | nameOfInstitution      | educationOrganizationCategoryDescriptor | gradeLevelDescriptor |
-                  | 255901001 | Grand Bend High School | ["School"]                              | ["Eleventh grade"]   |
-              And the system has these Courses
-                  | courseCode | courseIdentificationSystemDescriptor | identificationCode | educationOrganizationId | courseTitle |
-                  | ALG-1      | ["LEA course code"]                  | ALG-1              | 255901001               | Algebra I   |
+        Background:
+            Given the system has these descriptors
+                  | descriptorValue                                                             |
+                  | uri://ed-fi.org/GradeLevelDescriptor#TenthGrade                             |
+                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School              |
+                  | uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education        |
+                  | uri://ed-fi.org/GraduationPlanTypeDescriptor#Career and Technical Education |
+                  | uri://ed-fi.org/TermDescriptor#Spring Semester                              |
+              And the system has these "schoolYearTypes"
+                  | schoolYear | currentSchoolYear | schoolYearDescription |
+                  | 2025       | false             | School Year 2025      |
+              And the system has these "Schools" references
+                  | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
+                  | 123      | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
 
-        @ignore
         Scenario: 01 Ensure clients cannot create a resource with a non existing reference
              When a POST request is made to "ed-fi/academicWeeks" with
                   """
                   {
-                   "weekIdentifier": "one",
+                   "weekIdentifier": "WeekIdentifier1",
                    "schoolReference": {
                      "schoolId": 9999
                    },
@@ -23,29 +29,29 @@ Feature: Invalid Reference Validation
                    "totalInstructionalDays": 300
                   }
                   """
-             Then it should respond with 409
-              And the response body is
+
+             Then the response body is
                   """
                   {
-                      "detail": "The referenced 'School' resource does not exist.",
+                      "detail": "The referenced School item(s) do not exist.",
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
-                      "title": "Resource Not Unique Conflict due to invalid-reference",
+                      "title": "Unresolved Reference",
                       "status": 409,
                       "correlationId": null
                   }
                   """
+              And it should respond with 409
 
-        @ignore
         Scenario: 02 Ensure clients cannot create a resource with correct information but an invalid value belonging to the reference
              When a POST request is made to "ed-fi/studentCTEProgramAssociations" with
                   """
                   {
                       "beginDate": "2020-06-05",
                       "educationOrganizationReference": {
-                          "educationOrganizationId": 255901
+                          "educationOrganizationId": 123
                       },
                       "programReference": {
-                          "educationOrganizationId": 255901,
+                          "educationOrganizationId": 123,
                           "programName": "Fake",
                           "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education"
                       },
@@ -54,26 +60,26 @@ Feature: Invalid Reference Validation
                       }
                   }
                   """
-             Then it should respond with 409
-              And the response body is
+
+             Then the response body is
                   """
                   {
-                      "detail": "The referenced 'Program' resource does not exist.",
+                      "detail": "The referenced Program,Student item(s) do not exist.",
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
-                      "title": "Resource Not Unique Conflict due to invalid-reference",
+                      "title": "Unresolved Reference",
                       "status": 409,
                       "correlationId": null
                   }
                   """
+              And it should respond with 409
 
-        @ignore
         Scenario: 03 Ensure clients cannot create a resource using a reference that is out of range of the existing values
              When a POST request is made to "ed-fi/graduationPlans" with
                   """
                   {
                      "graduationPlanTypeDescriptor": "uri://ed-fi.org/GraduationPlanTypeDescriptor#Career and Technical Education",
                      "educationOrganizationReference": {
-                         "educationOrganizationId": 255901
+                         "educationOrganizationId": 123
                      },
                      "graduationSchoolYearTypeReference": {
                          "schoolYear": 1970
@@ -85,29 +91,31 @@ Feature: Invalid Reference Validation
               And the response body is
                   """
                   {
-                    "detail": "The referenced 'SchoolYearType' resource does not exist.",
+                    "detail": "The referenced SchoolYearType item(s) do not exist.",
                     "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
-                    "title": "Resource Not Unique Conflict due to invalid-reference",
+                    "title": "Unresolved Reference",
                     "status": 409,
                     "correlationId": null
                   }
                   """
 
-        @ignore
         Scenario: 04 Ensure clients cannot create a resource using an invalid reference inside of another reference
+            Given the system has these "students"
+                  | studentUniqueId | firstName | lastSurname | birthDate    |
+                  | "456"           | Firstname | Lastsurname | "2020-01-01" |
              When a POST request is made to "ed-fi/studentSectionAssociations" with
                   """
                   {
                       "beginDate": "2023-08-23",
                       "sectionReference": {
                           "localCourseCode": "ALG-1",
-                          "schoolId": 255901,
+                          "schoolId": 123,
                           "schoolYear": 2022,
-                          "sectionIdentifier": "25590100103Trad220ALG122011",
+                          "sectionIdentifier": "12300103Trad220ALG122011",
                           "sessionName": "2021-2022 Spring Semester"
                       },
                       "studentReference": {
-                          "studentUniqueId": "604824"
+                          "studentUniqueId": "456"
                       }
                   }
                   """
@@ -115,40 +123,77 @@ Feature: Invalid Reference Validation
               And the response body is
                   """
                   {
-                      "detail": "The referenced 'Section' resource does not exist.",
+                      "detail": "The referenced Section item(s) do not exist.",
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
-                      "title": "Resource Not Unique Conflict due to invalid-reference",
+                      "title": "Unresolved Reference",
                       "status": 409,
                       "correlationId": null
                   }
                   """
 
-        @ignore
-        Scenario: 05 Verify clients cannot update a resource that is missing a reference
-        # CourseOffering should also have `sessionReference`, which has been omitted in the JSON below
-            Given Local Course Code "ALG-1 TEST-101"
-            #set value to {id}
-             When a PUT request is made to "ed-fi/courseOfferings/{id}"
+        Scenario: 05 Verify clients cannot update a resource with a bad academicWeeks reference
+            Given the system has these "AcademicWeeks" references
+                  | weekIdentifier | nameOfInstitution | schoolReference   | beginDate    | endDate      | totalInstructionalDays |
+                  | WeekIdentifier | Test school       | {"schoolId": 123} | "2024-07-10" | "2024-07-10" | 365                    |
+
+             When a POST request is made to "ed-fi/sessions" with
                   """
                   {
-                      "localCourseCode": "ALG-1 TEST-101",
-                      "courseReference": {
-                          "courseCode": "ALG-1",
-                          "educationOrganizationId": 255901001
-                      },
-                      "schoolReference": {
-                          "schoolId": 255901001
+                    "sessionName": "sessionName",
+                    "schoolReference": {
+                      "schoolId": 123
+                    },
+                    "schoolYearTypeReference": {
+                      "schoolYear": 2025
+                    },
+                    "academicWeeks": [
+                      {
+                        "academicWeekReference": {
+                          "schoolId": 123,
+                          "weekIdentifier": "WeekIdentifier"
+                        }
                       }
+                    ],
+                    "beginDate": "2024-07-10",
+                    "endDate": "2024-07-10",
+                    "termDescriptor": "uri://ed-fi.org/TermDescriptor#Spring Semester",
+                    "totalInstructionalDays": 365
                   }
                   """
-             Then it should respond with 400
-              And the response body is
+
+              And a POST request is made to "ed-fi/sessions" with
                   """
                   {
-                      "detail": "The referenced 'SessionReference' resource does not exist.",
+                    "sessionName": "sessionName",
+                    "schoolReference": {
+                      "schoolId": 123
+                    },
+                    "schoolYearTypeReference": {
+                      "schoolYear": 2025
+                    },
+                    "academicWeeks": [
+                      {
+                        "academicWeekReference": {
+                          "schoolId": 123,
+                          "weekIdentifier": "Invalid"
+                        }
+                      }
+                    ],
+                    "beginDate": "2024-07-10",
+                    "endDate": "2024-07-10",
+                    "termDescriptor": "uri://ed-fi.org/TermDescriptor#Spring Semester",
+                    "totalInstructionalDays": 365
+                  }
+                  """
+
+             Then the response body is
+                  """
+                  {
+                      "detail": "The referenced AcademicWeek item(s) do not exist.",
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
-                      "title": "Resource Not Unique Conflict due to invalid-reference",
+                      "title": "Unresolved Reference",
                       "status": 409,
                       "correlationId": null
                   }
                   """
+              And it should respond with 409

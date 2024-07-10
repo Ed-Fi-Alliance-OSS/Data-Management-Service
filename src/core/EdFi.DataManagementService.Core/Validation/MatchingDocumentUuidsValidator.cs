@@ -23,7 +23,7 @@ internal class MatchingDocumentUuidsValidator() : IMatchingDocumentUuidsValidato
 {
     public bool Validate(PipelineContext context)
     {
-        var documentId = context.ParsedBody["id"]?.GetValue<string>();
+        string? documentId = context.ParsedBody["id"]?.GetValue<string>();
 
         return documentId != null &&
                context.PathComponents.DocumentUuid == new DocumentUuid(new Guid(documentId));
