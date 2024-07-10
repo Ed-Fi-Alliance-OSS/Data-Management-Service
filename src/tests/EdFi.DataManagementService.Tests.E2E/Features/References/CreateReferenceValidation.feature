@@ -13,8 +13,8 @@ Feature: Create Reference Validation
                   | schoolYear | currentSchoolYear | schoolYearDescription |
                   | 2025       | false             | School Year 2025      |
               And the system has these "Schools" references
-                  | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
-                  | 123      | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+                  | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
+                  | 123      | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
 
         Scenario: 01 Ensure clients cannot create a resource with a non existing reference
              When a POST request is made to "ed-fi/academicWeeks" with
