@@ -497,10 +497,6 @@ public class SqlAction : ISqlAction
     /// <summary>
     /// Given an array of referentialId guids and a parallel array of partition keys, returns
     /// an array of invalid referentialId guids, if any.
-    ///
-    /// Note the db command is run in a separate transaction because the original transaction
-    /// is invalidated by FK violations. This means there is a slight chance of staleness,
-    /// which should be acceptable.
     /// </summary>
     public async Task<Guid[]> FindInvalidReferentialIds(
         DocumentReferenceIds documentReferenceIds,
