@@ -2,7 +2,7 @@ Feature: Invalid Reference Validation
     PUT requests validation for invalid references
 
         Background:
-            Given the system has these "schoolYears"""
+            Given the system has these "schoolYears"
                   | schoolYear | currentSchoolYear | schoolYearDescription |
                   | 2022       | false             | 2021-2022             |
               And the system has these "schools"
