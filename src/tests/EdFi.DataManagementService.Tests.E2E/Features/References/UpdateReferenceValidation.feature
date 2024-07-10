@@ -1,4 +1,4 @@
-Feature: Invalid Reference Validation
+Feature: Update Reference Validation
     PUT requests validation for invalid references
 
         Background:

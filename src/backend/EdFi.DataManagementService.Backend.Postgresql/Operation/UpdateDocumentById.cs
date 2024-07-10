@@ -25,46 +25,7 @@ public interface IUpdateDocumentById
 public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentById> _logger)
     : IUpdateDocumentById
 {
-
-    /// <summary>
-    /// Returns the ReferentialId Guids and corresponding partition keys for all of the document
-    /// references in the UpdateRequest.
-    /// </summary>
-    public static DocumentReferenceIds DocumentReferenceIdsFrom(IUpdateRequest updateRequest)
-    {
-        DocumentReference[] documentReferences = updateRequest.DocumentInfo.DocumentReferences;
-        Guid[] referentialIds = documentReferences.Select(x => x.ReferentialId.Value).ToArray();
-        int[] referentialPartitionKeys = documentReferences
-            .Select(x => PartitionKeyFor(x.ReferentialId).Value)
-            .ToArray();
-        return new(referentialIds, referentialPartitionKeys);
-    }
-
-    /// <summary>
-    /// Returns the unique ResourceNames of all DocumentReferences that have the given ReferentialId Guids
-    /// </summary>
-    private ResourceName[] ResourceNamesFrom(DocumentReference[] documentReferences, Guid[] referentialIds)
-    {
-
-        Dictionary<Guid, string> guidToResourceNameMap =
-            new(
-                documentReferences.Select(x => new KeyValuePair<Guid, string>(
-                    x.ReferentialId.Value,
-                    x.ResourceInfo.ResourceName.Value
-                ))
-            );
-
-        HashSet<string> uniqueResourceNames = [];
-
-        foreach (Guid referentialId in referentialIds)
-        {
-            if (guidToResourceNameMap.TryGetValue(referentialId, out string? value))
-            {
-                uniqueResourceNames.Add(value);
-            }
-        }
-        return uniqueResourceNames.Select(x => new ResourceName(x)).ToArray();
-    }
+    private readonly ReferenceHelper _referenceHelper = new();
 
     /// <summary>
     /// Takes an UpdateRequest and connection + transaction and returns the result of an update operation.
@@ -83,7 +44,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
         try
         {
 
-            DocumentReferenceIds documentReferenceIds = DocumentReferenceIdsFrom(updateRequest);
+            DocumentReferenceIds documentReferenceIds = _referenceHelper.DocumentReferenceIdsFrom(updateRequest);
 
             if (documentReferenceIds.ReferentialIds.Any())
             {
@@ -93,7 +54,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                     transaction
                 );
 
-                ResourceName[] invalidResourceNames = ResourceNamesFrom(
+                ResourceName[] invalidResourceNames = _referenceHelper.ResourceNamesFrom(
                     updateRequest.DocumentInfo.DocumentReferences,
                     invalidReferentialIds
                 );

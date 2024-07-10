@@ -64,7 +64,7 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
                     Headers: []
                 ),
             UpdateFailureReference failure
-                => new FrontendResponse(StatusCode: 409, Body: JsonSerializer.Serialize(FailureResponse.ForInvalidReferences(failure.ReferencingDocumentInfo)), Headers: []),
+                => new FrontendResponse(StatusCode: 409, Body: JsonSerializer.Serialize(FailureResponse.ForImmutableIdentity(failure.ReferencingDocumentInfo)), Headers: []),
             UpdateFailureIdentityConflict failure
                 => new FrontendResponse(StatusCode: 400, Body: failure.ReferencingDocumentInfo, Headers: []),
             UpdateFailureWriteConflict => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),

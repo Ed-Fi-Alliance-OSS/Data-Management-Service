@@ -205,7 +205,9 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         public async Task WhenAPUTRequestIsMadeToReferencedResourceWith(string url, string body)
         {
             url = $"data/{url.Replace("{id}", _referencedResourceId)}";
+            _logger.log.Information(url);
             body = body.Replace("{id}", _referencedResourceId);
+            _logger.log.Information(body);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(url, new() {Data = body})!;
         }
 
