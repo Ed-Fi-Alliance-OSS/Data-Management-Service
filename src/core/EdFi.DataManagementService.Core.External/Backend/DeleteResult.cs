@@ -22,8 +22,8 @@ public abstract record DeleteResult
     /// <summary>
     /// A failure because of the existence of referencing documents
     /// </summary>
-    /// <param name="ReferencingDocumentInfo">Information about the referencing documents</param>
-    public record DeleteFailureReference(string ReferencingDocumentInfo) : DeleteResult;
+    /// <param name="ReferencingDocumentResourceNames">Resource names of referencing documents</param>
+    public record DeleteFailureReference(string[] ReferencingDocumentResourceNames) : DeleteResult;
 
     /// <summary>
     /// A transient failure due to a transaction write conflict

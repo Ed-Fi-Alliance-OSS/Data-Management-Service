@@ -36,7 +36,7 @@ public interface ISqlAction
         LockOption lockOption
     );
 
-    public Task<string?> FindReferencingResourceNameByDocumentUuid(
+    public Task<string[]> FindReferencingResourceNamesByDocumentUuid(
         DocumentUuid documentUuid,
         PartitionKey documentPartitionKey,
         NpgsqlConnection connection,
@@ -596,7 +596,7 @@ public class SqlAction : ISqlAction
         return rowsAffected;
     }
 
-    public async Task<string?> FindReferencingResourceNameByDocumentUuid(
+    public async Task<string[]> FindReferencingResourceNamesByDocumentUuid(
         DocumentUuid documentUuid,
         PartitionKey documentPartitionKey,
         NpgsqlConnection connection,
@@ -611,7 +611,8 @@ public class SqlAction : ISqlAction
                    INNER JOIN public.Aliases a ON r.ReferentialId = a.ReferentialId AND r.ReferentialPartitionKey = a.ReferentialPartitionKey
                    INNER JOIN public.Documents d2 ON d2.Id = a.DocumentId AND d2.DocumentPartitionKey = a.DocumentPartitionKey
                    WHERE d2.DocumentUuid =$1 AND d2.DocumentPartitionKey = $2) AS re
-                   ON re.ParentDocumentId = d.id AND re.ParentDocumentPartitionKey = d.DocumentPartitionKey {SqlFor(lockOption)};",
+                   ON re.ParentDocumentId = d.id AND re.ParentDocumentPartitionKey = d.DocumentPartitionKey
+                   ORDER BY d.ResourceName {SqlFor(lockOption)};",
                 connection,
                 transaction
             )
@@ -625,13 +626,14 @@ public class SqlAction : ISqlAction
         try
         {
             await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
-            if (!reader.HasRows)
-            {
-                return null;
-            }
-            await reader.ReadAsync();
+            var resourceNames = new List<string>();
 
-            return reader.GetString(reader.GetOrdinal("ResourceName"));
+            while (await reader.ReadAsync())
+            {
+                resourceNames.Add(reader.GetString(reader.GetOrdinal("ResourceName")));
+            }
+
+            return resourceNames.Distinct().ToArray();
         }
         catch (Exception ex)
         {
