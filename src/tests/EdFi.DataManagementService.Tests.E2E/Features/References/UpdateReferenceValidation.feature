@@ -1,7 +1,7 @@
 Feature: Update Reference Validation
     PUT requests validation for invalid references
 
-        Background:
+        Background:            
             Given the system has these "schoolYears"
                   | schoolYear | currentSchoolYear | schoolYearDescription |
                   | 2022       | false             | 2021-2022             |
@@ -29,7 +29,7 @@ Feature: Update Reference Validation
               And the system has these "studentSectionAssociations"
                   | beginDate  | localCourseCode | schoolId  | schoolYear | sectionIdentifier           | sessionName             | studentUniqueId |
                   | 2021-08-23 | ALG-1           | 255901001 | 2022       | 25590100102Trad220ALG112011 | 2021-2022 Fall Semester | 604874          |
-
+        
         @ignore
         Scenario: 01 Ensure clients cannot update a resource with a Descriptor that does not exist
             Given the system has these "localEducationAgencies" references
