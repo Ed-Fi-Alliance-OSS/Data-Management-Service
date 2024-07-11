@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.Postgresql.Model;
-using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
@@ -13,11 +12,10 @@ internal static class ReferenceHelper
 {
     /// <summary>
     /// Returns the ReferentialId Guids and corresponding partition keys for all of the document
-    /// references in the UpdateRequest.
+    /// references in the UpdateRequest and UpsertRequest.
     /// </summary>
-    public static DocumentReferenceIds DocumentReferenceIdsFrom(IUpdateRequest updateRequest)
+    public static DocumentReferenceIds DocumentReferenceIdsFrom(DocumentReference[] documentReferences)
     {
-        DocumentReference[] documentReferences = updateRequest.DocumentInfo.DocumentReferences;
         Guid[] referentialIds = documentReferences.Select(x => x.ReferentialId.Value).ToArray();
         int[] referentialPartitionKeys = documentReferences
             .Select(x => PartitionUtility.PartitionKeyFor(x.ReferentialId).Value)
@@ -50,6 +48,5 @@ internal static class ReferenceHelper
         }
         return uniqueResourceNames.Select(x => new ResourceName(x)).ToArray();
     }
-
 }
 

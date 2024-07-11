@@ -2,35 +2,20 @@ Feature: Update Reference Validation
     PUT requests validation for invalid references
 
         Background:            
-            Given the system has these "schoolYears"
-                  | schoolYear | currentSchoolYear | schoolYearDescription |
-                  | 2022       | false             | 2021-2022             |
-              And the system has these "schools"
-                  | educationOrganizationCategoryDescriptor | gradeLevels     | schoolId  | nameOfInstitution            |
-                  | ["School"]                              | ["First grade"] | 255901107 | Grand Bend Elementary School |
-              And the system has these "programs"
-                  | programName                    | programTypeDescriptor                                                  | educationOrganizationReference     | programId |
-                  | Career and Technical Education | "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education" | {"educationOrganizationId":255901} | "100"     |
+            Given the system has these "schools"
+                  | schoolId     | nameOfInstitution | gradeLevels                                                                        | educationOrganizationCategories                                                                                        |
+                  | 255901       | School Test       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"} ] | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School" }] |
               And the system has these "students"
-                  | studentUniqueId | birthDate  | firstName | lastSurname |
-                  | 604824          | 2010-01-13 | Traci     | Mathews     |
-              And the system has these "localEducationAgencies"
-                  | educationOrganizationCategoryDescriptor | localEducationAgencyId | localEducationAgencyCategoryDescriptor | nameOfInstitution |
-                  | ["School"]                              | 255901                 | ["Independent"]                        | Grand Bend ISD    |
-              And the system has these "studentEducationOrganizationAssociations"
-                  | educationOrganizationId | studentUniqueId |
-                  | 255901                  | 604834          |
-              And the system has these "studentCTEProgramAssociations"
-                  | beginDate  | educationOrganizationId | educationOrganizationId | programName                    | programTypeDescriptor              | studentUniqueId |
-                  | 2020-06-05 | 255901                  | 255901                  | Career and Technical Education | ["Career and Technical Education"] | 604825          |
-              And the system has these "graduationPlans"
-                  | graduationPlanTypeDescriptor   | educationOrganizationId | schoolYear | totalRequiredCredits |
-                  | Career and Technical Education | 255901                  | 2022       | 10.000               |
-              And the system has these "studentSectionAssociations"
-                  | beginDate  | localCourseCode | schoolId  | schoolYear | sectionIdentifier           | sessionName             | studentUniqueId |
-                  | 2021-08-23 | ALG-1           | 255901001 | 2022       | 25590100102Trad220ALG112011 | 2021-2022 Fall Semester | 604874          |
+                  | studentUniqueId   | birthDate   | firstName   | lastSurname  |
+                  | "604834"          | 2000-01-01  | Thomas      | Johnson      |
+              And the system has these "programs"
+                  | programName                        | programTypeDescriptor                                                  | educationOrganizationReference        | programId |
+                  | Career and Technical Education     | "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education" | {"educationOrganizationId":255901}    | "100"     |
+              And the system has these "schoolYearTypes"
+                  | schoolYear | currentSchoolYear | schoolYearDescription |
+                  | 2022       | true              | 2021-2022             |
+
         
-        @ignore
         Scenario: 01 Ensure clients cannot update a resource with a Descriptor that does not exist
             Given the system has these "localEducationAgencies" references
                   | localEducationAgencyId | nameOfInstitution | localEducationAgencyCategoryDescriptor                                          | categories                                                                                                                              |
@@ -38,9 +23,10 @@ Feature: Update Reference Validation
              When a PUT request is made to referenced resource "ed-fi/localEducationAgencies/{id}" with
                   """
                   {
-                      "localEducationAgencyId": 255901,
-                      "nameOfInstitution": "Grand Bend ISD ",
-                      "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Independent",
+                      "id": "{id}",
+                      "localEducationAgencyId": 102030401,
+                      "nameOfInstitution": "Institution Test",
+                      "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Federal operated agency",
                       "categories": [
                           {
                               "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Fake"
@@ -238,27 +224,3 @@ Feature: Update Reference Validation
                       "correlationId": null
                   }
                   """
-
-        @ignore
-        Scenario: 08 Ensure clients cannot update a resource that is used by another reference
-             When a PUT request is made to "ed-fi/programs/{id}" with
-                  """
-                  "programName": "Career and Technical Education Test",
-                  "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education",
-                  "educationOrganizationReference": {
-                      "educationOrganizationId": 255901
-                  },
-                  "programId": "100"
-                  """
-             Then it should respond with 409
-              And the response body is
-                  """
-                  {
-                      "detail": "The requested action cannot be performed because this item is referenced by an existing 'StudentProgramAssociation' item.",
-                      "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
-                      "title": "Dependent Item Exists",
-                      "status": 409,
-                      "correlationId": null
-                  }
-                  """
-

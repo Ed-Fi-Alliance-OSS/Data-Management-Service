@@ -42,7 +42,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
 
         try
         {
-            DocumentReferenceIds documentReferenceIds = ReferenceHelper.DocumentReferenceIdsFrom(updateRequest);
+            DocumentReferenceIds documentReferenceIds = ReferenceHelper.DocumentReferenceIdsFrom(updateRequest.DocumentInfo.DocumentReferences);
 
             if (documentReferenceIds.ReferentialIds.Any())
             {

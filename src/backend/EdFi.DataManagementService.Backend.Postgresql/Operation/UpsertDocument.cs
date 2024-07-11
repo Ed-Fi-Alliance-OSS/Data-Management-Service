@@ -26,46 +26,6 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
 {
     private static readonly string _beforeInsertReferences = "BeforeInsertReferences";
 
-    /// <summary>
-    /// Returns the ReferentialId Guids and corresponding partition keys for all of the document
-    /// references in the UpsertRequest.
-    /// </summary>
-    public static DocumentReferenceIds DocumentReferenceIdsFrom(IUpsertRequest upsertRequest)
-    {
-        DocumentReference[] documentReferences = upsertRequest.DocumentInfo.DocumentReferences;
-        Guid[] referentialIds = documentReferences.Select(x => x.ReferentialId.Value).ToArray();
-        int[] referentialPartitionKeys = documentReferences
-            .Select(x => PartitionKeyFor(x.ReferentialId).Value)
-            .ToArray();
-        return new(referentialIds, referentialPartitionKeys);
-    }
-
-    /// <summary>
-    /// Returns the unique ResourceNames of all DocumentReferences that have the given ReferentialId Guids
-    /// </summary>
-    private ResourceName[] ResourceNamesFrom(DocumentReference[] documentReferences, Guid[] referentialIds)
-    {
-        Dictionary<Guid, string> guidToResourceNameMap =
-            new(
-                documentReferences.Select(x => new KeyValuePair<Guid, string>(
-                    x.ReferentialId.Value,
-                    x.ResourceInfo.ResourceName.Value
-                ))
-            );
-
-        HashSet<string> uniqueResourceNames = [];
-
-        foreach (Guid referentialId in referentialIds)
-        {
-            if (guidToResourceNameMap.TryGetValue(referentialId, out string? value))
-            {
-                uniqueResourceNames.Add(value);
-            }
-        }
-
-        return uniqueResourceNames.Select(x => new ResourceName(x)).ToArray();
-    }
-
     public async Task<UpsertResult> AsInsert(
         IUpsertRequest upsertRequest,
         DocumentReferenceIds documentReferenceIds,
@@ -232,7 +192,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
     {
         _logger.LogDebug("Entering UpsertDocument.Upsert - {TraceId}", upsertRequest.TraceId);
 
-        DocumentReferenceIds documentReferenceIds = DocumentReferenceIdsFrom(upsertRequest);
+        DocumentReferenceIds documentReferenceIds = ReferenceHelper.DocumentReferenceIdsFrom(upsertRequest.DocumentInfo.DocumentReferences);
 
         try
         {
@@ -299,7 +259,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 transaction
             );
 
-            ResourceName[] invalidResourceNames = ResourceNamesFrom(
+            ResourceName[] invalidResourceNames = ReferenceHelper.ResourceNamesFrom(
                 upsertRequest.DocumentInfo.DocumentReferences,
                 invalidReferentialIds
             );
