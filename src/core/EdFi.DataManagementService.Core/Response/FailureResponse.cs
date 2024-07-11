@@ -83,7 +83,7 @@ internal static class FailureResponse
 
     public static BaseFailureResponse ForInvalidReferences(ResourceName[] resourceNames)
     {
-        string resources = string.Join(",", resourceNames.Select(x => x.Value));
+        string resources = string.Join(", ", resourceNames.Select(x => x.Value));
         return new(
             detail: $"The referenced {resources} item(s) do not exist.",
             type: $"{_dataConflictTypePrefix}:unresolved-reference",
