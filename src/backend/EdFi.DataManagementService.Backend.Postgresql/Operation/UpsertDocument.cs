@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
+using static EdFi.DataManagementService.Backend.Postgresql.ReferenceHelper;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
 
@@ -192,7 +193,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
     {
         _logger.LogDebug("Entering UpsertDocument.Upsert - {TraceId}", upsertRequest.TraceId);
 
-        DocumentReferenceIds documentReferenceIds = ReferenceHelper.DocumentReferenceIdsFrom(upsertRequest.DocumentInfo.DocumentReferences);
+        DocumentReferenceIds documentReferenceIds = DocumentReferenceIdsFrom(upsertRequest.DocumentInfo.DocumentReferences);
 
         try
         {
@@ -259,7 +260,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 transaction
             );
 
-            ResourceName[] invalidResourceNames = ReferenceHelper.ResourceNamesFrom(
+            ResourceName[] invalidResourceNames = ResourceNamesFrom(
                 upsertRequest.DocumentInfo.DocumentReferences,
                 invalidReferentialIds
             );
