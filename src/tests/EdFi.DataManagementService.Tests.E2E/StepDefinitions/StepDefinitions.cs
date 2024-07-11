@@ -97,6 +97,15 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 );
             }
 
+            foreach (var apiResponse in _apiResponses)
+            {
+                if (apiResponse.Status != 200 && apiResponse.Status != 201)
+                {
+                    JsonNode responseJson = JsonNode.Parse(apiResponse.TextAsync().Result)!;
+
+                    _logger.log.Information(responseJson.ToString());
+                }
+            }
             return _apiResponses;
         }
 
