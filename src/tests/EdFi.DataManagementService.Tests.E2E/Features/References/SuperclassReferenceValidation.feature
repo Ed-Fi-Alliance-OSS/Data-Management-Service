@@ -149,7 +149,7 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
               And the response body is
                   """
                   {
-                      "detail": "The requested action cannot be performed because this item is referenced by an existing 'Program' item.",
+                      "detail": "The requested action cannot be performed because this item is referenced by existing Program item(s).",
                       "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
                       "title": "Dependent Item Exists",
                       "status": 409,
