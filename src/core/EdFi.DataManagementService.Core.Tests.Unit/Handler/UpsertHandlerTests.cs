@@ -84,7 +84,7 @@ public class UpsertHandlerTests
             context.FrontendResponse.StatusCode.Should().Be(409);
             context.FrontendResponse.Body.Should().Be(
                 """
-                {"detail":"The referenced BadResourceName1,BadResourceName2 item(s) do not exist.","type":"urn:ed-fi:api:data-conflict:unresolved-reference","title":"Unresolved Reference","status":409,"correlationId":null}
+                {"detail":"The referenced BadResourceName1, BadResourceName2 item(s) do not exist.","type":"urn:ed-fi:api:data-conflict:unresolved-reference","title":"Unresolved Reference","status":409,"correlationId":null}
                 """
             );
             context.FrontendResponse.Headers.Should().BeEmpty();
