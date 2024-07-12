@@ -6,6 +6,7 @@
 
 using System.Net;
 using System.Text.RegularExpressions;
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
@@ -33,6 +34,7 @@ public partial class MetadataEndpointModule : IEndpointModule
     {
         endpoints.MapGet("/metadata", GetMetadata);
         endpoints.MapGet("/metadata/dependencies", GetDependencies);
+        endpoints.MapGet("/metadata/dependencies2", GetDependencies2);
         endpoints.MapGet("/metadata/specifications", GetSections);
         endpoints.MapGet("/metadata/specifications/{section}-spec.json", GetSectionMetadata);
     }
@@ -53,6 +55,12 @@ public partial class MetadataEndpointModule : IEndpointModule
     internal async Task GetDependencies(HttpContext httpContext, IContentProvider contentProvider)
     {
         var content = contentProvider.LoadJsonContent("dependencies");
+        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+    }
+
+    internal async Task GetDependencies2(HttpContext httpContext, IApiService apiService)
+    {
+        var content = apiService.GetDependencies();
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
 
