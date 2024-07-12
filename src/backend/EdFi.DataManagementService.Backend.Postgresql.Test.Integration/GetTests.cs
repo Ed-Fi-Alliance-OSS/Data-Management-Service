@@ -71,7 +71,6 @@ public class GetTests : DatabaseTest
     }
 
     [TestFixture]
-    [Ignore("Fix in DMS-237")]
     public class Given_an_existing_document_for_a_different_resource : GetTests
     {
         private GetResult? _getResult;
