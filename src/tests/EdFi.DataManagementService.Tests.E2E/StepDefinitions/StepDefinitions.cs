@@ -260,14 +260,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             }
         }
 
-        [When("a GET request is made to referenced resource {string}")]
-        public async Task WhenAGETRequestIsMadeToReferencedResource(string url)
-        {
-            url = $"data/{url.Replace("{id}", _referencedResourceId)}";
-            _logger.log.Information(url);
-            _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(url)!;
-        }
-
         #endregion
 
         #region Then
