@@ -59,22 +59,47 @@ Feature: Resources "Read" Operation validations
              Then it should respond with 200
               And total of records should be 1
 
-        Scenario: 05 Verify response code 404 when trying to get a school with an ID that corresponds to another resource
+        Scenario: 05 Verify response code 404 when trying to get a school with an ID that corresponds to Course
             Given the system has these "Schools" 
                   | schoolId | nameOfInstitution | educationOrganizationCategories                                                                                         | gradeLevels                                                                          |
                   | 100      | School Test       | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"}]   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"}]      |
-            Given the system has these "courses" references
-                  | courseCode | identificationCodes                                                                                                                                  | educationOrganizationReference     | courseTitle | numberOfParts |
-                  | ALG-1      | [{"identificationCode": "ALG-1", "courseIdentificationSystemDescriptor":"uri://ed-fi.org/CourseIdentificationSystemDescriptor#State course code"}]   | {"educationOrganizationId":100}    | Algebra I   | 1             |
-             When a GET request is made to referenced resource "ed-fi/schools/{id}"
+            And a POST request is made to "courses" with
+                   """
+                   {
+                        "courseCode": "ALG-2",
+                        "identificationCodes": [
+                          {
+                            "courseIdentificationSystemDescriptor": "uri://ed-fi.org/CourseIdentificationSystemDescriptor#LEA course code",
+                            "identificationCode": "ALG-2"
+                          }
+                        ],
+                        "educationOrganizationReference": {
+                          "educationOrganizationId": 100
+                        },
+                        "courseTitle": "Algebra 2",
+                        "numberOfParts": 2
+                    }
+                   """
+             When a GET request is made to "ed-fi/schools/{id}"
              Then it should respond with 404
 
-        Scenario: 06 Verify response code 200 when trying to get a school with an correct ID
-            Given the system has these "Schools" references
-                  | schoolId | nameOfInstitution   | educationOrganizationCategories                                                                                         | gradeLevels                                                                          |
-                  | 101      | School Test 2       | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"}]   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"}]      |
-            Given the system has these "courses"
-                  | courseCode | identificationCodes                                                                                                                                  | educationOrganizationReference     | courseTitle  | numberOfParts |
-                  | ALG-2      | [{"identificationCode": "ALG-2", "courseIdentificationSystemDescriptor":"uri://ed-fi.org/CourseIdentificationSystemDescriptor#State course code"}]   | {"educationOrganizationId":101}    | Algebra II   | 2             |
-             When a GET request is made to referenced resource "ed-fi/schools/{id}"
+        Scenario: 06 Verify response code 200 when trying to get a school with a correct ID
+            Given a POST request is made to "Schools" with
+                """
+                {
+                   "schoolId":101,
+                   "nameOfInstitution":"School Test",
+                   "gradeLevels":[    
+                      {
+                         "gradeLevelDescriptor":"Postsecondary"
+                      }
+                   ],
+                   "educationOrganizationCategories":[
+                      {
+                         "educationOrganizationCategoryDescriptor":"School"
+                      }
+                   ]
+                }
+                """
+             When a GET request is made to "ed-fi/schools/{id}"
              Then it should respond with 200
