@@ -7,10 +7,12 @@ using System.Text.Json;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using Microsoft.CodeAnalysis;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
 using static EdFi.DataManagementService.Backend.Postgresql.ReferenceHelper;
+using Document = EdFi.DataManagementService.Backend.Postgresql.Model.Document;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
 
@@ -27,6 +29,8 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
     : IUpdateDocumentById
 {
 
+    private static readonly string _beforeInsertReferences = "BeforeInsertReferences";
+
     /// <summary>
     /// Takes an UpdateRequest and connection + transaction and returns the result of an update operation.
     ///
@@ -41,26 +45,9 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
         _logger.LogDebug("Entering UpdateDocumentById.UpdateById - {TraceId}", updateRequest.TraceId);
         var documentPartitionKey = PartitionKeyFor(updateRequest.DocumentUuid);
 
+        DocumentReferenceIds documentReferenceIds = DocumentReferenceIdsFrom(updateRequest.DocumentInfo.DocumentReferences);
         try
         {
-            DocumentReferenceIds documentReferenceIds = DocumentReferenceIdsFrom(updateRequest.DocumentInfo.DocumentReferences);
-
-            if (documentReferenceIds.ReferentialIds.Any())
-            {
-                Guid[] invalidReferentialIds = await _sqlAction.FindInvalidReferentialIds(
-                    documentReferenceIds,
-                    connection,
-                    transaction
-                );
-
-                ResourceName[] invalidResourceNames = ResourceNamesFrom(
-                    updateRequest.DocumentInfo.DocumentReferences,
-                    invalidReferentialIds
-                );
-
-                return new UpdateResult.UpdateFailureReference(invalidResourceNames);
-            }
-
             var validationResult = await _sqlAction.UpdateDocumentValidation(
                 updateRequest.DocumentUuid,
                 documentPartitionKey,
@@ -100,6 +87,64 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
             switch (rowsAffected)
             {
                 case 1:
+                    if (documentReferenceIds.ReferentialIds.Length > 0)
+                    {
+                        Document? documentFromDb;
+                        try
+                        {
+                            // Attempt to get the document, to get the ID for references
+                            documentFromDb = await _sqlAction.FindDocumentByReferentialId(
+                                updateRequest.DocumentInfo.ReferentialId,
+                                PartitionKeyFor(updateRequest.DocumentInfo.ReferentialId),
+                                connection,
+                                transaction,
+                                LockOption.BlockUpdateDelete
+                            );
+                        }
+                        catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.SerializationFailure)
+                        {
+                            _logger.LogDebug(
+                                pe,
+                                "Transaction conflict on Documents table read - {TraceId}",
+                                updateRequest.TraceId
+                            );
+                            return new UpdateResult.UpdateFailureWriteConflict();
+                        }
+
+                        long documentId = 0;
+                        if (documentFromDb != null)
+                        {
+                            documentId =
+                                documentFromDb.Id
+                                ?? throw new InvalidOperationException("documentFromDb.Id should never be null");
+                        }
+
+                        await _sqlAction.DeleteReferencesByDocumentUuid(
+                        documentPartitionKey.Value,
+                        updateRequest.DocumentUuid.Value,
+                            connection,
+                            transaction
+                        );
+
+                        // Create a transaction savepoint in case insert into References fails due to invalid references
+                        await transaction.SaveAsync(_beforeInsertReferences);
+                        int numberOfRowsInserted = await _sqlAction.InsertReferences(
+                            new(
+                                ParentDocumentPartitionKey: documentPartitionKey.Value,
+                                ParentDocumentId: documentId,
+                                ReferentialIds: documentReferenceIds.ReferentialIds,
+                                ReferentialPartitionKeys: documentReferenceIds.ReferentialPartitionKeys
+                            ),
+                            connection,
+                            transaction
+                        );
+
+                        if (numberOfRowsInserted != documentReferenceIds.ReferentialIds.Length)
+                        {
+                            throw new InvalidOperationException("Database did not insert all references");
+                        }
+                    }
+
                     return new UpdateResult.UpdateSuccess(updateRequest.DocumentUuid);
 
                 case 0:
@@ -122,6 +167,29 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
         {
             _logger.LogDebug(pe, "Transaction conflict on UpdateById - {TraceId}", updateRequest.TraceId);
             return new UpdateResult.UpdateFailureWriteConflict();
+        }
+        catch (PostgresException pe)
+            when (pe.SqlState == PostgresErrorCodes.ForeignKeyViolation
+                  && pe.ConstraintName == "fk_references_referencedalias"
+                 )
+        {
+            _logger.LogDebug(pe, "Foreign key violation on Update - {TraceId}", updateRequest.TraceId);
+
+            // Restore transaction savepoint to continue using transaction
+            await transaction.RollbackAsync(_beforeInsertReferences);
+
+            Guid[] invalidReferentialIds = await _sqlAction.FindInvalidReferentialIds(
+                documentReferenceIds,
+                connection,
+                transaction
+            );
+
+            ResourceName[] invalidResourceNames = ResourceNamesFrom(
+                updateRequest.DocumentInfo.DocumentReferences,
+                invalidReferentialIds
+            );
+
+            return new UpdateResult.UpdateFailureReference(invalidResourceNames);
         }
         catch (Exception ex)
         {

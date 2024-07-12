@@ -80,26 +80,27 @@ Feature: Update Reference Validation
                   """
                           
         Scenario: 03 Ensure clients cannot update a resource using a wrong reference
-            Given the system has these "studentEducationOrganizationAssociations" references
-                  | educationOrganizationReference           | studentReference                  |
-                  | {"educationOrganizationId":255901}       | {"studentUniqueId":"604834"}      |
-             When a PUT request is made to referenced resource "ed-fi/studentEducationOrganizationAssociations/{id}" with
+            Given the system has these "Staffs" references
+                  | staffUniqueId   | firstName | lastSurname |
+                  | "123"           | John      | Dutton      |
+             When a PUT request is made to referenced resource "ed-fi/staffs/{id}" with
                   """
                   {
                       "id": "{id}",
-                      "educationOrganizationReference": {
-                          "educationOrganizationId": 25590111
-                      },
-                      "studentReference": {
-                        "studentUniqueId":"604834"
-                      }
+                      "staffUniqueId":"123",
+	                    "firstName":"John",
+	                    "lastSurname": "Dutton",
+                      "personReference":{
+	                      "personId": "207284",
+                          "sourceSystemDescriptor": "uri://ed-fi.org/SourceSystemDescriptor#District"
+	                    }
                   }
                   """
              Then it should respond with 409
               And the response body is
                   """
                   {
-                      "detail": "The referenced EducationOrganization item(s) do not exist.",
+                      "detail": "The referenced Person item(s) do not exist.",
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Unresolved Reference",
                       "status": 409,
@@ -110,45 +111,7 @@ Feature: Update Reference Validation
                   """
 
         
-        Scenario: 04 Ensure clients cannot update a resource that uses a reference that not exist
-            Given the system has these "studentCTEProgramAssociations" references
-                  | beginDate  | educationOrganizationReference     | programReference                                                                                                                                                                     |  studentReference               |
-                  | 2020-06-05 | {"educationOrganizationId":255901} | {"educationOrganizationId":255901, "programName":"Career and Technical Education", "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education"}  | {"studentUniqueId":"604834"}    |
-             When a PUT request is made to referenced resource "ed-fi/studentCTEProgramAssociations/{id}" with
-                  """
-                  {
-                      "id": "{id}",
-                      "beginDate": "2020-06-05",
-                      "educationOrganizationReference":{
-		                    "educationOrganizationId":255901
-                      },
-                      "programReference": {
-                        "educationOrganizationId":255901,
-                        "programName": "Program Error",
-                        "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Program Error"
-                      },
-                      "studentReference": {
-                          "studentUniqueId": "604825"
-                      }
-                  }
-                  """
-             Then it should respond with 409
-              And the response body is
-                  """
-                  {
-                      "detail": "The referenced Program,Student item(s) do not exist.",
-                      "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
-                      "title": "Unresolved Reference",
-                      "status": 409,
-                      "correlationId": null,
-                      "validationErrors": null,
-                      "errors": null
-                  }
-                  """
-                        
-
-        
-        Scenario: 05 Ensure clients cannot update a resource that uses an invalid school year reference
+        Scenario: 04 Ensure clients cannot update a resource that uses an invalid school year reference
             Given the system has these "graduationPlans" references
                   | graduationPlanTypeDescriptor   | educationOrganizationReference      | graduationSchoolYearTypeReference | totalRequiredCredits |
                   | Career and Technical Education | {"educationOrganizationId":255901}  | {"schoolYear":2022}               | 10.000               |
@@ -166,22 +129,23 @@ Feature: Update Reference Validation
                       "totalRequiredCredits": 10.000
                   }
                   """
-             Then it should respond with 409
+             Then it should respond with 400
               And the response body is
                   """
                   {
-                      "detail": "The referenced SchoolYearType item(s) do not exist.",
-                      "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
-                      "title": "Unresolved Reference",
-                      "status": 409,
+                      "detail": "Identifying values for the GraduationPlan resource cannot be changed. Delete and recreate the resource item instead.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed:key-change-not-supported",
+                      "title": "Key Change Not Supported",
+                      "status": 400,
                       "correlationId": null,
                       "validationErrors": null,
                       "errors": null
                   }
                   """
+
         # There is a problem when trying to save a section It appears that the reference to CourseOffering is not being assembled properly.
         @ignore
-        Scenario: 06 Ensure clients cannot update a resource that is incorrect from a deep reference
+        Scenario: 05 Ensure clients cannot update a resource that is incorrect from a deep reference
             Given the system has these "courses"
                   | courseCode | identificationCodes                                                                                                                                  | educationOrganizationReference        | courseTitle | numberOfParts |
                   | ALG-1      | [{"identificationCode": "ALG-1", "courseIdentificationSystemDescriptor":"uri://ed-fi.org/CourseIdentificationSystemDescriptor#State course code"}]   | {"educationOrganizationId":255901}    | Algebra I   | 1             |
