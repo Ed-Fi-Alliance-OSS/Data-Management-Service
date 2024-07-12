@@ -442,8 +442,8 @@ public class DeleteTests : DatabaseTest
         {
             var result = _deleteResult as DeleteResult.DeleteFailureReference;
             result.Should().NotBeNull();
-            result?.ReferencingDocumentInfo.Should().NotBeNull();
-            result?.ReferencingDocumentInfo.Should().Be(_referencingResourceName);
+            result?.ReferencingDocumentResourceNames.Should().NotBeNull();
+            result?.ReferencingDocumentResourceNames.Should().Contain(_referencingResourceName);
         }
     }
 
@@ -590,8 +590,8 @@ public class DeleteTests : DatabaseTest
         {
             var result = _deleteResult as DeleteResult.DeleteFailureReference;
             result.Should().NotBeNull();
-            result?.ReferencingDocumentInfo.Should().NotBeNull();
-            result?.ReferencingDocumentInfo.Should().Be(_referencingClassName);
+            result?.ReferencingDocumentResourceNames.Should().NotBeNull();
+            result?.ReferencingDocumentResourceNames.Should().Contain(_referencingClassName);
         }
     }
 }

@@ -48,7 +48,7 @@ internal class DeleteByIdHandler(IDocumentStoreRepository _documentStoreReposito
                 => new FrontendResponse(
                     StatusCode: 409,
                     Body: JsonSerializer.Serialize(
-                        FailureResponse.ForDataConflict(failure.ReferencingDocumentInfo)
+                        FailureResponse.ForDataConflict(failure.ReferencingDocumentResourceNames)
                     ),
                     Headers: []
                 ),

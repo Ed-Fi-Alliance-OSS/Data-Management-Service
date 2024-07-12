@@ -59,7 +59,7 @@ Feature: Resources "Delete" Operation validations
               And the response body is
                   """
                     {
-                        "detail": "The requested action cannot be performed because this item is referenced by an existing 'GradingPeriod' item.",
+                        "detail": "The requested action cannot be performed because this item is referenced by existing GradingPeriod item(s).",
                         "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
                         "title": "Dependent Item Exists",
                         "status": 409,
@@ -87,7 +87,7 @@ Feature: Resources "Delete" Operation validations
               And the response body is
                   """
                     {
-                        "detail": "The requested action cannot be performed because this item is referenced by an existing 'GradingPeriod' item.",
+                        "detail": "The requested action cannot be performed because this item is referenced by existing GradingPeriod item(s).",
                         "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
                         "title": "Dependent Item Exists",
                         "status": 409,
@@ -115,7 +115,44 @@ Feature: Resources "Delete" Operation validations
               And the response body is
                   """
                     {
-                        "detail": "The requested action cannot be performed because this item is referenced by an existing 'StudentSchoolAssociation' item.",
+                        "detail": "The requested action cannot be performed because this item is referenced by existing StudentSchoolAssociation item(s).",
+                        "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
+                        "title": "Dependent Item Exists",
+                        "status": 409,
+                        "correlationId": null,
+                        "validationErrors":null,
+                        "errors":null
+                    }
+                  """
+
+        Scenario: 08 Verify response when deleting a student with more than one reference
+            Given the system has these "schools"
+                  | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
+                  | 4005     | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#First Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+
+            Given the system has these "contacts"
+                  | contactUniqueId | firstName          | lastSurname       |
+                  | "123"           | "contactFirstname" | "contactLastname" |
+
+            Given the system has these "students" references
+                  | studentUniqueId | birthDate  | firstName   | lastSurname |
+                  | "987"           | 2017-08-23 | "firstname" | "lastname"  |
+
+            Given the system has these "studentSchoolAssociations"
+                  | entryDate  | schoolReference    | studentReference           | entryGradeLevelDescriptor                        |
+                  | 2021-07-23 | {"schoolId": 4005} | {"studentUniqueId": "987"} | uri://ed-fi.org/GradeLevelDescriptor#First grade |
+
+            Given the system has these "studentContactAssociations"
+                  | contactReference           | studentReference           |
+                  | {"contactUniqueId": "123"} | {"studentUniqueId": "987"} |
+
+
+             When a DELETE request is made to referenced resource "/ed-fi/students/{id}"
+             Then it should respond with 409
+              And the response body is
+                  """
+                    {
+                        "detail": "The requested action cannot be performed because this item is referenced by existing StudentContactAssociation, StudentSchoolAssociation item(s).",
                         "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
                         "title": "Dependent Item Exists",
                         "status": 409,

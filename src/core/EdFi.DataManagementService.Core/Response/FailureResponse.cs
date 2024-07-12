@@ -69,14 +69,10 @@ internal static class FailureResponse
             errors
         );
 
-    public static FailureResponseWithErrors ForDataConflict(string dependentItemName)
+    public static FailureResponseWithErrors ForDataConflict(string[] dependentItemNames)
     {
-        dependentItemName = !string.IsNullOrEmpty(dependentItemName)
-            ? $"'{dependentItemName}'"
-            : string.Empty;
-
         return new(
-            detail: $"The requested action cannot be performed because this item is referenced by an existing {dependentItemName} item.",
+            detail: $"The requested action cannot be performed because this item is referenced by existing {string.Join(", ", dependentItemNames)} item(s).",
             type: $"{_dataConflictTypePrefix}:dependent-item-exists",
             title: "Dependent Item Exists",
             status: 409,
@@ -88,7 +84,7 @@ internal static class FailureResponse
 
     public static BaseFailureResponse ForInvalidReferences(ResourceName[] resourceNames)
     {
-        string resources = string.Join(",", resourceNames.Select(x => x.Value));
+        string resources = string.Join(", ", resourceNames.Select(x => x.Value));
         return new(
             detail: $"The referenced {resources} item(s) do not exist.",
             type: $"{_dataConflictTypePrefix}:unresolved-reference",

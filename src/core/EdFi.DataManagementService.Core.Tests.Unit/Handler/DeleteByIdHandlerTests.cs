@@ -86,7 +86,7 @@ public class DeleteByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public static readonly string ResponseBody = "ReferencingDocumentInfo";
+            public static readonly string[] ResponseBody = ["ReferencingDocumentInfo"];
 
             public override Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
             {
@@ -107,7 +107,7 @@ public class DeleteByIdHandlerTests
         public void It_has_the_correct_response()
         {
             context.FrontendResponse.StatusCode.Should().Be(409);
-            context.FrontendResponse.Body.Should().Contain(Repository.ResponseBody);
+            context.FrontendResponse.Body.Should().Contain(string.Join(", ", Repository.ResponseBody));
         }
     }
 

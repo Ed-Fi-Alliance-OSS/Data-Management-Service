@@ -166,3 +166,118 @@ Feature: ValidationErrors
                   """
                   {"detail":"Data validation failed. See 'validationErrors' for details.","type":"urn:ed-fi:api:bad-request:data","title":"Data Validation Failed","status":400,"correlationId":null,"validationErrors":{"$.schoolReference":["schoolReference is required."],"$.courseReference.courseCode":["courseCode is required."],"$.courseReference.educationOrganizationId":["educationOrganizationId is required."]},"errors":[]}
                   """
+
+        Scenario: 09 Post request body for academicWeeks with identity property value contains only white spaces
+             When a POST request is made to "ed-fi/academicWeeks" with
+                  """
+                    {
+                        "weekIdentifier": "             ",
+                        "schoolReference": {
+                        "schoolId": 255901
+                        },
+                        "beginDate": "2024-07-10",
+                        "endDate": "2024-07-30",
+                        "totalInstructionalDays": 20
+                    }
+                  """
+             Then it should respond with 400
+              And the response body is
+                 """
+                   {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null,
+                    "validationErrors": {
+                        "$.weekIdentifier": [
+                            "weekIdentifier cannot contain leading or trailing spaces."
+                        ]
+                    },
+                    "errors": []
+                   }
+                 """
+
+         Scenario: 10 Post request body for academicWeeks with identity property value contains white spaces
+             When a POST request is made to "ed-fi/academicWeeks" with
+                  """
+                    {
+                        "weekIdentifier": "     week id with spaces        ",
+                        "schoolReference": {
+                        "schoolId": 255901
+                        },
+                        "beginDate": "2024-07-10",
+                        "endDate": "2024-07-30",
+                        "totalInstructionalDays": 20
+                    }
+                  """
+             Then it should respond with 400
+              And the response body is
+                   """
+                   {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null,
+                    "validationErrors": {
+                        "$.weekIdentifier": [
+                            "weekIdentifier cannot contain leading or trailing spaces."
+                        ]
+                    },
+                    "errors": []
+                   }
+                 """
+
+         Scenario: 11 Post request body for students with required property value contains only white spaces
+             When a POST request is made to "ed-fi/students" with
+                  """
+                    {
+                        "studentUniqueId":"8989",
+                        "birthDate":  "2017-08-23",
+                        "firstName": "first name",
+                        "lastSurname": "                  "
+                    }
+                  """
+              Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null,
+                    "validationErrors": {
+                        "$.lastSurname": [
+                            "lastSurname cannot contain leading or trailing spaces."
+                        ]
+                    },
+                    "errors": []
+                  }
+                  """
+
+         Scenario: 12 Post request body for students with required property value contains white spaces
+             When a POST request is made to "ed-fi/students" with
+                  """
+                    {
+                        "studentUniqueId":"8989",
+                        "birthDate":  "2017-08-23",
+                        "firstName": "first name",
+                        "lastSurname": "      last name            "
+                    }
+                  """
+             Then it should respond with 201 or 200
+
+        Scenario: 13 Post request body for students with optional property value contains only white spaces
+             When a POST request is made to "ed-fi/students" with
+                  """
+                    {
+                        "studentUniqueId":"8989",
+                        "birthDate":  "2017-08-23",
+                        "firstName": "first name",
+                        "lastSurname": "      last name            ",
+                        "middleName": "                        "
+                    }
+                  """
+             Then it should respond with 201 or 200
