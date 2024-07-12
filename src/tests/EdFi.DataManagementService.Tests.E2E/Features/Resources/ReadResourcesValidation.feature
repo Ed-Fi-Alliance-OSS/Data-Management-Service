@@ -83,23 +83,15 @@ Feature: Resources "Read" Operation validations
              When a GET request is made to "ed-fi/schools/{id}"
              Then it should respond with 404
 
-        Scenario: 06 Verify response code 200 when trying to get a school with a correct ID
-            Given a POST request is made to "Schools" with
+        Scenario: 06 Verify response code 200 when trying to get a student with a correct ID
+            Given a POST request is made to "ed-fi/students" with
                 """
-                {
-                   "schoolId":101,
-                   "nameOfInstitution":"School Test",
-                   "gradeLevels":[    
-                      {
-                         "gradeLevelDescriptor":"Postsecondary"
-                      }
-                   ],
-                   "educationOrganizationCategories":[
-                      {
-                         "educationOrganizationCategoryDescriptor":"School"
-                      }
-                   ]
+               {
+                    "studentUniqueId":"604834",
+	                  "birthDate":"2000-01-01",
+	                   "firstName":"Thomas",
+	                   "lastSurname":"Johnson"
                 }
                 """
-             When a GET request is made to "ed-fi/schools/{id}"
+             When a GET request is made to "ed-fi/students/{id}"
              Then it should respond with 200
