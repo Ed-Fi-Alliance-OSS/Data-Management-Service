@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
+using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.ApiSchema;
@@ -263,5 +265,108 @@ internal class ApiService(
             result.Add(new DataModelInfo(projectName, projectVersion, description));
         }
         return result;
+    }
+
+    public JsonArray GetDependencies()
+    {
+        JsonNode schema = _apiSchemaProvider.ApiSchemaRootNode;
+
+        KeyValuePair<string, JsonNode?>[]? projectSchemas = schema["projectSchemas"]?.AsObject().ToArray();
+        if (projectSchemas == null || projectSchemas.Length == 0)
+        {
+            string errorMessage = "No projectSchemas found, ApiSchema.json is invalid";
+            _logger.LogCritical(errorMessage);
+            throw new InvalidOperationException(errorMessage);
+        }
+
+        List<JsonNode> projectSchemaNodes = projectSchemas
+            .Where(x => x.Value != null)
+            .Select(x => x.Value ?? new JsonObject())
+            .ToList();
+
+        var dependenciesJsonArray = new JsonArray();
+        foreach (JsonNode projectSchemaNode in projectSchemaNodes)
+        {
+            KeyValuePair<string, JsonNode?>[]? resourceSchemas =
+                projectSchemaNode?["resourceSchemas"]?.AsObject().ToArray();
+            Debug.Assert(resourceSchemas != null, nameof(resourceSchemas) + " != null");
+
+
+            Dictionary<string, List<string>> dependencies =
+                resourceSchemas.ToDictionary(rs => rs.Value!["resourceName"]!.GetValue<string>(), rs => new List<string>());
+
+            foreach (var resourceSchema in resourceSchemas!.Select(rs => rs.Value))
+            {
+                var resourceSchemaJsonObject = resourceSchema;
+                var documentPathsMappingObj = resourceSchemaJsonObject?["documentPathsMapping"]?.AsObject();
+                if (documentPathsMappingObj != null)
+                {
+                    var references = documentPathsMappingObj.Select(dmo => dmo.Value?.AsObject()).Where(o =>
+                    {
+                        Debug.Assert(o != null, nameof(o) + " != null");
+                        return (bool)(o["isReference"] ?? false);
+                    });
+
+                    foreach (var reference in references)
+                    {
+                        dependencies[resourceSchemaJsonObject!["resourceName"]!.GetValue<string>()].Add(reference!["resourceName"]!.GetValue<string>());
+                    }
+                }
+            }
+            List<KeyValuePair<string, int>> orderedResources = new List<KeyValuePair<string, int>>();
+            Dictionary<string, int> visitedResources = new Dictionary<string, int>();
+            foreach (var dependency in dependencies.OrderBy(d => d.Value.Count).ThenBy(d => d.Key).Select(d => d.Key))
+            {
+                RecursivelyDetermineDependencies(dependency, 0);
+            }
+
+            int RecursivelyDetermineDependencies(string resourceName, int depth)
+            {
+
+                // some hacks
+                if (resourceName == "EducationOrganization")
+                {
+                    resourceName = "School";
+                }
+
+                if (resourceName == "GeneralStudentProgramAssociation")
+                {
+                    resourceName = "StudentProgramAssociation";
+                }
+
+                visitedResources.Add(resourceName, Int32.MinValue);
+                var maxDepth = depth;
+                if (dependencies.ContainsKey(resourceName))
+                {
+                    foreach (var dependency in dependencies[resourceName])
+                    {
+                        if (visitedResources.ContainsKey(dependency))
+                        {
+                            if (visitedResources[dependency] > maxDepth)
+                            {
+                                maxDepth = visitedResources[dependency];
+                            }
+                        }
+                        else
+                        {
+                            var level = RecursivelyDetermineDependencies(dependency, depth);
+                            if (level > maxDepth)
+                                maxDepth = level;
+                        }
+                    }
+                    orderedResources.Add(new KeyValuePair<string, int>(resourceName, maxDepth + 1));
+                    visitedResources[resourceName] = maxDepth + 1;
+                }
+
+                return maxDepth + 1;
+            }
+
+            foreach (var orderedResource in orderedResources.OrderBy(o => o.Value).ThenBy(o => o.Key))
+            {
+                dependenciesJsonArray.Add(new { resource = orderedResource.Key, order = orderedResource.Value });
+            }
+        }
+
+        return dependenciesJsonArray;
     }
 }
