@@ -45,10 +45,7 @@ internal class DocumentValidator() : IDocumentValidator
             new() { OutputFormat = OutputFormat.List, RequireFormatValidation = true };
 
         var resourceSchemaValidator = GetSchema(context.ResourceSchema, context.Method);
-        var results = resourceSchemaValidator.Evaluate(
-            context.ParsedBody,
-            validatorEvaluationOptions
-        );
+        var results = resourceSchemaValidator.Evaluate(context.ParsedBody, validatorEvaluationOptions);
 
         var pruneResult = PruneOverpostedData(context.ParsedBody, results);
 
@@ -58,10 +55,7 @@ internal class DocumentValidator() : IDocumentValidator
             context.ParsedBody = pruned.prunedDocumentBody;
 
             // Now re-evaluate the pruned body
-            results = resourceSchemaValidator.Evaluate(
-                context.ParsedBody,
-                validatorEvaluationOptions
-            );
+            results = resourceSchemaValidator.Evaluate(context.ParsedBody, validatorEvaluationOptions);
         }
 
         return (new List<string>().ToArray(), ValidationErrorsFrom(results));
@@ -83,9 +77,7 @@ internal class DocumentValidator() : IDocumentValidator
             foreach (var additionalProperty in additionalProperties)
             {
                 JsonObject jsonObject = documentBody.AsObject();
-                var prunedJsonObject = jsonObject.RemoveProperty(
-                    [.. additionalProperty.InstanceLocation]
-                );
+                var prunedJsonObject = jsonObject.RemoveProperty([.. additionalProperty.InstanceLocation]);
                 var prunedDocumentBody = JsonNode.Parse(prunedJsonObject.ToJsonString());
                 Trace.Assert(prunedDocumentBody != null, "Unexpected null after parsing pruned object");
                 documentBody = prunedDocumentBody;
@@ -106,8 +98,21 @@ internal class DocumentValidator() : IDocumentValidator
                 }
                 if (detail.Errors != null && detail.Errors.Any())
                 {
-                    foreach (var error in detail.Errors.Select(x => x.Value))
+                    foreach (var errorDetail in detail.Errors)
                     {
+                        // Custom validation error for strings with white spaces
+                        var error = errorDetail.Value;
+                        if (
+                            errorDetail.Key.Equals("pattern", StringComparison.InvariantCultureIgnoreCase)
+                            && error.Contains(
+                                "value is not a match for the indicated regular expression",
+                                StringComparison.InvariantCultureIgnoreCase
+                            )
+                        )
+                        {
+                            error = "cannot contain leading or trailing spaces.";
+                        }
+
                         var splitErrors = SplitErrorDetail(error, propertyName);
 
                         foreach (var splitError in splitErrors)
@@ -144,7 +149,8 @@ internal class DocumentValidator() : IDocumentValidator
             {
                 var value = new List<string>();
                 value.Add($"{hit[1].Value} is required.");
-                var additional = propertyName == string.Empty ? "" : propertyName.Replace(":", "").TrimEnd() + ".";
+                var additional =
+                    propertyName == string.Empty ? "" : propertyName.Replace(":", "").TrimEnd() + ".";
                 validations.Add("$." + additional + hit[1].Value, value.ToArray());
             }
         }
@@ -171,10 +177,7 @@ internal abstract record PruneResult
 
 internal static class JsonObjectExtensions
 {
-    internal static JsonObject RemoveProperty(
-        this JsonObject jsonObject,
-        string[] segments
-    )
+    internal static JsonObject RemoveProperty(this JsonObject jsonObject, string[] segments)
     {
         if (segments.Length == 0)
             return jsonObject;
@@ -211,7 +214,10 @@ internal static class JsonObjectExtensions
         }
         else
         {
-            Trace.Assert(false, $"Node is not a JsonObject or JsonArray or invalid index for array: {currentSegment}");
+            Trace.Assert(
+                false,
+                $"Node is not a JsonObject or JsonArray or invalid index for array: {currentSegment}"
+            );
         }
 
         return jsonObject;
