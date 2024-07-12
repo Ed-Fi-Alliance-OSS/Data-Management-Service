@@ -68,3 +68,13 @@ Feature: Resources "Read" Operation validations
                   | ALG-1      | [{"identificationCode": "ALG-1", "courseIdentificationSystemDescriptor":"uri://ed-fi.org/CourseIdentificationSystemDescriptor#State course code"}]   | {"educationOrganizationId":100}    | Algebra I   | 1             |
              When a GET request is made to referenced resource "ed-fi/schools/{id}"
              Then it should respond with 404
+
+        Scenario: 06 Verify response code 200 when trying to get a school with an correct ID
+            Given the system has these "Schools" references
+                  | schoolId | nameOfInstitution   | educationOrganizationCategories                                                                                         | gradeLevels                                                                          |
+                  | 101      | School Test 2       | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"}]   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"}]      |
+            Given the system has these "courses"
+                  | courseCode | identificationCodes                                                                                                                                  | educationOrganizationReference     | courseTitle  | numberOfParts |
+                  | ALG-2      | [{"identificationCode": "ALG-2", "courseIdentificationSystemDescriptor":"uri://ed-fi.org/CourseIdentificationSystemDescriptor#State course code"}]   | {"educationOrganizationId":101}    | Algebra II   | 2             |
+             When a GET request is made to referenced resource "ed-fi/schools/{id}"
+             Then it should respond with 200
