@@ -162,7 +162,7 @@ public class SqlAction : ISqlAction
     {
         await using NpgsqlCommand command =
             new(
-                $@"SELECT EdfiDoc FROM public.Documents WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 AND resourcename = $3 {SqlFor(lockOption)};",
+                $@"SELECT EdfiDoc FROM public.Documents WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 AND ResourceName = $3 {SqlFor(lockOption)};",
                 connection,
                 transaction
             )

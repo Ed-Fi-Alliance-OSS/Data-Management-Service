@@ -58,3 +58,13 @@ Feature: Resources "Read" Operation validations
              When a GET request is made to "ed-fi/absenceEventCategoryDescriptors"
              Then it should respond with 200
               And total of records should be 1
+
+        Scenario: 05 Verify response code 404 when trying to get a school with an ID that corresponds to another resource
+            Given the system has these "Schools" 
+                  | schoolId | nameOfInstitution | educationOrganizationCategories                                                                                         | gradeLevels                                                                          |
+                  | 100      | School Test       | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"}]   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"}]      |
+            Given the system has these "courses" references
+                  | courseCode | identificationCodes                                                                                                                                  | educationOrganizationReference     | courseTitle | numberOfParts |
+                  | ALG-1      | [{"identificationCode": "ALG-1", "courseIdentificationSystemDescriptor":"uri://ed-fi.org/CourseIdentificationSystemDescriptor#State course code"}]   | {"educationOrganizationId":100}    | Algebra I   | 1             |
+             When a GET request is made to referenced resource "ed-fi/schools/{id}"
+             Then it should respond with 404
