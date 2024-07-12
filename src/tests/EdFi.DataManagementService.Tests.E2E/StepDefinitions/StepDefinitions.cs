@@ -97,6 +97,15 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 );
             }
 
+            foreach (var apiResponse in _apiResponses)
+            {
+                if (apiResponse.Status != 200 && apiResponse.Status != 201)
+                {
+                    JsonNode responseJson = JsonNode.Parse(apiResponse.TextAsync().Result)!;
+
+                    _logger.log.Information(responseJson.ToString());
+                }
+            }
             return _apiResponses;
         }
 
@@ -199,6 +208,22 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information($"PUT url: {url}");
             _logger.log.Information($"PUT body: {body}");
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(url, new() { Data = body })!;
+        }
+
+        [When("a PUT request is made to referenced resource {string} with")]
+        public async Task WhenAPUTRequestIsMadeToReferencedResourceWith(string url, string body)
+        {
+            url = $"data/{url.Replace("{id}", _referencedResourceId)}";
+            _logger.log.Information(url);
+            body = body.Replace("{id}", _referencedResourceId);
+            _logger.log.Information(body);
+            _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(url, new() { Data = body })!;
+            if (_apiResponse.Status != 204)
+            {
+                JsonNode responseJson = JsonNode.Parse(_apiResponse.TextAsync().Result)!;
+
+                _logger.log.Information(responseJson.ToString());
+            }
         }
 
         [When("a DELETE request is made to {string}")]
