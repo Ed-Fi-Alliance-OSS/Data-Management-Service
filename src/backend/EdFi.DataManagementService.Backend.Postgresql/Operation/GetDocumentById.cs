@@ -39,6 +39,7 @@ public class GetDocumentById(ISqlAction _sqlAction, ILogger<GetDocumentById> _lo
         {
             JsonNode? edfiDoc = await _sqlAction.FindDocumentEdfiDocByDocumentUuid(
                 getRequest.DocumentUuid,
+                getRequest.ResourceInfo.ResourceName.Value,
                 PartitionKeyFor(getRequest.DocumentUuid),
                 connection,
                 transaction,
