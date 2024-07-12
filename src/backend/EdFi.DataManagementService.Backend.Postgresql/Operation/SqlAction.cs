@@ -22,6 +22,7 @@ public interface ISqlAction
 {
     public Task<JsonNode?> FindDocumentEdfiDocByDocumentUuid(
         DocumentUuid documentUuid,
+        string resourceName,
         PartitionKey partitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -152,6 +153,7 @@ public class SqlAction : ISqlAction
     /// </summary>
     public async Task<JsonNode?> FindDocumentEdfiDocByDocumentUuid(
         DocumentUuid documentUuid,
+        string resourceName,
         PartitionKey partitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -160,7 +162,7 @@ public class SqlAction : ISqlAction
     {
         await using NpgsqlCommand command =
             new(
-                $@"SELECT EdfiDoc FROM public.Documents WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 {SqlFor(lockOption)};",
+                $@"SELECT EdfiDoc FROM public.Documents WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 AND ResourceName = $3 {SqlFor(lockOption)};",
                 connection,
                 transaction
             )
@@ -169,6 +171,7 @@ public class SqlAction : ISqlAction
                 {
                     new() { Value = partitionKey.Value },
                     new() { Value = documentUuid.Value },
+                    new() { Value = resourceName}
                 }
             };
 
