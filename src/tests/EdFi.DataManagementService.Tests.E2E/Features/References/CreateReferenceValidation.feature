@@ -64,7 +64,7 @@ Feature: Create Reference Validation
              Then the response body is
                   """
                   {
-                      "detail": "The referenced Program,Student item(s) do not exist.",
+                      "detail": "The referenced Program, Student item(s) do not exist.",
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Unresolved Reference",
                       "status": 409,
