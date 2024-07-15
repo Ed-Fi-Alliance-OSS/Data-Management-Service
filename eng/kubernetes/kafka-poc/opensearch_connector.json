@@ -9,7 +9,7 @@
     "connection.username": "admin",
     "connection.password": "abcdefgh1!",
 
-    "tasks.max":"1",
+    "max.in.flight.requests":"1",
 
     "key.converter": "org.apache.kafka.connect.storage.StringConverter",
 
@@ -26,7 +26,10 @@
     "transforms.generateIndexFromResource.type":"com.github.edfiexchangeoss.meadowlark.kafka.connect.transforms.GenerateIndexFromResource",
     "transforms.generateIndexFromResource.field.name":"projectname, resourceversion, resourcename",
 
-    "behavior.on.version.conflict": "ignore"
+    "behavior.on.version.conflict": "ignore",
+    "behavior.on.null.values": "delete",
+    "drop.invalid.message": "true",
+    "index.write.method": "upsert"
 
   }
 }
