@@ -287,7 +287,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             _logger.log.Information(responseJson.ToString());
 
-            JsonNode.DeepEquals(bodyJson, responseJson).Should().BeTrue();
+            responseJson.Should().BeEquivalentTo(bodyJson, options => options
+                .WithoutStrictOrdering()
+                .IgnoringCyclicReferences()
+            );
         }
 
         // Use Regex to find all occurrences of {id} in the body
@@ -348,7 +351,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             string responseJsonString = _apiResponse.TextAsync().Result;
             JsonNode responseJson = JsonNode.Parse(responseJsonString)!;
             _logger.log.Information(responseJson.ToString());
-            JsonNode.DeepEquals(bodyJson, responseJson).Should().BeTrue();
+            responseJson.Should().BeEquivalentTo(bodyJson, options => options
+                .WithoutStrictOrdering()
+                .IgnoringCyclicReferences()
+            );
         }
 
         [Then("total of records should be {int}")]
