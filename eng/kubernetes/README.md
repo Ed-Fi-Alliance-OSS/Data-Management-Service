@@ -52,24 +52,22 @@ First, build a locally-tagged image of the Data Management Service. Two ways:
 
 ### Configure the Deployment
 
-In `eng/kubernetes/<folder>` where `<folder>` could be development or production:
-
 > [!TIP]
-> development folder will use the local data-management-service docker image `image: local/edfi-data-management-service:latest`;
-> production folder will pull the published image from the docker hub `image: edfialliance/data-management-service:pre`
+> These instructions incorporate notes on running Debezium and Kafka from
+> [Deploying Debezium on Kubernetes](https://debezium.io/documentation/reference/stable/operations/kubernetes.html)
 
+* In `eng/kubernetes/<folder>` where `<folder>` could be development or production:
+  * The `development` folder use a locally built image:
+    `local/edfi-data-management-service:latest`
+  * The `production` folder pull the published image from the docker hub
+    `edfialliance/data-management-service:pre`
 * Create an app-secret.yaml file with a encrypted password, see
   [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/) for more
   information.
+* Create a dedicated namespace for Debezium: `kubectl create ns debezium`.
 * Run `kubectl apply -f .` to apply all files.
 * After done, inspect with `kubectl get pods`, and verify that all pods have
   status **RUNNING** (This can take a couple of minutes).
-
-> [!TIP]
-> The [deployment file](./data-management-service-deployment.yaml#L21) has a
-> policy of Never pull, which means that will use the locally built image instead of
-> trying to pull the image from Docker Hub which is the default behavior, remove
-> once the image is published to the registry.
 
 This will start the kubernetes infrastructure to run without exposing any
 connection to the _external_ network. When installing in a cloud provider the
