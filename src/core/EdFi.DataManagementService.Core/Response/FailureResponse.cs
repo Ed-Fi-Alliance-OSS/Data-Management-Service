@@ -94,19 +94,7 @@ internal static class FailureResponse
         );
     }
 
-    public static FailureResponseWithErrors ForImmutableIdentity(ResourceName[] resourceNames) =>
-        new(
-            detail:
-            $"The referenced {string.Join(",", resourceNames.Select(x => x.Value))} item(s) do not exist.",
-            type: $"{_dataConflictTypePrefix}:unresolved-reference",
-            title: "Unresolved Reference",
-            status: 409,
-            correlationId: null,
-            validationErrors: null,
-            errors: null
-        );
-
-    public static FailureResponseWithErrors ForKeyChangeNotSupported(string error) =>
+    public static FailureResponseWithErrors ForImmutableIdentity(string error) =>
         new(
             detail: error,
             type: _keyChangeNotSupported,
@@ -117,5 +105,3 @@ internal static class FailureResponse
             errors: null
         );
 }
-
-
