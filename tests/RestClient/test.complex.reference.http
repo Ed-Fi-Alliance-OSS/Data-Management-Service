@@ -1,0 +1,112 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * Licensed to the Ed-Fi Alliance under one or more agreements.
+ * The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+ * See the LICENSE and NOTICES files in the project root for more information.
+ */
+
+### Test a reference with a complex identity involving key unification (CourseOffering)
+
+#@port = 8080
+@port = 5198
+
+### POST School Year 2025
+POST http://localhost:{{port}}/data/ed-fi/schoolYearTypes
+
+{
+    "schoolYear": 2025,
+    "currentSchoolYear": false,
+    "schoolYearDescription": "Year 2025"
+}
+
+### POST School1
+POST http://localhost:{{port}}/data/ed-fi/schools
+
+{
+    "schoolId": 123,
+    "nameOfInstitution": "School1",
+    "educationOrganizationCategories": [
+        {
+            "educationOrganizationCategoryDescriptor": "string"
+        }
+    ],
+    "gradeLevels": [
+        {
+            "gradeLevelDescriptor": "string"
+        }
+    ]
+}
+
+### POST Course1
+POST http://localhost:{{port}}/data/ed-fi/courses
+
+{
+    "schoolId": 123,
+    "courseCode": "Course1",
+    "courseTitle": "Course1Title",
+    "numberOfParts": 1,
+    "educationOrganizationReference": {
+        "educationOrganizationId": 123
+    },
+    "identificationCodes": [
+        {
+            "courseIdentificationSystemDescriptor": "IdentificationCode1",
+            "assigningOrganizationIdentificationCode": "IdentificationCode1",
+            "courseCatalogURL": "URL12",
+            "identificationCode": "IdentificationCode1"
+        }
+    ]
+}
+
+### POST Session1, depending on School1 and SchoolYear 2025
+
+POST http://localhost:{{port}}/data/ed-fi/sessions
+
+{
+    "sessionName": "Session1",
+    "schoolYearTypeReference": {
+        "schoolYear": 2025
+    },
+    "beginDate": "2025-01-01",
+    "endDate": "2025-12-12",
+    "termDescriptor": "uri://ed-fi.org/TermDescriptor#Presentation",
+    "totalInstructionalDays": 365,
+    "schoolReference": {
+        "schoolId": 123
+    }
+}
+
+### POST CourseOffering1
+POST http://localhost:{{port}}/data/ed-fi/courseOfferings
+
+{
+    "localCourseCode": "CourseOffering1",
+    "schoolYearTypeReference": {
+        "schoolYear": 2025
+    },
+    "schoolReference": {
+        "schoolId": 123
+    },
+    "courseReference": {
+        "courseCode": "Course1",
+        "educationOrganizationId": 123
+    },
+    "sessionReference": {
+        "schoolId": 123,
+        "schoolYear": 2025,
+        "sessionName": "Session1"
+    }
+}
+
+### POST Section1
+POST http://localhost:{{port}}/data/ed-fi/sections
+
+{
+    "sectionIdentifier": "Section1",
+    "courseOfferingReference": {
+        "localCourseCode": "CourseOffering1",
+        "schoolId": 123,
+        "schoolYear": 2025,
+        "sessionName": "Session1"
+    }
+}
