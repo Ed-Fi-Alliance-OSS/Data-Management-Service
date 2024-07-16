@@ -25,7 +25,8 @@ internal class MatchingDocumentUuidsValidator() : IMatchingDocumentUuidsValidato
     {
         string? documentId = context.ParsedBody["id"]?.GetValue<string>();
 
-        return documentId != null &&
-               context.PathComponents.DocumentUuid == new DocumentUuid(new Guid(documentId));
+        return documentId != null
+            && Guid.TryParse(documentId, out var id)
+            && context.PathComponents.DocumentUuid.Value == id;
     }
 }

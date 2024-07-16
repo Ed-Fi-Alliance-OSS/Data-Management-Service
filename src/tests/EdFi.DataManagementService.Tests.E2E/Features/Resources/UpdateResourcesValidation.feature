@@ -81,6 +81,7 @@ Feature: Resources "Update" Operation validations
                       "errors": null
                   }
                   """
+
         Scenario: 04 Verify error handling updating the document identity
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -189,10 +190,10 @@ Feature: Resources "Update" Operation validations
                     ]
                   }
                   """
-        @ignore
+
         Scenario: 08 Verify error handling when resource ID is not included in body on PUT
             # The id value should be replaced with the resource created in the Background section
-             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
+             When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
                   {
                     "id": "",
@@ -204,18 +205,45 @@ Feature: Resources "Update" Operation validations
                   """
              Then it should respond with 400
               And the response body is
-                  """
+                 """
                   {
-                    "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
-                    "title": "Data Validation Failed",
+                    "detail": "The request could not be processed. See 'errors' for details.",
+                    "type": "urn:ed-fi:api:bad-request",
+                    "title": "Bad Request",
                     "status": 400,
                     "correlationId": null,
-                    "validationErrors": {
-                        "$.id": [
-                        "Error converting value \\"\\" to type 'System.Guid'. Path 'id', line 2, position 32."
-                        ]
-                    }
+                    "validationErrors": null,
+                    "errors": [
+                        "Request body id must match the id in the url."
+                    ]
+                  }
+                  """
+
+          Scenario: 09 Verify error handling when resource ID is invalid Guid in body on PUT
+             # The id value should be replaced with the resource created in the Background section
+             When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
+                  """
+                  {
+                    "id": "invalid-id",
+                    "codeValue": "Sick Leave",
+                    "description": "Sick Leave Edited",
+                    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                    "shortDescription": "Sick Leave"
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "The request could not be processed. See 'errors' for details.",
+                    "type": "urn:ed-fi:api:bad-request",
+                    "title": "Bad Request",
+                    "status": 400,
+                    "correlationId": null,
+                    "validationErrors": null,
+                    "errors": [
+                        "Request body id must match the id in the url."
+                    ]
                   }
                   """
 
