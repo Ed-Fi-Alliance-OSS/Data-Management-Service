@@ -1,0 +1,50 @@
+Feature: Discovery API that retrieves the information from the base endpoint of the API
+
+        @ignore
+        Scenario: 01 Retrieves information of the API
+             Given a get to the root of the API
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                      "openapi": "3.1.0"
+                      "info": {
+                          "version": "1.0.0",
+                          "applicationName": "Ed-Fi Alliance Data Management Service"
+                      }
+                      "dataModels": [
+                          {
+                              "name": "Ed-Fi",
+                              "version": "5.1.0",
+                              "informationalVersion": "The Ed-Fi Data Standard v5.1"
+                          }
+                      ],
+                      "urls": [
+                          {
+                              "dependencies": "https://api.ed-fi.org/DMS/metadata/dependencies"
+                          },
+                          {
+                              "openApiMetadata": "https://api.ed-fi.org/DMS/metadata/specifications"
+                          },
+                          {
+                              "oauth": "https://api.ed-fi.org/DMS/oauth/token"
+                          },
+                          {
+                              "dataManagementApi": "https://api.ed-fi.org/DMS/data",
+                              "description": "Base path for all resources"
+                          },
+                          {
+                              "xsdMetadata": "https://api.ed-fi.org/DMS/metadata/xsd",
+                              "description": "Link for downloading XSD files"
+                          },
+                          {
+                              "changeQueries": "https://api.ed-fi.org/DMS/changeQueries/v1",
+                              "description": "Base path for the Change Queries API"
+                          },
+                          {
+                              "identity": "https://api.ed-fi.org/DMS/identity/v2",
+                              "description": "Base path for the Identity API"
+                          }
+                      ]
+                  }
+                  """
