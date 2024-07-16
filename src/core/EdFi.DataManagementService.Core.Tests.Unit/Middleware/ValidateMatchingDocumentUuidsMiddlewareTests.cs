@@ -156,9 +156,129 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
             }
 
             [Test]
-            public void It_provides_no_response()
+            public void It_provides_status_code_400()
             {
                 _context?.FrontendResponse.StatusCode.Should().Be(400);
+            }
+
+            [Test]
+            public void It_returns_message_body_with_error()
+            {
+                _context
+                    ?.FrontendResponse.Body.Should()
+                    .Contain("Request body id must match the id in the url.");
+            }
+        }
+
+        [TestFixture]
+        public class Given_A_Invalid_Guid_In_Body : ValidateMatchingDocumentUuidsMiddlewareTests
+        {
+            private PipelineContext _context = No.PipelineContext();
+            private string id = Guid.NewGuid().ToString();
+
+            [SetUp]
+            public async Task Setup()
+            {
+                var jsonData = $$"""
+                    {
+                     "id": "invalid-guid",
+                     "weekIdentifier": "12345",
+                     "schoolReference": {
+                       "schoolId": 17012391,
+                       "add": {
+                            "test": "test"
+                       }
+                     },
+                     "beginDate": "2023-09-11",
+                     "endDate": "2023-09-11",
+                     "totalInstructionalDays": 300,
+                     "additionalField": "test"
+                    }
+                    """;
+                var frontEndRequest = new FrontendRequest(
+                    $"ed-fi/academicweeks/{id}",
+                    Body: jsonData,
+                    QueryParameters: [],
+                    new TraceId("traceId")
+                );
+                _context = Context(frontEndRequest, RequestMethod.PUT);
+                _context.ParsedBody = JsonNode.Parse(jsonData)!;
+                _context.PathComponents = _context.PathComponents with
+                {
+                    DocumentUuid = new DocumentUuid(new(id))
+                };
+
+                await Middleware().Execute(_context, Next());
+            }
+
+            [Test]
+            public void It_provides_error_response()
+            {
+                _context?.FrontendResponse.StatusCode.Should().Be(400);
+            }
+
+            [Test]
+            public void It_returns_message_body_with_error()
+            {
+                _context
+                    ?.FrontendResponse.Body.Should()
+                    .Contain("Request body id must match the id in the url.");
+            }
+        }
+
+        [TestFixture]
+        public class Given_An_Empty_Id_In_Body : ValidateMatchingDocumentUuidsMiddlewareTests
+        {
+            private PipelineContext _context = No.PipelineContext();
+            private string id = Guid.NewGuid().ToString();
+
+            [SetUp]
+            public async Task Setup()
+            {
+                var jsonData = $$"""
+                    {
+                     "id": "",
+                     "weekIdentifier": "12345",
+                     "schoolReference": {
+                       "schoolId": 17012391,
+                       "add": {
+                            "test": "test"
+                       }
+                     },
+                     "beginDate": "2023-09-11",
+                     "endDate": "2023-09-11",
+                     "totalInstructionalDays": 300,
+                     "additionalField": "test"
+                    }
+                    """;
+                var frontEndRequest = new FrontendRequest(
+                    $"ed-fi/academicweeks/{id}",
+                    Body: jsonData,
+                    QueryParameters: [],
+                    new TraceId("traceId")
+                );
+                _context = Context(frontEndRequest, RequestMethod.PUT);
+                _context.ParsedBody = JsonNode.Parse(jsonData)!;
+                _context.PathComponents = _context.PathComponents with
+                {
+                    DocumentUuid = new DocumentUuid(new(id))
+                };
+
+                await Middleware().Execute(_context, Next());
+            }
+
+            [Test]
+            public void It_provides_error_response()
+            {
+                _context?.FrontendResponse.StatusCode.Should().Be(400);
+            }
+
+            [Test]
+            public void It_returns_message_body_with_error()
+            {
+                _context
+                    ?.FrontendResponse.Body.Should()
+                    .Contain("Request body id must match the id in the url.");
             }
         }
     }
