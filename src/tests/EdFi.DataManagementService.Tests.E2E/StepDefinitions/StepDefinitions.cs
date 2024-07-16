@@ -116,10 +116,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             _logger.log.Information($"Responses for Given(the system has these {entityType})");
 
-            // Verify all the responses
             foreach (var response in _apiResponses)
             {
-                _logger.log.Information(response.TextAsync().Result);
+                string body = response.TextAsync().Result;
+                _logger.log.Information(body);
             }
         }
 
@@ -140,7 +140,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     new() { DataObject = descriptorBody }
                 )!;
 
-                _logger.log.Information(apiResponse.TextAsync().Result);
+                string body = apiResponse.TextAsync().Result;
+                _logger.log.Information(body);
 
                 apiResponse.Status.Should().BeOneOf([201, 200]);
             }
@@ -155,7 +156,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             foreach (var response in _apiResponses)
             {
-                _logger.log.Information(response.TextAsync().Result);
+                string body = response.TextAsync().Result;
+                _logger.log.Information(body);
                 response.Status.Should().BeOneOf([201, 200]);
 
                 if (
@@ -267,27 +269,32 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Then("it should respond with {int}")]
         public void ThenItShouldRespondWith(int statusCode)
         {
+            string body = _apiResponse.TextAsync().Result;
+            _logger.log.Information(body);
             _apiResponse.Status.Should().Be(statusCode);
         }
 
         [Then("it should respond with {int} or {int}")]
         public void ThenItShouldRespondWithEither(int statusCode1, int statusCode2)
         {
+            string body = _apiResponse.TextAsync().Result;
+            _logger.log.Information(body);
             _apiResponse.Status.Should().BeOneOf([statusCode1, statusCode2]);
         }
 
         [Then("the response body is")]
-        public void ThenTheResponseBodyIs(string body)
+        public void ThenTheResponseBodyIs(string expectedBody)
         {
             // Parse the API response to JsonNode
-            JsonNode responseJson = JsonNode.Parse(_apiResponse.TextAsync().Result)!;
+            string responseBody = _apiResponse.TextAsync().Result;
+            JsonNode responseJson = JsonNode.Parse(responseBody)!;
 
-            body = ReplacePlaceholders(body, responseJson);
-            JsonNode bodyJson = JsonNode.Parse(body)!;
+            expectedBody = ReplacePlaceholders(expectedBody, responseJson);
+            JsonNode expectedBodyJson = JsonNode.Parse(expectedBody)!;
 
             _logger.log.Information(responseJson.ToString());
 
-            responseJson.Should().BeEquivalentTo(bodyJson, options => options
+            responseJson.Should().BeEquivalentTo(expectedBodyJson, options => options
                 .WithoutStrictOrdering()
                 .IgnoringCyclicReferences()
                 .Excluding(x => x.Path.EndsWith("correlationId"))
