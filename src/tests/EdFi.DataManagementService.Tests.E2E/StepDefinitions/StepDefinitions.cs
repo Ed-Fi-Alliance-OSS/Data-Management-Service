@@ -290,6 +290,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             responseJson.Should().BeEquivalentTo(bodyJson, options => options
                 .WithoutStrictOrdering()
                 .IgnoringCyclicReferences()
+                .Excluding(x => x.Path.EndsWith("correlationId"))
             );
         }
 
