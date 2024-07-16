@@ -98,15 +98,13 @@ Feature: Resources "Update" Operation validations
               And the response body is
                   """
                   {
-                    "detail": "The request could not be processed. See 'errors' for details.",
-                    "type": "urn:ed-fi:api:bad-request",
-                    "title": "Bad Request",
+                    "detail": "Identifying values for the AbsenceEventCategoryDescriptor resource cannot be changed. Delete and recreate the resource item instead.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed:key-change-not-supported",
+                    "title": "Key Change Not Supported",
                     "status": 400,
                     "correlationId": null,
                     "validationErrors": null,
-                    "errors": [
-                        "Identifying values for the AbsenceEventCategoryDescriptor resource cannot be changed. Delete and recreate the resource item instead."
-                    ]
+                    "errors": null
                     }
                   """
 

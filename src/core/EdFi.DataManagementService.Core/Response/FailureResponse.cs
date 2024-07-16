@@ -15,6 +15,7 @@ internal static class FailureResponse
     private static readonly string _typePrefix = "urn:ed-fi:api";
     private static readonly string _badRequestTypePrefix = $"{_typePrefix}:bad-request";
     private static readonly string _dataConflictTypePrefix = $"{_typePrefix}:data-conflict";
+    private static readonly string _keyChangeNotSupported = $"{_badRequestTypePrefix}:data-validation-failed:key-change-not-supported";
 
     public static FailureResponseWithErrors ForDataValidation(
         string detail,
@@ -92,4 +93,15 @@ internal static class FailureResponse
             correlationId: null
         );
     }
+
+    public static FailureResponseWithErrors ForImmutableIdentity(string error) =>
+        new(
+            detail: error,
+            type: _keyChangeNotSupported,
+            title: "Key Change Not Supported",
+            status: 400,
+            correlationId: null,
+            validationErrors: null,
+            errors: null
+        );
 }

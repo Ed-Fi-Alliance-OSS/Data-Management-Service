@@ -94,7 +94,7 @@ public class UpdateByIdHandlerTests
 
             public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
             {
-                return Task.FromResult<UpdateResult>(new UpdateFailureReference(ResponseBody));
+                return Task.FromResult<UpdateResult>(new UpdateFailureReference([new(ResponseBody)]));
             }
         }
 
@@ -111,7 +111,7 @@ public class UpdateByIdHandlerTests
         public void It_has_the_correct_response()
         {
             context.FrontendResponse.StatusCode.Should().Be(409);
-            context.FrontendResponse.Body.Should().Be(Repository.ResponseBody);
+            context.FrontendResponse.Body.Should().Contain(Repository.ResponseBody);
         }
     }
 

@@ -64,7 +64,7 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
                     Headers: []
                 ),
             UpdateFailureReference failure
-                => new FrontendResponse(StatusCode: 409, Body: failure.ReferencingDocumentInfo, Headers: []),
+                => new FrontendResponse(StatusCode: 409, Body: JsonSerializer.Serialize(FailureResponse.ForInvalidReferences(failure.ReferencingDocumentInfo)), Headers: []),
             UpdateFailureIdentityConflict failure
                 => new FrontendResponse(StatusCode: 400, Body: failure.ReferencingDocumentInfo, Headers: []),
             UpdateFailureWriteConflict => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),
@@ -72,15 +72,12 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
                 => new FrontendResponse(
                     StatusCode: 400,
                     Body: JsonSerializer.Serialize(
-                        FailureResponse.ForBadRequest(
-                            "The request could not be processed. See 'errors' for details.",
-                            null,
-                            [failure.FailureMessage]
-                        )
+                        FailureResponse.ForImmutableIdentity(failure.FailureMessage)
                     ),
                     Headers: []
                 ),
-            UpdateFailureCascadeRequired => new FrontendResponse(StatusCode: 400, Body: null, Headers: []),
+            UpdateFailureCascadeRequired
+                => new FrontendResponse(StatusCode: 400, Body: null, Headers: []),
             UnknownFailure failure
                 => new FrontendResponse(StatusCode: 500, Body: failure.FailureMessage, Headers: []),
             _ => new FrontendResponse(StatusCode: 500, Body: "Unknown UpdateResult", Headers: [])

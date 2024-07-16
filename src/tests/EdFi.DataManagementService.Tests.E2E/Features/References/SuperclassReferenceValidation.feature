@@ -68,11 +68,11 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
         
         Scenario: 04 Ensure clients can update a school that references to an existing local education agency
             Given the system has these "Schools" references
-                  | schoolId | nameOfInstitution | localEducationAgencyReference   | educationOrganizationCategories                                                                                         | gradeLevels                                                                          |
-                  | 200      | School Test  99   | {"localEducationAgencyId":101}  | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"}]   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"}]      |
+                  | schoolId | nameOfInstitution | educationOrganizationCategories                                                                                         | gradeLevels                                                                          |
+                  | 200      | School Test  99   | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"}]   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"}]      |
             And the system has these "localEducationAgencies"
-                  | localEducationAgencyId | nameOfInstitution           | localEducationAgencyCategoryDescriptor                                                  | categories                                                                                                                             |
-                  | 333                    | Other Education Agency Test | "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Other local education agency    | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency"}]  |
+                  | localEducationAgencyId | nameOfInstitution           | localEducationAgencyCategoryDescriptor                                                   | categories                                                                                                                             |
+                  | 333                    | Other Education Agency Test | "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Other local education agency"    | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency"}]  |
              When a PUT request is made to referenced resource "ed-fi/schools/{id}" with
                   """
                   {
@@ -96,7 +96,7 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
                   """
              Then it should respond with 204
 
-        @ignore
+        
         Scenario: 05 Ensure clients cannot update a school that references to an existing Local Agency so it references now a Non Existing Education Organization
             Given the system has these "schools" references
                   | schoolId | nameOfInstitution | localEducationAgencyReference   | educationOrganizationCategories                                                                                         | gradeLevels                                                                          |
@@ -126,7 +126,7 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
               And the response body is
                   """
                   {
-                      "detail": "The referenced EducationOrganization item(s) do not exist.",
+                      "detail": "The referenced LocalEducationAgency item(s) do not exist.",
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Unresolved Reference",
                       "status": 409,
@@ -149,7 +149,7 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
               And the response body is
                   """
                   {
-                      "detail": "The requested action cannot be performed because this item is referenced by existing Program item(s).",
+                      "detail": "The requested action cannot be performed because this item is referenced by existing Program, School item(s).",
                       "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
                       "title": "Dependent Item Exists",
                       "status": 409,

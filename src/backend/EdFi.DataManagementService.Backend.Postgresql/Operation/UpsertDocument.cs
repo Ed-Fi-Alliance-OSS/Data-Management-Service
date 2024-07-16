@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Diagnostics;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -11,6 +10,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
+using static EdFi.DataManagementService.Backend.Postgresql.ReferenceHelper;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
 
@@ -26,46 +26,6 @@ public interface IUpsertDocument
 public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logger) : IUpsertDocument
 {
     private static readonly string _beforeInsertReferences = "BeforeInsertReferences";
-
-    /// <summary>
-    /// Returns the ReferentialId Guids and corresponding partition keys for all of the document
-    /// references in the UpsertRequest.
-    /// </summary>
-    public static DocumentReferenceIds DocumentReferenceIdsFrom(IUpsertRequest upsertRequest)
-    {
-        DocumentReference[] documentReferences = upsertRequest.DocumentInfo.DocumentReferences;
-        Guid[] referentialIds = documentReferences.Select(x => x.ReferentialId.Value).ToArray();
-        int[] referentialPartitionKeys = documentReferences
-            .Select(x => PartitionKeyFor(x.ReferentialId).Value)
-            .ToArray();
-        return new(referentialIds, referentialPartitionKeys);
-    }
-
-    /// <summary>
-    /// Returns the unique ResourceNames of all DocumentReferences that have the given ReferentialId Guids
-    /// </summary>
-    private ResourceName[] ResourceNamesFrom(DocumentReference[] documentReferences, Guid[] referentialIds)
-    {
-        Dictionary<Guid, string> guidToResourceNameMap =
-            new(
-                documentReferences.Select(x => new KeyValuePair<Guid, string>(
-                    x.ReferentialId.Value,
-                    x.ResourceInfo.ResourceName.Value
-                ))
-            );
-
-        HashSet<string> uniqueResourceNames = [];
-
-        foreach (Guid referentialId in referentialIds)
-        {
-            if (guidToResourceNameMap.TryGetValue(referentialId, out string? value))
-            {
-                uniqueResourceNames.Add(value);
-            }
-        }
-
-        return uniqueResourceNames.Select(x => new ResourceName(x)).ToArray();
-    }
 
     public async Task<UpsertResult> AsInsert(
         IUpsertRequest upsertRequest,
@@ -233,7 +193,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
     {
         _logger.LogDebug("Entering UpsertDocument.Upsert - {TraceId}", upsertRequest.TraceId);
 
-        DocumentReferenceIds documentReferenceIds = DocumentReferenceIdsFrom(upsertRequest);
+        DocumentReferenceIds documentReferenceIds = DocumentReferenceIdsFrom(upsertRequest.DocumentInfo.DocumentReferences);
 
         try
         {
