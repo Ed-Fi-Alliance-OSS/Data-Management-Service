@@ -52,10 +52,6 @@ First, build a locally-tagged image of the Data Management Service. Two ways:
 
 ### Configure the Deployment
 
-> [!TIP]
-> These instructions incorporate notes on running Debezium and Kafka from
-> [Deploying Debezium on Kubernetes](https://debezium.io/documentation/reference/stable/operations/kubernetes.html)
-
 * In `eng/kubernetes/<folder>` where `<folder>` could be development or production:
   * The `development` folder use a locally built image:
     `local/edfi-data-management-service:latest`
@@ -64,7 +60,6 @@ First, build a locally-tagged image of the Data Management Service. Two ways:
 * Create an app-secret.yaml file with a encrypted password, see
   [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/) for more
   information.
-* Create a dedicated namespace for Debezium: `kubectl create ns debezium`.
 * Run `kubectl apply -f .` to apply all files.
 * After done, inspect with `kubectl get pods`, and verify that all pods have
   status **RUNNING** (This can take a couple of minutes).
