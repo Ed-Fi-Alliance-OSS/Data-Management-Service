@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Diagnostics;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.ApiSchema;
@@ -290,20 +289,17 @@ internal class ApiService(
         var dependenciesJsonArray = new JsonArray();
         foreach (JsonNode projectSchemaNode in projectSchemaNodes)
         {
-            KeyValuePair<string, JsonNode?>[] resourceSchemas =
-                projectSchemaNode["resourceSchemas"]!.AsObject().ToArray();
+
+            var resourceSchemasObj = projectSchemaNode["resourceSchemas"]!.AsObject().Select(x => new ResourceSchema(x.Value!));
 
             Dictionary<string, List<string>> dependencies =
-                resourceSchemas!.ToDictionary(rs => rs.Value!["resourceName"]!.GetValue<string>(), rs => new List<string>());
+                resourceSchemasObj!.ToDictionary(rs => rs.ResourceName.Value, rs => new List<string>());
 
-            foreach (var resourceSchema in resourceSchemas!.Select(rs => rs.Value))
+            foreach (var resourceSchema in resourceSchemasObj)
             {
-                var documentPathsMappingObj = resourceSchema!["documentPathsMapping"]!.AsObject();
-                var references = documentPathsMappingObj!.Select(dmo => dmo.Value!.AsObject()).Where(o => (bool)(o!["isReference"] ?? false));
-
-                foreach (var reference in references)
+                foreach (var documentPath in resourceSchema.DocumentPaths.Where(d => d.IsReference))
                 {
-                    dependencies[resourceSchema["resourceName"]!.GetValue<string>()].Add(reference!["resourceName"]!.GetValue<string>());
+                    dependencies[resourceSchema.ResourceName.Value].Add(documentPath.ResourceName.Value);
                 }
             }
 
