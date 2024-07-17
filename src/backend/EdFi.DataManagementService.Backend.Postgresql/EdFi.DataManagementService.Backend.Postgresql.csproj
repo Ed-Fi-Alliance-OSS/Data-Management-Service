@@ -9,6 +9,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Deploy\Scripts\0000_Create_DMS_Schema.sql">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </EmbeddedResource>
     <EmbeddedResource Include="Deploy\Scripts\0001_Create_Documents_Table.sql">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </EmbeddedResource>

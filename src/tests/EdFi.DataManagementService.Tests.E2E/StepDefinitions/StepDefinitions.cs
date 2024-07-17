@@ -222,9 +222,17 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(url, new() { Data = body })!;
             if (_apiResponse.Status != 204)
             {
-                JsonNode responseJson = JsonNode.Parse(_apiResponse.TextAsync().Result)!;
+                var result = _apiResponse.TextAsync().Result;
+                _logger.log.Information(result);
 
-                _logger.log.Information(responseJson.ToString());
+                try
+                {
+                    JsonNode responseJson = JsonNode.Parse(result)!;
+                }
+                catch (Exception e)
+                {
+                    throw new Exception($"Unable to parse the JSON result from the API server: {e.Message}", e);
+                }
             }
         }
 

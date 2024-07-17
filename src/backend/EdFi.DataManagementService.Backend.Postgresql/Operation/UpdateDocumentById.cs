@@ -170,7 +170,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
         }
         catch (PostgresException pe)
             when (pe.SqlState == PostgresErrorCodes.ForeignKeyViolation
-                  && pe.ConstraintName == "fk_references_referencedalias"
+                  && pe.ConstraintName == SqlAction.FK_Reference_ReferenceAlias
                  )
         {
             _logger.LogDebug(pe, "Foreign key violation on Update - {TraceId}", updateRequest.TraceId);

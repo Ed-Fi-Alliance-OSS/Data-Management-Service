@@ -41,8 +41,8 @@ internal class GetByIdHandler(IDocumentStoreRepository _documentStoreRepository,
         {
             GetSuccess success => new FrontendResponse(StatusCode: 200, Body: success.EdfiDoc.ToString(), Headers: []),
             GetFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
-            UnknownFailure failure => new FrontendResponse(StatusCode: 500, Body: failure.FailureMessage, Headers: []),
-            _ => new(StatusCode: 500, Body: "Unknown GetResult", Headers: [])
+            UnknownFailure failure => new FrontendResponse(StatusCode: 500, Body: failure.FailureMessage.ToJsonError(), Headers: []),
+            _ => new(StatusCode: 500, Body: "Unknown GetResult".ToJsonError(), Headers: [])
         };
     }
 }

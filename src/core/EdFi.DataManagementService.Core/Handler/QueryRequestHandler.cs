@@ -51,8 +51,8 @@ internal class QueryRequestHandler(IQueryHandler _queryHandler, ILogger _logger)
                 ),
             QueryFailureInvalidQuery => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
             UnknownFailure failure
-                => new FrontendResponse(StatusCode: 500, Body: failure.FailureMessage, Headers: []),
-            _ => new(StatusCode: 500, Body: "Unknown QueryResult", Headers: [])
+                => new FrontendResponse(StatusCode: 500, Body: failure.FailureMessage.ToJsonError(), Headers: []),
+            _ => new(StatusCode: 500, Body: "Unknown QueryResult".ToJsonError(), Headers: [])
         };
     }
 }

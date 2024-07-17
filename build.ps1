@@ -326,7 +326,7 @@ function DockerBuild {
 }
 
 function DockerRun {
-    &docker run --rm -p 8080:8080 -d $dockerTagDMS
+    &docker run --rm -p 8080:8080 --env-file ./src/.env -d $dockerTagDMS
 }
 
 function Run {

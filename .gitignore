@@ -423,3 +423,4 @@ coveragereport
 
 # Smoke test related
 sdk/
+src/.env
