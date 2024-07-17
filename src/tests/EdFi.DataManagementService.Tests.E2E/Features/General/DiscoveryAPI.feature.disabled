@@ -1,17 +1,14 @@
-Feature: Discovery API that retrieves the information from the base endpoint of the API
+Feature: The Discovery API provides information about the application version, supported data model(s), and URLs for additional metadata.
 
         @ignore
-        Scenario: 01 Retrieves information of the API
-             Given a get to the root of the API
+        Scenario: 01 GET / returns the root Discovery API document
+            Given a GET to the root of the API
              Then it should respond with 200
               And the response body is
                   """
                   {
-                      "openapi": "3.1.0"
-                      "info": {
-                          "version": "1.0.0",
-                          "applicationName": "Ed-Fi Alliance Data Management Service"
-                      }
+                      "version": "1.0.0",
+                      "applicationName": "Ed-Fi Alliance Data Management Service"
                       "dataModels": [
                           {
                               "name": "Ed-Fi",
@@ -20,31 +17,50 @@ Feature: Discovery API that retrieves the information from the base endpoint of 
                           }
                       ],
                       "urls": [
-                          {
-                              "dependencies": "https://api.ed-fi.org/DMS/metadata/dependencies"
-                          },
-                          {
-                              "openApiMetadata": "https://api.ed-fi.org/DMS/metadata/specifications"
-                          },
-                          {
-                              "oauth": "https://api.ed-fi.org/DMS/oauth/token"
-                          },
-                          {
-                              "dataManagementApi": "https://api.ed-fi.org/DMS/data",
-                              "description": "Base path for all resources"
-                          },
-                          {
-                              "xsdMetadata": "https://api.ed-fi.org/DMS/metadata/xsd",
-                              "description": "Link for downloading XSD files"
-                          },
-                          {
-                              "changeQueries": "https://api.ed-fi.org/DMS/changeQueries/v1",
-                              "description": "Base path for the Change Queries API"
-                          },
-                          {
-                              "identity": "https://api.ed-fi.org/DMS/identity/v2",
-                              "description": "Base path for the Identity API"
-                          }
+                          "dependencies": "{BASE_URL}/metadata/dependencies",
+                          "openApiMetadata": "{BASE_URL}/DMS/metadata/specifications",
+                          "oauth": "{BASE_URL}/DMS/oauth/token",
+                          "dataManagementApi": "{BASE_URL}/DMS/data",
+                          "xsdMetadata": "{BASE_URL}/DMS/metadata/xsd",
+                          "changeQueries": "{BASE_URL}/DMS/changeQueries/v1",
+                          "identity": "{BASE_URL}/DMS/identity/v2"
                       ]
                   }
                   """
+
+        @ignore
+        Scenario: 02 GET /metadata returns the metadata URL list
+            Given a GET to "/metadata"
+             Then it should respond with 200
+              And there is a JSON file with the list of metadata URL
+
+        @ignore
+        Scenario: 03 GET /metadata/specifications returns the list of supported API specifications
+            Given a GET to "/metadata/specifications"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [
+                      {
+                          "name": "Resources",
+                          "endpointUri": "{BASE_URL}/DMS/metadata/specifications/resources-spec.json",
+                          "prefix": "string"
+                      },
+                      {
+                          "name": "Descriptors",
+                          "endpointUri": "{BASE_URL}/metadata/specifications/descriptors-spec.json",
+                          "prefix": ""
+                      ,
+                      {
+                          "name": "Discovery",
+                          "endpointUri": "{BASE_URL}/metadata/specifications/discovery-spec.json",
+                          "prefix": "Other"
+                      }
+                  ]
+                  """
+
+        @ignore
+        Scenario: 04 /metadata/dependencies returns the dependency order for loading documents
+            Given a GET to "/metadata/dependencies"
+             Then it should respond with 200
+              And there is a JSON file in the response body with a list of dependencies
