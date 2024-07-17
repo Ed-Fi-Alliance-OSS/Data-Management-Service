@@ -1,7 +1,7 @@
 Feature: Update Reference Validation
     PUT requests validation for invalid references
 
-        Background:            
+        Background:
             Given the system has these "schools"
                   | schoolId     | nameOfInstitution | gradeLevels                                                                        | educationOrganizationCategories                                                                                        |
                   | 255901       | School Test       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"} ] | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School" }] |
@@ -15,11 +15,11 @@ Feature: Update Reference Validation
                   | schoolYear | currentSchoolYear | schoolYearDescription |
                   | 2022       | true              | 2021-2022             |
 
-        
+
         Scenario: 01 Ensure clients cannot update a resource with a Descriptor that does not exist
             Given the system has these "localEducationAgencies" references
-                  | localEducationAgencyId | nameOfInstitution | localEducationAgencyCategoryDescriptor                                          | categories                                                                                                                              |
-                  | 10203040               | Institution Test  | "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Federal operated agency | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency" }]  |
+                  | localEducationAgencyId | nameOfInstitution | localEducationAgencyCategoryDescriptor                                           | categories                                                                                                                              |
+                  | 10203040               | Institution Test  | "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Federal operated agency" | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency" }]  |
              When a PUT request is made to referenced resource "ed-fi/localEducationAgencies/{id}" with
                   """
                   {
@@ -47,7 +47,7 @@ Feature: Update Reference Validation
                       "errors": null
                   }
                   """
-                          
+
         Scenario: 02 Ensure clients cannot update a resource missing a direct reference
             Given the system has these "studentEducationOrganizationAssociations" references
                   | educationOrganizationReference           | studentReference                  |
@@ -78,7 +78,7 @@ Feature: Update Reference Validation
                       "errors": []
                   }
                   """
-                          
+
         Scenario: 03 Ensure clients cannot update a resource using a wrong reference
             Given the system has these "Staffs" references
                   | staffUniqueId   | firstName | lastSurname |
@@ -110,7 +110,7 @@ Feature: Update Reference Validation
                   }
                   """
 
-        
+
         Scenario: 04 Ensure clients cannot update a resource that uses an invalid school year reference
             Given the system has these "graduationPlans" references
                   | graduationPlanTypeDescriptor   | educationOrganizationReference      | graduationSchoolYearTypeReference | totalRequiredCredits |
