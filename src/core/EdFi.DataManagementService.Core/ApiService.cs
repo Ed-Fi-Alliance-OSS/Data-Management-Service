@@ -326,7 +326,7 @@ internal class ApiService(
             foreach (var dependency in dependencies.OrderBy(d => d.Value.Count).ThenBy(d => d.Key).Select(d => d.Key))
             {
                 Debug.Assert(projectSchemaNode != null, nameof(projectSchemaNode) + " != null");
-                RecursivelyDetermineDependencies(projectSchemaNode.GetPropertyName(), dependency, 0);
+                RecursivelyDetermineDependencies(dependency, 0);
             }
 
             foreach (var orderedResource in orderedResources.OrderBy(o => o.Value).ThenBy(o => o.Key))
@@ -335,7 +335,7 @@ internal class ApiService(
                 dependenciesJsonArray.Add(new { resource = $"/{projectSchemaNode.GetPropertyName()}/{orderedResource.Key.First().ToString().ToLowerInvariant()}{orderedResource.Key.Substring(1)}", order = orderedResource.Value, operations = new[] { "Create", "Update" } });
             }
 
-            int RecursivelyDetermineDependencies(string projectSchemaName, string resourceName, int depth)
+            int RecursivelyDetermineDependencies(string resourceName, int depth)
             {
 
                 // These resources are similar to abstract base classes, so they are not represented in the resourceSchemas
@@ -369,7 +369,7 @@ internal class ApiService(
                         }
                         else
                         {
-                            var level = RecursivelyDetermineDependencies(projectSchemaName, dependency, depth);
+                            var level = RecursivelyDetermineDependencies(dependency, depth);
                             if (level > maxDepth)
                                 maxDepth = level;
                         }

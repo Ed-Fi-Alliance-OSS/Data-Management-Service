@@ -204,11 +204,6 @@ public class MetadataModuleTests
         // Arrange
         var contentProvider = A.Fake<IContentProvider>();
 
-        var json = """[{"name": "dependency1"},{"name": "dependency2"}]""";
-        JsonNode _dependencyJson = JsonNode.Parse(json)!;
-
-        A.CallTo(() => contentProvider.LoadJsonContent(A<string>.Ignored)).Returns(_dependencyJson);
-
         var httpContext = A.Fake<HttpContext>();
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -234,6 +229,5 @@ public class MetadataModuleTests
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         jsonContent.Should().NotBeNull();
-        name.Should().Be("dependency1");
     }
 }
