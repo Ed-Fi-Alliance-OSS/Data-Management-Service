@@ -290,16 +290,16 @@ internal class ApiService(
         var dependenciesJsonArray = new JsonArray();
         foreach (JsonNode projectSchemaNode in projectSchemaNodes)
         {
-            KeyValuePair<string, JsonNode?>[]? resourceSchemas =
-                projectSchemaNode?["resourceSchemas"]?.AsObject().ToArray();
+            KeyValuePair<string, JsonNode?>[] resourceSchemas =
+                projectSchemaNode["resourceSchemas"]!.AsObject().ToArray();
 
             Dictionary<string, List<string>> dependencies =
                 resourceSchemas!.ToDictionary(rs => rs.Value!["resourceName"]!.GetValue<string>(), rs => new List<string>());
 
             foreach (var resourceSchema in resourceSchemas!.Select(rs => rs.Value))
             {
-                var documentPathsMappingObj = resourceSchema!["documentPathsMapping"]?.AsObject();
-                var references = documentPathsMappingObj!.Select(dmo => dmo.Value?.AsObject());
+                var documentPathsMappingObj = resourceSchema!["documentPathsMapping"]!.AsObject();
+                var references = documentPathsMappingObj!.Select(dmo => dmo.Value!.AsObject()).Where(o => (bool)(o!["isReference"] ?? false));
 
                 foreach (var reference in references)
                 {
