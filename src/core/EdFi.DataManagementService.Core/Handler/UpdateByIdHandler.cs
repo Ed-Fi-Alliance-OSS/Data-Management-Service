@@ -79,8 +79,13 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
             UpdateFailureCascadeRequired
                 => new FrontendResponse(StatusCode: 400, Body: null, Headers: []),
             UnknownFailure failure
-                => new FrontendResponse(StatusCode: 500, Body: failure.FailureMessage, Headers: []),
-            _ => new FrontendResponse(StatusCode: 500, Body: "Unknown UpdateResult", Headers: [])
+                => new FrontendResponse(StatusCode: 500, Body: createErrorBody(failure.FailureMessage), Headers: []),
+            _ => new FrontendResponse(StatusCode: 500, Body: createErrorBody("Unknown UpdateResult"), Headers: [])
         };
+
+        static string createErrorBody(string message)
+        {
+            return JsonSerializer.Serialize(new { error = message });
+        }
     }
 }
