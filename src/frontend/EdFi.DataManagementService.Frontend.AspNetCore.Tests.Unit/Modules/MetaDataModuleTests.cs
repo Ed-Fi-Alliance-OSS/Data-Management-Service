@@ -202,8 +202,6 @@ public class MetadataModuleTests
     public async Task Metadata_Returns_Dependencies()
     {
         // Arrange
-        var contentProvider = A.Fake<IContentProvider>();
-
         var httpContext = A.Fake<HttpContext>();
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -212,7 +210,6 @@ public class MetadataModuleTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((x) => contentProvider);
                     collection.AddTransient(x => httpContext);
                 }
             );
@@ -224,7 +221,6 @@ public class MetadataModuleTests
         var content = await response.Content.ReadAsStringAsync();
 
         var jsonContent = JsonNode.Parse(content);
-        var name = jsonContent?[0]?["name"]?.GetValue<string>();
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
