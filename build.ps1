@@ -194,7 +194,7 @@ function RunTests {
 
             Invoke-Execute {
                 dotnet test $target `
-                    --logger "trx;LogFileName=$trx" `
+                    --logger "trx;LogFileName=$trx.trx" `
                     --logger "console" `
                     --nologo
             }
