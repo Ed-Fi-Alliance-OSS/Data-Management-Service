@@ -136,6 +136,8 @@ public record UpdateDocumentValidationResult(bool DocumentExists, bool Referenti
 /// </summary>
 public class SqlAction : ISqlAction
 {
+    public const string FK_Reference_ReferenceAlias = "fk_reference_referencedalias";
+
     private static string SqlFor(LockOption lockOption)
     {
         return lockOption switch
@@ -162,7 +164,7 @@ public class SqlAction : ISqlAction
     {
         await using NpgsqlCommand command =
             new(
-                $@"SELECT EdfiDoc FROM public.Documents WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 AND ResourceName = $3 {SqlFor(lockOption)};",
+                $@"SELECT EdfiDoc FROM dms.Document WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 AND ResourceName = $3 {SqlFor(lockOption)};",
                 connection,
                 transaction
             )
@@ -171,7 +173,7 @@ public class SqlAction : ISqlAction
                 {
                     new() { Value = partitionKey.Value },
                     new() { Value = documentUuid.Value },
-                    new() { Value = resourceName}
+                    new() { Value = resourceName }
                 }
             };
 
@@ -201,8 +203,8 @@ public class SqlAction : ISqlAction
     {
         await using NpgsqlCommand command =
             new(
-                $@"SELECT * FROM public.Documents d
-                INNER JOIN public.Aliases a ON a.DocumentId = d.Id AND a.DocumentPartitionKey = d.DocumentPartitionKey
+                $@"SELECT * FROM dms.Document d
+                INNER JOIN dms.Alias a ON a.DocumentId = d.Id AND a.DocumentPartitionKey = d.DocumentPartitionKey
                 WHERE a.ReferentialPartitionKey = $1 AND a.ReferentialId = $2 {SqlFor(lockOption)};",
                 connection,
                 transaction
@@ -250,7 +252,7 @@ public class SqlAction : ISqlAction
     {
         await using NpgsqlCommand command =
             new(
-                @"SELECT EdfiDoc FROM public.Documents WHERE ResourceName = $1 ORDER BY CreatedAt OFFSET $2 ROWS FETCH FIRST $3 ROWS ONLY;",
+                @"SELECT EdfiDoc FROM dms.Document WHERE ResourceName = $1 ORDER BY CreatedAt OFFSET $2 ROWS FETCH FIRST $3 ROWS ONLY;",
                 connection,
                 transaction
             )
@@ -291,7 +293,7 @@ public class SqlAction : ISqlAction
     )
     {
         await using NpgsqlCommand command =
-            new(@"SELECT Count(1) Total FROM public.Documents WHERE resourcename = $1;", connection)
+            new(@"SELECT Count(1) Total FROM dms.Document WHERE resourcename = $1;", connection)
             {
                 Parameters = { new() { Value = resourceName }, }
             };
@@ -318,7 +320,7 @@ public class SqlAction : ISqlAction
     )
     {
         await using var command = new NpgsqlCommand(
-            @"INSERT INTO public.Documents(DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, ProjectName, EdfiDoc)
+            @"INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, ProjectName, EdfiDoc)
                     VALUES ($1, $2, $3, $4, $5, $6)
               RETURNING Id;",
             connection,
@@ -351,7 +353,7 @@ public class SqlAction : ISqlAction
     )
     {
         await using var command = new NpgsqlCommand(
-            @"UPDATE public.Documents
+            @"UPDATE dms.Document
               SET EdfiDoc = $1
               WHERE DocumentPartitionKey = $2 AND DocumentUuid = $3
               RETURNING Id;",
@@ -390,8 +392,8 @@ public class SqlAction : ISqlAction
         await using NpgsqlCommand command =
             new(
                 $@"SELECT DocumentUuid, ReferentialId
-                FROM public.documents d
-                LEFT JOIN public.aliases a ON
+                FROM dms.Document d
+                LEFT JOIN dms.Alias a ON
                     a.DocumentId = d.Id
                     AND a.DocumentPartitionKey = d.DocumentPartitionKey
                     AND a.ReferentialId = $1 and a.ReferentialPartitionKey = $2
@@ -439,7 +441,7 @@ public class SqlAction : ISqlAction
     )
     {
         await using var command = new NpgsqlCommand(
-            @"INSERT INTO public.Aliases(ReferentialPartitionKey, ReferentialId, DocumentId, DocumentPartitionKey)
+            @"INSERT INTO dms.Alias (ReferentialPartitionKey, ReferentialId, DocumentId, DocumentPartitionKey)
                     VALUES ($1, $2, $3, $4)
               RETURNING Id;",
             connection,
@@ -479,7 +481,7 @@ public class SqlAction : ISqlAction
         Array.Fill(parentDocumentPartitionKeys, bulkReferences.ParentDocumentPartitionKey);
 
         await using var command = new NpgsqlCommand(
-            @"INSERT INTO public.""references""(ParentDocumentId, ParentDocumentPartitionKey, ReferentialId, ReferentialPartitionKey)
+            @"INSERT INTO dms.Reference (ParentDocumentId, ParentDocumentPartitionKey, ReferentialId, ReferentialPartitionKey)
                     SELECT * FROM unnest($1, $2, $3, $4)",
             connection,
             transaction
@@ -514,7 +516,7 @@ public class SqlAction : ISqlAction
                  AS r (ReferentialId, ReferentialPartitionKey)
                WHERE NOT EXISTS (
                  SELECT 1
-                 FROM Aliases a
+                 FROM dms.Alias a
                  WHERE r.ReferentialId = a.ReferentialId
                  AND r.ReferentialPartitionKey = a.ReferentialPartitionKey)",
             connection,
@@ -551,8 +553,8 @@ public class SqlAction : ISqlAction
     {
         await using NpgsqlCommand command =
             new(
-                @"DELETE from public.""references"" r
-                  USING public.Documents d
+                @"DELETE from dms.Reference r
+                  USING dms.Document d
                   WHERE d.Id = r.ParentDocumentId AND d.DocumentPartitionKey = r.ParentDocumentPartitionKey
                   AND d.DocumentPartitionKey = $1 AND d.DocumentUuid = $2;",
                 connection,
@@ -583,7 +585,7 @@ public class SqlAction : ISqlAction
     {
         await using NpgsqlCommand command =
             new(
-                @"DELETE from public.Documents WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2;",
+                @"DELETE from dms.Document WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2;",
                 connection,
                 transaction
             )
@@ -609,10 +611,10 @@ public class SqlAction : ISqlAction
     {
         await using NpgsqlCommand command =
             new(
-                $@"SELECT  d.ResourceName FROM public.Documents d INNER JOIN (
-                   SELECT ParentDocumentId, ParentDocumentPartitionKey FROM public.""references"" r
-                   INNER JOIN public.Aliases a ON r.ReferentialId = a.ReferentialId AND r.ReferentialPartitionKey = a.ReferentialPartitionKey
-                   INNER JOIN public.Documents d2 ON d2.Id = a.DocumentId AND d2.DocumentPartitionKey = a.DocumentPartitionKey
+                $@"SELECT  d.ResourceName FROM dms.Document d INNER JOIN (
+                   SELECT ParentDocumentId, ParentDocumentPartitionKey FROM dms.Reference r
+                   INNER JOIN dms.Alias a ON r.ReferentialId = a.ReferentialId AND r.ReferentialPartitionKey = a.ReferentialPartitionKey
+                   INNER JOIN dms.Document d2 ON d2.Id = a.DocumentId AND d2.DocumentPartitionKey = a.DocumentPartitionKey
                    WHERE d2.DocumentUuid =$1 AND d2.DocumentPartitionKey = $2) AS re
                    ON re.ParentDocumentId = d.id AND re.ParentDocumentPartitionKey = d.DocumentPartitionKey
                    ORDER BY d.ResourceName {SqlFor(lockOption)};",

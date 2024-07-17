@@ -45,14 +45,14 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
 
         context.FrontendResponse = result switch
         {
-            UpdateSuccess
+            UpdateSuccess updateSuccess
                 => new FrontendResponse(
                     StatusCode: 204,
                     Body: null,
                     Headers: [],
                     LocationHeaderPath: PathComponents.ToResourcePath(
                         context.PathComponents,
-                        ((UpdateSuccess)result).ExistingDocumentUuid
+                        updateSuccess.ExistingDocumentUuid
                     )
                 ),
             UpdateFailureNotExists
@@ -79,8 +79,8 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
             UpdateFailureCascadeRequired
                 => new FrontendResponse(StatusCode: 400, Body: null, Headers: []),
             UnknownFailure failure
-                => new FrontendResponse(StatusCode: 500, Body: failure.FailureMessage, Headers: []),
-            _ => new FrontendResponse(StatusCode: 500, Body: "Unknown UpdateResult", Headers: [])
+                => new FrontendResponse(StatusCode: 500, Body: failure.FailureMessage.ToJsonError(), Headers: []),
+            _ => new FrontendResponse(StatusCode: 500, Body: "Unknown UpdateResult".ToJsonError(), Headers: [])
         };
     }
 }

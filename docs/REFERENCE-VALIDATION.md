@@ -11,7 +11,7 @@ loading of test data, the following database script can be used to remove the
 foreign key constraints on the `References` table.
 
 ``` sql
-ALTER TABLE "references"  DROP CONSTRAINT FK_References_ReferencedAlias
+ALTER TABLE Reference  DROP CONSTRAINT FK_Reference_ReferencedAlias
 ```
 
 > [!NOTE]

@@ -53,8 +53,8 @@ internal class DeleteByIdHandler(IDocumentStoreRepository _documentStoreReposito
                     Headers: []
                 ),
             DeleteFailureWriteConflict => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),
-            UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage, Headers: []),
-            _ => new(StatusCode: 500, Body: "Unknown DeleteResult", Headers: [])
+            UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage.ToJsonError(), Headers: []),
+            _ => new(StatusCode: 500, Body: "Unknown DeleteResult".ToJsonError(), Headers: [])
         };
     }
 }

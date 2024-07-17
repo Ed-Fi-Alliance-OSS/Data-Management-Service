@@ -5,6 +5,6 @@
 
 -- Reference validation enforcement occurs via this constraint
 -- Omitting this FK effectively disables reference validation
-ALTER TABLE "references"
-ADD CONSTRAINT FK_References_ReferencedAlias FOREIGN KEY (ReferentialPartitionKey, ReferentialId)
-REFERENCES Aliases (ReferentialPartitionKey, ReferentialId) ON DELETE RESTRICT;
+ALTER TABLE dms.Reference
+ADD CONSTRAINT FK_Reference_ReferencedAlias FOREIGN KEY (ReferentialPartitionKey, ReferentialId)
+REFERENCES dms.Alias (ReferentialPartitionKey, ReferentialId) ON DELETE RESTRICT;
