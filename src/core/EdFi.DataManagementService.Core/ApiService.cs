@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -17,6 +18,7 @@ using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Validation;
+using Microsoft.CodeAnalysis.VisualBasic.Syntax;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -267,6 +269,11 @@ internal class ApiService(
         return result;
     }
 
+    /// <summary>
+    /// Get resource dependencies
+    /// </summary>
+    /// <returns>JSON array ordered by dependency sequence</returns>
+    /// <exception cref="InvalidOperationException"></exception>
     public JsonArray GetDependencies()
     {
         JsonNode schema = _apiSchemaProvider.ApiSchemaRootNode;
@@ -313,17 +320,26 @@ internal class ApiService(
                     }
                 }
             }
+
             List<KeyValuePair<string, int>> orderedResources = new List<KeyValuePair<string, int>>();
             Dictionary<string, int> visitedResources = new Dictionary<string, int>();
             foreach (var dependency in dependencies.OrderBy(d => d.Value.Count).ThenBy(d => d.Key).Select(d => d.Key))
             {
-                RecursivelyDetermineDependencies(dependency, 0);
+                Debug.Assert(projectSchemaNode != null, nameof(projectSchemaNode) + " != null");
+                RecursivelyDetermineDependencies(projectSchemaNode.GetPropertyName(), dependency, 0);
             }
 
-            int RecursivelyDetermineDependencies(string resourceName, int depth)
+            foreach (var orderedResource in orderedResources.OrderBy(o => o.Value).ThenBy(o => o.Key))
+            {
+                Debug.Assert(projectSchemaNode != null, nameof(projectSchemaNode) + " != null");
+                dependenciesJsonArray.Add(new { resource = $"/{projectSchemaNode.GetPropertyName()}/{orderedResource.Key.First().ToString().ToLowerInvariant()}{orderedResource.Key.Substring(1)}", order = orderedResource.Value, operations = new[] { "Create", "Update" } });
+            }
+
+            int RecursivelyDetermineDependencies(string projectSchemaName, string resourceName, int depth)
             {
 
-                // some hacks
+                // These resources are similar to abstract base classes, so they are not represented in the resourceSchemas
+                // portion of the schema document. This is a rudimentary replacement with the most specific version of the resource
                 if (resourceName == "EducationOrganization")
                 {
                     resourceName = "School";
@@ -334,7 +350,11 @@ internal class ApiService(
                     resourceName = "StudentProgramAssociation";
                 }
 
-                visitedResources.Add(resourceName, Int32.MinValue);
+                if (!visitedResources.ContainsKey(resourceName))
+                {
+                    visitedResources.Add(resourceName, 0);
+                }
+
                 var maxDepth = depth;
                 if (dependencies.ContainsKey(resourceName))
                 {
@@ -349,7 +369,7 @@ internal class ApiService(
                         }
                         else
                         {
-                            var level = RecursivelyDetermineDependencies(dependency, depth);
+                            var level = RecursivelyDetermineDependencies(projectSchemaName, dependency, depth);
                             if (level > maxDepth)
                                 maxDepth = level;
                         }
@@ -360,13 +380,10 @@ internal class ApiService(
 
                 return maxDepth + 1;
             }
-
-            foreach (var orderedResource in orderedResources.OrderBy(o => o.Value).ThenBy(o => o.Key))
-            {
-                dependenciesJsonArray.Add(new { resource = orderedResource.Key, order = orderedResource.Value });
-            }
         }
 
         return dependenciesJsonArray;
+
+
     }
 }
