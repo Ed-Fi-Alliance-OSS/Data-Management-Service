@@ -296,14 +296,14 @@ internal class ApiService(
             Trace.Assert(projectSchemaNode != null, nameof(projectSchemaNode) + " != null");
             Trace.Assert(resourceSchemas != null, nameof(resourceSchemas) + " != null");
 
-
             Dictionary<string, List<string>> dependencies =
                 resourceSchemas.ToDictionary(rs => rs.Value!["resourceName"]!.GetValue<string>(), rs => new List<string>());
 
-            foreach (var resourceSchema in resourceSchemas!.Select(rs => rs.Value))
+            foreach (var resourceSchema in resourceSchemas.Select(rs => rs.Value))
             {
                 var resourceSchemaJsonObject = resourceSchema;
-                var documentPathsMappingObj = resourceSchemaJsonObject?["documentPathsMapping"]?.AsObject();
+                Trace.Assert(resourceSchemaJsonObject != null, nameof(resourceSchemaJsonObject) + " != null");
+                var documentPathsMappingObj = resourceSchemaJsonObject["documentPathsMapping"]?.AsObject();
                 if (documentPathsMappingObj != null)
                 {
                     var references = documentPathsMappingObj.Select(dmo => dmo.Value?.AsObject()).Where(o =>
@@ -314,7 +314,7 @@ internal class ApiService(
 
                     foreach (var reference in references)
                     {
-                        dependencies[resourceSchemaJsonObject!["resourceName"]!.GetValue<string>()].Add(reference!["resourceName"]!.GetValue<string>());
+                        dependencies[resourceSchemaJsonObject["resourceName"]!.GetValue<string>()].Add(reference!["resourceName"]!.GetValue<string>());
                     }
                 }
             }
@@ -379,7 +379,5 @@ internal class ApiService(
         }
 
         return dependenciesJsonArray;
-
-
     }
 }
