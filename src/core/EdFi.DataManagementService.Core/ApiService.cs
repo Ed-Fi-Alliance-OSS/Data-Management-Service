@@ -4,8 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
-using System.Security.Cryptography.X509Certificates;
-using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.ApiSchema;
@@ -18,7 +16,6 @@ using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Validation;
-using Microsoft.CodeAnalysis.VisualBasic.Syntax;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -273,7 +270,6 @@ internal class ApiService(
     /// Get resource dependencies
     /// </summary>
     /// <returns>JSON array ordered by dependency sequence</returns>
-    /// <exception cref="InvalidOperationException"></exception>
     public JsonArray GetDependencies()
     {
         JsonNode schema = _apiSchemaProvider.ApiSchemaRootNode;
@@ -296,7 +292,9 @@ internal class ApiService(
         {
             KeyValuePair<string, JsonNode?>[]? resourceSchemas =
                 projectSchemaNode?["resourceSchemas"]?.AsObject().ToArray();
-            Debug.Assert(resourceSchemas != null, nameof(resourceSchemas) + " != null");
+
+            Trace.Assert(projectSchemaNode != null, nameof(projectSchemaNode) + " != null");
+            Trace.Assert(resourceSchemas != null, nameof(resourceSchemas) + " != null");
 
 
             Dictionary<string, List<string>> dependencies =
@@ -310,7 +308,7 @@ internal class ApiService(
                 {
                     var references = documentPathsMappingObj.Select(dmo => dmo.Value?.AsObject()).Where(o =>
                     {
-                        Debug.Assert(o != null, nameof(o) + " != null");
+                        Trace.Assert(o != null, nameof(o) + " != null");
                         return (bool)(o["isReference"] ?? false);
                     });
 
@@ -325,13 +323,11 @@ internal class ApiService(
             Dictionary<string, int> visitedResources = new Dictionary<string, int>();
             foreach (var dependency in dependencies.OrderBy(d => d.Value.Count).ThenBy(d => d.Key).Select(d => d.Key))
             {
-                Debug.Assert(projectSchemaNode != null, nameof(projectSchemaNode) + " != null");
                 RecursivelyDetermineDependencies(dependency, 0);
             }
 
             foreach (var orderedResource in orderedResources.OrderBy(o => o.Value).ThenBy(o => o.Key))
             {
-                Debug.Assert(projectSchemaNode != null, nameof(projectSchemaNode) + " != null");
                 dependenciesJsonArray.Add(new { resource = $"/{projectSchemaNode.GetPropertyName()}/{orderedResource.Key.First().ToString().ToLowerInvariant()}{orderedResource.Key.Substring(1)}", order = orderedResource.Value, operations = new[] { "Create", "Update" } });
             }
 
