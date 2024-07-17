@@ -136,6 +136,8 @@ public record UpdateDocumentValidationResult(bool DocumentExists, bool Referenti
 /// </summary>
 public class SqlAction : ISqlAction
 {
+    public const string FK_Reference_ReferenceAlias = "fk_reference_referencedalias";
+
     private static string SqlFor(LockOption lockOption)
     {
         return lockOption switch

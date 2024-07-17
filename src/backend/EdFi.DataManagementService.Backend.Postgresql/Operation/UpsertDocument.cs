@@ -248,7 +248,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
         }
         catch (PostgresException pe)
             when (pe.SqlState == PostgresErrorCodes.ForeignKeyViolation
-                && pe.ConstraintName == "fk_reference_referencedalias"
+                && pe.ConstraintName == SqlAction.FK_Reference_ReferenceAlias
             )
         {
             _logger.LogDebug(pe, "Foreign key violation on Upsert - {TraceId}", upsertRequest.TraceId);
