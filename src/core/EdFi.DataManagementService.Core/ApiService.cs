@@ -290,12 +290,12 @@ internal class ApiService(
         foreach (JsonNode projectSchemaNode in projectSchemaNodes)
         {
 
-            var resourceSchemasObj = projectSchemaNode["resourceSchemas"]!.AsObject().Select(x => new ResourceSchema(x.Value!));
+            var resourceSchemas = projectSchemaNode["resourceSchemas"]?.AsObject().Select(x => new ResourceSchema(x.Value!)).ToList()!;
 
             Dictionary<string, List<string>> dependencies =
-                resourceSchemasObj!.ToDictionary(rs => rs.ResourceName.Value, rs => new List<string>());
+                resourceSchemas.ToDictionary(rs => rs.ResourceName.Value, rs => new List<string>());
 
-            foreach (var resourceSchema in resourceSchemasObj)
+            foreach (var resourceSchema in resourceSchemas)
             {
                 foreach (var documentPath in resourceSchema.DocumentPaths.Where(d => d.IsReference))
                 {
@@ -317,7 +317,7 @@ internal class ApiService(
 
             int RecursivelyDetermineDependencies(string resourceName, int depth)
             {
-
+                // Code Smell here:
                 // These resources are similar to abstract base classes, so they are not represented in the resourceSchemas
                 // portion of the schema document. This is a rudimentary replacement with the most specific version of the resource
                 if (resourceName == "EducationOrganization")
