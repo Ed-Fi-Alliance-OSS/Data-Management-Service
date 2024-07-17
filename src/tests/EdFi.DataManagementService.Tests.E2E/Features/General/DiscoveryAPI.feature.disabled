@@ -60,7 +60,7 @@ Feature: The Discovery API provides information about the application version, s
                   """
 
         @ignore
-        Scenario: 04 /metadata/dependencies returns the dependency order for loading documents
+        Scenario: 04 GET /metadata/dependencies returns the dependency order for loading documents
             Given a GET to "/metadata/dependencies"
              Then it should respond with 200
               And there is a JSON file in the response body with a list of dependencies
