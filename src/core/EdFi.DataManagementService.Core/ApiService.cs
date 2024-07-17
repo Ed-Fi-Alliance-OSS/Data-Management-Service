@@ -296,25 +296,20 @@ internal class ApiService(
             Dictionary<string, List<string>> dependencies =
                 resourceSchemas!.ToDictionary(rs => rs.Value!["resourceName"]!.GetValue<string>(), rs => new List<string>());
 
-#pragma warning disable S125
-            //foreach (var resourceSchema in resourceSchemas!.Select(rs => rs.Value))
-            //{
-            //    var resourceSchemaJsonObject = resourceSchema;
-            //    var documentPathsMappingObj = resourceSchemaJsonObject!["documentPathsMapping"]?.AsObject();
-            //    if (documentPathsMappingObj != null)
-            //    {
-            //        var references = documentPathsMappingObj.Select(dmo => dmo.Value?.AsObject()).Where(o =>
-            //        {
-            //            return (bool)(o!["isReference"] ?? false);
-            //        });
+            foreach (var resourceSchema in resourceSchemas!.Select(rs => rs.Value))
+            {
+                var resourceSchemaJsonObject = resourceSchema;
+                var documentPathsMappingObj = resourceSchemaJsonObject!["documentPathsMapping"]?.AsObject();
+                if (documentPathsMappingObj != null)
+                {
+                    var references = documentPathsMappingObj.Select(dmo => dmo.Value?.AsObject()).Where(o => (bool)(o!["isReference"] ?? false));
 
-            //        foreach (var reference in references)
-            //        {
-            //            dependencies[resourceSchemaJsonObject["resourceName"]!.GetValue<string>()].Add(reference!["resourceName"]!.GetValue<string>());
-            //        }
-            //    }
-            //}
-#pragma warning restore S125
+                    foreach (var reference in references)
+                    {
+                        dependencies[resourceSchemaJsonObject["resourceName"]!.GetValue<string>()].Add(reference!["resourceName"]!.GetValue<string>());
+                    }
+                }
+            }
 
             List<KeyValuePair<string, int>> orderedResources = new List<KeyValuePair<string, int>>();
             Dictionary<string, int> visitedResources = new Dictionary<string, int>();
