@@ -157,25 +157,7 @@ jobs:
 
       - name: Run Integration Tests
         if: success()
-        run: |
-          $retries = 3
-          $until_failure = 0
-          while ($retries -gt 0) {
-            ./build.ps1 IntegrationTest -Configuration Debug
-            $exit_code = $LastExitCode
-            if ($exit_code -eq 0) {
-              break
-            }
-            elseif ($exit_code -eq 1 -and $until_failure -lt 3) {
-              $until_failure++
-              Write-Host "Retrying (attempt $until_failure of 3)..."
-            }
-            else {
-              Write-Host "Integration tests failed with exit code $exit_code, no retries left."
-              exit 1
-            }
-            $retries--
-          }
+        run: ./build.ps1 IntegrationTest -Configuration Debug
 
   run-e2e-tests:
     name: Run E2E Tests
