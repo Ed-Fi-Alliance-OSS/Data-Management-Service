@@ -45,26 +45,27 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
             context.FrontendRequest.TraceId
         );
 
+
         context.FrontendResponse = result switch
         {
-            InsertSuccess
+            InsertSuccess insertSuccess
                 => new FrontendResponse(
                     StatusCode: 201,
                     Body: null,
                     Headers: [],
                     LocationHeaderPath: PathComponents.ToResourcePath(
                         context.PathComponents,
-                        ((InsertSuccess)result).NewDocumentUuid
+                        insertSuccess.NewDocumentUuid
                     )
                 ),
-            UpdateSuccess
+            UpdateSuccess updateSuccess
                 => new(
                     StatusCode: 200,
                     Body: null,
                     Headers: [],
                     LocationHeaderPath: PathComponents.ToResourcePath(
                         context.PathComponents,
-                        ((UpdateSuccess)result).ExistingDocumentUuid
+                        updateSuccess.ExistingDocumentUuid
                     )
                 ),
             UpsertFailureReference failure
@@ -87,8 +88,8 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
                     Headers: []
                 ),
             UpsertFailureWriteConflict => new(StatusCode: 409, Body: null, Headers: []),
-            UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage, Headers: []),
-            _ => new(StatusCode: 500, Body: "Unknown UpsertResult", Headers: [])
+            UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage.ToJsonError(), Headers: []),
+            _ => new(StatusCode: 500, Body: "Unknown UpsertResult".ToJsonError(), Headers: [])
         };
     }
 }
