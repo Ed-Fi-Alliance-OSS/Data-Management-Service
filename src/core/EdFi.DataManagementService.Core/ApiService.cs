@@ -293,23 +293,18 @@ internal class ApiService(
             KeyValuePair<string, JsonNode?>[]? resourceSchemas =
                 projectSchemaNode?["resourceSchemas"]?.AsObject().ToArray();
 
-            Trace.Assert(projectSchemaNode != null, nameof(projectSchemaNode) + " != null");
-            Trace.Assert(resourceSchemas != null, nameof(resourceSchemas) + " != null");
-
             Dictionary<string, List<string>> dependencies =
-                resourceSchemas.ToDictionary(rs => rs.Value!["resourceName"]!.GetValue<string>(), rs => new List<string>());
+                resourceSchemas!.ToDictionary(rs => rs.Value!["resourceName"]!.GetValue<string>(), rs => new List<string>());
 
-            foreach (var resourceSchema in resourceSchemas.Select(rs => rs.Value))
+            foreach (var resourceSchema in resourceSchemas!.Select(rs => rs.Value))
             {
                 var resourceSchemaJsonObject = resourceSchema;
-                Trace.Assert(resourceSchemaJsonObject != null, nameof(resourceSchemaJsonObject) + " != null");
-                var documentPathsMappingObj = resourceSchemaJsonObject["documentPathsMapping"]?.AsObject();
+                var documentPathsMappingObj = resourceSchemaJsonObject!["documentPathsMapping"]?.AsObject();
                 if (documentPathsMappingObj != null)
                 {
                     var references = documentPathsMappingObj.Select(dmo => dmo.Value?.AsObject()).Where(o =>
                     {
-                        Trace.Assert(o != null, nameof(o) + " != null");
-                        return (bool)(o["isReference"] ?? false);
+                        return (bool)(o!["isReference"] ?? false);
                     });
 
                     foreach (var reference in references)
@@ -328,7 +323,7 @@ internal class ApiService(
 
             foreach (var orderedResource in orderedResources.OrderBy(o => o.Value).ThenBy(o => o.Key))
             {
-                dependenciesJsonArray.Add(new { resource = $"/{projectSchemaNode.GetPropertyName()}/{orderedResource.Key.First().ToString().ToLowerInvariant()}{orderedResource.Key.Substring(1)}", order = orderedResource.Value, operations = new[] { "Create", "Update" } });
+                dependenciesJsonArray.Add(new { resource = $"/{projectSchemaNode!.GetPropertyName()}/{orderedResource.Key.First().ToString().ToLowerInvariant()}{orderedResource.Key.Substring(1)}", order = orderedResource.Value, operations = new[] { "Create", "Update" } });
             }
 
             int RecursivelyDetermineDependencies(string resourceName, int depth)
