@@ -298,13 +298,12 @@ internal class ApiService(
 
             foreach (var resourceSchema in resourceSchemas!.Select(rs => rs.Value))
             {
-                var resourceSchemaJsonObject = resourceSchema;
-                var documentPathsMappingObj = resourceSchemaJsonObject!["documentPathsMapping"]?.AsObject();
-                var references = documentPathsMappingObj!.Select(dmo => dmo.Value?.AsObject()).Where(o => (bool)(o!["isReference"] ?? false));
+                var documentPathsMappingObj = resourceSchema!["documentPathsMapping"]?.AsObject();
+                var references = documentPathsMappingObj!.Select(dmo => dmo.Value?.AsObject());
 
                 foreach (var reference in references)
                 {
-                    dependencies[resourceSchemaJsonObject["resourceName"]!.GetValue<string>()].Add(reference!["resourceName"]!.GetValue<string>());
+                    dependencies[resourceSchema["resourceName"]!.GetValue<string>()].Add(reference!["resourceName"]!.GetValue<string>());
                 }
             }
 
