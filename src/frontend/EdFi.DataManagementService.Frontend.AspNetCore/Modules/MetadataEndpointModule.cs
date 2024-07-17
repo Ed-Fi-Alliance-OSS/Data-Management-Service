@@ -34,7 +34,6 @@ public partial class MetadataEndpointModule : IEndpointModule
     {
         endpoints.MapGet("/metadata", GetMetadata);
         endpoints.MapGet("/metadata/dependencies", GetDependencies);
-        endpoints.MapGet("/metadata/dependencies2", GetDependencies2);
         endpoints.MapGet("/metadata/specifications", GetSections);
         endpoints.MapGet("/metadata/specifications/{section}-spec.json", GetSectionMetadata);
     }
@@ -52,13 +51,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         await httpContext.Response.WriteAsJsonAsync(content);
     }
 
-    internal async Task GetDependencies(HttpContext httpContext, IContentProvider contentProvider)
-    {
-        var content = contentProvider.LoadJsonContent("dependencies");
-        await httpContext.Response.WriteAsSerializedJsonAsync(content);
-    }
-
-    internal async Task GetDependencies2(HttpContext httpContext, IApiService apiService)
+    internal async Task GetDependencies(HttpContext httpContext, IApiService apiService)
     {
         var content = apiService.GetDependencies();
         await httpContext.Response.WriteAsSerializedJsonAsync(content);

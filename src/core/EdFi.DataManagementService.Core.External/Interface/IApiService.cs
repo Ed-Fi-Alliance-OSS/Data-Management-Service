@@ -42,5 +42,9 @@ public interface IApiService
     /// </summary>
     public IList<IDataModelInfo> GetDataModelInfo();
 
+    /// <summary>
+    /// Get the ordered list of dependencies
+    /// </summary>
+    /// <returns></returns>
     public JsonArray GetDependencies();
 }
