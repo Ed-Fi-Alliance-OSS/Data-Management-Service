@@ -25,4 +25,27 @@ internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
             _logger
         );
     }
+
+    /// <summary>
+    /// Gets all ProjectSchema nodes in the document. 
+    /// </summary>
+    public List<JsonNode> GetAllProjectSchemaNodes()
+    {
+        JsonNode schema = _apiSchemaRootNode;
+
+        KeyValuePair<string, JsonNode?>[]? projectSchemas = schema["projectSchemas"]?.AsObject().ToArray();
+        if (projectSchemas == null || projectSchemas.Length == 0)
+        {
+            string errorMessage = "No projectSchemas found, ApiSchema.json is invalid";
+            _logger.LogCritical(errorMessage);
+            throw new InvalidOperationException(errorMessage);
+        }
+
+        List<JsonNode> projectSchemaNodes = projectSchemas
+            .Where(x => x.Value != null)
+            .Select(x => x.Value ?? new JsonObject())
+            .ToList();
+
+        return projectSchemaNodes;
+    }
 }

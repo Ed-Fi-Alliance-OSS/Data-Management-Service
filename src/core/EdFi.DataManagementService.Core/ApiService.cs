@@ -238,23 +238,10 @@ internal class ApiService(
     /// </summary>
     public IList<IDataModelInfo> GetDataModelInfo()
     {
-        JsonNode schema = _apiSchemaProvider.ApiSchemaRootNode;
-
-        KeyValuePair<string, JsonNode?>[]? projectSchemas = schema["projectSchemas"]?.AsObject().ToArray();
-        if (projectSchemas == null || projectSchemas.Length == 0)
-        {
-            string errorMessage = "No projectSchemas found, ApiSchema.json is invalid";
-            _logger.LogCritical(errorMessage);
-            throw new InvalidOperationException(errorMessage);
-        }
+        var apiSchemaDocument = new ApiSchemaDocument(_apiSchemaProvider.ApiSchemaRootNode, _logger);
 
         IList<IDataModelInfo> result = [];
-        List<JsonNode> projectSchemaNodes = projectSchemas
-            .Where(x => x.Value != null)
-            .Select(x => x.Value ?? new JsonObject())
-            .ToList();
-
-        foreach (JsonNode projectSchemaNode in projectSchemaNodes)
+        foreach (JsonNode projectSchemaNode in apiSchemaDocument.GetAllProjectSchemaNodes())
         {
             var projectName = projectSchemaNode?["projectName"]?.GetValue<string>() ?? string.Empty;
             var projectVersion = projectSchemaNode?["projectVersion"]?.GetValue<string>() ?? string.Empty;
@@ -271,25 +258,10 @@ internal class ApiService(
     /// <returns>JSON array ordered by dependency sequence</returns>
     public JsonArray GetDependencies()
     {
-        JsonNode schema = _apiSchemaProvider.ApiSchemaRootNode;
-
-        KeyValuePair<string, JsonNode?>[]? projectSchemas = schema["projectSchemas"]?.AsObject().ToArray();
-        if (projectSchemas == null || projectSchemas.Length == 0)
-        {
-            string errorMessage = "No projectSchemas found, ApiSchema.json is invalid";
-            _logger.LogCritical(errorMessage);
-            throw new InvalidOperationException(errorMessage);
-        }
-
-        List<JsonNode> projectSchemaNodes = projectSchemas
-            .Where(x => x.Value != null)
-            .Select(x => x.Value ?? new JsonObject())
-            .ToList();
-
+        var apiSchemaDocument = new ApiSchemaDocument(_apiSchemaProvider.ApiSchemaRootNode, _logger);
         var dependenciesJsonArray = new JsonArray();
-        foreach (JsonNode projectSchemaNode in projectSchemaNodes)
+        foreach (JsonNode projectSchemaNode in apiSchemaDocument.GetAllProjectSchemaNodes())
         {
-
             var resourceSchemas = projectSchemaNode["resourceSchemas"]?.AsObject().Select(x => new ResourceSchema(x.Value!)).ToList()!;
 
             Dictionary<string, List<string>> dependencies =
@@ -303,8 +275,8 @@ internal class ApiService(
                 }
             }
 
-            List<KeyValuePair<string, int>> orderedResources = new List<KeyValuePair<string, int>>();
-            Dictionary<string, int> visitedResources = new Dictionary<string, int>();
+            List<KeyValuePair<string, int>> orderedResources = [];
+            Dictionary<string, int> visitedResources = [];
             foreach (var dependency in dependencies.OrderBy(d => d.Value.Count).ThenBy(d => d.Key).Select(d => d.Key))
             {
                 RecursivelyDetermineDependencies(dependency, 0);
