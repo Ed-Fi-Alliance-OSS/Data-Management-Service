@@ -33,19 +33,13 @@ internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
     {
         JsonNode schema = _apiSchemaRootNode;
 
-        KeyValuePair<string, JsonNode?>[]? projectSchemas = schema["projectSchemas"]?.AsObject().ToArray();
-        if (projectSchemas == null || projectSchemas.Length == 0)
+        var projectSchemasNode = schema["projectSchemas"];
+
+        if (projectSchemasNode == null)
         {
-            string errorMessage = "No projectSchemas found, ApiSchema.json is invalid";
-            _logger.LogCritical(errorMessage);
-            throw new InvalidOperationException(errorMessage);
+            throw new InvalidOperationException("Expected ProjectSchmas node to exist.");
         }
 
-        List<JsonNode> projectSchemaNodes = projectSchemas
-            .Where(x => x.Value != null)
-            .Select(x => x.Value ?? new JsonObject())
-            .ToList();
-
-        return projectSchemaNodes;
+        return projectSchemasNode.SelectNodesFromPropertyValues();
     }
 }

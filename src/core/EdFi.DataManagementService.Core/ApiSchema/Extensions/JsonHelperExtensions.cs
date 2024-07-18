@@ -244,4 +244,23 @@ internal static class JsonHelperExtensions
             }
         }
     }
+
+    /// <summary>
+    /// Helper to extract a list of JsonNodes as the values of all the properties of a JsonNode
+    /// </summary>
+    /// <param name="jsonNode"></param>
+    public static List<JsonNode> SelectNodesFromPropertyValues(this JsonNode jsonNode)
+    {
+        KeyValuePair<string, JsonNode?>[]? nodeKeys = jsonNode?.AsObject().ToArray();
+
+        if (nodeKeys == null)
+        {
+            throw new InvalidOperationException("Unexpected null");
+        }
+
+        return nodeKeys
+            .Where(x => x.Value != null)
+            .Select(x => x.Value ?? new JsonObject())
+            .ToList();
+    }
 }
