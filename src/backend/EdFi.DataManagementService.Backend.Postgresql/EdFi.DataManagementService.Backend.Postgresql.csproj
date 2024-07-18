@@ -12,13 +12,13 @@
     <EmbeddedResource Include="Deploy\Scripts\0000_Create_DMS_Schema.sql">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </EmbeddedResource>
-    <EmbeddedResource Include="Deploy\Scripts\0001_Create_Documents_Table.sql">
+    <EmbeddedResource Include="Deploy\Scripts\0001_Create_Document_Table.sql">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </EmbeddedResource>
-    <EmbeddedResource Include="Deploy\Scripts\0002_Create_Aliases_Table.sql">
+    <EmbeddedResource Include="Deploy\Scripts\0002_Create_Alias_Table.sql">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </EmbeddedResource>
-    <EmbeddedResource Include="Deploy\Scripts\0003_Create_References_Table.sql">
+    <EmbeddedResource Include="Deploy\Scripts\0003_Create_Reference_Table.sql">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </EmbeddedResource>
     <EmbeddedResource Include="Deploy\Scripts\1000_Create_Reference_Validation_FKs.sql">

@@ -13,130 +13,18 @@ using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
 
-/// <summary>
-/// A facade of all the DB interactions. Any action requiring SQL statement execution should be here.
-/// Connections and transactions are managed by the caller.
-/// Exceptions are handled by the caller.
-/// </summary>
-public interface ISqlAction
-{
-    public Task<JsonNode?> FindDocumentEdfiDocByDocumentUuid(
-        DocumentUuid documentUuid,
-        string resourceName,
-        PartitionKey partitionKey,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        LockOption lockOption
-    );
-
-    public Task<Document?> FindDocumentByReferentialId(
-        ReferentialId referentialId,
-        PartitionKey partitionKey,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        LockOption lockOption
-    );
-
-    public Task<string[]> FindReferencingResourceNamesByDocumentUuid(
-        DocumentUuid documentUuid,
-        PartitionKey documentPartitionKey,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        LockOption lockOption
-    );
-
-    public Task<JsonNode[]> GetAllDocuments(
-        string resourceName,
-        IPaginationParameters paginationParameters,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction
-    );
-
-    public Task<int> GetTotalDocuments(
-        string resourceName,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction
-    );
-
-    public Task<long> InsertDocument(
-        Document document,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction
-    );
-
-    public Task<long> InsertAlias(Alias alias, NpgsqlConnection connection, NpgsqlTransaction transaction);
-
-    /// <summary>
-    /// Insert a set of rows into the References table and return the number of rows affected
-    /// </summary>
-    public Task<int> InsertReferences(
-        BulkReferences bulkReferences,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction
-    );
-
-    /// <summary>
-    /// Given an array of referentialId guids and a parallel array of partition keys, returns
-    /// an array of invalid referentialId guids, if any
-    /// </summary>
-    public Task<Guid[]> FindInvalidReferentialIds(
-        DocumentReferenceIds documentReferenceIds,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction
-    );
-
-    /// <summary>
-    /// Delete associated Reference records for a given DocumentUuid, returning the number of rows affected
-    /// </summary>
-    public Task<int> DeleteReferencesByDocumentUuid(
-        int parentDocumentPartitionKey,
-        Guid parentDocumentUuidGuid,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction
-    );
-
-    /// <summary>
-    /// Delete a document for a given documentUuid and returns the number of rows affected.
-    /// Delete cascades to Aliases and References tables
-    /// </summary>
-    public Task<int> DeleteDocumentByDocumentUuid(
-        PartitionKey documentPartitionKey,
-        DocumentUuid documentUuid,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction
-    );
-
-    public Task<int> UpdateDocumentEdfiDoc(
-        int documentPartitionKey,
-        Guid documentUuid,
-        JsonElement edfiDoc,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction
-    );
-
-    public Task<UpdateDocumentValidationResult> UpdateDocumentValidation(
-        DocumentUuid documentUuid,
-        PartitionKey documentPartitionKey,
-        ReferentialId referentialId,
-        PartitionKey referentialPartitionKey,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        LockOption lockOption
-    );
-}
-
 public record UpsertDocumentSqlResult(bool Inserted, long DocumentId);
 
-public record UpdateDocumentValidationResult(bool DocumentExists, bool ReferentialIdExists);
+public record UpdateDocumentValidationResult(bool DocumentExists, bool ReferentialIdUnchanged);
 
 /// <summary>
 /// A facade of all the DB interactions. Any action requiring SQL statement execution should be here.
 /// Connections and transactions are managed by the caller.
 /// Exceptions are handled by the caller.
 /// </summary>
-public class SqlAction : ISqlAction
+public static class SqlAction
 {
-    public const string FK_Reference_ReferenceAlias = "fk_reference_referencedalias";
+    public const string ReferenceValidationFkName = "fk_reference_referencedalias";
 
     private static string SqlFor(LockOption lockOption)
     {
@@ -153,7 +41,7 @@ public class SqlAction : ISqlAction
     /// Returns the EdfiDoc of single Document from the database corresponding to the given DocumentUuid,
     /// or null if no matching Document was found.
     /// </summary>
-    public async Task<JsonNode?> FindDocumentEdfiDocByDocumentUuid(
+    public static async Task<JsonNode?> FindDocumentEdfiDocByDocumentUuid(
         DocumentUuid documentUuid,
         string resourceName,
         PartitionKey partitionKey,
@@ -193,7 +81,7 @@ public class SqlAction : ISqlAction
     /// Returns a single Document from the database corresponding to the given ReferentialId,
     /// or null if no matching Document was found.
     /// </summary>
-    public async Task<Document?> FindDocumentByReferentialId(
+    public static async Task<Document?> FindDocumentByReferentialId(
         ReferentialId referentialId,
         PartitionKey partitionKey,
         NpgsqlConnection connection,
@@ -243,7 +131,7 @@ public class SqlAction : ISqlAction
     /// <summary>
     /// Returns an array of Documents from the database corresponding to the given ResourceName
     /// </summary>
-    public async Task<JsonNode[]> GetAllDocuments(
+    public static async Task<JsonNode[]> GetAllDocumentsByResourceName(
         string resourceName,
         IPaginationParameters paginationParameters,
         NpgsqlConnection connection,
@@ -286,14 +174,14 @@ public class SqlAction : ISqlAction
     /// Returns total number of Documents from the database corresponding to the given ResourceName,
     /// or 0 if no matching Document was found.
     /// </summary>
-    public async Task<int> GetTotalDocuments(
+    public static async Task<int> GetTotalDocumentsForResourceName(
         string resourceName,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     )
     {
         await using NpgsqlCommand command =
-            new(@"SELECT Count(1) Total FROM dms.Document WHERE resourcename = $1;", connection)
+            new(@"SELECT Count(1) Total FROM dms.Document WHERE resourcename = $1;", connection, transaction)
             {
                 Parameters = { new() { Value = resourceName }, }
             };
@@ -313,7 +201,7 @@ public class SqlAction : ISqlAction
     /// <summary>
     /// Insert a single Document into the database and return the Id of the new document
     /// </summary>
-    public async Task<long> InsertDocument(
+    public static async Task<long> InsertDocument(
         Document document,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
@@ -344,7 +232,7 @@ public class SqlAction : ISqlAction
     /// <summary>
     /// Update the EdfiDoc of a Document and return the number of rows affected
     /// </summary>
-    public async Task<int> UpdateDocumentEdfiDoc(
+    public static async Task<int> UpdateDocumentEdfiDoc(
         int documentPartitionKey,
         Guid documentUuid,
         JsonElement edfiDoc,
@@ -372,7 +260,7 @@ public class SqlAction : ISqlAction
         return await command.ExecuteNonQueryAsync();
     }
 
-    public async Task<UpdateDocumentValidationResult> UpdateDocumentValidation(
+    public static async Task<UpdateDocumentValidationResult> UpdateDocumentValidation(
         DocumentUuid documentUuid,
         PartitionKey documentPartitionKey,
         ReferentialId referentialId,
@@ -416,7 +304,7 @@ public class SqlAction : ISqlAction
         if (!reader.HasRows)
         {
             // Document does not exist
-            return new UpdateDocumentValidationResult(false, false);
+            return new UpdateDocumentValidationResult(DocumentExists: false, ReferentialIdUnchanged: false);
         }
 
         // Assumes only one row returned (should never be more due to DB unique constraint)
@@ -425,16 +313,16 @@ public class SqlAction : ISqlAction
         if (await reader.IsDBNullAsync(reader.GetOrdinal("ReferentialId")))
         {
             // Extracted referential id does not match stored. Must be attempting to change natural key.
-            return new UpdateDocumentValidationResult(true, false);
+            return new UpdateDocumentValidationResult(DocumentExists: true, ReferentialIdUnchanged: false);
         }
 
-        return new UpdateDocumentValidationResult(true, true);
+        return new UpdateDocumentValidationResult(DocumentExists: true, ReferentialIdUnchanged: true);
     }
 
     /// <summary>
     /// Insert a single Alias into the database and return the Id of the new document
     /// </summary>
-    public async Task<long> InsertAlias(
+    public static async Task<long> InsertAlias(
         Alias alias,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
@@ -463,7 +351,7 @@ public class SqlAction : ISqlAction
     /// <summary>
     /// Insert a set of rows into the References table and return the number of rows affected
     /// </summary>
-    public async Task<int> InsertReferences(
+    public static async Task<int> InsertReferences(
         BulkReferences bulkReferences,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
@@ -503,7 +391,7 @@ public class SqlAction : ISqlAction
     /// Given an array of referentialId guids and a parallel array of partition keys, returns
     /// an array of invalid referentialId guids, if any.
     /// </summary>
-    public async Task<Guid[]> FindInvalidReferentialIds(
+    public static async Task<Guid[]> FindInvalidReferentialIds(
         DocumentReferenceIds documentReferenceIds,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
@@ -544,7 +432,7 @@ public class SqlAction : ISqlAction
     /// <summary>
     /// Delete associated Reference records for a given DocumentUuid, returning the number of rows affected
     /// </summary>
-    public async Task<int> DeleteReferencesByDocumentUuid(
+    public static async Task<int> DeleteReferencesByDocumentUuid(
         int parentDocumentPartitionKey,
         Guid parentDocumentUuidGuid,
         NpgsqlConnection connection,
@@ -576,7 +464,7 @@ public class SqlAction : ISqlAction
     /// Delete a document for a given documentUuid and returns the number of rows affected.
     /// Delete cascades to Aliases and References tables
     /// </summary>
-    public async Task<int> DeleteDocumentByDocumentUuid(
+    public static async Task<int> DeleteDocumentByDocumentUuid(
         PartitionKey documentPartitionKey,
         DocumentUuid documentUuid,
         NpgsqlConnection connection,
@@ -601,7 +489,7 @@ public class SqlAction : ISqlAction
         return rowsAffected;
     }
 
-    public async Task<string[]> FindReferencingResourceNamesByDocumentUuid(
+    public static async Task<string[]> FindReferencingResourceNamesByDocumentUuid(
         DocumentUuid documentUuid,
         PartitionKey documentPartitionKey,
         NpgsqlConnection connection,

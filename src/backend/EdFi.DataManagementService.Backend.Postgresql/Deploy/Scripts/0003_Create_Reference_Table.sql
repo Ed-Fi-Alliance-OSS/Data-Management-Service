@@ -7,6 +7,8 @@ CREATE TABLE dms.Reference (
   Id BIGINT GENERATED ALWAYS AS IDENTITY(START WITH 1 INCREMENT BY 1),
   ParentDocumentId BIGINT NOT NULL,
   ParentDocumentPartitionKey SMALLINT NOT NULL,
+  ReferencedDocumentId BIGINT NULL,
+  ReferencedDocumentPartitionKey SMALLINT NULL,
   ReferentialId UUID NOT NULL,
   ReferentialPartitionKey SMALLINT NOT NULL,
   PRIMARY KEY (ParentDocumentPartitionKey, Id)
@@ -29,9 +31,18 @@ CREATE TABLE dms.Reference_13 PARTITION OF dms.Reference FOR VALUES WITH (MODULU
 CREATE TABLE dms.Reference_14 PARTITION OF dms.Reference FOR VALUES WITH (MODULUS 16, REMAINDER 14);
 CREATE TABLE dms.Reference_15 PARTITION OF dms.Reference FOR VALUES WITH (MODULUS 16, REMAINDER 15);
 
--- DELETE/UPDATE by id lookup support
-CREATE INDEX UX_References_DocumentId ON dms.Reference (ParentDocumentPartitionKey, ParentDocumentId);
+-- Lookup support for DELETE/UPDATE by id
+CREATE INDEX UX_Reference_ParentDocumentId ON dms.Reference (ParentDocumentPartitionKey, ParentDocumentId);
 
+-- Lookup support for DELETE failure due to existing references - cross partition index
+CREATE INDEX UX_Reference_ReferencedDocumentId ON dms.Reference (ReferencedDocumentPartitionKey, ReferencedDocumentId);
+
+-- FK back to parent document
 ALTER TABLE dms.Reference
-ADD CONSTRAINT FK_Reference_Document FOREIGN KEY (ParentDocumentPartitionKey, ParentDocumentId)
+ADD CONSTRAINT FK_Reference_ParentDocument FOREIGN KEY (ParentDocumentPartitionKey, ParentDocumentId)
 REFERENCES dms.Document (DocumentPartitionKey, Id) ON DELETE CASCADE;
+
+-- FK back to document being referenced - can be null if reference validation is turned off
+ALTER TABLE dms.Reference
+ADD CONSTRAINT FK_Reference_ReferencedDocument FOREIGN KEY (ReferencedDocumentPartitionKey, ReferencedDocumentId)
+REFERENCES dms.Document (DocumentPartitionKey, Id);

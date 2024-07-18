@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
 using static EdFi.DataManagementService.Backend.Postgresql.ReferenceHelper;
+using static EdFi.DataManagementService.Backend.Postgresql.Operation.SqlAction;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
 
@@ -23,7 +24,7 @@ public interface IUpsertDocument
     );
 }
 
-public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logger) : IUpsertDocument
+public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
 {
     private static readonly string _beforeInsertReferences = "BeforeInsertReferences";
 
@@ -39,7 +40,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
 
         // First insert into Documents
         upsertRequest.EdfiDoc["id"] = upsertRequest.DocumentUuid.Value;
-        newDocumentId = await _sqlAction.InsertDocument(
+        newDocumentId = await InsertDocument(
             new(
                 DocumentPartitionKey: documentPartitionKey,
                 DocumentUuid: upsertRequest.DocumentUuid.Value,
@@ -53,7 +54,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
         );
 
         // Next insert into Aliases
-        await _sqlAction.InsertAlias(
+        await InsertAlias(
             new(
                 DocumentPartitionKey: documentPartitionKey,
                 DocumentId: newDocumentId,
@@ -71,7 +72,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             // If subclass, also insert superclass version of identity into Aliases
             if (superclassIdentity != null)
             {
-                await _sqlAction.InsertAlias(
+                await InsertAlias(
                     new(
                         DocumentPartitionKey: documentPartitionKey,
                         DocumentId: newDocumentId,
@@ -104,9 +105,9 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
 
         if (documentReferenceIds.ReferentialIds.Length > 0)
         {
-            // Create a transaction savepoint in case insert into References fails due to invalid references
+            // Create a transaction save point in case insert into References fails due to invalid references
             await transaction.SaveAsync(_beforeInsertReferences);
-            int numberOfRowsInserted = await _sqlAction.InsertReferences(
+            int numberOfRowsInserted = await InsertReferences(
                 new(
                     ParentDocumentPartitionKey: documentPartitionKey,
                     ParentDocumentId: newDocumentId,
@@ -139,7 +140,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
     {
         // Update the EdfiDoc of the Document
         upsertRequest.EdfiDoc["id"] = documentUuid;
-        await _sqlAction.UpdateDocumentEdfiDoc(
+        await UpdateDocumentEdfiDoc(
             documentPartitionKey,
             documentUuid,
             JsonSerializer.Deserialize<JsonElement>(upsertRequest.EdfiDoc),
@@ -150,16 +151,16 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
         if (documentReferenceIds.ReferentialIds.Length > 0)
         {
             // First clear out all the existing references, as they may have changed
-            await _sqlAction.DeleteReferencesByDocumentUuid(
+            await DeleteReferencesByDocumentUuid(
                 documentPartitionKey,
                 documentUuid,
                 connection,
                 transaction
             );
 
-            // Create a transaction savepoint in case insert into References fails due to invalid references
+            // Create a transaction save point in case insert into References fails due to invalid references
             await transaction.SaveAsync(_beforeInsertReferences);
-            int numberOfRowsInserted = await _sqlAction.InsertReferences(
+            int numberOfRowsInserted = await InsertReferences(
                 new(
                     ParentDocumentPartitionKey: documentPartitionKey,
                     ParentDocumentId: documentId,
@@ -203,7 +204,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             try
             {
                 // Attempt to get the document, to see whether this is an insert or update
-                documentFromDb = await _sqlAction.FindDocumentByReferentialId(
+                documentFromDb = await FindDocumentByReferentialId(
                     upsertRequest.DocumentInfo.ReferentialId,
                     PartitionKeyFor(upsertRequest.DocumentInfo.ReferentialId),
                     connection,
@@ -248,15 +249,15 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
         }
         catch (PostgresException pe)
             when (pe.SqlState == PostgresErrorCodes.ForeignKeyViolation
-                && pe.ConstraintName == SqlAction.FK_Reference_ReferenceAlias
+                && pe.ConstraintName == ReferenceValidationFkName
             )
         {
             _logger.LogDebug(pe, "Foreign key violation on Upsert - {TraceId}", upsertRequest.TraceId);
 
-            // Restore transaction savepoint to continue using transaction
+            // Restore transaction save point to continue using transaction
             await transaction.RollbackAsync(_beforeInsertReferences);
 
-            Guid[] invalidReferentialIds = await _sqlAction.FindInvalidReferentialIds(
+            Guid[] invalidReferentialIds = await FindInvalidReferentialIds(
                 documentReferenceIds,
                 connection,
                 transaction

@@ -235,76 +235,63 @@ public class UpdateTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_update_of_a_document_that_references_a_non_existent_document : UpdateTests
+    public class Given_an_update_of_a_document_to_reference_a_non_existent_document : UpdateTests
     {
         private UpdateResult? _updateResult;
-        private List<UpsertResult> _upsertResults = new();
 
-        private static readonly string _referencedResourceName = "ReferencedResource";
-        private static readonly Guid _resourcedDocUuidGuid = Guid.NewGuid();
-        private static readonly Guid _referencedRefIdGuid = Guid.NewGuid();
-        private static readonly string _referencedDocString = """{"abc":1}""";
+        private static readonly Guid _referencedReferentialIdGuid = Guid.NewGuid();
 
         private static readonly string _referencingResourceName = "ReferencingResource";
-        private static readonly Guid _documentUuidGuid = Guid.NewGuid();
-        private static readonly Guid _referentialIdGuid = Guid.NewGuid();
-        private static readonly string _edFiDocString = """{"abc":2}""";
+        private static readonly Guid _referencingDocumentUuidGuid = Guid.NewGuid();
+        private static readonly Guid _referencingReferentialIdGuid = Guid.NewGuid();
+        private static readonly Guid _invalidReferentialIdGuid = Guid.NewGuid();
 
         [SetUp]
         public async Task Setup()
         {
-            _upsertResults = new List<UpsertResult>();
+            // Referenced document
             IUpsertRequest refUpsertRequest = CreateUpsertRequest(
-                _referencedResourceName,
-                _resourcedDocUuidGuid,
-                _referencedRefIdGuid,
-                _referencedDocString
+                "ReferencedResource",
+                Guid.NewGuid(),
+                _referencedReferentialIdGuid,
+                """{"abc":1}"""
             );
-            _upsertResults.Add(await CreateUpsert().Upsert(refUpsertRequest, Connection!, Transaction!));
+            await CreateUpsert().Upsert(refUpsertRequest, Connection!, Transaction!);
 
-            // Add references
-            Reference[] references = [new(_referencingResourceName, _referencedRefIdGuid)];
-
+            // Document with valid reference
             IUpsertRequest upsertRequest = CreateUpsertRequest(
                 _referencingResourceName,
-                _documentUuidGuid,
-                _referentialIdGuid,
-                _edFiDocString,
-                CreateDocumentReferences(references)
+                _referencingDocumentUuidGuid,
+                _referencingReferentialIdGuid,
+                """{"abc":2}""",
+                CreateDocumentReferences([new(_referencingResourceName, _referencedReferentialIdGuid)])
             );
 
-            _upsertResults.Add(await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!));
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
 
-            // Update
+            // Update with invalid reference
             string updatedReferencedDocString = """{"abc":3}""";
             IUpdateRequest updateRequest = CreateUpdateRequest(
-                _referencedResourceName,
-                _resourcedDocUuidGuid,
-                _referentialIdGuid,
-                updatedReferencedDocString
+                _referencingResourceName,
+                _referencingDocumentUuidGuid,
+                _referencingReferentialIdGuid,
+                updatedReferencedDocString,
+                CreateDocumentReferences([new(_referencingResourceName, _invalidReferentialIdGuid)])
             );
             _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
         }
 
         [Test]
-        public void It_should_be_a_successful_inserts()
+        public void It_should_be_an_update_failure_reference()
         {
-            _upsertResults.Should().HaveCount(2);
-            _upsertResults.ForEach(x => x.Should().BeOfType<UpsertResult.InsertSuccess>());
-        }
-
-        [Test]
-        public void It_should_be_a_update_failure_reference()
-        {
-            _updateResult.Should().BeOfType<UpdateResult.UpdateFailureImmutableIdentity>();
+            _updateResult.Should().BeOfType<UpdateResult.UpdateFailureReference>();
         }
     }
 
     [TestFixture]
-    public class Given_an_update_of_a_document_that_references_an_existing_document : UpdateTests
+    public class Given_an_update_of_a_document_to_reference_an_existing_document : UpdateTests
     {
         private UpdateResult? _updateResult;
-        private List<UpsertResult> _upsertResults = new();
 
         private static readonly string _referencedResourceName = "ReferencedResource";
         private static readonly Guid _resourcedDocUuidGuid = Guid.NewGuid();
@@ -326,33 +313,28 @@ public class UpdateTests : DatabaseTest
                 _referencedRefIdGuid,
                 _referencedDocString
             );
-            _upsertResults.Add(await CreateUpsert().Upsert(refUpsertRequest, Connection!, Transaction!));
+            var upsertResult1 = await CreateUpsert().Upsert(refUpsertRequest, Connection!, Transaction!);
+            upsertResult1.Should().BeOfType<UpsertResult.InsertSuccess>();
 
-            // Ensure the referenced document is successfully inserted
-            _upsertResults.Should().HaveCount(1);
-            _upsertResults[0].Should().BeOfType<UpsertResult.InsertSuccess>();
-
-            // Add references
-            Reference[] references = { new (_referencingResourceName, _referencedRefIdGuid) };
-
-            // Then, insert the referencing document that refers to the existing document
+            // Then, insert the referencing document without a reference
             IUpsertRequest upsertRequest = CreateUpsertRequest(
                 _referencingResourceName,
                 _documentUuidGuid,
                 _referentialIdGuid,
-                _edFiDocString,
-                CreateDocumentReferences(references)
+                _edFiDocString
             );
 
-            _upsertResults.Add(await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!));
+            var upsertResult2 = await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+            upsertResult2.Should().BeOfType<UpsertResult.InsertSuccess>();
 
-            // Update the referencing document
+            // Update the referencing document, adding the reference
             string updatedReferencingDocString = """{"abc":3}""";
             IUpdateRequest updateRequest = CreateUpdateRequest(
                 _referencingResourceName,
                 _documentUuidGuid,
                 _referentialIdGuid,
-                updatedReferencingDocString
+                updatedReferencingDocString,
+                CreateDocumentReferences([new(_referencingResourceName, _referencedRefIdGuid)])
             );
             _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
         }
@@ -368,14 +350,11 @@ public class UpdateTests : DatabaseTest
     public class Given_an_update_of_a_document_with_one_existing_and_one_non_existent_reference : UpdateTests
     {
         private UpdateResult? _updateResult;
-        private List<UpsertResult> _upsertResults = new();
 
         private static readonly string _existingReferencedResourceName = "ExistingReferencedResource";
         private static readonly Guid _existingResourcedDocUuidGuid = Guid.NewGuid();
         private static readonly Guid _existingReferencedRefIdGuid = Guid.NewGuid();
         private static readonly string _existingReferencedDocString = """{"abc":1}""";
-        
-        private static readonly Guid _nonExistentReferencedRefIdGuid = Guid.NewGuid();
 
         private static readonly string _referencingResourceName = "ReferencingResource";
         private static readonly Guid _documentUuidGuid = Guid.NewGuid();
@@ -385,8 +364,6 @@ public class UpdateTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _upsertResults = new List<UpsertResult>();
-
             // First, insert the existing referenced document
             IUpsertRequest existingRefUpsertRequest = CreateUpsertRequest(
                 _existingReferencedResourceName,
@@ -394,57 +371,51 @@ public class UpdateTests : DatabaseTest
                 _existingReferencedRefIdGuid,
                 _existingReferencedDocString
             );
-            _upsertResults.Add(await CreateUpsert().Upsert(existingRefUpsertRequest, Connection!, Transaction!));
+            var upsertResult1 = await CreateUpsert()
+                .Upsert(existingRefUpsertRequest, Connection!, Transaction!);
+            upsertResult1.Should().BeOfType<UpsertResult.InsertSuccess>();
 
-            // Ensure the existing referenced document is successfully inserted
-            _upsertResults.Should().HaveCount(1);
-            _upsertResults[0].Should().BeOfType<UpsertResult.InsertSuccess>();
-
-            // Add references: one existing and one non-existent
-            Reference[] references = { new (_existingReferencedResourceName, _existingReferencedRefIdGuid) };
-
-            // Then, insert the referencing document that refers to both existing and non-existent documents
+            // Then, insert the referencing document with no references yet
             IUpsertRequest upsertRequest = CreateUpsertRequest(
                 _referencingResourceName,
                 _documentUuidGuid,
                 _referentialIdGuid,
-                _edFiDocString,
-                CreateDocumentReferences(references)
+                _edFiDocString
             );
 
-            _upsertResults.Add(await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!));
+            var upsertResult2 = await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+            upsertResult2.Should().BeOfType<UpsertResult.InsertSuccess>();
 
-            // Update the referencing document
-            string updatedReferencingDocString = """{"abc":3}""";
+            // One existing and one non-existent reference
+            Reference[] references =
+            [
+                new(_existingReferencedResourceName, _existingReferencedRefIdGuid),
+                new("Nonexistent", Guid.NewGuid())
+            ];
+
+            // Update the referencing document to refer to both existing and non-existent documents
             IUpdateRequest updateRequest = CreateUpdateRequest(
                 _referencingResourceName,
                 _documentUuidGuid,
-                _nonExistentReferencedRefIdGuid,
-                updatedReferencingDocString
+                _referentialIdGuid,
+                """{"abc":3}""",
+                CreateDocumentReferences(references)
             );
             _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
         }
 
         [Test]
-        public void It_should_be_a_successful_inserts()
-        {
-            _upsertResults.Should().HaveCount(2);
-            _upsertResults.ForEach(x => x.Should().BeOfType<UpsertResult.InsertSuccess>());
-        }
-
-        [Test]
         public void It_should_be_a_update_failure_reference()
         {
-            _updateResult.Should().BeOfType<UpdateResult.UpdateFailureImmutableIdentity>();
+            _updateResult.Should().BeOfType<UpdateResult.UpdateFailureReference>();
         }
     }
 
     [TestFixture]
-    public class Given_an_update_of_a_subclass_document_referenced_by_an_existing_document_as_a_superclass : UpdateTests
+    public class Given_an_update_of_a_subclass_document_referenced_by_an_existing_document_as_a_superclass
+        : UpdateTests
     {
         private UpdateResult? _updateResult;
-        private List<UpsertResult> _upsertResults = new();
-
         private static readonly string _superclassResourceName = "SuperclassResource";
         private static readonly Guid _superclassDocUuidGuid = Guid.NewGuid();
         private static readonly Guid _superclassRefIdGuid = Guid.NewGuid();
@@ -458,22 +429,18 @@ public class UpdateTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _upsertResults = new List<UpsertResult>();
-
             IUpsertRequest superclassUpsertRequest = CreateUpsertRequest(
                 _superclassResourceName,
                 _superclassDocUuidGuid,
                 _superclassRefIdGuid,
                 _superclassDocString
             );
-            _upsertResults.Add(await CreateUpsert().Upsert(superclassUpsertRequest, Connection!, Transaction!));
+            var upsertResult1 = await CreateUpsert().Upsert(superclassUpsertRequest, Connection!, Transaction!);
+            upsertResult1.Should().BeOfType<UpsertResult.InsertSuccess>();
 
-            _upsertResults.Should().HaveCount(1);
-            _upsertResults[0].Should().BeOfType<UpsertResult.InsertSuccess>();
+            Reference[] references = [new(_superclassResourceName, _superclassRefIdGuid)];
 
-            Reference[] references = { new (_superclassResourceName, _superclassRefIdGuid) };
-
-            IUpsertRequest subclassUpsertRequest = CreateUpsertRequest(
+            IUpsertRequest referencingUpsertRequest = CreateUpsertRequest(
                 _subclassResourceName,
                 _subclassDocUuidGuid,
                 _subclassRefIdGuid,
@@ -481,7 +448,8 @@ public class UpdateTests : DatabaseTest
                 CreateDocumentReferences(references)
             );
 
-            _upsertResults.Add(await CreateUpsert().Upsert(subclassUpsertRequest, Connection!, Transaction!));
+            var upsertResult2 = await CreateUpsert().Upsert(referencingUpsertRequest, Connection!, Transaction!);
+            upsertResult2.Should().BeOfType<UpsertResult.InsertSuccess>();
 
             string updatedSubclassDocString = """{"xyz":10}""";
             IUpdateRequest updateRequest = CreateUpdateRequest(
@@ -495,13 +463,6 @@ public class UpdateTests : DatabaseTest
         }
 
         [Test]
-        public void It_should_be_a_successful_inserts()
-        {
-            _upsertResults.Should().HaveCount(2);
-            _upsertResults.ForEach(x => x.Should().BeOfType<UpsertResult.InsertSuccess>());
-        }
-
-        [Test]
         public void It_should_be_a_successful_update()
         {
             _updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
@@ -509,7 +470,8 @@ public class UpdateTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_update_of_the_same_document_with_two_overlapping_request_but_also_with_different_references : UpdateTests
+    public class Given_an_update_of_the_same_document_with_two_overlapping_request_but_also_with_different_references
+        : UpdateTests
     {
         private UpdateResult? _updateResult1;
         private UpdateResult? _updateResult2;
@@ -595,12 +557,12 @@ public class UpdateTests : DatabaseTest
     }
 
     // Future tests - from Meadowlark
-    
-    // given an update of a document that references an existing descriptor
 
-    // given an update of a document that references a nonexisting descriptor
+    // given an update of a document that tries to reference an existing descriptor
+
+    // given an update of a document that tries to reference a nonexisting descriptor
 
     // Future tests - new concurrency-based
 
-    // given an update of a document that references an existing document that is concurrently deleted
+    // given an update of a document that tries to reference an existing document that is concurrently deleted
 }

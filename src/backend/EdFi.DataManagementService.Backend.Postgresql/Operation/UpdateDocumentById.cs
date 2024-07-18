@@ -7,12 +7,11 @@ using System.Text.Json;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using Microsoft.CodeAnalysis;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
+using static EdFi.DataManagementService.Backend.Postgresql.Operation.SqlAction;
 using static EdFi.DataManagementService.Backend.Postgresql.ReferenceHelper;
-using Document = EdFi.DataManagementService.Backend.Postgresql.Model.Document;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
 
@@ -25,10 +24,8 @@ public interface IUpdateDocumentById
     );
 }
 
-public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentById> _logger)
-    : IUpdateDocumentById
+public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDocumentById
 {
-
     private static readonly string _beforeInsertReferences = "BeforeInsertReferences";
 
     /// <summary>
@@ -45,10 +42,12 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
         _logger.LogDebug("Entering UpdateDocumentById.UpdateById - {TraceId}", updateRequest.TraceId);
         var documentPartitionKey = PartitionKeyFor(updateRequest.DocumentUuid);
 
-        DocumentReferenceIds documentReferenceIds = DocumentReferenceIdsFrom(updateRequest.DocumentInfo.DocumentReferences);
+        DocumentReferenceIds documentReferenceIds = DocumentReferenceIdsFrom(
+            updateRequest.DocumentInfo.DocumentReferences
+        );
         try
         {
-            var validationResult = await _sqlAction.UpdateDocumentValidation(
+            var validationResult = await UpdateDocumentValidation(
                 updateRequest.DocumentUuid,
                 documentPartitionKey,
                 updateRequest.DocumentInfo.ReferentialId,
@@ -64,7 +63,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 return new UpdateResult.UpdateFailureNotExists();
             }
 
-            if (!validationResult.ReferentialIdExists)
+            if (!validationResult.ReferentialIdUnchanged)
             {
                 // Extracted referential id does not match stored. Must be attempting to change natural key.
                 _logger.LogInformation(
@@ -76,7 +75,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 );
             }
 
-            int rowsAffected = await _sqlAction.UpdateDocumentEdfiDoc(
+            int rowsAffected = await UpdateDocumentEdfiDoc(
                 PartitionKeyFor(updateRequest.DocumentUuid).Value,
                 updateRequest.DocumentUuid.Value,
                 JsonSerializer.Deserialize<JsonElement>(updateRequest.EdfiDoc),
@@ -93,7 +92,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                         try
                         {
                             // Attempt to get the document, to get the ID for references
-                            documentFromDb = await _sqlAction.FindDocumentByReferentialId(
+                            documentFromDb = await FindDocumentByReferentialId(
                                 updateRequest.DocumentInfo.ReferentialId,
                                 PartitionKeyFor(updateRequest.DocumentInfo.ReferentialId),
                                 connection,
@@ -101,7 +100,8 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                                 LockOption.BlockUpdateDelete
                             );
                         }
-                        catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.SerializationFailure)
+                        catch (PostgresException pe)
+                            when (pe.SqlState == PostgresErrorCodes.SerializationFailure)
                         {
                             _logger.LogDebug(
                                 pe,
@@ -116,19 +116,21 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                         {
                             documentId =
                                 documentFromDb.Id
-                                ?? throw new InvalidOperationException("documentFromDb.Id should never be null");
+                                ?? throw new InvalidOperationException(
+                                    "documentFromDb.Id should never be null"
+                                );
                         }
 
-                        await _sqlAction.DeleteReferencesByDocumentUuid(
-                        documentPartitionKey.Value,
-                        updateRequest.DocumentUuid.Value,
+                        await DeleteReferencesByDocumentUuid(
+                            documentPartitionKey.Value,
+                            updateRequest.DocumentUuid.Value,
                             connection,
                             transaction
                         );
 
-                        // Create a transaction savepoint in case insert into References fails due to invalid references
+                        // Create a transaction save point in case insert into References fails due to invalid references
                         await transaction.SaveAsync(_beforeInsertReferences);
-                        int numberOfRowsInserted = await _sqlAction.InsertReferences(
+                        int numberOfRowsInserted = await InsertReferences(
                             new(
                                 ParentDocumentPartitionKey: documentPartitionKey.Value,
                                 ParentDocumentId: documentId,
@@ -170,15 +172,15 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
         }
         catch (PostgresException pe)
             when (pe.SqlState == PostgresErrorCodes.ForeignKeyViolation
-                  && pe.ConstraintName == SqlAction.FK_Reference_ReferenceAlias
-                 )
+                && pe.ConstraintName == SqlAction.ReferenceValidationFkName
+            )
         {
             _logger.LogDebug(pe, "Foreign key violation on Update - {TraceId}", updateRequest.TraceId);
 
-            // Restore transaction savepoint to continue using transaction
+            // Restore transaction save point to continue using transaction
             await transaction.RollbackAsync(_beforeInsertReferences);
 
-            Guid[] invalidReferentialIds = await _sqlAction.FindInvalidReferentialIds(
+            Guid[] invalidReferentialIds = await FindInvalidReferentialIds(
                 documentReferenceIds,
                 connection,
                 transaction
