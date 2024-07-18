@@ -18,12 +18,12 @@ Feature: The Discovery API provides information about the application version, s
                       ],
                       "urls": [
                           "dependencies": "{BASE_URL}/metadata/dependencies",
-                          "openApiMetadata": "{BASE_URL}/DMS/metadata/specifications",
-                          "oauth": "{BASE_URL}/DMS/oauth/token",
-                          "dataManagementApi": "{BASE_URL}/DMS/data",
-                          "xsdMetadata": "{BASE_URL}/DMS/metadata/xsd",
-                          "changeQueries": "{BASE_URL}/DMS/changeQueries/v1",
-                          "identity": "{BASE_URL}/DMS/identity/v2"
+                          "openApiMetadata": "{BASE_URL}/metadata/specifications",
+                          "oauth": "{BASE_URL}/oauth/token",
+                          "dataManagementApi": "{BASE_URL}/data",
+                          "xsdMetadata": "{BASE_URL}/metadata/xsd",
+                          "changeQueries": "{BASE_URL}/changeQueries/v1",
+                          "identity": "{BASE_URL}/identity/v2"
                       ]
                   }
                   """
@@ -32,7 +32,14 @@ Feature: The Discovery API provides information about the application version, s
         Scenario: 02 GET /metadata returns the metadata URL list
             Given a GET to "/metadata"
              Then it should respond with 200
-              And there is a JSON file with the list of metadata URL
+              And the response body is
+                  """
+                  {
+                      "dependencies": "{BASE_URL}/metadata/dependencies",
+                      "specifications": "{BASE_URL}/metadata/specifications",
+                      "xsdMetadata": "{BASE_URL}/metadata/xsd"
+                  }
+                  """
 
         @ignore
         Scenario: 03 GET /metadata/specifications returns the list of supported API specifications
@@ -43,7 +50,7 @@ Feature: The Discovery API provides information about the application version, s
                   [
                       {
                           "name": "Resources",
-                          "endpointUri": "{BASE_URL}/DMS/metadata/specifications/resources-spec.json",
+                          "endpointUri": "{BASE_URL}/metadata/specifications/resources-spec.json",
                           "prefix": "string"
                       },
                       {
@@ -63,4 +70,15 @@ Feature: The Discovery API provides information about the application version, s
         Scenario: 04 GET /metadata/dependencies returns the dependency order for loading documents
             Given a GET to "/metadata/dependencies"
              Then it should respond with 200
-              And there is a JSON file in the response body with a list of dependencies
+              And the response body is
+                  """
+                  [
+                      {
+                          "resource": "/ed-fi/absenceEventCategoryDescriptors",
+                          "order": 1,
+                          "operations": [
+                              "Create"
+                          ]
+                      }
+                  ]
+                  """
