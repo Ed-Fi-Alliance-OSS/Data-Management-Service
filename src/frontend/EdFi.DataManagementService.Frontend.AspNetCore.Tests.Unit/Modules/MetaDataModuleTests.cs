@@ -225,5 +225,7 @@ public class MetadataModuleTests
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         jsonContent.Should().NotBeNull();
+        jsonContent?[0]!["resource"]?.GetValue<string>().Should().Be("/ed-fi/absenceEventCategoryDescriptor");
+        jsonContent?[0]!["order"]?.GetValue<int>().Should().Be(1);
     }
 }
