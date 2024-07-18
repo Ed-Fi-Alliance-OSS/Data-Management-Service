@@ -30,6 +30,16 @@ cd ../
 ./build.ps1 run
 ```
 
+## Running the EdFi.DataManagementService.Backend.Postgresql.Test.Integration
+To run the integration tests locally, execute the following command in a PowerShell
+terminal:
+
+```shell
+# From base directory
+./build.ps1 IntegrationTest -Configuration Debug
+```
+You can see the result in the `TestResults` folder (located in the base directory). The file containing the result is of the type `Test Result File (.trx)`. To better understand the format, is recommended that you open it using Visual Studio. The file name is `EdFi.DataManagementService.Backend.Postgresql.Test.Integration.trx`.
+
 ## Running the EdFi.DataManagementService.Api.Tests.Integration
 
 > [!NOTE] If using a custom connection string for your integration tests, it's
