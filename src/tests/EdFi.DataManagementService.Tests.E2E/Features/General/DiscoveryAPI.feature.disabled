@@ -21,9 +21,7 @@ Feature: The Discovery API provides information about the application version, s
                           "openApiMetadata": "{BASE_URL}/metadata/specifications",
                           "oauth": "{BASE_URL}/oauth/token",
                           "dataManagementApi": "{BASE_URL}/data",
-                          "xsdMetadata": "{BASE_URL}/metadata/xsd",
-                          "changeQueries": "{BASE_URL}/changeQueries/v1",
-                          "identity": "{BASE_URL}/identity/v2"
+                          "xsdMetadata": "{BASE_URL}/metadata/xsd"
                       ]
                   }
                   """
