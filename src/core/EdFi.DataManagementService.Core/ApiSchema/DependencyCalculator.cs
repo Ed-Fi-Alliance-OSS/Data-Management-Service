@@ -19,26 +19,44 @@ internal class DependencyCalculator(JsonNode _apiSchemaRootNode, ILogger _logger
             var resourceSchemas = projectSchemaNode["resourceSchemas"]?.AsObject().Select(x => new ResourceSchema(x.Value!)).ToList()!;
 
             Dictionary<string, List<string>> dependencies =
-                resourceSchemas.ToDictionary(rs => rs.ResourceName.Value, rs => new List<string>());
+                resourceSchemas
+                    .Where(rs => !rs.IsSchoolYearEnumeration)
+                    .ToDictionary(rs => rs.ResourceName.Value, rs => rs.DocumentPaths.Where(d => d.IsReference).Select(d => d.ResourceName.Value).ToList());
 
-            foreach (var resourceSchema in resourceSchemas)
-            {
-                foreach (var documentPath in resourceSchema.DocumentPaths.Where(d => d.IsReference))
-                {
-                    dependencies[resourceSchema.ResourceName.Value].Add(documentPath.ResourceName.Value);
-                }
-            }
-
-            List<KeyValuePair<string, int>> orderedResources = [];
+            Dictionary<string, int> orderedResources = dependencies.ToDictionary(d => d.Key, _ => 0);
             Dictionary<string, int> visitedResources = [];
             foreach (var dependency in dependencies.OrderBy(d => d.Value.Count).ThenBy(d => d.Key).Select(d => d.Key))
             {
                 RecursivelyDetermineDependencies(dependency, 0);
             }
 
+            string ResourceNameMapping(string resourceName)
+            {
+                var resourceNameNode = projectSchemaNode["resourceNameMapping"];
+                if (resourceNameNode == null)
+                {
+                    throw new InvalidOperationException("ResourceNameMapping missing");
+                }
+
+                if (resourceName.EndsWith("Descriptor"))
+                {
+                    resourceName = resourceName.Replace("Descriptor", string.Empty);
+                }
+
+                var resourceNode = resourceNameNode[resourceName];
+                if (resourceNode == null)
+                {
+                    throw new InvalidOperationException($"No resource name mapping for {resourceName}");
+                }
+
+                return resourceNode.GetValue<string>();
+            }
+
             foreach (var orderedResource in orderedResources.OrderBy(o => o.Value).ThenBy(o => o.Key))
             {
-                dependenciesJsonArray.Add(new { resource = $"/{projectSchemaNode!.GetPropertyName()}/{orderedResource.Key.First().ToString().ToLowerInvariant()}{orderedResource.Key.Substring(1)}", order = orderedResource.Value, operations = new[] { "Create", "Update" } });
+                string resourceName = ResourceNameMapping(orderedResource.Key);
+
+                dependenciesJsonArray.Add(new { resource = $"/{projectSchemaNode!.GetPropertyName()}/{resourceName}", order = orderedResource.Value, operations = new[] { "Create", "Update" } });
             }
 
             int RecursivelyDetermineDependencies(string resourceName, int depth)
@@ -80,7 +98,8 @@ internal class DependencyCalculator(JsonNode _apiSchemaRootNode, ILogger _logger
                                 maxDepth = level;
                         }
                     }
-                    orderedResources.Add(new KeyValuePair<string, int>(resourceName, maxDepth + 1));
+
+                    orderedResources[resourceName] = maxDepth + 1;
                     visitedResources[resourceName] = maxDepth + 1;
                 }
 

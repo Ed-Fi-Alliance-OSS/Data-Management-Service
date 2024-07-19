@@ -26,10 +26,14 @@ public class DependencyCalculatorTests
               },
               "projectSchemas": {
                 "ed-fi": {
+                  "resourceNameMapping": {
+                    "AbsenceEventCategory": "absenceEventCategoryDescriptors"
+                  },
                   "resourceSchemas": {
                     "absenceEventCategoryDescriptors": {
                       "documentPathsMapping": {
                       },
+                      "isSchoolYearEnumeration": false,
                       "resourceName": "AbsenceEventCategoryDescriptor"
                     }
                   }
@@ -42,7 +46,7 @@ public class DependencyCalculatorTests
             """
             [
                 {
-                  "resource": "/ed-fi/absenceEventCategoryDescriptor",
+                  "resource": "/ed-fi/absenceEventCategoryDescriptors",
                   "order": 1,
                   "operations": [
                     "Create",
@@ -84,11 +88,17 @@ public class DependencyCalculatorTests
                 },
                 "projectSchemas": {
                   "ed-fi": {
+                    "resourceNameMapping": {
+                      "EducationOrganizationCategory": "educationOrganizationCategoryDescriptors",
+                      "LocalEducationAgency": "localEducationAgencies",
+                      "School": "schools"
+                    },
                     "resourceSchemas": {
                       "educationOrganizationCategoryDescriptors": {
                       "documentPathsMapping": {
                       },
-                      "isDescriptor": true,          
+                      "isDescriptor": true,
+                      "isSchoolYearEnumeration": false,          
                       "isSubclass": false,         
                       "resourceName": "EducationOrganizationCategoryDescriptor"
                     },
@@ -106,7 +116,8 @@ public class DependencyCalculatorTests
                           "resourceName": "LocalEducationAgency"
                         }
                       },         
-                      "isSubclass": true,          
+                      "isSubclass": true,
+                      "isSchoolYearEnumeration": false,       
                       "resourceName": "LocalEducationAgency",
                       "subclassType": "domainEntity",
                       "superclassProjectName": "Ed-Fi",
@@ -131,6 +142,7 @@ public class DependencyCalculatorTests
                         }
                       },
                       "isSubclass": true,
+                      "isSchoolYearEnumeration": false,
                       "resourceName": "School",
                       "subclassType": "domainEntity",
                       "superclassProjectName": "Ed-Fi",
@@ -146,7 +158,7 @@ public class DependencyCalculatorTests
             """
             [
                 {
-                  "resource": "/ed-fi/educationOrganizationCategoryDescriptor",
+                  "resource": "/ed-fi/educationOrganizationCategoryDescriptors",
                   "order": 1,
                   "operations": [
                     "Create",
@@ -154,7 +166,7 @@ public class DependencyCalculatorTests
                   ]
                 },
                 {
-                  "resource": "/ed-fi/localEducationAgency",
+                  "resource": "/ed-fi/localEducationAgencies",
                   "order": 2,
                   "operations": [
                     "Create",
@@ -162,7 +174,7 @@ public class DependencyCalculatorTests
                   ]
                 },
                 {
-                  "resource": "/ed-fi/school",
+                  "resource": "/ed-fi/schools",
                   "order": 3,
                   "operations": [
                     "Create",
@@ -192,6 +204,120 @@ public class DependencyCalculatorTests
         }
     }
 
+
+    [TestFixture]
+    public class Given_A_Sample_ApiSchema_With_Superclass_Reference() : DependencyCalculatorTests
+    {
+        private readonly string _sampleSchema =
+            """
+            {
+                "projectNameMapping": {
+                  "Ed-Fi": "ed-fi"
+                },
+                "projectSchemas": {
+                  "ed-fi": {
+                    "resourceNameMapping": {
+                      "EducationOrganizationCategory": "educationOrganizationCategoryDescriptors",
+                      "LocalEducationAgency": "localEducationAgencies",
+                      "OpenStaffPosition": "openStaffPositions",
+                      "School": "schools"
+                    },
+                    "resourceSchemas": {
+                      "educationOrganizationCategoryDescriptors": {
+                      "documentPathsMapping": {
+                      },
+                      "isDescriptor": true,   
+                      "isSchoolYearEnumeration": false,       
+                      "isSubclass": false,         
+                      "resourceName": "EducationOrganizationCategoryDescriptor"
+                    },
+                    "openStaffPositions": {
+                      "allowIdentityUpdates": false,
+                      "documentPathsMapping": {            
+                        "EducationOrganization": {
+                          "isDescriptor": false,
+                          "isReference": true,
+                          "projectName": "Ed-Fi",
+                          "resourceName": "EducationOrganization"
+                        }            
+                      },
+                      "isSubclass": false,
+                      "isSchoolYearEnumeration": false,
+                      "resourceName": "OpenStaffPosition"
+                    },
+                      "schools": {
+                      "documentPathsMapping": {
+                        "EducationOrganizationCategoryDescriptor": {
+                          "isDescriptor": true,
+                          "isReference": true,
+                          "projectName": "Ed-Fi",
+                          "resourceName": "EducationOrganizationCategoryDescriptor"
+                        },
+                        "LocalEducationAgency": {
+                          "isReference": true,
+                          "projectName": "Ed-Fi",
+                          "resourceName": "LocalEducationAgency"
+                        }
+                      },
+                      "isSubclass": true,
+                      "isSchoolYearEnumeration": false,
+                      "resourceName": "School"
+                    }
+                  }
+                }
+              }
+            }
+            """;
+
+        private readonly string _expectedDescriptor =
+            """
+            [
+                {
+                  "resource": "/ed-fi/educationOrganizationCategoryDescriptors",
+                  "order": 1,
+                  "operations": [
+                    "Create",
+                    "Update"
+                  ]
+                },
+                {
+                  "resource": "/ed-fi/schools",
+                  "order": 2,
+                  "operations": [
+                    "Create",
+                    "Update"
+                  ]
+                },
+                {
+                  "resource": "/ed-fi/openStaffPositions",
+                  "order": 3,
+                  "operations": [
+                    "Create",
+                    "Update"
+                  ]
+                }
+            ]
+            """;
+
+        [SetUp]
+        public void Setup()
+        {
+            var logger = NullLogger<ApiSchemaSchemaProvider>.Instance;
+            _dependencyCalculator = new DependencyCalculator(JsonNode.Parse(_sampleSchema)!, logger);
+        }
+
+        [Test]
+        public void It_should_calculate_dependencies()
+        {
+            var dependencies = _dependencyCalculator!.GetDependencies();
+            dependencies.Should().NotBeEmpty();
+
+            var expectedDependencies = JsonNode.Parse(_expectedDescriptor)!.AsArray();
+            dependencies!.Should().BeEquivalentTo(expectedDependencies!, options => options
+                .WithoutStrictOrdering()
+                .IgnoringCyclicReferences());
+        }
+    }
     [TestFixture]
     public class Given_A_Sample_ApiSchema_Missing_ProjectSchemas() : DependencyCalculatorTests
     {
