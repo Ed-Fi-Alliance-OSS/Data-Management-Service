@@ -7,8 +7,6 @@ using System.Diagnostics;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Model;
 using Json.More;
-using Microsoft.VisualBasic;
-using static Microsoft.CodeAnalysis.CSharp.SyntaxTokenParser;
 
 namespace EdFi.DataManagementService.Core.Validation;
 
@@ -65,7 +63,7 @@ internal class EqualityConstraintValidator : IEqualityConstraintValidator
                         .Select(x => $"'{x}'")
                         .ToArray()
                 );
-                var targetSegment = Strings.Replace(targetPath.Segments[1].ToString(), ".", "");
+                var targetSegment = string.Replace(targetPath.Segments[1].ToString(), ".", "");
                 errors.Add(
                     $"All values supplied for '{targetSegment}' must match."
                         + " Review all references (including those higher up in the resource's data)"
