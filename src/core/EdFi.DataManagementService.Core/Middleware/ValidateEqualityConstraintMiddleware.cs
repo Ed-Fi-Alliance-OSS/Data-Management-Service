@@ -37,21 +37,21 @@ internal class ValidateEqualityConstraintMiddleware(
             context.FrontendRequest.TraceId
         );
 
-        string[] errors = _equalityConstraintValidator.Validate(
+        Dictionary<string, string[]> errors = _equalityConstraintValidator.Validate(
             context.ParsedBody,
             context.ResourceSchema.EqualityConstraints
         );
 
-        if (errors.Length == 0)
+        if (errors.Count == 0)
         {
             await next();
         }
         else
         {
-            var failureResponse = FailureResponse.ForBadRequest(
-                "The request could not be processed. See 'errors' for details.",
-                null,
-                errors
+            var failureResponse = FailureResponse.ForDataValidation(
+                "Data validation failed. See 'validationErrors' for details.",
+                errors,
+                null
             );
 
             _logger.LogDebug(
