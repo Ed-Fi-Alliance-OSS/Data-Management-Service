@@ -63,7 +63,7 @@ internal class EqualityConstraintValidator : IEqualityConstraintValidator
                         .Select(x => $"'{x}'")
                         .ToArray()
                 );
-                var targetSegment = string.Replace(targetPath.Segments[1].ToString(), ".", "");
+                var targetSegment = targetPath.Segments[1].ToString().Replace(".", "");
                 errors.Add(
                     $"All values supplied for '{targetSegment}' must match."
                         + " Review all references (including those higher up in the resource's data)"
