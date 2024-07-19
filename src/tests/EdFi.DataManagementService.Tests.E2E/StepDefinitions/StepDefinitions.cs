@@ -10,7 +10,6 @@ using EdFi.DataManagementService.Tests.E2E.Management;
 using FluentAssertions;
 using Microsoft.Playwright;
 using Newtonsoft.Json.Linq;
-using NUnit.Framework.Internal;
 using Reqnroll;
 
 namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
