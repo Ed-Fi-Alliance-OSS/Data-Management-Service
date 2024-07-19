@@ -73,15 +73,17 @@ Feature: Equality Constraint Validation
               And the response body is
                   """
                   {
-                      "detail": "The request could not be processed. See 'errors' for details.",
-                      "type": "urn:ed-fi:api:bad-request",
-                      "title": "Bad Request",
-                      "status": 400,
-                      "correlationId": null,
-                      "validationErrors": null,
-                      "errors": [
-                          "Constraint failure: document paths $.classPeriods[*].classPeriodReference.schoolId and $.schoolReference.schoolId must have the same values"
-                      ]
+                    "detail": "Data validation failed. See 'validationErrors' for details",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null,
+                    "validationErrors": {
+                          "$.classPeriods[*].classPeriodReference.schoolId": [
+                              "All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '1', '255901001'"
+                          ]
+                      },
+                    "errors": null
                   }
                   """
 
@@ -110,15 +112,17 @@ Feature: Equality Constraint Validation
               And the response body is
                   """
                   {
-                      "detail": "The request could not be processed. See 'errors' for details.",
-                      "type": "urn:ed-fi:api:bad-request",
-                      "title": "Bad Request",
-                      "status": 400,
-                      "correlationId": null,
-                      "validationErrors": null,
-                      "errors": [
-                          "Constraint failure: document paths $.classPeriods[*].classPeriodReference.schoolId and $.courseOfferingReference.schoolId must have the same values"
-                      ]
+                      "detail": "Data validation failed. See 'validationErrors' for details",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null,
+                    "validationErrors": {
+                          "$.classPeriods[*].classPeriodReference.schoolId": [
+                              "All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '255901107', '255901001'"
+                          ]
+                      },
+                    "errors": null
                   }
                   """
 
@@ -153,15 +157,17 @@ Feature: Equality Constraint Validation
               And the response body is
                   """
                   {
-                      "detail": "The request could not be processed. See 'errors' for details.",
-                      "type": "urn:ed-fi:api:bad-request",
-                      "title": "Bad Request",
-                      "status": 400,
-                      "correlationId": null,
-                      "validationErrors": null,
-                      "errors": [
-                          "Constraint failure: document paths $.classPeriods[*].classPeriodReference.schoolId and $.courseOfferingReference.schoolId must have the same values"
-                      ]
+                    "detail": "Data validation failed. See 'validationErrors' for details",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null,
+                    "validationErrors": {
+                          "$.classPeriods[*].classPeriodReference.schoolId": [
+                              "All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '1', '255901001'"
+                          ]
+                      },
+                    "errors": null
                   }
                   """
 

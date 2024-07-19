@@ -69,14 +69,16 @@ Feature: Validation of Natural Key Unification
              Then the response body is
                   """
                   {
-                      "validationErrors":null,
-                      "errors":[
-                          "Constraint failure: document paths $.schoolReference.schoolId and $.sessionReference.schoolId must have the same values"
-                      ],
+                      "validationErrors":{
+                        "$.schoolReference.schoolId": [
+                          "All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '123', '999'"
+                        ]
+                      },
+                      "errors": null,
                       "detail":"The request could not be processed. See 'errors' for details.",
                       "type":"urn:ed-fi:api:bad-request",
                       "title":"Bad Request",
-                      "status":400,
+                      "status":400, 
                       "correlationId":null
                   }
                   """

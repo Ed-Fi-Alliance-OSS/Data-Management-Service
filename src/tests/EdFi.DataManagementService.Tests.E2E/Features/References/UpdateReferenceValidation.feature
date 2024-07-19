@@ -104,9 +104,7 @@ Feature: Update Reference Validation
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Unresolved Reference",
                       "status": 409,
-                      "correlationId": null,
-                      "validationErrors": null,
-                      "errors": null
+                      "correlationId": null
                   }
                   """
 
