@@ -65,6 +65,7 @@ public static class SqlAction
                 }
             };
 
+        await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
         if (!reader.HasRows)
@@ -105,6 +106,7 @@ public static class SqlAction
                 }
             };
 
+        await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
         if (!reader.HasRows)
@@ -153,6 +155,7 @@ public static class SqlAction
                 }
             };
 
+        await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
         var documents = new List<JsonNode>();
@@ -186,6 +189,7 @@ public static class SqlAction
                 Parameters = { new() { Value = resourceName }, }
             };
 
+        await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
         if (!reader.HasRows)
@@ -226,6 +230,7 @@ public static class SqlAction
             }
         };
 
+        await command.PrepareAsync();
         return Convert.ToInt64(await command.ExecuteScalarAsync());
     }
 
@@ -257,6 +262,7 @@ public static class SqlAction
             }
         };
 
+        await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
 
@@ -299,6 +305,7 @@ public static class SqlAction
                 }
             };
 
+        await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
         if (!reader.HasRows)
@@ -345,6 +352,7 @@ public static class SqlAction
             }
         };
 
+        await command.PrepareAsync();
         return Convert.ToInt64(await command.ExecuteScalarAsync());
     }
 
@@ -384,6 +392,7 @@ public static class SqlAction
             }
         };
 
+        await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
 
@@ -418,6 +427,7 @@ public static class SqlAction
             }
         };
 
+        await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
         List<Guid> result = [];
@@ -456,6 +466,7 @@ public static class SqlAction
                 }
             };
 
+        await command.PrepareAsync();
         int rowsAffected = await command.ExecuteNonQueryAsync();
         return rowsAffected;
     }
@@ -485,6 +496,7 @@ public static class SqlAction
                 }
             };
 
+        await command.PrepareAsync();
         int rowsAffected = await command.ExecuteNonQueryAsync();
         return rowsAffected;
     }
@@ -516,6 +528,9 @@ public static class SqlAction
                     new() { Value = documentPartitionKey.Value }
                 }
             };
+
+        await command.PrepareAsync();
+
         try
         {
             await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();

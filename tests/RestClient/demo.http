@@ -1,0 +1,137 @@
+@port = 5198
+
+### Note, no descriptor validation yet
+
+### Setup - POST School Year 2025
+POST http://localhost:{{port}}/data/ed-fi/schoolYearTypes
+
+{
+    "schoolYear": 2025,
+    "currentSchoolYear": false,
+    "schoolYearDescription": "Year 2025"
+}
+
+### Setup - POST School1
+POST http://localhost:{{port}}/data/ed-fi/schools
+
+{
+    "schoolId": 123,
+    "nameOfInstitution": "School1",
+    "educationOrganizationCategories": [
+        {
+            "educationOrganizationCategoryDescriptor": "string"
+        }
+    ],
+    "gradeLevels": [
+        {
+            "gradeLevelDescriptor": "string"
+        }
+    ]
+}
+
+### POST Session1, depending on School1 and SchoolYear 2025
+
+POST http://localhost:{{port}}/data/ed-fi/sessions
+
+{
+    "sessionName": "Session3",
+    "schoolYearTypeReference": {
+        "schoolYear": 1900
+    },
+    "beginDate": "2025-01-01",
+    "endDate": "2025-12-12",
+    "termDescriptor": "uri://ed-fi.org/TermDescriptor#Presentation",
+    "totalInstructionalDays": 365,
+    "schoolReference": {
+        "schoolId": 123
+    }
+}
+
+### POST a bad Session2, invalid school
+
+POST http://localhost:{{port}}/data/ed-fi/sessions
+
+{
+    "sessionName": "Session2",
+    "schoolYearTypeReference": {
+        "schoolYear": 2025
+    },
+    "beginDate": "2025-01-01",
+    "endDate": "2025-12-12",
+    "termDescriptor": "uri://ed-fi.org/TermDescriptor#Presentation",
+    "totalInstructionalDays": 365,
+    "schoolReference": {
+        "schoolId": 999
+    }
+}
+
+
+### POST AccountabilityRating1, depending on School1 as EducationOrganization and SchoolYear 2025
+
+POST http://localhost:{{port}}/data/ed-fi/accountabilityRatings
+
+{
+    "ratingTitle": "AccountabilityRating1",
+    "rating": "Good",
+    "schoolYearTypeReference": {
+        "schoolYear": 2025
+    },
+    "educationOrganizationReference": {
+        "educationOrganizationId": 123
+    }
+}
+
+### Create AccountabilityRating2 with invalid EducationOrganization, expect error
+
+POST http://localhost:{{port}}/data/ed-fi/accountabilityRatings
+
+{
+    "ratingTitle": "AccountabilityRating1",
+    "rating": "Good",
+    "schoolYearTypeReference": {
+        "schoolYear": 2025
+    },
+    "educationOrganizationReference": {
+        "educationOrganizationId": 999
+    }
+}
+
+### Delete School1, expect error
+DELETE http://localhost:{{port}}/data/ed-fi/schools/8168fcad-4bf3-4529-991a-2851b0dd1161
+
+
+### Create Survey referencing Session1
+
+POST http://localhost:{{port}}/data/ed-fi/surveys
+
+{
+    "surveyIdentifier": "abc",
+    "namespace": "defgh",
+    "surveyTitle": "A Survey",
+    "schoolYearTypeReference": {
+        "schoolYear": 2025
+    },
+    "sessionReference": {
+        "schoolId": 123,
+        "schoolYear": 2025,
+        "sessionName": "Session1"
+    }
+}
+
+### Update Survey with invalid Session
+PUT http://localhost:{{port}}/data/ed-fi/surveys/299f629e-170e-4e23-bd5e-68abcfc46a7e
+
+{
+    "id": "299f629e-170e-4e23-bd5e-68abcfc46a7e",
+    "surveyIdentifier": "abc",
+    "namespace": "defgh",
+    "surveyTitle": "A Survey",
+    "schoolYearTypeReference": {
+        "schoolYear": 2025
+    },
+    "sessionReference": {
+        "schoolId": 123,
+        "schoolYear": 2025,
+        "sessionName": "Invalid"
+    }
+}
