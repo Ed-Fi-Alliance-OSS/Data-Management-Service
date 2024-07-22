@@ -61,7 +61,6 @@ internal class DependencyCalculator(JsonNode _apiSchemaRootNode, ILogger _logger
 
     private static string ReplaceAbstractResourceNames(string resourceName)
     {
-        // Code Smell here:
         // These resources are similar to abstract base classes, so they are not represented in the resourceSchemas
         // portion of the schema document. This is a rudimentary replacement with the most specific version of the resource
         if (resourceName == "EducationOrganization")
