@@ -315,7 +315,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             }
             catch (Exception e)
             {
-                Console.WriteLine(e);
+                _logger.log.Information(e.Message);
                 throw;
             }
         }
