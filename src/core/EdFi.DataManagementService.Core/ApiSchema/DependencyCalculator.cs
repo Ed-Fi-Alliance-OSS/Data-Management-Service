@@ -20,10 +20,9 @@ internal class DependencyCalculator(JsonNode _apiSchemaRootNode, ILogger _logger
 
             Dictionary<string, List<string>> resources =
                 resourceSchemas
-                    .Where(rs => !rs.IsSchoolYearEnumeration)
                     .ToDictionary(
                         rs => rs.ResourceName.Value,
-                        rs => rs.DocumentPaths.Where(d => d.IsReference && d.ResourceName.Value != "SchoolYearType").Select(d => ReplaceAbstractResourceNames(d.ResourceName.Value)).ToList());
+                        rs => rs.DocumentPaths.Where(d => d.IsReference).Select(d => ReplaceAbstractResourceNames(d.ResourceName.Value)).ToList());
 
             var orderedResources = GetDependencies(resources);
 
@@ -80,44 +79,44 @@ internal class DependencyCalculator(JsonNode _apiSchemaRootNode, ILogger _logger
 
     public static Dictionary<string, int> GetDependencies(Dictionary<string, List<string>> resources)
     {
-        Dictionary<string, int> orderedResources = resources.ToDictionary(d => d.Key, _ => 0);
-        Dictionary<string, int> visitedResources = [];
+        Dictionary<string, int> orderedNodes = resources.ToDictionary(d => d.Key, _ => 0);
+        Dictionary<string, int> visitedNodes = [];
 
-        foreach (var dependency in resources.OrderBy(d => d.Value.Count).ThenBy(d => d.Key).Select(d => d.Key))
+        foreach (var resource in resources.Select(d => d.Key))
         {
-            RecursivelyDetermineDependencies(dependency, 0);
+            RecursivelyDetermineDependencies(resource);
         }
 
-        int RecursivelyDetermineDependencies(string resourceName, int depth)
+        int RecursivelyDetermineDependencies(string resourceName)
         {
-            if (orderedResources[resourceName] > 0)
+            if (orderedNodes[resourceName] > 0)
             {
-                return orderedResources[resourceName];
+                return orderedNodes[resourceName];
             }
 
-            visitedResources.TryAdd(resourceName, 0);
-            var maxDepth = depth;
+            visitedNodes.TryAdd(resourceName, 0);
+            var maxDepth = 0;
             foreach (var dependency in resources[resourceName])
             {
-                if (visitedResources.ContainsKey(dependency))
+                if (visitedNodes.ContainsKey(dependency))
                 {
-                    if (visitedResources[dependency] > maxDepth)
+                    if (visitedNodes[dependency] > maxDepth)
                     {
-                        maxDepth = visitedResources[dependency];
+                        maxDepth = visitedNodes[dependency];
                     }
                 }
                 else
                 {
-                    var level = RecursivelyDetermineDependencies(dependency, depth);
+                    var level = RecursivelyDetermineDependencies(dependency);
                     if (level > maxDepth)
                         maxDepth = level;
                 }
             }
-            orderedResources[resourceName] = maxDepth + 1;
-            visitedResources[resourceName] = maxDepth + 1;
+            orderedNodes[resourceName] = maxDepth + 1;
+            visitedNodes[resourceName] = maxDepth + 1;
             return maxDepth + 1;
         }
 
-        return orderedResources;
+        return orderedNodes;
     }
 }
