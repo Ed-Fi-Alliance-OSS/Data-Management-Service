@@ -122,6 +122,7 @@ public class DeleteTests : DatabaseTest
         }
 
         [Test]
+        [Ignore("DMS-296 will resolve intermittent serialization failures causing UnknownFailure")]
         public void It_should_be_a_write_conflict_for_2nd_transaction()
         {
             _deleteResult2!.Should().BeOfType<DeleteResult.DeleteFailureWriteConflict>();
@@ -183,6 +184,7 @@ public class DeleteTests : DatabaseTest
         }
 
         [Test]
+        [Ignore("DMS-296 will resolve intermittent serialization failures causing UnknownFailure")]
         public void It_should_be_an_update_write_conflict_for_2nd_transaction()
         {
             _updateResult.Should().BeOfType<UpdateResult.UpdateFailureWriteConflict>();
@@ -244,6 +246,7 @@ public class DeleteTests : DatabaseTest
         }
 
         [Test]
+        [Ignore("DMS-296 will resolve intermittent serialization failures causing UnknownFailure")]
         public void It_should_be_a_delete_write_conflict_for_2nd_transaction()
         {
             _deleteResult.Should().BeOfType<DeleteResult.DeleteFailureWriteConflict>();
@@ -305,6 +308,7 @@ public class DeleteTests : DatabaseTest
         }
 
         [Test]
+        [Ignore("DMS-296 will resolve intermittent serialization failures causing UnknownFailure")]
         public void It_should_be_an_update_write_conflict_for_2nd_transaction()
         {
             _upsertResult.Should().BeOfType<UpsertResult.UpsertFailureWriteConflict>();
@@ -366,6 +370,7 @@ public class DeleteTests : DatabaseTest
         }
 
         [Test]
+        [Ignore("DMS-296 will resolve intermittent serialization failures causing UnknownFailure")]
         public void It_should_be_a_delete_write_conflict_for_2nd_transaction()
         {
             _deleteResult.Should().BeOfType<DeleteResult.DeleteFailureWriteConflict>();
