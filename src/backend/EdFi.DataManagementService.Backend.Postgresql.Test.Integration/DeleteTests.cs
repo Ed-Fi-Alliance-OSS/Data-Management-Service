@@ -414,7 +414,7 @@ public class DeleteTests : DatabaseTest
             _upsertResults.Add(await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!));
 
             await Transaction!.CommitAsync();
-            Transaction = await Connection!.BeginTransactionAsync(IsolationLevel.Serializable);
+            Transaction = await Connection!.BeginTransactionAsync(IsolationLevel.RepeatableRead);
 
             _deleteResult = await CreateDeleteById()
                 .DeleteById(
@@ -489,7 +489,7 @@ public class DeleteTests : DatabaseTest
             _upsertResults.Add(await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!));
 
             await Transaction!.CommitAsync();
-            Transaction = await Connection!.BeginTransactionAsync(IsolationLevel.Serializable);
+            Transaction = await Connection!.BeginTransactionAsync(IsolationLevel.RepeatableRead);
 
             _deleteResult = await CreateDeleteById()
                 .DeleteById(
@@ -562,7 +562,7 @@ public class DeleteTests : DatabaseTest
 
             await Transaction!.CommitAsync();
 
-            Transaction = await Connection!.BeginTransactionAsync(IsolationLevel.Serializable);
+            Transaction = await Connection!.BeginTransactionAsync(IsolationLevel.RepeatableRead);
 
             _deleteResult = await CreateDeleteById()
                 .DeleteById(
