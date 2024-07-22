@@ -259,6 +259,6 @@ internal class ApiService(
     public JsonArray GetDependencies()
     {
         var dependencyCalculator = new DependencyCalculator(_apiSchemaProvider.ApiSchemaRootNode, _logger);
-        return dependencyCalculator.GetDependencies();
+        return dependencyCalculator.GetDependenciesFromResourceSchema();
     }
 }

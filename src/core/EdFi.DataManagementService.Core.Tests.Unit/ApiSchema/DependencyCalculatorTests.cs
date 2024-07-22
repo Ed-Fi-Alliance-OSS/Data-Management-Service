@@ -66,7 +66,7 @@ public class DependencyCalculatorTests
         [Test]
         public void It_should_calculate_dependencies()
         {
-            var dependencies = _dependencyCalculator!.GetDependencies();
+            var dependencies = _dependencyCalculator!.GetDependenciesFromResourceSchema();
             dependencies.Should().NotBeEmpty();
             dependencies.Count.Should().Be(1);
 
@@ -194,7 +194,7 @@ public class DependencyCalculatorTests
         [Test]
         public void It_should_calculate_dependencies()
         {
-            var dependencies = _dependencyCalculator!.GetDependencies();
+            var dependencies = _dependencyCalculator!.GetDependenciesFromResourceSchema();
             dependencies.Should().NotBeEmpty();
 
             var expectedDependencies = JsonNode.Parse(_expectedDescriptor)!.AsArray();
@@ -245,6 +245,27 @@ public class DependencyCalculatorTests
                       "isSchoolYearEnumeration": false,
                       "resourceName": "OpenStaffPosition"
                     },
+                    "localEducationAgencies": {
+                      "documentPathsMapping": {
+                        "EducationOrganizationCategoryDescriptor": {
+                          "isDescriptor": true,
+                          "isReference": true,
+                          "projectName": "Ed-Fi",
+                          "resourceName": "EducationOrganizationCategoryDescriptor"
+                        },
+                        "ParentLocalEducationAgency": {
+                          "isReference": true,
+                          "projectName": "Ed-Fi",
+                          "resourceName": "LocalEducationAgency"
+                        }
+                      },         
+                      "isSubclass": true,
+                      "isSchoolYearEnumeration": false,       
+                      "resourceName": "LocalEducationAgency",
+                      "subclassType": "domainEntity",
+                      "superclassProjectName": "Ed-Fi",
+                      "superclassResourceName": "EducationOrganization"
+                    },
                       "schools": {
                       "documentPathsMapping": {
                         "EducationOrganizationCategoryDescriptor": {
@@ -281,7 +302,7 @@ public class DependencyCalculatorTests
                   ]
                 },
                 {
-                  "resource": "/ed-fi/schools",
+                  "resource": "/ed-fi/localEducationAgencies",
                   "order": 2,
                   "operations": [
                     "Create",
@@ -289,8 +310,16 @@ public class DependencyCalculatorTests
                   ]
                 },
                 {
-                  "resource": "/ed-fi/openStaffPositions",
+                  "resource": "/ed-fi/schools",
                   "order": 3,
+                  "operations": [
+                    "Create",
+                    "Update"
+                  ]
+                },
+                {
+                  "resource": "/ed-fi/openStaffPositions",
+                  "order": 4,
                   "operations": [
                     "Create",
                     "Update"
@@ -309,7 +338,7 @@ public class DependencyCalculatorTests
         [Test]
         public void It_should_calculate_dependencies()
         {
-            var dependencies = _dependencyCalculator!.GetDependencies();
+            var dependencies = _dependencyCalculator!.GetDependenciesFromResourceSchema();
             dependencies.Should().NotBeEmpty();
 
             var expectedDependencies = JsonNode.Parse(_expectedDescriptor)!.AsArray();
@@ -318,6 +347,7 @@ public class DependencyCalculatorTests
                 .IgnoringCyclicReferences());
         }
     }
+
     [TestFixture]
     public class Given_A_Sample_ApiSchema_Missing_ProjectSchemas() : DependencyCalculatorTests
     {
@@ -340,8 +370,67 @@ public class DependencyCalculatorTests
         [Test]
         public void It_should_throw_invalid_operation()
         {
-            Action act = () => _dependencyCalculator!.GetDependencies();
+            Action act = () => _dependencyCalculator!.GetDependenciesFromResourceSchema();
             act.Should().Throw<InvalidOperationException>();
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Dependency_Calculator() : DependencyCalculatorTests
+    {
+        [Test]
+        public void It_should_return_proper_ordered_dependencies1()
+        {
+            Dictionary<string, List<string>> resources = new Dictionary<string, List<string>>
+            {
+                { "A", ["B"] },
+                { "B", [] },
+                { "C", ["B"] },
+            };
+
+            var dependencies = DependencyCalculator.GetDependencies(resources);
+
+            dependencies["A"].Should().Be(2);
+            dependencies["B"].Should().Be(1);
+            dependencies["C"].Should().Be(2);
+        }
+
+        [Test]
+        public void It_should_return_proper_ordered_dependencies2()
+        {
+            Dictionary<string, List<string>> resources = new Dictionary<string, List<string>>
+            {
+                { "A", ["B"] },
+                { "B", ["C", "D"] },
+                { "C", [] },
+                { "D", [] }
+            };
+
+            var dependencies = DependencyCalculator.GetDependencies(resources);
+
+            dependencies["A"].Should().Be(3);
+            dependencies["B"].Should().Be(2);
+            dependencies["C"].Should().Be(1);
+            dependencies["D"].Should().Be(1);
+        }
+
+        [Test]
+        public void It_should_handle_circular_dependencies()
+        {
+            Dictionary<string, List<string>> resources = new Dictionary<string, List<string>>
+            {
+                { "EOCD", [] },
+                { "OSP", ["S"] },
+                { "LEA", ["EOCD", "LEA"] },
+                { "S", ["EOCD", "LEA"] }
+            };
+
+            var dependencies = DependencyCalculator.GetDependencies(resources);
+
+            dependencies["EOCD"].Should().Be(1);
+            dependencies["LEA"].Should().Be(2);
+            dependencies["S"].Should().Be(3);
+            dependencies["OSP"].Should().Be(4);
         }
     }
 }

@@ -10,7 +10,7 @@ namespace EdFi.DataManagementService.Core.ApiSchema;
 
 internal class DependencyCalculator(JsonNode _apiSchemaRootNode, ILogger _logger)
 {
-    public JsonArray GetDependencies()
+    public JsonArray GetDependenciesFromResourceSchema()
     {
         var apiSchemaDocument = new ApiSchemaDocument(_apiSchemaRootNode, _logger);
         var dependenciesJsonArray = new JsonArray();
@@ -18,17 +18,14 @@ internal class DependencyCalculator(JsonNode _apiSchemaRootNode, ILogger _logger
         {
             var resourceSchemas = projectSchemaNode["resourceSchemas"]?.AsObject().Select(x => new ResourceSchema(x.Value!)).ToList()!;
 
-            Dictionary<string, List<string>> dependencies =
+            Dictionary<string, List<string>> resources =
                 resourceSchemas
                     .Where(rs => !rs.IsSchoolYearEnumeration)
-                    .ToDictionary(rs => rs.ResourceName.Value, rs => rs.DocumentPaths.Where(d => d.IsReference).Select(d => d.ResourceName.Value).ToList());
+                    .ToDictionary(
+                        rs => rs.ResourceName.Value,
+                        rs => rs.DocumentPaths.Where(d => d.IsReference && d.ResourceName.Value != "SchoolYearType").Select(d => ReplaceAbstractResourceNames(d.ResourceName.Value)).ToList());
 
-            Dictionary<string, int> orderedResources = dependencies.ToDictionary(d => d.Key, _ => 0);
-            Dictionary<string, int> visitedResources = [];
-            foreach (var dependency in dependencies.OrderBy(d => d.Value.Count).ThenBy(d => d.Key).Select(d => d.Key))
-            {
-                RecursivelyDetermineDependencies(dependency, 0);
-            }
+            var orderedResources = GetDependencies(resources);
 
             string ResourceNameMapping(string resourceName)
             {
@@ -58,55 +55,69 @@ internal class DependencyCalculator(JsonNode _apiSchemaRootNode, ILogger _logger
 
                 dependenciesJsonArray.Add(new { resource = $"/{projectSchemaNode!.GetPropertyName()}/{resourceName}", order = orderedResource.Value, operations = new[] { "Create", "Update" } });
             }
-
-            int RecursivelyDetermineDependencies(string resourceName, int depth)
-            {
-                // Code Smell here:
-                // These resources are similar to abstract base classes, so they are not represented in the resourceSchemas
-                // portion of the schema document. This is a rudimentary replacement with the most specific version of the resource
-                if (resourceName == "EducationOrganization")
-                {
-                    resourceName = "School";
-                }
-
-                if (resourceName == "GeneralStudentProgramAssociation")
-                {
-                    resourceName = "StudentProgramAssociation";
-                }
-
-                if (!visitedResources.ContainsKey(resourceName))
-                {
-                    visitedResources.Add(resourceName, 0);
-                }
-
-                var maxDepth = depth;
-                if (dependencies.ContainsKey(resourceName))
-                {
-                    foreach (var dependency in dependencies[resourceName])
-                    {
-                        if (visitedResources.ContainsKey(dependency))
-                        {
-                            if (visitedResources[dependency] > maxDepth)
-                            {
-                                maxDepth = visitedResources[dependency];
-                            }
-                        }
-                        else
-                        {
-                            var level = RecursivelyDetermineDependencies(dependency, depth);
-                            if (level > maxDepth)
-                                maxDepth = level;
-                        }
-                    }
-
-                    orderedResources[resourceName] = maxDepth + 1;
-                    visitedResources[resourceName] = maxDepth + 1;
-                }
-
-                return maxDepth + 1;
-            }
         }
 
         return dependenciesJsonArray;
+    }
+
+    private static string ReplaceAbstractResourceNames(string resourceName)
+    {
+        // Code Smell here:
+        // These resources are similar to abstract base classes, so they are not represented in the resourceSchemas
+        // portion of the schema document. This is a rudimentary replacement with the most specific version of the resource
+        if (resourceName == "EducationOrganization")
+        {
+            resourceName = "School";
+        }
+
+        if (resourceName == "GeneralStudentProgramAssociation")
+        {
+            resourceName = "StudentProgramAssociation";
+        }
+
+        return resourceName;
+    }
+
+    public static Dictionary<string, int> GetDependencies(Dictionary<string, List<string>> resources)
+    {
+        Dictionary<string, int> orderedResources = resources.ToDictionary(d => d.Key, _ => 0);
+        Dictionary<string, int> visitedResources = [];
+
+        foreach (var dependency in resources.OrderBy(d => d.Value.Count).ThenBy(d => d.Key).Select(d => d.Key))
+        {
+            RecursivelyDetermineDependencies(dependency, 0);
+        }
+
+        int RecursivelyDetermineDependencies(string resourceName, int depth)
+        {
+            if (orderedResources[resourceName] > 0)
+            {
+                return orderedResources[resourceName];
+            }
+
+            visitedResources.TryAdd(resourceName, 0);
+            var maxDepth = depth;
+            foreach (var dependency in resources[resourceName])
+            {
+                if (visitedResources.ContainsKey(dependency))
+                {
+                    if (visitedResources[dependency] > maxDepth)
+                    {
+                        maxDepth = visitedResources[dependency];
+                    }
+                }
+                else
+                {
+                    var level = RecursivelyDetermineDependencies(dependency, depth);
+                    if (level > maxDepth)
+                        maxDepth = level;
+                }
+            }
+            orderedResources[resourceName] = maxDepth + 1;
+            visitedResources[resourceName] = maxDepth + 1;
+            return maxDepth + 1;
+        }
+
+        return orderedResources;
     }
 }
