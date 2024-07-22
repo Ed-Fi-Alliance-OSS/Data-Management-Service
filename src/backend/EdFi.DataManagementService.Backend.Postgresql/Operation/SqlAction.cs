@@ -531,8 +531,13 @@ public static class SqlAction
         await using NpgsqlCommand command =
             new(
                 $@"SELECT d.ResourceName FROM dms.Document d
-                   INNER JOIN dms.Reference r
-                   ON r.ReferencedDocumentId = d.Id AND r.ReferencedDocumentPartitionKey = d.DocumentPartitionKey
+                   INNER JOIN (
+                     SELECT ParentDocumentId, ParentDocumentPartitionKey
+                     FROM dms.Reference r
+                     INNER JOIN dms.Document d2 ON d2.Id = r.ReferencedDocumentId
+                       AND d2.DocumentPartitionKey = r.ReferencedDocumentPartitionKey
+                       WHERE d2.DocumentUuid = $1 AND d2.DocumentPartitionKey = $2) AS re
+                     ON re.ParentDocumentId = d.id AND re.ParentDocumentPartitionKey = d.DocumentPartitionKey
                    ORDER BY d.ResourceName {SqlFor(lockOption)};",
                 connection,
                 transaction
