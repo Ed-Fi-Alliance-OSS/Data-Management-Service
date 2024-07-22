@@ -376,9 +376,28 @@ public static class SqlAction
         int[] parentDocumentPartitionKeys = new int[bulkReferences.ReferentialIds.Length];
         Array.Fill(parentDocumentPartitionKeys, bulkReferences.ParentDocumentPartitionKey);
 
+        // Use unnest() to bulk insert references, left join to find referenced documents ids
+        // or null if this is an invalid reference (and FK constraint is disabled)
         await using var command = new NpgsqlCommand(
-            @"INSERT INTO dms.Reference (ParentDocumentId, ParentDocumentPartitionKey, ReferentialId, ReferentialPartitionKey)
-                    SELECT * FROM unnest($1, $2, $3, $4)",
+            @"INSERT INTO dms.Reference (
+                  ParentDocumentId,
+                  ParentDocumentPartitionKey,
+                  ReferentialId,
+                  ReferentialPartitionKey,
+                  ReferencedDocumentId,
+                  ReferencedDocumentPartitionKey
+              )
+              SELECT
+                  ids.documentId,
+                  ids.documentPartitionKey,
+                  ids.referentialId,
+                  ids.referentialPartitionKey,
+                  a.documentId,
+                  a.documentPartitionKey
+              FROM unnest($1, $2, $3, $4) AS
+                  ids(documentId, documentPartitionKey, referentialId, referentialPartitionKey)
+              LEFT JOIN dms.Alias a ON
+                  ids.referentialId = a.referentialId and ids.referentialPartitionKey = a.referentialPartitionKey",
             connection,
             transaction
         )
@@ -511,12 +530,9 @@ public static class SqlAction
     {
         await using NpgsqlCommand command =
             new(
-                $@"SELECT  d.ResourceName FROM dms.Document d INNER JOIN (
-                   SELECT ParentDocumentId, ParentDocumentPartitionKey FROM dms.Reference r
-                   INNER JOIN dms.Alias a ON r.ReferentialId = a.ReferentialId AND r.ReferentialPartitionKey = a.ReferentialPartitionKey
-                   INNER JOIN dms.Document d2 ON d2.Id = a.DocumentId AND d2.DocumentPartitionKey = a.DocumentPartitionKey
-                   WHERE d2.DocumentUuid =$1 AND d2.DocumentPartitionKey = $2) AS re
-                   ON re.ParentDocumentId = d.id AND re.ParentDocumentPartitionKey = d.DocumentPartitionKey
+                $@"SELECT d.ResourceName FROM dms.Document d
+                   INNER JOIN dms.Reference r
+                   ON r.ReferencedDocumentId = d.Id AND r.ReferencedDocumentPartitionKey = d.DocumentPartitionKey
                    ORDER BY d.ResourceName {SqlFor(lockOption)};",
                 connection,
                 transaction
