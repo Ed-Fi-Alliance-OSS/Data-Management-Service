@@ -392,14 +392,13 @@ Feature: Resources "Create" Operation validations
              When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
-                        "codeValue": "SL",
+                        "codeValue": "SL2",
                         "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                        "shortDescription": "Sick Leave",
+                        "shortDescription": "Sick Leave2",
                         "description": "  aa  "
                     }
                   """
-             # 200 because this is updating a document created above.
-             Then it should respond with 200
+             Then it should respond with 201
 
         Scenario: 15 Post a document with optional property's value containing only white spaces (Descriptor)
              When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
@@ -453,6 +452,39 @@ Feature: Resources "Create" Operation validations
                             "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
                             "shortDescription": "Sick Leave"
                         }
+                  """
+
+        # DMS-297
+        # Not sure yet what the expected response should be. Depends on what the
+        # JSON schema can do.
+        @ignore
+        Scenario: 16.1 Post a document with duplicate properties (Descriptor)
+             # The id value should be replaced with the resource created in the Background section
+             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
+                  """
+                  {
+                    "codeValue": "Sick Leave",
+                    "shortDescription": "Sick Leave Edited",
+                    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                    "shortDescription": "Sick Leave"
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "The request could not be processed. See 'errors' for details.",
+                    "type": "urn:ed-fi:api:bad-request",
+                    "title": "Bad Request",
+                    "status": 400,
+                    "correlationId": null,
+                    "validationErrors": {
+                       "$.shortDescription": [
+                         "shortDescription value occurs twice"
+                       ]
+                     },
+                     "errors": []
+                  }
                   """
 
     Rule: Resources
@@ -517,7 +549,7 @@ Feature: Resources "Create" Operation validations
                     {
                         "weekIdentifier": "             ",
                         "schoolReference": {
-                        "schoolId": 255901
+                            "schoolId": 255901
                         },
                         "beginDate": "2024-07-10",
                         "endDate": "2024-07-30",
@@ -706,7 +738,7 @@ Feature: Resources "Create" Operation validations
                     }
                   }
                   """
-             Then it should respond with 201 or 200
+             Then it should respond with 201
               And the record can be retrieved with a GET request
                   """
                   {
@@ -883,5 +915,56 @@ Feature: Resources "Create" Operation validations
                         ]
                         },
                         "errors": []
+                    }
+                  """
+
+        Scenario: 31 Post a new document (Resource)
+              And a POST request is made to "ed-fi/educationContents" with
+                  """
+                  {
+                    "contentIdentifier": "Testing",
+                    "namespace": "Testing",
+                    "shortDescription": "Testing",
+                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                    "learningResourceMetadataURI": "Testing"
+                  }
+                  """
+             # Was already created somewhere above
+             Then it should respond with 200
+
+
+        # DMS-297
+        # Not sure yet what the expected response should be. Depends on what the
+        # JSON schema can do.
+        @ignore
+        Scenario: 24 Post a request with a duplicated value (Resource)
+             When a POST request is made to "ed-fi/educationContents" with
+                  """
+                  {
+                    "id": "{id}",
+                    "contentIdentifier": "Testing",
+                    "namespace": "Testing",
+                    "shortDescription": "Testing",
+                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                    "learningResourceMetadataURI": "Testing",
+                    "publisher": "publisherpublisherpublisherpublisherpublisherpublisherpublisher",
+                    "learningResourceMetadataURI": "uri"
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                        "$.learningResourceMetadataURI": [
+                          "learningResourceMetadataURI value occurs twice"
+                        ]
+                      },
+                      "errors": []
                     }
                   """

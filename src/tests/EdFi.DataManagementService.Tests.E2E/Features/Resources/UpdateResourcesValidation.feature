@@ -68,7 +68,174 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        Scenario: 03 Put an existing document with an extra property (overpost) (Descriptor)
+        # Descriptors are not validating properly. DMS-295
+        #@ignore
+        Scenario: 03 Put a document with a string that is too long (Descriptor)
+             When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "codeValue": "Sick LeaveSick LeaveSick LeaveSick LeaveSick LeaveSick LeaveSick LeaveSick Leave",
+                      "description": "Sick Leave",
+                      "effectiveBeginDate": "2024-05-14",
+                      "effectiveEndDate": "2024-05-14",
+                      "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                      "shortDescription": "Sick Leave"
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "validationErrors": {
+                        "$.codeValue": [
+                            "codeValue Value should be at most 50 characters"
+                        ]
+                    },
+                    "errors": [],
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null
+                  }
+                  """
+
+
+        # Ignored because we do not have namespace security for descriptors yet. DMS-81
+        @ignore
+        Scenario: 04 Put a Descriptor using an invalid namespace
+             When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
+                  """
+                    {
+                        "id": "{id}",
+                        "codeValue": "xxxx",
+                        "description": "Wrong Value",
+                        "namespace": "uri://.org/wrong",
+                        "shortDescription": "Wrong Value"
+                    }
+                  """
+             Then it should respond with 403
+              And the response body is
+                  """
+                    {
+                        "detail": "Access to the resource could not be authorized. The 'Namespace' value of the resource does not start with any of the caller's associated namespace prefixes ('uri://ed-fi.org', 'uri://gbisd.org', 'uri://tpdm.ed-fi.org').",
+                        "type": "urn:ed-fi:api:security:authorization:namespace:access-denied:namespace-mismatch",
+                        "title": "Authorization Denied",
+                        "status": 403,
+                        "correlationId": null
+                    }
+                  """
+
+        # Descriptors are not validating properly. DMS-295
+        @ignore
+        Scenario: 05 Put a document with spaces in required fields (Descriptor)
+             When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
+                  """
+                    {
+                        "id": "{id}",
+                        "codeValue": "                      ",
+                        "description": "                    ",
+                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                        "shortDescription": "                    "
+                    }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """{
+                    "validationErrors": {
+                        "$.codeValue": [
+                            "codeValue cannot contain leading or trailing spaces."
+                        ],
+                        "$.namespace": [
+                            "namespace cannot contain leading or trailing spaces."
+                            ],
+                        "$.shortDescription": [
+                            "shortDescription cannot contain leading or trailing spaces."
+                        ]
+                    },
+                    "errors": [],
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null
+                  }
+                  """
+
+        # Descriptors are not validating properly. DMS-295
+        @ignore
+        Scenario: 06 Put a document with leading spaces in required fields (Descriptor)
+             When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
+                  """
+                    {
+                        "id": "{id}",
+                        "codeValue": "                      a",
+                        "description": "                    a",
+                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                        "shortDescription": "                   a"
+                    }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """{
+                    "validationErrors": {
+                        "$.codeValue": [
+                            "codeValue cannot contain leading or trailing spaces."
+                        ],
+                        "$.namespace": [
+                            "namespace cannot contain leading or trailing spaces."
+                            ],
+                        "$.shortDescription": [
+                            "shortDescription cannot contain leading or trailing spaces."
+                        ]
+                    },
+                    "errors": [],
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null
+                  }
+                  """
+
+        # Descriptors are not validating the whitespace yet. DMS-295
+        @ignore
+        Scenario: 07 Put a document with trailing spaces in required fields (Descriptor)
+             When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
+                  """
+                    {
+                        "id": "{id}",
+                        "codeValue": "a                      ",
+                        "description": "a                    ",
+                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                        "shortDescription": "a                   "
+                    }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """{
+                    "validationErrors": {
+                        "$.codeValue": [
+                            "codeValue cannot contain leading or trailing spaces."
+                        ],
+                        "$.namespace": [
+                            "namespace cannot contain leading or trailing spaces."
+                            ],
+                        "$.shortDescription": [
+                            "shortDescription cannot contain leading or trailing spaces."
+                        ]
+                    },
+                    "errors": [],
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null
+                  }
+                  """
+
+        Scenario: 08 Put an existing document with an extra property (overpost) (Descriptor)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -93,7 +260,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        Scenario: 04 Put a document that does not exist (Descriptor)
+        Scenario: 09 Put a document that does not exist (Descriptor)
              # The id value should be replaced with a non existing resource
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/00000000-0000-4000-a000-000000000000" with
                   """
@@ -119,7 +286,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        Scenario: 05 Put a document with modification of an identity field (Descriptor)
+        Scenario: 10 Put a document with modification of an identity field (Descriptor)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -145,7 +312,7 @@ Feature: Resources "Update" Operation validations
                     }
                   """
 
-        Scenario: 06  Put an empty request object (Descriptor)
+        Scenario: 11  Put an empty request object (Descriptor)
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -177,7 +344,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        Scenario: 07 Put an empty JSON body (Descriptor)
+        Scenario: 12 Put an empty JSON body (Descriptor)
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -211,7 +378,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        Scenario: 08 Put a document with mismatch between URL and id (Descriptor)
+        Scenario: 13 Put a document with mismatch between URL and id (Descriptor)
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -239,7 +406,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        Scenario: 09 Put a document with a blank id (Descriptor)
+        Scenario: 14 Put a document with a blank id (Descriptor)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -267,7 +434,7 @@ Feature: Resources "Update" Operation validations
                    }
                   """
 
-        Scenario: 10 Put a document with an invalid id format (Descriptor)
+        Scenario: 15 Put a document with an invalid id format (Descriptor)
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -292,6 +459,39 @@ Feature: Resources "Update" Operation validations
                     "errors": [
                         "Request body id must match the id in the url."
                     ]
+                  }
+                  """
+        # DMS-297
+        # Not sure yet what the expected response should be. Depends on what the
+        # JSON schema can do.
+        @ignore
+        Scenario: 15.1 Put a document with duplicate properties (Descriptor)
+             # The id value should be replaced with the resource created in the Background section
+             When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
+                  """
+                  {
+                    "id": "invalid-id",
+                    "codeValue": "Sick Leave",
+                    "shortDescription": "Sick Leave Edited",
+                    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                    "shortDescription": "Sick Leave"
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "The request could not be processed. See 'errors' for details.",
+                    "type": "urn:ed-fi:api:bad-request",
+                    "title": "Bad Request",
+                    "status": 400,
+                    "correlationId": null,
+                    "validationErrors": {
+                       "$.shortDescription": [
+                         "shortDescription value occurs twice"
+                       ]
+                     },
+                     "errors": []
                   }
                   """
 
@@ -565,4 +765,132 @@ Feature: Resources "Update" Operation validations
                         "Request body id must match the id in the url."
                     ]
                   }
+                  """
+
+        Scenario: 21 Put an existing document with string coercion to a numeric value (Resource)
+            # The id value should be replaced with the resource created in the Background section
+             When a PUT request is made to "ed-fi/educationContents/{id}" with
+                  """
+                  {
+                    "id": "{id}",
+                    "contentIdentifier": "Testing",
+                    "namespace": "Testing",
+                    "shortDescription": "Testing",
+                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                    "learningResourceMetadataURI": "Testing",
+                    "cost": "2.13"
+                  }
+                  """
+             Then it should respond with 204
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": "{id}",
+                    "contentIdentifier": "Testing",
+                    "namespace": "Testing",
+                    "shortDescription": "Testing",
+                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                    "learningResourceMetadataURI": "Testing",
+                    "cost": 2.13
+                  }
+                  """
+
+        Scenario: 22 Put an existing document with a string that is too long (Resource)
+            # The id value should be replaced with the resource created in the Background section
+             When a PUT request is made to "ed-fi/educationContents/{id}" with
+                  """
+                  {
+                    "id": "{id}",
+                    "contentIdentifier": "Testing",
+                    "namespace": "Testing",
+                    "shortDescription": "Testing",
+                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                    "learningResourceMetadataURI": "Testing",
+                    "publisher": "publisherpublisherpublisherpublisherpublisherpublisherpublisher"
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "validationErrors": {
+                        "$.codeValue": [
+                            "codeValue Value should be at most 50 characters"
+                        ]
+                    },
+                    "errors": [],
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null
+                  }
+                  """
+
+        @ignore
+        Scenario: 23 Put a request with a value that is too short (Resource)
+             When a PUT request is made to "ed-fi/educationContents/{id}" with
+                  """
+                  {
+                    "id": "{id}",
+                    "contentIdentifier": "Testing",
+                    "namespace": "Testing",
+                    "shortDescription": "Testing",
+                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                    "learningResourceMetadataURI": "uri",
+                    "publisher": "publisherpublisherpublisherpublisherpublisherpublisherpublisher"
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                        "$.learningResourceMetadataURI": [
+                          "learningResourceMetadataURI Value should be at least 5 characters"
+                        ]
+                      },
+                      "errors": []
+                    }
+                  """
+
+        # DMS-297
+        # Not sure yet what the expected response should be. Depends on what the
+        # JSON schema can do.
+        @ignore
+        Scenario: 24 Put a request with a duplicated value (Resource)
+             When a PUT request is made to "ed-fi/educationContents/{id}" with
+                  """
+                  {
+                    "id": "{id}",
+                    "contentIdentifier": "Testing",
+                    "namespace": "Testing",
+                    "shortDescription": "Testing",
+                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                    "learningResourceMetadataURI": "Testing",
+                    "publisher": "publisherpublisherpublisherpublisherpublisherpublisherpublisher",
+                    "learningResourceMetadataURI": "uri"
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                        "$.learningResourceMetadataURI": [
+                          "learningResourceMetadataURI value occurs twice"
+                        ]
+                      },
+                      "errors": []
+                    }
                   """
