@@ -31,6 +31,7 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
     public async Task<UpsertResult> AsInsert(
         IUpsertRequest upsertRequest,
         DocumentReferenceIds documentReferenceIds,
+        DocumentReferenceIds descriptorReferenceIds,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     )
@@ -124,6 +125,27 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
             }
         }
 
+        if (descriptorReferenceIds.ReferentialIds.Length > 0)
+        {
+            // Create a transaction savepoint in case insert into References fails due to invalid references
+            await transaction.SaveAsync(_beforeInsertReferences);
+            int numberOfRowsInserted = await _sqlAction.InsertReferences(
+                new(
+                    ParentDocumentPartitionKey: documentPartitionKey,
+                    ParentDocumentId: newDocumentId,
+                    ReferentialIds: descriptorReferenceIds.ReferentialIds,
+                    ReferentialPartitionKeys: descriptorReferenceIds.ReferentialPartitionKeys
+                ),
+                connection,
+                transaction
+            );
+
+            if (numberOfRowsInserted != descriptorReferenceIds.ReferentialIds.Length)
+            {
+                throw new InvalidOperationException("Database did not insert all references");
+            }
+        }
+
         _logger.LogDebug("Upsert success as insert - {TraceId}", upsertRequest.TraceId);
         return new UpsertResult.InsertSuccess(upsertRequest.DocumentUuid);
     }
@@ -198,6 +220,10 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
             upsertRequest.DocumentInfo.DocumentReferences
         );
 
+        DocumentReferenceIds descriptorReferenceIds = DocumentReferenceIdsFrom(
+            upsertRequest.DocumentInfo.DescriptorReferences
+        );
+
         try
         {
             Document? documentFromDb;
@@ -225,7 +251,7 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
             // Either get the existing document uuid or use the new one provided
             if (documentFromDb == null)
             {
-                return await AsInsert(upsertRequest, documentReferenceIds, connection, transaction);
+                return await AsInsert(upsertRequest, documentReferenceIds, descriptorReferenceIds, connection, transaction);
             }
 
             long documentId =
