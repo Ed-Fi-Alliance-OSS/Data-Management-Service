@@ -9,7 +9,7 @@
     "database.password": "abcdefgh1!",
     "database.dbname" : "postgres",
     "topic.prefix": "edfi",
-    "table.include.list": "dms.documents",
+    "table.include.list": "dms.document",
 
     "value.converter": "org.apache.kafka.connect.json.JsonConverter",
     "value.converter.schemas.enable": "false",

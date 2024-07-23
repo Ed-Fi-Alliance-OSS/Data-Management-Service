@@ -44,8 +44,9 @@ services:
   connect-source:
     hostname: kafka-connect-source
     container_name: kafka-connect-source
-    #image: debezium/connect:2.7.0-Final@sha256:a69c0bf30a269a0c53a98d9caf61a45f74a7bab18ebac6081a53af64ceba78b4
-    image: edfialliance/connect-meadowlark:2.3-2@sha256:e6792ab9c797a27ae15e2fba68e874cf9898658f947ba0448182b5e269b1bbb8
+    # image: debezium/connect:2.7.0-Final@sha256:a69c0bf30a269a0c53a98d9caf61a45f74a7bab18ebac6081a53af64ceba78b4
+    # image: edfialliance/connect-meadowlark:2.3-2@sha256:e6792ab9c797a27ae15e2fba68e874cf9898658f947ba0448182b5e269b1bbb8
+    image: local/kafka-connect-service:latest
     ports:
       - 8083:8083
     links:
@@ -65,7 +66,8 @@ services:
   connect-sink:
     hostname: kafka-connect-sink
     container_name: kafka-connect-sink
-    image: edfialliance/connect-meadowlark:2.3-2@sha256:e6792ab9c797a27ae15e2fba68e874cf9898658f947ba0448182b5e269b1bbb8
+    # image: edfialliance/connect-meadowlark:2.3-2@sha256:e6792ab9c797a27ae15e2fba68e874cf9898658f947ba0448182b5e269b1bbb8
+    image: local/kafka-connect-service:latest
     ports:
       - 8084:8083
     links:
@@ -85,7 +87,7 @@ services:
   db:
     hostname: dms-postgresql
     container_name: dms-postgresql
-    image: postgres:14.3-alpine
+    image: postgres:16.3-alpine
     restart: always
     environment:
     # If username and password not provided through and env file
