@@ -41,11 +41,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Given("a POST request is made to {string} with")]
         public async Task GivenAPOSTRequestIsMadeToWith(string url, string body)
         {
-            // Prefer that the "url" fragment have a starting slash, but write
-            // the code so it will work either way.
-            url = url.StartsWith('/') ? url[1..] : url;
+            url = addDataPrefixIfNecessary(url);
 
-            url = $"data/{url}";
             _logger.log.Information(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
             if (_apiResponse.Headers.ContainsKey("location"))
@@ -183,7 +180,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a POST request is made to {string} with")]
         public async Task WhenSendingAPOSTRequestToWithBody(string url, string body)
         {
-            url = $"data/{url}";
+            url = addDataPrefixIfNecessary(url);
             _logger.log.Information($"POST url: {url}");
             _logger.log.Information($"POST body: {body}");
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
@@ -198,7 +195,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a POST request is made for dependent resource {string} with")]
         public async Task WhenSendingAPOSTRequestForDependentResourceWithBody(string url, string body)
         {
-            url = $"data/{url}";
+            url = addDataPrefixIfNecessary(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
             if (_apiResponse.Headers.ContainsKey("location"))
             {
@@ -210,7 +207,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a PUT request is made to {string} with")]
         public async Task WhenAPUTRequestIsMadeToWith(string url, string body)
         {
-            url = $"data/{url.Replace("{id}", _id)}";
+            url = addDataPrefixIfNecessary(url).Replace("{id}", _id);
+
             body = body.Replace("{id}", _id);
             _logger.log.Information($"PUT url: {url}");
             _logger.log.Information($"PUT body: {body}");
@@ -220,7 +218,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a PUT request is made to referenced resource {string} with")]
         public async Task WhenAPUTRequestIsMadeToReferencedResourceWith(string url, string body)
         {
-            url = $"data/{url.Replace("{id}", _referencedResourceId)}";
+            url = addDataPrefixIfNecessary(url).Replace("{id}", _referencedResourceId);
+
             _logger.log.Information(url);
             body = body.Replace("{id}", _referencedResourceId);
             _logger.log.Information(body);
@@ -247,29 +246,23 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a DELETE request is made to {string}")]
         public async Task WhenADELETERequestIsMadeTo(string url)
         {
-            url = $"data/{url.Replace("{id}", _id)}";
+            url = addDataPrefixIfNecessary(url).Replace("{id}", _id);
+
             _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(url)!;
         }
 
         [When("a DELETE request is made to referenced resource {string}")]
         public async Task WhenADELETERequestIsMadeToReferencedResource(string url)
         {
-            url = $"data/{url.Replace("{id}", _referencedResourceId)}";
+            url = addDataPrefixIfNecessary(url).Replace("{id}", _referencedResourceId);
+
             _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(url)!;
         }
 
         [When("a GET request is made to {string}")]
         public async Task WhenAGETRequestIsMadeTo(string url)
         {
-            url = url.Replace("{id}", _id);
-
-            if (url.StartsWith("ed-fi"))
-            {
-                // If it doesn't start with ed-fi, then assume that this is
-                // looking for metadata and should not have "data" added to the
-                // URL.
-                url = $"data/{url}";
-            }
+            url = addDataPrefixIfNecessary(url).Replace("{id}", _id);
 
             _logger.log.Information(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(url)!;
@@ -278,7 +271,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a GET request is made to {string} using values as")]
         public async Task WhenAGETRequestIsMadeToUsingValuesAs(string url, Table table)
         {
-            url = $"data/{url}";
+            url = addDataPrefixIfNecessary(url);
             foreach (var row in table.Rows)
             {
                 var value = row["Values"];
@@ -494,8 +487,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Then("schools returned")]
         public void ThenSchoolsReturned(Table table)
         {
-            var url = $"data/ed-fi/schools?offset=3&limit=5";
-
             var jsonResponse = _apiResponse.TextAsync().Result;
             var responseArray = JArray.Parse(jsonResponse);
 
@@ -517,5 +508,18 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         }
 
         #endregion
+
+        private static string addDataPrefixIfNecessary(string input)
+        {
+            // Prefer that the "url" fragment have a starting slash, but write
+            // the code so it will work either way.
+            input = input.StartsWith('/') ? input[1..] : input;
+
+            // If it doesn't start with ed-fi, then assume that this is looking
+            // for metadata and should not have "data" added to the URL.
+            input = input.StartsWith("ed-fi") ? $"data/{input}" : input;
+
+            return input;
+        }
     }
 }
