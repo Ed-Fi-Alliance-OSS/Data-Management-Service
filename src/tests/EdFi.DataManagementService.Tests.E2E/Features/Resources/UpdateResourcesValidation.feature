@@ -70,7 +70,7 @@ Feature: Resources "Update" Operation validations
 
         # Descriptors are not validating properly. DMS-295
         #@ignore
-        Scenario: 03 Put a document with a string that is too long (Descriptor)
+        Scenario: 03 Update a document with a string that is too long (Descriptor)
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
                   {
@@ -129,7 +129,7 @@ Feature: Resources "Update" Operation validations
 
         # Descriptors are not validating properly. DMS-295
         @ignore
-        Scenario: 05 Put a document with spaces in required fields (Descriptor)
+        Scenario: 05 Update a document with spaces in required fields (Descriptor)
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
                     {
@@ -165,7 +165,7 @@ Feature: Resources "Update" Operation validations
 
         # Descriptors are not validating properly. DMS-295
         @ignore
-        Scenario: 06 Put a document with leading spaces in required fields (Descriptor)
+        Scenario: 06 Update a document with leading spaces in required fields (Descriptor)
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
                     {
@@ -201,7 +201,7 @@ Feature: Resources "Update" Operation validations
 
         # Descriptors are not validating the whitespace yet. DMS-295
         @ignore
-        Scenario: 07 Put a document with trailing spaces in required fields (Descriptor)
+        Scenario: 07 Update a document with trailing spaces in required fields (Descriptor)
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
                     {
@@ -260,7 +260,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        Scenario: 09 Put a document that does not exist (Descriptor)
+        Scenario: 09 Update a document that does not exist (Descriptor)
              # The id value should be replaced with a non existing resource
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/00000000-0000-4000-a000-000000000000" with
                   """
@@ -286,7 +286,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        Scenario: 10 Put a document with modification of an identity field (Descriptor)
+        Scenario: 10 Update a document with modification of an identity field (Descriptor)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -378,7 +378,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        Scenario: 13 Put a document with mismatch between URL and id (Descriptor)
+        Scenario: 13 Update a document with mismatch between URL and id (Descriptor)
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -406,7 +406,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        Scenario: 14 Put a document with a blank id (Descriptor)
+        Scenario: 14 Update a document with a blank id (Descriptor)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -434,7 +434,7 @@ Feature: Resources "Update" Operation validations
                    }
                   """
 
-        Scenario: 15 Put a document with an invalid id format (Descriptor)
+        Scenario: 15 Update a document with an invalid id format (Descriptor)
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -465,7 +465,7 @@ Feature: Resources "Update" Operation validations
         # Not sure yet what the expected response should be. Depends on what the
         # JSON schema can do.
         @ignore
-        Scenario: 15.1 Put a document with duplicate properties (Descriptor)
+        Scenario: 15.1 Update a document with duplicate properties (Descriptor)
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -587,7 +587,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        Scenario: 14 Put a document that does not exist (Resource)
+        Scenario: 14 Update a document that does not exist (Resource)
              # The id value should be replaced with a non existing resource
              When a PUT request is made to "ed-fi/educationContents/00000000-0000-4000-a000-000000000000" with
                   """
@@ -611,7 +611,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        Scenario: 15 Put a document with modification of an identity field (Resource)
+        Scenario: 15 Update a document with modification of an identity field (Resource)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/educationContents/{id}" with
                   """
@@ -689,7 +689,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        Scenario: 18 Put a document with mismatch between URL and id (Resource)
+        Scenario: 18 Update a document with mismatch between URL and id (Resource)
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/educationContents/{id}" with
                   """
@@ -715,7 +715,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        Scenario: 19 Put a document with a blank id (Resource)
+        Scenario: 19 Update a document with a blank id (Resource)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/educationContents/{id}" with
                   """
@@ -741,7 +741,7 @@ Feature: Resources "Update" Operation validations
                    }
                   """
 
-        Scenario: 20 Put a document with an invalid id format (Resource)
+        Scenario: 20 Update a document with an invalid id format (Resource)
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "ed-fi/educationContents/{id}" with
                   """
@@ -828,7 +828,7 @@ Feature: Resources "Update" Operation validations
                   """
 
         @ignore
-        Scenario: 23 Put a request with a value that is too short (Resource)
+        Scenario: 23 Update a document with a value that is too short (Resource)
              When a PUT request is made to "ed-fi/educationContents/{id}" with
                   """
                   {
@@ -863,7 +863,7 @@ Feature: Resources "Update" Operation validations
         # Not sure yet what the expected response should be. Depends on what the
         # JSON schema can do.
         @ignore
-        Scenario: 24 Put a request with a duplicated value (Resource)
+        Scenario: 24 Update a document with a duplicated value (Resource)
              When a PUT request is made to "ed-fi/educationContents/{id}" with
                   """
                   {

@@ -40,7 +40,7 @@ Feature: Resources "Create" Operation validations
 
         # Descriptors are not validating properly. DMS-295
         @ignore
-        Scenario: 02 Post a document with a string that is too long (Descriptor)
+        Scenario: 02 Create a document with a string that is too long (Descriptor)
              When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                   {
@@ -70,7 +70,7 @@ Feature: Resources "Create" Operation validations
                   }
                   """
 
-        Scenario: 03 Post a document that is missing a required property (Descriptor)
+        Scenario: 03 Create a document that is missing a required property (Descriptor)
              When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
@@ -156,7 +156,7 @@ Feature: Resources "Create" Operation validations
 
         # Descriptors are not validating properly. DMS-295
         @ignore
-        Scenario: 06 Post a document with spaces in required fields (Descriptor)
+        Scenario: 06 Create a document with spaces in required fields (Descriptor)
              When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
@@ -191,7 +191,7 @@ Feature: Resources "Create" Operation validations
 
         # Descriptors are not validating properly. DMS-295
         @ignore
-        Scenario: 07 Post a document with leading spaces in required fields (Descriptor)
+        Scenario: 07 Create a document with leading spaces in required fields (Descriptor)
              When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
@@ -226,7 +226,7 @@ Feature: Resources "Create" Operation validations
 
         # Descriptors are not validating the whitespace yet. DMS-295
         @ignore
-        Scenario: 08 Post a document with trailing spaces in required fields (Descriptor)
+        Scenario: 08 Create a document with trailing spaces in required fields (Descriptor)
              When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
@@ -341,7 +341,7 @@ Feature: Resources "Create" Operation validations
 
         # Descriptors are not validating properly. DMS-295
         @ignore
-        Scenario: 12 Post a document with id property (Descriptor)
+        Scenario: 12 Create a document with id property (Descriptor)
             # The ID used does not need to exist: any ID is invalid here
              When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -388,7 +388,7 @@ Feature: Resources "Create" Operation validations
                         }
                   """
 
-        Scenario: 14 Post a document with a required, non-identity, property's value containing leading and trailing white spaces (Descriptor)
+        Scenario: 14 Create a document with a required, non-identity, property's value containing leading and trailing white spaces (Descriptor)
              When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
@@ -400,7 +400,7 @@ Feature: Resources "Create" Operation validations
                   """
              Then it should respond with 201
 
-        Scenario: 15 Post a document with optional property's value containing only white spaces (Descriptor)
+        Scenario: 15 Create a document with optional property's value containing only white spaces (Descriptor)
              When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
@@ -458,7 +458,7 @@ Feature: Resources "Create" Operation validations
         # Not sure yet what the expected response should be. Depends on what the
         # JSON schema can do.
         @ignore
-        Scenario: 16.1 Post a document with duplicate properties (Descriptor)
+        Scenario: 16.1 Create a document with duplicate properties (Descriptor)
              # The id value should be replaced with the resource created in the Background section
              When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -543,7 +543,7 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
-        Scenario: 19 Post a document with spaces in required fields (Resource)
+        Scenario: 19 Create a document with spaces in required fields (Resource)
              When a POST request is made to "ed-fi/academicWeeks" with
                   """
                     {
@@ -574,7 +574,7 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
-        Scenario: 20 Post a document with leading spaces in required fields (Resource)
+        Scenario: 20 Create a document with leading spaces in required fields (Resource)
              When a POST request is made to "ed-fi/academicWeeks" with
                   """
                     {
@@ -605,7 +605,7 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
-        Scenario: 21 Post a document with trailing spaces in required fields (Resource)
+        Scenario: 21 Create a document with trailing spaces in required fields (Resource)
              When a POST request is made to "ed-fi/academicWeeks" with
                   """
                     {
@@ -668,7 +668,7 @@ Feature: Resources "Create" Operation validations
                   }
                   """
 
-        Scenario: 23 Post a document with a required, non-identity, property's value containing leading and trailing white spaces (Resource)
+        Scenario: 23 Create a document with a required, non-identity, property's value containing leading and trailing white spaces (Resource)
              When a POST request is made to "ed-fi/students" with
                   """
                     {
@@ -680,7 +680,7 @@ Feature: Resources "Create" Operation validations
                   """
              Then it should respond with 201
 
-        Scenario: 24 Post a document with optional property's value containing only white spaces (Resource)
+        Scenario: 24 Create a document with optional property's value containing only white spaces (Resource)
              When a POST request is made to "ed-fi/students" with
                   """
                     {
@@ -694,7 +694,7 @@ Feature: Resources "Create" Operation validations
              # 200 because this is updating the document stored with the scenario above.
              Then it should respond with 200
 
-        Scenario: 25 Post a document with id property (Resource)
+        Scenario: 25 Create a document with id property (Resource)
             # The ID used does not need to exist: any ID is invalid here
              When a POST request is made to "ed-fi/academicWeeks" with
                   """
@@ -724,7 +724,7 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
-        Scenario: 26 Post a document with an extra property (overpost) (Resource)
+        Scenario: 26 Create a document with an extra property (overpost) (Resource)
              When a POST request is made to "ed-fi/educationContents" with
                   """
                   {
@@ -884,7 +884,7 @@ Feature: Resources "Create" Operation validations
                   """
 
 
-        Scenario: 30 Post a document that is missing multiple required properties (Resource)
+        Scenario: 30 Create a document that is missing multiple required properties (Resource)
              When a POST request is made to "ed-fi/academicWeeks" with
                   """
                   {
