@@ -24,7 +24,7 @@ internal static class FailureResponse
     ) =>
         new(
             detail,
-            type: $"{_badRequestTypePrefix}:data",
+            type: $"{_badRequestTypePrefix}:data-validation-failed",
             title: "Data Validation Failed",
             status: 400,
             correlationId: null,

@@ -302,11 +302,22 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             _logger.log.Information(responseJson.ToString());
 
-            responseJson.Should().BeEquivalentTo(expectedBodyJson, options => options
-                .WithoutStrictOrdering()
-                .IgnoringCyclicReferences()
-                .Excluding(x => x.Path.EndsWith("correlationId"))
-            );
+            (responseJson as JsonObject)?.Remove("correlationId");
+            (expectedBodyJson as JsonObject)?.Remove("correlationId");
+
+            try
+            {
+                responseJson.Should().BeEquivalentTo(expectedBodyJson, options => options
+                    .WithoutStrictOrdering()
+                    .IgnoringCyclicReferences()
+                    .RespectingRuntimeTypes()
+                );
+            }
+            catch (Exception e)
+            {
+                _logger.log.Information(e.Message);
+                throw;
+            }
         }
 
         // Use Regex to find all occurrences of {id} in the body
