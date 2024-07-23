@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Frontend;
+using System.Text.Json.Nodes;
 
 namespace EdFi.DataManagementService.Core.External.Interface;
 
@@ -40,4 +41,10 @@ public interface IApiService
     /// DMS entry point for data model information from ApiSchema.json
     /// </summary>
     public IList<IDataModelInfo> GetDataModelInfo();
+
+    /// <summary>
+    /// Get the ordered list of dependencies
+    /// </summary>
+    /// <returns></returns>
+    public JsonArray GetDependencies();
 }

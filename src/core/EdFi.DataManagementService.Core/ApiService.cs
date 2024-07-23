@@ -238,23 +238,10 @@ internal class ApiService(
     /// </summary>
     public IList<IDataModelInfo> GetDataModelInfo()
     {
-        JsonNode schema = _apiSchemaProvider.ApiSchemaRootNode;
-
-        KeyValuePair<string, JsonNode?>[]? projectSchemas = schema["projectSchemas"]?.AsObject().ToArray();
-        if (projectSchemas == null || projectSchemas.Length == 0)
-        {
-            string errorMessage = "No projectSchemas found, ApiSchema.json is invalid";
-            _logger.LogCritical(errorMessage);
-            throw new InvalidOperationException(errorMessage);
-        }
+        var apiSchemaDocument = new ApiSchemaDocument(_apiSchemaProvider.ApiSchemaRootNode, _logger);
 
         IList<IDataModelInfo> result = [];
-        List<JsonNode> projectSchemaNodes = projectSchemas
-            .Where(x => x.Value != null)
-            .Select(x => x.Value ?? new JsonObject())
-            .ToList();
-
-        foreach (JsonNode projectSchemaNode in projectSchemaNodes)
+        foreach (JsonNode projectSchemaNode in apiSchemaDocument.GetAllProjectSchemaNodes())
         {
             var projectName = projectSchemaNode?["projectName"]?.GetValue<string>() ?? string.Empty;
             var projectVersion = projectSchemaNode?["projectVersion"]?.GetValue<string>() ?? string.Empty;
@@ -263,5 +250,15 @@ internal class ApiService(
             result.Add(new DataModelInfo(projectName, projectVersion, description));
         }
         return result;
+    }
+
+    /// <summary>
+    /// Get resource dependencies
+    /// </summary>
+    /// <returns>JSON array ordered by dependency sequence</returns>
+    public JsonArray GetDependencies()
+    {
+        var dependencyCalculator = new DependencyCalculator(_apiSchemaProvider.ApiSchemaRootNode, _logger);
+        return dependencyCalculator.GetDependenciesFromResourceSchema();
     }
 }

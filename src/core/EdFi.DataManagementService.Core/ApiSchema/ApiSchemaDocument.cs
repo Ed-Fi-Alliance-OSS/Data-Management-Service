@@ -25,4 +25,21 @@ internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
             _logger
         );
     }
+
+    /// <summary>
+    /// Gets all ProjectSchema nodes in the document. 
+    /// </summary>
+    public List<JsonNode> GetAllProjectSchemaNodes()
+    {
+        JsonNode schema = _apiSchemaRootNode;
+
+        var projectSchemasNode = schema["projectSchemas"];
+
+        if (projectSchemasNode == null)
+        {
+            throw new InvalidOperationException("Expected ProjectSchmas node to exist.");
+        }
+
+        return projectSchemasNode.SelectNodesFromPropertyValues();
+    }
 }
