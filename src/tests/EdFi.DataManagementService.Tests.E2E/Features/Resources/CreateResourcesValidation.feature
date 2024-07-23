@@ -7,7 +7,7 @@ Feature: Resources "Create" Operation validations
     Rule: Descriptors
 
         Scenario: 01 Post a valid document (Descriptor)
-             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                   {
                       "codeValue": "Sick Leave",
@@ -22,7 +22,7 @@ Feature: Resources "Create" Operation validations
               And the response headers includes
                   """
                     {
-                        "location": "ed-fi/absenceEventCategoryDescriptors/{id}"
+                        "location": "/ed-fi/absenceEventCategoryDescriptors/{id}"
                     }
                   """
               And the record can be retrieved with a GET request
@@ -41,7 +41,7 @@ Feature: Resources "Create" Operation validations
         # Descriptors are not validating properly. DMS-295
         @ignore
         Scenario: 02 Create a document with a string that is too long (Descriptor)
-             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                   {
                       "codeValue": "Sick LeaveSick LeaveSick LeaveSick LeaveSick LeaveSick LeaveSick LeaveSick Leave",
@@ -71,7 +71,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         Scenario: 03 Create a document that is missing a required property (Descriptor)
-             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "__codeValue": "will be ignored",
@@ -103,7 +103,7 @@ Feature: Resources "Create" Operation validations
         # Ignored because we do not have namespace security for descriptors yet. DMS-81
         @ignore
         Scenario: 04 Post a Descriptor using an invalid namespace
-             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "xxxx",
@@ -125,7 +125,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         Scenario: 05 Post using an empty JSON body
-             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                     }
@@ -157,7 +157,7 @@ Feature: Resources "Create" Operation validations
         # Descriptors are not validating properly. DMS-295
         @ignore
         Scenario: 06 Create a document with spaces in required fields (Descriptor)
-             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "                      ",
@@ -192,7 +192,7 @@ Feature: Resources "Create" Operation validations
         # Descriptors are not validating properly. DMS-295
         @ignore
         Scenario: 07 Create a document with leading spaces in required fields (Descriptor)
-             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "                      a",
@@ -227,7 +227,7 @@ Feature: Resources "Create" Operation validations
         # Descriptors are not validating the whitespace yet. DMS-295
         @ignore
         Scenario: 08 Create a document with trailing spaces in required fields (Descriptor)
-             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "a                      ",
@@ -260,7 +260,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         Scenario: 09 Post a new document with optional fields (Descriptor)
-            Given a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
+            Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "Sick Leave",
@@ -284,7 +284,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         Scenario: 10 Post a new document with an extra property (overpost) (Descriptor)
-            Given a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
+            Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "Sick Leave",
@@ -311,7 +311,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         Scenario: 11 Post a new document with trailing comma (Descriptor)
-            Given a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
+            Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "Sick Leave",
@@ -343,7 +343,7 @@ Feature: Resources "Create" Operation validations
         @ignore
         Scenario: 12 Create a document with id property (Descriptor)
             # The ID used does not need to exist: any ID is invalid here
-             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "id": "3a93cdce-157d-4cfe-b6f8-d5caa88c986b",
@@ -369,7 +369,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         Scenario: 13 Post a new document with required fields only (Descriptor)
-            Given a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
+            Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "SL",
@@ -389,7 +389,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         Scenario: 14 Create a document with a required, non-identity, property's value containing leading and trailing white spaces (Descriptor)
-             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "SL2",
@@ -401,7 +401,7 @@ Feature: Resources "Create" Operation validations
              Then it should respond with 201
 
         Scenario: 15 Create a document with optional property's value containing only white spaces (Descriptor)
-             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "SL",
@@ -424,7 +424,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         Scenario: 16 Post an existing document without changes (Descriptor)
-            Given a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
+            Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "Sick Leave",
@@ -433,7 +433,7 @@ Feature: Resources "Create" Operation validations
                         "shortDescription": "Sick Leave"
                     }
                   """
-             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "Sick Leave",
@@ -460,7 +460,7 @@ Feature: Resources "Create" Operation validations
         @ignore
         Scenario: 16.1 Create a document with duplicate properties (Descriptor)
              # The id value should be replaced with the resource created in the Background section
-             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                   {
                     "codeValue": "Sick Leave",
@@ -490,7 +490,7 @@ Feature: Resources "Create" Operation validations
     Rule: Resources
 
         Scenario: 17 Post an empty request object (Resource)
-             When a POST request is made to "ed-fi/schools" with
+             When a POST request is made to "/ed-fi/schools" with
                   """
                   """
              Then it should respond with 400
@@ -508,7 +508,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         Scenario: 18 Post using an empty JSON body (Resource)
-             When a POST request is made to "ed-fi/academicWeeks" with
+             When a POST request is made to "/ed-fi/academicWeeks" with
                   """
                     {
                     }
@@ -544,7 +544,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         Scenario: 19 Create a document with spaces in required fields (Resource)
-             When a POST request is made to "ed-fi/academicWeeks" with
+             When a POST request is made to "/ed-fi/academicWeeks" with
                   """
                     {
                         "weekIdentifier": "             ",
@@ -575,7 +575,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         Scenario: 20 Create a document with leading spaces in required fields (Resource)
-             When a POST request is made to "ed-fi/academicWeeks" with
+             When a POST request is made to "/ed-fi/academicWeeks" with
                   """
                     {
                         "weekIdentifier": "             a",
@@ -606,7 +606,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         Scenario: 21 Create a document with trailing spaces in required fields (Resource)
-             When a POST request is made to "ed-fi/academicWeeks" with
+             When a POST request is made to "/ed-fi/academicWeeks" with
                   """
                     {
                         "weekIdentifier": "a             ",
@@ -638,7 +638,7 @@ Feature: Resources "Create" Operation validations
 
 
         Scenario: 22 Post an invalid document missing a comma (Resource)
-             When a POST request is made to "ed-fi/academicWeeks" with
+             When a POST request is made to "/ed-fi/academicWeeks" with
                   """
                   {
                     "weekIdentifier": "abcdef",
@@ -669,7 +669,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         Scenario: 23 Create a document with a required, non-identity, property's value containing leading and trailing white spaces (Resource)
-             When a POST request is made to "ed-fi/students" with
+             When a POST request is made to "/ed-fi/students" with
                   """
                     {
                         "studentUniqueId":"8989",
@@ -681,7 +681,7 @@ Feature: Resources "Create" Operation validations
              Then it should respond with 201
 
         Scenario: 24 Create a document with optional property's value containing only white spaces (Resource)
-             When a POST request is made to "ed-fi/students" with
+             When a POST request is made to "/ed-fi/students" with
                   """
                     {
                         "studentUniqueId":"8989",
@@ -696,7 +696,7 @@ Feature: Resources "Create" Operation validations
 
         Scenario: 25 Create a document with id property (Resource)
             # The ID used does not need to exist: any ID is invalid here
-             When a POST request is made to "ed-fi/academicWeeks" with
+             When a POST request is made to "/ed-fi/academicWeeks" with
                   """
                   {
                     "id": "3a93cdce-157d-4cfe-b6f8-d5caa88c986b",
@@ -725,7 +725,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         Scenario: 26 Create a document with an extra property (overpost) (Resource)
-             When a POST request is made to "ed-fi/educationContents" with
+             When a POST request is made to "/ed-fi/educationContents" with
                   """
                   {
                     "contentIdentifier": "Testing",
@@ -754,7 +754,7 @@ Feature: Resources "Create" Operation validations
         Scenario: 27 Post an numeric and boolean fields as strings are coerced (Resource)
                   # In this example schoolId is numeric and doNotPublishIndicator are boolean, yet posted in quotes as strings
                   # In the GET request you can see they are coerced to their proper types
-             When a POST request is made to "ed-fi/schools/" with
+             When a POST request is made to "/ed-fi/schools/" with
                   """
                   {
                       "schoolId": "99",
@@ -787,7 +787,7 @@ Feature: Resources "Create" Operation validations
               And the response headers includes
                   """
                     {
-                        "location": "ed-fi/schools/{id}"
+                        "location": "/ed-fi/schools/{id}"
                     }
                   """
               And the record can be retrieved with a GET request
@@ -822,7 +822,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         Scenario: 28 Post a request with a value that is too short (Resource)
-             When a POST request is made to "ed-fi/academicWeeks" with
+             When a POST request is made to "/ed-fi/academicWeeks" with
                   """
                   {
                    "weekIdentifier": "one",
@@ -853,7 +853,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         Scenario: 29 Post a request with a value that is too long (Resource)
-             When a POST request is made to "ed-fi/academicWeeks" with
+             When a POST request is made to "/ed-fi/academicWeeks" with
                   """
                   {
                    "weekIdentifier": "oneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneone",
@@ -885,7 +885,7 @@ Feature: Resources "Create" Operation validations
 
 
         Scenario: 30 Create a document that is missing multiple required properties (Resource)
-             When a POST request is made to "ed-fi/academicWeeks" with
+             When a POST request is made to "/ed-fi/academicWeeks" with
                   """
                   {
                     "weekIdentifier": "seven",
@@ -919,7 +919,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         Scenario: 31 Post a new document (Resource)
-              And a POST request is made to "ed-fi/educationContents" with
+              And a POST request is made to "/ed-fi/educationContents" with
                   """
                   {
                     "contentIdentifier": "Testing",
@@ -938,7 +938,7 @@ Feature: Resources "Create" Operation validations
         # JSON schema can do.
         @ignore
         Scenario: 24 Post a request with a duplicated value (Resource)
-             When a POST request is made to "ed-fi/educationContents" with
+             When a POST request is made to "/ed-fi/educationContents" with
                   """
                   {
                     "id": "{id}",

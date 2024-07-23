@@ -41,6 +41,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Given("a POST request is made to {string} with")]
         public async Task GivenAPOSTRequestIsMadeToWith(string url, string body)
         {
+            // Prefer that the "url" fragment have a starting slash, but write
+            // the code so it will work either way.
+            url = url.StartsWith('/') ? url[1..] : url;
+
             url = $"data/{url}";
             _logger.log.Information(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;

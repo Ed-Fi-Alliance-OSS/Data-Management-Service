@@ -34,7 +34,7 @@ Feature: Validation of DELETE requests that would cause a foreign key violation
         Scenario: 01 Ensure clients cannot delete a year that is used by another item
             # Reposting the item right before the WHEN statement is the simplest way
             # of making the {id} available for the URL
-            Given a POST request is made to "ed-fi/schoolYearTypes" with
+            Given a POST request is made to "/ed-fi/schoolYearTypes" with
                   """
                   {
                    "schoolYear": 2022,
@@ -42,7 +42,7 @@ Feature: Validation of DELETE requests that would cause a foreign key violation
                    "schoolYearDescription": "2021-2022"
                   }
                   """
-             When a DELETE request is made to "ed-fi/schoolYearTypes/{id}"
+             When a DELETE request is made to "/ed-fi/schoolYearTypes/{id}"
              Then it should respond with 409
               And the response body is
                   """
@@ -57,7 +57,7 @@ Feature: Validation of DELETE requests that would cause a foreign key violation
 
         @ignore
         Scenario: 02 Ensure clients cannot delete a descriptor that is used by another item
-            Given a POST request is made to "ed-fi/educationOrganizationCategoryDescriptors" with
+            Given a POST request is made to "/ed-fi/educationOrganizationCategoryDescriptors" with
                   """
                   {
                       "codeValue": "School",
@@ -65,7 +65,7 @@ Feature: Validation of DELETE requests that would cause a foreign key violation
                       "namespace": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor"
                   }
                   """
-             When a DELETE request is made to "ed-fi/educationOrganizationCategoryDescriptors/{id}"
+             When a DELETE request is made to "/ed-fi/educationOrganizationCategoryDescriptors/{id}"
              Then it should respond with 409
               And the response body is
                   """
@@ -80,7 +80,7 @@ Feature: Validation of DELETE requests that would cause a foreign key violation
 
         @ignore
         Scenario: 03 Ensure clients cannot delete a dependent element for an item
-            Given a POST request is made to "ed-fi/students" with
+            Given a POST request is made to "/ed-fi/students" with
                   """
                   {
                       "studentUniqueId": "604824",
@@ -89,7 +89,7 @@ Feature: Validation of DELETE requests that would cause a foreign key violation
                       "lastSurname": "Mathews"
                   }
                   """
-             When a DELETE request is made to "ed-fi/students/{id}"
+             When a DELETE request is made to "/ed-fi/students/{id}"
              Then it should respond with 409
               And the response body is
                   """
@@ -104,7 +104,7 @@ Feature: Validation of DELETE requests that would cause a foreign key violation
 
         @ignore
         Scenario: 04 Ensure clients cannot delete an element that is reference to an Education Organization that is used by another items
-            Given a POST request is made to "ed-fi/localEducationAgencies" with
+            Given a POST request is made to "/ed-fi/localEducationAgencies" with
                   """
                   {
                       "educationOrganizationCategoryDescriptor": ["uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"],
@@ -113,7 +113,7 @@ Feature: Validation of DELETE requests that would cause a foreign key violation
                       "nameOfInstitution": "Grand Bend ISD"
                   }
                   """
-             When a DELETE request is made to "ed-fi/localEducationAgencies/{id}"
+             When a DELETE request is made to "/ed-fi/localEducationAgencies/{id}"
              Then it should respond with 409
               And the response body is
                   """
@@ -128,7 +128,7 @@ Feature: Validation of DELETE requests that would cause a foreign key violation
 
         @ignore
         Scenario: 05 Ensure clients cannot delete a resource that is used by another items
-            Given a POST request is made to "ed-fi/programs" with
+            Given a POST request is made to "/ed-fi/programs" with
                   """
                   {
                       "programName": "Career and Technical Education"
@@ -136,7 +136,7 @@ Feature: Validation of DELETE requests that would cause a foreign key violation
                       "educationOrganizationId": 255901
                   }
                   """
-             When a DELETE request is made to "ed-fi/programs/{id}"
+             When a DELETE request is made to "/ed-fi/programs/{id}"
              Then it should respond with 409
               And the response body is
                   """

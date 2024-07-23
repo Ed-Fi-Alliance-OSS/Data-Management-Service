@@ -20,7 +20,7 @@ Feature: School Year Reference Validation
                   | "451"        | { "schoolId": 535 } | { "schoolYear": 2029 }  | uri://ed-fi.org/CalendarTypeDescriptor#Student Specific | []          |
 
         Scenario: 01 Try creating a resource using a valid school year
-             When a POST request is made to "ed-fi/calendars" with
+             When a POST request is made to "/ed-fi/calendars" with
                   """
                   {
                       "calendarCode": "321",
@@ -37,7 +37,7 @@ Feature: School Year Reference Validation
              Then it should respond with 200 or 201
 
         Scenario: 02 Try creating a resource using an invalid school year
-             When a POST request is made to "ed-fi/calendars" with
+             When a POST request is made to "/ed-fi/calendars" with
                   """
                   {
                      "calendarCode": "325",
@@ -64,7 +64,7 @@ Feature: School Year Reference Validation
                   """
 
         Scenario: 03 Try creating a CalendarDate using a valid Calendar reference
-             When a POST request is made to "ed-fi/calendarDates" with
+             When a POST request is made to "/ed-fi/calendarDates" with
                   """
                      {
                         "calendarReference": {
@@ -83,7 +83,7 @@ Feature: School Year Reference Validation
              Then it should respond with 201
 
         Scenario: 04 Try creating a CalendarDate using an invalid Calendar reference with an invalid School year
-             When a POST request is made to "ed-fi/calendarDates" with
+             When a POST request is made to "/ed-fi/calendarDates" with
                   """
                      {
                         "calendarReference": {

@@ -5,17 +5,17 @@ Feature: Query Strings handling for GET requests
             Given there are no schools
 
         Scenario: 01 Validate totalCount value when there are no existing schools in the Database
-             When a GET request is made to "ed-fi/schools?totalCount=true"
+             When a GET request is made to "/ed-fi/schools?totalCount=true"
              Then it should respond with 200
               And the response headers includes total-count 0
 
         Scenario: 02 Validate totalCount is not included when there are no existing schools in the Database and value equals to false
-             When a GET request is made to "ed-fi/schools?totalCount=false"
+             When a GET request is made to "/ed-fi/schools?totalCount=false"
              Then it should respond with 200
               And the response headers does not include total-count
 
         Scenario: 03 Validate totalCount is not included when is not included in the URL
-             When a GET request is made to "ed-fi/schools"
+             When a GET request is made to "/ed-fi/schools"
              Then it should respond with 200
               And the response headers does not include total-count
 
@@ -30,27 +30,27 @@ Feature: Query Strings handling for GET requests
                   | 255901045 | UT Austin Extended Campus                     | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Twelfth grade"} ]  | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
 
         Scenario: 04 Ensure that schools return the total count
-             When a GET request is made to "ed-fi/schools?totalCount=true"
+             When a GET request is made to "/ed-fi/schools?totalCount=true"
              Then it should respond with 200
               And the response headers includes total-count 5
 
         Scenario: 05 Validate totalCount Header is not included when equals to false
-             When a GET request is made to "ed-fi/schools?totalCount=false"
+             When a GET request is made to "/ed-fi/schools?totalCount=false"
              Then it should respond with 200
               And the response headers does not include total-count
 
         Scenario: 06 Validate totalCount is not included when it is not present in the URL
-             When a GET request is made to "ed-fi/schools"
+             When a GET request is made to "/ed-fi/schools"
              Then it should respond with 200
               And the response headers does not include total-count
 
         Scenario: 07 Ensure results can be limited and totalCount matches the actual number of existing records
-             When a GET request is made to "ed-fi/schools?totalCount=true&limit=2"
+             When a GET request is made to "/ed-fi/schools?totalCount=true&limit=2"
              Then getting less schools than the total-count
               And the response headers includes total-count 5
 
         Scenario: 08 Ensure clients can get information when filtering by limit and and a valid offset
-             When a GET request is made to "ed-fi/schools?offset=3&limit=5"
+             When a GET request is made to "/ed-fi/schools?offset=3&limit=5"
              Then it should respond with 200
               And schools returned
                   | schoolId  | nameOfInstitution         |
@@ -58,14 +58,14 @@ Feature: Query Strings handling for GET requests
                   | 255901045 | UT Austin Extended Campus |
 
         Scenario: 09 Ensure clients can get information when filtering by limit and offset greater than the total
-             When a GET request is made to "ed-fi/schools?offset=6&limit=5"
+             When a GET request is made to "/ed-fi/schools?offset=6&limit=5"
              Then it should respond with 200
               And the response body is
                   """
                   []
                   """
         Scenario: 10 Ensure clients can't GET information when filtering using invalid values
-             When a GET request is made to "ed-fi/schools?limit=-1" using values as
+             When a GET request is made to "/ed-fi/schools?limit=-1" using values as
                   | Values                   |
                   | -1                       |
                   | 'zero'                   |
@@ -89,7 +89,7 @@ Feature: Query Strings handling for GET requests
                   """
 
         Scenario: 11 Ensure clients can not GET information when filtering by limit and offset using invalid values
-             When a GET request is made to "ed-fi/schools?offset=-1" using values as
+             When a GET request is made to "/ed-fi/schools?offset=-1" using values as
                   | Values                   |
                   | -1                       |
                   | 'zero'                   |
@@ -120,7 +120,7 @@ Feature: Query Strings handling for GET requests
             Given the following schools exist
                   | schoolId | nameOfInstitution             | gradeLevels         | educationOrganizationCategories |
                   | 5        | School with max edorgId value | [ "Postsecondary" ] | [ "School" ]                    |
-             When a GET request is made to "ed-fi/schools?nameOfInstitution=school+with+max+edorgid+value"
+             When a GET request is made to "/ed-fi/schools?nameOfInstitution=school+with+max+edorgid+value"
              Then it should respond with 200
               And the response body includes "nameOfInstitution: School with max edorgId value"
 
@@ -129,7 +129,7 @@ Feature: Query Strings handling for GET requests
             Given the following schools exist
                   | schoolId | nameOfInstitution                             | gradeLevels         | educationOrganizationCategories     |
                   | 6        | UT Austin College of Education Under Graduate | [ "Postsecondary" ] | [ "Educator Preparation Provider" ] |
-             When a GET request is made to "ed-fi/schools?nameOfInstitution=UT+AUSTIN+COLLEGE+OF+EDUCATION+UNDER+GRADUATE"
+             When a GET request is made to "/ed-fi/schools?nameOfInstitution=UT+AUSTIN+COLLEGE+OF+EDUCATION+UNDER+GRADUATE"
              Then it should respond with 200
               And the response body includes "nameOfInstitution: UT Austin College of Education Under Graduate"
 
@@ -138,7 +138,7 @@ Feature: Query Strings handling for GET requests
             Given the following schools exist
                   | schoolId | nameOfInstitution                             | gradeLevels         | educationOrganizationCategories     |
                   | 6        | UT Austin College of Education Under Graduate | [ "Postsecondary" ] | [ "Educator Preparation Provider" ] |
-             When a GET request is made to "ed-fi/schools?nameOfInstitution=nonExisting+school"
+             When a GET request is made to "/ed-fi/schools?nameOfInstitution=nonExisting+school"
              Then it should respond with 200
               And the response body is
                   """
@@ -152,7 +152,7 @@ Feature: Query Strings handling for GET requests
                   | schoolId | nameOfInstitution                             |
                   | 5        | School with max edorgId value                 |
                   | 6        | UT Austin College of Education Under Graduate |
-             When a GET request is made to "ed-fi/schools?limit=-6&offset=-1"
+             When a GET request is made to "/ed-fi/schools?limit=-6&offset=-1"
              Then it should respond with 400
               And the response body is
                   """

@@ -17,7 +17,7 @@ Feature: Create Reference Validation
                   | 123      | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
 
         Scenario: 01 Ensure clients cannot create a resource with a non existing reference
-             When a POST request is made to "ed-fi/academicWeeks" with
+             When a POST request is made to "/ed-fi/academicWeeks" with
                   """
                   {
                    "weekIdentifier": "WeekIdentifier1",
@@ -43,7 +43,7 @@ Feature: Create Reference Validation
               And it should respond with 409
 
         Scenario: 02 Ensure clients cannot create a resource with correct information but an invalid value belonging to the reference
-             When a POST request is made to "ed-fi/studentCTEProgramAssociations" with
+             When a POST request is made to "/ed-fi/studentCTEProgramAssociations" with
                   """
                   {
                       "beginDate": "2020-06-05",
@@ -74,7 +74,7 @@ Feature: Create Reference Validation
               And it should respond with 409
 
         Scenario: 03 Ensure clients cannot create a resource using a reference that is out of range of the existing values
-             When a POST request is made to "ed-fi/graduationPlans" with
+             When a POST request is made to "/ed-fi/graduationPlans" with
                   """
                   {
                      "graduationPlanTypeDescriptor": "uri://ed-fi.org/GraduationPlanTypeDescriptor#Career and Technical Education",
@@ -103,7 +103,7 @@ Feature: Create Reference Validation
             Given the system has these "students"
                   | studentUniqueId | firstName | lastSurname | birthDate    |
                   | "456"           | Firstname | Lastsurname | "2020-01-01" |
-             When a POST request is made to "ed-fi/studentSectionAssociations" with
+             When a POST request is made to "/ed-fi/studentSectionAssociations" with
                   """
                   {
                       "beginDate": "2023-08-23",
@@ -136,7 +136,7 @@ Feature: Create Reference Validation
                   | weekIdentifier | nameOfInstitution | schoolReference   | beginDate    | endDate      | totalInstructionalDays |
                   | WeekIdentifier | Test school       | {"schoolId": 123} | "2024-07-10" | "2024-07-10" | 365                    |
 
-             When a POST request is made to "ed-fi/sessions" with
+             When a POST request is made to "/ed-fi/sessions" with
                   """
                   {
                     "sessionName": "sessionName",
@@ -161,7 +161,7 @@ Feature: Create Reference Validation
                   }
                   """
 
-              And a POST request is made to "ed-fi/sessions" with
+              And a POST request is made to "/ed-fi/sessions" with
                   """
                   {
                     "sessionName": "sessionName",
