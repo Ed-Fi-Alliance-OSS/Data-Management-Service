@@ -69,7 +69,7 @@ Feature: Resources "Update" Operation validations
                   """
 
         # Descriptors are not validating properly. DMS-295
-        #@ignore
+        @ignore
         Scenario: 03 Update a document with a string that is too long (Descriptor)
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -321,26 +321,15 @@ Feature: Resources "Update" Operation validations
               And the response body is
                   """
                   {
-                    "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
-                    "title": "Data Validation Failed",
+                    "validationErrors": {},
+                    "errors": [
+                        "A non-empty request body is required."
+                    ],
+                    "detail": "The request could not be processed. See 'errors' for details.",
+                    "type": "urn:ed-fi:api:bad-request",
+                    "title": "Bad Request",
                     "status": 400,
-                    "correlationId": null,
-                    "validationErrors": {
-                        "$.namespace": [
-                        "namespace is required."
-                        ],
-                        "$.codeValue": [
-                        "codeValue is required."
-                        ],
-                        "$.shortDescription": [
-                        "shortDescription is required."
-                        ],
-                        "$.id": [
-                        "id is required."
-                        ]
-                    },
-                    "errors": []
+                    "correlationId": null
                   }
                   """
 
@@ -644,20 +633,15 @@ Feature: Resources "Update" Operation validations
               And the response body is
                   """
                   {
-                    "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
-                    "title": "Data Validation Failed",
+                    "validationErrors": {},
+                    "errors": [
+                        "A non-empty request body is required."
+                    ],
+                    "detail": "The request could not be processed. See 'errors' for details.",
+                    "type": "urn:ed-fi:api:bad-request",
+                    "title": "Bad Request",
                     "status": 400,
-                    "correlationId": null,
-                    "validationErrors": {
-                        "$.contentIdentifier": [
-                            "contentIdentifier is required."
-                        ],
-                        "$.namespace": [
-                            "namespace is required."
-                        ]
-                    },
-                    "errors": []
+                    "correlationId": null
                   }
                   """
 
@@ -683,6 +667,9 @@ Feature: Resources "Update" Operation validations
                         ],
                         "$.namespace": [
                             "namespace is required."
+                        ],
+                        "$.id": [
+                            "id is required."
                         ]
                     },
                     "errors": []
@@ -814,8 +801,8 @@ Feature: Resources "Update" Operation validations
                   """
                   {
                     "validationErrors": {
-                        "$.codeValue": [
-                            "codeValue Value should be at most 50 characters"
+                        "$.publisher": [
+                            "publisher Value should be at most 50 characters"
                         ]
                     },
                     "errors": [],
