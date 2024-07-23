@@ -2,7 +2,7 @@
   "name":"search-engine",
   "config": {
     "connector.class": "io.aiven.kafka.connect.opensearch.OpensearchSinkConnector",
-    "topics": "edfi.dms.documents",
+    "topics": "edfi.dms.document",
     "type_name": "_doc",
 
     "connection.url": "http://dms-opensearch:9200",
@@ -20,11 +20,11 @@
 
     "compact.map.entries": "true",
 
-    "transforms": "removeId, generateIndexFromResource",
+    "transforms": "removeId, generateIndexFromDmsResource",
     "transforms.removeId.type": "org.apache.kafka.connect.transforms.ReplaceField$Value",
     "transforms.removeId.exclude": "id",
-    "transforms.generateIndexFromResource.type":"com.github.edfiexchangeoss.meadowlark.kafka.connect.transforms.GenerateIndexFromResource",
-    "transforms.generateIndexFromResource.field.name":"projectname, resourceversion, resourcename",
+    "transforms.generateIndexFromDmsResource.type":"org.edfi.kafka.connect.transforms.GenerateIndexFromDmsResource",
+    "transforms.generateIndexFromDmsResource.field.name":"projectname, resourceversion, resourcename",
 
     "behavior.on.version.conflict": "ignore",
     "behavior.on.null.values": "delete",
