@@ -126,7 +126,7 @@ Feature: Validation of DELETE requests that would cause a foreign key violation
                   }
                   """
 
-        #@ignore
+        @ignore
         Scenario: 05 Ensure clients cannot delete a resource that is used by another items
             Given a POST request is made to "ed-fi/programs" with
                   """

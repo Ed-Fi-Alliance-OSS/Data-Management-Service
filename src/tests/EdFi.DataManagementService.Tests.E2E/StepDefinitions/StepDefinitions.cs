@@ -429,7 +429,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     _apiResponse
                         .Headers[header.Key]
                         .Should()
-                        .EndWith("data" + header.Value.ToString().Replace("{id}", _id));
+                        .EndWith(header.Value.ToString().Replace("{id}", _id));
             }
         }
 

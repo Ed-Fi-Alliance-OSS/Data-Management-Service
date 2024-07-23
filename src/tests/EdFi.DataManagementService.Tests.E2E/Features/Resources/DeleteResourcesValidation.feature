@@ -5,7 +5,7 @@ Feature: Resources "Delete" Operation validations
         Background:
             Given the Data Management Service must receive a token issued by "http://localhost"
               And user is already authorized
-             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "Sick Leave",
@@ -19,25 +19,25 @@ Feature: Resources "Delete" Operation validations
              Then it should respond with 201 or 200
 
         Scenario: 01 Verify deleting a specific resource by ID
-             When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
+             When a DELETE request is made to "ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 204
 
         Scenario: 02 Verify error handling when deleting using a invalid id
-             When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/00112233445566"
+             When a DELETE request is made to "ed-fi/absenceEventCategoryDescriptors/00112233445566"
              Then it should respond with 404
 
         Scenario: 03 Verify error handling when deleting a non existing resource
             # The id value should be replaced with the resource created in the Background section
-             When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
+             When a DELETE request is made to "ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 204
-             When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
+             When a DELETE request is made to "ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 404
 
         Scenario: 04 Verify response code when GET a deleted resource
             # The id value should be replaced with the resource created in the Background section
-             When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
+             When a DELETE request is made to "ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 204
-             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
+             When a GET request is made to "ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 404
 
 
@@ -54,7 +54,7 @@ Feature: Resources "Delete" Operation validations
                   | schoolReference    | schoolYearTypeReference | gradingPeriodDescriptor                                 | gradingPeriodName              | beginDate  | endDate    | periodSequence | totalInstructionalDays |
                   | {"schoolId": 4003} | {"schoolYear": 2022}    | uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks | 2021-2022 Fall Semester Exam 1 | 2021-08-23 | 2021-10-03 | 1              | 29                     |
 
-             When a DELETE request is made to referenced resource "/ed-fi/schools/{id}"
+             When a DELETE request is made to referenced resource "ed-fi/schools/{id}"
              Then it should respond with 409
               And the response body is
                   """
@@ -82,7 +82,7 @@ Feature: Resources "Delete" Operation validations
                   | schoolReference    | schoolYearTypeReference | gradingPeriodDescriptor                                 | gradingPeriodName              | beginDate  | endDate    | periodSequence | totalInstructionalDays |
                   | {"schoolId": 4003} | {"schoolYear": 2022}    | uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks | 2021-2022 Fall Semester Exam 1 | 2021-08-23 | 2021-10-03 | 1              | 29                     |
 
-             When a DELETE request is made to referenced resource "/ed-fi/schoolYearTypes/{id}"
+             When a DELETE request is made to referenced resource "ed-fi/schoolYearTypes/{id}"
              Then it should respond with 409
               And the response body is
                   """
@@ -110,7 +110,7 @@ Feature: Resources "Delete" Operation validations
                   | entryDate  | schoolReference    | studentReference           | entryGradeLevelDescriptor                        |
                   | 2021-07-23 | {"schoolId": 4005} | {"studentUniqueId": "987"} | uri://ed-fi.org/GradeLevelDescriptor#First grade |
 
-             When a DELETE request is made to referenced resource "/ed-fi/students/{id}"
+             When a DELETE request is made to referenced resource "ed-fi/students/{id}"
              Then it should respond with 409
               And the response body is
                   """
@@ -147,7 +147,7 @@ Feature: Resources "Delete" Operation validations
                   | {"contactUniqueId": "123"} | {"studentUniqueId": "987"} |
 
 
-             When a DELETE request is made to referenced resource "/ed-fi/students/{id}"
+             When a DELETE request is made to referenced resource "ed-fi/students/{id}"
              Then it should respond with 409
               And the response body is
                   """
