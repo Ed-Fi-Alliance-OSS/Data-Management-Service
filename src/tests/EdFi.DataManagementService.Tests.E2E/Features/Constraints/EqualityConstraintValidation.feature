@@ -10,7 +10,7 @@ Feature: Equality Constraint Validation
             Given the system has these "schools"
                   | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
                   | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
-            And the system has these "classPeriods"
+              And the system has these "classPeriods"
                   | classPeriodName  | schoolReference           |
                   | 01 - Traditional | { "schoolId": 255901001 } |
                   | 02 - Traditional | { "schoolId": 255901001 } |
@@ -171,7 +171,6 @@ Feature: Equality Constraint Validation
                   }
                   """
 
-        @ignore
         Scenario: 05 Making a Post request when value does not match the same value in a single other reference
              When a POST request is made to "ed-fi/sections" with
                   """
