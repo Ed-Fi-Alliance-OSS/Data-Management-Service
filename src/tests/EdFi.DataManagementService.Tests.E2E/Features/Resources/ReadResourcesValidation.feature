@@ -63,7 +63,7 @@ Feature: Resources "Read" Operation validations
             Given the system has these "Schools"
                   | schoolId | nameOfInstitution | educationOrganizationCategories                                                                                       | gradeLevels                                                                     |
                   | 100      | School Test       | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"}] | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"}] |
-              And a POST request is made to "courses" with
+              And a POST request is made to "/ed-fi/courses" with
                   """
                   {
                        "courseCode": "ALG-2",
