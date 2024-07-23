@@ -42,7 +42,7 @@ public class DependencyCalculatorTests
             }
             """;
 
-        private readonly string _expectedDescriptor =
+        private readonly string _expectedDependencies =
             """
             [
                 {
@@ -70,7 +70,7 @@ public class DependencyCalculatorTests
             dependencies.Should().NotBeEmpty();
             dependencies.Count.Should().Be(1);
 
-            var expectedDependencies = JsonNode.Parse(_expectedDescriptor)!.AsArray();
+            var expectedDependencies = JsonNode.Parse(_expectedDependencies)!.AsArray();
             dependencies!.Should().BeEquivalentTo(expectedDependencies!, options => options
                 .WithoutStrictOrdering()
                 .IgnoringCyclicReferences());
@@ -154,7 +154,7 @@ public class DependencyCalculatorTests
             }
             """;
 
-        private readonly string _expectedDescriptor =
+        private readonly string _expectedDependencies =
             """
             [
                 {
@@ -197,7 +197,7 @@ public class DependencyCalculatorTests
             var dependencies = _dependencyCalculator!.GetDependenciesFromResourceSchema();
             dependencies.Should().NotBeEmpty();
 
-            var expectedDependencies = JsonNode.Parse(_expectedDescriptor)!.AsArray();
+            var expectedDependencies = JsonNode.Parse(_expectedDependencies)!.AsArray();
             dependencies!.Should().BeEquivalentTo(expectedDependencies!, options => options
                 .WithoutStrictOrdering()
                 .IgnoringCyclicReferences());
@@ -290,7 +290,7 @@ public class DependencyCalculatorTests
             }
             """;
 
-        private readonly string _expectedDescriptor =
+        private readonly string _expectedDescriptors =
             """
             [
                 {
@@ -341,7 +341,7 @@ public class DependencyCalculatorTests
             var dependencies = _dependencyCalculator!.GetDependenciesFromResourceSchema();
             dependencies.Should().NotBeEmpty();
 
-            var expectedDependencies = JsonNode.Parse(_expectedDescriptor)!.AsArray();
+            var expectedDependencies = JsonNode.Parse(_expectedDescriptors)!.AsArray();
             dependencies!.Should().BeEquivalentTo(expectedDependencies!, options => options
                 .WithoutStrictOrdering()
                 .IgnoringCyclicReferences());
