@@ -8,6 +8,7 @@ using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Tests.E2E.Extensions;
 using EdFi.DataManagementService.Tests.E2E.Management;
 using FluentAssertions;
+using Json.Schema;
 using Microsoft.Playwright;
 using Newtonsoft.Json.Linq;
 using Reqnroll;
@@ -231,7 +232,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 }
                 catch (Exception e)
                 {
-                    throw new Exception($"Unable to parse the JSON result from the API server: {e.Message}", e);
+                    throw new Exception(
+                        $"Unable to parse the JSON result from the API server: {e.Message}",
+                        e
+                    );
                 }
             }
         }
@@ -253,7 +257,16 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a GET request is made to {string}")]
         public async Task WhenAGETRequestIsMadeTo(string url)
         {
-            url = $"data/{url.Replace("{id}", _id)}";
+            url = url.Replace("{id}", _id);
+
+            if (url.StartsWith("ed-fi"))
+            {
+                // If it doesn't start with ed-fi, then assume that this is
+                // looking for metadata and should not have "data" added to the
+                // URL.
+                url = $"data/{url}";
+            }
+
             _logger.log.Information(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(url)!;
         }
@@ -290,6 +303,51 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _apiResponse.Status.Should().BeOneOf([statusCode1, statusCode2]);
         }
 
+        [Then("there is a JSON file in the response body with a list of dependencies")]
+        public void ThenThereIsADependencyResponse()
+        {
+            string responseBody = _apiResponse.TextAsync().Result;
+            JsonNode responseJson = JsonNode.Parse(responseBody)!;
+
+            var dependenciesSchema = """
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "array",
+  "items":
+    {
+      "type": "object",
+      "properties": {
+        "resource": {
+          "type": "string"
+        },
+        "order": {
+          "type": "integer"
+        },
+        "operations": {
+          "type": "array",
+          "items":
+            {
+              "type": "string"
+            }
+        }
+      },
+      "required": [
+        "resource",
+        "order",
+        "operations"
+      ]
+    }
+}
+""";
+            var schema = JsonSchema.FromText(dependenciesSchema);
+
+            EvaluationOptions validatorEvaluationOptions =
+                new() { OutputFormat = OutputFormat.List, RequireFormatValidation = true };
+
+            var evaluation = schema.Evaluate(responseJson, validatorEvaluationOptions);
+            evaluation.HasErrors.Should().BeFalse("The response does not adhere to the expected schema.");
+        }
+
         [Then("the response body is")]
         public void ThenTheResponseBodyIs(string expectedBody)
         {
@@ -307,11 +365,16 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             try
             {
-                responseJson.Should().BeEquivalentTo(expectedBodyJson, options => options
-                    .WithoutStrictOrdering()
-                    .IgnoringCyclicReferences()
-                    .RespectingRuntimeTypes()
-                );
+                responseJson
+                    .Should()
+                    .BeEquivalentTo(
+                        expectedBodyJson,
+                        options =>
+                            options
+                                .WithoutStrictOrdering()
+                                .IgnoringCyclicReferences()
+                                .RespectingRuntimeTypes()
+                    );
             }
             catch (Exception e)
             {
@@ -352,6 +415,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     }
                 );
             }
+            replacedBody = replacedBody.Replace("{BASE_URL}", _playwrightContext.ApiUrl);
             return replacedBody;
         }
 
@@ -378,10 +442,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             string responseJsonString = _apiResponse.TextAsync().Result;
             JsonNode responseJson = JsonNode.Parse(responseJsonString)!;
             _logger.log.Information(responseJson.ToString());
-            responseJson.Should().BeEquivalentTo(bodyJson, options => options
-                .WithoutStrictOrdering()
-                .IgnoringCyclicReferences()
-            );
+            responseJson
+                .Should()
+                .BeEquivalentTo(
+                    bodyJson,
+                    options => options.WithoutStrictOrdering().IgnoringCyclicReferences()
+                );
         }
 
         [Then("total of records should be {int}")]
