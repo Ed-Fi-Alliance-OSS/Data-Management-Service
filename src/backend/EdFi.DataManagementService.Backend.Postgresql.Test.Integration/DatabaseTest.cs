@@ -79,6 +79,7 @@ public abstract class DatabaseTest : DatabaseTestBase
     protected static DocumentInfo CreateDocumentInfo(
         Guid referentialId,
         DocumentReference[]? documentReferences = null,
+        DocumentReference[]? descriptorReferences = null,
         SuperclassIdentity? superclassIdentity = null
     )
     {
@@ -86,7 +87,7 @@ public abstract class DatabaseTest : DatabaseTestBase
             DocumentIdentity: new([new(IdentityValue: "", IdentityJsonPath: new("$"))]),
             ReferentialId: new ReferentialId(referentialId),
             DocumentReferences: documentReferences ?? [],
-            DescriptorReferences: [],
+            DescriptorReferences: descriptorReferences ?? [],
             SuperclassIdentity: superclassIdentity
         );
     }
@@ -122,6 +123,7 @@ public abstract class DatabaseTest : DatabaseTestBase
         Guid referentialIdGuid,
         string edfiDocString,
         DocumentReference[]? documentReferences = null,
+        DocumentReference[]? descriptorReferences = null,
         SuperclassIdentity? superclassIdentity = null
     )
     {
@@ -129,7 +131,7 @@ public abstract class DatabaseTest : DatabaseTestBase
             new
             {
                 ResourceInfo = CreateResourceInfo(resourceName),
-                DocumentInfo = CreateDocumentInfo(referentialIdGuid, documentReferences, superclassIdentity),
+                DocumentInfo = CreateDocumentInfo(referentialIdGuid, documentReferences, descriptorReferences, superclassIdentity),
                 EdfiDoc = JsonNode.Parse(edfiDocString),
                 TraceId = new TraceId("123"),
                 DocumentUuid = new DocumentUuid(documentUuidGuid)
@@ -153,6 +155,7 @@ public abstract class DatabaseTest : DatabaseTestBase
         Guid referentialIdGuid,
         string edFiDocString,
         DocumentReference[]? documentReferences = null,
+        DocumentReference[]? descriptorReferences = null,
         SuperclassIdentity? superclassIdentity = null
     )
     {
@@ -160,7 +163,7 @@ public abstract class DatabaseTest : DatabaseTestBase
             new
             {
                 ResourceInfo = CreateResourceInfo(resourceName),
-                DocumentInfo = CreateDocumentInfo(referentialIdGuid, documentReferences, superclassIdentity),
+                DocumentInfo = CreateDocumentInfo(referentialIdGuid, documentReferences, descriptorReferences, superclassIdentity),
                 EdfiDoc = JsonNode.Parse(edFiDocString),
                 TraceId = new TraceId("123"),
                 DocumentUuid = new DocumentUuid(documentUuidGuid)
