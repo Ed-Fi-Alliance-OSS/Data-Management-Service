@@ -1,8 +1,8 @@
 Feature: Query Strings handling for GET requests
 
     Rule: Testing without data
-    Background:
-        Given there are no schools
+        Background:
+            Given there are no schools
 
         Scenario: 01 Validate totalCount value when there are no existing schools in the Database
              When a GET request is made to "/ed-fi/schools?totalCount=true"
@@ -19,17 +19,17 @@ Feature: Query Strings handling for GET requests
              Then it should respond with 200
               And the response headers does not include total-count
 
-    Rule: Thesting with data upload 
-    Background:
-        Given the system has these "schools"
-            | schoolId  | nameOfInstitution                               | gradeLevels                                                                         | educationOrganizationCategories                                                                                         |
-            | 5         | School with max edorgId value                   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"} ]    | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ]  |
-            | 6         | UT Austin College of Education Under Graduate   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ]  |
-            | 255901001 | Grand Bend High School                          | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"} ]    | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ]  |
-            | 255901044 | Grand Bend Middle School                        | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"} ]    | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ]  |
-            | 255901045 | UT Austin Extended Campus                       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Twelfth grade"} ]  | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ]  |
+    Rule: Testing with data upload
+        Background:
+            Given the system has these "schools"
+                  | schoolId  | nameOfInstitution                             | gradeLevels                                                                         | educationOrganizationCategories                                                                                        |
+                  | 5         | School with max edorgId value                 | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"} ]    | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+                  | 6         | UT Austin College of Education Under Graduate | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+                  | 255901001 | Grand Bend High School                        | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"} ]    | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+                  | 255901044 | Grand Bend Middle School                      | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"} ]    | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+                  | 255901045 | UT Austin Extended Campus                     | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Twelfth grade"} ]  | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
 
-        Scenario: 04 Ensure that schools return the total count            
+        Scenario: 04 Ensure that schools return the total count
              When a GET request is made to "/ed-fi/schools?totalCount=true"
              Then it should respond with 200
               And the response headers includes total-count 5
@@ -53,9 +53,9 @@ Feature: Query Strings handling for GET requests
              When a GET request is made to "/ed-fi/schools?offset=3&limit=5"
              Then it should respond with 200
               And schools returned
-                  | schoolId  | nameOfInstitution          |
-                  | 255901044 | Grand Bend Middle School   |
-                  | 255901045 | UT Austin Extended Campus  |
+                  | schoolId  | nameOfInstitution         |
+                  | 255901044 | Grand Bend Middle School  |
+                  | 255901045 | UT Austin Extended Campus |
 
         Scenario: 09 Ensure clients can get information when filtering by limit and offset greater than the total
              When a GET request is made to "/ed-fi/schools?offset=6&limit=5"
@@ -144,7 +144,7 @@ Feature: Query Strings handling for GET requests
                   """
                   []
                   """
-        
+
                   ##I need a few more details on this scenario
         @ignore
         Scenario: 15 Ensure clients can't GET information when querying with filter and offset using limit without offset

@@ -20,7 +20,7 @@ Feature: Update Reference Validation
             Given the system has these "localEducationAgencies" references
                   | localEducationAgencyId | nameOfInstitution | localEducationAgencyCategoryDescriptor                                           | categories                                                                                                                              |
                   | 10203040               | Institution Test  | "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Federal operated agency" | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency" }]  |
-             When a PUT request is made to referenced resource "ed-fi/localEducationAgencies/{id}" with
+             When a PUT request is made to referenced resource "/ed-fi/localEducationAgencies/{id}" with
                   """
                   {
                       "id": "{id}",
@@ -52,7 +52,7 @@ Feature: Update Reference Validation
             Given the system has these "studentEducationOrganizationAssociations" references
                   | educationOrganizationReference           | studentReference                  |
                   | {"educationOrganizationId":255901}       | {"studentUniqueId":"604834"}      |
-             When a PUT request is made to referenced resource "ed-fi/studentEducationOrganizationAssociations/{id}" with
+             When a PUT request is made to referenced resource "/ed-fi/studentEducationOrganizationAssociations/{id}" with
                   """
                   {
                       "id": "{id}",
@@ -83,7 +83,7 @@ Feature: Update Reference Validation
             Given the system has these "Staffs" references
                   | staffUniqueId   | firstName | lastSurname |
                   | "123"           | John      | Dutton      |
-             When a PUT request is made to referenced resource "ed-fi/staffs/{id}" with
+             When a PUT request is made to referenced resource "/ed-fi/staffs/{id}" with
                   """
                   {
                       "id": "{id}",
@@ -113,7 +113,7 @@ Feature: Update Reference Validation
             Given the system has these "graduationPlans" references
                   | graduationPlanTypeDescriptor   | educationOrganizationReference      | graduationSchoolYearTypeReference | totalRequiredCredits |
                   | Career and Technical Education | {"educationOrganizationId":255901}  | {"schoolYear":2022}               | 10.000               |
-             When a PUT request is made to referenced resource "ed-fi/graduationPlans/{id}" with
+             When a PUT request is made to referenced resource "/ed-fi/graduationPlans/{id}" with
                   """
                   {
                       "id": "{id}",
@@ -159,7 +159,7 @@ Feature: Update Reference Validation
               And the system has these "studentSectionAssociations" references
                   | beginDate  | sectionReference                                                                                                                                                  | studentReference               |
                   | 2021-08-23 | {"localCourseCode":"ALG-1", "schoolId":255901, "schoolYear": 2022, "sectionIdentifier":"25590100102Trad220ALG112011", "sessionName":"2021-2022 Fall Semester"  }  | {"studentUniqueId":"604834"}   |
-             When a PUT request is made to referenced resource "ed-fi/studentSectionAssociations/{id}" with
+             When a PUT request is made to referenced resource "/ed-fi/studentSectionAssociations/{id}" with
                   """
                   {
                       "id": "{id}",

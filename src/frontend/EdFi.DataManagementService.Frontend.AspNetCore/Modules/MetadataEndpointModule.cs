@@ -45,7 +45,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         {
             dependencies = $"{baseUrl}/dependencies",
             specifications = $"{baseUrl}/specifications",
-            xsdFiles = $"{baseUrl}/xsdMetadata"
+            xsdMetadata = $"{baseUrl}/xsd"
         };
 
         await httpContext.Response.WriteAsJsonAsync(content);

@@ -10,11 +10,11 @@ Feature: Equality Constraint Validation
             Given the system has these "schools"
                   | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
                   | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
-            And the system has these "classPeriods"
+              And the system has these "classPeriods"
                   | classPeriodName  | schoolReference           |
                   | 01 - Traditional | { "schoolId": 255901001 } |
                   | 02 - Traditional | { "schoolId": 255901001 } |
-             When a POST request is made to "ed-fi/bellschedules" with
+             When a POST request is made to "/ed-fi/bellschedules" with
                   """
                   {
                       "schoolReference": {
@@ -43,7 +43,7 @@ Feature: Equality Constraint Validation
              Then it should respond with 201 or 200
 
         Scenario: 02 Post an invalid bell schedule with equality constraint violations.
-             When a POST request is made to "ed-fi/bellschedules" with
+             When a POST request is made to "/ed-fi/bellschedules" with
                   """
                   {
                       "schoolReference": {
@@ -88,7 +88,7 @@ Feature: Equality Constraint Validation
                   """
 
         Scenario: 03 Making a Post request when value does not match the same value in an array
-             When a POST request is made to "ed-fi/sections" with
+             When a POST request is made to "/ed-fi/sections" with
                   """
                   {
                       "sectionIdentifier": "25590100102Trad220ALG112011Test",
@@ -127,7 +127,7 @@ Feature: Equality Constraint Validation
                   """
 
         Scenario: 04 Making a Post request when a value matches the first scenario in an array but not the second
-             When a POST request is made to "ed-fi/sections" with
+             When a POST request is made to "/ed-fi/sections" with
                   """
                   {
                       "sectionIdentifier": "25590100102Trad220ALG112011Test",
@@ -171,9 +171,8 @@ Feature: Equality Constraint Validation
                   }
                   """
 
-        @ignore
         Scenario: 05 Making a Post request when value does not match the same value in a single other reference
-             When a POST request is made to "ed-fi/sections" with
+             When a POST request is made to "/ed-fi/sections" with
                   """
                   {
                       "sectionIdentifier": "25590100102Trad220ALG112011Test",

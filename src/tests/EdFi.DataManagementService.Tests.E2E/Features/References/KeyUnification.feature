@@ -21,7 +21,7 @@ Feature: Validation of Natural Key Unification
                   | Course1    | 1             | ALG-1              | 123      | Course1Title | {"educationOrganizationId": 123} | [{"courseIdentificationSystemDescriptor": "uri://ed-fi.org/courseIdentificationSystemDescriptor#LEA course code", "assigningOrganizationIdentificationCode": "IdentificationCode1", "courseCatalogURL": "URL12", "identificationCode": "IdentificationCode1"}] |
 
         Scenario: 01 Verify clients can create a resource that contains multiple references with an overlapping natural key field
-             When a POST request is made to "ed-fi/courseOfferings" with
+             When a POST request is made to "/ed-fi/courseOfferings" with
                   """
                   {
                       "localCourseCode": "CourseOffering1",
@@ -45,7 +45,7 @@ Feature: Validation of Natural Key Unification
              Then it should respond with 201 or 200
 
         Scenario: 02 Verify clients cannot create a resource that contains mismatched values on an overlapping natural key field
-             When a POST request is made to "ed-fi/courseOfferings" with
+             When a POST request is made to "/ed-fi/courseOfferings" with
                   """
                   {
                       "localCourseCode": "CourseOffering1",
@@ -88,7 +88,7 @@ Feature: Validation of Natural Key Unification
         Scenario: 03 Verify clients cannot update a resource that contains mismatched values on an overlapping natural key field
             Given Local Course Code "ALG-1 TEST-101"
             #set value to {id}
-             When a PUT request is made to "ed-fi/courseOfferings/{id}" with
+             When a PUT request is made to "/ed-fi/courseOfferings/{id}" with
                   """
                   {
                       "localCourseCode": "ALG-1 TEST-101",
@@ -126,7 +126,7 @@ Feature: Validation of Natural Key Unification
                   }
                   """
         Scenario: 04 Verify clients can create a resource with a reference to a resource with a complex identity (CourseOffering)
-             When a POST request is made to "ed-fi/sections" with
+             When a POST request is made to "/ed-fi/sections" with
                   """
                   {
                       "sectionIdentifier": "Section1",

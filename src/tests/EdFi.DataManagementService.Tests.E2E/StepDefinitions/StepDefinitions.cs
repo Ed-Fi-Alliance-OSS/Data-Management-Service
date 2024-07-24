@@ -8,6 +8,7 @@ using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Tests.E2E.Extensions;
 using EdFi.DataManagementService.Tests.E2E.Management;
 using FluentAssertions;
+using Json.Schema;
 using Microsoft.Playwright;
 using Newtonsoft.Json.Linq;
 using Reqnroll;
@@ -40,7 +41,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Given("a POST request is made to {string} with")]
         public async Task GivenAPOSTRequestIsMadeToWith(string url, string body)
         {
-            url = $"data/{url}";
+            url = addDataPrefixIfNecessary(url);
+
             _logger.log.Information(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
             if (_apiResponse.Headers.ContainsKey("location"))
@@ -178,7 +180,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a POST request is made to {string} with")]
         public async Task WhenSendingAPOSTRequestToWithBody(string url, string body)
         {
-            url = $"data/{url}";
+            url = addDataPrefixIfNecessary(url);
             _logger.log.Information($"POST url: {url}");
             _logger.log.Information($"POST body: {body}");
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
@@ -193,7 +195,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a POST request is made for dependent resource {string} with")]
         public async Task WhenSendingAPOSTRequestForDependentResourceWithBody(string url, string body)
         {
-            url = $"data/{url}";
+            url = addDataPrefixIfNecessary(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
             if (_apiResponse.Headers.ContainsKey("location"))
             {
@@ -205,7 +207,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a PUT request is made to {string} with")]
         public async Task WhenAPUTRequestIsMadeToWith(string url, string body)
         {
-            url = $"data/{url.Replace("{id}", _id)}";
+            url = addDataPrefixIfNecessary(url).Replace("{id}", _id);
+
             body = body.Replace("{id}", _id);
             _logger.log.Information($"PUT url: {url}");
             _logger.log.Information($"PUT body: {body}");
@@ -215,7 +218,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a PUT request is made to referenced resource {string} with")]
         public async Task WhenAPUTRequestIsMadeToReferencedResourceWith(string url, string body)
         {
-            url = $"data/{url.Replace("{id}", _referencedResourceId)}";
+            url = addDataPrefixIfNecessary(url).Replace("{id}", _referencedResourceId);
+
             _logger.log.Information(url);
             body = body.Replace("{id}", _referencedResourceId);
             _logger.log.Information(body);
@@ -231,7 +235,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 }
                 catch (Exception e)
                 {
-                    throw new Exception($"Unable to parse the JSON result from the API server: {e.Message}", e);
+                    throw new Exception(
+                        $"Unable to parse the JSON result from the API server: {e.Message}",
+                        e
+                    );
                 }
             }
         }
@@ -239,21 +246,24 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a DELETE request is made to {string}")]
         public async Task WhenADELETERequestIsMadeTo(string url)
         {
-            url = $"data/{url.Replace("{id}", _id)}";
+            url = addDataPrefixIfNecessary(url).Replace("{id}", _id);
+
             _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(url)!;
         }
 
         [When("a DELETE request is made to referenced resource {string}")]
         public async Task WhenADELETERequestIsMadeToReferencedResource(string url)
         {
-            url = $"data/{url.Replace("{id}", _referencedResourceId)}";
+            url = addDataPrefixIfNecessary(url).Replace("{id}", _referencedResourceId);
+
             _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(url)!;
         }
 
         [When("a GET request is made to {string}")]
         public async Task WhenAGETRequestIsMadeTo(string url)
         {
-            url = $"data/{url.Replace("{id}", _id)}";
+            url = addDataPrefixIfNecessary(url).Replace("{id}", _id);
+
             _logger.log.Information(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(url)!;
         }
@@ -261,7 +271,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a GET request is made to {string} using values as")]
         public async Task WhenAGETRequestIsMadeToUsingValuesAs(string url, Table table)
         {
-            url = $"data/{url}";
+            url = addDataPrefixIfNecessary(url);
             foreach (var row in table.Rows)
             {
                 var value = row["Values"];
@@ -290,6 +300,51 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _apiResponse.Status.Should().BeOneOf([statusCode1, statusCode2]);
         }
 
+        [Then("there is a JSON file in the response body with a list of dependencies")]
+        public void ThenThereIsADependencyResponse()
+        {
+            string responseBody = _apiResponse.TextAsync().Result;
+            JsonNode responseJson = JsonNode.Parse(responseBody)!;
+
+            var dependenciesSchema = """
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "array",
+  "items":
+    {
+      "type": "object",
+      "properties": {
+        "resource": {
+          "type": "string"
+        },
+        "order": {
+          "type": "integer"
+        },
+        "operations": {
+          "type": "array",
+          "items":
+            {
+              "type": "string"
+            }
+        }
+      },
+      "required": [
+        "resource",
+        "order",
+        "operations"
+      ]
+    }
+}
+""";
+            var schema = JsonSchema.FromText(dependenciesSchema);
+
+            EvaluationOptions validatorEvaluationOptions =
+                new() { OutputFormat = OutputFormat.List, RequireFormatValidation = true };
+
+            var evaluation = schema.Evaluate(responseJson, validatorEvaluationOptions);
+            evaluation.HasErrors.Should().BeFalse("The response does not adhere to the expected schema.");
+        }
+
         [Then("the response body is")]
         public void ThenTheResponseBodyIs(string expectedBody)
         {
@@ -307,11 +362,16 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             try
             {
-                responseJson.Should().BeEquivalentTo(expectedBodyJson, options => options
-                    .WithoutStrictOrdering()
-                    .IgnoringCyclicReferences()
-                    .RespectingRuntimeTypes()
-                );
+                responseJson
+                    .Should()
+                    .BeEquivalentTo(
+                        expectedBodyJson,
+                        options =>
+                            options
+                                .WithoutStrictOrdering()
+                                .IgnoringCyclicReferences()
+                                .RespectingRuntimeTypes()
+                    );
             }
             catch (Exception e)
             {
@@ -352,6 +412,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     }
                 );
             }
+            replacedBody = replacedBody.Replace("{BASE_URL}", _playwrightContext.ApiUrl);
             return replacedBody;
         }
 
@@ -365,7 +426,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     _apiResponse
                         .Headers[header.Key]
                         .Should()
-                        .EndWith("data" + header.Value.ToString().Replace("{id}", _id));
+                        .EndWith(header.Value.ToString().Replace("{id}", _id));
             }
         }
 
@@ -378,10 +439,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             string responseJsonString = _apiResponse.TextAsync().Result;
             JsonNode responseJson = JsonNode.Parse(responseJsonString)!;
             _logger.log.Information(responseJson.ToString());
-            responseJson.Should().BeEquivalentTo(bodyJson, options => options
-                .WithoutStrictOrdering()
-                .IgnoringCyclicReferences()
-            );
+            responseJson
+                .Should()
+                .BeEquivalentTo(
+                    bodyJson,
+                    options => options.WithoutStrictOrdering().IgnoringCyclicReferences()
+                );
         }
 
         [Then("total of records should be {int}")]
@@ -424,8 +487,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Then("schools returned")]
         public void ThenSchoolsReturned(Table table)
         {
-            var url = $"data/ed-fi/schools?offset=3&limit=5";
-
             var jsonResponse = _apiResponse.TextAsync().Result;
             var responseArray = JArray.Parse(jsonResponse);
 
@@ -447,5 +508,18 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         }
 
         #endregion
+
+        private static string addDataPrefixIfNecessary(string input)
+        {
+            // Prefer that the "url" fragment have a starting slash, but write
+            // the code so it will work either way.
+            input = input.StartsWith('/') ? input[1..] : input;
+
+            // If it doesn't start with ed-fi, then assume that this is looking
+            // for metadata and should not have "data" added to the URL.
+            input = input.StartsWith("ed-fi") ? $"data/{input}" : input;
+
+            return input;
+        }
     }
 }
