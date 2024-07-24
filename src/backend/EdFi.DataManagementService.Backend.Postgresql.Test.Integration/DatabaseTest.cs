@@ -24,7 +24,7 @@ public abstract class DatabaseTest : DatabaseTestBase
     public async Task ConnectionSetup()
     {
         Connection = await DataSource!.OpenConnectionAsync();
-        Transaction = await Connection.BeginTransactionAsync(IsolationLevel.Serializable);
+        Transaction = await Connection.BeginTransactionAsync(IsolationLevel.RepeatableRead);
     }
 
     [TearDown]
@@ -36,27 +36,27 @@ public abstract class DatabaseTest : DatabaseTestBase
 
     protected static UpsertDocument CreateUpsert()
     {
-        return new UpsertDocument(new SqlAction(), NullLogger<UpsertDocument>.Instance);
+        return new UpsertDocument(NullLogger<UpsertDocument>.Instance);
     }
 
     protected static UpdateDocumentById CreateUpdate()
     {
-        return new UpdateDocumentById(new SqlAction(), NullLogger<UpdateDocumentById>.Instance);
+        return new UpdateDocumentById(NullLogger<UpdateDocumentById>.Instance);
     }
 
     protected static GetDocumentById CreateGetById()
     {
-        return new GetDocumentById(new SqlAction(), NullLogger<GetDocumentById>.Instance);
+        return new GetDocumentById(NullLogger<GetDocumentById>.Instance);
     }
 
     protected static QueryDocument CreateQueryDocument()
     {
-        return new QueryDocument(new SqlAction(), NullLogger<QueryDocument>.Instance);
+        return new QueryDocument(NullLogger<QueryDocument>.Instance);
     }
 
     protected static DeleteDocumentById CreateDeleteById()
     {
-        return new DeleteDocumentById(new SqlAction(), NullLogger<DeleteDocumentById>.Instance);
+        return new DeleteDocumentById(NullLogger<DeleteDocumentById>.Instance);
     }
 
     protected static T AsValueType<T, TU>(TU value)
@@ -119,7 +119,7 @@ public abstract class DatabaseTest : DatabaseTestBase
     protected static IUpsertRequest CreateUpsertRequest(
         string resourceName,
         Guid documentUuidGuid,
-        Guid referentialId,
+        Guid referentialIdGuid,
         string edfiDocString,
         DocumentReference[]? documentReferences = null,
         SuperclassIdentity? superclassIdentity = null
@@ -129,7 +129,7 @@ public abstract class DatabaseTest : DatabaseTestBase
             new
             {
                 ResourceInfo = CreateResourceInfo(resourceName),
-                DocumentInfo = CreateDocumentInfo(referentialId, documentReferences, superclassIdentity),
+                DocumentInfo = CreateDocumentInfo(referentialIdGuid, documentReferences, superclassIdentity),
                 EdfiDoc = JsonNode.Parse(edfiDocString),
                 TraceId = new TraceId("123"),
                 DocumentUuid = new DocumentUuid(documentUuidGuid)
@@ -151,14 +151,16 @@ public abstract class DatabaseTest : DatabaseTestBase
         string resourceName,
         Guid documentUuidGuid,
         Guid referentialIdGuid,
-        string edFiDocString
+        string edFiDocString,
+        DocumentReference[]? documentReferences = null,
+        SuperclassIdentity? superclassIdentity = null
     )
     {
         return (
             new
             {
                 ResourceInfo = CreateResourceInfo(resourceName),
-                DocumentInfo = CreateDocumentInfo(referentialIdGuid),
+                DocumentInfo = CreateDocumentInfo(referentialIdGuid, documentReferences, superclassIdentity),
                 EdfiDoc = JsonNode.Parse(edFiDocString),
                 TraceId = new TraceId("123"),
                 DocumentUuid = new DocumentUuid(documentUuidGuid)
@@ -233,7 +235,7 @@ public abstract class DatabaseTest : DatabaseTestBase
         // Connection and transaction for the setup
         await using var connectionForSetup = await DataSource!.OpenConnectionAsync();
         await using var transactionForSetup = await connectionForSetup.BeginTransactionAsync(
-            IsolationLevel.Serializable
+            IsolationLevel.RepeatableRead
         );
 
         // Run the setup
@@ -248,7 +250,7 @@ public abstract class DatabaseTest : DatabaseTestBase
 
         // Connection and transaction managed in this method for DB transaction 1
         await using var connection1 = await DataSource!.OpenConnectionAsync();
-        await using var transaction1 = await connection1.BeginTransactionAsync(IsolationLevel.Serializable);
+        await using var transaction1 = await connection1.BeginTransactionAsync(IsolationLevel.RepeatableRead);
 
         // Use these for threads to signal each other for coordination
         using EventWaitHandle Transaction1Go = new AutoResetEvent(false);
@@ -269,7 +271,7 @@ public abstract class DatabaseTest : DatabaseTestBase
 
             // Step #3: Create new connection and begin DB transaction 2
             connection2 = await DataSource!.OpenConnectionAsync();
-            transaction2 = await connection2.BeginTransactionAsync(IsolationLevel.Serializable);
+            transaction2 = await connection2.BeginTransactionAsync(IsolationLevel.RepeatableRead);
 
             // Step #4: Signal to transaction 1 thread to continue in parallel
             Transaction1Go?.Set();

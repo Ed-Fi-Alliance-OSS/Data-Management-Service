@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
+using static EdFi.DataManagementService.Backend.Postgresql.Operation.SqlAction;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
 
@@ -19,7 +20,7 @@ public interface IDeleteDocumentById
     );
 }
 
-public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentById> _logger)
+public class DeleteDocumentById(ILogger<DeleteDocumentById> _logger)
     : IDeleteDocumentById
 {
     public async Task<DeleteResult> DeleteById(
@@ -36,7 +37,7 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
             // Create a transaction save point
             await transaction.SaveAsync("beforeDelete");
 
-            int rowsAffectedOnDocumentDelete = await _sqlAction.DeleteDocumentByDocumentUuid(
+            int rowsAffectedOnDocumentDelete = await DeleteDocumentByDocumentUuid(
                 documentPartitionKey,
                 deleteRequest.DocumentUuid,
                 connection,
@@ -73,7 +74,7 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
             // Restore transaction save point to continue using transaction
             await transaction.RollbackAsync("beforeDelete");
 
-            var referencingDocumentNames = await _sqlAction.FindReferencingResourceNamesByDocumentUuid(
+            var referencingDocumentNames = await FindReferencingResourceNamesByDocumentUuid(
                 deleteRequest.DocumentUuid,
                 documentPartitionKey,
                 connection,
