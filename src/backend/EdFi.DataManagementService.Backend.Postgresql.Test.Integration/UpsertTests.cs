@@ -895,12 +895,114 @@ public class UpsertTests : DatabaseTest
         }
     }
 
-    // Future tests - from Meadowlark
+    [TestFixture]
+    public class Given_an_update_of_a_document_to_reference_an_existing_descriptor : UpsertTests
+    {
+        private UpsertResult? _upsertResult;
+        private GetResult? _getResult;
 
-    // given an update of a document that references an existing descriptor
+        private static readonly Guid _documentUuid1Guid = Guid.NewGuid();
+        private static readonly Guid _referentialId1Guid = Guid.NewGuid();
+        private static readonly string _edFiDocString1 = """{"abc":1}""";
+        private static readonly Guid _documentUuidDescriptorGuid = Guid.NewGuid();
+        private static readonly Guid _referentialIdDescriptorGuid = Guid.NewGuid();
+        private static readonly string _edFiDocString2 = """{"abc":2}""";
+        private static readonly string _edFiDocString3 = """{"abc":3}""";
 
-    // given an update of a document that references a nonexisting descriptor
+        [SetUp]
+        public async Task Setup()
+        {
+            // Insert document
+            IUpsertRequest upsertRequest = CreateUpsertRequest(
+                _defaultResourceName,
+                _documentUuid1Guid,
+                _referentialId1Guid,
+                _edFiDocString1
+            );
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
 
+            // Insert descriptor
+            IUpsertRequest upsertRequest2 = CreateUpsertRequest(
+                _defaultDescriptorName,
+                _documentUuidDescriptorGuid,
+                _referentialIdDescriptorGuid,
+                _edFiDocString2
+            );
+            await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
+
+            // Update document to reference descriptor
+            Reference[] references = [new(_defaultResourceName, _referentialIdDescriptorGuid)];
+            IUpsertRequest upsertRequest3 = CreateUpsertRequest(
+                _defaultResourceName,
+                _documentUuid1Guid,
+                _referentialId1Guid,
+                _edFiDocString3,
+                null,
+                CreateDocumentReferences(references)
+            );
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest3, Connection!, Transaction!);
+
+            // Confirm document is updated
+            IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuid1Guid);
+            _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
+        }
+
+        [Test]
+        public void It_should_be_a_successful_update()
+        {
+            _upsertResult!.Should().BeOfType<UpsertResult.UpdateSuccess>();
+        }
+
+        [Test]
+        public void It_should_be_found_by_get()
+        {
+            _getResult!.Should().BeOfType<GetResult.GetSuccess>();
+            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":3");
+        }
+    }
+
+
+    [TestFixture]
+    public class Given_an_update_of_a_document_to_reference_a_nonexisting_descriptor : UpsertTests
+    {
+        private UpsertResult? _upsertResult;
+
+        private static readonly Guid _documentUuidGuid = Guid.NewGuid();
+        private static readonly Guid _referentialIdGuid = Guid.NewGuid();
+        private static readonly string _edFiDocString = """{"abc":1}""";
+        private static readonly Guid _nonExistentDescriptorReferentialIdGuid = Guid.NewGuid();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Insert document
+            IUpsertRequest upsertRequest = CreateUpsertRequest(
+                _defaultResourceName,
+                _documentUuidGuid,
+                _referentialIdGuid,
+                _edFiDocString
+            );
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+
+            // Update document with nonexistent reference
+            Reference[] references = [new(_defaultResourceName, _nonExistentDescriptorReferentialIdGuid)];
+            IUpsertRequest upsertRequest2 = CreateUpsertRequest(
+                _defaultResourceName,
+                _documentUuidGuid,
+                _referentialIdGuid,
+                _edFiDocString,
+                null,
+                CreateDocumentReferences(references)
+            );
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
+        }
+
+        [Test]
+        public void It_should_be_a_reference_failure()
+        {
+            _upsertResult!.Should().BeOfType<UpsertResult.UpsertFailureDescriptorReference>();
+        }
+    }
 
     // Future tests - new concurrency-based
 
