@@ -13,6 +13,119 @@ using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
 
+/// <summary>
+/// A facade of all the DB interactions. Any action requiring SQL statement execution should be here.
+/// Connections and transactions are managed by the caller.
+/// Exceptions are handled by the caller.
+/// </summary>
+public interface ISqlAction
+{
+    public Task<JsonNode?> FindDocumentEdfiDocByDocumentUuid(
+        DocumentUuid documentUuid,
+        string resourceName,
+        PartitionKey partitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        LockOption lockOption
+    );
+
+    public Task<Document?> FindDocumentByReferentialId(
+        ReferentialId referentialId,
+        PartitionKey partitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        LockOption lockOption
+    );
+
+    public Task<string[]> FindReferencingResourceNamesByDocumentUuid(
+        DocumentUuid documentUuid,
+        PartitionKey documentPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        LockOption lockOption
+    );
+
+    public Task<JsonNode[]> GetAllDocuments(
+        string resourceName,
+        IPaginationParameters paginationParameters,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    public Task<int> GetTotalDocuments(
+        string resourceName,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    public Task<long> InsertDocument(
+        Document document,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    public Task<long> InsertAlias(Alias alias, NpgsqlConnection connection, NpgsqlTransaction transaction);
+
+    /// <summary>
+    /// Insert a set of rows into the References table and return the number of rows affected
+    /// </summary>
+    public Task<int> InsertReferences(
+        BulkReferences bulkReferences,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    /// <summary>
+    /// Given an array of referentialId guids and a parallel array of partition keys, returns
+    /// an array of invalid referentialId guids, if any
+    /// </summary>
+    public Task<Guid[]> FindInvalidReferentialIds(
+        DocumentReferenceIds documentReferenceIds,
+        DocumentReferenceIds descriptorReferenceIds,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    /// <summary>
+    /// Delete associated Reference records for a given DocumentUuid, returning the number of rows affected
+    /// </summary>
+    public Task<int> DeleteReferencesByDocumentUuid(
+        int parentDocumentPartitionKey,
+        Guid parentDocumentUuidGuid,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    /// <summary>
+    /// Delete a document for a given documentUuid and returns the number of rows affected.
+    /// Delete cascades to Aliases and References tables
+    /// </summary>
+    public Task<int> DeleteDocumentByDocumentUuid(
+        PartitionKey documentPartitionKey,
+        DocumentUuid documentUuid,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    public Task<int> UpdateDocumentEdfiDoc(
+        int documentPartitionKey,
+        Guid documentUuid,
+        JsonElement edfiDoc,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    public Task<UpdateDocumentValidationResult> UpdateDocumentValidation(
+        DocumentUuid documentUuid,
+        PartitionKey documentPartitionKey,
+        ReferentialId referentialId,
+        PartitionKey referentialPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        LockOption lockOption
+    );
+}
+
 public record UpsertDocumentSqlResult(bool Inserted, long DocumentId);
 
 public record UpdateDocumentValidationResult(bool DocumentExists, bool ReferentialIdUnchanged);
@@ -421,6 +534,7 @@ public static class SqlAction
     /// </summary>
     public static async Task<Guid[]> FindInvalidReferentialIds(
         DocumentReferenceIds documentReferenceIds,
+        DocumentReferenceIds descriptorReferenceIds,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     )
@@ -441,8 +555,8 @@ public static class SqlAction
         {
             Parameters =
             {
-                new() { Value = documentReferenceIds.ReferentialIds },
-                new() { Value = documentReferenceIds.ReferentialPartitionKeys },
+                new() { Value = documentReferenceIds.ReferentialIds.Concat(descriptorReferenceIds.ReferentialIds).ToArray() },
+                new() { Value = documentReferenceIds.ReferentialPartitionKeys.Concat(descriptorReferenceIds.ReferentialPartitionKeys).ToArray() },
             }
         };
 

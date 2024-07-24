@@ -30,6 +30,12 @@ public record UpsertResult
     public record UpsertFailureReference(ResourceName[] ResourceNames) : UpsertResult();
 
     /// <summary>
+    /// A failure because referenced descriptors in the upserted document do not exist
+    /// </summary>
+    /// <param name="InvalidDescriptorReferences">The invalid descriptor references</param>
+    public record UpsertFailureDescriptorReference(List<DocumentReference> InvalidDescriptorReferences) : UpsertResult();
+
+    /// <summary>
     /// A failure because there is a different document with the same identity
     /// </summary>
     /// <param name="ResourceName">The name of the resource that failed to upsert</param>

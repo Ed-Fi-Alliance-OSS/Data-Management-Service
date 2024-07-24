@@ -45,6 +45,11 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
         DocumentReferenceIds documentReferenceIds = DocumentReferenceIdsFrom(
             updateRequest.DocumentInfo.DocumentReferences
         );
+
+        DocumentReferenceIds descriptorReferenceIds = DocumentReferenceIdsFrom(
+            updateRequest.DocumentInfo.DescriptorReferences
+        );
+
         try
         {
             var validationResult = await UpdateDocumentValidation(
@@ -182,6 +187,7 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
 
             Guid[] invalidReferentialIds = await FindInvalidReferentialIds(
                 documentReferenceIds,
+                descriptorReferenceIds,
                 connection,
                 transaction
             );

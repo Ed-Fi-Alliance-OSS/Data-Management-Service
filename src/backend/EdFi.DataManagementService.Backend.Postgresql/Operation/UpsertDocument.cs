@@ -129,7 +129,7 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
         {
             // Create a transaction savepoint in case insert into References fails due to invalid references
             await transaction.SaveAsync(_beforeInsertReferences);
-            int numberOfRowsInserted = await _sqlAction.InsertReferences(
+            int numberOfRowsInserted = await InsertReferences(
                 new(
                     ParentDocumentPartitionKey: documentPartitionKey,
                     ParentDocumentId: newDocumentId,
@@ -285,9 +285,19 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
 
             Guid[] invalidReferentialIds = await FindInvalidReferentialIds(
                 documentReferenceIds,
+                descriptorReferenceIds,
                 connection,
                 transaction
             );
+
+            var invalidDescriptorReferences =
+                upsertRequest.DocumentInfo.DescriptorReferences.Where(d =>
+                    invalidReferentialIds.Contains(d.ReferentialId.Value)).ToList();
+
+            if (invalidDescriptorReferences.Any())
+            {
+                return new UpsertResult.UpsertFailureDescriptorReference(invalidDescriptorReferences);
+            }
 
             ResourceName[] invalidResourceNames = ResourceNamesFrom(
                 upsertRequest.DocumentInfo.DocumentReferences,
