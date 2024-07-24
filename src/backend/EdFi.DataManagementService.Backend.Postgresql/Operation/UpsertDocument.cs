@@ -104,7 +104,7 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
             );
         }
 
-        if (documentReferenceIds.ReferentialIds.Length > 0)
+        if (documentReferenceIds.ReferentialIds.Length > 0 || descriptorReferenceIds.ReferentialIds.Length > 0)
         {
             // Create a transaction save point in case insert into References fails due to invalid references
             await transaction.SaveAsync(_beforeInsertReferences);
@@ -112,35 +112,14 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
                 new(
                     ParentDocumentPartitionKey: documentPartitionKey,
                     ParentDocumentId: newDocumentId,
-                    ReferentialIds: documentReferenceIds.ReferentialIds,
-                    ReferentialPartitionKeys: documentReferenceIds.ReferentialPartitionKeys
+                    ReferentialIds: documentReferenceIds.ReferentialIds.Concat(descriptorReferenceIds.ReferentialIds).ToArray(),
+                    ReferentialPartitionKeys: documentReferenceIds.ReferentialPartitionKeys.Concat(descriptorReferenceIds.ReferentialPartitionKeys).ToArray()
                 ),
                 connection,
                 transaction
             );
 
-            if (numberOfRowsInserted != documentReferenceIds.ReferentialIds.Length)
-            {
-                throw new InvalidOperationException("Database did not insert all references");
-            }
-        }
-
-        if (descriptorReferenceIds.ReferentialIds.Length > 0)
-        {
-            // Create a transaction savepoint in case insert into References fails due to invalid references
-            await transaction.SaveAsync(_beforeInsertReferences);
-            int numberOfRowsInserted = await InsertReferences(
-                new(
-                    ParentDocumentPartitionKey: documentPartitionKey,
-                    ParentDocumentId: newDocumentId,
-                    ReferentialIds: descriptorReferenceIds.ReferentialIds,
-                    ReferentialPartitionKeys: descriptorReferenceIds.ReferentialPartitionKeys
-                ),
-                connection,
-                transaction
-            );
-
-            if (numberOfRowsInserted != descriptorReferenceIds.ReferentialIds.Length)
+            if (numberOfRowsInserted != documentReferenceIds.ReferentialIds.Length + descriptorReferenceIds.ReferentialIds.Length)
             {
                 throw new InvalidOperationException("Database did not insert all references");
             }
@@ -156,6 +135,7 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
         Guid documentUuid,
         IUpsertRequest upsertRequest,
         DocumentReferenceIds documentReferenceIds,
+        DocumentReferenceIds descriptorReferenceIds,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     )
@@ -170,7 +150,7 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
             transaction
         );
 
-        if (documentReferenceIds.ReferentialIds.Length > 0)
+        if (documentReferenceIds.ReferentialIds.Length > 0 || descriptorReferenceIds.ReferentialIds.Length > 0)
         {
             // First clear out all the existing references, as they may have changed
             await DeleteReferencesByDocumentUuid(
@@ -186,14 +166,14 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
                 new(
                     ParentDocumentPartitionKey: documentPartitionKey,
                     ParentDocumentId: documentId,
-                    ReferentialIds: documentReferenceIds.ReferentialIds,
-                    ReferentialPartitionKeys: documentReferenceIds.ReferentialPartitionKeys
+                    ReferentialIds: documentReferenceIds.ReferentialIds.Concat(descriptorReferenceIds.ReferentialIds).ToArray(),
+                    ReferentialPartitionKeys: documentReferenceIds.ReferentialPartitionKeys.Concat(descriptorReferenceIds.ReferentialPartitionKeys).ToArray()
                 ),
                 connection,
                 transaction
             );
 
-            if (numberOfRowsInserted != documentReferenceIds.ReferentialIds.Length)
+            if (numberOfRowsInserted != documentReferenceIds.ReferentialIds.Length + descriptorReferenceIds.ReferentialIds.Length)
             {
                 throw new InvalidOperationException("Database did not insert all references");
             }
@@ -264,6 +244,7 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
                 documentFromDb.DocumentUuid,
                 upsertRequest,
                 documentReferenceIds,
+                descriptorReferenceIds,
                 connection,
                 transaction
             );
