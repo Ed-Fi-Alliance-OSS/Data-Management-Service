@@ -111,8 +111,8 @@ Feature: Update Reference Validation
 
         Scenario: 04 Ensure clients cannot update a resource that uses an invalid school year reference
             Given the system has these "graduationPlans" references
-                  | graduationPlanTypeDescriptor   | educationOrganizationReference      | graduationSchoolYearTypeReference | totalRequiredCredits |
-                  | Career and Technical Education | {"educationOrganizationId":255901}  | {"schoolYear":2022}               | 10.000               |
+                  | graduationPlanTypeDescriptor                                                | educationOrganizationReference      | graduationSchoolYearTypeReference | totalRequiredCredits |
+                  | uri://ed-fi.org/GraduationPlanTypeDescriptor#Career and Technical Education | {"educationOrganizationId":255901}  | {"schoolYear":2022}               | 10.000               |
              When a PUT request is made to referenced resource "/ed-fi/graduationPlans/{id}" with
                   """
                   {

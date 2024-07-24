@@ -5,6 +5,14 @@ Feature: Resources "Update" Operation validations
         Background:
             Given the Data Management Service must receive a token issued by "http://localhost"
               And user is already authorized
+              And the system has these descriptors
+                  | descriptorValue                                                                            |
+                  | uri://ed-fi.org/ContentClassDescriptor#Testing                                             |
+                  | uri://ed-fi.org/AddressTypeDescriptor#Physical                                             |
+                  | uri://ed-fi.org/StateAbbreviationDescriptor#TX                                             |
+                  | uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider |
+                  | uri://ed-fi.org/GradeLevelDescriptor#Postsecondary                                         |
+                  | uri://ed-fi.org/AbsenceEventCategoryDescriptor#Sick Leave                                  |
               And a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                   {
@@ -489,6 +497,10 @@ Feature: Resources "Update" Operation validations
         Background:
             Given the Data Management Service must receive a token issued by "http://localhost"
               And user is already authorized
+              And the system has these descriptors
+                  | descriptorValue                                                                            |
+                  | uri://ed-fi.org/ContentClassDescriptor#Testing                                             |
+
               And a POST request is made to "/ed-fi/educationContents" with
                   """
                   {

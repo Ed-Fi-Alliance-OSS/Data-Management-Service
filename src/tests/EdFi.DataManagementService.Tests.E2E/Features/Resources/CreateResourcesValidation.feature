@@ -4,6 +4,15 @@ Feature: Resources "Create" Operation validations
             Given the Data Management Service must receive a token issued by "http://localhost"
               And user is already authorized
 
+              And the system has these descriptors
+                  | descriptorValue                                                                            |
+                  | uri://ed-fi.org/ContentClassDescriptor#Testing                                             |
+                  | uri://ed-fi.org/AddressTypeDescriptor#Physical                                             |
+                  | uri://ed-fi.org/StateAbbreviationDescriptor#TX                                             |
+                  | uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider |
+                  | uri://ed-fi.org/GradeLevelDescriptor#Postsecondary                                         |
+
+
     Rule: Descriptors
 
         Scenario: 01 Post a valid document (Descriptor)
