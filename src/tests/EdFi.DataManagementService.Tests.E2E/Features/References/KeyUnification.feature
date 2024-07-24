@@ -75,22 +75,23 @@ Feature: Validation of Natural Key Unification
                         ]
                       },
                       "errors": null,
-                      "detail":"The request could not be processed. See 'errors' for details.",
-                      "type":"urn:ed-fi:api:bad-request",
-                      "title":"Bad Request",
+                      "detail":"Data validation failed. See 'validationErrors' for details.",
+                      "type":"urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title":"Data Validation Failed",
                       "status":400, 
                       "correlationId":null
                   }
                   """
               And it should respond with 400
 
-        @ignore
         Scenario: 03 Verify clients cannot update a resource that contains mismatched values on an overlapping natural key field
-            Given Local Course Code "ALG-1 TEST-101"
-            #set value to {id}
-             When a PUT request is made to "/ed-fi/courseOfferings/{id}" with
+            Given the system has these "courseOfferings" references
+                  | localCourseCode | courseReference                                         | schoolReference  | sessionReference                                                |
+                  | ALG-1           | {"courseCode":"Course1", "educationOrganizationId":123} | {"schoolId":123} | {"schoolId":123, "schoolYear": 2025, "sessionName":"Session1" } |
+             When a PUT request is made to referenced resource "/ed-fi/courseOfferings/{id}" with
                   """
                   {
+                      "id": "{id}",
                       "localCourseCode": "ALG-1 TEST-101",
                       "courseReference": {
                           "courseCode": "ALG-1",
@@ -110,21 +111,20 @@ Feature: Validation of Natural Key Unification
               And the response body is
                   """
                   {
-                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "detail":"Data validation failed. See 'validationErrors' for details.",
                       "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                       "title": "Data Validation Failed",
                       "status": 400,
                       "correlationId": null,
-                      "validationErrors": {
-                          "$.schoolReference.schoolId": [
-                              "All values supplied for 'schoolId' must match. Review all references and align the following conflicting values: '725', '999'"
-                          ],
-                          "$.sessionReference.schoolId": [
-                              "All values supplied for 'schoolId' must match. Review all references and align the following conflicting values: '725', '999'"
-                          ]
-                      }
+                      "validationErrors":{
+		                    "$.schoolReference.schoolId":[
+			                    "All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '725', '999'"
+			                    ]
+		                    },
+                      "errors": null
                   }
                   """
+
         Scenario: 04 Verify clients can create a resource with a reference to a resource with a complex identity (CourseOffering)
              When a POST request is made to "/ed-fi/sections" with
                   """
