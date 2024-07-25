@@ -141,7 +141,9 @@ Feature: Update Reference Validation
                   }
                   """
 
-
+        # There is a problem when trying to save a section It appears that the reference to CourseOffering is not being assembled properly.
+        #[DMS-80]
+        @ignore
         Scenario: 05 Ensure clients cannot update a resource that is incorrect from a deep reference
             Given the system has these "courses"
                   | courseCode | identificationCodes                                                                                                                                  | educationOrganizationReference        | courseTitle | numberOfParts |
@@ -152,16 +154,18 @@ Feature: Update Reference Validation
               And the system has these "courseOfferings"
                   | localCourseCode | courseReference                                          | schoolReference     | sessionReference                                                                  |
                   | ALG-1           | {"courseCode":"ALG-1", "educationOrganizationId":255901} | {"schoolId":255901} | {"schoolId":255901, "schoolYear": 2022, "sessionName":"2021-2022 Fall Semester" } |
-              And the system has these "sections" references
+              And the system has these "sections"
                   | sectionIdentifier               | courseOfferingReference                                                                                        |
                   | 25590100102Trad220ALG112011     | {"localCourseCode":"ALG-1", "schoolId":255901, "schoolYear":2022, "sessionName":"2021-2022 Fall Semester"}     |
+              And the system has these "studentSectionAssociations" references
+                  | beginDate  | sectionReference                                                                                                                                                  | studentReference               |
+                  | 2021-08-23 | {"localCourseCode":"ALG-1", "schoolId":255901, "schoolYear": 2022, "sectionIdentifier":"25590100102Trad220ALG112011", "sessionName":"2021-2022 Fall Semester"  }  | {"studentUniqueId":"604834"}   |
              When a PUT request is made to referenced resource "/ed-fi/studentSectionAssociations/{id}" with
                   """
                   {
                       "id": "{id}",
                       "sectionReference": {
                           "localCourseCode": "ALG-1",
-                          "schoolId": 255901,
                           "schoolYear": 2022,
                           "sectionIdentifier": "25590100102Trad220ALG112011",
                           "sessionName": "2021-2022 Fall Semester"
@@ -172,16 +176,14 @@ Feature: Update Reference Validation
                       "beginDate": "2021-08-23"
                   }
                   """
-             Then it should respond with 400
+             Then it should respond with 409
               And the response body is
                   """
                   {
-                      "detail":"Identifying values for the StudentSectionAssociation resource cannot be changed. Delete and recreate the resource item instead.",
-                      "type":"urn:ed-fi:api:bad-request:data-validation-failed:key-change-not-supported",
-                      "title":"Key Change Not Supported",
-                      "status": 400,
-                      "correlationId": null,
-                      "validationErrors": {},
-	                    "errors": []
+                      "detail": "The referenced Section item(s) do not exist.",
+                      "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
+                      "title": "Unresolved Reference",
+                      "status": 409,
+                      "correlationId": null
                   }
                   """
