@@ -281,8 +281,8 @@ Feature: Resources "Update" Operation validations
                       "title": "Not Found",
                       "status": 404,
                       "correlationId": null,
-                      "validationErrors": null,
-                      "errors": null
+                      "validationErrors": {},
+                      "errors": []
                   }
                   """
 
@@ -307,8 +307,8 @@ Feature: Resources "Update" Operation validations
                     "title": "Key Change Not Supported",
                     "status": 400,
                     "correlationId": null,
-                    "validationErrors": null,
-                    "errors": null
+                    "validationErrors": {},
+                    "errors": []
                     }
                   """
 
@@ -388,7 +388,7 @@ Feature: Resources "Update" Operation validations
                     "title": "Bad Request",
                     "status": 400,
                     "correlationId": null,
-                    "validationErrors": null,
+                    "validationErrors": {},
                     "errors": [
                         "Request body id must match the id in the url."
                     ]
@@ -416,7 +416,7 @@ Feature: Resources "Update" Operation validations
                      "title": "Bad Request",
                      "status": 400,
                      "correlationId": null,
-                     "validationErrors": null,
+                     "validationErrors": {},
                      "errors": [
                          "Request body id must match the id in the url."
                      ]
@@ -444,7 +444,7 @@ Feature: Resources "Update" Operation validations
                     "title": "Bad Request",
                     "status": 400,
                     "correlationId": null,
-                    "validationErrors": null,
+                    "validationErrors": {},
                     "errors": [
                         "Request body id must match the id in the url."
                     ]
@@ -595,8 +595,8 @@ Feature: Resources "Update" Operation validations
                       "title": "Not Found",
                       "status": 404,
                       "correlationId": null,
-                      "validationErrors": null,
-                      "errors": null
+                      "validationErrors": {},
+                      "errors": []
                   }
                   """
 
@@ -619,8 +619,8 @@ Feature: Resources "Update" Operation validations
                     "title": "Key Change Not Supported",
                     "status": 400,
                     "correlationId": null,
-                    "validationErrors": null,
-                    "errors": null
+                    "validationErrors": {},
+                    "errors": []
                     }
                   """
 
@@ -695,7 +695,7 @@ Feature: Resources "Update" Operation validations
                     "title": "Bad Request",
                     "status": 400,
                     "correlationId": null,
-                    "validationErrors": null,
+                    "validationErrors": {},
                     "errors": [
                         "Request body id must match the id in the url."
                     ]
@@ -721,7 +721,7 @@ Feature: Resources "Update" Operation validations
                      "title": "Bad Request",
                      "status": 400,
                      "correlationId": null,
-                     "validationErrors": null,
+                     "validationErrors": {},
                      "errors": [
                          "Request body id must match the id in the url."
                      ]
@@ -747,7 +747,7 @@ Feature: Resources "Update" Operation validations
                     "title": "Bad Request",
                     "status": 400,
                     "correlationId": null,
-                    "validationErrors": null,
+                    "validationErrors": {},
                     "errors": [
                         "Request body id must match the id in the url."
                     ]

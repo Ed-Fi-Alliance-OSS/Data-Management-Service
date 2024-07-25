@@ -81,7 +81,7 @@ Feature: Query Strings handling for GET requests
                         "title": "Bad Request",
                         "status": 400,
                         "correlationId": null,
-                        "validationErrors": null,
+                        "validationErrors": {},
                         "errors": [
                             "Limit must be a numeric value greater than or equal to 0."
                         ]
@@ -105,7 +105,7 @@ Feature: Query Strings handling for GET requests
                         "title": "Bad Request",
                         "status": 400,
                         "correlationId": null,
-                        "validationErrors": null,
+                        "validationErrors": {},
                         "errors": [
                             "Offset must be a numeric value greater than or equal to 0."
                         ]

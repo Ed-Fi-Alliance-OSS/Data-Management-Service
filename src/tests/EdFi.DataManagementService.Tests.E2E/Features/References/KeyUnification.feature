@@ -74,7 +74,7 @@ Feature: Validation of Natural Key Unification
                           "All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '123', '999'"
                         ]
                       },
-                      "errors": null,
+                      "errors": [],
                       "detail":"Data validation failed. See 'validationErrors' for details.",
                       "type":"urn:ed-fi:api:bad-request:data-validation-failed",
                       "title":"Data Validation Failed",
@@ -121,7 +121,7 @@ Feature: Validation of Natural Key Unification
 			                    "All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '725', '999'"
 			                    ]
 		                    },
-                      "errors": null
+                      "errors": []
                   }
                   """
 

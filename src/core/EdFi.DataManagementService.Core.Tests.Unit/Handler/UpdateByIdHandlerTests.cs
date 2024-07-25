@@ -79,7 +79,7 @@ public class UpdateByIdHandlerTests
             context.FrontendResponse.StatusCode.Should().Be(404);
             context.FrontendResponse.Body.Should().Be(
                 """
-                {"validationErrors":null,"errors":null,"detail":"Resource to update was not found","type":"urn:ed-fi:api:not-found","title":"Not Found","status":404,"correlationId":null}
+                {"validationErrors":{},"errors":[],"detail":"Resource to update was not found","type":"urn:ed-fi:api:not-found","title":"Not Found","status":404,"correlationId":null}
                 """
             );
         }

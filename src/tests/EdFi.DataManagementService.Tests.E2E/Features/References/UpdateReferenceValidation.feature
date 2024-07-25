@@ -43,8 +43,8 @@ Feature: Update Reference Validation
                       "title": "Key Change Not Supported",
                       "status": 400,
                       "correlationId": null,
-                      "validationErrors": null,
-                      "errors": null
+                      "validationErrors": {},
+                      "errors": []
                   }
                   """
 
@@ -136,8 +136,8 @@ Feature: Update Reference Validation
                       "title": "Key Change Not Supported",
                       "status": 400,
                       "correlationId": null,
-                      "validationErrors": null,
-                      "errors": null
+                      "validationErrors": {},
+                      "errors": []
                   }
                   """
 
@@ -181,7 +181,7 @@ Feature: Update Reference Validation
                       "title":"Key Change Not Supported",
                       "status": 400,
                       "correlationId": null,
-                      "validationErrors":null,
-	                    "errors":null
+                      "validationErrors": {},
+	                    "errors": []
                   }
                   """
