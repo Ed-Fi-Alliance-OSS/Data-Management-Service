@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Tests.E2E.Extensions;
@@ -12,6 +13,7 @@ using Json.Schema;
 using Microsoft.Playwright;
 using Newtonsoft.Json.Linq;
 using Reqnroll;
+using static EdFi.DataManagementService.Tests.E2E.Management.JsonComparer;
 
 namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 {
@@ -360,24 +362,15 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             (responseJson as JsonObject)?.Remove("correlationId");
             (expectedBodyJson as JsonObject)?.Remove("correlationId");
 
-            try
-            {
-                responseJson
-                    .Should()
-                    .BeEquivalentTo(
-                        expectedBodyJson,
-                        options =>
-                            options
-                                .WithoutStrictOrdering()
-                                .IgnoringCyclicReferences()
-                                .RespectingRuntimeTypes()
-                    );
-            }
-            catch (Exception e)
-            {
-                _logger.log.Information(e.Message);
-                throw;
-            }
+            responseJson = OrderJsonProperties(responseJson);
+            expectedBodyJson = OrderJsonProperties(expectedBodyJson);
+
+            JsonElement expectedElement = JsonDocument.Parse(expectedBodyJson.ToJsonString()).RootElement;
+            JsonElement responseElement = JsonDocument.Parse(responseJson.ToJsonString()).RootElement;
+
+            bool areEquals = JsonElementEqualityComparer.Instance.Equals(expectedElement, responseElement);
+
+            areEquals.Should().BeTrue();
         }
 
         // Use Regex to find all occurrences of {id} in the body
@@ -412,7 +405,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     }
                 );
             }
-            replacedBody = replacedBody.Replace("{BASE_URL}", _playwrightContext.ApiUrl);
+            replacedBody = replacedBody.Replace("{BASE_URL}/", _playwrightContext.ApiUrl);
             return replacedBody;
         }
 
@@ -439,12 +432,16 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             string responseJsonString = _apiResponse.TextAsync().Result;
             JsonNode responseJson = JsonNode.Parse(responseJsonString)!;
             _logger.log.Information(responseJson.ToString());
-            responseJson
-                .Should()
-                .BeEquivalentTo(
-                    bodyJson,
-                    options => options.WithoutStrictOrdering().IgnoringCyclicReferences()
-                );
+
+            responseJson = OrderJsonProperties(responseJson);
+            bodyJson = OrderJsonProperties(bodyJson);
+
+            JsonElement expectedElement = JsonDocument.Parse(bodyJson.ToJsonString()).RootElement;
+            JsonElement responseElement = JsonDocument.Parse(responseJson.ToJsonString()).RootElement;
+
+            bool areEquals = JsonElementEqualityComparer.Instance.Equals(expectedElement, responseElement);
+
+            areEquals.Should().BeTrue();
         }
 
         [Then("total of records should be {int}")]

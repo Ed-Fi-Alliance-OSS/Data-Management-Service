@@ -22,7 +22,7 @@ Feature: Delete reference validation
               And the response body is
                   """
                   {
-                      "detail": "The requested action cannot be performed because this item is referenced by an existing Calendar item(s).",
+                      "detail": "The requested action cannot be performed because this item is referenced by existing Calendar item(s).",
                       "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
                       "title": "Dependent Item Exists",
                       "status": 409,
@@ -40,7 +40,7 @@ Feature: Delete reference validation
               And the response body is
                   """
                   {
-                      "detail": "The requested action cannot be performed because this item is referenced by an existing School item(s).",
+                      "detail": "The requested action cannot be performed because this item is referenced by existing School item(s).",
                       "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
                       "title": "Dependent Item Exists",
                       "status": 409,
@@ -62,7 +62,7 @@ Feature: Delete reference validation
               And the response body is
                   """
                   {
-                      "detail": "The requested action cannot be performed because this item is referenced by an existing StudentEducationOrganizationAssociations item(s).",
+                      "detail": "The requested action cannot be performed because this item is referenced by existing StudentEducationOrganizationAssociation item(s).",
                       "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
                       "title": "Dependent Item Exists",
                       "status": 409,
@@ -84,7 +84,7 @@ Feature: Delete reference validation
               And the response body is
                   """
                   {
-                      "detail": "The requested action cannot be performed because this item is referenced by an existing School item(s).",
+                      "detail": "The requested action cannot be performed because this item is referenced by existing School item(s).",
                       "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
                       "title": "Dependent Item Exists",
                       "status": 409,
@@ -109,7 +109,7 @@ Feature: Delete reference validation
               And the response body is
                   """
                   {
-                      "detail": "The requested action cannot be performed because this item is referenced by an existing StudentProgramAssociation item(s).",
+                      "detail": "The requested action cannot be performed because this item is referenced by existing StudentProgramAssociation item(s).",
                       "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
                       "title": "Dependent Item Exists",
                       "status": 409,

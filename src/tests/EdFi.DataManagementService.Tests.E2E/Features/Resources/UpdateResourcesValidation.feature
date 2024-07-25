@@ -345,7 +345,7 @@ Feature: Resources "Update" Operation validations
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null,
@@ -614,7 +614,7 @@ Feature: Resources "Update" Operation validations
               And the response body is
                   """
                   {
-                    "detail": "Identifying values for the EducationContents resource cannot be changed. Delete and recreate the resource item instead.",
+                    "detail": "Identifying values for the EducationContent resource cannot be changed. Delete and recreate the resource item instead.",
                     "type": "urn:ed-fi:api:bad-request:data-validation-failed:key-change-not-supported",
                     "title": "Key Change Not Supported",
                     "status": 400,
@@ -657,7 +657,7 @@ Feature: Resources "Update" Operation validations
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null,
@@ -807,7 +807,7 @@ Feature: Resources "Update" Operation validations
                     },
                     "errors": [],
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null

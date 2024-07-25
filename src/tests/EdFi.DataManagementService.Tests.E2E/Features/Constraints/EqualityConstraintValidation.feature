@@ -73,7 +73,7 @@ Feature: Equality Constraint Validation
               And the response body is
                   """
                   {
-                    "detail": "Data validation failed. See 'validationErrors' for details",
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
                     "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
@@ -112,7 +112,7 @@ Feature: Equality Constraint Validation
               And the response body is
                   """
                   {
-                      "detail": "Data validation failed. See 'validationErrors' for details",
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
                     "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
@@ -157,7 +157,7 @@ Feature: Equality Constraint Validation
               And the response body is
                   """
                   {
-                    "detail": "Data validation failed. See 'validationErrors' for details",
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
                     "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
@@ -192,9 +192,9 @@ Feature: Equality Constraint Validation
               And the response body is
                   """
                   {
-                      "detail": "The referenced 'Location' resource does not exist.",
-                      "type": "urn:ed-fi:api:conflict:invalid-reference",
-                      "title": "Resource Not Unique Conflict due to invalid-reference",
+                      "detail": "The referenced CourseOffering, Location item(s) do not exist.",
+                      "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
+                      "title": "Unresolved Reference",
                       "status": 409,
                       "correlationId": null
                   }
