@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Linq;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -92,7 +91,8 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
             switch (rowsAffected)
             {
                 case 1:
-                    if (documentReferenceIds.ReferentialIds.Length > 0 || descriptorReferenceIds.ReferentialIds.Length > 0)
+                    if (documentReferenceIds.ReferentialIds.Length > 0 ||
+                        descriptorReferenceIds.ReferentialIds.Length > 0)
                     {
                         Document? documentFromDb;
                         try
@@ -140,14 +140,17 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
                             new(
                                 ParentDocumentPartitionKey: documentPartitionKey.Value,
                                 ParentDocumentId: documentId,
-                                ReferentialIds: documentReferenceIds.ReferentialIds.Concat(descriptorReferenceIds.ReferentialIds).ToArray(),
-                                ReferentialPartitionKeys: documentReferenceIds.ReferentialPartitionKeys.Concat(descriptorReferenceIds.ReferentialPartitionKeys).ToArray()
+                                ReferentialIds: documentReferenceIds.ReferentialIds
+                                    .Concat(descriptorReferenceIds.ReferentialIds).ToArray(),
+                                ReferentialPartitionKeys: documentReferenceIds.ReferentialPartitionKeys
+                                    .Concat(descriptorReferenceIds.ReferentialPartitionKeys).ToArray()
                             ),
                             connection,
                             transaction
                         );
 
-                        if (numberOfRowsInserted != documentReferenceIds.ReferentialIds.Length + descriptorReferenceIds.ReferentialIds.Length)
+                        if (numberOfRowsInserted != documentReferenceIds.ReferentialIds.Length +
+                            descriptorReferenceIds.ReferentialIds.Length)
                         {
                             throw new InvalidOperationException("Database did not insert all references");
                         }
@@ -178,8 +181,8 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
         }
         catch (PostgresException pe)
             when (pe.SqlState == PostgresErrorCodes.ForeignKeyViolation
-                && pe.ConstraintName == SqlAction.ReferenceValidationFkName
-            )
+                  && pe.ConstraintName == SqlAction.ReferenceValidationFkName
+                 )
         {
             _logger.LogDebug(pe, "Foreign key violation on Update - {TraceId}", updateRequest.TraceId);
 
