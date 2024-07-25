@@ -12,7 +12,6 @@ Feature: Resources "Create" Operation validations
                   | uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider |
                   | uri://ed-fi.org/GradeLevelDescriptor#Postsecondary                                         |
 
-
     Rule: Descriptors
 
         Scenario: 01 Post a valid document (Descriptor)

@@ -1,19 +1,19 @@
 Feature: Validate the reference of descriptors when creating resources
 
-    Background:
-        Given the system has these descriptors
-                | descriptorValue                                                             |
-                | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School              |
-                | uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Ind                  |
-                | uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Other                |
-                | uri://ed-fi.org/ProgramTypeDescriptor#Bilingual                             |
+        Background:
+            Given the system has these descriptors
+                  | descriptorValue                                                |
+                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
+                  | uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Ind     |
+                  | uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Other   |
+                  | uri://ed-fi.org/ProgramTypeDescriptor#Bilingual                |
 
-        Given the system has these "students"
-                | studentUniqueId   | birthDate  | firstName | lastSurname |
-                | "604824"          | 2010-01-13 | Traci     | Mathews     |
-        Given the system has these "schools"
-                | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
-                | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+              And the system has these "students"
+                  | studentUniqueId | birthDate  | firstName | lastSurname |
+                  | "604824"        | 2010-01-13 | Traci     | Mathews     |
+              And the system has these "schools"
+                  | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
+                  | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
 
         Scenario: 01 User can not create a resource when descriptor doesn't exist
              When a POST request is made to "/ed-fi/localEducationAgencies" with
@@ -76,9 +76,9 @@ Feature: Validate the reference of descriptors when creating resources
                     "title": "Bad Request",
                     "status": 400,
                     "correlationId": null
-                 }
+                  }
                   """
-    
+
         Scenario: 03 User can not update a resource using a descriptor that does not exist
             Given a POST request is made to "/ed-fi/localEducationAgencies" with
                   """
@@ -175,45 +175,45 @@ Feature: Validate the reference of descriptors when creating resources
              Then it should respond with 204
 
         Scenario: 06 User receives 400 instead of 409 error when both descriptor and reference are invalid
-            When a POST request is made to "/ed-fi/studentProgramAssociations" with
-                """
-                {
-                    "educationOrganizationReference": {
-                      "educationOrganizationId": 255901001
-                    },
-                    "programReference": {
-                      "educationOrganizationId": 255901001,
-                      "programName": "Bilingual",
-                      "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Bilingual"
-                    },
-                    "studentReference": {
-                      "studentUniqueId": "604824"
-                    },
-                    "beginDate": "2021-08-30",
-                    "servedOutsideOfRegularSession": true,
-                    "programParticipationStatuses": [
-                      {
-                        "participationStatusDescriptor": "uri://ed-fi.org/participationStatusDescriptor#Fake",
-                        "statusBeginDate": "2024-06-26"
-                      }
-                    ]
+             When a POST request is made to "/ed-fi/studentProgramAssociations" with
+                  """
+                  {
+                      "educationOrganizationReference": {
+                        "educationOrganizationId": 255901001
+                      },
+                      "programReference": {
+                        "educationOrganizationId": 255901001,
+                        "programName": "Bilingual",
+                        "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Bilingual"
+                      },
+                      "studentReference": {
+                        "studentUniqueId": "604824"
+                      },
+                      "beginDate": "2021-08-30",
+                      "servedOutsideOfRegularSession": true,
+                      "programParticipationStatuses": [
+                        {
+                          "participationStatusDescriptor": "uri://ed-fi.org/participationStatusDescriptor#Fake",
+                          "statusBeginDate": "2024-06-26"
+                        }
+                      ]
+                    }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                      "validationErrors": {
+                          "$.programParticipationStatuses[*].participationStatusDescriptor": [
+                              "ParticipationStatusDescriptor value 'uri://ed-fi.org/participationStatusDescriptor#Fake' does not exist."
+                          ]
+                      },
+                      "errors": null,
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request",
+                      "title": "Bad Request",
+                      "status": 400,
+                      "correlationId": null
                   }
-                """
-            Then it should respond with 400
-            And the response body is
-            """
-            {
-                "validationErrors": {
-                    "$.programParticipationStatuses[*].participationStatusDescriptor": [
-                        "ParticipationStatusDescriptor value 'uri://ed-fi.org/participationStatusDescriptor#Fake' does not exist."
-                    ]
-                },
-                "errors": null,
-                "detail": "Data validation failed. See 'validationErrors' for details.",
-                "type": "urn:ed-fi:api:bad-request",
-                "title": "Bad Request",
-                "status": 400,
-                "correlationId": null
-            }
-            """
+                  """
 
