@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Linq;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -91,7 +92,7 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
             switch (rowsAffected)
             {
                 case 1:
-                    if (documentReferenceIds.ReferentialIds.Length > 0)
+                    if (documentReferenceIds.ReferentialIds.Length > 0 || descriptorReferenceIds.ReferentialIds.Length > 0)
                     {
                         Document? documentFromDb;
                         try
@@ -139,14 +140,14 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
                             new(
                                 ParentDocumentPartitionKey: documentPartitionKey.Value,
                                 ParentDocumentId: documentId,
-                                ReferentialIds: documentReferenceIds.ReferentialIds,
-                                ReferentialPartitionKeys: documentReferenceIds.ReferentialPartitionKeys
+                                ReferentialIds: documentReferenceIds.ReferentialIds.Concat(descriptorReferenceIds.ReferentialIds).ToArray(),
+                                ReferentialPartitionKeys: documentReferenceIds.ReferentialPartitionKeys.Concat(descriptorReferenceIds.ReferentialPartitionKeys).ToArray()
                             ),
                             connection,
                             transaction
                         );
 
-                        if (numberOfRowsInserted != documentReferenceIds.ReferentialIds.Length)
+                        if (numberOfRowsInserted != documentReferenceIds.ReferentialIds.Length + descriptorReferenceIds.ReferentialIds.Length)
                         {
                             throw new InvalidOperationException("Database did not insert all references");
                         }
@@ -191,6 +192,15 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
                 connection,
                 transaction
             );
+
+            var invalidDescriptorReferences =
+                updateRequest.DocumentInfo.DescriptorReferences.Where(d =>
+                    invalidReferentialIds.Contains(d.ReferentialId.Value)).ToList();
+
+            if (invalidDescriptorReferences.Any())
+            {
+                return new UpdateResult.UpdateFailureDescriptorReference(invalidDescriptorReferences);
+            }
 
             ResourceName[] invalidResourceNames = ResourceNamesFrom(
                 updateRequest.DocumentInfo.DocumentReferences,
