@@ -200,7 +200,7 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
             upsertRequest.DocumentInfo.DocumentReferences
         );
 
-        DocumentReferenceIds descriptorReferenceIds = DocumentReferenceIdsFrom(
+        DocumentReferenceIds descriptorReferenceIds = DescriptorReferenceIdsFrom(
             upsertRequest.DocumentInfo.DescriptorReferences
         );
 

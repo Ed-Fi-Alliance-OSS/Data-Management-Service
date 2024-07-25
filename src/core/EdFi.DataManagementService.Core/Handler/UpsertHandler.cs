@@ -75,7 +75,7 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
                         ForBadRequest(
                             "Data validation failed. See 'validationErrors' for details.",
                             failure.InvalidDescriptorReferences.ToDictionary(
-                                d => d.ResourceInfo.ResourceName.Value,
+                                d => d.Path.Value,
                                 d => d.DocumentIdentity.DocumentIdentityElements.Select(e =>
                                         $"{d.ResourceInfo.ResourceName.Value} value '{e.IdentityValue}' does not exist.")
                                     .ToArray()), null)),

@@ -79,7 +79,7 @@ public abstract class DatabaseTest : DatabaseTestBase
     protected static DocumentInfo CreateDocumentInfo(
         Guid referentialId,
         DocumentReference[]? documentReferences = null,
-        DocumentReference[]? descriptorReferences = null,
+        DescriptorReference[]? descriptorReferences = null,
         SuperclassIdentity? superclassIdentity = null
     )
     {
@@ -103,6 +103,16 @@ public abstract class DatabaseTest : DatabaseTestBase
         );
     }
 
+    protected static DescriptorReference CreateDescriptorReference(Reference reference)
+    {
+        return new(
+            ResourceInfo: CreateResourceInfo(reference.ResourceName),
+            DocumentIdentity: new([]),
+            ReferentialId: new ReferentialId(reference.ReferentialIdGuid),
+            Path: new JsonPath()
+        );
+    }
+
     protected static SuperclassIdentity CreateSuperclassIdentity(string resourceName, Guid referentialIdGuid)
     {
         return new(
@@ -117,13 +127,18 @@ public abstract class DatabaseTest : DatabaseTestBase
         return references.Select(x => CreateDocumentReference(x)).ToArray();
     }
 
+    protected static DescriptorReference[] CreateDescriptorReferences(Reference[] references)
+    {
+        return references.Select(x => CreateDescriptorReference(x)).ToArray();
+    }
+
     protected static IUpsertRequest CreateUpsertRequest(
         string resourceName,
         Guid documentUuidGuid,
         Guid referentialIdGuid,
         string edfiDocString,
         DocumentReference[]? documentReferences = null,
-        DocumentReference[]? descriptorReferences = null,
+        DescriptorReference[]? descriptorReferences = null,
         SuperclassIdentity? superclassIdentity = null
     )
     {
@@ -155,7 +170,7 @@ public abstract class DatabaseTest : DatabaseTestBase
         Guid referentialIdGuid,
         string edFiDocString,
         DocumentReference[]? documentReferences = null,
-        DocumentReference[]? descriptorReferences = null,
+        DescriptorReference[]? descriptorReferences = null,
         SuperclassIdentity? superclassIdentity = null
     )
     {

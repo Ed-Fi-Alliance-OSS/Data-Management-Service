@@ -838,7 +838,7 @@ public class UpsertTests : DatabaseTest
                 _referentialIdGuid,
                 _edFiDocString,
                 null,
-                CreateDocumentReferences(references)
+                CreateDescriptorReferences(references)
             );
             _upsertResult = await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
 
@@ -883,7 +883,7 @@ public class UpsertTests : DatabaseTest
                 _referentialIdGuid,
                 _edFiDocString,
                 null,
-                CreateDocumentReferences(descriptorReferences)
+                CreateDescriptorReferences(descriptorReferences)
             );
             _upsertResult = await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
         }
@@ -938,7 +938,7 @@ public class UpsertTests : DatabaseTest
                 _referentialId1Guid,
                 _edFiDocString3,
                 null,
-                CreateDocumentReferences(references)
+                CreateDescriptorReferences(references)
             );
             _upsertResult = await CreateUpsert().Upsert(upsertRequest3, Connection!, Transaction!);
 
@@ -992,7 +992,7 @@ public class UpsertTests : DatabaseTest
                 _referentialIdGuid,
                 _edFiDocString,
                 null,
-                CreateDocumentReferences(references)
+                CreateDescriptorReferences(references)
             );
             _upsertResult = await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
         }

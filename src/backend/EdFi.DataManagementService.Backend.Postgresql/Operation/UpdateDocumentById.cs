@@ -46,7 +46,7 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
             updateRequest.DocumentInfo.DocumentReferences
         );
 
-        DocumentReferenceIds descriptorReferenceIds = DocumentReferenceIdsFrom(
+        DocumentReferenceIds descriptorReferenceIds = DescriptorReferenceIdsFrom(
             updateRequest.DocumentInfo.DescriptorReferences
         );
 
