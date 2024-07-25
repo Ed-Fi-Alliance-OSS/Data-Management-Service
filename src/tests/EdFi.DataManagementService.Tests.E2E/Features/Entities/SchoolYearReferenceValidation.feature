@@ -55,7 +55,7 @@ Feature: School Year Reference Validation
               And the response body is
                   """
                      {
-                      "detail": "The referenced 'SchoolYearType' item does not exist.",
+                      "detail": "The referenced SchoolYearType item(s) do not exist.",
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Unresolved Reference",
                       "status": 409,
@@ -103,7 +103,7 @@ Feature: School Year Reference Validation
               And the response body is
                   """
                       {
-                          "detail": "The referenced 'Calendar' item does not exist.",
+                          "detail": "The referenced Calendar item(s) do not exist.",
                           "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                           "title": "Unresolved Reference",
                           "status": 409,

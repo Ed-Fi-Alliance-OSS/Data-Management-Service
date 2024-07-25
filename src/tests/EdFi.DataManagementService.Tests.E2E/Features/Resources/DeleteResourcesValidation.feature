@@ -64,8 +64,8 @@ Feature: Resources "Delete" Operation validations
                         "title": "Dependent Item Exists",
                         "status": 409,
                         "correlationId": null,
-                        "validationErrors":null,
-                        "errors":null
+                        "validationErrors": {},
+                        "errors": []
                     }
                   """
 
@@ -92,8 +92,8 @@ Feature: Resources "Delete" Operation validations
                         "title": "Dependent Item Exists",
                         "status": 409,
                         "correlationId": null,
-                        "validationErrors":null,
-                        "errors":null
+                        "validationErrors": {},
+                        "errors": []
                     }
                   """
 
@@ -120,8 +120,8 @@ Feature: Resources "Delete" Operation validations
                         "title": "Dependent Item Exists",
                         "status": 409,
                         "correlationId": null,
-                        "validationErrors":null,
-                        "errors":null
+                        "validationErrors": {},
+                        "errors": []
                     }
                   """
 
@@ -157,8 +157,8 @@ Feature: Resources "Delete" Operation validations
                         "title": "Dependent Item Exists",
                         "status": 409,
                         "correlationId": null,
-                        "validationErrors":null,
-                        "errors":null
+                        "validationErrors": {},
+                        "errors": []
                     }
                   """
 

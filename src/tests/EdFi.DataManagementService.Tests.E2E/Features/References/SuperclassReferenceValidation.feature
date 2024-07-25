@@ -152,8 +152,8 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
                       "title": "Dependent Item Exists",
                       "status": 409,
                       "correlationId": null,
-                      "validationErrors": null,
-                      "errors": null
+                      "validationErrors": {},
+                      "errors": []
                   }
                   """
 

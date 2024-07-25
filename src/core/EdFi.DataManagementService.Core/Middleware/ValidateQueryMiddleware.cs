@@ -79,7 +79,7 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
         {
             FailureResponseWithErrors failureResponse = FailureResponse.ForBadRequest(
                 "The request could not be processed. See 'errors' for details.",
-                null,
+                [],
                 errors.ToArray()
             );
 

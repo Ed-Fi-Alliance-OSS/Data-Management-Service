@@ -32,7 +32,7 @@ Feature: Subclass resources validation
                       "title": "Identifying Values Are Not Unique",
                       "status": 409,
                       "correlationId": null,
-                      "validationErrors": null,
+                      "validationErrors": {},
                       "errors": [
                       "A natural key conflict occurred when attempting to create a new resource School with a duplicate key. The duplicate keys and values are (schoolId = 255901)"
                       ]

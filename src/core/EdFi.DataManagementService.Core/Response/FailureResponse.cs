@@ -54,8 +54,8 @@ internal static class FailureResponse
             title: "Not Found",
             status: 404,
             correlationId: null,
-            validationErrors: null,
-            errors: null
+            validationErrors: [],
+            errors: []
         );
 
     public static FailureResponseWithErrors ForIdentityConflict(string[]? errors) =>
@@ -65,7 +65,7 @@ internal static class FailureResponse
             title: "Identifying Values Are Not Unique",
             status: 409,
             correlationId: null,
-            validationErrors: null,
+            validationErrors: [],
             errors
         );
 
@@ -77,8 +77,8 @@ internal static class FailureResponse
             title: "Dependent Item Exists",
             status: 409,
             correlationId: null,
-            validationErrors: null,
-            errors: null
+            validationErrors: [],
+            errors: []
         );
     }
 
@@ -101,7 +101,7 @@ internal static class FailureResponse
             title: "Key Change Not Supported",
             status: 400,
             correlationId: null,
-            validationErrors: null,
-            errors: null
+            validationErrors: [],
+            errors: []
         );
 }

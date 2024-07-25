@@ -43,8 +43,8 @@ Feature: Update Reference Validation
                       "title": "Key Change Not Supported",
                       "status": 400,
                       "correlationId": null,
-                      "validationErrors": null,
-                      "errors": null
+                      "validationErrors": {},
+                      "errors": []
                   }
                   """
 
@@ -66,7 +66,7 @@ Feature: Update Reference Validation
                   """
                   {
                       "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                       "title": "Data Validation Failed",
                       "status": 400,
                       "correlationId": null,
@@ -136,12 +136,13 @@ Feature: Update Reference Validation
                       "title": "Key Change Not Supported",
                       "status": 400,
                       "correlationId": null,
-                      "validationErrors": null,
-                      "errors": null
+                      "validationErrors": {},
+                      "errors": []
                   }
                   """
 
         # There is a problem when trying to save a section It appears that the reference to CourseOffering is not being assembled properly.
+        #[DMS-80]
         @ignore
         Scenario: 05 Ensure clients cannot update a resource that is incorrect from a deep reference
             Given the system has these "courses"
@@ -179,7 +180,7 @@ Feature: Update Reference Validation
               And the response body is
                   """
                   {
-                      "detail": "The referenced 'SectionReferenceSectionReference' item does not exist.",
+                      "detail": "The referenced Section item(s) do not exist.",
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Unresolved Reference",
                       "status": 409,

@@ -81,7 +81,7 @@ Feature: Query Strings handling for GET requests
                         "title": "Bad Request",
                         "status": 400,
                         "correlationId": null,
-                        "validationErrors": null,
+                        "validationErrors": {},
                         "errors": [
                             "Limit must be a numeric value greater than or equal to 0."
                         ]
@@ -105,7 +105,7 @@ Feature: Query Strings handling for GET requests
                         "title": "Bad Request",
                         "status": 400,
                         "correlationId": null,
-                        "validationErrors": null,
+                        "validationErrors": {},
                         "errors": [
                             "Offset must be a numeric value greater than or equal to 0."
                         ]
@@ -117,7 +117,7 @@ Feature: Query Strings handling for GET requests
 
         @ignore
         Scenario: 12 Ensure clients can GET information changing the casing of the query value to be all lowercase
-            Given the following schools exist
+            Given the system has these "schools"
                   | schoolId | nameOfInstitution             | gradeLevels         | educationOrganizationCategories |
                   | 5        | School with max edorgId value | [ "Postsecondary" ] | [ "School" ]                    |
              When a GET request is made to "/ed-fi/schools?nameOfInstitution=school+with+max+edorgid+value"
@@ -126,7 +126,7 @@ Feature: Query Strings handling for GET requests
 
         @ignore
         Scenario: 13 Ensure clients can GET information changing the casing of the query value to be all uppercase
-            Given the following schools exist
+            Given the system has these "schools"
                   | schoolId | nameOfInstitution                             | gradeLevels         | educationOrganizationCategories     |
                   | 6        | UT Austin College of Education Under Graduate | [ "Postsecondary" ] | [ "Educator Preparation Provider" ] |
              When a GET request is made to "/ed-fi/schools?nameOfInstitution=UT+AUSTIN+COLLEGE+OF+EDUCATION+UNDER+GRADUATE"
@@ -135,7 +135,7 @@ Feature: Query Strings handling for GET requests
 
         @ignore
         Scenario: 14 Ensure empty array is returned if school name does not match
-            Given the following schools exist
+            Given the system has these "schools"
                   | schoolId | nameOfInstitution                             | gradeLevels         | educationOrganizationCategories     |
                   | 6        | UT Austin College of Education Under Graduate | [ "Postsecondary" ] | [ "Educator Preparation Provider" ] |
              When a GET request is made to "/ed-fi/schools?nameOfInstitution=nonExisting+school"
@@ -148,7 +148,7 @@ Feature: Query Strings handling for GET requests
                   ##I need a few more details on this scenario
         @ignore
         Scenario: 15 Ensure clients can't GET information when querying with filter and offset using limit without offset
-            Given the following schools exist
+            Given the system has these "schools"
                   | schoolId | nameOfInstitution                             |
                   | 5        | School with max edorgId value                 |
                   | 6        | UT Austin College of Education Under Graduate |

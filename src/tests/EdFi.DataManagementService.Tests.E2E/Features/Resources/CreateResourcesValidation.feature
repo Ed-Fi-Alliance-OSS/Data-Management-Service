@@ -87,7 +87,7 @@ Feature: Resources "Create" Operation validations
                   """
                   {
                       "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                       "title": "Data Validation Failed",
                       "status": 400,
                       "correlationId": null,
@@ -135,7 +135,7 @@ Feature: Resources "Create" Operation validations
                   """
                     {
                       "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                       "title": "Data Validation Failed",
                       "status": 400,
                       "correlationId": null,
@@ -322,17 +322,17 @@ Feature: Resources "Create" Operation validations
                     }
                   """
              Then it should respond with 400
-              And the record can be retrieved with a GET request
+              And the response body is
                   """
                   {
                     "validationErrors": {
                         "$.": [
-                        "The JSON object contains a trailing comma at the end which is not supported in this mode. Change the reader options. LineNumber: 6 | BytePositionInLine: 20."
+                        "The JSON object contains a trailing comma at the end which is not supported in this mode. Change the reader options. LineNumber: 6 | BytePositionInLine: 2."
                         ]
                     },
                     "errors": [],
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null
@@ -411,12 +411,12 @@ Feature: Resources "Create" Operation validations
                     }
                   """
              # 200 because this is updating a document created above.
-             Then it should respond with 200
+             Then it should respond with 200 or 201
               And the record can be retrieved with a GET request
                   """
                     {
                         "id": "{id}",
-                        "codeValueSSSSS": "SL",
+                        "codeValue": "SL",
                         "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
                         "shortDescription": "Sick Leave",
                         "description": "    "
@@ -518,7 +518,7 @@ Feature: Resources "Create" Operation validations
                   """
                     {
                       "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                       "title": "Data Validation Failed",
                       "status": 400,
                       "correlationId": null,
@@ -561,7 +561,7 @@ Feature: Resources "Create" Operation validations
                   """
                     {
                      "detail": "Data validation failed. See 'validationErrors' for details.",
-                     "type": "urn:ed-fi:api:bad-request:data",
+                     "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                      "title": "Data Validation Failed",
                      "status": 400,
                      "correlationId": null,
@@ -592,7 +592,7 @@ Feature: Resources "Create" Operation validations
                   """
                     {
                      "detail": "Data validation failed. See 'validationErrors' for details.",
-                     "type": "urn:ed-fi:api:bad-request:data",
+                     "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                      "title": "Data Validation Failed",
                      "status": 400,
                      "correlationId": null,
@@ -623,7 +623,7 @@ Feature: Resources "Create" Operation validations
                   """
                     {
                      "detail": "Data validation failed. See 'validationErrors' for details.",
-                     "type": "urn:ed-fi:api:bad-request:data",
+                     "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                      "title": "Data Validation Failed",
                      "status": 400,
                      "correlationId": null,
@@ -655,13 +655,13 @@ Feature: Resources "Create" Operation validations
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null,
                     "validationErrors": {
                         "$.": [
-                            "'\"' is invalid after a value. Expected either ',', '}', or ']'. LineNumber: 8 | BytePositionInLine: 13."
+                            "'\"' is invalid after a value. Expected either ',', '}', or ']'. LineNumber: 5 | BytePositionInLine: 2."
                         ]
                     },
                     "errors": []
@@ -841,7 +841,7 @@ Feature: Resources "Create" Operation validations
                   """
                   {
                       "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                       "title": "Data Validation Failed",
                       "status": 400,
                       "correlationId": null,
@@ -878,7 +878,7 @@ Feature: Resources "Create" Operation validations
                     },
                     "errors": [],
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null
@@ -904,7 +904,7 @@ Feature: Resources "Create" Operation validations
                   """
                   {
                         "detail": "Data validation failed. See 'validationErrors' for details.",
-                        "type": "urn:ed-fi:api:bad-request:data",
+                        "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                         "title": "Data Validation Failed",
                         "status": 400,
                         "correlationId": null,

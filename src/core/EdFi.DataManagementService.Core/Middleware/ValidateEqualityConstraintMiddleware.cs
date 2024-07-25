@@ -37,12 +37,12 @@ internal class ValidateEqualityConstraintMiddleware(
             context.FrontendRequest.TraceId
         );
 
-        Dictionary<string, string[]> errors = _equalityConstraintValidator.Validate(
+        Dictionary<string, string[]> validationErrors = _equalityConstraintValidator.Validate(
             context.ParsedBody,
             context.ResourceSchema.EqualityConstraints
         );
 
-        if (errors.Count == 0)
+        if (validationErrors.Count == 0)
         {
             await next();
         }
@@ -50,8 +50,8 @@ internal class ValidateEqualityConstraintMiddleware(
         {
             var failureResponse = FailureResponse.ForDataValidation(
                 "Data validation failed. See 'validationErrors' for details.",
-                errors,
-                null
+                validationErrors,
+                []
             );
 
             _logger.LogDebug(
