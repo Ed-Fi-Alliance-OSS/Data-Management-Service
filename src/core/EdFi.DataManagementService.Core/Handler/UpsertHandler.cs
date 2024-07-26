@@ -78,7 +78,7 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
                                 d => d.Path.Value,
                                 d => d.DocumentIdentity.DocumentIdentityElements.Select(e =>
                                         $"{d.ResourceInfo.ResourceName.Value} value '{e.IdentityValue}' does not exist.")
-                                    .ToArray()), null)),
+                                    .ToArray()), [])),
                     Headers: []
                 ),
             UpsertFailureReference failure

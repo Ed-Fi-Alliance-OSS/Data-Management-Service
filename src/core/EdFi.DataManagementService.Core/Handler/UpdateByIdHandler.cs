@@ -73,7 +73,7 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
                                 d => d.Path.Value,
                                 d => d.DocumentIdentity.DocumentIdentityElements.Select(e =>
                                         $"{d.ResourceInfo.ResourceName.Value} value '{e.IdentityValue}' does not exist.")
-                                    .ToArray()), null)),
+                                    .ToArray()), [])),
                     Headers: []
                 ),
             UpdateFailureReference failure

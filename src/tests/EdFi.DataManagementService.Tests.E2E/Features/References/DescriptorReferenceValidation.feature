@@ -41,7 +41,7 @@ Feature: Validate the reference of descriptors when creating resources
                         "LocalEducationAgencyCategoryDescriptor value 'uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Fake' does not exist."
                     ]
                     },
-                    "errors": null,
+                    "errors": [],
                     "detail": "Data validation failed. See 'validationErrors' for details.",
                     "type": "urn:ed-fi:api:bad-request",
                     "title": "Bad Request",
@@ -70,7 +70,7 @@ Feature: Validate the reference of descriptors when creating resources
                             "CitizenshipStatusDescriptor value 'uri://ed-fi.org/CitizenshipStatusDescriptor#Fake' does not exist."
                     ]
                     },
-                    "errors": null,
+                    "errors": [],
                     "detail": "Data validation failed. See 'validationErrors' for details.",
                     "type": "urn:ed-fi:api:bad-request",
                     "title": "Bad Request",
@@ -119,7 +119,7 @@ Feature: Validate the reference of descriptors when creating resources
                         "LocalEducationAgencyCategoryDescriptor value 'uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Fake' does not exist."
                     ]
                     },
-                    "errors": null,
+                    "errors": [],
                     "detail": "Data validation failed. See 'validationErrors' for details.",
                     "type": "urn:ed-fi:api:bad-request",
                     "title": "Bad Request",
@@ -208,7 +208,7 @@ Feature: Validate the reference of descriptors when creating resources
                               "ParticipationStatusDescriptor value 'uri://ed-fi.org/participationStatusDescriptor#Fake' does not exist."
                           ]
                       },
-                      "errors": null,
+                      "errors": [],
                       "detail": "Data validation failed. See 'validationErrors' for details.",
                       "type": "urn:ed-fi:api:bad-request",
                       "title": "Bad Request",
