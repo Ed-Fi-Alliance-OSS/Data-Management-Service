@@ -45,6 +45,11 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
         DocumentReferenceIds documentReferenceIds = DocumentReferenceIdsFrom(
             updateRequest.DocumentInfo.DocumentReferences
         );
+
+        DocumentReferenceIds descriptorReferenceIds = DescriptorReferenceIdsFrom(
+            updateRequest.DocumentInfo.DescriptorReferences
+        );
+
         try
         {
             var validationResult = await UpdateDocumentValidation(
@@ -86,7 +91,8 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
             switch (rowsAffected)
             {
                 case 1:
-                    if (documentReferenceIds.ReferentialIds.Length > 0)
+                    if (documentReferenceIds.ReferentialIds.Length > 0 ||
+                        descriptorReferenceIds.ReferentialIds.Length > 0)
                     {
                         Document? documentFromDb;
                         try
@@ -134,14 +140,17 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
                             new(
                                 ParentDocumentPartitionKey: documentPartitionKey.Value,
                                 ParentDocumentId: documentId,
-                                ReferentialIds: documentReferenceIds.ReferentialIds,
+                                ReferentialIds: documentReferenceIds.ReferentialIds
+                                    .Concat(descriptorReferenceIds.ReferentialIds).ToArray(),
                                 ReferentialPartitionKeys: documentReferenceIds.ReferentialPartitionKeys
+                                    .Concat(descriptorReferenceIds.ReferentialPartitionKeys).ToArray()
                             ),
                             connection,
                             transaction
                         );
 
-                        if (numberOfRowsInserted != documentReferenceIds.ReferentialIds.Length)
+                        if (numberOfRowsInserted != documentReferenceIds.ReferentialIds.Length +
+                            descriptorReferenceIds.ReferentialIds.Length)
                         {
                             throw new InvalidOperationException("Database did not insert all references");
                         }
@@ -172,8 +181,8 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
         }
         catch (PostgresException pe)
             when (pe.SqlState == PostgresErrorCodes.ForeignKeyViolation
-                && pe.ConstraintName == SqlAction.ReferenceValidationFkName
-            )
+                  && pe.ConstraintName == SqlAction.ReferenceValidationFkName
+                 )
         {
             _logger.LogDebug(pe, "Foreign key violation on Update - {TraceId}", updateRequest.TraceId);
 
@@ -182,9 +191,19 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
 
             Guid[] invalidReferentialIds = await FindInvalidReferentialIds(
                 documentReferenceIds,
+                descriptorReferenceIds,
                 connection,
                 transaction
             );
+
+            var invalidDescriptorReferences =
+                updateRequest.DocumentInfo.DescriptorReferences.Where(d =>
+                    invalidReferentialIds.Contains(d.ReferentialId.Value)).ToList();
+
+            if (invalidDescriptorReferences.Any())
+            {
+                return new UpdateResult.UpdateFailureDescriptorReference(invalidDescriptorReferences);
+            }
 
             ResourceName[] invalidResourceNames = ResourceNamesFrom(
                 updateRequest.DocumentInfo.DocumentReferences,

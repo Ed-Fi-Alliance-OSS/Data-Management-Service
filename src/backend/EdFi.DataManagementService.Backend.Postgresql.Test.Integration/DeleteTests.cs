@@ -548,6 +548,7 @@ public class DeleteTests : DatabaseTest
                 _subClassRefIdGuid,
                 _subClassDocString,
                 null,
+                null,
                 CreateSuperclassIdentity(_superClassName, _superClassReferentialIdGuid)
             );
             _upsertResults.Add(await CreateUpsert().Upsert(subClassUpsertRequest, Connection!, Transaction!));

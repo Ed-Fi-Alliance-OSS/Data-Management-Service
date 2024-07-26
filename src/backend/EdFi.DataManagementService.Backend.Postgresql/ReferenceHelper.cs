@@ -24,6 +24,19 @@ internal static class ReferenceHelper
     }
 
     /// <summary>
+    /// Returns the ReferentialId Guids and corresponding partition keys for all of the descriptor
+    /// references in the UpdateRequest and UpsertRequest.
+    /// </summary>
+    public static DocumentReferenceIds DescriptorReferenceIdsFrom(DescriptorReference[] descriptorReferences)
+    {
+        Guid[] referentialIds = descriptorReferences.Select(x => x.ReferentialId.Value).ToArray();
+        int[] referentialPartitionKeys = descriptorReferences
+            .Select(x => PartitionUtility.PartitionKeyFor(x.ReferentialId).Value)
+            .ToArray();
+        return new(referentialIds, referentialPartitionKeys);
+    }
+
+    /// <summary>
     /// Returns the unique ResourceNames of all DocumentReferences that have the given ReferentialId Guids
     /// </summary>
     public static ResourceName[] ResourceNamesFrom(DocumentReference[] documentReferences, Guid[] referentialIds)

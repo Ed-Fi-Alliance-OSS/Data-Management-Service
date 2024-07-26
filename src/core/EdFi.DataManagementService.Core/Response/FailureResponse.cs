@@ -19,8 +19,8 @@ internal static class FailureResponse
 
     public static FailureResponseWithErrors ForDataValidation(
         string detail,
-        Dictionary<string, string[]>? validationErrors,
-        string[]? errors
+        Dictionary<string, string[]> validationErrors,
+        string[] errors
     ) =>
         new(
             detail,
@@ -34,8 +34,8 @@ internal static class FailureResponse
 
     public static FailureResponseWithErrors ForBadRequest(
         string detail,
-        Dictionary<string, string[]>? ValidationErrors,
-        string[]? Errors
+        Dictionary<string, string[]> ValidationErrors,
+        string[] Errors
     ) =>
         new(
             detail,

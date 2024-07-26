@@ -6,9 +6,9 @@
 namespace EdFi.DataManagementService.Core.External.Model;
 
 /// <summary>
-/// Information representing a reference to a document, extracted from the referring document
+/// Information representing a descriptor reference to a document, extracted from the referring document
 /// </summary>
-public record DocumentReference(
+public record DescriptorReference(
     /// <summary>
     /// Base API resource information for the referenced document
     /// </summary>
@@ -20,5 +20,9 @@ public record DocumentReference(
     /// <summary>
     /// The referentialId derived from the DocumentIdentity
     /// </summary>
-    ReferentialId ReferentialId
+    ReferentialId ReferentialId,
+    /// <summary>
+    /// The JsonPath to the descriptor in the document
+    /// </summary>
+    JsonPath Path
 );

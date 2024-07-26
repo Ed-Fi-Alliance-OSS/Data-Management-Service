@@ -89,6 +89,13 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             List<IAPIResponse> _apiResponses = [];
             var baseUrl = $"data/ed-fi";
 
+            foreach (var descriptor in dataTable.ExtractDescriptors())
+            {
+                _apiResponses.Add(await _playwrightContext.ApiRequestContext?.PostAsync(
+                    $"{baseUrl}/{descriptor["descriptorName"]}", new() { DataObject = descriptor })!
+                );
+            }
+
             foreach (var row in dataTable.Rows)
             {
                 var dataUrl = $"{baseUrl}/{entityType}";
@@ -136,7 +143,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             foreach (DataTableRow row in dataTable.Rows)
             {
-                string descriptorValue = row.Parse();
+                string descriptorValue = row["descriptorValue"];
                 var (descriptorName, descriptorBody) = ExtractDescriptorBody(descriptorValue);
 
                 IAPIResponse apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(

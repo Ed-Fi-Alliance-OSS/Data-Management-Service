@@ -24,7 +24,7 @@ public record DocumentInfo(
     /// <summary>
     /// A list of the non-reference (meaning top-level only) descriptor values of the entity extracted from the API document
     /// </summary>
-    DocumentReference[] DescriptorReferences,
+    DescriptorReference[] DescriptorReferences,
     /// <summary>
     /// If this document is a subclass, this provides the document superclass identity information.
     /// </summary>
