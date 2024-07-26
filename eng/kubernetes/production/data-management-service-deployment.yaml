@@ -76,6 +76,11 @@ spec:
                 configMapKeyRef:
                   name: app-configmap
                   key: bypass-string-coercion
+            - name: DATABASE_ISOLATION_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: app-configmap
+                  key: database-isolation-level
           livenessProbe:
             exec:
               command:

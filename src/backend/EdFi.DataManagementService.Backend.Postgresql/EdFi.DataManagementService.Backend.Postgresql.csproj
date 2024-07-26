@@ -35,6 +35,7 @@
           <PrivateAssets>all</PrivateAssets>
       </PackageReference>
       <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+      <PackageReference Include="Microsoft.Extensions.Options" />
       <PackageReference Include="Npgsql" />
       <PackageReference Include="Npgsql.DependencyInjection" />
       <PackageReference Include="SonarAnalyzer.CSharp">

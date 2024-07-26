@@ -57,6 +57,7 @@ public class ContainerSetup
             .WithEnvironment("LOG_LEVEL", "Debug")
             .WithEnvironment("OAUTH_TOKEN_ENDPOINT", "http://127.0.0.1:8080/oauth/token")
             .WithEnvironment("BYPASS_STRING_COERCION", "false")
+            .WithEnvironment("DATABASE_ISOLATION_LEVEL", "RepeatableRead")
             .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(8080)))
             .WithNetwork(network)
             .WithLogger(loggerFactory.CreateLogger("apiContainer"))

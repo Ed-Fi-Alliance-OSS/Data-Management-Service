@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using Npgsql;
 using NUnit.Framework;
 using Respawn;
@@ -17,6 +18,7 @@ public abstract class DatabaseTestBase
     private Respawner? _respawner;
 
     public NpgsqlDataSource? DataSource { get; set; }
+    public static readonly IsolationLevel ConfiguredIsolationLevel = Configuration.IsolationLevel;
 
     [OneTimeSetUp]
     public void OneTimeSetup()
