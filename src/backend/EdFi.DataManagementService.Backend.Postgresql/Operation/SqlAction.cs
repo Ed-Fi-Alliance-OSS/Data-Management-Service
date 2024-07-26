@@ -421,6 +421,7 @@ public static class SqlAction
     /// </summary>
     public static async Task<Guid[]> FindInvalidReferentialIds(
         DocumentReferenceIds documentReferenceIds,
+        DocumentReferenceIds descriptorReferenceIds,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     )
@@ -441,8 +442,8 @@ public static class SqlAction
         {
             Parameters =
             {
-                new() { Value = documentReferenceIds.ReferentialIds },
-                new() { Value = documentReferenceIds.ReferentialPartitionKeys },
+                new() { Value = documentReferenceIds.ReferentialIds.Concat(descriptorReferenceIds.ReferentialIds).ToArray() },
+                new() { Value = documentReferenceIds.ReferentialPartitionKeys.Concat(descriptorReferenceIds.ReferentialPartitionKeys).ToArray() },
             }
         };
 

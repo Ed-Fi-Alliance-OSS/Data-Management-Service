@@ -6,6 +6,10 @@ Feature: School Year Reference Validation
             Given the Data Management Service must receive a token issued by "http://localhost"
               And user is already authorized
 
+            Given the system has these descriptors
+                  | descriptorValue                                           |
+                  | uri://ed-fi.org/CalendarEventDescriptor#Instructional day |
+
             Given the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
                   | 535      | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |

@@ -63,6 +63,19 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
                     ),
                     Headers: []
                 ),
+            UpdateFailureDescriptorReference failure
+                => new(
+                    StatusCode: 400,
+                    Body: JsonSerializer.Serialize(
+                        FailureResponse.ForBadRequest(
+                            "Data validation failed. See 'validationErrors' for details.",
+                            failure.InvalidDescriptorReferences.ToDictionary(
+                                d => d.Path.Value,
+                                d => d.DocumentIdentity.DocumentIdentityElements.Select(e =>
+                                        $"{d.ResourceInfo.ResourceName.Value} value '{e.IdentityValue}' does not exist.")
+                                    .ToArray()), [])),
+                    Headers: []
+                ),
             UpdateFailureReference failure
                 => new FrontendResponse(StatusCode: 409, Body: JsonSerializer.Serialize(FailureResponse.ForInvalidReferences(failure.ReferencingDocumentInfo)), Headers: []),
             UpdateFailureIdentityConflict failure

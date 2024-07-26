@@ -9,7 +9,7 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
                   | uri://ed-fi.org/ProgramTypeDescriptor#Bilingual                                     |
             And the system has these "localEducationAgencies"
                   | localEducationAgencyId | nameOfInstitution           | localEducationAgencyCategoryDescriptor                                                  | categories                                                                                                                             |
-                  | 101                    | Local Education Agency Test | "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Other local education agency    | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency"}]  |
+                  | 101                    | Local Education Agency Test | uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Other local education agency    | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency"}]  |
             And the system has these "Schools"
                   | schoolId | nameOfInstitution | localEducationAgencyReference   | educationOrganizationCategories                                                                                         | gradeLevels                                                                          |
                   | 100      | School Test       | {"localEducationAgencyId":101}  | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"}]   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"}]      |
@@ -138,7 +138,7 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
         Scenario: 06 Ensure clients cannot delete and existing Education Organization that is referenced to a Program
             Given the system has these "localEducationAgencies" references
                   | localEducationAgencyId | nameOfInstitution           | localEducationAgencyCategoryDescriptor                                                  | categories                                                                                                                             |
-                  | 333                    | Other Education Agency Test | "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Other local education agency    | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency"}]  |
+                  | 333                    | Other Education Agency Test | uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Other local education agency    | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency"}]  |
             And the system has these "programs"
                   | programName              | programTypeDescriptor                              | educationOrganizationReference     | programId |
                   | Career and Technical     | "uri://ed-fi.org/ProgramTypeDescriptor#Billingual" | {"educationOrganizationId":333}    | "111"     |

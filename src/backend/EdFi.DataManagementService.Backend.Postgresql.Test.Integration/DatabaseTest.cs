@@ -79,6 +79,7 @@ public abstract class DatabaseTest : DatabaseTestBase
     protected static DocumentInfo CreateDocumentInfo(
         Guid referentialId,
         DocumentReference[]? documentReferences = null,
+        DescriptorReference[]? descriptorReferences = null,
         SuperclassIdentity? superclassIdentity = null
     )
     {
@@ -86,7 +87,7 @@ public abstract class DatabaseTest : DatabaseTestBase
             DocumentIdentity: new([new(IdentityValue: "", IdentityJsonPath: new("$"))]),
             ReferentialId: new ReferentialId(referentialId),
             DocumentReferences: documentReferences ?? [],
-            DescriptorReferences: [],
+            DescriptorReferences: descriptorReferences ?? [],
             SuperclassIdentity: superclassIdentity
         );
     }
@@ -99,6 +100,16 @@ public abstract class DatabaseTest : DatabaseTestBase
             ResourceInfo: CreateResourceInfo(reference.ResourceName),
             DocumentIdentity: new([]),
             ReferentialId: new ReferentialId(reference.ReferentialIdGuid)
+        );
+    }
+
+    protected static DescriptorReference CreateDescriptorReference(Reference reference)
+    {
+        return new(
+            ResourceInfo: CreateResourceInfo(reference.ResourceName),
+            DocumentIdentity: new([]),
+            ReferentialId: new ReferentialId(reference.ReferentialIdGuid),
+            Path: new JsonPath()
         );
     }
 
@@ -116,12 +127,18 @@ public abstract class DatabaseTest : DatabaseTestBase
         return references.Select(x => CreateDocumentReference(x)).ToArray();
     }
 
+    protected static DescriptorReference[] CreateDescriptorReferences(Reference[] references)
+    {
+        return references.Select(x => CreateDescriptorReference(x)).ToArray();
+    }
+
     protected static IUpsertRequest CreateUpsertRequest(
         string resourceName,
         Guid documentUuidGuid,
         Guid referentialIdGuid,
         string edfiDocString,
         DocumentReference[]? documentReferences = null,
+        DescriptorReference[]? descriptorReferences = null,
         SuperclassIdentity? superclassIdentity = null
     )
     {
@@ -129,7 +146,7 @@ public abstract class DatabaseTest : DatabaseTestBase
             new
             {
                 ResourceInfo = CreateResourceInfo(resourceName),
-                DocumentInfo = CreateDocumentInfo(referentialIdGuid, documentReferences, superclassIdentity),
+                DocumentInfo = CreateDocumentInfo(referentialIdGuid, documentReferences, descriptorReferences, superclassIdentity),
                 EdfiDoc = JsonNode.Parse(edfiDocString),
                 TraceId = new TraceId("123"),
                 DocumentUuid = new DocumentUuid(documentUuidGuid)
@@ -153,6 +170,7 @@ public abstract class DatabaseTest : DatabaseTestBase
         Guid referentialIdGuid,
         string edFiDocString,
         DocumentReference[]? documentReferences = null,
+        DescriptorReference[]? descriptorReferences = null,
         SuperclassIdentity? superclassIdentity = null
     )
     {
@@ -160,7 +178,7 @@ public abstract class DatabaseTest : DatabaseTestBase
             new
             {
                 ResourceInfo = CreateResourceInfo(resourceName),
-                DocumentInfo = CreateDocumentInfo(referentialIdGuid, documentReferences, superclassIdentity),
+                DocumentInfo = CreateDocumentInfo(referentialIdGuid, documentReferences, descriptorReferences, superclassIdentity),
                 EdfiDoc = JsonNode.Parse(edFiDocString),
                 TraceId = new TraceId("123"),
                 DocumentUuid = new DocumentUuid(documentUuidGuid)
