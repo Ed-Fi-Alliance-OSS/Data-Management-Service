@@ -50,6 +50,7 @@ internal class ApiService(
                     new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                     new ParsePathMiddleware(_logger),
                     new ParseBodyMiddleware(_logger),
+                    new ValidateDuplicatedPropertiesMiddleware(_logger),
                     new ValidateEndpointMiddleware(_logger)
                 ]);
 
@@ -129,6 +130,7 @@ internal class ApiService(
                     new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                     new ParsePathMiddleware(_logger),
                     new ParseBodyMiddleware(_logger),
+                    new ValidateDuplicatedPropertiesMiddleware(_logger),
                     new ValidateEndpointMiddleware(_logger)
                 ]);
 
