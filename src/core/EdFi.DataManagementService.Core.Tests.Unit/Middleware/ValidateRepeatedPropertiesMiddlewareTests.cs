@@ -16,16 +16,16 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
-public class ValidateDuplicatedPropertiesMiddlewareTests
+public class ValidateRepeatedPropertiesMiddlewareTests
 {
     internal static IPipelineStep Middleware()
     {
-        return new ValidateDuplicatedPropertiesMiddleware(NullLogger.Instance);
+        return new ValidateRepeatedPropertiesMiddleware(NullLogger.Instance);
     }
 
     [TestFixture]
     public class Given_Pipeline_Context_With_Duplicate_Property_On_First_Level
-        : ValidateDuplicatedPropertiesMiddlewareTests
+        : ValidateRepeatedPropertiesMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -81,7 +81,7 @@ public class ValidateDuplicatedPropertiesMiddlewareTests
 
     [TestFixture]
     public class Given_Pipeline_Context_With_A_Collection_As_Duplicated_Property_On_First_Level
-        : ValidateDuplicatedPropertiesMiddlewareTests
+        : ValidateRepeatedPropertiesMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -141,7 +141,7 @@ public class ValidateDuplicatedPropertiesMiddlewareTests
 
     [TestFixture]
     public class Given_Pipeline_Context_With_Duplicate_Property_Inside_Of_A_Collection
-        : ValidateDuplicatedPropertiesMiddlewareTests
+        : ValidateRepeatedPropertiesMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -198,7 +198,7 @@ public class ValidateDuplicatedPropertiesMiddlewareTests
 
     [TestFixture]
     public class Given_Pipeline_Context_With_Same_Value_Inside_An_Array_Of_Properties
-        : ValidateDuplicatedPropertiesMiddlewareTests
+        : ValidateRepeatedPropertiesMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -257,7 +257,7 @@ public class ValidateDuplicatedPropertiesMiddlewareTests
     }
     [TestFixture]
     public class Given_Pipeline_Context_With_Duplicate_Property_And_Same_Value_Inside_An_Array_Of_Properties
-        : ValidateDuplicatedPropertiesMiddlewareTests
+        : ValidateRepeatedPropertiesMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 

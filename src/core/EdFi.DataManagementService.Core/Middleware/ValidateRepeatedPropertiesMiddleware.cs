@@ -13,7 +13,7 @@ using static EdFi.DataManagementService.Core.Response.FailureResponse;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
-internal class ValidateDuplicatedPropertiesMiddleware(ILogger logger) : IPipelineStep
+internal class ValidateRepeatedPropertiesMiddleware(ILogger logger) : IPipelineStep
 {
     private static readonly JsonSerializerOptions _serializerOptions =
         new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
@@ -21,7 +21,7 @@ internal class ValidateDuplicatedPropertiesMiddleware(ILogger logger) : IPipelin
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         logger.LogDebug(
-            "Entering ValidateDuplicatedPropertiesMiddleware - {TraceId}",
+            "Entering ValidateRepeatedPropertiesMiddleware - {TraceId}",
             context.FrontendRequest.TraceId
         );
         if (context.FrontendRequest.Body != null)
@@ -77,8 +77,8 @@ internal class ValidateDuplicatedPropertiesMiddleware(ILogger logger) : IPipelin
 
                 return;
             }
-            await next();
         }
+        await next();
     }
 
     private void CheckForDuplicateProperties(
