@@ -1,29 +1,20 @@
 Feature: Descriptors are a set of mechanisms to support flexible enumerations or code sets
 
-        Background:
-            Given the system has this "educationOrganizationCategoryDescriptors"
-                  | codeValue | description | namespace                                               | shortDescription |
-                  | School    | School      | uri://ed-fi.org/EducationOrganizationCategoryDescriptor | School           |
-              And the system has this "disabilityDescriptors"
-                  | codeValue       | description          | namespace                            | shortDescription     |
-                  | Disability Test | User Disability Test | uri://ed-fi.org/DisabilityDescriptor | User Disability Test |
-
         @ignore
-        Scenario: 01 / Ensure clients can create a Descriptor with the required attributes
+        Scenario: 01 Ensure clients can create a Descriptor with the required attributes
              When a POST reques is made to "/ed-fi/disabilityDescriptors" with
                   """
                   {
                       "namespace": "uri://ed-fi.org/DisabilityDescriptor",
                       "codeValue": "Deaf-Blindness",
                       "shortDescription": "Deaf-Blindness",
-                      "description": "Deaf-Blindness"
                   }
                   """
              Then it should respond with 201
 
 
         @ignore
-        Scenario: 02 / Ensure clients can retrieve information of a Descriptor
+        Scenario: 02 Ensure clients can retrieve information of a Descriptor
              When a GET request is made to "/ed-fi/disabilityDescriptors"
              Then it should respond with 200
               And the response body is
@@ -48,8 +39,10 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
                   """
 
         @ignore
-        Scenario: 03 / Ensure clients can update the values of a Descriptor
-            Given the system has this codeValue "Deaf-Blindness"
+        Scenario: 03 Ensure clients can update the values of a Descriptor
+            Given the system has this "disabilityDescriptors" descriptor
+                  | codeValue      | namespace                            | shortDescription |
+                  | Deaf-Blindness | uri://ed-fi.org/DisabilityDescriptor | Deaf-Blindness   |
              When a PUT request is made to "/ed-fi/disabilityDescriptors/{id}" with
                   """
                       {
@@ -62,7 +55,7 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
              Then it should respond with 204
 
         @ignore
-        Scenario: 04 / Ensure clients can create a descriptor using optional attributes
+        Scenario: 04 Ensure clients can create a descriptor using optional attributes
              When a POST request is made to "/ed-fi/disabilityDescriptors" with
                   """
                   {
@@ -77,13 +70,16 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
              Then it should respond with 201
 
         @ignore
-        Scenario: 05 / Ensure clients can retrieve optional attributes from descriptors that have used them
-            Given the system has this codeValue "Testing Deaf-Blindness"
+        Scenario: 05 Ensure clients can retrieve optional attributes from descriptors that have used them
+            Given the system has this "disabilityDescriptors" descriptor
+                  | codeValue              | namespace                            | shortDescription       |
+                  | Testing Deaf-Blindness | uri://ed-fi.org/DisabilityDescriptor | Testing Deaf-Blindness |
              When a GET request is made to "/ed-fi/disabilityDescriptors/{id}"
              Then it should respond with 200
               And the response body is
                   """
                   {
+                      "id": "{id}",
                       "namespace": "uri://ed-fi.org/DisabilityDescriptor",
                       "codeValue": "Testing Deaf-Blindness",
                       "shortDescription": "Testing Deaf-Blindness",
@@ -94,15 +90,17 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
                   """
 
         @ignore
-        Scenario: 06 / Ensure clients can add optional attributes to descriptors that do not include them
+        Scenario: 06 Ensure clients can add optional attributes to descriptors that do not include them
             Given the system has this codeValue "Deaf-Blindness"
+                  | codeValue                 | namespace                            | shortDescription          |
+                  | Autism Spectrum Disorders | uri://ed-fi.org/DisabilityDescriptor | Autism Spectrum Disorders |
              When a PUT request is made to "/ed-fi/disabilityDescriptors/{id}" with
                   """
                   {
                       "namespace": "uri://ed-fi.org/DisabilityDescriptor",
-                      "codeValue": "Deaf-Blindness",
-                      "shortDescription": "Deaf-Blindness",
-                      "description": "Deaf-Blindness"
+                      "codeValue": "Autism Spectrum Disorders",
+                      "shortDescription": "Autism Spectrum Disorders",
+                      "description": "Autism Spectrum Disorders Test"
                       "effectiveBeginDate": "2024-07-24",
                       "effectiveEndDate" "2025-12-31"
                   }
@@ -110,9 +108,11 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
              Then it should respond with 204
 
         @ignore
-        Scenario: 07 / Ensure clients can retrieve a descriptor by requesting through a valid codeValue
-            Given the system has this codeValue "Deaf-Blindness"
-             When a GET request is made to "/ed-fi/disabilityDescriptors/{id}"
+        Scenario: 07 Ensure clients can retrieve a descriptor by requesting through a valid codeValue
+            Given the system has this "disabilityDescriptors" descriptor
+                  | codeValue      | namespace                            | shortDescription |
+                  | Deaf-Blindness | uri://ed-fi.org/DisabilityDescriptor | Deaf-Blindness   |
+             When a GET request is made to "/ed-fi/disabilityDescriptors/?codeValue=Deaf-Blindness"
              Then it should respond with 200
               And the response body is
                   """
@@ -128,7 +128,7 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
                   """
 
         @ignore
-        Scenario: 08 / Ensure clients cannot retrieve a descriptor by requesting through a non existing codeValue
+        Scenario: 08 Ensure clients cannot retrieve a descriptor by requesting through a non existing codeValue
              When a GET request is made to "/ed-fi/disabilityDescriptors?codeValue=Test"
              Then it should respond with 200
               And the response body is
@@ -137,9 +137,11 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
                   """
 
         @ignore
-        Scenario: 09 / Ensure clients can retrieve a descriptor by requesting through a valid namespace
-            Given the system has this namespace "uri://ed-fi.org/DisabilityDescriptor"
-             When a GET request is made to "/ed-fi/disabilityDescriptors/{id}"
+        Scenario: 09 Ensure clients can retrieve a descriptor by requesting through a valid namespace
+            Given the system has this "disabilityDescriptors" descriptor
+                  | codeValue      | namespace                            | shortDescription |
+                  | Deaf-Blindness | uri://ed-fi.org/DisabilityDescriptor | Deaf-Blindness   |
+             When a GET request is made to "/ed-fi/disabilityDescriptors?namespace%3Duri%3A%2F%2Fed-fi.org%2FDisabilityDescriptor"
              Then it should respond with 200
               And the response body is
                   """
@@ -155,8 +157,8 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
                   """
 
         @ignore
-        Scenario: 10 / Ensure clients cannot retrieve a descriptor by requesting through a non existing namespace
-             When a GET request is made to "/ed-fi/disabilityDescriptors?namespace=uri://ed-fi.org/DisabilityDescriptorFake"
+        Scenario: 10 Ensure clients cannot retrieve a descriptor by requesting through a non existing namespace
+             When a GET request is made to "/ed-fi/disabilityDescriptors?namespace%3Duri%3A%2F%2Fed-fi.org%2FDisabilityDescriptorFake"
              Then it should respond with 200
               And the response body is
                   """
@@ -164,7 +166,7 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
                   """
 
         @ignore
-        Scenario: 11 / Ensure clients cannot create a descriptor omitting any of the required values
+        Scenario: 11 Ensure clients cannot create a descriptor omitting any of the required values
              When a POST request is made to "/ed-fi/disabilityDescriptors" with
                   """
                   {
@@ -191,7 +193,7 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
                   """
 
         @ignore
-        Scenario: 12 / Ensure clients cannot update a descriptor omitting any of the required values
+        Scenario: 12 Ensure clients cannot update a descriptor omitting any of the required values
              When a POST request is made to "/ed-fi/disabilityDescriptors" with
                   """
                   {
@@ -200,14 +202,14 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
                       "description": "Deaf-Blindness"
                   }
                   """
-             Then it should respond with 400
+             Then it should respond with 409
               And the response body is
                   """
                   {
                       "detail": "Data validation failed. See 'validationErrors' for details.",
                       "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                       "title": "Data Validation Failed",
-                      "status": 400,
+                      "status": 409,
                       "correlationId": null,
                       "validationErrors": {
                           "$.namespace": [
@@ -218,8 +220,10 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
                   """
 
         @ignore
-        Scenario: 13 / Ensure clients can update a descriptor that is not being used by any resource
-            Given the system has this codeValue "Visual Impairment, including Blindness"
+        Scenario: 13 Ensure clients can update a descriptor that is not being used by any resource
+            Given the system has this "disabilityDescriptors" descriptor
+                  | codeValue                              | namespace                            | shortDescription                       |
+                  | Visual Impairment, including Blindness | uri://ed-fi.org/DisabilityDescriptor | Visual Impairment, including Blindness |
              When a PUT request is made to "/ed-fi/disabilityDescriptors/{id}" with
                   """
                   {
@@ -232,8 +236,10 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
              Then it should respond with 204
 
         @ignore
-        Scenario: 14 / Ensure clients cannot update a descriptor changing identifying values
-            Given the system has this codeValue "Visual Impairment, including Blindness"
+        Scenario: 14 Ensure clients cannot update a descriptor changing identifying values
+            Given the system has this "disabilityDescriptors" descriptor
+                  | codeValue                              | namespace                            | shortDescription                       |
+                  | Visual Impairment, including Blindness | uri://ed-fi.org/DisabilityDescriptor | Visual Impairment, including Blindness |
              When a PUT request is made to "/ed-fi/disabilityDescriptors/{id}" with
                   """
                   {
@@ -256,14 +262,18 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
                   """
 
         @ignore
-        Scenario: 15 / Ensure clients can delete a descriptor that is not beign used by any resource
-            Given the system has codeValue "Disability Test"
+        Scenario: 15 Ensure clients can delete a descriptor that is not beign used by any resource
+            Given the system has this "disabilityDescriptors" descriptor
+                  | codeValue       | description          | namespace                            | shortDescription     |
+                  | Disability Test | User Disability Test | uri://ed-fi.org/DisabilityDescriptor | User Disability Test |
              When a DELETE request is made to "/ed-fi/disabilityDescriptors/{id}"
              Then it should respond with 204
 
         @ignore
-        Scenario: 16 / Ensure clients cannot delete a descriptor that is beign used by any resource
-            Given the system has codeValue "School"
+        Scenario: 16 Ensure clients cannot delete a descriptor that is beign used by any resource
+            Given the system has this "educationOrganizationCategoryDescriptors" descriptor
+                  | codeValue | namespace                                               | shortDescription |
+                  | School    | uri://ed-fi.org/EducationOrganizationCategoryDescriptor | School           |
              When a DELETE request is made to "/ed-fi/educationOrganizationCategoryDescriptors/{id}"
              Then it should respond with 409
               And the response body is
