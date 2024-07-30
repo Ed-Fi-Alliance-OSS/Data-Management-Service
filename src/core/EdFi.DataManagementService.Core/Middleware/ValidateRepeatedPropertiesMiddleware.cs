@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using EdFi.DataManagementService.Core.Model;
@@ -145,7 +146,7 @@ internal class ValidateRepeatedPropertiesMiddleware(ILogger logger) : IPipelineS
                         AddValidationError(
                             validationErrors,
                             $"$.{propertyPath}",
-                            $"The {index + 1}nd item of the {property.Name} has the same identifying values as another item earlier in the list."
+                            $"The {AddOrdinalSuffix((index + 1).ToString())} item of the {property.Name} has the same identifying values as another item earlier in the list."
                         );
                     }
                     index++;
@@ -156,6 +157,40 @@ internal class ValidateRepeatedPropertiesMiddleware(ILogger logger) : IPipelineS
                 CheckForDuplicateValues(property.Value, propertyPath, validationErrors);
             }
         }
+    }
+
+    public static bool IsStringNumeric(string str)
+    {
+        double result;
+        return double.TryParse(str, NumberStyles.Float, NumberFormatInfo.CurrentInfo, out result);
+    }
+
+    public static string AddOrdinalSuffix(string number)
+    {
+        if (IsStringNumeric(number))
+        {
+            int n = int.Parse(number);
+            int nMod100 = n % 100;
+
+            if (nMod100 >= 11 && nMod100 <= 13)
+            {
+                return string.Concat(number, "th");
+            }
+
+            switch (n % 10)
+            {
+                case 1:
+                    return string.Concat(number, "st");
+                case 2:
+                    return string.Concat(number, "nd");
+                case 3:
+                    return string.Concat(number, "rd");
+                default:
+                    return string.Concat(number, "th");
+            }
+        }
+
+        return number;
     }
 
     private void AddValidationError(
