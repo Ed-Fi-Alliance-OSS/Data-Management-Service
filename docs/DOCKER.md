@@ -30,14 +30,13 @@ Service container.
 NEED_DATABASE_SETUP=<Flag (true or false) to decide whether the DMS database setup needs to be executed as part of the container setup>
 POSTGRES_ADMIN_USER=<Admin user to use with database setup>
 POSTGRES_ADMIN_PASSWORD=<Admin password to use with database setup>
-POSTGRES_USER=<Non-admin user to use for accessing the database from the DMS application>
-POSTGRES_PASSWORD=<Non-admin user password>
 POSTGRES_PORT=<Port for postgres server Eg. 5432>
 POSTGRES_HOST=<DNS or IP address of the PostgreSQL Server, i.e. sql.somedns.org Eg. 172.25.32.1>
 LOG_LEVEL=<serilog log level i.e. Information>
 OAUTH_TOKEN_ENDPOINT=<Authentication service url>
 BYPASS_STRING_COERCION=<Boolean whether to bypass coercion of boolean and numeric values represented as strings to their natural type. Eg. "true" = true>
 DATABASE_ISOLATION_LEVEL=<The System.Data.IsolationLevel to use for transaction locking. Eg. RepeatableRead>
+DATABASE_CONNECTION_STRING=<The non-admin database connection string>
 ```
 
 For example, you might have a `.env` file like the following:
@@ -46,14 +45,13 @@ For example, you might have a `.env` file like the following:
 NEED_DATABASE_SETUP=true
 POSTGRES_ADMIN_USER=postgres
 POSTGRES_ADMIN_PASSWORD=P@ssw0rd53
-POSTGRES_USER=dms
-POSTGRES_PASSWORD=P@ssw0rd
 POSTGRES_PORT=5432
 POSTGRES_HOST=localhost
 LOG_LEVEL=Information
 OAUTH_TOKEN_ENDPOINT=http://localhost:8080/oauth/token
 BYPASS_STRING_COERCION=false
 DATABASE_ISOLATION_LEVEL=RepeatableRead
+DATABASE_CONNECTION_STRING=host=localhost;port=5432;username=dms;password=P@ssw0rd;database=edfi_datamanagementservice;
 ```
 
 ## Orchestration

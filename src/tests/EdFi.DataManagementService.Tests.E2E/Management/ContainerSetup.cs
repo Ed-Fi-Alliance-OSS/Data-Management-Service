@@ -22,8 +22,8 @@ public class ContainerSetup
         string apiImageName = "local/edfi-data-management-service";
         string dbImageName = "postgres:16.3-alpine3.20";
 
-        var dbUserName = "postgres";
-        var dbPassword = "P@ssw0rd";
+        var pgAdminUser = "postgres";
+        var pgAdminPassword = "P@ssw0rd";
         var dbContainerName = "dmsdb";
 
         var loggerFactory = LoggerFactory.Create(builder =>
@@ -39,7 +39,7 @@ public class ContainerSetup
             .WithPortBinding(5404, 5432)
             .WithNetwork(network)
             .WithNetworkAliases(dbContainerName)
-            .WithEnvironment("POSTGRES_PASSWORD", dbPassword)
+            .WithEnvironment("POSTGRES_PASSWORD", pgAdminPassword)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(5432))
             .WithLogger(loggerFactory.CreateLogger("dbContainer"))
             .Build();
@@ -48,10 +48,9 @@ public class ContainerSetup
             .WithImage(apiImageName)
             .WithPortBinding(8080)
             .WithEnvironment("NEED_DATABASE_SETUP", "true")
-            .WithEnvironment("POSTGRES_ADMIN_USER", dbUserName)
-            .WithEnvironment("POSTGRES_ADMIN_PASSWORD", dbPassword)
-            .WithEnvironment("POSTGRES_PASSWORD", dbPassword)
-            .WithEnvironment("POSTGRES_USER", dbUserName)
+            .WithEnvironment("DATABASE_CONNECTION_STRING", "host=dmsdb;port=5432;username=postgres;password=P@ssw0rd;database=edfi_datamanagementservice;")
+            .WithEnvironment("POSTGRES_ADMIN_USER", pgAdminUser)
+            .WithEnvironment("POSTGRES_ADMIN_PASSWORD", pgAdminPassword)
             .WithEnvironment("POSTGRES_PORT", "5432")
             .WithEnvironment("POSTGRES_HOST", dbContainerName)
             .WithEnvironment("LOG_LEVEL", "Debug")

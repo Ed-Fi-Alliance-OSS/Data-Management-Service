@@ -22,12 +22,12 @@ spec:
         ports:
             - containerPort: 5432
         env:
-          - name: POSTGRES_USER
+          - name: POSTGRES_ADMIN_USER
             valueFrom:
               configMapKeyRef:
                 name: app-configmap
                 key: postgres-admin-user
-          - name: POSTGRES_PASSWORD
+          - name: POSTGRES_ADMIN_PASSWORD
             valueFrom:
               secretKeyRef:
                 name: app-secret
