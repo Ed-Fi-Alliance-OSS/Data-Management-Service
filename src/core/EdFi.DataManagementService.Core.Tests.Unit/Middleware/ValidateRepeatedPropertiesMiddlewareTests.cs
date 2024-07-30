@@ -190,7 +190,7 @@ public class ValidateRepeatedPropertiesMiddlewareTests
                 ?.FrontendResponse.Body.Should()
                 .Contain(
                     """
-                    "validationErrors":{"$.classPeriods[0].classPeriodReference.classPeriodName":["This property is duplicated."]}
+                    "validationErrors":{"$.classPeriods[1].classPeriodReference.classPeriodName":["This property is duplicated."]}
                     """
                 );
         }

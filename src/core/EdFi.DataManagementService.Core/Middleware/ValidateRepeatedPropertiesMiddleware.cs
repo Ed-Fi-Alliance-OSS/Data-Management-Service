@@ -31,9 +31,7 @@ internal class ValidateRepeatedPropertiesMiddleware(ILogger logger) : IPipelineS
                 var jsonDocument = JsonDocument.Parse(context.FrontendRequest.Body);
                 var validationErrors = new Dictionary<string, List<string>>();
 
-                CheckForDuplicateProperties(jsonDocument.RootElement, "", validationErrors);
-
-                CheckForDuplicateValues(jsonDocument.RootElement, "", validationErrors);
+                CheckForDuplicates(jsonDocument.RootElement, "", validationErrors);
 
                 if (validationErrors.Any())
                 {
@@ -79,7 +77,7 @@ internal class ValidateRepeatedPropertiesMiddleware(ILogger logger) : IPipelineS
         await next();
     }
 
-    private void CheckForDuplicateProperties(
+    private void CheckForDuplicates(
         JsonElement element,
         string currentPath,
         Dictionary<string, List<string>> validationErrors
@@ -93,44 +91,18 @@ internal class ValidateRepeatedPropertiesMiddleware(ILogger logger) : IPipelineS
                 ? property.Name
                 : $"{currentPath}.{property.Name}";
 
+            // Check for duplicate properties
             if (!propertyNames.Add(property.Name))
             {
                 AddValidationError(validationErrors, $"$.{propertyPath}", "This property is duplicated.");
+                continue; // Skip further validation for duplicated properties
             }
 
             if (property.Value.ValueKind == JsonValueKind.Object)
             {
-                CheckForDuplicateProperties(property.Value, propertyPath, validationErrors);
+                CheckForDuplicates(property.Value, propertyPath, validationErrors);
             }
             else if (property.Value.ValueKind == JsonValueKind.Array)
-            {
-                int index = 0;
-                foreach (var item in property.Value.EnumerateArray())
-                {
-                    string itemPath = $"{propertyPath}[{index}]";
-                    if (item.ValueKind == JsonValueKind.Object)
-                    {
-                        CheckForDuplicateProperties(item, itemPath, validationErrors);
-                    }
-                    index++;
-                }
-            }
-        }
-    }
-
-    private void CheckForDuplicateValues(
-        JsonElement element,
-        string currentPath,
-        Dictionary<string, List<string>> validationErrors
-    )
-    {
-        foreach (var property in element.EnumerateObject())
-        {
-            string propertyPath = string.IsNullOrEmpty(currentPath)
-                ? property.Name
-                : $"{currentPath}.{property.Name}";
-
-            if (property.Value.ValueKind == JsonValueKind.Array)
             {
                 var valuesSet = new HashSet<string>();
                 int index = 0;
@@ -138,6 +110,7 @@ internal class ValidateRepeatedPropertiesMiddleware(ILogger logger) : IPipelineS
                 foreach (var item in property.Value.EnumerateArray())
                 {
                     string itemValue = item.GetRawText();
+
                     if (!valuesSet.Add(itemValue))
                     {
                         AddValidationError(
@@ -147,11 +120,12 @@ internal class ValidateRepeatedPropertiesMiddleware(ILogger logger) : IPipelineS
                         );
                     }
                     index++;
+
+                    if (item.ValueKind == JsonValueKind.Object)
+                    {
+                        CheckForDuplicates(item, $"{propertyPath}[{index}]", validationErrors);
+                    }
                 }
-            }
-            else if (property.Value.ValueKind == JsonValueKind.Object)
-            {
-                CheckForDuplicateValues(property.Value, propertyPath, validationErrors);
             }
         }
     }
