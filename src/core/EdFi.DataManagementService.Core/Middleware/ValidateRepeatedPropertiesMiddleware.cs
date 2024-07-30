@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Globalization;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using EdFi.DataManagementService.Core.Model;
@@ -144,7 +143,7 @@ internal class ValidateRepeatedPropertiesMiddleware(ILogger logger) : IPipelineS
                         AddValidationError(
                             validationErrors,
                             $"$.{propertyPath}",
-                            $"The {AddOrdinalSuffix((index + 1).ToString())} item of the {property.Name} has the same identifying values as another item earlier in the list."
+                            $"The {OrdinalSuffix((index + 1))} item of the {property.Name} has the same identifying values as another item earlier in the list."
                         );
                     }
                     index++;
@@ -157,37 +156,27 @@ internal class ValidateRepeatedPropertiesMiddleware(ILogger logger) : IPipelineS
         }
     }
 
-    public static bool IsStringNumeric(string str)
+    private static string OrdinalSuffix(int number)
     {
-        return double.TryParse(str, NumberStyles.Float, NumberFormatInfo.CurrentInfo, out double _);
-    }
+        string ordinaryNumber = number.ToString();
+        int nMod100 = number % 100;
 
-    public static string AddOrdinalSuffix(string number)
-    {
-        if (IsStringNumeric(number))
+        if (nMod100 >= 11 && nMod100 <= 13)
         {
-            int n = int.Parse(number);
-            int nMod100 = n % 100;
-
-            if (nMod100 >= 11 && nMod100 <= 13)
-            {
-                return string.Concat(number, "th");
-            }
-
-            switch (n % 10)
-            {
-                case 1:
-                    return string.Concat(number, "st");
-                case 2:
-                    return string.Concat(number, "nd");
-                case 3:
-                    return string.Concat(number, "rd");
-                default:
-                    return string.Concat(number, "th");
-            }
+            return string.Concat(ordinaryNumber, "th");
         }
 
-        return number;
+        switch (number % 10)
+        {
+            case 1:
+                return string.Concat(ordinaryNumber, "st");
+            case 2:
+                return string.Concat(ordinaryNumber, "nd");
+            case 3:
+                return string.Concat(ordinaryNumber, "rd");
+            default:
+                return string.Concat(ordinaryNumber, "th");
+        }
     }
 
     private void AddValidationError(
