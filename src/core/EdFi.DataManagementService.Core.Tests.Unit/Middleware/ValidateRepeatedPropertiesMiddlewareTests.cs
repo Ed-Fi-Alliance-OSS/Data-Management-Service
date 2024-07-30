@@ -255,6 +255,7 @@ public class ValidateRepeatedPropertiesMiddlewareTests
                 );
         }
     }
+
     [TestFixture]
     public class Given_Pipeline_Context_With_Duplicate_Property_And_Same_Value_Inside_An_Array_Of_Properties
         : ValidateRepeatedPropertiesMiddlewareTests
@@ -293,6 +294,119 @@ public class ValidateRepeatedPropertiesMiddlewareTests
                 new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.POST);
+            await Middleware().Execute(_context, NullNext);
+        }
+
+        [Test]
+        public void It_returns_status_400()
+        {
+            _context?.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_returns_message_body_with_failure_duplicated_property()
+        {
+            _context?.FrontendResponse.Body.Should().Contain("Data Validation Failed");
+            _context
+                ?.FrontendResponse.Body.Should()
+                .Contain(
+                    """
+                    "validationErrors":{"$.schoolId":["This property is duplicated."],"$.gradeLevels":["This property is duplicated."]}
+                    """
+                );
+        }
+    }
+
+    [TestFixture]
+    public class Given_Pipeline_Context_With_Duplicate_Property_On_First_Level_using_PUT
+        : ValidateRepeatedPropertiesMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+        private string id = Guid.NewGuid().ToString();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            string jsonBody = $$"""
+                                {
+                                    "id": "{{id}}",
+                                    "studentUniqueId":"123",
+                                	"birthDate":"2000-01-01",
+                                	"firstName":"Thomas",
+                                	"firstName":"John",
+                                	"lastSurname":"Muller"
+                                }
+                                """;
+            var frontEndRequest = new FrontendRequest(
+                $"ed-fi/students/{id}",
+                Body: jsonBody,
+                QueryParameters: [],
+                new TraceId("traceId")
+            );
+            _context = new(frontEndRequest, RequestMethod.PUT);
+            await Middleware().Execute(_context, NullNext);
+        }
+
+        [Test]
+        public void It_returns_status_400()
+        {
+            _context?.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_returns_message_body_with_failure_duplicated_property()
+        {
+            _context?.FrontendResponse.Body.Should().Contain("Data Validation Failed");
+            _context
+                ?.FrontendResponse.Body.Should()
+                .Contain(
+                    """
+                    "validationErrors":{"$.firstName":["This property is duplicated."]}
+                    """
+                );
+        }
+    }
+
+    [TestFixture]
+    public class Given_Pipeline_Context_With_Duplicate_Property_And_Same_Value_Inside_An_Array_Of_Properties_Using_PUT
+        : ValidateRepeatedPropertiesMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+        private string id = Guid.NewGuid().ToString();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            string jsonBody = $$"""
+                                {
+                                  "id": "{{id}}",
+                                  "schoolId":255901001,
+                                  "schoolId":255901001,
+                                  "nameOfInstitution":"School Test",
+                                  "gradeLevels":[
+                                    {
+                                        "gradeLevelDescriptor":"uri://ed-fi.org/gradeLevelDescriptor#Ninth grade"
+                                    }
+                                  ],
+                                  "gradeLevels":[
+                                    {
+                                        "gradeLevelDescriptor":"uri://ed-fi.org/gradeLevelDescriptor#Ninth grade"
+                                    }
+                                  ],
+                                  "educationOrganizationCategories":[
+                                    {
+                                        "educationOrganizationCategoryDescriptor":"uri://ed-fi.org/educationOrganizationCategoryDescriptor#School"
+                                    }
+                                  ]
+                                }
+                                """;
+            var frontEndRequest = new FrontendRequest(
+                $"ed-fi/schools/{id}",
+                Body: jsonBody,
+                QueryParameters: [],
+                new TraceId("traceId")
+            );
+            _context = new(frontEndRequest, RequestMethod.PUT);
             await Middleware().Execute(_context, NullNext);
         }
 
