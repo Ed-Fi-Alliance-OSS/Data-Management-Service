@@ -12,7 +12,7 @@ CREATE OR REPLACE FUNCTION dms.InsertReferences(
     referentialPartitionKeys SMALLINT[]
 ) RETURNS TABLE (referentialId UUID)
 LANGUAGE plpgsql AS
-$func$
+$$
 DECLARE
     constraintErrorName text;
 BEGIN
@@ -57,4 +57,4 @@ EXCEPTION
     -- Some other exception
     WHEN OTHERS THEN RAISE;
 end;
-$func$;
+$$;
