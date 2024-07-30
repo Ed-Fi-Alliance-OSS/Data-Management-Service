@@ -374,11 +374,11 @@ public static class SqlAction
         long[] parentDocumentIds = new long[bulkReferences.ReferentialIds.Length];
         Array.Fill(parentDocumentIds, bulkReferences.ParentDocumentId);
 
-        int[] parentDocumentPartitionKeys = new int[bulkReferences.ReferentialIds.Length];
+        short[] parentDocumentPartitionKeys = new short[bulkReferences.ReferentialIds.Length];
         Array.Fill(parentDocumentPartitionKeys, bulkReferences.ParentDocumentPartitionKey);
 
         await using var command = new NpgsqlCommand(
-            @"SELECT dms.InsertReferences(unnest($1), unnest($2), unnest($3), unnest($4))",
+            @"SELECT dms.InsertReferences($1, $2, $3, $4)",
             connection,
             transaction
         )
@@ -398,7 +398,7 @@ public static class SqlAction
         List<Guid> result = [];
         while (await reader.ReadAsync())
         {
-            result.Add(reader.GetGuid(reader.GetOrdinal("ReferentialId")));
+            result.Add(reader.GetGuid(0));
         }
 
         return result.ToArray();

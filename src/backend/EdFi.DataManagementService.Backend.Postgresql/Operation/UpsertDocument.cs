@@ -59,7 +59,7 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
         NpgsqlTransaction transaction
     )
     {
-        int documentPartitionKey = PartitionKeyFor(upsertRequest.DocumentUuid).Value;
+        short documentPartitionKey = PartitionKeyFor(upsertRequest.DocumentUuid).Value;
         long newDocumentId;
 
         // First insert into Documents
@@ -160,7 +160,7 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
 
     public async Task<UpsertResult> AsUpdate(
         long documentId,
-        int documentPartitionKey,
+        short documentPartitionKey,
         Guid documentUuid,
         IUpsertRequest upsertRequest,
         DocumentReferenceIds documentReferenceIds,

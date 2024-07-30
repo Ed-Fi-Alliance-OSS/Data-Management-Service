@@ -16,7 +16,7 @@ public record BulkReferences(
     /// <summary>
     /// The partition key from the Documents table for the document these references are on
     /// </summary>
-    int ParentDocumentPartitionKey,
+    short ParentDocumentPartitionKey,
     /// <summary>
     /// The ReferentialIds on the Aliases table for all the references on this document
     /// </summary>
@@ -24,5 +24,5 @@ public record BulkReferences(
     /// <summary>
     /// The ReferentialPartitionKeys on the Aliases table for all the references on this document
     /// </summary>
-    int[] ReferentialPartitionKeys
+    short[] ReferentialPartitionKeys
 );

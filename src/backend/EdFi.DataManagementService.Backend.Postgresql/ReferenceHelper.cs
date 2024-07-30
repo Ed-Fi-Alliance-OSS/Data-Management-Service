@@ -17,7 +17,7 @@ internal static class ReferenceHelper
     public static DocumentReferenceIds DocumentReferenceIdsFrom(DocumentReference[] documentReferences)
     {
         Guid[] referentialIds = documentReferences.Select(x => x.ReferentialId.Value).ToArray();
-        int[] referentialPartitionKeys = documentReferences
+        short[] referentialPartitionKeys = documentReferences
             .Select(x => PartitionUtility.PartitionKeyFor(x.ReferentialId).Value)
             .ToArray();
         return new(referentialIds, referentialPartitionKeys);
@@ -30,7 +30,7 @@ internal static class ReferenceHelper
     public static DocumentReferenceIds DescriptorReferenceIdsFrom(DescriptorReference[] descriptorReferences)
     {
         Guid[] referentialIds = descriptorReferences.Select(x => x.ReferentialId.Value).ToArray();
-        int[] referentialPartitionKeys = descriptorReferences
+        short[] referentialPartitionKeys = descriptorReferences
             .Select(x => PartitionUtility.PartitionKeyFor(x.ReferentialId).Value)
             .ToArray();
         return new(referentialIds, referentialPartitionKeys);

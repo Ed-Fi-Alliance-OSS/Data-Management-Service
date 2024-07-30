@@ -14,7 +14,7 @@ public record Document(
     /// <summary>
     /// The partition key for this Document
     /// </summary>
-    int DocumentPartitionKey,
+    short DocumentPartitionKey,
     /// <summary>
     /// The externally known UUID for this Document
     /// </summary>

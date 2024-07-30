@@ -17,5 +17,5 @@ public record DocumentReferenceIds(
     /// <summary>
     /// The ReferentialPartitionKeys for all the references on this document
     /// </summary>
-    int[] ReferentialPartitionKeys
+    short[] ReferentialPartitionKeys
 );
