@@ -24,7 +24,7 @@ public abstract class DatabaseTest : DatabaseTestBase
     public async Task ConnectionSetup()
     {
         Connection = await DataSource!.OpenConnectionAsync();
-        Transaction = await Connection.BeginTransactionAsync(IsolationLevel.RepeatableRead);
+        Transaction = await Connection.BeginTransactionAsync(ConfiguredIsolationLevel);
     }
 
     [TearDown]
@@ -268,7 +268,7 @@ public abstract class DatabaseTest : DatabaseTestBase
 
         // Connection and transaction managed in this method for DB transaction 1
         await using var connection1 = await DataSource!.OpenConnectionAsync();
-        await using var transaction1 = await connection1.BeginTransactionAsync(IsolationLevel.RepeatableRead);
+        await using var transaction1 = await connection1.BeginTransactionAsync(ConfiguredIsolationLevel);
 
         // Use these for threads to signal each other for coordination
         using EventWaitHandle Transaction1Go = new AutoResetEvent(false);
@@ -289,7 +289,7 @@ public abstract class DatabaseTest : DatabaseTestBase
 
             // Step #3: Create new connection and begin DB transaction 2
             connection2 = await DataSource!.OpenConnectionAsync();
-            transaction2 = await connection2.BeginTransactionAsync(IsolationLevel.RepeatableRead);
+            transaction2 = await connection2.BeginTransactionAsync(ConfiguredIsolationLevel);
 
             // Step #4: Signal to transaction 1 thread to continue in parallel
             Transaction1Go?.Set();

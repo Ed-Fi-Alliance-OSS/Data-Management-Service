@@ -16,6 +16,7 @@
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.1" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Debug" Version="8.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="8.0.2" />
     <PackageVersion Include="Npgsql" Version="8.0.3" />
     <PackageVersion Include="Npgsql.DependencyInjection" Version="8.0.3" />
     <PackageVersion Include="Respawn" Version="6.2.1" />

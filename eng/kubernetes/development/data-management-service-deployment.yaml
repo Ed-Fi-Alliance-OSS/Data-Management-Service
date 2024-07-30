@@ -25,16 +25,11 @@ spec:
                 configMapKeyRef:
                   name: app-configmap
                   key: need-db-setup
-            - name: POSTGRES_USER
-              valueFrom:
-                configMapKeyRef:
-                  name: app-configmap
-                  key: postgres-user
-            - name: POSTGRES_PASSWORD
+            - name: DATABASE_CONNECTION_STRING
               valueFrom:
                 secretKeyRef:
                   name: app-secret
-                  key: postgres-password
+                  key: database-connection-string
             - name: POSTGRES_ADMIN_USER
               valueFrom:
                 configMapKeyRef:
@@ -70,6 +65,11 @@ spec:
                 configMapKeyRef:
                   name: app-configmap
                   key: bypass-string-coercion
+            - name: DATABASE_ISOLATION_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: app-configmap
+                  key: database-isolation-level
           livenessProbe:
             exec:
               command:
