@@ -95,9 +95,9 @@ internal class ApiService(
         );
 
     /// <summary>
-    /// The pipeline steps to satisfy a get by resource name request
+    /// The pipeline steps to satisfy a query request
     /// </summary>
-    private readonly Lazy<PipelineProvider> _getByKeySteps =
+    private readonly Lazy<PipelineProvider> _querySteps =
         new(
             () =>
                 new(
@@ -185,7 +185,7 @@ internal class ApiService(
     }
 
     /// <summary>
-    /// DMS entry point for all API GET by id requests
+    /// DMS entry point for all API GET requests
     /// </summary>
     public async Task<IFrontendResponse> Get(FrontendRequest frontendRequest)
     {
@@ -193,22 +193,20 @@ internal class ApiService(
 
         Match match = UtilityService.PathExpressionRegex().Match(frontendRequest.Path);
 
-        string documentUuidValue;
-        string? documentUuid = string.Empty;
+        string documentUuid = string.Empty;
 
         if (match.Success)
         {
-            documentUuidValue = match.Groups["documentUuid"].Value;
-            documentUuid = documentUuidValue == "" ? null : documentUuidValue;
+            documentUuid = match.Groups["documentUuid"].Value;
         }
 
-        if (documentUuid != null)
+        if (documentUuid != string.Empty)
         {
             await _getByIdSteps.Value.Run(pipelineContext);
         }
         else
         {
-            await _getByKeySteps.Value.Run(pipelineContext);
+            await _querySteps.Value.Run(pipelineContext);
         }
         return pipelineContext.FrontendResponse;
     }
