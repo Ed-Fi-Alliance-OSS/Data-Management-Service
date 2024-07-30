@@ -10,8 +10,8 @@ using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
-using static EdFi.DataManagementService.Backend.Postgresql.ReferenceHelper;
 using static EdFi.DataManagementService.Backend.Postgresql.Operation.SqlAction;
+using static EdFi.DataManagementService.Backend.Postgresql.ReferenceHelper;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
 
@@ -26,7 +26,30 @@ public interface IUpsertDocument
 
 public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
 {
-    private static readonly string _beforeInsertReferences = "BeforeInsertReferences";
+    /// <summary>
+    /// Determine whether invalid referentialIds were descriptors or references, and returns the
+    /// appropriate failure.
+    /// </summary>
+    private static UpsertResult ReportReferenceFailure(
+        DocumentInfo documentInfo,
+        Guid[] invalidReferentialIds
+    )
+    {
+        List<DescriptorReference> invalidDescriptorReferences = DescriptorReferencesWithReferentialIds(documentInfo
+            .DescriptorReferences, invalidReferentialIds);
+
+        if (invalidDescriptorReferences.Count != 0)
+        {
+            return new UpsertResult.UpsertFailureDescriptorReference(invalidDescriptorReferences);
+        }
+
+        ResourceName[] invalidResourceNames = ResourceNamesFrom(
+            documentInfo.DocumentReferences,
+            invalidReferentialIds
+        );
+
+        return new UpsertResult.UpsertFailureReference(invalidResourceNames);
+    }
 
     public async Task<UpsertResult> AsInsert(
         IUpsertRequest upsertRequest,
@@ -104,28 +127,30 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
             );
         }
 
-        if (documentReferenceIds.ReferentialIds.Length > 0 ||
-            descriptorReferenceIds.ReferentialIds.Length > 0)
+        if (
+            documentReferenceIds.ReferentialIds.Length > 0
+            || descriptorReferenceIds.ReferentialIds.Length > 0
+        )
         {
-            // Create a transaction save point in case insert into References fails due to invalid references
-            await transaction.SaveAsync(_beforeInsertReferences);
-            int numberOfRowsInserted = await InsertReferences(
+            Guid[] invalidReferentialIds = await InsertReferences(
                 new(
                     ParentDocumentPartitionKey: documentPartitionKey,
                     ParentDocumentId: newDocumentId,
-                    ReferentialIds: documentReferenceIds.ReferentialIds
-                        .Concat(descriptorReferenceIds.ReferentialIds).ToArray(),
-                    ReferentialPartitionKeys: documentReferenceIds.ReferentialPartitionKeys
-                        .Concat(descriptorReferenceIds.ReferentialPartitionKeys).ToArray()
+                    ReferentialIds: documentReferenceIds
+                        .ReferentialIds.Concat(descriptorReferenceIds.ReferentialIds)
+                        .ToArray(),
+                    ReferentialPartitionKeys: documentReferenceIds
+                        .ReferentialPartitionKeys.Concat(descriptorReferenceIds.ReferentialPartitionKeys)
+                        .ToArray()
                 ),
                 connection,
                 transaction
             );
 
-            if (numberOfRowsInserted != documentReferenceIds.ReferentialIds.Length +
-                descriptorReferenceIds.ReferentialIds.Length)
+            if (invalidReferentialIds.Length > 0)
             {
-                throw new InvalidOperationException("Database did not insert all references");
+                _logger.LogDebug("Foreign key violation on Upsert as Insert - {TraceId}", upsertRequest.TraceId);
+                return ReportReferenceFailure(upsertRequest.DocumentInfo, invalidReferentialIds);
             }
         }
 
@@ -154,36 +179,33 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
             transaction
         );
 
-        if (documentReferenceIds.ReferentialIds.Length > 0 ||
-            descriptorReferenceIds.ReferentialIds.Length > 0)
+        if (
+            documentReferenceIds.ReferentialIds.Length > 0
+            || descriptorReferenceIds.ReferentialIds.Length > 0
+        )
         {
             // First clear out all the existing references, as they may have changed
-            await DeleteReferencesByDocumentUuid(
-                documentPartitionKey,
-                documentUuid,
-                connection,
-                transaction
-            );
+            await DeleteReferencesByDocumentUuid(documentPartitionKey, documentUuid, connection, transaction);
 
-            // Create a transaction save point in case insert into References fails due to invalid references
-            await transaction.SaveAsync(_beforeInsertReferences);
-            int numberOfRowsInserted = await InsertReferences(
+            Guid[] invalidReferentialIds = await InsertReferences(
                 new(
                     ParentDocumentPartitionKey: documentPartitionKey,
                     ParentDocumentId: documentId,
-                    ReferentialIds: documentReferenceIds.ReferentialIds
-                        .Concat(descriptorReferenceIds.ReferentialIds).ToArray(),
-                    ReferentialPartitionKeys: documentReferenceIds.ReferentialPartitionKeys
-                        .Concat(descriptorReferenceIds.ReferentialPartitionKeys).ToArray()
+                    ReferentialIds: documentReferenceIds
+                        .ReferentialIds.Concat(descriptorReferenceIds.ReferentialIds)
+                        .ToArray(),
+                    ReferentialPartitionKeys: documentReferenceIds
+                        .ReferentialPartitionKeys.Concat(descriptorReferenceIds.ReferentialPartitionKeys)
+                        .ToArray()
                 ),
                 connection,
                 transaction
             );
 
-            if (numberOfRowsInserted != documentReferenceIds.ReferentialIds.Length +
-                descriptorReferenceIds.ReferentialIds.Length)
+            if (invalidReferentialIds.Length > 0)
             {
-                throw new InvalidOperationException("Database did not insert all references");
+                _logger.LogDebug("Foreign key violation on Upsert as Update - {TraceId}", upsertRequest.TraceId);
+                return ReportReferenceFailure(upsertRequest.DocumentInfo, invalidReferentialIds);
             }
         }
 
@@ -267,39 +289,6 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
         {
             _logger.LogDebug(pe, "Transaction conflict on Upsert - {TraceId}", upsertRequest.TraceId);
             return new UpsertResult.UpsertFailureWriteConflict();
-        }
-        catch (PostgresException pe)
-            when (pe.SqlState == PostgresErrorCodes.ForeignKeyViolation
-                  && pe.ConstraintName == ReferenceValidationFkName
-                 )
-        {
-            _logger.LogDebug(pe, "Foreign key violation on Upsert - {TraceId}", upsertRequest.TraceId);
-
-            // Restore transaction save point to continue using transaction
-            await transaction.RollbackAsync(_beforeInsertReferences);
-
-            Guid[] invalidReferentialIds = await FindInvalidReferentialIds(
-                documentReferenceIds,
-                descriptorReferenceIds,
-                connection,
-                transaction
-            );
-
-            var invalidDescriptorReferences =
-                upsertRequest.DocumentInfo.DescriptorReferences.Where(d =>
-                    invalidReferentialIds.Contains(d.ReferentialId.Value)).ToList();
-
-            if (invalidDescriptorReferences.Any())
-            {
-                return new UpsertResult.UpsertFailureDescriptorReference(invalidDescriptorReferences);
-            }
-
-            ResourceName[] invalidResourceNames = ResourceNamesFrom(
-                upsertRequest.DocumentInfo.DocumentReferences,
-                invalidReferentialIds
-            );
-
-            return new UpsertResult.UpsertFailureReference(invalidResourceNames);
         }
         catch (Exception ex)
         {
