@@ -1,0 +1,157 @@
+services:
+  zookeeper:
+    hostname: dms-zookeeper1
+    container_name: dms-zookeeper1
+    image: debezium/zookeeper:2.7.0.Final@sha256:47d988f5db17fc3493de683e456cfb8dc8cafcaae4d36d3885c778e9a39d62eb
+    ports:
+      - 2181:2181
+      - 2888:2888
+      - 3888:3888
+    volumes:
+      - zookeeper-logs:/zookeeper/logs
+      - zookeeper-data:/zookeeper/data
+      - zookeeper-txns:/zookeeper/txns
+      - zookeeper-conf:/zookeeper/conf
+
+  kafka:
+    hostname: dms-kafka1
+    container_name: dms-kafka1
+    image: debezium/kafka:2.7.0.Final@sha256:6b233b44f29522f8ce6018e4c95dae8be7688c82183d95da348a95bcedc6fcc6
+    ports:
+      - 9092:9092
+    links:
+      - zookeeper
+    environment:
+      - ZOOKEEPER_CONNECT=dms-zookeeper1:2181
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://dms-kafka1:9092
+    volumes:
+      - kafka-data:/kafka/data
+      - kafka-logs:/kafka/logs
+
+  # Kafka UI on port 8080 - https://docs.kafka-ui.provectus.io/
+  kafka-ui:
+    container_name: kafka-ui
+    image: provectuslabs/kafka-ui:latest
+    ports:
+      - 8080:8080
+    links:
+      - kafka
+      - kafka-postgresql-source
+      - kafka-opensearch-sink
+    environment:
+      DYNAMIC_CONFIG_ENABLED: 'true'
+
+  kafka-postgresql-source:
+    hostname: kafka-postgresql-source
+    container_name: kafka-postgresql-source
+    image: edfialliance/ed-fi-kafka-connect:dev
+    ports:
+      - 8083:8083
+    links:
+      - kafka
+      - zookeeper
+    environment:
+      BOOTSTRAP_SERVERS: dms-kafka1:9092
+      GROUP_ID: 1
+      CONFIG_STORAGE_TOPIC: debezium_source_config
+      OFFSET_STORAGE_TOPIC: debezium_source_offset
+      STATUS_STORAGE_TOPIC: debezium_source_status
+    volumes:
+      - kafka-postgresql-source-logs:/kafka/logs
+      - kafka-postgresql-source-config:/kafka/config
+
+  kafka-opensearch-sink:
+    hostname: kafka-opensearch-sink
+    container_name: kafka-opensearch-sink
+    image: edfialliance/ed-fi-kafka-connect:dev
+    ports:
+      - 8084:8083
+    links:
+      - kafka
+      - zookeeper
+    environment:
+      BOOTSTRAP_SERVERS: dms-kafka1:9092
+      GROUP_ID: 2
+      CONFIG_STORAGE_TOPIC: debezium_sink_config
+      OFFSET_STORAGE_TOPIC: debezium_sink_offset
+      STATUS_STORAGE_TOPIC: debezium_sink_status
+    volumes:
+      - kafka-opensearch-sink-logs:/kafka/logs
+      - kafka-opensearch-sink-config:/kafka/config
+
+  db:
+    hostname: dms-postgresql
+    container_name: dms-postgresql
+    image: postgres:16.3-alpine
+    restart: always
+    environment:
+    # If username and password not provided through and env file
+    # default to postgres/abcdefgh1!
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-abcdefgh1!}
+    ports:
+    # If no port provided through an env file, default to 5432
+      - ${POSTGRES_PORT:-5432}:5432
+    volumes:
+      - dms-postgresql:/var/lib/postgresql/data
+
+  opensearch:
+    image: opensearchproject/opensearch:2.15.0@sha256:1a6d62f4ff2215f66792362a56c64cea29ff6cbe700f95881857f045a6fea3c9
+    container_name: dms-opensearch
+    hostname: dms-opensearch
+    environment:
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: "abcdefgh1!"
+      OPENSEARCH_ADMIN_PASSWORD: "abcdefgh1!"
+      cluster.name: opensearch-cluster
+       # along with the memlock settings below, disables swapping
+      bootstrap.memory_lock: true
+      # minimum and maximum Java heap size, recommend setting both to 50% of system RAM
+      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+      discovery.type: single-node
+      # DISABLING TLS SECURITY:
+      # disables execution of install_demo_configuration.sh bundled with security plugin, which installs demo certificates and security configurations to OpenSearch
+      DISABLE_INSTALL_DEMO_CONFIG: true
+      # disables security plugin entirely in OpenSearch by setting plugins.security.disabled: true in opensearch.yml
+      DISABLE_SECURITY_PLUGIN: true
+    mem_limit: 2g
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536 # maximum number of open files for the OpenSearch user, set to at least 65536 on modern systems
+        hard: 65536
+    volumes:
+      - opensearch-data1:/usr/share/opensearch/data
+    ports:
+      - 9200:9200
+      - 9600:9600 # required for Performance Analyzer
+    restart: unless-stopped
+
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:latest
+    container_name: dms-opensearch-dashboards
+    ports:
+      - 5601:5601
+    expose:
+      - 5601
+    environment:
+      OPENSEARCH_ADMIN_PASSWORD: abcdefgh1!
+      OPENSEARCH_HOSTS: '["http://dms-opensearch:9200"]'
+       # disables security dashboards plugin in OpenSearch Dashboards, otherwise will have TLS errors
+      DISABLE_SECURITY_DASHBOARDS_PLUGIN: true
+    restart: unless-stopped
+
+volumes:
+  zookeeper-logs:
+  zookeeper-data:
+  zookeeper-txns:
+  zookeeper-conf:
+  kafka-data:
+  kafka-logs:
+  kafka-postgresql-source-logs:
+  kafka-postgresql-source-config:
+  kafka-opensearch-sink-logs:
+  kafka-opensearch-sink-config:
+  dms-postgresql:
+  opensearch-data1:

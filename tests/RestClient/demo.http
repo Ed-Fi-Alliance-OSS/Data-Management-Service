@@ -1,12 +1,29 @@
 @port = 5198
 
-### Note, no descriptor validation yet
+
+### Setup - POST Descriptors
+POST http://localhost:{{port}}/data/ed-fi/educationOrganizationCategoryDescriptors
+
+{
+    "namespace": "string",
+    "codeValue": "string",
+    "shortDescription": "string"
+}
+
+### Setup - POST Descriptors
+POST http://localhost:{{port}}/data/ed-fi/gradeLevelDescriptors
+
+{
+    "namespace": "string",
+    "codeValue": "string",
+    "shortDescription": "string"
+}
 
 ### Setup - POST School Year 2025
 POST http://localhost:{{port}}/data/ed-fi/schoolYearTypes
 
 {
-    "schoolYear": 2025,
+    "schoolYear": 2028,
     "currentSchoolYear": false,
     "schoolYearDescription": "Year 2025"
 }
@@ -15,16 +32,23 @@ POST http://localhost:{{port}}/data/ed-fi/schoolYearTypes
 POST http://localhost:{{port}}/data/ed-fi/schools
 
 {
-    "schoolId": 123,
+    "schoolId": 12345678,
     "nameOfInstitution": "School1",
     "educationOrganizationCategories": [
         {
-            "educationOrganizationCategoryDescriptor": "string"
+            "educationOrganizationCategoryDescriptor": "string#string"
         }
     ],
     "gradeLevels": [
         {
-            "gradeLevelDescriptor": "string"
+            "gradeLevelDescriptor": "string#string"
+        }
+    ],
+    "classPeriods": [
+        {
+            "classPeriodReference": {
+                "s": "b"
+            }
         }
     ]
 }

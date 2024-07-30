@@ -11,15 +11,13 @@ namespace EdFi.DataManagementService.Core.Middleware
 {
     /// <summary>
     /// For boolean and numeric properties that were submitted as strings, i.e. surrounded with double quotes,
-    /// this middleware tries to coerce those back to their proper ValueKind. 
+    /// this middleware tries to coerce those back to their proper type.
     /// </summary>
-    /// <param name="logger"></param>
-    /// <param name="bypassStringTypeCoercion">If true exit immediately without attempting coercion</param>
-    internal class CoerceStringTypeMiddleware(ILogger logger) : IPipelineStep
+    internal class CoerceFromStringsMiddleware(ILogger logger) : IPipelineStep
     {
         public async Task Execute(PipelineContext context, Func<Task> next)
         {
-            logger.LogDebug("Entering CoerceStringTypeMiddleware - {TraceId}", context.FrontendRequest.TraceId);
+            logger.LogDebug("Entering CoerceFromStringsMiddleware - {TraceId}", context.FrontendRequest.TraceId);
 
             foreach (var path in context.ResourceSchema.BooleanJsonPaths.Select(path => path.Value))
             {

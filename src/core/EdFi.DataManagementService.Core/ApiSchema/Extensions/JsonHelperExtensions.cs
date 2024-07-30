@@ -198,8 +198,7 @@ internal static class JsonHelperExtensions
     /// Helper to replace a boolean data type that was submitted as a string with its actual
     /// boolean value. Does not handle parsing failures as these will be dealt with in validation.
     /// </summary>
-    /// <param name="jsonNode"></param>
-    public static void TryCoerceBooleanToBoolean(this JsonNode jsonNode)
+    public static void TryCoerceStringToBoolean(this JsonNode jsonNode)
     {
         var jsonValue = jsonNode.AsValue();
         if (jsonValue.GetValueKind() == JsonValueKind.String)
@@ -217,7 +216,6 @@ internal static class JsonHelperExtensions
     /// Helper to replace a numeric data type that was submitted as a string with its actual
     /// numeric value. Does not handle parsing failures as these will be dealt with in validation.
     /// </summary>
-    /// <param name="jsonNode"></param>
     public static void TryCoerceStringToNumber(this JsonNode jsonNode)
     {
         var jsonValue = jsonNode.AsValue();
