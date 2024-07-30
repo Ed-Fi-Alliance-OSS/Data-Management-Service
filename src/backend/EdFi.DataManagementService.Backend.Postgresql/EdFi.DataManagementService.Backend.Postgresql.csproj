@@ -21,6 +21,9 @@
     <EmbeddedResource Include="Deploy\Scripts\0003_Create_Reference_Table.sql">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </EmbeddedResource>
+    <EmbeddedResource Include="Deploy\Scripts\0010_Create_Insert_References_Procedure.sql">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </EmbeddedResource>
     <EmbeddedResource Include="Deploy\Scripts\1000_Create_Reference_Validation_FKs.sql">
         <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </EmbeddedResource>

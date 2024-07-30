@@ -357,9 +357,10 @@ public static class SqlAction
     }
 
     /// <summary>
-    /// Insert a set of rows into the References table and return the number of rows affected
+    /// Attempt to insert references into the Reference table.
+    /// If any referentialId is invalid, rolls back and returns an array of invalid referentialIds.
     /// </summary>
-    public static async Task<int> InsertReferences(
+    public static async Task<Guid[]> InsertReferences(
         BulkReferences bulkReferences,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
@@ -373,31 +374,11 @@ public static class SqlAction
         long[] parentDocumentIds = new long[bulkReferences.ReferentialIds.Length];
         Array.Fill(parentDocumentIds, bulkReferences.ParentDocumentId);
 
-        int[] parentDocumentPartitionKeys = new int[bulkReferences.ReferentialIds.Length];
+        short[] parentDocumentPartitionKeys = new short[bulkReferences.ReferentialIds.Length];
         Array.Fill(parentDocumentPartitionKeys, bulkReferences.ParentDocumentPartitionKey);
 
-        // Use unnest() to bulk insert references, left join to find referenced documents ids
-        // or null if this is an invalid reference (and FK constraint is disabled)
         await using var command = new NpgsqlCommand(
-            @"INSERT INTO dms.Reference (
-                  ParentDocumentId,
-                  ParentDocumentPartitionKey,
-                  ReferentialId,
-                  ReferentialPartitionKey,
-                  ReferencedDocumentId,
-                  ReferencedDocumentPartitionKey
-              )
-              SELECT
-                  ids.documentId,
-                  ids.documentPartitionKey,
-                  ids.referentialId,
-                  ids.referentialPartitionKey,
-                  a.documentId,
-                  a.documentPartitionKey
-              FROM unnest($1, $2, $3, $4) AS
-                  ids(documentId, documentPartitionKey, referentialId, referentialPartitionKey)
-              LEFT JOIN dms.Alias a ON
-                  ids.referentialId = a.referentialId and ids.referentialPartitionKey = a.referentialPartitionKey",
+            @"SELECT dms.InsertReferences($1, $2, $3, $4)",
             connection,
             transaction
         )
@@ -412,48 +393,12 @@ public static class SqlAction
         };
 
         await command.PrepareAsync();
-        return await command.ExecuteNonQueryAsync();
-    }
-
-    /// <summary>
-    /// Given an array of referentialId guids and a parallel array of partition keys, returns
-    /// an array of invalid referentialId guids, if any.
-    /// </summary>
-    public static async Task<Guid[]> FindInvalidReferentialIds(
-        DocumentReferenceIds documentReferenceIds,
-        DocumentReferenceIds descriptorReferenceIds,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction
-    )
-    {
-        await using var command = new NpgsqlCommand(
-            @$"SELECT r.ReferentialId
-               FROM ROWS FROM
-                 (unnest($1::uuid[]), unnest($2::integer[]))
-                 AS r (ReferentialId, ReferentialPartitionKey)
-               WHERE NOT EXISTS (
-                 SELECT 1
-                 FROM dms.Alias a
-                 WHERE r.ReferentialId = a.ReferentialId
-                 AND r.ReferentialPartitionKey = a.ReferentialPartitionKey)",
-            connection,
-            transaction
-        )
-        {
-            Parameters =
-            {
-                new() { Value = documentReferenceIds.ReferentialIds.Concat(descriptorReferenceIds.ReferentialIds).ToArray() },
-                new() { Value = documentReferenceIds.ReferentialPartitionKeys.Concat(descriptorReferenceIds.ReferentialPartitionKeys).ToArray() },
-            }
-        };
-
-        await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
         List<Guid> result = [];
         while (await reader.ReadAsync())
         {
-            result.Add(reader.GetGuid(reader.GetOrdinal("ReferentialId")));
+            result.Add(reader.GetGuid(0));
         }
 
         return result.ToArray();

@@ -13,10 +13,10 @@ namespace EdFi.DataManagementService.Backend;
 public static class PartitionUtility
 {
     // Returns an integer in the range 0..15 from the last byte of a Guid (e.g. DocumentUuid, ReferentialId)
-    private static int PartitionKeyFor(Guid uuid)
+    private static short PartitionKeyFor(Guid uuid)
     {
         byte lastByte = uuid.ToByteArray()[^1];
-        return lastByte % 16;
+        return Convert.ToInt16(lastByte % 16);
     }
 
     // Returns an integer in the range 0..15 from the last byte of a DocumentUuid

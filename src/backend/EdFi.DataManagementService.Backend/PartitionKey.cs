@@ -8,4 +8,4 @@ namespace EdFi.DataManagementService.Backend;
 /// <summary>
 /// Database integer partition key as a Branded type
 /// </summary>
-public record PartitionKey(int Value);
+public record PartitionKey(short Value);

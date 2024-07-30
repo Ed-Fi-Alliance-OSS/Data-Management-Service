@@ -17,7 +17,7 @@ internal static class ReferenceHelper
     public static DocumentReferenceIds DocumentReferenceIdsFrom(DocumentReference[] documentReferences)
     {
         Guid[] referentialIds = documentReferences.Select(x => x.ReferentialId.Value).ToArray();
-        int[] referentialPartitionKeys = documentReferences
+        short[] referentialPartitionKeys = documentReferences
             .Select(x => PartitionUtility.PartitionKeyFor(x.ReferentialId).Value)
             .ToArray();
         return new(referentialIds, referentialPartitionKeys);
@@ -30,7 +30,7 @@ internal static class ReferenceHelper
     public static DocumentReferenceIds DescriptorReferenceIdsFrom(DescriptorReference[] descriptorReferences)
     {
         Guid[] referentialIds = descriptorReferences.Select(x => x.ReferentialId.Value).ToArray();
-        int[] referentialPartitionKeys = descriptorReferences
+        short[] referentialPartitionKeys = descriptorReferences
             .Select(x => PartitionUtility.PartitionKeyFor(x.ReferentialId).Value)
             .ToArray();
         return new(referentialIds, referentialPartitionKeys);
@@ -39,9 +39,11 @@ internal static class ReferenceHelper
     /// <summary>
     /// Returns the unique ResourceNames of all DocumentReferences that have the given ReferentialId Guids
     /// </summary>
-    public static ResourceName[] ResourceNamesFrom(DocumentReference[] documentReferences, Guid[] referentialIds)
+    public static ResourceName[] ResourceNamesFrom(
+        DocumentReference[] documentReferences,
+        Guid[] referentialIds
+    )
     {
-
         Dictionary<Guid, string> guidToResourceNameMap =
             new(
                 documentReferences.Select(x => new KeyValuePair<Guid, string>(
@@ -61,5 +63,17 @@ internal static class ReferenceHelper
         }
         return uniqueResourceNames.Select(x => new ResourceName(x)).ToArray();
     }
-}
 
+    /// <summary>
+    /// Returns a list of descriptor references filtered by referentialId
+    /// </summary>
+    public static List<DescriptorReference> DescriptorReferencesWithReferentialIds(
+        DescriptorReference[] descriptorReferences,
+        Guid[] referentialIds
+    )
+    {
+        return descriptorReferences
+            .Where(d => referentialIds.Contains(d.ReferentialId.Value))
+            .ToList();
+    }
+}
