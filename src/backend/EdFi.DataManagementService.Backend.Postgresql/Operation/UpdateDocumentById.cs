@@ -26,7 +26,30 @@ public interface IUpdateDocumentById
 
 public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDocumentById
 {
-    private static readonly string _beforeInsertReferences = "BeforeInsertReferences";
+    /// <summary>
+    /// Determine whether invalid referentialIds were descriptors or references, and returns the
+    /// appropriate failure.
+    /// </summary>
+    private static UpdateResult ReportReferenceFailure(
+        DocumentInfo documentInfo,
+        Guid[] invalidReferentialIds
+    )
+    {
+        List<DescriptorReference> invalidDescriptorReferences = DescriptorReferencesWithReferentialIds(documentInfo
+            .DescriptorReferences, invalidReferentialIds);
+
+        if (invalidDescriptorReferences.Count != 0)
+        {
+            return new UpdateResult.UpdateFailureDescriptorReference(invalidDescriptorReferences);
+        }
+
+        ResourceName[] invalidResourceNames = ResourceNamesFrom(
+            documentInfo.DocumentReferences,
+            invalidReferentialIds
+        );
+
+        return new UpdateResult.UpdateFailureReference(invalidResourceNames);
+    }
 
     /// <summary>
     /// Takes an UpdateRequest and connection + transaction and returns the result of an update operation.
@@ -134,9 +157,7 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
                             transaction
                         );
 
-                        // Create a transaction save point in case insert into References fails due to invalid references
-                        await transaction.SaveAsync(_beforeInsertReferences);
-                        int numberOfRowsInserted = await InsertReferences(
+                        Guid[] invalidReferentialIds = await InsertReferences(
                             new(
                                 ParentDocumentPartitionKey: documentPartitionKey.Value,
                                 ParentDocumentId: documentId,
@@ -149,10 +170,10 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
                             transaction
                         );
 
-                        if (numberOfRowsInserted != documentReferenceIds.ReferentialIds.Length +
-                            descriptorReferenceIds.ReferentialIds.Length)
+                        if (invalidReferentialIds.Length > 0)
                         {
-                            throw new InvalidOperationException("Database did not insert all references");
+                            _logger.LogDebug("Foreign key violation on Update - {TraceId}", updateRequest.TraceId);
+                            return ReportReferenceFailure(updateRequest.DocumentInfo, invalidReferentialIds);
                         }
                     }
 
@@ -178,39 +199,6 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
         {
             _logger.LogDebug(pe, "Transaction conflict on UpdateById - {TraceId}", updateRequest.TraceId);
             return new UpdateResult.UpdateFailureWriteConflict();
-        }
-        catch (PostgresException pe)
-            when (pe.SqlState == PostgresErrorCodes.ForeignKeyViolation
-                  && pe.ConstraintName == SqlAction.ReferenceValidationFkName
-                 )
-        {
-            _logger.LogDebug(pe, "Foreign key violation on Update - {TraceId}", updateRequest.TraceId);
-
-            // Restore transaction save point to continue using transaction
-            await transaction.RollbackAsync(_beforeInsertReferences);
-
-            Guid[] invalidReferentialIds = await FindInvalidReferentialIds(
-                documentReferenceIds,
-                descriptorReferenceIds,
-                connection,
-                transaction
-            );
-
-            var invalidDescriptorReferences =
-                updateRequest.DocumentInfo.DescriptorReferences.Where(d =>
-                    invalidReferentialIds.Contains(d.ReferentialId.Value)).ToList();
-
-            if (invalidDescriptorReferences.Any())
-            {
-                return new UpdateResult.UpdateFailureDescriptorReference(invalidDescriptorReferences);
-            }
-
-            ResourceName[] invalidResourceNames = ResourceNamesFrom(
-                updateRequest.DocumentInfo.DocumentReferences,
-                invalidReferentialIds
-            );
-
-            return new UpdateResult.UpdateFailureReference(invalidResourceNames);
         }
         catch (Exception ex)
         {

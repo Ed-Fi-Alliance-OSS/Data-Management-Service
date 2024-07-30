@@ -34,7 +34,7 @@ POST http://localhost:{{port}}/data/ed-fi/schools
 POST http://localhost:{{port}}/data/ed-fi/sessions
 
 {
-    "sessionName": "Session3",
+    "sessionName": "Session1",
     "schoolYearTypeReference": {
         "schoolYear": 1900
     },
@@ -97,7 +97,7 @@ POST http://localhost:{{port}}/data/ed-fi/accountabilityRatings
 }
 
 ### Delete School1, expect error
-DELETE http://localhost:{{port}}/data/ed-fi/schools/8168fcad-4bf3-4529-991a-2851b0dd1161
+DELETE http://localhost:{{port}}/data/ed-fi/schools/77c9aab4-2e6e-4987-9981-1baff1ba70fb
 
 
 ### Create Survey referencing Session1
@@ -119,10 +119,10 @@ POST http://localhost:{{port}}/data/ed-fi/surveys
 }
 
 ### Update Survey with invalid Session
-PUT http://localhost:{{port}}/data/ed-fi/surveys/299f629e-170e-4e23-bd5e-68abcfc46a7e
+PUT http://localhost:{{port}}/data/ed-fi/surveys/ae63728e-2f69-4609-bffd-a8179bc15d41
 
 {
-    "id": "299f629e-170e-4e23-bd5e-68abcfc46a7e",
+    "id": "ae63728e-2f69-4609-bffd-a8179bc15d41",
     "surveyIdentifier": "abc",
     "namespace": "defgh",
     "surveyTitle": "A Survey",

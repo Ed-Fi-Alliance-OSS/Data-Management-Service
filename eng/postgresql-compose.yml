@@ -10,8 +10,8 @@ services:
     image: postgres:16.3-alpine
     restart: always
     environment:
-      - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-P@ssW0rd}
+      - POSTGRES_USER=${POSTGRES_ADMIN_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_ADMIN_PASSWORD:-P@ssW0rd}
     ports:
       - ${POSTGRES_PORT:-5432}:5432
     volumes:

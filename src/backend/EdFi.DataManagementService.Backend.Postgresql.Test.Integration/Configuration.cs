@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 
+using System.Data;
 using Microsoft.Extensions.Configuration;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration
@@ -28,5 +29,8 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration
         }
 
         public static string? DatabaseConnectionString => Config().GetConnectionString("DatabaseConnection");
+
+        public static IsolationLevel IsolationLevel =>
+            Enum.Parse<IsolationLevel>(Config().GetSection("IsolationLevel").Value!);
     }
 }

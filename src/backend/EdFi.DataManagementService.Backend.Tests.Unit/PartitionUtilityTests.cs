@@ -7,7 +7,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
 
-namespace EdFi.DataManagementService.Core.Tests.Unit.Backend
+namespace EdFi.DataManagementService.Backend.Tests.Unit
 {
     [TestFixture]
     public class PartitionUtilityTests

@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Data;
 using EdFi.DataManagementService.Core.External.Backend;
 using FluentAssertions;
 using Npgsql;
@@ -419,7 +418,7 @@ public class DeleteTests : DatabaseTest
             _upsertResults.Add(await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!));
 
             await Transaction!.CommitAsync();
-            Transaction = await Connection!.BeginTransactionAsync(IsolationLevel.RepeatableRead);
+            Transaction = await Connection!.BeginTransactionAsync(ConfiguredIsolationLevel);
 
             _deleteResult = await CreateDeleteById()
                 .DeleteById(
@@ -494,7 +493,7 @@ public class DeleteTests : DatabaseTest
             _upsertResults.Add(await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!));
 
             await Transaction!.CommitAsync();
-            Transaction = await Connection!.BeginTransactionAsync(IsolationLevel.RepeatableRead);
+            Transaction = await Connection!.BeginTransactionAsync(ConfiguredIsolationLevel);
 
             _deleteResult = await CreateDeleteById()
                 .DeleteById(
@@ -568,7 +567,7 @@ public class DeleteTests : DatabaseTest
 
             await Transaction!.CommitAsync();
 
-            Transaction = await Connection!.BeginTransactionAsync(IsolationLevel.RepeatableRead);
+            Transaction = await Connection!.BeginTransactionAsync(ConfiguredIsolationLevel);
 
             _deleteResult = await CreateDeleteById()
                 .DeleteById(
