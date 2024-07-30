@@ -10,7 +10,7 @@ CREATE OR REPLACE FUNCTION dms.InsertReferences(
     parentDocumentPartitionKeys SMALLINT[],
     referentialIds UUID[],
     referentialPartitionKeys SMALLINT[]
-) RETURNS TABLE (referentialId UUID)
+) RETURNS TABLE (ReferentialId UUID)
 LANGUAGE plpgsql AS
 $$
 DECLARE
