@@ -43,9 +43,7 @@ internal class ValidateRepeatedPropertiesMiddleware(ILogger logger) : IPipelineS
                         kv => kv.Value.ToArray()
                     );
 
-                    FailureResponseWithErrors failureResponse;
-
-                    failureResponse = ForDataValidation(
+                    FailureResponseWithErrors failureResponse = ForDataValidation(
                         "Data validation failed. See 'validationErrors' for details.",
                         validationErrorsDict,
                         []
@@ -161,8 +159,7 @@ internal class ValidateRepeatedPropertiesMiddleware(ILogger logger) : IPipelineS
 
     public static bool IsStringNumeric(string str)
     {
-        double result;
-        return double.TryParse(str, NumberStyles.Float, NumberFormatInfo.CurrentInfo, out result);
+        return double.TryParse(str, NumberStyles.Float, NumberFormatInfo.CurrentInfo, out double _);
     }
 
     public static string AddOrdinalSuffix(string number)
