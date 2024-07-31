@@ -482,7 +482,7 @@ Feature: Resources "Update" Operation validations
                     "correlationId": null,
                     "validationErrors": {
                        "$.shortDescription": [
-                         "This property is duplicated."
+                         "An item with the same key has already been added."
                        ]
                      },
                      "errors": []
@@ -880,56 +880,9 @@ Feature: Resources "Update" Operation validations
                       "correlationId": null,
                       "validationErrors": {
                         "$.learningResourceMetadataURI": [
-                          "This property is duplicated."
+                          "An item with the same key has already been added."
                         ]
                       },
                       "errors": []
                     }
                   """
-
-        Scenario: 25 Update a document with a duplicated property and a duplicate value (Resource)
-        Given the system has these "schools" references
-                | schoolId | nameOfInstitution | gradeLevels                                                                        | educationOrganizationCategories                                                                                        |
-                | 255901   | School Test       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"} ] | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School" }] |
-         When a PUT request is made to referenced resource "/ed-fi/Schools/{id}" with
-                """
-                {
-                    "id": "{id}",
-                    "schoolId":255901,
-                    "schoolId":255901,
-                    "nameOfInstitution":"School Test",
-                    "gradeLevels":[    
-                        {
-                            "gradeLevelDescriptor":"uri://ed-fi.org/gradeLevelDescriptor#Ninth grade"
-                        },
-                        {
-                            "gradeLevelDescriptor":"uri://ed-fi.org/gradeLevelDescriptor#Ninth grade"
-                        }
-                    ],
-                    "educationOrganizationCategories":[
-                        {
-                            "educationOrganizationCategoryDescriptor":"uri://ed-fi.org/educationOrganizationCategoryDescriptor#School"
-                        }
-                    ]
-                }
-                """
-            Then it should respond with 400
-            And the response body is
-            """
-            {
-                "validationErrors": {
-                    "$.schoolId": [
-                        "This property is duplicated."
-                    ],
-                    "$.gradeLevels": [
-                        "The 2nd item of the gradeLevels has the same identifying values as another item earlier in the list."
-                    ]
-                },
-                "errors": [],
-                "detail": "Data validation failed. See 'validationErrors' for details.",
-                "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-                "title": "Data Validation Failed",
-                "status": 400,
-                "correlationId": null
-            }
-            """

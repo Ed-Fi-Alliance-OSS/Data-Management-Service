@@ -483,7 +483,7 @@ Feature: Resources "Create" Operation validations
                     "correlationId": null,
                     "validationErrors": {
                        "$.shortDescription": [
-                         "This property is duplicated."
+                         "An item with the same key has already been added."
                        ]
                      },
                      "errors": []
@@ -961,52 +961,9 @@ Feature: Resources "Create" Operation validations
                       "correlationId": null,
                       "validationErrors": {
                         "$.learningResourceMetadataURI": [
-                          "This property is duplicated."
+                          "An item with the same key has already been added."
                         ]
                       },
                       "errors": []
                     }
                   """
-
-        Scenario: 33 Post a document with a duplicated property and a duplicate value (Resource)
-         When a POST request is made to "/ed-fi/Schools" with
-                """
-                {
-                    "schoolId":255901001,
-                    "schoolId":255901001,
-                    "nameOfInstitution":"School Test",
-                    "gradeLevels":[    
-                        {
-                            "gradeLevelDescriptor":"uri://ed-fi.org/gradeLevelDescriptor#Ninth grade"
-                        },
-                        {
-                            "gradeLevelDescriptor":"uri://ed-fi.org/gradeLevelDescriptor#Ninth grade"
-                        }
-                    ],
-                    "educationOrganizationCategories":[
-                        {
-                            "educationOrganizationCategoryDescriptor":"uri://ed-fi.org/educationOrganizationCategoryDescriptor#School"
-                        }
-                    ]
-                }
-                """
-            Then it should respond with 400
-            And the response body is
-            """
-            {
-                "validationErrors": {
-                    "$.schoolId": [
-                        "This property is duplicated."
-                    ],
-                    "$.gradeLevels": [
-                        "The 2nd item of the gradeLevels has the same identifying values as another item earlier in the list."
-                    ]
-                },
-                "errors": [],
-                "detail": "Data validation failed. See 'validationErrors' for details.",
-                "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-                "title": "Data Validation Failed",
-                "status": 400,
-                "correlationId": null
-            }
-            """

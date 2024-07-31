@@ -16,16 +16,16 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
-public class ValidateRepeatedPropertiesMiddlewareTests
+public class ParseBodyMiddlewareTests
 {
     internal static IPipelineStep Middleware()
     {
-        return new ValidateRepeatedPropertiesMiddleware(NullLogger.Instance);
+        return new ParseBodyMiddleware(NullLogger.Instance);
     }
 
     [TestFixture]
     public class Given_Pipeline_Context_With_Duplicate_Property_On_First_Level
-        : ValidateRepeatedPropertiesMiddlewareTests
+        : ParseBodyMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -73,7 +73,7 @@ public class ValidateRepeatedPropertiesMiddlewareTests
                 ?.FrontendResponse.Body.Should()
                 .Contain(
                     """
-                    "validationErrors":{"$.schoolId":["This property is duplicated."]}
+                    "validationErrors":{"$.schoolId":["An item with the same key has already been added."]}
                     """
                 );
         }
@@ -81,7 +81,7 @@ public class ValidateRepeatedPropertiesMiddlewareTests
 
     [TestFixture]
     public class Given_Pipeline_Context_With_A_Collection_As_Duplicated_Property_On_First_Level
-        : ValidateRepeatedPropertiesMiddlewareTests
+        : ParseBodyMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -133,7 +133,7 @@ public class ValidateRepeatedPropertiesMiddlewareTests
                 ?.FrontendResponse.Body.Should()
                 .Contain(
                     """
-                    "validationErrors":{"$.gradeLevels":["This property is duplicated."]}
+                    "validationErrors":{"$.gradeLevels":["An item with the same key has already been added."]}
                     """
                 );
         }
@@ -141,7 +141,7 @@ public class ValidateRepeatedPropertiesMiddlewareTests
 
     [TestFixture]
     public class Given_Pipeline_Context_With_Duplicate_Property_Inside_Of_A_Collection
-        : ValidateRepeatedPropertiesMiddlewareTests
+        : ParseBodyMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -190,7 +190,7 @@ public class ValidateRepeatedPropertiesMiddlewareTests
                 ?.FrontendResponse.Body.Should()
                 .Contain(
                     """
-                    "validationErrors":{"$.classPeriods[1].classPeriodReference.classPeriodName":["This property is duplicated."]}
+                    "validationErrors":{"$.classPeriodName":["An item with the same key has already been added."]}
                     """
                 );
         }
@@ -198,7 +198,7 @@ public class ValidateRepeatedPropertiesMiddlewareTests
 
     [TestFixture]
     public class Given_Pipeline_Context_With_Same_Value_Inside_An_Array_Of_Properties
-        : ValidateRepeatedPropertiesMiddlewareTests
+        : ParseBodyMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -250,68 +250,7 @@ public class ValidateRepeatedPropertiesMiddlewareTests
                 ?.FrontendResponse.Body.Should()
                 .Contain(
                     """
-                    "validationErrors":{"$.gradeLevels":["This property is duplicated."]}
-                    """
-                );
-        }
-    }
-
-    [TestFixture]
-    public class Given_Pipeline_Context_With_Duplicate_Property_And_Same_Value_Inside_An_Array_Of_Properties
-        : ValidateRepeatedPropertiesMiddlewareTests
-    {
-        private PipelineContext _context = No.PipelineContext();
-
-        [SetUp]
-        public async Task Setup()
-        {
-            string jsonBody = """
-                              {
-                                "schoolId":255901001,
-                                "schoolId":255901001,
-                                "nameOfInstitution":"School Test",
-                                "gradeLevels":[
-                                    {
-                                        "gradeLevelDescriptor":"uri://ed-fi.org/gradeLevelDescriptor#Ninth grade"
-                                    }
-                                ],
-                                "gradeLevels":[
-                                  {
-                                      "gradeLevelDescriptor":"uri://ed-fi.org/gradeLevelDescriptor#Ninth grade"
-                                  }
-                                ],
-                                "educationOrganizationCategories":[
-                                    {
-                                        "educationOrganizationCategoryDescriptor":"uri://ed-fi.org/educationOrganizationCategoryDescriptor#School"
-                                    }
-                                ]
-                              }
-                              """;
-            var frontEndRequest = new FrontendRequest(
-                "ed-fi/schools",
-                Body: jsonBody,
-                QueryParameters: [],
-                new TraceId("traceId")
-            );
-            _context = new(frontEndRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, NullNext);
-        }
-
-        [Test]
-        public void It_returns_status_400()
-        {
-            _context?.FrontendResponse.StatusCode.Should().Be(400);
-        }
-
-        [Test]
-        public void It_returns_message_body_with_failure_duplicated_property()
-        {
-            _context?.FrontendResponse.Body.Should().Contain("Data Validation Failed");
-            _context
-                ?.FrontendResponse.Body.Should()
-                .Contain(
-                    """
-                    "validationErrors":{"$.schoolId":["This property is duplicated."],"$.gradeLevels":["This property is duplicated."]}
+                    "validationErrors":{"$.gradeLevels":["An item with the same key has already been added."]}
                     """
                 );
         }
@@ -319,7 +258,7 @@ public class ValidateRepeatedPropertiesMiddlewareTests
 
     [TestFixture]
     public class Given_Pipeline_Context_With_Duplicate_Property_On_First_Level_using_PUT
-        : ValidateRepeatedPropertiesMiddlewareTests
+        : ParseBodyMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
         private string id = Guid.NewGuid().ToString();
@@ -361,70 +300,7 @@ public class ValidateRepeatedPropertiesMiddlewareTests
                 ?.FrontendResponse.Body.Should()
                 .Contain(
                     """
-                    "validationErrors":{"$.firstName":["This property is duplicated."]}
-                    """
-                );
-        }
-    }
-
-    [TestFixture]
-    public class Given_Pipeline_Context_With_Duplicate_Property_And_Same_Value_Inside_An_Array_Of_Properties_Using_PUT
-        : ValidateRepeatedPropertiesMiddlewareTests
-    {
-        private PipelineContext _context = No.PipelineContext();
-        private string id = Guid.NewGuid().ToString();
-
-        [SetUp]
-        public async Task Setup()
-        {
-            string jsonBody = $$"""
-                                {
-                                  "id": "{{id}}",
-                                  "schoolId":255901001,
-                                  "schoolId":255901001,
-                                  "nameOfInstitution":"School Test",
-                                  "gradeLevels":[
-                                    {
-                                        "gradeLevelDescriptor":"uri://ed-fi.org/gradeLevelDescriptor#Ninth grade"
-                                    }
-                                  ],
-                                  "gradeLevels":[
-                                    {
-                                        "gradeLevelDescriptor":"uri://ed-fi.org/gradeLevelDescriptor#Ninth grade"
-                                    }
-                                  ],
-                                  "educationOrganizationCategories":[
-                                    {
-                                        "educationOrganizationCategoryDescriptor":"uri://ed-fi.org/educationOrganizationCategoryDescriptor#School"
-                                    }
-                                  ]
-                                }
-                                """;
-            var frontEndRequest = new FrontendRequest(
-                $"ed-fi/schools/{id}",
-                Body: jsonBody,
-                QueryParameters: [],
-                new TraceId("traceId")
-            );
-            _context = new(frontEndRequest, RequestMethod.PUT);
-            await Middleware().Execute(_context, NullNext);
-        }
-
-        [Test]
-        public void It_returns_status_400()
-        {
-            _context?.FrontendResponse.StatusCode.Should().Be(400);
-        }
-
-        [Test]
-        public void It_returns_message_body_with_failure_duplicated_property()
-        {
-            _context?.FrontendResponse.Body.Should().Contain("Data Validation Failed");
-            _context
-                ?.FrontendResponse.Body.Should()
-                .Contain(
-                    """
-                    "validationErrors":{"$.schoolId":["This property is duplicated."],"$.gradeLevels":["This property is duplicated."]}
+                    "validationErrors":{"$.firstName":["An item with the same key has already been added."]}
                     """
                 );
         }
