@@ -3,21 +3,29 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-#Requires -Version 7
 
 param(
-  [string]
-  $Key = "sampleKey",
+    [string]
+    $Key = "minimalKey",
 
-  [string]
-  $Secret = "sampleSecret",
+    [string]
+    $Secret = "minimalSecret",
 
-  # 8080 is the default k8s port
-  # 5198 is the default when running F5
-  [string]
-  $BaseUrl = "http://localhost:8080"
+    # 8080 is the default k8s port
+    # 5198 is the default when running F5
+    [string]
+    $BaseUrl = "http://localhost:8080",
+
+    # Use 5.0.0 even if we're using 5.1.0 Data Standard, because there is no 5.1.0 file yet.
+    [string]
+    $SampleDataVersion = "5.0.0",
+
+    # When false (default), only loads descriptors
+    [switch]
+    $FullDataSet
 )
 
+#Requires -Version 7
 $ErrorActionPreference = "Stop"
 
 Import-Module ../Package-Management.psm1 -Force
@@ -28,11 +36,14 @@ $paths = Initialize-ToolsAndDirectories
 $paths.SampleDataDirectory = Import-SampleData -Template "Southridge"
 
 $parameters = @{
-  BaseUrl = $BaseUrl
-  Key = $Key
-  Secret = $Secret
-  Paths = $paths
+    BaseUrl = $BaseUrl
+    Key     = $Key
+    Secret  = $Secret
+    Paths   = $paths
 }
 
 Write-Descriptors @parameters
-Write-PartialGrandBend  @parameters
+
+if ($FullDataSet) {
+    Write-PartialGrandBend  @parameters
+}
