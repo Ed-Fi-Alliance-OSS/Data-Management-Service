@@ -71,7 +71,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
 
         internal static IPipelineStep Middleware()
         {
-            return new CoerceStringTypeMiddleware(NullLogger.Instance);
+            return new CoerceFromStringsMiddleware(NullLogger.Instance);
         }
 
         internal PipelineContext Context(FrontendRequest frontendRequest, RequestMethod method)

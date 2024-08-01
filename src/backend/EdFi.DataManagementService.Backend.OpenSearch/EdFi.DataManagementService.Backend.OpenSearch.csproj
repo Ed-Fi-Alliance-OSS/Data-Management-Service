@@ -10,13 +10,14 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis" />
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle" >
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle">
         <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />
-    <PackageReference Include="SonarAnalyzer.CSharp" >
+    <PackageReference Include="OpenSearch.Client" />
+    <PackageReference Include="SonarAnalyzer.CSharp">
         <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         <PrivateAssets>all</PrivateAssets>
     </PackageReference>

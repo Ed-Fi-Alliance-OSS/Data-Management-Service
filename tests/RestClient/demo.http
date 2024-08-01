@@ -26,6 +26,13 @@ POST http://localhost:{{port}}/data/ed-fi/schools
         {
             "gradeLevelDescriptor": "string"
         }
+    ],
+    "classPeriods": [
+        {
+            "classPeriodReference": {
+                "s": "b"
+            }
+        }
     ]
 }
 
