@@ -1,0 +1,154 @@
+Feature: Resources "Read" Operation validations
+
+        Background:
+            Given the Data Management Service must receive a token issued by "http://localhost"
+              And user is already authorized
+              And a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+                  """
+                    {
+                        "codeValue": "Sick Leave",
+                        "description": "Sick Leave",
+                        "effectiveBeginDate": "2024-05-14",
+                        "effectiveEndDate": "2024-05-14",
+                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                        "shortDescription": "Sick Leave"
+                    }
+                  """
+             Then it should respond with 201 or 200
+
+        @ignore
+        Scenario: 01 Verify existing descriptors can be retrieved successfully
+             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors"
+             Then it should respond with 200
+              And the response body is
+                  """
+                    [
+                        {
+                            "id": "{id}",
+                            "codeValue": "Sick Leave",
+                            "description": "Sick Leave",
+                            "effectiveBeginDate": "2024-05-14",
+                            "effectiveEndDate": "2024-05-14",
+                            "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                            "shortDescription": "Sick Leave"
+                        }
+                    ]
+                  """
+
+        @ignore
+        Scenario: 02 Verify retrieving a single descriptor by ID
+             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                    {
+                      "id": "{id}",
+                      "codeValue": "Sick Leave",
+                      "description": "Sick Leave",
+                      "effectiveBeginDate": "2024-05-14",
+                      "effectiveEndDate": "2024-05-14",
+                      "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                      "shortDescription": "Sick Leave"
+                    }
+                  """
+
+        @ignore
+        Scenario: 03 Verify response code 404 when ID does not exist
+             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/123123123123"
+             Then it should respond with 404
+
+        @ignore
+        Scenario: 04 Verify array records content on GET All
+             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors"
+             Then it should respond with 200
+              And total of records should be 1
+
+        @ignore
+        Scenario: 05 Ensure clients can create a Descriptor with the required attributes
+             When a POST reques is made to "/ed-fi/disabilityDescriptors" with
+                  """
+                  {
+                      "namespace": "uri://ed-fi.org/DisabilityDescriptor",
+                      "codeValue": "Deaf-Blindness",
+                      "shortDescription": "Deaf-Blindness",
+                  }
+                  """
+             Then it should respond with 201
+
+        @ignore
+        Scenario: 06 Ensure clients can retrieve optional attributes from descriptors that have used them
+            Given the system has this "disabilityDescriptors" descriptor
+                  | codeValue              | namespace                            | shortDescription       |
+                  | Testing Deaf-Blindness | uri://ed-fi.org/DisabilityDescriptor | Testing Deaf-Blindness |
+             When a GET request is made to "/ed-fi/disabilityDescriptors/{id}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                      "id": "{id}",
+                      "namespace": "uri://ed-fi.org/DisabilityDescriptor",
+                      "codeValue": "Testing Deaf-Blindness",
+                      "shortDescription": "Testing Deaf-Blindness",
+                      "description": "Testing Deaf-Blindness",
+                      "effectiveBeginDate": "2023-07-24",
+                      "effectiveEndDate" "2030-07-24"
+                  }
+                  """
+
+        @ignore
+        Scenario: 07 Ensure clients can retrieve a descriptor by requesting through a valid codeValue
+            Given the system has this "disabilityDescriptors" descriptor
+                  | codeValue      | namespace                            | shortDescription |
+                  | Deaf-Blindness | uri://ed-fi.org/DisabilityDescriptor | Deaf-Blindness   |
+             When a GET request is made to "/ed-fi/disabilityDescriptors/?codeValue=Deaf-Blindness"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [
+                      {
+                          "id": "{id}",
+                          "codeValue": "Deaf-Blindness",
+                          "description": "Deaf-Blindness",
+                          "namespace": "uri://ed-fi.org/DisabilityDescriptor",
+                          "shortDescription": "Deaf-Blindness",
+                      }
+                  ]
+                  """
+
+        @ignore
+        Scenario: 08 Ensure clients cannot retrieve a descriptor by requesting through a non existing codeValue
+             When a GET request is made to "/ed-fi/disabilityDescriptors?codeValue=Test"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  []
+                  """
+
+        @ignore
+        Scenario: 09 Ensure clients can retrieve a descriptor by requesting through a valid namespace
+            Given the system has this "disabilityDescriptors" descriptor
+                  | codeValue      | namespace                            | shortDescription |
+                  | Deaf-Blindness | uri://ed-fi.org/DisabilityDescriptor | Deaf-Blindness   |
+             When a GET request is made to "/ed-fi/disabilityDescriptors?namespace%3Duri%3A%2F%2Fed-fi.org%2FDisabilityDescriptor"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [
+                      {
+                          "id": "{id}",
+                          "codeValue": "Deaf-Blindness",
+                          "description": "Deaf-Blindness",
+                          "namespace": "uri://ed-fi.org/DisabilityDescriptor",
+                          "shortDescription": "Deaf-Blindness",
+                      }
+                  ]
+                  """
+
+        @ignore
+        Scenario: 10 Ensure clients cannot retrieve a descriptor by requesting through a non existing namespace
+             When a GET request is made to "/ed-fi/disabilityDescriptors?namespace%3Duri%3A%2F%2Fed-fi.org%2FDisabilityDescriptorFake"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  []
+                  """
