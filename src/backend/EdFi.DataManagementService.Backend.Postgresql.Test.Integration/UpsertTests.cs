@@ -176,10 +176,10 @@ public class UpsertTests : DatabaseTest
         public async Task It_should_be_the_1st_transaction_document_found_by_get()
         {
             IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
-            GetResult? _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
+            GetResult? getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
 
-            (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
-            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":4");
+            (getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
+            (getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":4");
         }
     }
 
@@ -233,13 +233,13 @@ public class UpsertTests : DatabaseTest
         {
             _upsertResult1!.Should().BeOfType<UpsertResult.InsertSuccess>();
 
-            GetResult? _getResult = await CreateGetById()
+            GetResult? getResult = await CreateGetById()
                 .GetById(
                     CreateGetRequest(_defaultResourceName, _documentUuidGuid1),
                     Connection!,
                     Transaction!
                 );
-            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":1");
+            (getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":1");
         }
 
         [Test]
@@ -247,13 +247,13 @@ public class UpsertTests : DatabaseTest
         {
             _upsertResult2!.Should().BeOfType<UpsertResult.InsertSuccess>();
 
-            GetResult? _getResult = await CreateGetById()
+            GetResult? getResult = await CreateGetById()
                 .GetById(
                     CreateGetRequest(_defaultResourceName, _documentUuidGuid2),
                     Connection!,
                     Transaction!
                 );
-            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":2");
+            (getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":2");
         }
     }
 
@@ -327,10 +327,10 @@ public class UpsertTests : DatabaseTest
         public async Task It_should_be_the_1st_updated_document_found_by_get()
         {
             IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
-            GetResult? _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
+            GetResult? getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
 
-            (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
-            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":7");
+            (getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
+            (getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":7");
         }
     }
 
