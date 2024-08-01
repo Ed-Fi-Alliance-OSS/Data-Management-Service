@@ -51,13 +51,16 @@ namespace EdFi.DataManagementService.Core.Middleware
         public async Task Execute(PipelineContext context, Func<Task> next)
         {
             _logger.LogDebug("Entering ParseBodyMiddleware - {TraceId}", context.FrontendRequest.TraceId);
-            string errorMessage = "A non-empty request body is required.";
 
             try
             {
                 if (string.IsNullOrWhiteSpace(context.FrontendRequest.Body))
                 {
-                    ErrorResponse(errorMessage);
+                    context.FrontendResponse = new FrontendResponse(
+                        StatusCode: 400,
+                        GenerateFrontendErrorResponse("A non-empty request body is required."),
+                        Headers: []
+                    );
                     return;
                 }
 
@@ -65,11 +68,6 @@ namespace EdFi.DataManagementService.Core.Middleware
 
                 Trace.Assert(body != null, "Unable to parse JSON");
 
-                if (string.IsNullOrWhiteSpace(body.ToString()))
-                {
-                    ErrorResponse(errorMessage);
-                    return;
-                }
                 context.ParsedBody = body;
             }
             catch (Exception ex)
@@ -87,15 +85,6 @@ namespace EdFi.DataManagementService.Core.Middleware
                 );
 
                 return;
-            }
-
-            void ErrorResponse(string message)
-            {
-                context.FrontendResponse = new FrontendResponse(
-                    StatusCode: 400,
-                    GenerateFrontendErrorResponse(message),
-                    Headers: []
-                );
             }
 
             await next();

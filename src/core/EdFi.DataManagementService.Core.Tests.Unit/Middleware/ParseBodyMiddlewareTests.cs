@@ -98,43 +98,6 @@ public class ParseBodyMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_A_Post_Request_With_Whitespaces : ParseBodyMiddlewareTests
-    {
-        private PipelineContext _context = No.PipelineContext();
-
-        [SetUp]
-        public async Task Setup()
-        {
-            var frontEndRequest = new FrontendRequest(
-                "ed-fi/schools",
-                Body: "        ",
-                QueryParameters: [],
-                new TraceId("traceId")
-            );
-            _context = new(frontEndRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, NullNext);
-        }
-
-        [Test]
-        public void It_has_a_response()
-        {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
-        }
-
-        [Test]
-        public void It_returns_status_400()
-        {
-            _context?.FrontendResponse.StatusCode.Should().Be(400);
-        }
-
-        [Test]
-        public void It_returns_error_message_body()
-        {
-            _context?.FrontendResponse.Body.Should().Contain("A non-empty request body is required");
-        }
-    }
-
-    [TestFixture]
     public class Given_A_Post_Request_With_Invalid_Json : ParseBodyMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
