@@ -24,6 +24,6 @@ if($Update) {
 }
 
 Write-Output "Starting Measure for $Template..."
-$timing = Measure-Command { Invoke-Expression "./Invoke-Load$Template.ps1"  }
+$timing = Measure-Command { Invoke-Expression "./Invoke-Load$($Template).ps1" | Tee-Object ./$($Template).log }
 
 Write-Output "Total Time: $timing"
