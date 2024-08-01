@@ -16,20 +16,24 @@ param(
     $Update,
 
     [string]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('ReviewUnusedParameter', '', Justification = 'false positive')]
     $Key = "minimalKey",
 
     [string]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('ReviewUnusedParameter', '', Justification = 'false positive')]
     $Secret = "minimalSecret",
 
     # 8080 is the default k8s port
     # 5198 is the default when running F5
     [string]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('ReviewUnusedParameter', '', Justification = 'false positive')]
     $BaseUrl = "http://localhost:8080",
     # For ODS/API. Don't run with self-signed SSL, as the bulk loader won't like that.
     #$BaseUrl = "http://localhost/api",
 
     # When false (default), only loads descriptors
     [switch]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('ReviewUnusedParameter', '', Justification = 'false positive')]
     $FullDataSet
 )
 
