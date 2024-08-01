@@ -167,10 +167,9 @@ public class UpsertTests : DatabaseTest
         }
 
         [Test]
-        [Ignore("DMS-296 will resolve intermittent serialization failures causing UnknownFailure")]
-        public void It_should_be_a_write_conflict_for_2nd_transaction()
+        public void It_should_be_an_identity_conflict_for_2nd_transaction()
         {
-            _upsertResult2!.Should().BeOfType<UpsertResult.UpsertFailureWriteConflict>();
+            _upsertResult2!.Should().BeOfType<UpsertResult.UpsertFailureIdentityConflict>();
         }
 
         [Test]
@@ -319,7 +318,6 @@ public class UpsertTests : DatabaseTest
         }
 
         [Test]
-        [Ignore("DMS-296 will resolve intermittent serialization failures causing UnknownFailure")]
         public void It_should_be_a_write_conflict_for_2nd_transaction()
         {
             _upsertResult2!.Should().BeOfType<UpsertResult.UpsertFailureWriteConflict>();

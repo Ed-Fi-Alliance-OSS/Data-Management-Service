@@ -218,7 +218,6 @@ public class UpdateTests : DatabaseTest
         }
 
         [Test]
-        [Ignore("DMS-296 will resolve intermittent serialization failures causing UnknownFailure")]
         public void It_should_be_a_conflict_failure_for_2nd_transaction()
         {
             _updateResult2!.Should().BeOfType<UpdateResult.UpdateFailureWriteConflict>();
@@ -551,7 +550,6 @@ public class UpdateTests : DatabaseTest
         }
 
         [Test]
-        [Ignore("DMS-296 will resolve intermittent serialization failures causing UnknownFailure")]
         public void It_should_be_a_conflict_failure_for_2nd_transaction()
         {
             _updateResult2!.Should().BeOfType<UpdateResult.UpdateFailureWriteConflict>();
