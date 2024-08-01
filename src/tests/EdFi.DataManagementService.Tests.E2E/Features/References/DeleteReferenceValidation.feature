@@ -32,9 +32,15 @@ Feature: Delete reference validation
                   }
                   """
 
-        @ignore
         Scenario: 02 Ensure clients cannot delete a descriptor that is used by another item
-            Given Education Organization Category Descriptor School
+            Given a POST request is made to "ed-fi/educationOrganizationCategoryDescriptors/" with
+            """
+            {
+                "codeValue": "school",
+                "namespace": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
+                "shortDescription": "school"
+            }
+            """
              When a DELETE request is made to "ed-fi/educationOrganizationCategoryDescriptors/{id}"
              Then it should respond with 409
               And the response body is
