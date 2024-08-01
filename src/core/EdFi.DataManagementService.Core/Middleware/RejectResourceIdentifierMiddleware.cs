@@ -52,9 +52,9 @@ namespace EdFi.DataManagementService.Core.Middleware
                     );
                     return;
                 }
-
-                await next();
             }
+
+            await next();
 
             bool PropertyExists(JsonNode? jsonNode, string propertyName)
             {

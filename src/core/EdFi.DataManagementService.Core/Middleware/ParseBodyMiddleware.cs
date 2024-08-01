@@ -7,7 +7,6 @@ using System.Diagnostics;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
@@ -21,6 +20,19 @@ namespace EdFi.DataManagementService.Core.Middleware
             new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
         public static string GenerateFrontendErrorResponse(string errorDetail)
+        {
+            string[] errors = { errorDetail };
+
+            var response = ForBadRequest(
+                "The request could not be processed. See 'errors' for details.",
+                [],
+                errors
+            );
+
+            return JsonSerializer.Serialize(response, _serializerOptions);
+        }
+
+        public static string GenerateFrontendValidationErrorResponse(string errorDetail)
         {
             var validationErrors = new Dictionary<string, string[]>();
 
@@ -39,32 +51,51 @@ namespace EdFi.DataManagementService.Core.Middleware
         public async Task Execute(PipelineContext context, Func<Task> next)
         {
             _logger.LogDebug("Entering ParseBodyMiddleware - {TraceId}", context.FrontendRequest.TraceId);
+            string errorMessage = "A non-empty request body is required.";
 
-            if (context.FrontendRequest.Body != null)
+            try
             {
-                try
+                if (string.IsNullOrWhiteSpace(context.FrontendRequest.Body))
                 {
-                    JsonNode? body = JsonNode.Parse(context.FrontendRequest.Body);
-
-                    Trace.Assert(body != null, "Unable to parse JSON");
-
-                    context.ParsedBody = body;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(
-                        ex,
-                        "Unable to parse the request body as JSON - {TraceId}",
-                        context.FrontendRequest.TraceId
-                    );
-
-                    context.FrontendResponse = new FrontendResponse(
-                        StatusCode: 400,
-                        GenerateFrontendErrorResponse(ex.Message),
-                        Headers: []
-                    );
+                    ErrorResponse(errorMessage);
                     return;
                 }
+
+                JsonNode? body = JsonNode.Parse(context.FrontendRequest.Body);
+
+                Trace.Assert(body != null, "Unable to parse JSON");
+
+                if (string.IsNullOrWhiteSpace(body.ToString()))
+                {
+                    ErrorResponse(errorMessage);
+                    return;
+                }
+                context.ParsedBody = body;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(
+                    ex,
+                    "Unable to parse the request body as JSON - {TraceId}",
+                    context.FrontendRequest.TraceId
+                );
+
+                context.FrontendResponse = new FrontendResponse(
+                    StatusCode: 400,
+                    GenerateFrontendValidationErrorResponse(ex.Message),
+                    Headers: []
+                );
+
+                return;
+            }
+
+            void ErrorResponse(string message)
+            {
+                context.FrontendResponse = new FrontendResponse(
+                    StatusCode: 400,
+                    GenerateFrontendErrorResponse(message),
+                    Headers: []
+                );
             }
 
             await next();
