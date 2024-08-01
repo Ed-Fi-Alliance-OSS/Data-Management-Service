@@ -20,8 +20,6 @@ internal class ParseBodyMiddleware(ILogger logger) : IPipelineStep
     private static readonly JsonSerializerOptions _serializerOptions =
         new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
-    private const string TestForDuplicateObjectKeyWorkaround = "Test";
-
     public static string GenerateFrontendErrorResponse(string errorDetail)
     {
         var validationErrors = new Dictionary<string, string[]>();
@@ -50,38 +48,7 @@ internal class ParseBodyMiddleware(ILogger logger) : IPipelineStep
 
                 Trace.Assert(body != null, "Unable to parse JSON");
 
-                // Parse did not find errors in repeated values, it is identified until an attempt is made to use the JsonNode
-                // Please see https://github.com/dotnet/runtime/issues/70604 for information on the JsonNode bug this code is working-around.
-                _ = body[TestForDuplicateObjectKeyWorkaround];
-                ValidateJson(body);
-
                 context.ParsedBody = body;
-            }
-            catch (ArgumentException ae)
-            {
-                var propertyNameMatch = Regex.Match(ae.Message, @"Key: (\w+) \(Parameter 'propertyName'\)");
-                var propertyName = propertyNameMatch.Success ? propertyNameMatch.Groups[1].Value : "unknown";
-
-                var validationErrors = new Dictionary<string, string[]>
-                {
-                    { $"$.{propertyName}", new[] { "An item with the same key has already been added." } }
-                };
-
-                logger.LogDebug(ae, "Duplicate key found - {TraceId}", context.FrontendRequest.TraceId);
-
-                context.FrontendResponse = new FrontendResponse(
-                    StatusCode: 400,
-                    JsonSerializer.Serialize(
-                        ForDataValidation(
-                            "Data validation failed. See 'validationErrors' for details.",
-                            validationErrors,
-                            []
-                        ),
-                        _serializerOptions
-                    ),
-                    Headers: []
-                );
-                return;
             }
             catch (Exception ex)
             {
@@ -99,36 +66,6 @@ internal class ParseBodyMiddleware(ILogger logger) : IPipelineStep
                 return;
             }
         }
-
         await next();
-    }
-
-    private void ValidateJson(JsonNode node)
-    {
-        if (node is JsonObject jsonObject)
-        {
-            var keys = new HashSet<string>();
-            foreach (var prop in jsonObject)
-            {
-                if (!keys.Add(prop.Key))
-                {
-                    throw new ArgumentException($"Duplicate key '{prop.Key}' found.");
-                }
-                if (prop.Value != null)
-                {
-                    ValidateJson(prop.Value);
-                }
-            }
-        }
-        else if (node is JsonArray jsonArray)
-        {
-            foreach (var item in jsonArray)
-            {
-                if (item != null)
-                {
-                    ValidateJson(item);
-                }
-            }
-        }
     }
 }
