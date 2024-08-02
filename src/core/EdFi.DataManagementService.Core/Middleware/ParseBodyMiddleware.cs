@@ -7,65 +7,67 @@ using System.Diagnostics;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
 
-namespace EdFi.DataManagementService.Core.Middleware;
-
-internal class ParseBodyMiddleware(ILogger logger) : IPipelineStep
+namespace EdFi.DataManagementService.Core.Middleware
 {
-    private static readonly JsonSerializerOptions _serializerOptions =
-        new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
-
-    public static string GenerateFrontendErrorResponse(string errorDetail)
+    internal class ParseBodyMiddleware(ILogger _logger) : IPipelineStep
     {
-        var validationErrors = new Dictionary<string, string[]>();
+        private static readonly JsonSerializerOptions _serializerOptions =
+            new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
-        var value = new List<string> { errorDetail };
-        validationErrors.Add("$.", value.ToArray());
-
-        var response = ForDataValidation(
-            "Data validation failed. See 'validationErrors' for details.",
-            validationErrors,
-            []
-        );
-
-        return JsonSerializer.Serialize(response, _serializerOptions);
-    }
-
-    public async Task Execute(PipelineContext context, Func<Task> next)
-    {
-        logger.LogDebug("Entering ParseBodyMiddleware - {TraceId}", context.FrontendRequest.TraceId);
-
-        if (context.FrontendRequest.Body != null)
+        public static string GenerateFrontendErrorResponse(string errorDetail)
         {
-            try
-            {
-                JsonNode? body = JsonNode.Parse(context.FrontendRequest.Body);
+            var validationErrors = new Dictionary<string, string[]>();
 
-                Trace.Assert(body != null, "Unable to parse JSON");
+            var value = new List<string> { errorDetail };
+            validationErrors.Add("$.", value.ToArray());
 
-                context.ParsedBody = body;
-            }
-            catch (Exception ex)
-            {
-                logger.LogDebug(
-                    ex,
-                    "Unable to parse the request body as JSON - {TraceId}",
-                    context.FrontendRequest.TraceId
-                );
+            var response = ForDataValidation(
+                "Data validation failed. See 'validationErrors' for details.",
+                validationErrors,
+                []
+            );
 
-                context.FrontendResponse = new FrontendResponse(
-                    StatusCode: 400,
-                    GenerateFrontendErrorResponse(ex.Message),
-                    Headers: []
-                );
-                return;
-            }
+            return JsonSerializer.Serialize(response, _serializerOptions);
         }
-        await next();
+
+        public async Task Execute(PipelineContext context, Func<Task> next)
+        {
+            _logger.LogDebug("Entering ParseBodyMiddleware - {TraceId}", context.FrontendRequest.TraceId);
+
+            if (context.FrontendRequest.Body != null)
+            {
+                try
+                {
+                    JsonNode? body = JsonNode.Parse(context.FrontendRequest.Body);
+
+                    Trace.Assert(body != null, "Unable to parse JSON");
+
+                    context.ParsedBody = body;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(
+                        ex,
+                        "Unable to parse the request body as JSON - {TraceId}",
+                        context.FrontendRequest.TraceId
+                    );
+
+                    context.FrontendResponse = new FrontendResponse(
+                        StatusCode: 400,
+                        GenerateFrontendErrorResponse(ex.Message),
+                        Headers: []
+                    );
+                    return;
+                }
+            }
+
+            await next();
+        }
     }
 }
