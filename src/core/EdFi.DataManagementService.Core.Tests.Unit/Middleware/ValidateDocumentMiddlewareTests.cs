@@ -124,43 +124,6 @@ public class ValidateDocumentMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_An_Empty_Body : ValidateDocumentMiddlewareTests
-    {
-        private PipelineContext _context = No.PipelineContext();
-
-        [SetUp]
-        public async Task Setup()
-        {
-            var frontEndRequest = new FrontendRequest(
-                "ed-fi/schools",
-                Body: null,
-                QueryParameters: [],
-                new TraceId("traceId")
-            );
-            _context = Context(frontEndRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, Next());
-        }
-
-        [Test]
-        public void It_has_a_response()
-        {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
-        }
-
-        [Test]
-        public void It_returns_status_400()
-        {
-            _context?.FrontendResponse.StatusCode.Should().Be(400);
-        }
-
-        [Test]
-        public void It_returns_message_body()
-        {
-            _context?.FrontendResponse.Body.Should().Contain("A non-empty request body is required");
-        }
-    }
-
-    [TestFixture]
     public class Given_A_Request_With_Overposted_Property : ValidateDocumentMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();

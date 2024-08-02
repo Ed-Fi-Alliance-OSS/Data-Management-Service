@@ -39,11 +39,10 @@ internal class ApiService(
     /// The pipeline steps to satisfy an upsert request
     /// </summary>
     private readonly Lazy<PipelineProvider> _upsertSteps =
-        new(
-            () =>
-            {
-                var steps = new List<IPipelineStep>();
-                steps.AddRange(
+        new(() =>
+        {
+            var steps = new List<IPipelineStep>();
+            steps.AddRange(
                 [
                     new CoreLoggingMiddleware(_logger),
                     new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
@@ -53,28 +52,32 @@ internal class ApiService(
                     new DuplicatePropertiesMiddleware(_logger),
                     new ValidateEndpointMiddleware(_logger)
                 ]);
+                    new ValidateEndpointMiddleware(_logger),
+                    new RejectResourceIdentifierMiddleware(_logger)
+                ]
+            );
 
-                // CoerceStringTypeMiddleware should be immediately before ValidateDocumentMiddleware
-                if (_appSettings.Value.BypassStringTypeCoercion)
-                {
-                    _logger.LogDebug("Bypassing CoerceStringTypeMiddleware");
-                }
-                else
-                {
-                    steps.Add(new CoerceStringTypeMiddleware(_logger));
-                }
+            // CoerceStringTypeMiddleware should be immediately before ValidateDocumentMiddleware
+            if (_appSettings.Value.BypassStringTypeCoercion)
+            {
+                _logger.LogDebug("Bypassing CoerceStringTypeMiddleware");
+            }
+            else
+            {
+                steps.Add(new CoerceStringTypeMiddleware(_logger));
+            }
 
-                steps.AddRange(
+            steps.AddRange(
                 [
                     new ValidateDocumentMiddleware(_logger, _documentValidator),
                     new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
                     new BuildResourceInfoMiddleware(_logger),
                     new ExtractDocumentInfoMiddleware(_logger),
                     new UpsertHandler(_documentStoreRepository, _logger)
-                ]);
-                return new PipelineProvider(steps);
-            }
-        );
+                ]
+            );
+            return new PipelineProvider(steps);
+        });
 
     /// <summary>
     /// The pipeline steps to satisfy a get by id request
@@ -119,11 +122,10 @@ internal class ApiService(
     /// The pipeline steps to satisfy an update request
     /// </summary>
     private readonly Lazy<PipelineProvider> _updateSteps =
-        new(
-            () =>
-            {
-                var steps = new List<IPipelineStep>();
-                steps.AddRange(
+        new(() =>
+        {
+            var steps = new List<IPipelineStep>();
+            steps.AddRange(
                 [
                     new CoreLoggingMiddleware(_logger),
                     new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
@@ -132,19 +134,20 @@ internal class ApiService(
                     new ParseBodyMiddleware(_logger),
                     new DuplicatePropertiesMiddleware(_logger),
                     new ValidateEndpointMiddleware(_logger)
-                ]);
+                ]
+            );
 
-                // CoerceStringTypeMiddleware should be immediately before ValidateDocumentMiddleware
-                if (_appSettings.Value.BypassStringTypeCoercion)
-                {
-                    _logger.LogDebug("Bypassing CoerceStringTypeMiddleware");
-                }
-                else
-                {
-                    steps.Add(new CoerceStringTypeMiddleware(_logger));
-                }
+            // CoerceStringTypeMiddleware should be immediately before ValidateDocumentMiddleware
+            if (_appSettings.Value.BypassStringTypeCoercion)
+            {
+                _logger.LogDebug("Bypassing CoerceStringTypeMiddleware");
+            }
+            else
+            {
+                steps.Add(new CoerceStringTypeMiddleware(_logger));
+            }
 
-                steps.AddRange(
+            steps.AddRange(
                 [
                     new ValidateDocumentMiddleware(_logger, _documentValidator),
                     new ValidateMatchingDocumentUuidsMiddleware(_logger, matchingDocumentUuidsValidator),
@@ -152,10 +155,10 @@ internal class ApiService(
                     new BuildResourceInfoMiddleware(_logger),
                     new ExtractDocumentInfoMiddleware(_logger),
                     new UpdateByIdHandler(_documentStoreRepository, _logger)
-                ]);
-                return new PipelineProvider(steps);
-            }
-        );
+                ]
+            );
+            return new PipelineProvider(steps);
+        });
 
     /// <summary>
     /// The pipeline steps to satisfy a delete by id request

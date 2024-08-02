@@ -36,11 +36,6 @@ internal class DocumentValidator() : IDocumentValidator
 
     public (string[], Dictionary<string, string[]>) Validate(PipelineContext context)
     {
-        if (context.ParsedBody == null || context.ParsedBody == No.JsonNode)
-        {
-            return (["A non-empty request body is required."], []);
-        }
-
         EvaluationOptions validatorEvaluationOptions =
             new() { OutputFormat = OutputFormat.List, RequireFormatValidation = true };
 
