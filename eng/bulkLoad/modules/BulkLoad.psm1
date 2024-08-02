@@ -72,6 +72,9 @@ function Write-XmlFiles {
         $Paths
     )
 
+    # Want to reload everything, therefore need to clear out the working directory
+    Get-ChildItem -Path $Paths.WorkingDirectory -Filter *.hash | ForEach-Object { Remove-Item $_ }
+
     # Load descriptors
     $options = @(
         "-b", $BaseUrl,
@@ -79,12 +82,12 @@ function Write-XmlFiles {
         "-w", $Paths.WorkingDirectory,
         "-k", $Key,
         "-s", $Secret,
-        "-c", "100",
-        "-r", "0",
-        "-l", "500",
-        "-t", "50",
-        "-f",
-        "-n",
+        "-c", "100",                        # Maximum concurrent connections to api
+        "-r", "1",                          # The number of times to retry submitting a resource
+        "-l", "500",                        # Max number of simultaneous API requests
+        "-t", "50",                         # Maximum concurrent tasks to be buffered
+        "-f",                               # Force reload of metadata from metadata url
+        "-n",                               # Do not validate the XML document against the XSD before processing
         "-x", $Paths.XsdDirectory
     )
 

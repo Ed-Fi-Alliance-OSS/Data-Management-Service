@@ -7,24 +7,28 @@
 # template" - restricted to the data needed to run the performance testing kit.
 # This enables a faster setup, at the expense of having less data in the system.
 
-#Requires -Version 7
-
 param(
-  [string]
-  $Key = "sampleKey",
+    [string]
+    $Key = "minimalKey",
 
-  [string]
-  $Secret = "sampleSecret",
+    [string]
+    $Secret = "minimalSecret",
 
-  # 8080 is the default k8s port
-  # 5198 is the default when running F5
-  [string]
-  $BaseUrl = "http://localhost:8080",
+    # 8080 is the default k8s port
+    # 5198 is the default when running F5
+    [string]
+    $BaseUrl = "http://localhost:8080",
 
-  [string]
-  $SampleDataVersion = "5.0.0"
+    # Use 5.0.0 even if we're using 5.1.0 Data Standard, because there is no 5.1.0 file yet.
+    [string]
+    $SampleDataVersion = "5.0.0",
+
+    # When false (default), only loads descriptors
+    [switch]
+    $FullDataSet
 )
 
+#Requires -Version 7
 $ErrorActionPreference = "Stop"
 
 Import-Module ../Package-Management.psm1 -Force
@@ -35,11 +39,15 @@ $paths = Initialize-ToolsAndDirectories
 $paths.SampleDataDirectory = Import-SampleData -Template "GrandBend" -Version $SampleDataVersion
 
 $parameters = @{
-  BaseUrl = $BaseUrl
-  Key = $Key
-  Secret = $Secret
-  Paths = $paths
+    BaseUrl = $BaseUrl
+    Key     = $Key
+    Secret  = $Secret
+    Paths   = $paths
 }
 
 Write-Descriptors @parameters
-Write-PartialGrandBend  @parameters
+
+
+if ($FullDataSet) {
+    Write-PartialGrandBend  @parameters
+}
