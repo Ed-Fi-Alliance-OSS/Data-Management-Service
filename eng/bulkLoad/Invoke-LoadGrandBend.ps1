@@ -6,19 +6,24 @@
 # Runs the complete bulk upload of the Grand Bend dataset, aka "populated template"
 
 param(
-  [string]
-  $Key = "sampleKey",
+    [string]
+    $Key = "minimalKey",
 
-  [string]
-  $Secret = "sampleSecret",
+    [string]
+    $Secret = "minimalSecret",
 
-  # 8080 is the default k8s port
-  # 5198 is the default when running F5
-  [string]
-  $BaseUrl = "http://localhost:8080",
+    # 8080 is the default k8s port
+    # 5198 is the default when running F5
+    [string]
+    $BaseUrl = "http://localhost:8080",
 
-  [string]
-  $SampleDataVersion = "5.0.0"
+    # Use 5.0.0 even if we're using 5.1.0 Data Standard, because there is no 5.1.0 file yet.
+    [string]
+    $SampleDataVersion = "5.0.0",
+
+    # When false (default), only loads descriptors
+    [switch]
+    $FullDataSet
 )
 
 #Requires -Version 7
@@ -29,14 +34,17 @@ Import-Module ./modules/Get-XSD.psm1 -Force
 Import-Module ./modules/BulkLoad.psm1 -Force
 
 $paths = Initialize-ToolsAndDirectories
-$paths.SampleDataDirectory = Import-SampleData -Template "GrandBend" -Version $sampleDataVersion
+$paths.SampleDataDirectory = Import-SampleData -Template "GrandBend" -Version $SampleDataVersion
 
 $parameters = @{
-  BaseUrl = $BaseUrl
-  Key = $Key
-  Secret = $Secret
-  Paths = $paths
+    BaseUrl = $BaseUrl
+    Key     = $Key
+    Secret  = $Secret
+    Paths   = $paths
 }
 
 Write-Descriptors @parameters
-Write-GrandBend  @parameters
+
+if ($FullDataSet) {
+    Write-GrandBend  @parameters
+}
