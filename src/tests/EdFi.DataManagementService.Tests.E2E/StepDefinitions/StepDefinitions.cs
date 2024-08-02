@@ -11,7 +11,6 @@ using EdFi.DataManagementService.Tests.E2E.Management;
 using FluentAssertions;
 using Json.Schema;
 using Microsoft.Playwright;
-using Newtonsoft.Json.Linq;
 using Reqnroll;
 using static EdFi.DataManagementService.Tests.E2E.Management.JsonComparer;
 
@@ -491,19 +490,23 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Then("schools returned")]
         public void ThenSchoolsReturned(Table table)
         {
-            var jsonResponse = _apiResponse.TextAsync().Result;
-            var responseArray = JArray.Parse(jsonResponse);
+            string jsonResponse = _apiResponse.TextAsync().Result;
+            JsonDocument responseDocument = JsonDocument.Parse(jsonResponse);
+            JsonElement responseArray = responseDocument.RootElement;
 
             foreach (var row in table.Rows)
             {
-                var expectedSchoolId = row["schoolId"];
-                var expectedNameOfInstitution = row["nameOfInstitution"];
+                int expectedSchoolId = int.Parse(row["schoolId"]);
+                string expectedNameOfInstitution = row["nameOfInstitution"];
 
-                var matchSchoolId = responseArray.Any(school =>
-                    school["schoolId"]?.ToString() == expectedSchoolId
+                bool matchSchoolId = responseArray.EnumerateArray().Any(school =>
+                    school.TryGetProperty("schoolId", out JsonElement schoolIdElement) &&
+                    schoolIdElement.TryGetInt32(out int schoolId) &&
+                    schoolId == expectedSchoolId
                 );
-                var matchNameOfInstitution = responseArray.Any(school =>
-                    school["nameOfInstitution"]?.ToString() == expectedNameOfInstitution
+
+                bool matchNameOfInstitution = responseArray.EnumerateArray().Any(school =>
+                    school.GetProperty("nameOfInstitution").GetString() == expectedNameOfInstitution
                 );
 
                 matchSchoolId.Should().BeTrue();
