@@ -50,8 +50,7 @@ internal class ApiService(
                     new ParsePathMiddleware(_logger),
                     new ParseBodyMiddleware(_logger),
                     new DuplicatePropertiesMiddleware(_logger),
-                    new ValidateEndpointMiddleware(_logger)
-                ]);
+                    new ValidateEndpointMiddleware(_logger),
                     new ValidateEndpointMiddleware(_logger),
                     new RejectResourceIdentifierMiddleware(_logger)
                 ]
