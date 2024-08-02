@@ -50,12 +50,44 @@ Feature: Query Strings handling for GET requests
               And the response headers includes total-count 5
 
         Scenario: 08 Ensure clients can get information when filtering by limit and and a valid offset
-             When a GET request is made to "/ed-fi/schools?offset=3&limit=5"
+             When a GET request is made to "/ed-fi/schools?totalCount=true&offset=3&limit=5"
              Then it should respond with 200
-              And schools returned
-                  | schoolId  | nameOfInstitution         |
-                  | 255901044 | Grand Bend Middle School  |
-                  | 255901045 | UT Austin Extended Campus |
+             And the response headers includes total-count 5
+             And the response body is
+                  """
+                  [
+                    {
+                        "id": "{id}",
+                        "schoolId": 255901044,
+                        "gradeLevels": [
+                            {
+                                "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                            }
+                        ],
+                        "nameOfInstitution": "Grand Bend Middle School",
+                        "educationOrganizationCategories": [
+                            {
+                                "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                            }
+                        ]
+                    },
+                    {
+                        "id": "{id}",
+                        "schoolId": 255901045,
+                        "gradeLevels": [
+                            {
+                                "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Twelfth grade"
+                            }
+                        ],
+                        "nameOfInstitution": "UT Austin Extended Campus",
+                        "educationOrganizationCategories": [
+                            {
+                                "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                            }
+                        ]
+                    }
+                 ]
+                 """
 
         Scenario: 09 Ensure clients can get information when filtering by limit and offset greater than the total
              When a GET request is made to "/ed-fi/schools?offset=6&limit=5"

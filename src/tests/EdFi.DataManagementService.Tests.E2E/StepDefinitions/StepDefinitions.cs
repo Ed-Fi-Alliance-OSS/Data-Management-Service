@@ -487,33 +487,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             headers.GetValueOrDefault("total-count").Should().NotBe(count.ToString());
         }
 
-        [Then("schools returned")]
-        public void ThenSchoolsReturned(Table table)
-        {
-            string jsonResponse = _apiResponse.TextAsync().Result;
-            JsonDocument responseDocument = JsonDocument.Parse(jsonResponse);
-            JsonElement responseArray = responseDocument.RootElement;
-
-            foreach (var row in table.Rows)
-            {
-                int expectedSchoolId = int.Parse(row["schoolId"]);
-                string expectedNameOfInstitution = row["nameOfInstitution"];
-
-                bool matchSchoolId = responseArray.EnumerateArray().Any(school =>
-                    school.TryGetProperty("schoolId", out JsonElement schoolIdElement) &&
-                    schoolIdElement.TryGetInt32(out int schoolId) &&
-                    schoolId == expectedSchoolId
-                );
-
-                bool matchNameOfInstitution = responseArray.EnumerateArray().Any(school =>
-                    school.GetProperty("nameOfInstitution").GetString() == expectedNameOfInstitution
-                );
-
-                matchSchoolId.Should().BeTrue();
-                matchNameOfInstitution.Should().BeTrue();
-            }
-        }
-
         #endregion
 
         private static string addDataPrefixIfNecessary(string input)
