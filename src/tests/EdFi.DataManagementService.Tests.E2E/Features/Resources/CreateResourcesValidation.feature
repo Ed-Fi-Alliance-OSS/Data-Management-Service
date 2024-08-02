@@ -702,8 +702,6 @@ Feature: Resources "Create" Operation validations
              # 200 because this is updating the document stored with the scenario above.
              Then it should respond with 200
 
-        # We're treating `id` as an overpost, when it should be rejected. DMS-300
-        @ignore
         Scenario: 25 Create a document with id property (Resource)
             # The ID used does not need to exist: any ID is invalid here
              When a POST request is made to "/ed-fi/academicWeeks" with
@@ -724,13 +722,14 @@ Feature: Resources "Create" Operation validations
                   """
                     {
                         "detail": "The request data was constructed incorrectly.",
-                        "type": "urn:ed-fi:api:bad-request:data",
+                        "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                         "title": "Data Validation Failed",
                         "status": 400,
                         "correlationId": null,
                         "errors": [
                             "Resource identifiers cannot be assigned by the client. The 'id' property should not be included in the request body."
-                        ]
+                        ],
+                        "validationErrors": {}
                     }
                   """
 
