@@ -462,12 +462,7 @@ Feature: Resources "Create" Operation validations
                         }
                   """
 
-        # DMS-297
-        # Not sure yet what the expected response should be. Depends on what the
-        # JSON schema can do.
-        @ignore
         Scenario: 16.1 Create a document with duplicate properties (Descriptor)
-             # The id value should be replaced with the resource created in the Background section
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                   {
@@ -481,14 +476,14 @@ Feature: Resources "Create" Operation validations
               And the response body is
                   """
                   {
-                    "detail": "The request could not be processed. See 'errors' for details.",
-                    "type": "urn:ed-fi:api:bad-request",
-                    "title": "Bad Request",
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null,
                     "validationErrors": {
                        "$.shortDescription": [
-                         "shortDescription value occurs twice"
+                         "An item with the same key has already been added."
                        ]
                      },
                      "errors": []
@@ -940,17 +935,11 @@ Feature: Resources "Create" Operation validations
                   """
              # Was already created somewhere above
              Then it should respond with 200
-
-
-        # DMS-297
-        # Not sure yet what the expected response should be. Depends on what the
-        # JSON schema can do.
-        @ignore
-        Scenario: 24 Post a request with a duplicated value (Resource)
+        
+        Scenario: 32 Post a request with a duplicated value (Resource)
              When a POST request is made to "/ed-fi/educationContents" with
                   """
                   {
-                    "id": "{id}",
                     "contentIdentifier": "Testing",
                     "namespace": "Testing",
                     "shortDescription": "Testing",
@@ -965,13 +954,13 @@ Feature: Resources "Create" Operation validations
                   """
                   {
                       "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                       "title": "Data Validation Failed",
                       "status": 400,
                       "correlationId": null,
                       "validationErrors": {
                         "$.learningResourceMetadataURI": [
-                          "learningResourceMetadataURI value occurs twice"
+                          "An item with the same key has already been added."
                         ]
                       },
                       "errors": []

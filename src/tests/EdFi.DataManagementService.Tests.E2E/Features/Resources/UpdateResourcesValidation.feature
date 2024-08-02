@@ -458,16 +458,13 @@ Feature: Resources "Update" Operation validations
                     ]
                   }
                   """
-        # DMS-297
-        # Not sure yet what the expected response should be. Depends on what the
-        # JSON schema can do.
-        @ignore
+
         Scenario: 15.1 Update a document with duplicate properties (Descriptor)
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
                   {
-                    "id": "invalid-id",
+                    "id": "{id}",
                     "codeValue": "Sick Leave",
                     "shortDescription": "Sick Leave Edited",
                     "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
@@ -478,14 +475,14 @@ Feature: Resources "Update" Operation validations
               And the response body is
                   """
                   {
-                    "detail": "The request could not be processed. See 'errors' for details.",
-                    "type": "urn:ed-fi:api:bad-request",
-                    "title": "Bad Request",
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null,
                     "validationErrors": {
                        "$.shortDescription": [
-                         "shortDescription value occurs twice"
+                         "An item with the same key has already been added."
                        ]
                      },
                      "errors": []
@@ -858,10 +855,6 @@ Feature: Resources "Update" Operation validations
                     }
                   """
 
-        # DMS-297
-        # Not sure yet what the expected response should be. Depends on what the
-        # JSON schema can do.
-        @ignore
         Scenario: 24 Update a document with a duplicated value (Resource)
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
                   """
@@ -881,13 +874,13 @@ Feature: Resources "Update" Operation validations
                   """
                   {
                       "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                       "title": "Data Validation Failed",
                       "status": 400,
                       "correlationId": null,
                       "validationErrors": {
                         "$.learningResourceMetadataURI": [
-                          "learningResourceMetadataURI value occurs twice"
+                          "An item with the same key has already been added."
                         ]
                       },
                       "errors": []
