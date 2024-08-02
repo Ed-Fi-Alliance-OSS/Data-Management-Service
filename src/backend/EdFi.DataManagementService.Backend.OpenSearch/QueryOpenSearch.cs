@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.OpenSearch;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
@@ -18,22 +19,23 @@ public static class QueryOpenSearch
     /// </summary>
     private static string IndexFromResourceInfo(ResourceInfo resourceInfo)
     {
-        return `${resourceInfo.projectName}$${resourceInfo.resourceVersion}$${resourceInfo.resourceName}`
-            .toLowerCase()
-            .replace(/\./g, '-');
+        return $@"{resourceInfo.ProjectName.Value}${resourceInfo.ResourceVersion.Value}${resourceInfo.ResourceName.Value}"
+            .ToLower()
+            .Replace(".", "-");
     }
 
-
-    public static async Task<QueryResult> Query(IQueryRequest queryRequest, OpenSearchClient client, ILogger logger)
+    public static async Task<QueryResult> Query(
+        IQueryRequest queryRequest,
+        OpenSearchClient client,
+        ILogger logger
+    )
     {
-        logger.LogDebug(
-            "Entering QueryOpenSearch.Query - {TraceId}",
-            queryRequest.TraceId
-        );
+        logger.LogDebug("Entering QueryOpenSearch.Query - {TraceId}", queryRequest.TraceId);
 
         try
         {
-            var x = IndexFromResourceInfo(queryRequest.ResourceInfo);
+            string openSearchIndex = IndexFromResourceInfo(queryRequest.ResourceInfo);
+            client.LowLevel.SearchAsync<SearchResponse<Document>>(index: openSearchIndex, )
         }
         catch (Exception ex)
         {
