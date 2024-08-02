@@ -20,7 +20,9 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
 {
     private static readonly JsonSerializerOptions _serializerOptions =
         new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
-    private const string TestForDuplicateObjectKeyWorkaround = "Test";
+
+    // This key should never exist in the document
+    private const string TestForDuplicateObjectKeyWorkaround = "x";
     private const string Pattern = @"Key: (.*?) \((.*?)\)\.(.*?)$";
 
     public async Task Execute(PipelineContext context, Func<Task> next)
@@ -38,13 +40,17 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
 
                 if (node is JsonObject jsonObject)
                 {
+                    // Force evaluation of node to throw duplicate key exceptions
                     _ = node[TestForDuplicateObjectKeyWorkaround];
 
+                    // If you are in this line there are no First level exceptions, recursively check the rest of the body to find the first exception
                     CheckForDuplicateProperties(jsonObject, "$");
                 }
             }
             catch (ArgumentException ae)
             {
+                // This match works when the error is after the first level of node
+                //  e.g. An item with the same key has already been added. Key: classPeriodName (Parameter 'propertyName').$.classPeriods[0].classPeriodReference
                 Match match = Regex.Match(ae.Message, Pattern);
 
                 string propertyName;
@@ -56,8 +62,13 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
                 }
                 else
                 {
-                    var propertyNameMatch = Regex.Match(ae.Message, @"Key: (\w+) \(Parameter 'propertyName'\)");
-                    propertyName = propertyNameMatch.Success ? "$." + propertyNameMatch.Groups[1].Value : "unknown";
+                    var propertyNameMatch = Regex.Match(
+                        ae.Message,
+                        @"Key: (\w+) \(Parameter 'propertyName'\)"
+                    );
+                    propertyName = propertyNameMatch.Success
+                        ? "$." + propertyNameMatch.Groups[1].Value
+                        : "unknown";
                 }
 
                 var validationErrors = new Dictionary<string, string[]>
@@ -91,6 +102,7 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
                 return;
             }
         }
+
         await next();
     }
 
@@ -120,9 +132,10 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
                         }
                     }
                 }
-                catch (Exception ex)
+                catch (ArgumentException ex)
                 {
                     string detailedPath = string.Empty;
+                    // To avoid when it enters more than one time and the path is modified
                     if (!ex.Message.Contains(propertyPath))
                     {
                         detailedPath = "." + propertyPath;
