@@ -40,7 +40,7 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
 
                 if (node is JsonObject jsonObject)
                 {
-                    // Force evaluation of node to throw duplicate key exceptions
+                    // This validation will identify if the problem is at the first level. It does not identify if it is at a second or third level.
                     _ = node[TestForDuplicateObjectKeyWorkaround];
 
                     // If you are in this line there are no First level exceptions, recursively check the rest of the body to find the first exception
