@@ -1,0 +1,69 @@
+# PostgreSQL -> Kafka -> OpenSearch
+
+>⚠️  **WARNING: NOT FOR PRODUCTION USE!** Includes passwords in the default configuration that are visible in this repo and should never be used in real life. Be very careful!
+
+For requirements and design background, see [Change Data Capture to
+Stream](https://github.com/Ed-Fi-Alliance-OSS/Project-Tanager/blob/main/docs/DMS/CDC-STREAMING.md).
+
+1. Start these containers.
+
+    ```shell
+    docker compose up -d
+    ```
+
+2. Open a shell on the PostgreSQL container and run the following to enable
+   replication.
+
+    ```bash
+    echo "host    replication    postgres         kafka-connect-source    trust" >> /var/lib/postgresql/data/pg_hba.conf
+    echo "wal_level = logical" >> /var/lib/postgresql/data/postgresql.conf
+    ```
+
+3. Restart the PostgreSQL container.
+4. Run `setup.ps1` to inject the connector configurations into the respective
+   sink and source connector containers.
+5. Write a record to the `dms.document` table and it should flow through into
+   OpenSearch now.
+
+Tools
+
+* [Kafdrop](http://localhost:9000/)
+* [OpenSearch Dashboard](http://localhost:5601/)
+  * After a record has been inserted, create an [index
+    pattern](http://localhost:5601/app/management/opensearch-dashboards/indexPatterns): `ed-fi$*`
+
+Known problems:
+
+* DELETE is not having any impact on OpenSearch.
+  * We never even tried to get it working in Meadowlark, so there's no value in
+    reviewing that project.
+* The indexing in OpenSearch is not automagically detecting the fields inside
+  the `edfidoc`, so there is no searching inside the document.
+  * We _did_ have this working in Meadowlark, so it may be worthwhile to
+    startup Meadowlark and review that.
+  * There is one crucial difference: in Meadowlark we had this working _with
+    MongoDB_, not with PostgreSQL. So the document shape or the Kafka message
+    shape might have been slightly different.
+  * Maybe disabling the schema in the Kafka message was actually a bad idea? I
+    don't think we disabled the schema in Meadowlark.
+
+## Clearing Out All Data in OpenSearch
+
+Run the following commands from the Dev Tools console in OpenSearch Dashboard:
+
+Delete all documents:
+
+```none
+POST */_delete_by_query
+{
+  "query": {
+    "match_all": {}
+  }
+}
+```
+
+Delete all indices:
+
+```none
+DELETE *
+```
