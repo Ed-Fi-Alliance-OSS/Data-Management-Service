@@ -5,14 +5,6 @@ Feature: Resources "Update" Operation validations
         Background:
             Given the Data Management Service must receive a token issued by "http://localhost"
               And user is already authorized
-              And the system has these descriptors
-                  | descriptorValue                                                                            |
-                  | uri://ed-fi.org/ContentClassDescriptor#Testing                                             |
-                  | uri://ed-fi.org/AddressTypeDescriptor#Physical                                             |
-                  | uri://ed-fi.org/StateAbbreviationDescriptor#TX                                             |
-                  | uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider |
-                  | uri://ed-fi.org/GradeLevelDescriptor#Postsecondary                                         |
-                  | uri://ed-fi.org/AbsenceEventCategoryDescriptor#Sick Leave                                  |
               And a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                   {
@@ -24,7 +16,6 @@ Feature: Resources "Update" Operation validations
                     "shortDescription": "Sick Leave"
                   }
                   """
-             Then it should respond with 201 or 200
 
         @ignore
         Scenario: 01 Put an existing descriptor
@@ -36,9 +27,9 @@ Feature: Resources "Update" Operation validations
                     "codeValue": "Sick Leave",
                     "description": "Sick Leave Edited",
                     "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                    "shortDescription": "Sick Leave",
-                    "effectiveBeginDate": "2024-05-14",
-                    "effectiveEndDate": "2024-05-14"
+                    "shortDescription": "Sick Leave Short Description",
+                    "effectiveBeginDate": "2025-05-14",
+                    "effectiveEndDate": "2027-05-14"
                   }
                   """
              Then it should respond with 204
@@ -49,9 +40,9 @@ Feature: Resources "Update" Operation validations
                     "codeValue": "Sick Leave",
                     "description": "Sick Leave Edited",
                     "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                    "shortDescription": "Sick Leave",
-                    "effectiveBeginDate": "2024-05-14",
-                    "effectiveEndDate": "2024-05-14"
+                    "shortDescription": "Sick Leave Short Description",
+                    "effectiveBeginDate": "2025-05-14",
+                    "effectiveEndDate": "2027-05-14"
                   }
                   """
 
@@ -175,7 +166,7 @@ Feature: Resources "Update" Operation validations
 
         # Descriptors are not validating properly. DMS-295
         @ignore
-        Scenario: 06 Update a descruiptor with leading spaces in required fields
+        Scenario: 06 Update a descriptor with leading spaces in required fields
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
                     {
@@ -383,7 +374,7 @@ Feature: Resources "Update" Operation validations
                   """
 
         @ignore
-        Scenario: 13 Update a DESCRIPTOR with mismatch between URL and id
+        Scenario: 13 Update a descriptor with mismatch between URL and id
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -441,7 +432,7 @@ Feature: Resources "Update" Operation validations
                   """
 
         @ignore
-        Scenario: 15 Update a descriptot with an invalid id format (Descriptor)
+        Scenario: 15 Update a descriptor with an invalid id format (Descriptor)
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -504,7 +495,7 @@ Feature: Resources "Update" Operation validations
 
         @ignore
         Scenario: 17 Ensure clients cannot update a descriptor omitting any of the required values
-             When a POST request is made to "/ed-fi/disabilityDescriptors" with
+             When a PUT request is made to "/ed-fi/disabilityDescriptors" with
                   """
                   {
                       "namespace": "uri://ed-fi.org/DisabilityDescriptor",
@@ -530,23 +521,7 @@ Feature: Resources "Update" Operation validations
                   """
 
         @ignore
-        Scenario: 18 Ensure clients can update a descriptor that is not being used by any resource
-            Given the system has this "disabilityDescriptors" descriptor
-                  | codeValue                              | namespace                            | shortDescription                       |
-                  | Visual Impairment, including Blindness | uri://ed-fi.org/DisabilityDescriptor | Visual Impairment, including Blindness |
-             When a PUT request is made to "/ed-fi/disabilityDescriptors/{id}" with
-                  """
-                  {
-                      "codeValue": "Visual Impairment, including Blindness",
-                      "description": "Visual Impairment, including Blindness",
-                      "namespace": "uri://ed-fi.org/DisabilityDescriptor",
-                      "shortDescription": "Visual Impairment, including Blindness EdFi Test"
-                  }
-                  """
-             Then it should respond with 204
-
-        @ignore
-        Scenario: 19 Ensure clients cannot update a descriptor changing identifying values
+        Scenario: 18 Ensure clients cannot update a descriptor changing identifying values
             Given the system has this "disabilityDescriptors" descriptor
                   | codeValue                              | namespace                            | shortDescription                       |
                   | Visual Impairment, including Blindness | uri://ed-fi.org/DisabilityDescriptor | Visual Impairment, including Blindness |

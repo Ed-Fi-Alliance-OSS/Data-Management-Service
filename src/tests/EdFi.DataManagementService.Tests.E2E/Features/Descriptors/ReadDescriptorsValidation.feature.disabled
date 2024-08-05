@@ -58,25 +58,7 @@ Feature: Resources "Read" Operation validations
              Then it should respond with 404
 
         @ignore
-        Scenario: 04 Verify array records content on GET All
-             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors"
-             Then it should respond with 200
-              And total of records should be 1
-
-        @ignore
-        Scenario: 05 Ensure clients can create a Descriptor with the required attributes
-             When a POST reques is made to "/ed-fi/disabilityDescriptors" with
-                  """
-                  {
-                      "namespace": "uri://ed-fi.org/DisabilityDescriptor",
-                      "codeValue": "Deaf-Blindness",
-                      "shortDescription": "Deaf-Blindness",
-                  }
-                  """
-             Then it should respond with 201
-
-        @ignore
-        Scenario: 06 Ensure clients can retrieve optional attributes from descriptors that have used them
+        Scenario: 04 Read a descriptor that only contains required attributes
             Given the system has this "disabilityDescriptors" descriptor
                   | codeValue              | namespace                            | shortDescription       |
                   | Testing Deaf-Blindness | uri://ed-fi.org/DisabilityDescriptor | Testing Deaf-Blindness |
@@ -88,15 +70,12 @@ Feature: Resources "Read" Operation validations
                       "id": "{id}",
                       "namespace": "uri://ed-fi.org/DisabilityDescriptor",
                       "codeValue": "Testing Deaf-Blindness",
-                      "shortDescription": "Testing Deaf-Blindness",
-                      "description": "Testing Deaf-Blindness",
-                      "effectiveBeginDate": "2023-07-24",
-                      "effectiveEndDate" "2030-07-24"
+                      "shortDescription": "Testing Deaf-Blindness"
                   }
                   """
 
         @ignore
-        Scenario: 07 Ensure clients can retrieve a descriptor by requesting through a valid codeValue
+        Scenario: 05 Ensure clients can retrieve a descriptor by requesting through a valid codeValue
             Given the system has this "disabilityDescriptors" descriptor
                   | codeValue      | namespace                            | shortDescription |
                   | Deaf-Blindness | uri://ed-fi.org/DisabilityDescriptor | Deaf-Blindness   |
@@ -116,7 +95,7 @@ Feature: Resources "Read" Operation validations
                   """
 
         @ignore
-        Scenario: 08 Ensure clients cannot retrieve a descriptor by requesting through a non existing codeValue
+        Scenario: 06 Ensure clients cannot retrieve a descriptor by requesting through a non existing codeValue
              When a GET request is made to "/ed-fi/disabilityDescriptors?codeValue=Test"
              Then it should respond with 200
               And the response body is
@@ -125,7 +104,7 @@ Feature: Resources "Read" Operation validations
                   """
 
         @ignore
-        Scenario: 09 Ensure clients can retrieve a descriptor by requesting through a valid namespace
+        Scenario: 07 Ensure clients can retrieve a descriptor by requesting through a valid namespace
             Given the system has this "disabilityDescriptors" descriptor
                   | codeValue      | namespace                            | shortDescription |
                   | Deaf-Blindness | uri://ed-fi.org/DisabilityDescriptor | Deaf-Blindness   |
@@ -145,7 +124,7 @@ Feature: Resources "Read" Operation validations
                   """
 
         @ignore
-        Scenario: 10 Ensure clients cannot retrieve a descriptor by requesting through a non existing namespace
+        Scenario: 08 Ensure clients cannot retrieve a descriptor by requesting through a non existing namespace
              When a GET request is made to "/ed-fi/disabilityDescriptors?namespace%3Duri%3A%2F%2Fed-fi.org%2FDisabilityDescriptorFake"
              Then it should respond with 200
               And the response body is

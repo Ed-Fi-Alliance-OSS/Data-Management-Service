@@ -3,13 +3,6 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
         Background:
             Given the Data Management Service must receive a token issued by "http://localhost"
               And user is already authorized
-              And the system has these descriptors
-                  | descriptorValue                                                                            |
-                  | uri://ed-fi.org/ContentClassDescriptor#Testing                                             |
-                  | uri://ed-fi.org/AddressTypeDescriptor#Physical                                             |
-                  | uri://ed-fi.org/StateAbbreviationDescriptor#TX                                             |
-                  | uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider |
-                  | uri://ed-fi.org/GradeLevelDescriptor#Postsecondary                                         |
 
         @ignore
         Scenario: 01 Ensure clients can create a descriptor
@@ -164,7 +157,7 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
 
         # Descriptors are not validating properly. DMS-295
         @ignore
-        Scenario: 06 Ensure clients cannnot create a descriptor including soaces in the required attributes
+        Scenario: 06 Ensure clients cannnot create a descriptor only using spaces for the required attributes
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
@@ -268,32 +261,7 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
                   """
 
         @ignore
-        Scenario: 09 Ensure clients can create a descriptor using optional attributes
-            Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
-                  """
-                    {
-                        "codeValue": "Sick Leave",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                        "shortDescription": "Sick Leave",
-                        "effectiveBeginDate": "2024-07-22",
-                        "effectiveEndDate": "2024-07-22"
-                    }
-                  """
-             Then it should respond with 200
-              And the record can be retrieved with a GET request
-                  """
-                        {
-                            "id": "{id}",
-                            "codeValue": "Sick Leave",
-                            "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                            "shortDescription": "Sick Leave",
-                            "effectiveBeginDate": "2024-07-22",
-                            "effectiveEndDate": "2024-07-22"
-                        }
-                  """
-
-        @ignore
-        Scenario: 10 Post a new descriptor with an extra property (overpost)
+        Scenario: 09 Post a new descriptor with an extra property (overpost)
             Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
@@ -321,7 +289,7 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
                   """
 
         @ignore
-        Scenario: 11 Post a new descriptor with trailing comma
+        Scenario: 10 Post a new descriptor with invalid JSON (trailing comma)
             Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
@@ -352,7 +320,7 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
 
         # Descriptors are not validating properly. DMS-295
         @ignore
-        Scenario: 12 Create a descriptor with id property
+        Scenario: 11 Create a descriptor with forbidden id property
             # The ID used does not need to exist: any ID is invalid here
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -380,7 +348,7 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
                   """
 
         @ignore
-        Scenario: 13 Post a new descriptor with required attributes only
+        Scenario: 12 Post a new descriptor with required attributes only
             Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
@@ -401,7 +369,7 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
                   """
 
         @ignore
-        Scenario: 14 Create a descriptor with a required, non-identity, property's value containing leading and trailing white spaces
+        Scenario: 13 Create a descriptor with a required, non-identity, property's value containing leading and trailing white spaces
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
@@ -414,7 +382,7 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
              Then it should respond with 201
 
         @ignore
-        Scenario: 15 Create a descriptor with optional property's value containing only white spaces
+        Scenario: 14 Create a descriptor with optional property's value containing only white spaces
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
@@ -438,7 +406,7 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
                   """
 
         @ignore
-        Scenario: 16 Post an existing descriptor without changes
+        Scenario: 15 Post an existing descriptor without changes
             Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
@@ -473,7 +441,7 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
         # Not sure yet what the expected response should be. Depends on what the
         # JSON schema can do.
         @ignore
-        Scenario: 17 Create a descriptor with duplicate properties
+        Scenario: 16 Create a descriptor with duplicate properties
              # The id value should be replaced with the resource created in the Background section
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
