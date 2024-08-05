@@ -11,7 +11,6 @@ using EdFi.DataManagementService.Tests.E2E.Management;
 using FluentAssertions;
 using Json.Schema;
 using Microsoft.Playwright;
-using Newtonsoft.Json.Linq;
 using Reqnroll;
 using static EdFi.DataManagementService.Tests.E2E.Management.JsonComparer;
 
@@ -486,29 +485,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             int count = responseJson.AsArray().Count();
 
             headers.GetValueOrDefault("total-count").Should().NotBe(count.ToString());
-        }
-
-        [Then("schools returned")]
-        public void ThenSchoolsReturned(Table table)
-        {
-            var jsonResponse = _apiResponse.TextAsync().Result;
-            var responseArray = JArray.Parse(jsonResponse);
-
-            foreach (var row in table.Rows)
-            {
-                var expectedSchoolId = row["schoolId"];
-                var expectedNameOfInstitution = row["nameOfInstitution"];
-
-                var matchSchoolId = responseArray.Any(school =>
-                    school["schoolId"]?.ToString() == expectedSchoolId
-                );
-                var matchNameOfInstitution = responseArray.Any(school =>
-                    school["nameOfInstitution"]?.ToString() == expectedNameOfInstitution
-                );
-
-                matchSchoolId.Should().BeTrue();
-                matchNameOfInstitution.Should().BeTrue();
-            }
         }
 
         #endregion
