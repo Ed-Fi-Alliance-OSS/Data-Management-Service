@@ -24,9 +24,9 @@ public static class QueryOpenSearch
             .Replace(".", "-");
     }
 
-    public static async Task<QueryResult> Query(
+    public static async Task<QueryResult> QueryDocuments(
+        IOpenSearchClient client,
         IQueryRequest queryRequest,
-        OpenSearchClient client,
         ILogger logger
     )
     {

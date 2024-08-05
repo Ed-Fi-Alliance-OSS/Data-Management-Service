@@ -8,7 +8,6 @@
     "database.user": "postgres",
     "database.password": "abcdefgh1!",
     "database.dbname" : "edfi_datamanagementservice",
-    "slot.name": "dms_debezium",
 
     "topic.prefix": "edfi",
     "table.include.list": "dms.document",

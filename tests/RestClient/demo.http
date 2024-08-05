@@ -5,7 +5,7 @@
 POST http://localhost:{{port}}/data/ed-fi/educationOrganizationCategoryDescriptors
 
 {
-    "namespace": "strin",
+    "namespace": "string",
     "codeValue": "string",
     "shortDescription": "string"
 }
@@ -23,7 +23,7 @@ POST http://localhost:{{port}}/data/ed-fi/gradeLevelDescriptors
 POST http://localhost:{{port}}/data/ed-fi/schoolYearTypes
 
 {
-    "schoolYear": 2026,
+    "schoolYear": 2027,
     "currentSchoolYear": false,
     "schoolYearDescription": "Year 2025"
 }
@@ -32,7 +32,7 @@ POST http://localhost:{{port}}/data/ed-fi/schoolYearTypes
 POST http://localhost:{{port}}/data/ed-fi/schools
 
 {
-    "schoolId": 123,
+    "schoolId": 12345678,
     "nameOfInstitution": "School1",
     "educationOrganizationCategories": [
         {

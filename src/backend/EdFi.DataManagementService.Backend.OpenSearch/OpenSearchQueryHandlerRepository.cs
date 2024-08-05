@@ -11,7 +11,8 @@ using OpenSearch.Client;
 namespace EdFi.DataManagementService.Backend.Postgresql;
 
 public class OpenSearchQueryHandlerRepository(
-    ILogger<OpenSearchQueryHandlerRepository> _logger,
+    IOpenSearchClient openSearchClient,
+    ILogger<OpenSearchQueryHandlerRepository> _logger
 ) : IQueryHandler
 {
     public async Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
@@ -21,12 +22,9 @@ public class OpenSearchQueryHandlerRepository(
             queryRequest.TraceId
         );
 
-        Uri openSearchServerUri = new("http://localhost:9200");
-        OpenSearchClient client = new(openSearchServerUri);
-
         try
         {
-            QueryResult result = await QueryOpenSearch.QueryDocuments(queryRequest);
+            QueryResult result = await QueryOpenSearch.QueryDocuments(openSearchClient, queryRequest, _logger);
 
             return result;
         }

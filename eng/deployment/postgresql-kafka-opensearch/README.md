@@ -22,8 +22,8 @@ Stream](https://github.com/Ed-Fi-Alliance-OSS/Project-Tanager/blob/main/docs/DMS
 3. Restart the PostgreSQL container.
 4. Run `setup.ps1` to inject the connector configurations into the respective
    sink and source connector containers.
-5. Write a record to the `dms.document` table and it should flow through into
-   OpenSearch now.
+5. Start the DMS and begin inserting and updating documents.
+6. View Kafka changes in Kafdrop and OpenSearch changes in its Dashboard
 
 Tools
 
