@@ -11,7 +11,7 @@ Stream](https://github.com/Ed-Fi-Alliance-OSS/Project-Tanager/blob/main/docs/DMS
     docker compose up -d
     ```
 
-2. Open a shell on the PostgreSQL container and run the following to enable
+1. Open a shell on the PostgreSQL container and run the following to enable
    replication.
 
     ```bash
@@ -19,11 +19,12 @@ Stream](https://github.com/Ed-Fi-Alliance-OSS/Project-Tanager/blob/main/docs/DMS
     echo "wal_level = logical" >> /var/lib/postgresql/data/postgresql.conf
     ```
 
-3. Restart the PostgreSQL container.
-4. Run `setup.ps1` to inject the connector configurations into the respective
+1. Restart the PostgreSQL container.
+1. Create the `edfi_datamanagementservice` database and run the DB installer. 
+1. Run `setup.ps1` to inject the connector configurations into the respective
    sink and source connector containers.
-5. Start the DMS and begin inserting and updating documents.
-6. View Kafka changes in Kafdrop and OpenSearch changes in its Dashboard
+1. Start the DMS and begin inserting and updating documents.
+1. View Kafka changes in Kafdrop and OpenSearch changes in its Dashboard
 
 Tools
 

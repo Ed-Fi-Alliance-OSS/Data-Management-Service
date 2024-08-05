@@ -10,18 +10,23 @@
     "database.dbname" : "edfi_datamanagementservice",
 
     "topic.prefix": "edfi",
-    "table.include.list": "dms.document",
+    "table.include.list": "dms.document_(.*)",
 
     "value.converter": "org.apache.kafka.connect.json.JsonConverter",
     "value.converter.schemas.enable": "false",
 
-    "transforms": "unwrap, extractId",
+    "transforms": "unwrap, extractId, reroute",
 
     "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
     "transforms.unwrap.drop.tombstones": "false",
     "transforms.unwrap.delete.handling.mode": "none",
 
     "transforms.extractId.type": "org.apache.kafka.connect.transforms.ExtractField$Key",
-    "transforms.extractId.field": "id"
+    "transforms.extractId.field": "id",
+
+    "transforms.reroute.type": "io.debezium.transforms.ByLogicalTableRouter",
+    "transforms.reroute.topic.regex": "dms.document_(.*)",
+    "transforms.reroute.topic.replacement": "dms.document",
+    "key.enforce​.uniqueness": false
   }
 }
