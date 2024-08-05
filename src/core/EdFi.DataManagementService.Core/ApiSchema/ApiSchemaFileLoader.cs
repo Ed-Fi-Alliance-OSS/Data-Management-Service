@@ -20,7 +20,7 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger) : IApiS
             _logger.LogDebug("Entering ApiSchemaFileLoader");
 
             var assembly =
-                Assembly.GetAssembly(typeof(EdFi.ApiSchema.Marker))
+                Assembly.GetAssembly(typeof(DataStandard51.ApiSchema.Marker))
                 ?? throw new InvalidOperationException("Could not load the ApiSchema library");
 
             var resourceName = assembly
