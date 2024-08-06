@@ -286,6 +286,13 @@ public class UpdateTests : DatabaseTest
         {
             _updateResult.Should().BeOfType<UpdateResult.UpdateFailureReference>();
         }
+
+        [Test]
+        public void Needs_to_assert_expected_ReferencingDocumentInfo()
+        {
+            var failureResult = _updateResult as UpdateResult.UpdateFailureReference;
+            failureResult!.ReferencingDocumentInfo[0].Value.Should().Be(_referencingResourceName);
+        }
     }
 
     [TestFixture]
@@ -409,6 +416,13 @@ public class UpdateTests : DatabaseTest
         {
             _updateResult.Should().BeOfType<UpdateResult.UpdateFailureReference>();
         }
+
+        [Test]
+        public void Needs_to_assert_expected_ReferencingDocumentInfo()
+        {
+            var failureResult = _updateResult as UpdateResult.UpdateFailureReference;
+            failureResult!.ReferencingDocumentInfo[0].Value.Should().Be(_referencingResourceName);
+        }
     }
 
     [TestFixture]
@@ -416,19 +430,21 @@ public class UpdateTests : DatabaseTest
         : UpdateTests
     {
         private UpdateResult? _updateResult;
-        private static readonly string _superclassResourceName = "SuperclassResource";
+        private static readonly string _superclassResourceName = "EducationOrganization";
         private static readonly Guid _superclassDocUuidGuid = Guid.NewGuid();
         private static readonly Guid _superclassRefIdGuid = Guid.NewGuid();
-        private static readonly string _superclassDocString = """{"abc":1, "subClass": {"xyz":2}}""";
+        private static readonly string _superclassDocString = """{"schoolId": 123, "nameOfInstitution" : "Test" }""";
 
-        private static readonly string _subclassResourceName = "SubclassResource";
+        private static readonly string _subclassResourceName = "AcademicWeek";
         private static readonly Guid _subclassDocUuidGuid = Guid.NewGuid();
         private static readonly Guid _subclassRefIdGuid = Guid.NewGuid();
-        private static readonly string _subclassDocString = """{"xyz":3}""";
+        private static readonly string _subclassDocString = """{"weekIdentifier": "One"}""";
+        private static readonly string _subclassDocStringUpdate = """{"weekIdentifier": "One", "schoolReference":[{"schoolId": 123}]}""";
 
         [SetUp]
         public async Task Setup()
         {
+            // The document that will be referenced (EducationOrganization)
             IUpsertRequest superclassUpsertRequest = CreateUpsertRequest(
                 _superclassResourceName,
                 _superclassDocUuidGuid,
@@ -438,25 +454,24 @@ public class UpdateTests : DatabaseTest
             var upsertResult1 = await CreateUpsert().Upsert(superclassUpsertRequest, Connection!, Transaction!);
             upsertResult1.Should().BeOfType<UpsertResult.InsertSuccess>();
 
-            Reference[] references = [new(_superclassResourceName, _superclassRefIdGuid)];
-
+            // The original document with no reference (AcademicWeek)
             IUpsertRequest referencingUpsertRequest = CreateUpsertRequest(
                 _subclassResourceName,
                 _subclassDocUuidGuid,
                 _subclassRefIdGuid,
-                _subclassDocString,
-                CreateDocumentReferences(references)
+                _subclassDocString
             );
-
+            
             var upsertResult2 = await CreateUpsert().Upsert(referencingUpsertRequest, Connection!, Transaction!);
             upsertResult2.Should().BeOfType<UpsertResult.InsertSuccess>();
 
-            string updatedSubclassDocString = """{"xyz":10}""";
+            // The updated document with reference as superclass (an AcademicWeek reference an EducationOrgazation)
             IUpdateRequest updateRequest = CreateUpdateRequest(
                 _subclassResourceName,
                 _subclassDocUuidGuid,
                 _subclassRefIdGuid,
-                updatedSubclassDocString
+                _subclassDocStringUpdate,
+                CreateDocumentReferences([new(_subclassResourceName, _superclassRefIdGuid)])
             );
 
             _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
