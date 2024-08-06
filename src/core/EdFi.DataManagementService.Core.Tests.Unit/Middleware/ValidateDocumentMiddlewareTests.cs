@@ -628,6 +628,7 @@ public class ValidateDocumentMiddlewareTests
         {
             _context?.FrontendResponse.Body.Should().Contain("identityProperty");
             _context?.FrontendResponse.Body.Should().Contain("cannot contain leading or trailing spaces");
+            _context?.FrontendResponse.Body.Should().Contain("traceId");
         }
     }
 
