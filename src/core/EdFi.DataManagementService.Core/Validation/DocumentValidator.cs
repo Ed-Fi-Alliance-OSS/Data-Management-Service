@@ -42,12 +42,23 @@ internal class DocumentValidator() : IDocumentValidator
         var resourceSchemaValidator = GetSchema(context.ResourceSchema, context.Method);
         var results = resourceSchemaValidator.Evaluate(context.ParsedBody, validatorEvaluationOptions);
 
-        var pruneResult = PruneOverpostedData(context.ParsedBody, results);
+        var overpostPruneResult = PruneOverpostedData(context.ParsedBody, results);
 
-        if (pruneResult is PruneResult.Pruned pruned)
+        if (overpostPruneResult is PruneResult.Pruned pruned)
         {
             // Used pruned body for the remainder of pipeline
             context.ParsedBody = pruned.prunedDocumentBody;
+
+            // Now re-evaluate the pruned body
+            results = resourceSchemaValidator.Evaluate(context.ParsedBody, validatorEvaluationOptions);
+        }
+
+        var nullPruneResult = PruneNullData(context.ParsedBody, results);
+
+        if (nullPruneResult is PruneResult.Pruned nullPruned)
+        {
+            // Used pruned body for the remainder of pipeline
+            context.ParsedBody = nullPruned.prunedDocumentBody;
 
             // Now re-evaluate the pruned body
             results = resourceSchemaValidator.Evaluate(context.ParsedBody, validatorEvaluationOptions);
@@ -73,6 +84,30 @@ internal class DocumentValidator() : IDocumentValidator
             {
                 JsonObject jsonObject = documentBody.AsObject();
                 var prunedJsonObject = jsonObject.RemoveProperty([.. additionalProperty.InstanceLocation]);
+                var prunedDocumentBody = JsonNode.Parse(prunedJsonObject.ToJsonString());
+                Trace.Assert(prunedDocumentBody != null, "Unexpected null after parsing pruned object");
+                documentBody = prunedDocumentBody;
+            }
+
+            return new PruneResult.Pruned(documentBody);
+        }
+
+        PruneResult PruneNullData(JsonNode? documentBody, EvaluationResults evaluationResults)
+        {
+            if (documentBody == null)
+                return new PruneResult.NotPruned();
+
+            var nullProperties = evaluationResults
+                .Details.Where(r => r.Errors != null && r.Errors.Values.Any(e => e.StartsWith("Value is \"null\""))
+                ).ToList();
+
+            if (nullProperties.Count == 0)
+                return new PruneResult.NotPruned();
+
+            foreach (var nullProperty in nullProperties)
+            {
+                JsonObject jsonObject = documentBody.AsObject();
+                var prunedJsonObject = jsonObject.RemoveProperty([.. nullProperty.InstanceLocation]);
                 var prunedDocumentBody = JsonNode.Parse(prunedJsonObject.ToJsonString());
                 Trace.Assert(prunedDocumentBody != null, "Unexpected null after parsing pruned object");
                 documentBody = prunedDocumentBody;
