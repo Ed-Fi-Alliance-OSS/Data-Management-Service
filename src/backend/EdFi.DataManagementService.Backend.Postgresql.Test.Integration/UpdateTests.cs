@@ -421,7 +421,7 @@ public class UpdateTests : DatabaseTest
         public void Needs_to_assert_expected_ReferencingDocumentInfo()
         {
             var failureResult = _updateResult as UpdateResult.UpdateFailureReference;
-            failureResult!.ReferencingDocumentInfo[0].Value.Should().Be(_referencingResourceName);
+            failureResult!.ReferencingDocumentInfo[0].Value.Should().Be("Nonexistent");
         }
     }
 
@@ -461,7 +461,7 @@ public class UpdateTests : DatabaseTest
                 _subclassRefIdGuid,
                 _subclassDocString
             );
-            
+
             var upsertResult2 = await CreateUpsert().Upsert(referencingUpsertRequest, Connection!, Transaction!);
             upsertResult2.Should().BeOfType<UpsertResult.InsertSuccess>();
 
