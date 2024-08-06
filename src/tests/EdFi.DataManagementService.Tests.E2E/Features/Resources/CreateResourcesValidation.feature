@@ -46,8 +46,6 @@ Feature: Resources "Create" Operation validations
                   }
                   """
 
-        # Descriptors are not validating properly. DMS-295
-        @ignore
         Scenario: 02 Create a document with a string that is too long (Descriptor)
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -65,13 +63,13 @@ Feature: Resources "Create" Operation validations
                   """
                   {
                     "validationErrors": {
-                        "$.codeValue": [
-                            "codeValue Value should be at most 50 characters"
-                        ]
+                    "$.codeValue": [
+                        "codeValue Value should be at most 50 characters"
+                    ]
                     },
                     "errors": [],
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null
@@ -162,105 +160,102 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
-        # Descriptors are not validating properly. DMS-295
-        @ignore
         Scenario: 06 Create a document with spaces in required fields (Descriptor)
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "                      ",
                         "description": "                    ",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                        "namespace": "                      ",
                         "shortDescription": "                    "
                     }
                   """
              Then it should respond with 400
               And the response body is
-                  """{
+                  """
+                  {
                     "validationErrors": {
                         "$.codeValue": [
                             "codeValue cannot contain leading or trailing spaces."
                         ],
                         "$.namespace": [
                             "namespace cannot contain leading or trailing spaces."
-                            ],
+                        ],
                         "$.shortDescription": [
                             "shortDescription cannot contain leading or trailing spaces."
                         ]
                     },
                     "errors": [],
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null
                   }
                   """
 
-        # Descriptors are not validating properly. DMS-295
-        @ignore
         Scenario: 07 Create a document with leading spaces in required fields (Descriptor)
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "                      a",
                         "description": "                    a",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                        "namespace": "   uri://ed-fi.org/AbsenceEventCategoryDescriptor",
                         "shortDescription": "                   a"
                     }
                   """
              Then it should respond with 400
               And the response body is
-                  """{
+                  """
+                  {
                     "validationErrors": {
                         "$.codeValue": [
                             "codeValue cannot contain leading or trailing spaces."
                         ],
                         "$.namespace": [
                             "namespace cannot contain leading or trailing spaces."
-                            ],
+                        ],
                         "$.shortDescription": [
                             "shortDescription cannot contain leading or trailing spaces."
                         ]
                     },
                     "errors": [],
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null
                   }
                   """
 
-        # Descriptors are not validating the whitespace yet. DMS-295
-        @ignore
         Scenario: 08 Create a document with trailing spaces in required fields (Descriptor)
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "a                      ",
                         "description": "a                    ",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor                  ",
                         "shortDescription": "a                   "
                     }
                   """
              Then it should respond with 400
               And the response body is
-                  """{
+                  """
+                  {
                     "validationErrors": {
                         "$.codeValue": [
                             "codeValue cannot contain leading or trailing spaces."
                         ],
                         "$.namespace": [
                             "namespace cannot contain leading or trailing spaces."
-                            ],
+                        ],
                         "$.shortDescription": [
                             "shortDescription cannot contain leading or trailing spaces."
                         ]
                     },
                     "errors": [],
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null
@@ -347,8 +342,6 @@ Feature: Resources "Create" Operation validations
                   }
                   """
 
-        # Descriptors are not validating properly. DMS-295
-        @ignore
         Scenario: 12 Create a document with id property (Descriptor)
             # The ID used does not need to exist: any ID is invalid here
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
@@ -365,15 +358,16 @@ Feature: Resources "Create" Operation validations
               And the response body is
                   """
                     {
-                        "detail": "The request data was constructed incorrectly.",
-                        "type": "urn:ed-fi:api:bad-request:data",
-                        "title": "Data Validation Failed",
-                        "status": 400,
-                        "correlationId": null,
-                        "errors": [
-                            "Resource identifiers cannot be assigned by the client. The 'id' property should not be included in the request body."
-                        ]
-                    }
+                    "validationErrors": {},
+                    "errors": [
+                        "Resource identifiers cannot be assigned by the client. The 'id' property should not be included in the request body."
+                    ],
+                    "detail": "The request data was constructed incorrectly.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null
+                  }
                   """
 
         Scenario: 13 Post a new document with required fields only (Descriptor)

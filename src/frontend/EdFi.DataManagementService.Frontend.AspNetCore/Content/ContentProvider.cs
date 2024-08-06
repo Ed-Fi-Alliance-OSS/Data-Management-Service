@@ -49,7 +49,7 @@ public class ContentProvider : IContentProvider
 {
     private readonly ILogger<ContentProvider> _logger;
     private readonly IAssemblyProvider _assemblyProvider;
-    private readonly Type _type = typeof(ApiSchema.Marker);
+    private readonly Type _type = typeof(DataStandard51.ApiSchema.Marker);
 
     public ContentProvider(ILogger<ContentProvider> logger, IAssemblyProvider assemblyProvider)
     {

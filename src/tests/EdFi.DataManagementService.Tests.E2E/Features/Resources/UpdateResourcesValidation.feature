@@ -76,8 +76,6 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        # Descriptors are not validating properly. DMS-295
-        @ignore
         Scenario: 03 Update a document with a string that is too long (Descriptor)
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -96,13 +94,13 @@ Feature: Resources "Update" Operation validations
                   """
                   {
                     "validationErrors": {
-                        "$.codeValue": [
-                            "codeValue Value should be at most 50 characters"
-                        ]
+                    "$.codeValue": [
+                        "codeValue Value should be at most 50 characters"
+                    ]
                     },
                     "errors": [],
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null
@@ -135,8 +133,6 @@ Feature: Resources "Update" Operation validations
                     }
                   """
 
-        # Descriptors are not validating properly. DMS-295
-        @ignore
         Scenario: 05 Update a document with spaces in required fields (Descriptor)
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -144,35 +140,34 @@ Feature: Resources "Update" Operation validations
                         "id": "{id}",
                         "codeValue": "                      ",
                         "description": "                    ",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                        "namespace": "                      ",
                         "shortDescription": "                    "
                     }
                   """
              Then it should respond with 400
               And the response body is
-                  """{
+                  """
+                   {
                     "validationErrors": {
                         "$.codeValue": [
                             "codeValue cannot contain leading or trailing spaces."
                         ],
                         "$.namespace": [
                             "namespace cannot contain leading or trailing spaces."
-                            ],
+                        ],
                         "$.shortDescription": [
                             "shortDescription cannot contain leading or trailing spaces."
                         ]
                     },
                     "errors": [],
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null
                   }
                   """
 
-        # Descriptors are not validating properly. DMS-295
-        @ignore
         Scenario: 06 Update a document with leading spaces in required fields (Descriptor)
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -180,35 +175,34 @@ Feature: Resources "Update" Operation validations
                         "id": "{id}",
                         "codeValue": "                      a",
                         "description": "                    a",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                        "namespace": "     uri://ed-fi.org/AbsenceEventCategoryDescriptor",
                         "shortDescription": "                   a"
                     }
                   """
              Then it should respond with 400
               And the response body is
-                  """{
+                  """
+                  {
                     "validationErrors": {
                         "$.codeValue": [
                             "codeValue cannot contain leading or trailing spaces."
                         ],
                         "$.namespace": [
                             "namespace cannot contain leading or trailing spaces."
-                            ],
+                        ],
                         "$.shortDescription": [
                             "shortDescription cannot contain leading or trailing spaces."
                         ]
                     },
                     "errors": [],
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null
                   }
                   """
 
-        # Descriptors are not validating the whitespace yet. DMS-295
-        @ignore
         Scenario: 07 Update a document with trailing spaces in required fields (Descriptor)
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -216,27 +210,28 @@ Feature: Resources "Update" Operation validations
                         "id": "{id}",
                         "codeValue": "a                      ",
                         "description": "a                    ",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor     ",
                         "shortDescription": "a                   "
                     }
                   """
              Then it should respond with 400
               And the response body is
-                  """{
+                  """
+                  {
                     "validationErrors": {
                         "$.codeValue": [
                             "codeValue cannot contain leading or trailing spaces."
                         ],
                         "$.namespace": [
                             "namespace cannot contain leading or trailing spaces."
-                            ],
+                        ],
                         "$.shortDescription": [
                             "shortDescription cannot contain leading or trailing spaces."
                         ]
                     },
                     "errors": [],
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null
