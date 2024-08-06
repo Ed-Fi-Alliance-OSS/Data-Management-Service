@@ -425,6 +425,28 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
+        Scenario: 15.1 Create a document with optional property's value containing null (Descriptor)
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+                  """
+                    {
+                        "codeValue": "SL",
+                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                        "shortDescription": "Sick Leave",
+                        "description": null
+                    }
+                  """
+             # 200 because this is updating a document created above.
+             Then it should respond with 200 or 201
+              And the record can be retrieved with a GET request
+                  """
+                    {
+                        "id": "{id}",
+                        "codeValue": "SL",
+                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                        "shortDescription": "Sick Leave"
+                    }
+                  """
+
         Scenario: 16 Post an existing document without changes (Descriptor)
             Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
