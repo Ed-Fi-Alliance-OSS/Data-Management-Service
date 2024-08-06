@@ -15,7 +15,7 @@
     "value.converter": "org.apache.kafka.connect.json.JsonConverter",
     "value.converter.schemas.enable": "false",
 
-    "transforms": "unwrap, extractId, reroute",
+    "transforms": "mergeTopics, unwrap, extractId",
 
     "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
     "transforms.unwrap.drop.tombstones": "false",
@@ -24,9 +24,9 @@
     "transforms.extractId.type": "org.apache.kafka.connect.transforms.ExtractField$Key",
     "transforms.extractId.field": "id",
 
-    "transforms.reroute.type": "io.debezium.transforms.ByLogicalTableRouter",
-    "transforms.reroute.topic.regex": "dms.document_(.*)",
-    "transforms.reroute.topic.replacement": "dms.document",
+    "transforms.mergeTopics.type":"org.apache.kafka.connect.transforms.RegexRouter",
+    "transforms.mergeTopics.regex":"dms.document_(.*)",
+    "transforms.mergeTopics.replacement":"dms.document",
     "key.enforce​.uniqueness": false
   }
 }
