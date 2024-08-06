@@ -46,8 +46,6 @@ Feature: Resources "Create" Operation validations
                   }
                   """
 
-        # Descriptors are not validating properly. DMS-295
-        @ignore
         Scenario: 02 Create a document with a string that is too long (Descriptor)
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -65,13 +63,13 @@ Feature: Resources "Create" Operation validations
                   """
                   {
                     "validationErrors": {
-                        "$.codeValue": [
-                            "codeValue Value should be at most 50 characters"
-                        ]
+                    "$.codeValue": [
+                        "codeValue Value should be at most 50 characters"
+                    ]
                     },
                     "errors": [],
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null
