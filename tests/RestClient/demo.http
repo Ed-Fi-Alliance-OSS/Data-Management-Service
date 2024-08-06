@@ -23,7 +23,7 @@ POST http://localhost:{{port}}/data/ed-fi/gradeLevelDescriptors
 POST http://localhost:{{port}}/data/ed-fi/schoolYearTypes
 
 {
-    "schoolYear": 2027,
+    "schoolYear": 2028,
     "currentSchoolYear": false,
     "schoolYearDescription": "Year 2025"
 }

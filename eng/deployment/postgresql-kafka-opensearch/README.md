@@ -12,7 +12,7 @@ Stream](https://github.com/Ed-Fi-Alliance-OSS/Project-Tanager/blob/main/docs/DMS
     ```
 
 1. Open a shell on the PostgreSQL container and run the following to enable
-   replication.
+   replication:
 
     ```bash
     echo "host    replication    postgres         kafka-connect-source    trust" >> /var/lib/postgresql/data/pg_hba.conf
@@ -21,6 +21,12 @@ Stream](https://github.com/Ed-Fi-Alliance-OSS/Project-Tanager/blob/main/docs/DMS
 
 1. Restart the PostgreSQL container.
 1. Create the `edfi_datamanagementservice` database and run the DB installer. 
+1. Run the following SQL commands against the `edfi_datamanagementservice` database:
+    ```sql
+    CREATE PUBLICATION to_debezium WITH (publish = 'insert, update, delete, truncate', publish_via_partition_root = true);
+    SELECT pg_create_logical_replication_slot('debezium', 'pgoutput');
+    ALTER PUBLICATION to_debezium ADD TABLE dms.document;
+    ```
 1. Run `setup.ps1` to inject the connector configurations into the respective
    sink and source connector containers.
 1. Start the DMS and begin inserting and updating documents.
