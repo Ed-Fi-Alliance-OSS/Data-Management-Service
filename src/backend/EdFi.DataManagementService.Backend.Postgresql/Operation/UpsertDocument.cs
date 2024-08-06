@@ -290,6 +290,21 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
             _logger.LogDebug(pe, "Transaction conflict on Upsert - {TraceId}", upsertRequest.TraceId);
             return new UpsertResult.UpsertFailureWriteConflict();
         }
+        catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            _logger.LogInformation(pe, "Failure: identity already exists - {TraceId}",
+                upsertRequest.TraceId
+            );
+            return new UpsertResult.UpsertFailureIdentityConflict(
+                upsertRequest.ResourceInfo.ResourceName,
+                upsertRequest.DocumentInfo.DocumentIdentity.DocumentIdentityElements.Select(
+                    d => new KeyValuePair<string, string>(
+                        d.IdentityJsonPath.Value.Substring(d.IdentityJsonPath.Value.LastIndexOf('.') + 1),
+                        d.IdentityValue
+                    )
+                )
+            );
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Upsert failure - {TraceId}", upsertRequest.TraceId);
