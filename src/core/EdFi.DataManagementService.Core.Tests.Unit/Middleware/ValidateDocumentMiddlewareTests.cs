@@ -55,6 +55,8 @@ public class ValidateDocumentMiddlewareTests
                     new JsonSchemaBuilder().Type(SchemaValueType.String).Pattern("^(?!\\s).*(?<!\\s)$")
                 ),
                 ("optionalProperty", new JsonSchemaBuilder().Type(SchemaValueType.String)),
+                ("optionalNumber", new JsonSchemaBuilder().Type(SchemaValueType.Number)),
+                ("optionalBoolean", new JsonSchemaBuilder().Type(SchemaValueType.Boolean)),
                 ("webSite", new JsonSchemaBuilder().Type(SchemaValueType.String).MinLength(5).MaxLength(10)),
                 (
                     "educationOrganizationCategories",
@@ -262,7 +264,7 @@ public class ValidateDocumentMiddlewareTests
         public async Task Setup()
         {
             string jsonData =
-                """{"schoolId": 989, "gradeLevels":{"gradeLevelDescriptor": "grade1"},"nameOfInstitution":"school12", "optionalProperty": null}""";
+                """{"schoolId": 989, "gradeLevels":{"gradeLevelDescriptor": "grade1"},"nameOfInstitution":"school12", "optionalProperty": null, "optionalNumber": null, "optionalBoolean": null}""";
 
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
