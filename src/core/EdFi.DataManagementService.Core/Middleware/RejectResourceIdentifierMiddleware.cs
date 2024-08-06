@@ -6,6 +6,7 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
@@ -18,12 +19,13 @@ namespace EdFi.DataManagementService.Core.Middleware
         private static readonly JsonSerializerOptions _serializerOptions =
             new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
-        public static string GenerateFrontendErrorResponse(string errorDetail)
+        public static string GenerateFrontendErrorResponse(string errorDetail, TraceId traceId)
         {
             var errors = new List<string> { errorDetail };
 
             var response = ForDataValidation(
                 "The request data was constructed incorrectly.",
+                traceId,
                 [],
                 errors.ToArray()
             );
@@ -46,7 +48,8 @@ namespace EdFi.DataManagementService.Core.Middleware
                     context.FrontendResponse = new FrontendResponse(
                         StatusCode: 400,
                         GenerateFrontendErrorResponse(
-                            "Resource identifiers cannot be assigned by the client. The 'id' property should not be included in the request body."
+                            "Resource identifiers cannot be assigned by the client. The 'id' property should not be included in the request body.",
+                            context.FrontendRequest.TraceId
                         ),
                         Headers: []
                     );

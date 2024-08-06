@@ -48,12 +48,16 @@ internal class DeleteByIdHandler(IDocumentStoreRepository _documentStoreReposito
                 => new FrontendResponse(
                     StatusCode: 409,
                     Body: JsonSerializer.Serialize(
-                        FailureResponse.ForDataConflict(failure.ReferencingDocumentResourceNames)
+                        FailureResponse.ForDataConflict(
+                            failure.ReferencingDocumentResourceNames,
+                            traceId: context.FrontendRequest.TraceId
+                        )
                     ),
                     Headers: []
                 ),
             DeleteFailureWriteConflict => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),
-            UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage.ToJsonError(), Headers: []),
+            UnknownFailure failure
+                => new(StatusCode: 500, Body: failure.FailureMessage.ToJsonError(), Headers: []),
             _ => new(StatusCode: 500, Body: "Unknown DeleteResult".ToJsonError(), Headers: [])
         };
     }
