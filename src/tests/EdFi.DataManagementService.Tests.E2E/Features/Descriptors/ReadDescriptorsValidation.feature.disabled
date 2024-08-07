@@ -58,7 +58,7 @@ Feature: Resources "Read" Operation validations
              Then it should respond with 404
 
         @ignore
-        Scenario: 04 Read a descriptor that only contains required attributes
+        Scenario: 04 nsure clients cannot delete a descriptor that is being used by other Resources
             Given the system has this "disabilityDescriptors" descriptor
                   | codeValue              | namespace                            | shortDescription       |
                   | Testing Deaf-Blindness | uri://ed-fi.org/DisabilityDescriptor | Testing Deaf-Blindness |
