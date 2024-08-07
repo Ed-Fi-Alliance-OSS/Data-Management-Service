@@ -4,7 +4,6 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
             Given the Data Management Service must receive a token issued by "http://localhost"
               And user is already authorized
 
-        @ignore
         Scenario: 01 Ensure clients can create a descriptor
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -37,8 +36,6 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
                   }
                   """
 
-        # Descriptors are not validating properly. DMS-295
-        @ignore
         Scenario: 02 Ensure clients cannot create a descriptor using a value that is too long
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -57,19 +54,18 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
                   {
                     "validationErrors": {
                         "$.codeValue": [
-                            "codeValue Value should be at most 50 characters"
+                        "codeValue Value should be at most 50 characters"
                         ]
                     },
                     "errors": [],
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null
-                  }
+                    }
                   """
 
-        @ignore
         Scenario: 03 Ensure clients cannot create a descriptor omitting any of the required values
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -116,7 +112,7 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
               And the response body is
                   """
                     {
-                        "detail": "Access to the resource could not be authorized. The 'Namespace' value of the resource does not start with any of the caller's associated namespace prefixes ('uri://ed-fi.org', 'uri://gbisd.org', 'uri://tpdm.ed-fi.org').",
+                        "detail": "Access to the resource could not be authorized. The 'Namespace' value of the resource does not start with any of the caller's associated namespace prefixes ('uri://ed-fi.org').",
                         "type": "urn:ed-fi:api:security:authorization:namespace:access-denied:namespace-mismatch",
                         "title": "Authorization Denied",
                         "status": 403,
@@ -124,7 +120,6 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
                     }
                   """
 
-        @ignore
         Scenario: 05 Post using an empty JSON body
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -162,112 +157,109 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
                   """
                     {
                         "codeValue": "                      ",
-                        "description": "                    ",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                        "namespace": "  ",
                         "shortDescription": "                    "
                     }
                   """
              Then it should respond with 400
               And the response body is
-                  """{
+                  """
+                  {
                     "validationErrors": {
                         "$.codeValue": [
-                            "codeValue cannot contain leading or trailing spaces."
+                        "codeValue cannot contain leading or trailing spaces."
                         ],
                         "$.namespace": [
-                            "namespace cannot contain leading or trailing spaces."
-                            ],
+                        "namespace cannot contain leading or trailing spaces."
+                        ],
                         "$.shortDescription": [
-                            "shortDescription cannot contain leading or trailing spaces."
+                        "shortDescription cannot contain leading or trailing spaces."
                         ]
                     },
                     "errors": [],
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null
                   }
                   """
 
-        # Descriptors are not validating properly. DMS-295
-        @ignore
         Scenario: 07 Ensure clients cannot create a descriptor with leading spaces in required attributes
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "                      a",
                         "description": "                    a",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                        "namespace": "   uri://ed-fi.org/AbsenceEventCategoryDescriptor",
                         "shortDescription": "                   a"
                     }
                   """
              Then it should respond with 400
               And the response body is
-                  """{
+                  """
+                  {
                     "validationErrors": {
-                        "$.codeValue": [
-                            "codeValue cannot contain leading or trailing spaces."
-                        ],
-                        "$.namespace": [
-                            "namespace cannot contain leading or trailing spaces."
-                            ],
-                        "$.shortDescription": [
-                            "shortDescription cannot contain leading or trailing spaces."
-                        ]
+                      "$.codeValue": [
+                        "codeValue cannot contain leading or trailing spaces."
+                      ],
+                      "$.namespace": [
+                        "namespace cannot contain leading or trailing spaces."
+                      ],
+                      "$.shortDescription": [
+                        "shortDescription cannot contain leading or trailing spaces."
+                      ]
                     },
                     "errors": [],
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null
                   }
                   """
 
-        # Descriptors are not validating the whitespace yet. DMS-295
-        @ignore
         Scenario: 08 Ensure clients cannot create a descriptor with trailing spaces in required attributes
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "a                      ",
                         "description": "a                    ",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor   ",
                         "shortDescription": "a                   "
                     }
                   """
              Then it should respond with 400
               And the response body is
-                  """{
+                  """
+                  {
                     "validationErrors": {
                         "$.codeValue": [
-                            "codeValue cannot contain leading or trailing spaces."
+                        "codeValue cannot contain leading or trailing spaces."
                         ],
                         "$.namespace": [
-                            "namespace cannot contain leading or trailing spaces."
-                            ],
+                        "namespace cannot contain leading or trailing spaces."
+                        ],
                         "$.shortDescription": [
-                            "shortDescription cannot contain leading or trailing spaces."
+                        "shortDescription cannot contain leading or trailing spaces."
                         ]
                     },
                     "errors": [],
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null
                   }
                   """
 
-        @ignore
         Scenario: 09 Post a new descriptor with an extra property (overpost)
             Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
-                        "codeValue": "Sick Leave",
+                        "codeValue": "Sick Leave2",
                         "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                        "shortDescription": "Sick Leave",
+                        "shortDescription": "Sick Leave2",
                         "effectiveBeginDate": "2024-07-22",
                         "effectiveEndDate": "2024-07-22",
                         "objectOverpost": {
@@ -280,15 +272,14 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
                   """
                         {
                             "id": "{id}",
-                            "codeValue": "Sick Leave",
+                            "codeValue": "Sick Leave2",
                             "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                            "shortDescription": "Sick Leave",
+                            "shortDescription": "Sick Leave2",
                             "effectiveBeginDate": "2024-07-22",
                             "effectiveEndDate": "2024-07-22"
                         }
                   """
 
-        @ignore
         Scenario: 10 Post a new descriptor with invalid JSON (trailing comma)
             Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -318,8 +309,6 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
                   }
                   """
 
-        # Descriptors are not validating properly. DMS-295
-        @ignore
         Scenario: 11 Create a descriptor with forbidden id property
             # The ID used does not need to exist: any ID is invalid here
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
@@ -335,19 +324,18 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
              Then it should respond with 400
               And the response body is
                   """
-                    {
-                        "detail": "The request data was constructed incorrectly.",
-                        "type": "urn:ed-fi:api:bad-request:data",
-                        "title": "Data Validation Failed",
-                        "status": 400,
-                        "correlationId": null,
-                        "errors": [
-                            "Resource identifiers cannot be assigned by the client. The 'id' property should not be included in the request body."
-                        ]
-                    }
+                  {
+                    "validationErrors": {},
+                    "errors": [
+                      "Resource identifiers cannot be assigned by the client. The 'id' property should not be included in the request body."
+                    ],
+                    "detail": "The request data was constructed incorrectly.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null
+                  }
                   """
-
-        @ignore
         Scenario: 12 Post a new descriptor with required attributes only
             Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -368,7 +356,6 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
                         }
                   """
 
-        @ignore
         Scenario: 13 Create a descriptor with a required, non-identity, property's value containing leading and trailing white spaces
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -381,7 +368,6 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
                   """
              Then it should respond with 201
 
-        @ignore
         Scenario: 14 Create a descriptor with optional property's value containing only white spaces
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -405,7 +391,7 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
                     }
                   """
 
-        @ignore
+        #@ignore
         Scenario: 15 Post an existing descriptor without changes
             Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -437,10 +423,6 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
                         }
                   """
 
-        # DMS-297
-        # Not sure yet what the expected response should be. Depends on what the
-        # JSON schema can do.
-        @ignore
         Scenario: 16 Create a descriptor with duplicate properties
              # The id value should be replaced with the resource created in the Background section
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
@@ -456,16 +438,16 @@ Feature: Descriptors are a set of mechanisms to support flexible enumerations or
               And the response body is
                   """
                   {
-                    "detail": "The request could not be processed. See 'errors' for details.",
-                    "type": "urn:ed-fi:api:bad-request",
-                    "title": "Bad Request",
-                    "status": 400,
-                    "correlationId": null,
                     "validationErrors": {
-                       "$.shortDescription": [
-                         "shortDescription value occurs twice"
-                       ]
-                     },
-                     "errors": []
+                      "$.shortDescription": [
+                        "An item with the same key has already been added."
+                      ]
+                    },
+                    "errors": [],
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null
                   }
                   """
