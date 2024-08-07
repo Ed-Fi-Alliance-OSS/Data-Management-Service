@@ -90,8 +90,11 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             foreach (var descriptor in dataTable.ExtractDescriptors())
             {
-                _apiResponses.Add(await _playwrightContext.ApiRequestContext?.PostAsync(
-                    $"{baseUrl}/{descriptor["descriptorName"]}", new() { DataObject = descriptor })!
+                _apiResponses.Add(
+                    await _playwrightContext.ApiRequestContext?.PostAsync(
+                        $"{baseUrl}/{descriptor["descriptorName"]}",
+                        new() { DataObject = descriptor }
+                    )!
                 );
             }
 
@@ -192,6 +195,33 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information($"POST url: {url}");
             _logger.log.Information($"POST body: {body}");
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
+            _logger.log.Information(_apiResponse.TextAsync().Result);
+            if (_apiResponse.Headers.ContainsKey("location"))
+            {
+                _location = _apiResponse.Headers["location"];
+                _id = _apiResponse.Headers["location"].Split('/').Last();
+            }
+        }
+
+        [When("a POST request is made to {string} with header {string} value {string}")]
+        public async Task WhenSendingAPOSTRequestToWithBodyAndCustomHeader(
+            string url,
+            string header,
+            string value,
+            string body
+        )
+        {
+            url = addDataPrefixIfNecessary(url);
+            _logger.log.Information($"POST url: {url}");
+            _logger.log.Information($"POST body: {body}");
+
+            // Add custom header
+            var httpHeaders = new List<KeyValuePair<string, string>> { new(header, value) };
+
+            _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
+                url,
+                new() { Data = body, Headers = httpHeaders }
+            )!;
             _logger.log.Information(_apiResponse.TextAsync().Result);
             if (_apiResponse.Headers.ContainsKey("location"))
             {
@@ -368,15 +398,53 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             (responseJson as JsonObject)?.Remove("correlationId");
             (expectedBodyJson as JsonObject)?.Remove("correlationId");
 
+            AreEqual(expectedBodyJson, responseJson).Should().BeTrue();
+        }
+
+        private string? CorrelationIdValue(JsonNode response)
+        {
+            if (response is JsonObject jsonObject)
+            {
+                if (
+                    jsonObject.TryGetPropertyValue("correlationId", out JsonNode? correlationId)
+                    && correlationId != null
+                )
+                {
+                    return correlationId.GetValue<string?>();
+                }
+            }
+            return null;
+        }
+
+        private bool AreEqual(JsonNode expectedBodyJson, JsonNode responseJson)
+        {
             responseJson = OrderJsonProperties(responseJson);
             expectedBodyJson = OrderJsonProperties(expectedBodyJson);
 
             JsonElement expectedElement = JsonDocument.Parse(expectedBodyJson.ToJsonString()).RootElement;
             JsonElement responseElement = JsonDocument.Parse(responseJson.ToJsonString()).RootElement;
 
-            bool areEquals = JsonElementEqualityComparer.Instance.Equals(expectedElement, responseElement);
+            return JsonElementEqualityComparer.Instance.Equals(expectedElement, responseElement);
+        }
 
-            areEquals.Should().BeTrue();
+        [Then("the response body should contain header value {string}")]
+        public void ThenTheResponseShouldContainHeaderValue(string value, string expectedBody)
+        {
+            // Parse the API response to JsonNode
+            string responseBody = _apiResponse.TextAsync().Result;
+            JsonNode responseJson = JsonNode.Parse(responseBody)!;
+
+            expectedBody = ReplacePlaceholders(expectedBody, responseJson);
+            JsonNode expectedBodyJson = JsonNode.Parse(expectedBody)!;
+
+            _logger.log.Information(responseJson.ToString());
+
+            // Check for CorrelationId
+            var correlationId = CorrelationIdValue(responseJson);
+            correlationId.Should().NotBeNull();
+            correlationId.Should().BeEquivalentTo(value);
+
+            AreEqual(expectedBodyJson, responseJson).Should().BeTrue();
         }
 
         // Use Regex to find all occurrences of {id} in the body
