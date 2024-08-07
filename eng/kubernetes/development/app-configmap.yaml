@@ -13,3 +13,4 @@ data:
     oauth-token-endpoint: "http://localhost:8080/oauth/token"
     bypass-string-coercion: "false"
     database-isolation-level: "RepeatableRead"
+    correlation-id-header: "correlationid"
