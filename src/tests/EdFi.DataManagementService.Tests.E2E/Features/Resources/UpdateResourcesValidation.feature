@@ -484,6 +484,29 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
+    Scenario: 16 Put an existing document with a null optional property (Descriptor)
+            # The id value should be replaced with the resource created in the Background section
+             When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
+                  """
+                  {
+                    "id": "{id}",
+                    "codeValue": "Sick Leave",
+                    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                    "shortDescription": "Sick Leave",
+                    "description": null
+                  }
+                  """
+             Then it should respond with 204
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": "{id}",
+                    "codeValue": "Sick Leave",
+                    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                    "shortDescription": "Sick Leave"
+                  }
+                  """
+
     Rule: Resources
 
         Background:
@@ -786,7 +809,34 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        Scenario: 22 Put an existing document with a string that is too long (Resource)
+        Scenario: 22 Put an existing document with null optional value (Resource)
+            # The id value should be replaced with the resource created in the Background section
+             When a PUT request is made to "/ed-fi/educationContents/{id}" with
+                  """
+                  {
+                    "id": "{id}",
+                    "contentIdentifier": "Testing",
+                    "namespace": "Testing",
+                    "shortDescription": "Testing",
+                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                    "learningResourceMetadataURI": "Testing",
+                    "cost": null
+                  }
+                  """
+             Then it should respond with 204
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": "{id}",
+                    "contentIdentifier": "Testing",
+                    "namespace": "Testing",
+                    "shortDescription": "Testing",
+                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                    "learningResourceMetadataURI": "Testing"
+                  }
+                  """
+
+        Scenario: 23 Put an existing document with a string that is too long (Resource)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
                   """
@@ -819,7 +869,7 @@ Feature: Resources "Update" Operation validations
                   """
 
         @ignore
-        Scenario: 23 Update a document with a value that is too short (Resource)
+        Scenario: 24 Update a document with a value that is too short (Resource)
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
                   """
                   {
@@ -850,7 +900,7 @@ Feature: Resources "Update" Operation validations
                     }
                   """
 
-        Scenario: 24 Update a document with a duplicated value (Resource)
+        Scenario: 25 Update a document with a duplicated value (Resource)
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
                   """
                   {
