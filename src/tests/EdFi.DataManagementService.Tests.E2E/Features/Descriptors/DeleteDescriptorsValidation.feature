@@ -1,4 +1,4 @@
-Feature: Resources "Delete" Operation validations
+Feature: Delete a Descriptor
 
         Background:
             Given the Data Management Service must receive a token issued by "http://localhost"
@@ -15,11 +15,11 @@ Feature: Resources "Delete" Operation validations
                     }
                   """
 
-        @ignore
         Scenario: 01 Verify deleting a specific descriptor by ID
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 204
 
+        # Restore with DMS-309
         @ignore
         Scenario: 02 Verify error handling when deleting a descriptor using a invalid id
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/00112233445566"
@@ -40,40 +40,40 @@ Feature: Resources "Delete" Operation validations
                   }
                   """
 
-        @ignore
         Scenario: 03 Verify error handling when trying to delete an item that has already been deleted
-            # The id value should be replaced with the resource created in the Background section
-             When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
-             Then it should respond with 204
+            Given a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 404
 
-        @ignore
-        Scenario: 04 Verify response code when GET a deleted resource
-            # The id value should be replaced with the resource created in the Background section
-             When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
-             Then it should respond with 204
+        Scenario: 04 Verify response code when trying to read a deleted resource
+            Given a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 404
 
-        @ignore
         Scenario: 05 Ensure clients cannot delete a descriptor that is being used by other Resources
-            Given the system has this "educationOrganizationCategoryDescriptors" descriptor
-                  | codeValue | namespace                                               | shortDescription |
-                  | School    | uri://ed-fi.org/EducationOrganizationCategoryDescriptor | School           |
-              And the system has this "schools"
-                  | educationOrganizationCategories                                | gradeLevels                                      | schoolId  | nameOfInstitution            |
-                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School | uri://ed-fi.org/GradeLevelDescriptor#First grade | 255901107 | Grand Bend Elementary School |
-             When a DELETE request is made to "/ed-fi/educationOrganizationCategoryDescriptors/{id}"
+            Given the system has these "schools"
+                  | schoolId | nameOfInstitution             | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
+                  | 5        | School with max edorgId value | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+              And a POST request is made to "/ed-fi/gradeLevelDescriptors" with
+                  """
+                    {
+                        "codeValue": "Tenth grade",
+                        "namespace": "uri://ed-fi.org/GradeLevelDescriptor",
+                        "shortDescription": "Tenth grade"
+                    }
+                  """
+             When a DELETE request is made to "/ed-fi/gradeLevelDescriptors/{id}"
              Then it should respond with 409
               And the response body is
                   """
                   {
-                      "detail": "The requested action cannot be performed because this item is referenced by an existing 'School' item.",
-                      "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
-                      "title": "Dependent Item Exists",
-                      "status": 409,
-                      "correlationId": null
+                    "validationErrors": {},
+                    "errors": [],
+                    "detail": "The requested action cannot be performed because this item is referenced by existing School item(s).",
+                    "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
+                    "title": "Dependent Item Exists",
+                    "status": 409,
+                    "correlationId": null
                   }
                   """
 

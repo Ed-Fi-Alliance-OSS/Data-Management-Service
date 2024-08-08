@@ -1,4 +1,4 @@
-Feature: Resources "Update" Operation validations
+Feature: Update a Descriptor
 
     Rule: Descriptors
 
@@ -17,7 +17,6 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @ignore
         Scenario: 01 Put an existing descriptor
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -46,7 +45,6 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @ignore
         Scenario: 02 Put an existing descriptor with optional properties removed
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -69,8 +67,6 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        # Descriptors are not validating properly. DMS-295
-        @ignore
         Scenario: 03 Update a descriptor with a string that is too long
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -90,12 +86,12 @@ Feature: Resources "Update" Operation validations
                   {
                     "validationErrors": {
                         "$.codeValue": [
-                            "codeValue Value should be at most 50 characters"
+                        "codeValue Value should be at most 50 characters"
                         ]
                     },
                     "errors": [],
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null
@@ -120,7 +116,7 @@ Feature: Resources "Update" Operation validations
               And the response body is
                   """
                     {
-                        "detail": "Access to the resource could not be authorized. The 'Namespace' value of the resource does not start with any of the caller's associated namespace prefixes ('uri://ed-fi.org', 'uri://gbisd.org', 'uri://tpdm.ed-fi.org').",
+                        "detail": "Access to the resource could not be authorized. The 'Namespace' value of the resource does not start with any of the caller's associated namespace prefixes ('uri://ed-fi.org').",
                         "type": "urn:ed-fi:api:security:authorization:namespace:access-denied:namespace-mismatch",
                         "title": "Authorization Denied",
                         "status": 403,
@@ -128,8 +124,6 @@ Feature: Resources "Update" Operation validations
                     }
                   """
 
-        # Descriptors are not validating properly. DMS-295
-        @ignore
         Scenario: 05 Update a descriptor with spaces in required fields
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -137,35 +131,34 @@ Feature: Resources "Update" Operation validations
                         "id": "{id}",
                         "codeValue": "                      ",
                         "description": "                    ",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                        "namespace": "   ",
                         "shortDescription": "                    "
                     }
                   """
              Then it should respond with 400
               And the response body is
-                  """{
+                  """
+                  {
                     "validationErrors": {
-                        "$.codeValue": [
-                            "codeValue cannot contain leading or trailing spaces."
-                        ],
-                        "$.namespace": [
-                            "namespace cannot contain leading or trailing spaces."
-                            ],
-                        "$.shortDescription": [
-                            "shortDescription cannot contain leading or trailing spaces."
-                        ]
+                      "$.codeValue": [
+                        "codeValue cannot contain leading or trailing spaces."
+                      ],
+                      "$.namespace": [
+                        "namespace cannot contain leading or trailing spaces."
+                      ],
+                      "$.shortDescription": [
+                        "shortDescription cannot contain leading or trailing spaces."
+                      ]
                     },
                     "errors": [],
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null
                   }
                   """
 
-        # Descriptors are not validating properly. DMS-295
-        @ignore
         Scenario: 06 Update a descriptor with leading spaces in required fields
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -173,35 +166,34 @@ Feature: Resources "Update" Operation validations
                         "id": "{id}",
                         "codeValue": "                      a",
                         "description": "                    a",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                        "namespace": "   uri://ed-fi.org/AbsenceEventCategoryDescriptor",
                         "shortDescription": "                   a"
                     }
                   """
              Then it should respond with 400
               And the response body is
-                  """{
+                  """
+                  {
                     "validationErrors": {
-                        "$.codeValue": [
-                            "codeValue cannot contain leading or trailing spaces."
-                        ],
-                        "$.namespace": [
-                            "namespace cannot contain leading or trailing spaces."
-                            ],
-                        "$.shortDescription": [
-                            "shortDescription cannot contain leading or trailing spaces."
-                        ]
+                      "$.codeValue": [
+                        "codeValue cannot contain leading or trailing spaces."
+                      ],
+                      "$.namespace": [
+                        "namespace cannot contain leading or trailing spaces."
+                      ],
+                      "$.shortDescription": [
+                        "shortDescription cannot contain leading or trailing spaces."
+                      ]
                     },
                     "errors": [],
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null
                   }
                   """
 
-        # Descriptors are not validating the whitespace yet. DMS-295
-        @ignore
         Scenario: 07 Update a descriptor with trailing spaces in required fields
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -209,34 +201,34 @@ Feature: Resources "Update" Operation validations
                         "id": "{id}",
                         "codeValue": "a                      ",
                         "description": "a                    ",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor   ",
                         "shortDescription": "a                   "
                     }
                   """
              Then it should respond with 400
               And the response body is
-                  """{
+                  """
+                  {
                     "validationErrors": {
-                        "$.codeValue": [
-                            "codeValue cannot contain leading or trailing spaces."
-                        ],
-                        "$.namespace": [
-                            "namespace cannot contain leading or trailing spaces."
-                            ],
-                        "$.shortDescription": [
-                            "shortDescription cannot contain leading or trailing spaces."
-                        ]
+                      "$.codeValue": [
+                        "codeValue cannot contain leading or trailing spaces."
+                      ],
+                      "$.namespace": [
+                        "namespace cannot contain leading or trailing spaces."
+                      ],
+                      "$.shortDescription": [
+                        "shortDescription cannot contain leading or trailing spaces."
+                      ]
                     },
                     "errors": [],
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null
                   }
                   """
 
-        @ignore
         Scenario: 08 Put an existing descriptor with an extra property (overpost)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -262,7 +254,6 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @ignore
         Scenario: 09 Update a descriptor that does not exist
              # The id value should be replaced with a non existing resource
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/00000000-0000-4000-a000-000000000000" with
@@ -289,7 +280,6 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @ignore
         Scenario: 10 Update a descriptor with modification of an identity field
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -316,7 +306,6 @@ Feature: Resources "Update" Operation validations
                     }
                   """
 
-        @ignore
         Scenario: 11  Put an empty request descriptor
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -338,7 +327,6 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @ignore
         Scenario: 12 Put an empty JSON body
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -373,7 +361,6 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @ignore
         Scenario: 13 Update a descriptor with mismatch between URL and id
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -402,7 +389,6 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @ignore
         Scenario: 14 Update a descriptor with a blank id
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -431,8 +417,7 @@ Feature: Resources "Update" Operation validations
                    }
                   """
 
-        @ignore
-        Scenario: 15 Update a descriptor with an invalid id format
+        Scenario: 15 Update a descriptor with an invalid id format in the body
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -459,10 +444,7 @@ Feature: Resources "Update" Operation validations
                     ]
                   }
                   """
-        # DMS-297
-        # Not sure yet what the expected response should be. Depends on what the
-        # JSON schema can do.
-        @ignore
+
         Scenario: 16 Update a descriptor with duplicate properties
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -479,70 +461,138 @@ Feature: Resources "Update" Operation validations
               And the response body is
                   """
                   {
-                    "detail": "The request could not be processed. See 'errors' for details.",
-                    "type": "urn:ed-fi:api:bad-request",
-                    "title": "Bad Request",
-                    "status": 400,
-                    "correlationId": null,
                     "validationErrors": {
-                       "$.shortDescription": [
-                         "shortDescription value occurs twice"
-                       ]
-                     },
-                     "errors": []
+                      "$.shortDescription": [
+                        "An item with the same key has already been added."
+                      ]
+                    },
+                    "errors": [],
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null
                   }
                   """
 
-        @ignore
         Scenario: 17 Ensure clients cannot update a descriptor omitting any of the required values
              When a PUT request is made to "/ed-fi/disabilityDescriptors" with
                   """
                   {
+                      "id": "{id}",
                       "namespace": "uri://ed-fi.org/DisabilityDescriptor",
                       "shortDescription": "Deaf-Blindness",
                       "description": "Deaf-Blindness"
                   }
                   """
-             Then it should respond with 409
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "validationErrors": {
+                      "$.codeValue": [
+                        "codeValue is required."
+                      ]
+                    },
+                    "errors": [],
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null
+                  }
+                  """
+
+        Scenario: 18 Ensure clients cannot update a codeValue
+            Given a POST request is made to "/ed-fi/disabilityDescriptors" with
+                  """
+                  {
+                    "codeValue": "Visual Impairment, including Blindness",
+                    "namespace": "uri://ed-fi.org/DisabilityDescriptor",
+                    "shortDescription": "Visual Impairment, including Blindness"
+                  }
+                  """
+             When a PUT request is made to "/ed-fi/disabilityDescriptors/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "codeValue": "Visual Impairment, including Blindness Ed-Fi Test",
+                      "description": "Visual Impairment, including Blindness",
+                      "namespace": "uri://ed-fi.org/DisabilityDescriptor",
+                      "shortDescription": "Visual Impairment, including Blindness"
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "validationErrors": {},
+                    "errors": [],
+                    "detail": "Identifying values for the DisabilityDescriptor resource cannot be changed. Delete and recreate the resource item instead.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed:key-change-not-supported",
+                    "title": "Key Change Not Supported",
+                    "status": 400,
+                    "correlationId": null
+                  }
+                  """
+
+        Scenario: 19 Ensure clients cannot update a namespace
+            Given a POST request is made to "/ed-fi/disabilityDescriptors" with
+                  """
+                  {
+                    "codeValue": "Visual Impairment, including Blindness",
+                    "namespace": "uri://ed-fi.org/DisabilityDescriptor",
+                    "shortDescription": "Visual Impairment, including Blindness"
+                  }
+                  """
+             When a PUT request is made to "/ed-fi/disabilityDescriptors/{id}" with
+                  """
+                  {
+                    "id": "{id}",
+                    "codeValue": "Visual Impairment, including Blindness",
+                    "namespace": "uri://ed-fi.org/DisabilityDescriptor__",
+                    "shortDescription": "Visual Impairment, including Blindness"
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "validationErrors": {},
+                    "errors": [],
+                    "detail": "Identifying values for the DisabilityDescriptor resource cannot be changed. Delete and recreate the resource item instead.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed:key-change-not-supported",
+                    "title": "Key Change Not Supported",
+                    "status": 400,
+                    "correlationId": null
+                  }
+                  """
+
+        # DMS-309
+        @ignore
+        Scenario: 20 Verify response code 404 when ID is not valid
+             When a PUT request is made to "/ed-fi/disabilityDescriptors/00112233445566" with
+                  """
+                  {
+                    "id": "{id}",
+                    "codeValue": "Visual Impairment, including Blindness",
+                    "namespace": "uri://ed-fi.org/DisabilityDescriptor",
+                    "shortDescription": "Visual Impairment, including Blindness"
+                  }
+                  """
+             Then it should respond with 404
               And the response body is
                   """
                   {
                       "detail": "Data validation failed. See 'validationErrors' for details.",
                       "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                       "title": "Data Validation Failed",
-                      "status": 409,
+                      "status": 404,
                       "correlationId": null,
                       "validationErrors": {
-                          "$.namespace": [
-                              "CodeValue is required."
+                          "$.id": [
+                              "The value '00112233445566' is not valid."
                           ]
                       }
                   }
                   """
-
-        @ignore
-        Scenario: 18 Ensure clients cannot update a descriptor changing identifying values
-            Given the system has this "disabilityDescriptors" descriptor
-                  | codeValue                              | namespace                            | shortDescription                       |
-                  | Visual Impairment, including Blindness | uri://ed-fi.org/DisabilityDescriptor | Visual Impairment, including Blindness |
-             When a PUT request is made to "/ed-fi/disabilityDescriptors/{id}" with
-                  """
-                  {
-                      "codeValue": "Visual Impairment, including Blindness Ed-Fi Test",
-                      "description": "Visual Impairment, including Blindness",
-                      "namespace": "uri://ed-fi.org/DisabilityDescriptorEd-FiTest",
-                      "shortDescription": "Visual Impairment, including Blindness"
-                  }
-                  """
-             Then it should respond with 409
-              And the response body is
-                  """
-                  {
-                      "detail": "Identifying values for the DisabilityDescriptor data cannot be changed. Delete and recreate the item instead.",
-                      "type": "urn:ed-fi:api:bad-request:data-validation-failed:key-change-not-supported",
-                      "title": "Key Change Not Supported",
-                      "status": 400,
-                      "correlationId": null
-                  }
-                  """
-
