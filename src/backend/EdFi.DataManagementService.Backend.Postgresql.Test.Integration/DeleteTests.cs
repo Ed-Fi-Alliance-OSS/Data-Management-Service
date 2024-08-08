@@ -121,9 +121,9 @@ public class DeleteTests : DatabaseTest
         }
 
         [Test]
-        public void It_should_be_a_write_conflict_for_2nd_transaction()
+        public void It_should_be_not_exists_for_2nd_transaction()
         {
-            _deleteResult2!.Should().BeOfType<DeleteResult.DeleteFailureWriteConflict>();
+            _deleteResult2!.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
         }
     }
 

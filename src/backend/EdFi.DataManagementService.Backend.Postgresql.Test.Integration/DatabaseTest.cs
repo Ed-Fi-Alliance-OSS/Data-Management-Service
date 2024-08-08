@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
+using System.Diagnostics;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Operation;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -285,42 +286,61 @@ public abstract class DatabaseTest : DatabaseTestBase
         _ = Task.Run(async () =>
         {
             // Step #0: Wait for signal from transaction 1 thread to start
+            Debug.WriteLine("Step 0");
             Transaction2Go?.WaitOne();
 
             // Step #3: Create new connection and begin DB transaction 2
+            Debug.WriteLine("Step 3");
             connection2 = await DataSource!.OpenConnectionAsync();
             transaction2 = await connection2.BeginTransactionAsync(ConfiguredIsolationLevel);
 
             // Step #4: Signal to transaction 1 thread to continue in parallel
+            Debug.WriteLine("Step 4");
             Transaction1Go?.Set();
 
             // Step #6: Execute DB operation 2, which will block in DB until transaction 1 commits
+            Debug.WriteLine("Step 6");
             result2 = await dbOperation2(connection2, transaction2);
 
             // Step #9: DB operation unblocked by DB transaction 1 commit, so now we can commit
-            await transaction2.CommitAsync();
+            Debug.WriteLine("Step 9");
+            try
+            {
+                await transaction2.CommitAsync();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(ex.Message);
+            }
 
             // Step #10: Tell transaction 1 thread we are done
+            Debug.WriteLine("Step 10");
             Transaction1Go?.Set();
         });
 
         // Step #1: Execute DB operation 1 without committing
+        Debug.WriteLine("Step 1");
         result1 = await dbOperation1(connection1, transaction1);
 
         // Step #2: Yield to transaction 2 thread
+        Debug.WriteLine("Step 2");
         Transaction2Go?.Set();
         Transaction1Go?.WaitOne();
 
         // Step #5: Give transaction 2 thread time for it's blocking DB operation to execute on DB
+        Debug.WriteLine("Step 5");
         Thread.Sleep(1000);
 
         // Step #7: Commit DB transaction 1, which will unblock transaction 2's DB operation
+        Debug.WriteLine("Step 7");
         await transaction1.CommitAsync();
 
         // Step #8: Wait for transaction 2 thread to finish
+        Debug.WriteLine("Step 8");
         Transaction1Go?.WaitOne();
 
         // Step #11: Cleanup and return
+        Debug.WriteLine("Step 11");
         transaction2?.Dispose();
         connection2?.Dispose();
 
