@@ -1,4 +1,4 @@
-Feature: Descriptors are a set of mechanisms to support flexible enumerations or code sets. Validation of POST requests.
+Feature: Create a Descriptor
 
         Background:
             Given the Data Management Service must receive a token issued by "http://localhost"
