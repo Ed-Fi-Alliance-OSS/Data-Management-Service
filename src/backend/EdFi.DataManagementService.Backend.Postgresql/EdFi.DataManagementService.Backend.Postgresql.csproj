@@ -41,6 +41,7 @@
       <PackageReference Include="Microsoft.Extensions.Options" />
       <PackageReference Include="Npgsql" />
       <PackageReference Include="Npgsql.DependencyInjection" />
+      <PackageReference Include="Polly.Core" />
       <PackageReference Include="SonarAnalyzer.CSharp">
           <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
           <PrivateAssets>all</PrivateAssets>
