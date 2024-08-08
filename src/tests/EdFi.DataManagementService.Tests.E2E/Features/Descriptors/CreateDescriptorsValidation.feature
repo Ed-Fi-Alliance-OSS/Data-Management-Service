@@ -391,7 +391,6 @@ Feature: Create a Descriptor
                     }
                   """
 
-        #@ignore
         Scenario: 15 Post an existing descriptor without changes
             Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
