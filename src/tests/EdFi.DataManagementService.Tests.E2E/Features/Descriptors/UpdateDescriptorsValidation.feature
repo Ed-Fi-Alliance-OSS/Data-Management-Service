@@ -417,8 +417,7 @@ Feature: Update a Descriptor
                    }
                   """
 
-        @ignore
-        Scenario: 15 Update a descriptor with an invalid id format
+        Scenario: 15 Update a descriptor with an invalid id format in the body
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
