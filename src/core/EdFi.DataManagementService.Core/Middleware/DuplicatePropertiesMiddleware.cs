@@ -83,6 +83,7 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
                     JsonSerializer.Serialize(
                         ForDataValidation(
                             "Data validation failed. See 'validationErrors' for details.",
+                            traceId: context.FrontendRequest.TraceId,
                             validationErrors,
                             []
                         ),

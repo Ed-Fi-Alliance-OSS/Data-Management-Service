@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
@@ -19,12 +20,13 @@ namespace EdFi.DataManagementService.Core.Middleware
         private static readonly JsonSerializerOptions _serializerOptions =
             new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
-        public static string GenerateFrontendErrorResponse(string errorDetail)
+        public static string GenerateFrontendErrorResponse(string errorDetail, TraceId traceId)
         {
             string[] errors = { errorDetail };
 
             var response = ForBadRequest(
                 "The request could not be processed. See 'errors' for details.",
+                traceId,
                 [],
                 errors
             );
@@ -32,7 +34,7 @@ namespace EdFi.DataManagementService.Core.Middleware
             return JsonSerializer.Serialize(response, _serializerOptions);
         }
 
-        public static string GenerateFrontendValidationErrorResponse(string errorDetail)
+        public static string GenerateFrontendValidationErrorResponse(string errorDetail, TraceId traceId)
         {
             var validationErrors = new Dictionary<string, string[]>();
 
@@ -41,6 +43,7 @@ namespace EdFi.DataManagementService.Core.Middleware
 
             var response = ForDataValidation(
                 "Data validation failed. See 'validationErrors' for details.",
+                traceId,
                 validationErrors,
                 []
             );
@@ -58,7 +61,10 @@ namespace EdFi.DataManagementService.Core.Middleware
                 {
                     context.FrontendResponse = new FrontendResponse(
                         StatusCode: 400,
-                        GenerateFrontendErrorResponse("A non-empty request body is required."),
+                        GenerateFrontendErrorResponse(
+                            "A non-empty request body is required.",
+                            context.FrontendRequest.TraceId
+                        ),
                         Headers: []
                     );
                     return;
@@ -80,7 +86,7 @@ namespace EdFi.DataManagementService.Core.Middleware
 
                 context.FrontendResponse = new FrontendResponse(
                     StatusCode: 400,
-                    GenerateFrontendValidationErrorResponse(ex.Message),
+                    GenerateFrontendValidationErrorResponse(ex.Message, context.FrontendRequest.TraceId),
                     Headers: []
                 );
 

@@ -33,14 +33,18 @@ public class ValidateQueryMiddlewareTests
         {
             var queryParameters = new Dictionary<string, string>
             {
-                { "offset", "I"},
+                { "offset", "I" },
                 { "limit", "-1" },
                 { "totalCount", "100" }
             };
 
-            FrontendRequest frontendRequest = new(Path: "/ed-fi/schools",
-                Body:null,
-                QueryParameters: queryParameters, TraceId: new TraceId(""));
+            FrontendRequest frontendRequest =
+                new(
+                    Path: "/ed-fi/schools",
+                    Body: null,
+                    QueryParameters: queryParameters,
+                    TraceId: new TraceId("")
+                );
             _context = new(frontendRequest, RequestMethod.GET);
             await Middleware().Execute(_context, NullNext);
         }
@@ -60,13 +64,17 @@ public class ValidateQueryMiddlewareTests
         [Test]
         public void It_should_be_offset_errors()
         {
-            _context.FrontendResponse.Body.Should().Contain("Offset must be a numeric value greater than or equal to 0.");
+            _context
+                .FrontendResponse.Body.Should()
+                .Contain("Offset must be a numeric value greater than or equal to 0.");
         }
 
         [Test]
         public void It_should_be_limit_errors()
         {
-            _context.FrontendResponse.Body.Should().Contain("Limit must be a numeric value greater than or equal to 0.");
+            _context
+                .FrontendResponse.Body.Should()
+                .Contain("Limit must be a numeric value greater than or equal to 0.");
         }
 
         [Test]
@@ -76,4 +84,3 @@ public class ValidateQueryMiddlewareTests
         }
     }
 }
-

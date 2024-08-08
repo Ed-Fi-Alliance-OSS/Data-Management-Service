@@ -70,6 +70,11 @@ spec:
                 configMapKeyRef:
                   name: app-configmap
                   key: database-isolation-level
+            - name: CORRELATION_ID_HEADER
+              valueFrom:
+                configMapKeyRef:
+                  name: app-configmap
+                  key: correlation-id-header
           livenessProbe:
             exec:
               command:

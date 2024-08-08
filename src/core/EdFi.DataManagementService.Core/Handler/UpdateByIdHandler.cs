@@ -59,7 +59,10 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
                 => new FrontendResponse(
                     StatusCode: 404,
                     Body: JsonSerializer.Serialize(
-                        FailureResponse.ForNotFound("Resource to update was not found")
+                        FailureResponse.ForNotFound(
+                            "Resource to update was not found",
+                            traceId: context.FrontendRequest.TraceId
+                        )
                     ),
                     Headers: []
                 ),
@@ -69,15 +72,31 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
                     Body: JsonSerializer.Serialize(
                         FailureResponse.ForBadRequest(
                             "Data validation failed. See 'validationErrors' for details.",
+                            traceId: context.FrontendRequest.TraceId,
                             failure.InvalidDescriptorReferences.ToDictionary(
                                 d => d.Path.Value,
-                                d => d.DocumentIdentity.DocumentIdentityElements.Select(e =>
-                                        $"{d.ResourceInfo.ResourceName.Value} value '{e.IdentityValue}' does not exist.")
-                                    .ToArray()), [])),
+                                d =>
+                                    d.DocumentIdentity.DocumentIdentityElements.Select(e =>
+                                            $"{d.ResourceInfo.ResourceName.Value} value '{e.IdentityValue}' does not exist."
+                                        )
+                                        .ToArray()
+                            ),
+                            []
+                        )
+                    ),
                     Headers: []
                 ),
             UpdateFailureReference failure
-                => new FrontendResponse(StatusCode: 409, Body: JsonSerializer.Serialize(FailureResponse.ForInvalidReferences(failure.ReferencingDocumentInfo)), Headers: []),
+                => new FrontendResponse(
+                    StatusCode: 409,
+                    Body: JsonSerializer.Serialize(
+                        FailureResponse.ForInvalidReferences(
+                            failure.ReferencingDocumentInfo,
+                            traceId: context.FrontendRequest.TraceId
+                        )
+                    ),
+                    Headers: []
+                ),
             UpdateFailureIdentityConflict failure
                 => new FrontendResponse(StatusCode: 400, Body: failure.ReferencingDocumentInfo, Headers: []),
             UpdateFailureWriteConflict => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),
@@ -85,15 +104,26 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
                 => new FrontendResponse(
                     StatusCode: 400,
                     Body: JsonSerializer.Serialize(
-                        FailureResponse.ForImmutableIdentity(failure.FailureMessage)
+                        FailureResponse.ForImmutableIdentity(
+                            failure.FailureMessage,
+                            traceId: context.FrontendRequest.TraceId
+                        )
                     ),
                     Headers: []
                 ),
-            UpdateFailureCascadeRequired
-                => new FrontendResponse(StatusCode: 400, Body: null, Headers: []),
+            UpdateFailureCascadeRequired => new FrontendResponse(StatusCode: 400, Body: null, Headers: []),
             UnknownFailure failure
-                => new FrontendResponse(StatusCode: 500, Body: failure.FailureMessage.ToJsonError(), Headers: []),
-            _ => new FrontendResponse(StatusCode: 500, Body: "Unknown UpdateResult".ToJsonError(), Headers: [])
+                => new FrontendResponse(
+                    StatusCode: 500,
+                    Body: failure.FailureMessage.ToJsonError(),
+                    Headers: []
+                ),
+            _
+                => new FrontendResponse(
+                    StatusCode: 500,
+                    Body: "Unknown UpdateResult".ToJsonError(),
+                    Headers: []
+                )
         };
     }
 }

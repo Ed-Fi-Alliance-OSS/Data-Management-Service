@@ -77,11 +77,13 @@ public class UpdateByIdHandlerTests
         public void It_has_the_correct_response()
         {
             context.FrontendResponse.StatusCode.Should().Be(404);
-            context.FrontendResponse.Body.Should().Be(
-                """
-                {"validationErrors":{},"errors":[],"detail":"Resource to update was not found","type":"urn:ed-fi:api:not-found","title":"Not Found","status":404,"correlationId":null}
-                """
-            );
+            context
+                .FrontendResponse.Body.Should()
+                .Be(
+                    """
+                    {"validationErrors":{},"errors":[],"detail":"Resource to update was not found","type":"urn:ed-fi:api:not-found","title":"Not Found","status":404,"correlationId":""}
+                    """
+                );
         }
     }
 
@@ -179,7 +181,11 @@ public class UpdateByIdHandlerTests
         {
             public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
             {
-                return Task.FromResult<UpdateResult>(new UpdateFailureImmutableIdentity("Identifying values for the resource cannot be changed. Delete and recreate the resource item instead."));
+                return Task.FromResult<UpdateResult>(
+                    new UpdateFailureImmutableIdentity(
+                        "Identifying values for the resource cannot be changed. Delete and recreate the resource item instead."
+                    )
+                );
             }
         }
 

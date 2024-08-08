@@ -32,8 +32,7 @@ public class DuplicatePropertiesMiddlewareTest
         [SetUp]
         public async Task Setup()
         {
-            string jsonBody =
-                """
+            string jsonBody = """
                 {
                   "schoolId":255901001,
                   "schoolId":255901001,
@@ -89,8 +88,7 @@ public class DuplicatePropertiesMiddlewareTest
         [SetUp]
         public async Task Setup()
         {
-            string jsonBody =
-                """
+            string jsonBody = """
                 {
                   "schoolId":255901001,
                   "nameOfInstitution":"School Test",
@@ -150,8 +148,7 @@ public class DuplicatePropertiesMiddlewareTest
         [SetUp]
         public async Task Setup()
         {
-            string jsonBody =
-                """
+            string jsonBody = """
                 {
                     "schoolReference": {
                         "schoolId": 1
@@ -208,8 +205,7 @@ public class DuplicatePropertiesMiddlewareTest
         [SetUp]
         public async Task Setup()
         {
-            string jsonBody =
-                """
+            string jsonBody = """
                 {
                   "schoolId":255901001,
                   "nameOfInstitution":"School Test",
@@ -269,8 +265,7 @@ public class DuplicatePropertiesMiddlewareTest
         [SetUp]
         public async Task Setup()
         {
-            string jsonBody =
-                """
+            string jsonBody = """
                 {
                   "schoolId":255901001,
                   "schoolId":255901001,
@@ -332,8 +327,7 @@ public class DuplicatePropertiesMiddlewareTest
         [SetUp]
         public async Task Setup()
         {
-            string jsonBody =
-                """
+            string jsonBody = """
                 {
                     "id": "{{id}}",
                     "studentUniqueId":"123",
@@ -426,6 +420,13 @@ public class DuplicatePropertiesMiddlewareTest
         public void It_returns_message_body_with_failure_duplicated_property()
         {
             _context?.FrontendResponse.Body.Should().Contain("Data Validation Failed");
+            _context
+                ?.FrontendResponse.Body.Should()
+                .Contain(
+                    """
+                    "correlationId":"traceId"
+                    """
+                );
             _context
                 ?.FrontendResponse.Body.Should()
                 .Contain(
