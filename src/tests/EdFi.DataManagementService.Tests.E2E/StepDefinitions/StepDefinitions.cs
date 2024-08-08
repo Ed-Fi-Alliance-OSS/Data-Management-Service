@@ -251,6 +251,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             }
         }
 
+        [Given("a DELETE request is made to {string}")]
         [When("a DELETE request is made to {string}")]
         public async Task WhenADELETERequestIsMadeTo(string url)
         {
