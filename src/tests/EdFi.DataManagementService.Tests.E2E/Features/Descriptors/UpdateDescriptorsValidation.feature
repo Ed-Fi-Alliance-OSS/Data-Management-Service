@@ -551,7 +551,7 @@ Feature: Update a Descriptor
                   {
                     "id": "{id}",
                     "codeValue": "Visual Impairment, including Blindness",
-                    "namespace": "uri://ed-fi.org/DisabilityDescriptor",
+                    "namespace": "uri://ed-fi.org/DisabilityDescriptor__",
                     "shortDescription": "Visual Impairment, including Blindness"
                   }
                   """
@@ -569,4 +569,31 @@ Feature: Update a Descriptor
                   }
                   """
 
-
+        # DMS-309
+        @ignore
+        Scenario: 20 Verify response code 404 when ID is not valid
+             When a PUT request is made to "/ed-fi/disabilityDescriptors/00112233445566" with
+                  """
+                  {
+                    "id": "{id}",
+                    "codeValue": "Visual Impairment, including Blindness",
+                    "namespace": "uri://ed-fi.org/DisabilityDescriptor",
+                    "shortDescription": "Visual Impairment, including Blindness"
+                  }
+                  """
+             Then it should respond with 404
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 404,
+                      "correlationId": null,
+                      "validationErrors": {
+                          "$.id": [
+                              "The value '00112233445566' is not valid."
+                          ]
+                      }
+                  }
+                  """
