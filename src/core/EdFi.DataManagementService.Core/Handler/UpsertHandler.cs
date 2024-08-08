@@ -45,7 +45,6 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
             context.FrontendRequest.TraceId
         );
 
-
         context.FrontendResponse = result switch
         {
             InsertSuccess insertSuccess
@@ -74,17 +73,26 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
                     Body: JsonSerializer.Serialize(
                         ForBadRequest(
                             "Data validation failed. See 'validationErrors' for details.",
+                            traceId: context.FrontendRequest.TraceId,
                             failure.InvalidDescriptorReferences.ToDictionary(
                                 d => d.Path.Value,
-                                d => d.DocumentIdentity.DocumentIdentityElements.Select(e =>
-                                        $"{d.ResourceInfo.ResourceName.Value} value '{e.IdentityValue}' does not exist.")
-                                    .ToArray()), [])),
+                                d =>
+                                    d.DocumentIdentity.DocumentIdentityElements.Select(e =>
+                                            $"{d.ResourceInfo.ResourceName.Value} value '{e.IdentityValue}' does not exist."
+                                        )
+                                        .ToArray()
+                            ),
+                            []
+                        )
+                    ),
                     Headers: []
                 ),
             UpsertFailureReference failure
                 => new(
                     StatusCode: 409,
-                    Body: JsonSerializer.Serialize(ForInvalidReferences(failure.ResourceNames)),
+                    Body: JsonSerializer.Serialize(
+                        ForInvalidReferences(failure.ResourceNames, traceId: context.FrontendRequest.TraceId)
+                    ),
                     Headers: []
                 ),
             UpsertFailureIdentityConflict failure
@@ -94,15 +102,16 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
                         ForIdentityConflict(
                             [
                                 $"A natural key conflict occurred when attempting to create a new resource {failure.ResourceName.Value} with a duplicate key. "
-                                + $"The duplicate keys and values are {string.Join(',', failure.DuplicateIdentityValues.Select(d => $"({d.Key} = {d.Value})"))}"
-                            ]
+                                    + $"The duplicate keys and values are {string.Join(',', failure.DuplicateIdentityValues.Select(d => $"({d.Key} = {d.Value})"))}"
+                            ],
+                            traceId: context.FrontendRequest.TraceId
                         )
                     ),
                     Headers: []
                 ),
             UpsertFailureWriteConflict => new(StatusCode: 409, Body: null, Headers: []),
-            UnknownFailure failure => new(StatusCode: 500, Body: failure.FailureMessage.ToJsonError(),
-                Headers: []),
+            UnknownFailure failure
+                => new(StatusCode: 500, Body: failure.FailureMessage.ToJsonError(), Headers: []),
             _ => new(StatusCode: 500, Body: "Unknown UpsertResult".ToJsonError(), Headers: [])
         };
     }

@@ -35,6 +35,7 @@ namespace EdFi.DataManagementService.Core.Middleware
             {
                 FailureResponseWithErrors failureResponse = FailureResponse.ForBadRequest(
                     "The request could not be processed. See 'errors' for details.",
+                    context.FrontendRequest.TraceId,
                     [],
                     ["Request body id must match the id in the url."]
                 );

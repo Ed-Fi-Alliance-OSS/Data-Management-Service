@@ -12,6 +12,7 @@ public class AppSettings
     public required string AuthenticationService { get; set; }
     public required string DatabaseEngine { get; set; }
     public bool DeployDatabaseOnStartup { get; set; }
+    public required string CorrelationIdHeader { get; set; }
 }
 
 public class AppSettingsValidator : IValidateOptions<AppSettings>

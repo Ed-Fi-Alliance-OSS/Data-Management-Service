@@ -65,7 +65,9 @@ public class UpsertHandlerTests
 
             public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
-                return Task.FromResult<UpsertResult>(new UpsertFailureReference([new(BadResourceName1), new(BadResourceName2)]));
+                return Task.FromResult<UpsertResult>(
+                    new UpsertFailureReference([new(BadResourceName1), new(BadResourceName2)])
+                );
             }
         }
 
@@ -82,11 +84,13 @@ public class UpsertHandlerTests
         public void It_has_the_correct_response()
         {
             context.FrontendResponse.StatusCode.Should().Be(409);
-            context.FrontendResponse.Body.Should().Be(
-                """
-                {"detail":"The referenced BadResourceName1, BadResourceName2 item(s) do not exist.","type":"urn:ed-fi:api:data-conflict:unresolved-reference","title":"Unresolved Reference","status":409,"correlationId":null}
-                """
-            );
+            context
+                .FrontendResponse.Body.Should()
+                .Be(
+                    """
+                    {"detail":"The referenced BadResourceName1, BadResourceName2 item(s) do not exist.","type":"urn:ed-fi:api:data-conflict:unresolved-reference","title":"Unresolved Reference","status":409,"correlationId":""}
+                    """
+                );
             context.FrontendResponse.Headers.Should().BeEmpty();
             context.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }
@@ -101,7 +105,12 @@ public class UpsertHandlerTests
 
             public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
-                return Task.FromResult<UpsertResult>(new UpsertFailureIdentityConflict(new(""), [new KeyValuePair<string, string>("key", "value")]));
+                return Task.FromResult<UpsertResult>(
+                    new UpsertFailureIdentityConflict(
+                        new(""),
+                        [new KeyValuePair<string, string>("key", "value")]
+                    )
+                );
             }
         }
 
