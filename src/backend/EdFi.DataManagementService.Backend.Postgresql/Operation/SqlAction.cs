@@ -9,7 +9,6 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
@@ -64,17 +63,25 @@ public static class SqlAction
                     }
                 };
 
-            await command.PrepareAsync();
-            await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
-
-            if (!reader.HasRows)
+            try
             {
-                return null;
-            }
+                await command.PrepareAsync();
+                await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
-            // Assumes only one row returned
-            await reader.ReadAsync();
-            return (await reader.GetFieldValueAsync<JsonElement>(0)).Deserialize<JsonNode>();
+                if (!reader.HasRows)
+                {
+                    return null;
+                }
+
+                // Assumes only one row returned
+                await reader.ReadAsync();
+                return (await reader.GetFieldValueAsync<JsonElement>(0)).Deserialize<JsonNode>();
+            }
+            catch (PostgresException pe) when (pe.IsTransient)
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
         });
         return result;
     }
@@ -108,29 +115,37 @@ public static class SqlAction
                         new() { Value = referentialId.Value },
                     }
                 };
-
-            await command.PrepareAsync();
-            await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
-
-            if (!reader.HasRows)
+            try
             {
-                return null;
+                await command.PrepareAsync();
+                await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+
+                if (!reader.HasRows)
+                {
+                    return null;
+                }
+
+                // Assumes only one row returned (should never be more due to DB unique constraint)
+                await reader.ReadAsync();
+
+                return new Document(
+                    Id: reader.GetInt64(reader.GetOrdinal("Id")),
+                    DocumentPartitionKey: reader.GetInt16(reader.GetOrdinal("DocumentPartitionKey")),
+                    DocumentUuid: reader.GetGuid(reader.GetOrdinal("DocumentUuid")),
+                    ResourceName: reader.GetString(reader.GetOrdinal("ResourceName")),
+                    ResourceVersion: reader.GetString(reader.GetOrdinal("ResourceVersion")),
+                    ProjectName: reader.GetString(reader.GetOrdinal("ProjectName")),
+                    EdfiDoc: await reader.GetFieldValueAsync<JsonElement>(reader.GetOrdinal("EdfiDoc")),
+                    CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
+                    LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt"))
+                );
             }
 
-            // Assumes only one row returned (should never be more due to DB unique constraint)
-            await reader.ReadAsync();
-
-            return new Document(
-                Id: reader.GetInt64(reader.GetOrdinal("Id")),
-                DocumentPartitionKey: reader.GetInt16(reader.GetOrdinal("DocumentPartitionKey")),
-                DocumentUuid: reader.GetGuid(reader.GetOrdinal("DocumentUuid")),
-                ResourceName: reader.GetString(reader.GetOrdinal("ResourceName")),
-                ResourceVersion: reader.GetString(reader.GetOrdinal("ResourceVersion")),
-                ProjectName: reader.GetString(reader.GetOrdinal("ProjectName")),
-                EdfiDoc: await reader.GetFieldValueAsync<JsonElement>(reader.GetOrdinal("EdfiDoc")),
-                CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
-                LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt"))
-            );
+            catch (PostgresException pe) when (pe.IsTransient)
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
         });
         return result;
     }
@@ -162,22 +177,31 @@ public static class SqlAction
                     }
                 };
 
-            await command.PrepareAsync();
-            await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
-
-            var documents = new List<JsonNode>();
-
-            while (await reader.ReadAsync())
+            try
             {
-                JsonNode? edfiDoc = (await reader.GetFieldValueAsync<JsonElement>(0)).Deserialize<JsonNode>();
+                await command.PrepareAsync();
+                await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
-                if (edfiDoc != null)
+                var documents = new List<JsonNode>();
+
+                while (await reader.ReadAsync())
                 {
-                    documents.Add(edfiDoc);
-                }
-            }
+                    JsonNode? edfiDoc =
+                        (await reader.GetFieldValueAsync<JsonElement>(0)).Deserialize<JsonNode>();
 
-            return documents.ToArray();
+                    if (edfiDoc != null)
+                    {
+                        documents.Add(edfiDoc);
+                    }
+                }
+
+                return documents.ToArray();
+            }
+            catch (PostgresException pe) when (pe.IsTransient)
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
         });
         return result;
     }
@@ -200,17 +224,24 @@ public static class SqlAction
                     Parameters = { new() { Value = resourceName }, }
                 };
 
-            await command.PrepareAsync();
-            await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
-
-            if (!reader.HasRows)
+            try
             {
-                return 0;
+                await command.PrepareAsync();
+                await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+
+                if (!reader.HasRows)
+                {
+                    return 0;
+                }
+
+                await reader.ReadAsync();
+                return reader.GetInt16(reader.GetOrdinal("Total"));
             }
-
-            await reader.ReadAsync();
-
-            return reader.GetInt16(reader.GetOrdinal("Total"));
+            catch (PostgresException pe) when (pe.IsTransient)
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
         });
         return result;
     }
@@ -245,8 +276,16 @@ public static class SqlAction
                 }
             };
 
-            await command.PrepareAsync();
-            return Convert.ToInt64(await command.ExecuteScalarAsync());
+            try
+            {
+                await command.PrepareAsync();
+                return Convert.ToInt64(await command.ExecuteScalarAsync());
+            }
+            catch (PostgresException pe) when (pe.IsTransient)
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
         });
         return result;
     }
@@ -281,8 +320,17 @@ public static class SqlAction
                 }
             };
 
-            await command.PrepareAsync();
-            return await command.ExecuteNonQueryAsync();
+            try
+            {
+                await command.PrepareAsync();
+                return await command.ExecuteNonQueryAsync();
+            }
+            catch (PostgresException pe) when (pe.IsTransient)
+            {
+                // We will retry transient exceptions, but the transaction needs to be rolled back first. 
+                await transaction.RollbackAsync();
+                throw;
+            }
         });
         return result;
     }
@@ -328,25 +376,35 @@ public static class SqlAction
                     }
                 };
 
-            await command.PrepareAsync();
-            await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
-
-            if (!reader.HasRows)
+            try
             {
-                // Document does not exist
-                return new UpdateDocumentValidationResult(DocumentExists: false, ReferentialIdUnchanged: false);
+                await command.PrepareAsync();
+                await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+
+                if (!reader.HasRows)
+                {
+                    // Document does not exist
+                    return new UpdateDocumentValidationResult(DocumentExists: false,
+                        ReferentialIdUnchanged: false);
+                }
+
+                // Assumes only one row returned (should never be more due to DB unique constraint)
+                await reader.ReadAsync();
+
+                if (await reader.IsDBNullAsync(reader.GetOrdinal("ReferentialId")))
+                {
+                    // Extracted referential id does not match stored. Must be attempting to change natural key.
+                    return new UpdateDocumentValidationResult(DocumentExists: true,
+                        ReferentialIdUnchanged: false);
+                }
+
+                return new UpdateDocumentValidationResult(DocumentExists: true, ReferentialIdUnchanged: true);
             }
-
-            // Assumes only one row returned (should never be more due to DB unique constraint)
-            await reader.ReadAsync();
-
-            if (await reader.IsDBNullAsync(reader.GetOrdinal("ReferentialId")))
+            catch (PostgresException pe) when (pe.IsTransient)
             {
-                // Extracted referential id does not match stored. Must be attempting to change natural key.
-                return new UpdateDocumentValidationResult(DocumentExists: true, ReferentialIdUnchanged: false);
+                await transaction.RollbackAsync();
+                throw;
             }
-
-            return new UpdateDocumentValidationResult(DocumentExists: true, ReferentialIdUnchanged: true);
         });
         return result;
     }
@@ -379,8 +437,16 @@ public static class SqlAction
                 }
             };
 
-            await command.PrepareAsync();
-            return Convert.ToInt64(await command.ExecuteScalarAsync());
+            try
+            {
+                await command.PrepareAsync();
+                return Convert.ToInt64(await command.ExecuteScalarAsync());
+            }
+            catch (PostgresException pe) when (pe.IsTransient)
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
         });
         return result;
     }
@@ -423,16 +489,24 @@ public static class SqlAction
                 }
             };
 
-            await command.PrepareAsync();
-            await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
-
-            List<Guid> result = [];
-            while (await reader.ReadAsync())
+            try
             {
-                result.Add(reader.GetGuid(0));
-            }
+                await command.PrepareAsync();
+                await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
-            return result.ToArray();
+                List<Guid> result = [];
+                while (await reader.ReadAsync())
+                {
+                    result.Add(reader.GetGuid(0));
+                }
+
+                return result.ToArray();
+            }
+            catch (PostgresException pe) when (pe.IsTransient)
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
         });
         return result;
     }
@@ -466,9 +540,16 @@ public static class SqlAction
                     }
                 };
 
-            await command.PrepareAsync();
-            int rowsAffected = await command.ExecuteNonQueryAsync();
-            return rowsAffected;
+            try
+            {
+                await command.PrepareAsync();
+                return await command.ExecuteNonQueryAsync();
+            }
+            catch (PostgresException pe) when (pe.IsTransient)
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
         });
         return result;
     }
@@ -503,8 +584,7 @@ public static class SqlAction
             try
             {
                 await command.PrepareAsync();
-                int rowsAffected = await command.ExecuteNonQueryAsync();
-                return rowsAffected;
+                return await command.ExecuteNonQueryAsync();
             }
             catch (PostgresException pe) when (pe.IsTransient)
             {
@@ -548,17 +628,25 @@ public static class SqlAction
                     }
                 };
 
-            await command.PrepareAsync();
-
-            await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
-            var resourceNames = new List<string>();
-
-            while (await reader.ReadAsync())
+            try
             {
-                resourceNames.Add(reader.GetString(reader.GetOrdinal("ResourceName")));
-            }
+                await command.PrepareAsync();
 
-            return resourceNames.Distinct().ToArray();
+                await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+                var resourceNames = new List<string>();
+
+                while (await reader.ReadAsync())
+                {
+                    resourceNames.Add(reader.GetString(reader.GetOrdinal("ResourceName")));
+                }
+
+                return resourceNames.Distinct().ToArray();
+            }
+            catch (PostgresException pe) when (pe.IsTransient)
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
         });
         return result;
     }
