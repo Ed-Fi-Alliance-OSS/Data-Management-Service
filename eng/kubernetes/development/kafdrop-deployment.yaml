@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    serviceName: dms-kafdrop
+  name: dms-kafdrop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      serviceName: dms-kafdrop
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        serviceName: dms-kafdrop
+    spec:
+      containers:
+      - name: dms-kafdrop
+        image: obsidiandynamics/kafdrop:4.0.2@sha256:b1a316d2c2e3ef783758ba2d253eb7cfa65c1bc8ae4c6cd3686942cdec7f96e7
+        ports:
+            - port: 9000
+              targetPort: 9000
+
+        env:
+            name: "KAFKA_BROKERCONNECT"
+            value: "dms-kafka1:9092"
+
+            name: "JVM_OPTS"
+            value: "-Xms32M -Xmx64M"
+
+            name: "SERVER_SERVLET_CONTEXTPATH"
+            value: "/"
+
+      restartPolicy: Always
+status: {}

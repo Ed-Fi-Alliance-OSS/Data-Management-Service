@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    serviceName: dms-opensearch
+  name: dms-opensearch
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      serviceName: dms-opensearch
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        serviceName: dms-opensearch
+    spec:
+      containers:
+      - name: dms-opensearch
+        image: opensearchproject/opensearch:2.15.0@sha256:1a6d62f4ff2215f66792362a56c64cea29ff6cbe700f95881857f045a6fea3c9
+        ports:
+            - port: 9000
+              targetPort: 9000
+
+        env:
+            name: ""
+            value: ""
+
+            name: ""
+            value: ""
+
+            name: ""
+            value: ""
+
+      restartPolicy: Always
+status: {}
