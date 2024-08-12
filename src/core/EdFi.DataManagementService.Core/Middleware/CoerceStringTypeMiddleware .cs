@@ -26,7 +26,7 @@ namespace EdFi.DataManagementService.Core.Middleware
                 var jsonNodes = context.ParsedBody.SelectNodesFromArrayPath(path, logger);
                 foreach (var jsonNode in jsonNodes)
                 {
-                    jsonNode.TryCoerceBooleanToBoolean();
+                    jsonNode?.TryCoerceBooleanToBoolean();
                 }
             }
 
@@ -35,7 +35,7 @@ namespace EdFi.DataManagementService.Core.Middleware
                 var jsonNodes = context.ParsedBody.SelectNodesFromArrayPath(path, logger);
                 foreach (var jsonNode in jsonNodes)
                 {
-                    jsonNode.TryCoerceStringToNumber();
+                    jsonNode?.TryCoerceStringToNumber();
                 }
             }
 

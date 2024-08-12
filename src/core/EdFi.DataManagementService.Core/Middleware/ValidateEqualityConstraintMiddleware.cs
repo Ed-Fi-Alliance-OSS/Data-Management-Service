@@ -50,6 +50,7 @@ internal class ValidateEqualityConstraintMiddleware(
         {
             var failureResponse = FailureResponse.ForDataValidation(
                 "Data validation failed. See 'validationErrors' for details.",
+                context.FrontendRequest.TraceId,
                 validationErrors,
                 []
             );

@@ -28,10 +28,7 @@ public class ContainerSetup
 
         var loggerFactory = LoggerFactory.Create(builder =>
         {
-            builder
-                .SetMinimumLevel(LogLevel.Trace)
-                .AddDebug()
-                .AddConsole();
+            builder.SetMinimumLevel(LogLevel.Trace).AddDebug().AddConsole();
         });
 
         DbContainer = new ContainerBuilder()
@@ -48,7 +45,10 @@ public class ContainerSetup
             .WithImage(apiImageName)
             .WithPortBinding(8080)
             .WithEnvironment("NEED_DATABASE_SETUP", "true")
-            .WithEnvironment("DATABASE_CONNECTION_STRING", "host=dmsdb;port=5432;username=postgres;password=P@ssw0rd;database=edfi_datamanagementservice;")
+            .WithEnvironment(
+                "DATABASE_CONNECTION_STRING",
+                "host=dmsdb;port=5432;username=postgres;password=P@ssw0rd;database=edfi_datamanagementservice;"
+            )
             .WithEnvironment("POSTGRES_ADMIN_USER", pgAdminUser)
             .WithEnvironment("POSTGRES_ADMIN_PASSWORD", pgAdminPassword)
             .WithEnvironment("POSTGRES_PORT", "5432")
@@ -56,6 +56,7 @@ public class ContainerSetup
             .WithEnvironment("LOG_LEVEL", "Debug")
             .WithEnvironment("OAUTH_TOKEN_ENDPOINT", "http://127.0.0.1:8080/oauth/token")
             .WithEnvironment("BYPASS_STRING_COERCION", "false")
+            .WithEnvironment("CORRELATION_ID_HEADER", "correlationid")
             .WithEnvironment("DATABASE_ISOLATION_LEVEL", "RepeatableRead")
             .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(8080)))
             .WithNetwork(network)

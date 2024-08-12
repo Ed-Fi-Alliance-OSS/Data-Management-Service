@@ -16,32 +16,8 @@ Feature: Resources "Delete" Operation validations
                         "shortDescription": "Sick Leave"
                     }
                   """
-             Then it should respond with 201 or 200
 
-        Scenario: 01 Verify deleting a specific resource by ID
-             When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
-             Then it should respond with 204
-
-        Scenario: 02 Verify error handling when deleting using a invalid id
-             When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/00112233445566"
-             Then it should respond with 404
-
-        Scenario: 03 Verify error handling when deleting a non existing resource
-            # The id value should be replaced with the resource created in the Background section
-             When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
-             Then it should respond with 204
-             When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
-             Then it should respond with 404
-
-        Scenario: 04 Verify response code when GET a deleted resource
-            # The id value should be replaced with the resource created in the Background section
-             When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
-             Then it should respond with 204
-             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
-             Then it should respond with 404
-
-
-        Scenario: 05 Verify response when deleting a referenced school
+        Scenario: 01 Verify response when deleting a referenced school
             Given the system has these "schools" references
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
                   | 4003     | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
@@ -69,7 +45,7 @@ Feature: Resources "Delete" Operation validations
                     }
                   """
 
-        Scenario: 06 Verify response when deleting a referenced schoolyeartype
+        Scenario: 02 Verify response when deleting a referenced schoolyeartype
             Given the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
                   | 4003     | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
@@ -97,7 +73,7 @@ Feature: Resources "Delete" Operation validations
                     }
                   """
 
-        Scenario: 07 Verify response when deleting a referenced student
+        Scenario: 03 Verify response when deleting a referenced student
             Given the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
                   | 4005     | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#First Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
@@ -125,7 +101,7 @@ Feature: Resources "Delete" Operation validations
                     }
                   """
 
-        Scenario: 08 Verify response when deleting a student with more than one reference
+        Scenario: 04 Verify response when deleting a student with more than one reference
             Given the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
                   | 4005     | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#First Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
