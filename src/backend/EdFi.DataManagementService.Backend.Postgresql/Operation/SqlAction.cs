@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using Npgsql;
+using static EdFi.DataManagementService.Backend.Postgresql.Operation.Resilience;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
 
@@ -46,7 +47,7 @@ public static class SqlAction
         LockOption lockOption
     )
     {
-        var result = await Resilience.GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
+        var result = await GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
         {
             try
             {
@@ -100,7 +101,7 @@ public static class SqlAction
         LockOption lockOption
     )
     {
-        var result = await Resilience.GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
+        var result = await GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
         {
             try
             {
@@ -165,7 +166,7 @@ public static class SqlAction
         NpgsqlTransaction transaction
     )
     {
-        var result = await Resilience.GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
+        var result = await GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
         {
             try
             {
@@ -223,7 +224,7 @@ public static class SqlAction
         NpgsqlTransaction transaction
     )
     {
-        var result = await Resilience.GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
+        var result = await GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
         {
             try
             {
@@ -264,7 +265,7 @@ public static class SqlAction
         NpgsqlTransaction transaction
     )
     {
-        var result = await Resilience.GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
+        var result = await GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
         {
             try
             {
@@ -312,18 +313,18 @@ public static class SqlAction
         NpgsqlTransaction transaction
     )
     {
-        var result = await Resilience.GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
+        var result = await GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
         {
             try
             {
                 await using var command = new NpgsqlCommand(
                 @"UPDATE dms.Document
-              SET EdfiDoc = $1
-              WHERE DocumentPartitionKey = $2 AND DocumentUuid = $3
-              RETURNING Id;",
-                connection,
-                transaction
-            )
+                  SET EdfiDoc = $1
+                  WHERE DocumentPartitionKey = $2 AND DocumentUuid = $3
+                  RETURNING Id;",
+                    connection,
+                    transaction
+                )
                 {
                     Parameters =
                 {
@@ -357,7 +358,7 @@ public static class SqlAction
         LockOption lockOption
     )
     {
-        var result = await Resilience.GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
+        var result = await GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
         {
             try
             {
@@ -371,12 +372,12 @@ public static class SqlAction
                 await using NpgsqlCommand command =
                     new(
                         $@"SELECT DocumentUuid, ReferentialId
-                    FROM dms.Document d
-                    LEFT JOIN dms.Alias a ON
-                        a.DocumentId = d.Id
-                        AND a.DocumentPartitionKey = d.DocumentPartitionKey
-                        AND a.ReferentialId = $1 and a.ReferentialPartitionKey = $2
-                    WHERE d.DocumentUuid = $3 AND d.DocumentPartitionKey = $4 {sqlForLockOption};",
+                        FROM dms.Document d
+                        LEFT JOIN dms.Alias a ON
+                            a.DocumentId = d.Id
+                            AND a.DocumentPartitionKey = d.DocumentPartitionKey
+                            AND a.ReferentialId = $1 and a.ReferentialPartitionKey = $2
+                        WHERE d.DocumentUuid = $3 AND d.DocumentPartitionKey = $4 {sqlForLockOption};",
                         connection,
                         transaction
                     )
@@ -432,7 +433,7 @@ public static class SqlAction
         NpgsqlTransaction transaction
     )
     {
-        var result = await Resilience.GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
+        var result = await GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
         {
             try
             {
@@ -477,7 +478,7 @@ public static class SqlAction
         NpgsqlTransaction transaction
     )
     {
-        var result = await Resilience.GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
+        var result = await GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
         {
             try
             {
@@ -538,16 +539,16 @@ public static class SqlAction
         NpgsqlTransaction transaction
     )
     {
-        var result = await Resilience.GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
+        var result = await GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
         {
             try
             {
                 await using NpgsqlCommand command =
                 new(
                     @"DELETE from dms.Reference r
-                  USING dms.Document d
-                  WHERE d.Id = r.ParentDocumentId AND d.DocumentPartitionKey = r.ParentDocumentPartitionKey
-                  AND d.DocumentPartitionKey = $1 AND d.DocumentUuid = $2;",
+                      USING dms.Document d
+                      WHERE d.Id = r.ParentDocumentId AND d.DocumentPartitionKey = r.ParentDocumentPartitionKey
+                      AND d.DocumentPartitionKey = $1 AND d.DocumentUuid = $2;",
                     connection,
                     transaction
                 )
@@ -583,7 +584,7 @@ public static class SqlAction
         NpgsqlTransaction transaction
     )
     {
-        var result = await Resilience.GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
+        var result = await GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
         {
             try
             {
@@ -623,7 +624,7 @@ public static class SqlAction
         LockOption lockOption
     )
     {
-        var result = await Resilience.GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
+        var result = await GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
         {
             try
             {
