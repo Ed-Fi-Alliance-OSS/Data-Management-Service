@@ -7,13 +7,12 @@ using System.Diagnostics;
 using Npgsql;
 using Polly;
 using Polly.Retry;
-#pragma warning disable S125
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Operation
 {
     internal static class Resilience
     {
-        public static ResiliencePipeline GetTransientRetryPipeline()
+        public static ResiliencePipeline GetPostgresExceptionRetryPipeline()
         {
             return new ResiliencePipelineBuilder()
                 .AddRetry(new RetryStrategyOptions
@@ -22,14 +21,28 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Operation
                     BackoffType = DelayBackoffType.Exponential,
                     MaxRetryAttempts = 4,
                     Delay = TimeSpan.FromMilliseconds(500),
-                    OnRetry = OnRetry
+                    OnRetry = OnTransientRetry
+                })
+                .AddRetry(new RetryStrategyOptions
+                {
+                    ShouldHandle = new PredicateBuilder().Handle<PostgresException>(pe => !pe.IsTransient && pe.SqlState != PostgresErrorCodes.ForeignKeyViolation && pe.SqlState != PostgresErrorCodes.UniqueViolation),
+                    BackoffType = DelayBackoffType.Exponential,
+                    MaxRetryAttempts = 2,
+                    Delay = TimeSpan.FromMilliseconds(1000),
+                    OnRetry = OnFailuretRetry
                 })
                 .Build();
         }
 
-        private static ValueTask OnRetry(OnRetryArguments<object> onRetryArguments)
+        private static ValueTask OnTransientRetry(OnRetryArguments<object> onRetryArguments)
         {
-            Debug.WriteLine("You are here");
+            Debug.WriteLine($"Transient Tetry {onRetryArguments.AttemptNumber} {onRetryArguments.Duration}");
+            return ValueTask.CompletedTask;
+        }
+
+        private static ValueTask OnFailuretRetry(OnRetryArguments<object> onRetryArguments)
+        {
+            Debug.WriteLine($"Non-Transient Tetry {onRetryArguments.AttemptNumber} {onRetryArguments.Duration}");
             return ValueTask.CompletedTask;
         }
     }

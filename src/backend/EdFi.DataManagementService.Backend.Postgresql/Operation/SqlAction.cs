@@ -46,9 +46,11 @@ public static class SqlAction
         LockOption lockOption
     )
     {
-        var result = await Resilience.GetTransientRetryPipeline().ExecuteAsync(async _ =>
+        var result = await Resilience.GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
         {
-            await using NpgsqlCommand command =
+            try
+            {
+                await using NpgsqlCommand command =
                 new(
                     $@"SELECT EdfiDoc FROM dms.Document WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 AND ResourceName = $3 {SqlFor(lockOption)};",
                     connection,
@@ -63,8 +65,6 @@ public static class SqlAction
                     }
                 };
 
-            try
-            {
                 await command.PrepareAsync();
                 await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
@@ -77,8 +77,10 @@ public static class SqlAction
                 await reader.ReadAsync();
                 return (await reader.GetFieldValueAsync<JsonElement>(0)).Deserialize<JsonNode>();
             }
-            catch (PostgresException pe) when (pe.IsTransient)
+            catch (PostgresException)
             {
+                // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
+                // Must roll back the transaction before retry.
                 await transaction.RollbackAsync();
                 throw;
             }
@@ -98,9 +100,11 @@ public static class SqlAction
         LockOption lockOption
     )
     {
-        var result = await Resilience.GetTransientRetryPipeline().ExecuteAsync(async _ =>
+        var result = await Resilience.GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
         {
-            await using NpgsqlCommand command =
+            try
+            {
+                await using NpgsqlCommand command =
                 new(
                     $@"SELECT * FROM dms.Document d
                 INNER JOIN dms.Alias a ON a.DocumentId = d.Id AND a.DocumentPartitionKey = d.DocumentPartitionKey
@@ -115,8 +119,7 @@ public static class SqlAction
                         new() { Value = referentialId.Value },
                     }
                 };
-            try
-            {
+
                 await command.PrepareAsync();
                 await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
@@ -141,8 +144,10 @@ public static class SqlAction
                 );
             }
 
-            catch (PostgresException pe) when (pe.IsTransient)
+            catch (PostgresException)
             {
+                // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
+                // Must roll back the transaction before retry.
                 await transaction.RollbackAsync();
                 throw;
             }
@@ -160,9 +165,11 @@ public static class SqlAction
         NpgsqlTransaction transaction
     )
     {
-        var result = await Resilience.GetTransientRetryPipeline().ExecuteAsync(async _ =>
+        var result = await Resilience.GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
         {
-            await using NpgsqlCommand command =
+            try
+            {
+                await using NpgsqlCommand command =
                 new(
                     @"SELECT EdfiDoc FROM dms.Document WHERE ResourceName = $1 ORDER BY CreatedAt OFFSET $2 ROWS FETCH FIRST $3 ROWS ONLY;",
                     connection,
@@ -177,8 +184,6 @@ public static class SqlAction
                     }
                 };
 
-            try
-            {
                 await command.PrepareAsync();
                 await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
@@ -197,8 +202,10 @@ public static class SqlAction
 
                 return documents.ToArray();
             }
-            catch (PostgresException pe) when (pe.IsTransient)
+            catch (PostgresException)
             {
+                // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
+                // Must roll back the transaction before retry.
                 await transaction.RollbackAsync();
                 throw;
             }
@@ -216,16 +223,16 @@ public static class SqlAction
         NpgsqlTransaction transaction
     )
     {
-        var result = await Resilience.GetTransientRetryPipeline().ExecuteAsync(async _ =>
+        var result = await Resilience.GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
         {
-            await using NpgsqlCommand command =
-                new(@"SELECT Count(1) Total FROM dms.Document WHERE resourcename = $1;", connection, transaction)
-                {
-                    Parameters = { new() { Value = resourceName }, }
-                };
-
             try
             {
+                await using NpgsqlCommand command =
+                    new(@"SELECT Count(1) Total FROM dms.Document WHERE resourcename = $1;", connection, transaction)
+                    {
+                        Parameters = { new() { Value = resourceName }, }
+                    };
+
                 await command.PrepareAsync();
                 await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
@@ -237,8 +244,10 @@ public static class SqlAction
                 await reader.ReadAsync();
                 return reader.GetInt16(reader.GetOrdinal("Total"));
             }
-            catch (PostgresException pe) when (pe.IsTransient)
+            catch (PostgresException)
             {
+                // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
+                // Must roll back the transaction before retry.
                 await transaction.RollbackAsync();
                 throw;
             }
@@ -255,34 +264,36 @@ public static class SqlAction
         NpgsqlTransaction transaction
     )
     {
-        var result = await Resilience.GetTransientRetryPipeline().ExecuteAsync(async _ =>
+        var result = await Resilience.GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
         {
-            await using var command = new NpgsqlCommand(
-                @"INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, ProjectName, EdfiDoc)
-                    VALUES ($1, $2, $3, $4, $5, $6)
-              RETURNING Id;",
-                connection,
-                transaction
-            )
-            {
-                Parameters =
-                {
-                    new() { Value = document.DocumentPartitionKey },
-                    new() { Value = document.DocumentUuid },
-                    new() { Value = document.ResourceName },
-                    new() { Value = document.ResourceVersion },
-                    new() { Value = document.ProjectName },
-                    new() { Value = document.EdfiDoc },
-                }
-            };
-
             try
             {
+                await using var command = new NpgsqlCommand(
+                @"INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, ProjectName, EdfiDoc)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                  RETURNING Id;",
+                    connection,
+                    transaction
+                )
+                {
+                    Parameters =
+                    {
+                        new() { Value = document.DocumentPartitionKey },
+                        new() { Value = document.DocumentUuid },
+                        new() { Value = document.ResourceName },
+                        new() { Value = document.ResourceVersion },
+                        new() { Value = document.ProjectName },
+                        new() { Value = document.EdfiDoc },
+                    }
+                };
+
                 await command.PrepareAsync();
                 return Convert.ToInt64(await command.ExecuteScalarAsync());
             }
-            catch (PostgresException pe) when (pe.IsTransient)
+            catch (PostgresException pe) when (pe.SqlState != PostgresErrorCodes.ForeignKeyViolation && pe.SqlState != PostgresErrorCodes.UniqueViolation)
             {
+                // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
+                // Must roll back the transaction before retry.
                 await transaction.RollbackAsync();
                 throw;
             }
@@ -301,9 +312,11 @@ public static class SqlAction
         NpgsqlTransaction transaction
     )
     {
-        var result = await Resilience.GetTransientRetryPipeline().ExecuteAsync(async _ =>
+        var result = await Resilience.GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
         {
-            await using var command = new NpgsqlCommand(
+            try
+            {
+                await using var command = new NpgsqlCommand(
                 @"UPDATE dms.Document
               SET EdfiDoc = $1
               WHERE DocumentPartitionKey = $2 AND DocumentUuid = $3
@@ -311,23 +324,22 @@ public static class SqlAction
                 connection,
                 transaction
             )
-            {
-                Parameters =
+                {
+                    Parameters =
                 {
                     new() { Value = edfiDoc },
                     new() { Value = documentPartitionKey },
                     new() { Value = documentUuid },
                 }
-            };
+                };
 
-            try
-            {
                 await command.PrepareAsync();
                 return await command.ExecuteNonQueryAsync();
             }
-            catch (PostgresException pe) when (pe.IsTransient)
+            catch (PostgresException pe) when (pe.SqlState != PostgresErrorCodes.ForeignKeyViolation && pe.SqlState != PostgresErrorCodes.UniqueViolation)
             {
-                // We will retry transient exceptions, but the transaction needs to be rolled back first. 
+                // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
+                // Must roll back the transaction before retry.
                 await transaction.RollbackAsync();
                 throw;
             }
@@ -345,39 +357,39 @@ public static class SqlAction
         LockOption lockOption
     )
     {
-        var result = await Resilience.GetTransientRetryPipeline().ExecuteAsync(async _ =>
+        var result = await Resilience.GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
         {
-            string sqlForLockOption = SqlFor(lockOption);
-            if (sqlForLockOption != "")
-            {
-                // Only lock the Documents table
-                sqlForLockOption += " OF d";
-            }
-
-            await using NpgsqlCommand command =
-                new(
-                    $@"SELECT DocumentUuid, ReferentialId
-                FROM dms.Document d
-                LEFT JOIN dms.Alias a ON
-                    a.DocumentId = d.Id
-                    AND a.DocumentPartitionKey = d.DocumentPartitionKey
-                    AND a.ReferentialId = $1 and a.ReferentialPartitionKey = $2
-                WHERE d.DocumentUuid = $3 AND d.DocumentPartitionKey = $4 {sqlForLockOption};",
-                    connection,
-                    transaction
-                )
-                {
-                    Parameters =
-                    {
-                        new() { Value = referentialId.Value },
-                        new() { Value = referentialPartitionKey.Value },
-                        new() { Value = documentUuid.Value },
-                        new() { Value = documentPartitionKey.Value },
-                    }
-                };
-
             try
             {
+                string sqlForLockOption = SqlFor(lockOption);
+                if (sqlForLockOption != "")
+                {
+                    // Only lock the Documents table
+                    sqlForLockOption += " OF d";
+                }
+
+                await using NpgsqlCommand command =
+                    new(
+                        $@"SELECT DocumentUuid, ReferentialId
+                    FROM dms.Document d
+                    LEFT JOIN dms.Alias a ON
+                        a.DocumentId = d.Id
+                        AND a.DocumentPartitionKey = d.DocumentPartitionKey
+                        AND a.ReferentialId = $1 and a.ReferentialPartitionKey = $2
+                    WHERE d.DocumentUuid = $3 AND d.DocumentPartitionKey = $4 {sqlForLockOption};",
+                        connection,
+                        transaction
+                    )
+                    {
+                        Parameters =
+                        {
+                            new() { Value = referentialId.Value },
+                            new() { Value = referentialPartitionKey.Value },
+                            new() { Value = documentUuid.Value },
+                            new() { Value = documentPartitionKey.Value },
+                        }
+                    };
+
                 await command.PrepareAsync();
                 await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
@@ -400,8 +412,10 @@ public static class SqlAction
 
                 return new UpdateDocumentValidationResult(DocumentExists: true, ReferentialIdUnchanged: true);
             }
-            catch (PostgresException pe) when (pe.IsTransient)
+            catch (PostgresException)
             {
+                // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
+                // Must roll back the transaction before retry.
                 await transaction.RollbackAsync();
                 throw;
             }
@@ -418,32 +432,34 @@ public static class SqlAction
         NpgsqlTransaction transaction
     )
     {
-        var result = await Resilience.GetTransientRetryPipeline().ExecuteAsync(async _ =>
+        var result = await Resilience.GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
         {
-            await using var command = new NpgsqlCommand(
-                @"INSERT INTO dms.Alias (ReferentialPartitionKey, ReferentialId, DocumentId, DocumentPartitionKey)
-                    VALUES ($1, $2, $3, $4)
-              RETURNING Id;",
-                connection,
-                transaction
-            )
-            {
-                Parameters =
-                {
-                    new() { Value = alias.ReferentialPartitionKey },
-                    new() { Value = alias.ReferentialId },
-                    new() { Value = alias.DocumentId },
-                    new() { Value = alias.DocumentPartitionKey },
-                }
-            };
-
             try
             {
+                await using var command = new NpgsqlCommand(
+                @"INSERT INTO dms.Alias (ReferentialPartitionKey, ReferentialId, DocumentId, DocumentPartitionKey)
+                    VALUES ($1, $2, $3, $4)
+                  RETURNING Id;",
+                    connection,
+                    transaction
+                )
+                {
+                    Parameters =
+                    {
+                        new() { Value = alias.ReferentialPartitionKey },
+                        new() { Value = alias.ReferentialId },
+                        new() { Value = alias.DocumentId },
+                        new() { Value = alias.DocumentPartitionKey },
+                    }
+                };
+
                 await command.PrepareAsync();
                 return Convert.ToInt64(await command.ExecuteScalarAsync());
             }
-            catch (PostgresException pe) when (pe.IsTransient)
+            catch (PostgresException pe) when (pe.SqlState != PostgresErrorCodes.ForeignKeyViolation && pe.SqlState != PostgresErrorCodes.UniqueViolation)
             {
+                // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
+                // Must roll back the transaction before retry.
                 await transaction.RollbackAsync();
                 throw;
             }
@@ -461,36 +477,35 @@ public static class SqlAction
         NpgsqlTransaction transaction
     )
     {
-        var result = await Resilience.GetTransientRetryPipeline().ExecuteAsync(async _ =>
+        var result = await Resilience.GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
         {
-            Trace.Assert(
-                bulkReferences.ReferentialIds.Length == bulkReferences.ReferentialPartitionKeys.Length,
-                "Arrays of ReferentialIds and ReferentialPartitionKeys must be the same length"
-            );
-
-            long[] parentDocumentIds = new long[bulkReferences.ReferentialIds.Length];
-            Array.Fill(parentDocumentIds, bulkReferences.ParentDocumentId);
-
-            short[] parentDocumentPartitionKeys = new short[bulkReferences.ReferentialIds.Length];
-            Array.Fill(parentDocumentPartitionKeys, bulkReferences.ParentDocumentPartitionKey);
-
-            await using var command = new NpgsqlCommand(
-                @"SELECT dms.InsertReferences($1, $2, $3, $4)",
-                connection,
-                transaction
-            )
-            {
-                Parameters =
-                {
-                    new() { Value = parentDocumentIds },
-                    new() { Value = parentDocumentPartitionKeys },
-                    new() { Value = bulkReferences.ReferentialIds },
-                    new() { Value = bulkReferences.ReferentialPartitionKeys },
-                }
-            };
-
             try
             {
+                Trace.Assert(
+                    bulkReferences.ReferentialIds.Length == bulkReferences.ReferentialPartitionKeys.Length,
+                    "Arrays of ReferentialIds and ReferentialPartitionKeys must be the same length"
+                );
+
+                long[] parentDocumentIds = new long[bulkReferences.ReferentialIds.Length];
+                Array.Fill(parentDocumentIds, bulkReferences.ParentDocumentId);
+
+                short[] parentDocumentPartitionKeys = new short[bulkReferences.ReferentialIds.Length];
+                Array.Fill(parentDocumentPartitionKeys, bulkReferences.ParentDocumentPartitionKey);
+
+                await using var command = new NpgsqlCommand(
+                    @"SELECT dms.InsertReferences($1, $2, $3, $4)",
+                    connection,
+                    transaction
+                )
+                {
+                    Parameters =
+                    {
+                        new() { Value = parentDocumentIds },
+                        new() { Value = parentDocumentPartitionKeys },
+                        new() { Value = bulkReferences.ReferentialIds },
+                        new() { Value = bulkReferences.ReferentialPartitionKeys },
+                    }
+                };
                 await command.PrepareAsync();
                 await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
@@ -502,8 +517,10 @@ public static class SqlAction
 
                 return result.ToArray();
             }
-            catch (PostgresException pe) when (pe.IsTransient)
+            catch (PostgresException pe) when (pe.SqlState != PostgresErrorCodes.ForeignKeyViolation && pe.SqlState != PostgresErrorCodes.UniqueViolation)
             {
+                // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
+                // Must roll back the transaction before retry.
                 await transaction.RollbackAsync();
                 throw;
             }
@@ -521,9 +538,11 @@ public static class SqlAction
         NpgsqlTransaction transaction
     )
     {
-        var result = await Resilience.GetTransientRetryPipeline().ExecuteAsync(async _ =>
+        var result = await Resilience.GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
         {
-            await using NpgsqlCommand command =
+            try
+            {
+                await using NpgsqlCommand command =
                 new(
                     @"DELETE from dms.Reference r
                   USING dms.Document d
@@ -539,14 +558,13 @@ public static class SqlAction
                         new() { Value = parentDocumentUuidGuid }
                     }
                 };
-
-            try
-            {
                 await command.PrepareAsync();
                 return await command.ExecuteNonQueryAsync();
             }
-            catch (PostgresException pe) when (pe.IsTransient)
+            catch (PostgresException pe) when (pe.SqlState != PostgresErrorCodes.ForeignKeyViolation)
             {
+                // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
+                // Must roll back the transaction before retry.
                 await transaction.RollbackAsync();
                 throw;
             }
@@ -565,9 +583,11 @@ public static class SqlAction
         NpgsqlTransaction transaction
     )
     {
-        var result = await Resilience.GetTransientRetryPipeline().ExecuteAsync(async _ =>
+        var result = await Resilience.GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
         {
-            await using NpgsqlCommand command =
+            try
+            {
+                await using NpgsqlCommand command =
                 new(
                     @"DELETE from dms.Document WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2;",
                     connection,
@@ -581,14 +601,13 @@ public static class SqlAction
                     }
                 };
 
-            try
-            {
                 await command.PrepareAsync();
                 return await command.ExecuteNonQueryAsync();
             }
-            catch (PostgresException pe) when (pe.IsTransient)
+            catch (PostgresException pe) when (pe.SqlState != PostgresErrorCodes.ForeignKeyViolation)
             {
-                // We will retry transient exceptions, but the transaction needs to be rolled back first. 
+                // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
+                // Must roll back the transaction before retry.
                 await transaction.RollbackAsync();
                 throw;
             }
@@ -604,9 +623,11 @@ public static class SqlAction
         LockOption lockOption
     )
     {
-        var result = await Resilience.GetTransientRetryPipeline().ExecuteAsync(async _ =>
+        var result = await Resilience.GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
         {
-            await using NpgsqlCommand command =
+            try
+            {
+                await using NpgsqlCommand command =
                 new(
                     $@"SELECT d.ResourceName FROM dms.Document d
                    INNER JOIN (
@@ -628,11 +649,9 @@ public static class SqlAction
                     }
                 };
 
-            try
-            {
                 await command.PrepareAsync();
-
                 await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+
                 var resourceNames = new List<string>();
 
                 while (await reader.ReadAsync())
@@ -642,8 +661,10 @@ public static class SqlAction
 
                 return resourceNames.Distinct().ToArray();
             }
-            catch (PostgresException pe) when (pe.IsTransient)
+            catch (PostgresException)
             {
+                // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
+                // Must roll back the transaction before retry.
                 await transaction.RollbackAsync();
                 throw;
             }
