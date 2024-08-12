@@ -68,7 +68,7 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
-        Scenario: 03 Create a document with spaces in required fields (Resource)
+        Scenario: 03 Create a document with spaces in identity fields (Resource)
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
                     {
@@ -99,7 +99,7 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
-        Scenario: 04 Create a document with leading spaces in required fields (Resource)
+        Scenario: 04 Create a document with leading spaces in identity fields (Resource)
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
                     {
@@ -130,7 +130,7 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
-        Scenario: 05 Create a document with trailing spaces in required fields (Resource)
+        Scenario: 05 Create a document with trailing spaces in identity fields (Resource)
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
                     {
@@ -511,5 +511,101 @@ Feature: Resources "Create" Operation validations
                         ]
                       },
                       "errors": []
+                    }
+                  """
+
+         Scenario: 33 Create a document with empty value in identity fields (Resource)
+             When a POST request is made to "/ed-fi/students" with
+                  """
+                   {
+                        "studentUniqueId":"",
+                        "birthDate": "2016-08-07",
+                        "firstName": "firstName    ",
+                        "lastSurname": "lastSurname"
+                   }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                    {
+                     "detail": "Data validation failed. See 'validationErrors' for details.",
+                     "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                     "title": "Data Validation Failed",
+                     "status": 400,
+                     "correlationId": null,
+                     "validationErrors": {
+                         "$.studentUniqueId": [
+                             "studentUniqueId is required and should not be left empty."
+                         ]
+                     },
+                     "errors": []
+                    }
+                  """
+
+          Scenario: 34 Create a document with leading and trailing spaces in required fields (Resource)
+             When a POST request is made to "/ed-fi/students" with
+                  """
+                   {
+                        "studentUniqueId":"87878787",
+                        "birthDate": "2016-08-07",
+                        "firstName": "    firstName    ",
+                        "lastSurname": "lastSurname"
+                   }
+                  """
+             Then it should respond with 201 or 200
+
+         Scenario: 35 Create a document with just spaces in required fields (Resource)
+             When a POST request is made to "/ed-fi/students" with
+                  """
+                   {
+                        "studentUniqueId":"878787383",
+                        "birthDate": "2016-08-07",
+                        "firstName": "    ",
+                        "lastSurname": "lastSurname"
+                   }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                    {
+                     "detail": "Data validation failed. See 'validationErrors' for details.",
+                     "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                     "title": "Data Validation Failed",
+                     "status": 400,
+                     "correlationId": null,
+                     "validationErrors": {
+                         "$.firstName": [
+                             "firstName cannot contain leading or trailing spaces."
+                         ]
+                     },
+                     "errors": []
+                    }
+                  """
+
+        Scenario: 36 Create a document with empty required fields (Resource)
+             When a POST request is made to "/ed-fi/students" with
+                  """
+                   {
+                        "studentUniqueId":"878787383",
+                        "birthDate": "2016-08-07",
+                        "firstName": "",
+                        "lastSurname": "lastSurname"
+                   }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                    {
+                     "detail": "Data validation failed. See 'validationErrors' for details.",
+                     "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                     "title": "Data Validation Failed",
+                     "status": 400,
+                     "correlationId": null,
+                     "validationErrors": {
+                         "$.firstName": [
+                             "firstName is required and should not be left empty."
+                         ]
+                     },
+                     "errors": []
                     }
                   """

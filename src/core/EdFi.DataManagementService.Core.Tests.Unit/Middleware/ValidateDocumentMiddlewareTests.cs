@@ -52,7 +52,7 @@ public class ValidateDocumentMiddlewareTests
                 ),
                 (
                     "identityProperty",
-                    new JsonSchemaBuilder().Type(SchemaValueType.String).Pattern("^(?!\\s).*(?<!\\s)$")
+                    new JsonSchemaBuilder().Type(SchemaValueType.String).Pattern("^(?!\\s)(.*\\S)$")
                 ),
                 ("optionalProperty", new JsonSchemaBuilder().Type(SchemaValueType.String)),
                 ("optionalNumber", new JsonSchemaBuilder().Type(SchemaValueType.Number)),
@@ -628,6 +628,48 @@ public class ValidateDocumentMiddlewareTests
         {
             _context?.FrontendResponse.Body.Should().Contain("identityProperty");
             _context?.FrontendResponse.Body.Should().Contain("cannot contain leading or trailing spaces");
+            _context?.FrontendResponse.Body.Should().Contain("traceId");
+        }
+    }
+
+    [TestFixture]
+    public class Given_An_Insert_Request_With_Empty_Identity_String_Property : ValidateDocumentMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            string jsonData =
+                """{"schoolId": 7687,"gradeLevels":{"gradeLevelDescriptor": "grade1"},"nameOfInstitution":"name", "identityProperty":""}""";
+
+            var frontEndRequest = new FrontendRequest(
+                "ed-fi/schools",
+                Body: jsonData,
+                QueryParameters: [],
+                new TraceId("traceId")
+            );
+            _context = Context(frontEndRequest, RequestMethod.POST);
+            await Middleware().Execute(_context, Next());
+        }
+
+        [Test]
+        public void It_has_a_response()
+        {
+            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+        }
+
+        [Test]
+        public void It_returns_status_400()
+        {
+            _context?.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_returns_message_body_with_required_validation_error()
+        {
+            _context?.FrontendResponse.Body.Should().Contain("identityProperty");
+            _context?.FrontendResponse.Body.Should().Contain("is required and should not be left empty.");
             _context?.FrontendResponse.Body.Should().Contain("traceId");
         }
     }
