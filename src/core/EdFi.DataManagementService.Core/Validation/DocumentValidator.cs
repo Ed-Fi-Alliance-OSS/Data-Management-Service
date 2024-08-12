@@ -10,6 +10,7 @@ using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using Json.Pointer;
 using Json.Schema;
 
 namespace EdFi.DataManagementService.Core.Validation;
@@ -98,8 +99,10 @@ internal class DocumentValidator() : IDocumentValidator
                 return new PruneResult.NotPruned();
 
             var nullProperties = evaluationResults
-                .Details.Where(r => r.Errors != null && r.Errors.Values.Any(e => e.StartsWith("Value is \"null\""))
-                ).ToList();
+                .Details.Where(r =>
+                    r.Errors != null && r.Errors.Values.Any(e => e.StartsWith("Value is \"null\""))
+                )
+                .ToList();
 
             if (nullProperties.Count == 0)
                 return new PruneResult.NotPruned();
@@ -141,6 +144,10 @@ internal class DocumentValidator() : IDocumentValidator
                         )
                         {
                             error = "cannot contain leading or trailing spaces.";
+                            if (IsEmptyString(detail.InstanceLocation))
+                            {
+                                error = "is required and should not be left empty.";
+                            }
                         }
 
                         var splitErrors = SplitErrorDetail(error, propertyName);
@@ -162,6 +169,22 @@ internal class DocumentValidator() : IDocumentValidator
                 }
             }
             return validationErrors;
+
+            bool IsEmptyString(JsonPointer? instanceLocation)
+            {
+                if (instanceLocation == null)
+                    return false;
+
+                var jsonObject = context.ParsedBody.AsObject();
+                string propertyName = instanceLocation[^1];
+                bool propertyExists = jsonObject.TryGetPropertyValue(propertyName, out var value);
+
+                if (propertyExists && value != null && value.ToString() == string.Empty)
+                {
+                    return true;
+                }
+                return false;
+            }
         }
     }
 
