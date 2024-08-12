@@ -318,7 +318,7 @@ public class UpsertTests : DatabaseTest
         }
 
         [Test]
-        public void It_should_be_a_successful_update_for_2nd_transaction()
+        public void It_should_be_a_successful_update_for_2nd_transaction_due_to_retry()
         {
             _upsertResult2!.Should().BeOfType<UpsertResult.UpdateSuccess>();
         }

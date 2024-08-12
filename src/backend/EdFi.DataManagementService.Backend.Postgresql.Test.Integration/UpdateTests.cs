@@ -218,7 +218,7 @@ public class UpdateTests : DatabaseTest
         }
 
         [Test]
-        public void It_should_be_a_successful_update_for_2nd_transaction()
+        public void It_should_be_a_successful_update_for_2nd_transaction_due_to_retry()
         {
             _updateResult2!.Should().BeOfType<UpdateResult.UpdateSuccess>();
         }
@@ -565,7 +565,7 @@ public class UpdateTests : DatabaseTest
         }
 
         [Test]
-        public void It_should_be_a_successful_update_for_2nd_transaction()
+        public void It_should_be_a_successful_update_for_2nd_transaction_due_to_retry()
         {
             _updateResult2!.Should().BeOfType<UpdateResult.UpdateSuccess>();
         }
