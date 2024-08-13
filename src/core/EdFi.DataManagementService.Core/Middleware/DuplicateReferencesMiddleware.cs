@@ -26,21 +26,41 @@ internal class DuplicateReferencesMiddleware(ILogger logger) : IPipelineStep
 
         var validationErrors = new Dictionary<string, string[]>();
 
-        ValidateDuplicates(
-            context.DocumentInfo.DocumentReferences,
-            item => item.ReferentialId.ToString(),
-            item => item.ResourceInfo.ResourceName.Value,
-            validationErrors,
-            initialPosition: 1
-        );
+        // Find duplicates in document references
+        if (
+            context
+            .DocumentInfo.DocumentReferences
+            .GroupBy(d => d.ReferentialId)
+            .Any(g => g.Count() > 1)
+        )
+        {
+            // if duplicates are found, search for them
+            ValidateDuplicates(
+                context.DocumentInfo.DocumentReferences,
+                item => item.ReferentialId.ToString(),
+                item => item.ResourceInfo.ResourceName.Value,
+                validationErrors,
+                initialPosition: 1
+            );
+        }
 
-        ValidateDuplicates(
-            context.DocumentInfo.DescriptorReferences,
-            item => item.ReferentialId.ToString(),
-            item => ExtractArrayName(item.Path.Value),
-            validationErrors,
-            initialPosition: 0
-        );
+        // Find duplicates in descriptor references
+        if (
+            context
+            .DocumentInfo.DescriptorReferences
+            .GroupBy(d => d.ReferentialId)
+            .Any(g => g.Count() > 1)
+        )
+        {
+            // if duplicates are found, search for them
+            ValidateDuplicates(
+                context.DocumentInfo.DescriptorReferences,
+                item => item.ReferentialId.ToString(),
+                item => item.Path.Value,
+                validationErrors,
+                initialPosition: 0
+            );
+        }
 
         if (validationErrors.Any())
         {
@@ -79,22 +99,30 @@ internal class DuplicateReferencesMiddleware(ILogger logger) : IPipelineStep
         foreach (var item in items)
         {
             string referentialId = getReferentialId(item);
-            string path = getPath(item);
 
             if (seenItems.Contains(referentialId))
             {
+                string path = getPath(item);
+                string propertyName = path.StartsWith("$", StringComparison.InvariantCultureIgnoreCase)
+                    ? path
+                    : $"$.{path}";
+
+                path = path.StartsWith("$", StringComparison.InvariantCultureIgnoreCase)
+                    ? ExtractArrayName(path)
+                    : path;
+
                 string errorMessage =
                     $"The {GetOrdinal(position)} item of the {path} has the same identifying values as another item earlier in the list.";
 
-                if (validationErrors.ContainsKey(path))
+                if (validationErrors.ContainsKey(propertyName))
                 {
-                    var existingMessages = validationErrors[path].ToList();
+                    var existingMessages = validationErrors[propertyName].ToList();
                     existingMessages.Add(errorMessage);
-                    validationErrors[path] = existingMessages.ToArray();
+                    validationErrors[propertyName] = existingMessages.ToArray();
                 }
                 else
                 {
-                    validationErrors[path] = new[] { errorMessage };
+                    validationErrors[propertyName] = new[] { errorMessage };
                 }
             }
             else
