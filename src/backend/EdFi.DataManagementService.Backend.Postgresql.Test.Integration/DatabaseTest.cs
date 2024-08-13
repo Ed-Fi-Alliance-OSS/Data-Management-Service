@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
+using System.Diagnostics;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Operation;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -298,7 +299,15 @@ public abstract class DatabaseTest : DatabaseTestBase
             result2 = await dbOperation2(connection2, transaction2);
 
             // Step #9: DB operation unblocked by DB transaction 1 commit, so now we can commit
-            await transaction2.CommitAsync();
+            try
+            {
+                await transaction2.CommitAsync();
+            }
+            catch (Exception)
+            {
+                //This transaction was completed or rolled back as part of a retry, we must
+                //swallow this exception
+            }
 
             // Step #10: Tell transaction 1 thread we are done
             Transaction1Go?.Set();
