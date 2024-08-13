@@ -71,6 +71,7 @@ internal class ApiService(
                     new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
                     new BuildResourceInfoMiddleware(_logger),
                     new ExtractDocumentInfoMiddleware(_logger),
+                    new DuplicateReferencesMiddleware(_logger),
                     new UpsertHandler(_documentStoreRepository, _logger)
                 ]
             );
@@ -152,6 +153,7 @@ internal class ApiService(
                     new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
                     new BuildResourceInfoMiddleware(_logger),
                     new ExtractDocumentInfoMiddleware(_logger),
+                    new DuplicateReferencesMiddleware(_logger),
                     new UpdateByIdHandler(_documentStoreRepository, _logger)
                 ]
             );
