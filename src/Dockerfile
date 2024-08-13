@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-FROM mcr.microsoft.com/dotnet/sdk:8.0.203-alpine3.18@sha256:2a8dca3af111071172b1629c12eefaeca0d6c2954887c4489195771c9e90833c AS build
+FROM mcr.microsoft.com/dotnet/sdk:8.0.303-alpine3.20@sha256:6e8997576d16a6d7b4e6ba7ac0956d3ae46cb7a376581c40eabd20fbc5c28b8d AS build
 
 WORKDIR /source
 
@@ -29,7 +29,7 @@ WORKDIR /source/backend/EdFi.DataManagementService.Backend.Installer
 RUN dotnet build -c Release --no-restore && \
     dotnet publish -c Release -o /app/Installer --no-restore --no-build
 
-FROM mcr.microsoft.com/dotnet/aspnet:8.0.3-alpine3.19-amd64@sha256:a531d9d123928514405b9da9ff28a3aa81bd6f7d7d8cfb6207b66c007e7b3075 AS runtimebase
+FROM mcr.microsoft.com/dotnet/aspnet:8.0.7-alpine3.20-amd64@sha256:584dee34a962d98782a7f593413bfec317088b7c9806dc55441e6d9ffbb5b055 AS runtimebase
 
 RUN apk --no-cache add bash=~5 postgresql16-client=~16 gettext=~0
 
