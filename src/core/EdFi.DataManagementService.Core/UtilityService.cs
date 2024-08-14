@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace EdFi.DataManagementService.Core;
@@ -19,5 +21,9 @@ public static partial class UtilityService
     // Regex for a UUID v4 string
     [GeneratedRegex(@"^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")]
     public static partial Regex Uuid4Regex();
+
+    //Use to avoid HTML escaping in output message that we construct
+    public static readonly JsonSerializerOptions SerializerOptions =
+        new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 }
 

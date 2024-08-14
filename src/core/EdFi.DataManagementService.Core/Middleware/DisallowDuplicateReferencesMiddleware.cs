@@ -3,20 +3,17 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
+using static EdFi.DataManagementService.Core.UtilityService;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
-internal class DuplicateReferencesMiddleware(ILogger logger) : IPipelineStep
+internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipelineStep
 {
-    private static readonly JsonSerializerOptions _serializerOptions =
-        new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
-
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         logger.LogDebug(
@@ -32,7 +29,7 @@ internal class DuplicateReferencesMiddleware(ILogger logger) : IPipelineStep
             // if duplicates are found, they should be reported
             ValidateDuplicates(
                 context.DocumentInfo.DocumentReferences,
-                item => item.ReferentialId.ToString(),
+                item => item.ReferentialId.Value,
                 item => item.ResourceInfo.ResourceName.Value,
                 validationErrors,
                 initialPosition: 1
@@ -45,7 +42,7 @@ internal class DuplicateReferencesMiddleware(ILogger logger) : IPipelineStep
             // if duplicates are found, they should be reported
             ValidateDuplicates(
                 context.DocumentInfo.DescriptorReferences,
-                item => item.ReferentialId.ToString(),
+                item => item.ReferentialId.Value,
                 item => item.Path.Value,
                 validationErrors,
                 initialPosition: 0
@@ -64,8 +61,8 @@ internal class DuplicateReferencesMiddleware(ILogger logger) : IPipelineStep
                         traceId: context.FrontendRequest.TraceId,
                         validationErrors,
                         []
-                    ),
-                    _serializerOptions
+            ),
+                    SerializerOptions
                 ),
                 Headers: []
             );
@@ -77,18 +74,18 @@ internal class DuplicateReferencesMiddleware(ILogger logger) : IPipelineStep
 
     private static void ValidateDuplicates<T>(
         IEnumerable<T> items,
-        Func<T, string> getReferentialId,
+        Func<T, Guid> getReferentialId,
         Func<T, string> getPath,
         Dictionary<string, string[]> validationErrors,
         int initialPosition
     )
     {
-        var seenItems = new HashSet<string>();
+        var seenItems = new HashSet<Guid>();
         int position = initialPosition;
 
         foreach (var item in items)
         {
-            string referentialId = getReferentialId(item);
+            Guid referentialId = getReferentialId(item);
 
             if (seenItems.Contains(referentialId))
             {

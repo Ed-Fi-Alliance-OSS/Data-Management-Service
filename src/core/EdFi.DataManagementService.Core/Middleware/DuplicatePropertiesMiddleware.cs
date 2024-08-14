@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -11,6 +10,7 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
+using static EdFi.DataManagementService.Core.UtilityService;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
@@ -18,9 +18,6 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// Please see https://github.com/dotnet/runtime/issues/70604 for information on the JsonNode bug this code is working-around.
 internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
 {
-    private static readonly JsonSerializerOptions _serializerOptions =
-        new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
-
     // This key should never exist in the document
     private const string TestForDuplicateObjectKeyWorkaround = "x";
     private const string Pattern = @"Key: (.*?) \((.*?)\)\.(.*?)$";
@@ -87,7 +84,7 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
                             validationErrors,
                             []
                         ),
-                        _serializerOptions
+                        SerializerOptions
                     ),
                     Headers: []
                 );
