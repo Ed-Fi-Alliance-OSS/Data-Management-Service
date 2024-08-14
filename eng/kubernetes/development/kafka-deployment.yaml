@@ -25,23 +25,23 @@ spec:
       - name: dms-kafka1
         image: debezium/kafka:2.7.0.Final@sha256:6b233b44f29522f8ce6018e4c95dae8be7688c82183d95da348a95bcedc6fcc6
         ports:
-            - port: 9092
-              targetPort: 9092
-        #links:
-            #- zookeeper
-        env:
-            # https://hub.docker.com/r/debezium/kafka
-            name: "ZOOKEEPER_CONNECT"
-            value: "dms-zookeeper1:2181"
+        - containerPort: 9092
 
-            name: "KAFKA_ADVERTISED_LISTENERS"
-            value: "PLAINTEXT://dms-kafka1:9092"
-        #volumeMounts:
-          #- mountPath: /var/lib/postgresql/data
-            #name: pgsql-data
+        #links:
+        #- zookeeper
+        env:
+        # https://hub.docker.com/r/debezium/kafka
+        - name: "ZOOKEEPER_CONNECT"
+          value: "dms-zookeeper1:2181"
+
+        - name: "KAFKA_ADVERTISED_LISTENERS"
+          value: "PLAINTEXT://dms-kafka1:9092"
+          #volumeMounts:
+        #- mountPath: /var/lib/postgresql/data
+        #name: pgsql-data
       restartPolicy: Always
       #volumes:
-        #- name: pgsql-data
-          #persistentVolumeClaim:
-            #claimName: pgsql-data
+      #- name: pgsql-data
+      #persistentVolumeClaim:
+      #claimName: pgsql-data
 status: {}

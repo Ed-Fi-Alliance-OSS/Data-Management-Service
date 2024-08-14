@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    serviceName: kafka-connect-sink
+  name: kafka-connect-sink
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      serviceName: kafka-connect-sink
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        serviceName: kafka-connect-sink
+    spec:
+      containers:
+      - name: kafka-connect-sink
+        image: edfialliance/ed-fi-kafka-connect:pre
+        ports:
+        - containerPort: 8084
+        #- targetPort: 8083
+
+        #links:
+        #  - kafka
+        #  - zookeeper
+
+        env:
+        - name: "BOOTSTRAP_SERVERS"
+          value: "dms-kafka1:9092"
+
+        - name: "GROUP_ID"
+          value: "2"
+
+        - name: "CONFIG_STORAGE_TOPIC"
+          value: "debezium_sink_config"
+
+        - name: "OFFSET_STORAGE_TOPIC"
+          value: "debezium_sink_offset"
+
+        - name: "STATUS_STORAGE_TOPIC"
+          value: "debezium_sink_status"
+
+      restartPolicy: Always
+status: {}

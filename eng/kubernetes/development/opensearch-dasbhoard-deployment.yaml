@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    serviceName: dms-opensearch-dashboards
+  name: dms-opensearch-dashboards
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      serviceName: dms-opensearch-dashboards
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        serviceName: dms-opensearch-dashboards
+    spec:
+      containers:
+      - name: dms-opensearch-dashboards
+        image: opensearchproject/opensearch-dashboards:latest
+        ports:
+        - containerPort: 5601
+
+        env:
+        - name: 'OPENSEARCH_ADMIN_PASSWORD'
+          value: '$(OPENSEARCH_ADMIN_PASSWORD)'
+        - name: 'OPENSEARCH_HOSTS'
+          value: '["http://dms-opensearch:9200"]'
+        - name: "DISABLE_SECURITY_DASHBOARDS_PLUGIN"
+          value: "true"
+      restartPolicy: Always
+status: {}

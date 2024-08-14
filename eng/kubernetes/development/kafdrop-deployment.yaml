@@ -25,18 +25,17 @@ spec:
       - name: dms-kafdrop
         image: obsidiandynamics/kafdrop:4.0.2@sha256:b1a316d2c2e3ef783758ba2d253eb7cfa65c1bc8ae4c6cd3686942cdec7f96e7
         ports:
-            - port: 9000
-              targetPort: 9000
+        - containerPort: 9000
 
         env:
-            name: "KAFKA_BROKERCONNECT"
-            value: "dms-kafka1:9092"
+        - name: "KAFKA_BROKERCONNECT"
+          value: "dms-kafka1:9092"
 
-            name: "JVM_OPTS"
-            value: "-Xms32M -Xmx64M"
+        - name: "JVM_OPTS"
+          value: "-Xms32M -Xmx64M"
 
-            name: "SERVER_SERVLET_CONTEXTPATH"
-            value: "/"
+        - name: "SERVER_SERVLET_CONTEXTPATH"
+          value: "/"
 
       restartPolicy: Always
 status: {}

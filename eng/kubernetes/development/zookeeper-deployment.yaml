@@ -25,18 +25,15 @@ spec:
       - name: dms-zookeeper1
         image: debezium/zookeeper:2.7.0.Final@sha256:47d988f5db17fc3493de683e456cfb8dc8cafcaae4d36d3885c778e9a39d62eb
         ports:
-            - port: 2181
-              targetPort: 2181
+        - containerPort: 2181
 
-            - port: 2888
-              targetPort: 2888
+        - containerPort: 2888
 
-            - port: 3888
-              targetPort: 3888
-        #volumes:
-        #- zookeeper-logs:/zookeeper/logs
-        #- zookeeper-data:/zookeeper/data
-        #- zookeeper-txns:/zookeeper/txns
-        #- zookeeper-conf:/zookeeper/conf
+        - containerPort: 3888
+          #volumes:
+          #- zookeeper-logs:/zookeeper/logs
+          #- zookeeper-data:/zookeeper/data
+          #- zookeeper-txns:/zookeeper/txns
+          #- zookeeper-conf:/zookeeper/conf
       restartPolicy: Always
 status: {}
