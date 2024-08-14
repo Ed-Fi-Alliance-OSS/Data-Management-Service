@@ -26,9 +26,7 @@ spec:
         image: debezium/zookeeper:2.7.0.Final@sha256:47d988f5db17fc3493de683e456cfb8dc8cafcaae4d36d3885c778e9a39d62eb
         ports:
         - containerPort: 2181
-
         - containerPort: 2888
-
         - containerPort: 3888
           #volumes:
           #- zookeeper-logs:/zookeeper/logs

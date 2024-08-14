@@ -26,7 +26,6 @@ spec:
         image: edfialliance/ed-fi-kafka-connect:pre
         ports:
         - containerPort: 8084
-        #- targetPort: 8083
 
         #links:
         #  - kafka
