@@ -609,3 +609,114 @@ Feature: Resources "Create" Operation validations
                      "errors": []
                     }
                   """
+
+        Scenario: 37 Verify clients cannot create a resource with a duplicate descriptor
+            When a POST request is made to "/ed-fi/schools" with
+            """
+            {
+                "schoolId":255901001,
+                "nameOfInstitution":"School Test",
+                "gradeLevels": [
+                    {
+                    "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
+                    },
+                    {
+                    "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Seven grade"
+                    },
+                    {
+                    "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Seven grade"
+                    },
+                    {
+                    "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
+                    }
+                ],  
+                "educationOrganizationCategories":[
+                    {
+                        "educationOrganizationCategoryDescriptor":"uri://ed-fi.org/educationOrganizationCategoryDescriptor#School"
+                    }
+                ]
+            }
+            """
+            Then it should respond with 400
+            And the response body is
+                  """
+                  {
+                        "validationErrors": {
+                            "$.gradeLevels[*].gradeLevelDescriptor": [
+                                "The 3rd item of the gradeLevels has the same identifying values as another item earlier in the list.",
+                                "The 4th item of the gradeLevels has the same identifying values as another item earlier in the list."
+                            ]
+                        },
+                        "errors": [],
+                        "detail": "Data validation failed. See 'validationErrors' for details.",
+                        "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                        "title": "Data Validation Failed",
+                        "status": 400,
+                        "correlationId": null
+                    }
+                  """
+
+        Scenario: 38 Verify clients cannot create a resource with a duplicate resource reference
+            When a POST request is made to "/ed-fi/bellschedules" with
+            """
+            {
+                "schoolReference": {
+                    "schoolId": 1
+                },
+                "bellScheduleName": "Test Schedule",    
+                "totalInstructionalTime": 325,
+                "classPeriods": [
+                    {
+                        "classPeriodReference": {
+                            "classPeriodName": "01 - Traditional",
+                            "schoolId": 1
+                        }
+                    },
+                    {
+                        "classPeriodReference": {
+                            "classPeriodName": "02 - Traditional",
+                            "schoolId": 1
+                        }
+                    },
+                    {
+                        "classPeriodReference": {
+                            "classPeriodName": "03 - Traditional",
+                            "schoolId": 1
+                        }
+                    },
+                    {
+                        "classPeriodReference": {
+                            "classPeriodName": "01 - Traditional",
+                            "schoolId": 1
+                        }
+                    },
+                    {
+                        "classPeriodReference": {
+                            "classPeriodName": "02 - Traditional",
+                            "schoolId": 1
+                        }
+                    }
+
+                ],
+                "dates": [],
+                "gradeLevels": []
+            }
+            """
+            Then it should respond with 400
+            And the response body is
+                  """
+                  {
+                        "validationErrors": {
+                            "$.ClassPeriod": [
+                                "The 4th item of the ClassPeriod has the same identifying values as another item earlier in the list.",
+                                "The 5th item of the ClassPeriod has the same identifying values as another item earlier in the list."
+                            ]
+                        },
+                        "errors": [],
+                        "detail": "Data validation failed. See 'validationErrors' for details.",
+                        "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                        "title": "Data Validation Failed",
+                        "status": 400,
+                        "correlationId": null
+                  }
+                  """

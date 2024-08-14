@@ -5,8 +5,8 @@
 
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Model;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
 
@@ -27,14 +27,9 @@ internal class DuplicateReferencesMiddleware(ILogger logger) : IPipelineStep
         var validationErrors = new Dictionary<string, string[]>();
 
         // Find duplicates in document references
-        if (
-            context
-            .DocumentInfo.DocumentReferences
-            .GroupBy(d => d.ReferentialId)
-            .Any(g => g.Count() > 1)
-        )
+        if (context.DocumentInfo.DocumentReferences.GroupBy(d => d.ReferentialId).Any(g => g.Count() > 1))
         {
-            // if duplicates are found, search for them
+            // if duplicates are found, they should be reported
             ValidateDuplicates(
                 context.DocumentInfo.DocumentReferences,
                 item => item.ReferentialId.ToString(),
@@ -45,14 +40,9 @@ internal class DuplicateReferencesMiddleware(ILogger logger) : IPipelineStep
         }
 
         // Find duplicates in descriptor references
-        if (
-            context
-            .DocumentInfo.DescriptorReferences
-            .GroupBy(d => d.ReferentialId)
-            .Any(g => g.Count() > 1)
-        )
+        if (context.DocumentInfo.DescriptorReferences.GroupBy(d => d.ReferentialId).Any(g => g.Count() > 1))
         {
-            // if duplicates are found, search for them
+            // if duplicates are found, they should be reported
             ValidateDuplicates(
                 context.DocumentInfo.DescriptorReferences,
                 item => item.ReferentialId.ToString(),
