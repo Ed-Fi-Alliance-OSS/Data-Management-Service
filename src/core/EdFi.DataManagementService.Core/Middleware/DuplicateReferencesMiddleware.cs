@@ -5,8 +5,8 @@
 
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
 
@@ -93,6 +93,8 @@ internal class DuplicateReferencesMiddleware(ILogger logger) : IPipelineStep
             if (seenItems.Contains(referentialId))
             {
                 string path = getPath(item);
+
+                // the propertyName varies according to the origin (DescriptorReference or DocumentReferences)
                 string propertyName = path.StartsWith("$", StringComparison.InvariantCultureIgnoreCase)
                     ? path
                     : $"$.{path}";
