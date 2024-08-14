@@ -26,6 +26,7 @@
         * DockerBuild: builds a Docker image from source code
         * DockerRun: runs the Docker image that was built from source code
         * Run: starts the application
+        * SetUpKafka: Setup Kafka and OpenSearch
     .EXAMPLE
         .\build.ps1 build -Configuration Release -Version "2.0" -BuildCounter 45
 
@@ -44,7 +45,7 @@
 param(
     # Command to execute, defaults to "Build".
     [string]
-    [ValidateSet("Clean", "Build", "BuildAndPublish", "UnitTest", "E2ETest", "IntegrationTest", "Coverage", "Package", "Push", "DockerBuild", "DockerRun", "Run")]
+    [ValidateSet("Clean", "Build", "BuildAndPublish", "UnitTest", "E2ETest", "IntegrationTest", "Coverage", "Package", "Push", "DockerBuild", "DockerRun", "Run", "SetUpKafka")]
     $Command = "Build",
 
     # Assembly and package version number for the Data Management Service. The
@@ -346,6 +347,101 @@ function Run {
     }
 }
 
+function IsDatabaseContainerRunning ([string] $ContainerName)
+{
+    $status = &docker inspect -f "{{.State.Running}}" $ContainerName
+    return $status -eq "true"
+}
+
+function RunCommandInContainer ([string] $ContainerName)
+{
+    $hostCommand = 'echo "host    replication    postgres         kafka-connect-source    trust" >> /var/lib/postgresql/data/pg_hba.conf'
+    &docker exec $ContainerName bash -c $hostCommand
+
+    $walCommand = 'echo "wal_level = logical" >> /var/lib/postgresql/data/postgresql.conf'
+    &docker exec $ContainerName bash -c $walCommand
+
+    Write-Output "Restarting the database container"
+
+    &docker restart $ContainerName
+
+    Write-Output "Commands executed on the database container."
+}
+
+function SetUpKafkaConfiguration
+{
+    $sourcePort="8083"
+    $sinkPort="8084"
+
+    $sourceUrl = "http://localhost:$sourcePort/connectors/fulfillment-connector"
+    $sinkUrl = "http://localhost:$sinkPort/connectors/search-engine"
+
+    try {
+        $sourceResponse = Invoke-RestMethod -Uri $sourceUrl -Method Get -ErrorAction SilentlyContinue
+        if($sourceResponse)
+        {
+            Invoke-RestMethod -Method Delete -uri $sourceUrl
+        }
+    }
+    catch {}
+
+    Start-Sleep 1
+
+    Write-Output "Post source connector configuration"
+
+    $sourceBody = Get-Content -Path .\kafka-poc\postgresql_connector.json -Raw
+
+    Invoke-RestMethod -Method Post `
+        -uri http://localhost:$sourcePort/connectors/ -ContentType "application/json" -Body $sourceBody
+
+    Start-Sleep 1
+
+    Invoke-RestMethod -Method Get -uri $sourceUrl
+
+    ##
+    try {
+        $sinkResponse = Invoke-RestMethod -Uri $sinkUrl -Method Get -ErrorAction SilentlyContinue
+        if($sinkResponse)
+        {
+            Invoke-RestMethod -Method Delete -uri $sinkUrl
+        }
+    }
+    catch {}
+
+    Start-Sleep 1
+
+    Write-Output "Post sink connector configuration"
+
+    $sinkBody = Get-Content -Path .\kafka-poc\opensearch_connector.json -Raw
+
+    Invoke-RestMethod -Method Post `
+        -uri http://localhost:$sinkPort/connectors/ -ContentType "application/json" -Body $sinkBody
+
+    Start-Sleep 1
+
+    Invoke-RestMethod -Method Get -uri $sinkUrl
+}
+
+function SetUpKafka
+{
+    $containerName = "dms-postgresql"
+    &docker compose -f "./kafka-poc/docker-compose.yml" up -d
+
+    while (-not (IsDatabaseContainerRunning $containerName)) {
+        Write-Output "Container is not running. Waiting..."
+        Start-Sleep -Seconds 5
+    }
+    Write-Output "Database container is running. Executing command..."
+
+    RunCommandInContainer $containerName
+
+    SetUpKafkaConfiguration
+}
+
+function Invoke-SetupKafka {
+    Invoke-Step { SetUpKafka }
+}
+
 Invoke-Main {
     if ($IsLocalBuild) {
         $nugetExePath = Install-NugetCli
@@ -361,6 +457,7 @@ Invoke-Main {
         }
         UnitTest { Invoke-TestExecution UnitTests }
         E2ETest { Invoke-TestExecution E2ETests }
+        SetUpKafka { Invoke-SetupKafka }
         IntegrationTest { Invoke-TestExecution IntegrationTests }
         Coverage { Invoke-Coverage }
         Package { Invoke-BuildPackage }
