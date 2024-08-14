@@ -103,7 +103,7 @@ services:
       - dms-postgresql:/var/lib/postgresql/data
 
   opensearch:
-    image: opensearchproject/opensearch:2.15.0@sha256:1a6d62f4ff2215f66792362a56c64cea29ff6cbe700f95881857f045a6fea3c9
+    image: opensearchproject/opensearch:2.16.0@sha256:bd8c6fae35754f0fbb8fd83f30b7aa6e15b3a3a80d413f9ec9ca8abd3a4166e4
     container_name: dms-opensearch
     hostname: dms-opensearch
     environment:

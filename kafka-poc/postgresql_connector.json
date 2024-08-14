@@ -14,13 +14,16 @@
     "value.converter": "org.apache.kafka.connect.json.JsonConverter",
     "value.converter.schemas.enable": "false",
 
-    "transforms": "unwrap, extractId",
+    "transforms": "unwrap, extractId, expandJson",
 
     "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
     "transforms.unwrap.drop.tombstones": "false",
     "transforms.unwrap.delete.handling.mode": "none",
 
     "transforms.extractId.type": "org.apache.kafka.connect.transforms.ExtractField$Key",
-    "transforms.extractId.field": "id"
+    "transforms.extractId.field": "id",
+
+    "transforms.expandJson.type": "com.redhat.insights.expandjsonsmt.ExpandJSON$Value",
+    "transforms.expandJson.sourceFields": "edfidoc"
   }
 }

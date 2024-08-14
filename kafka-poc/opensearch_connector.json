@@ -20,16 +20,14 @@
 
     "compact.map.entries": "true",
 
-    "transforms": "removeId, generateIndexFromDmsResource",
+    "transforms": "removeId, toOpenSearchIndex",
     "transforms.removeId.type": "org.apache.kafka.connect.transforms.ReplaceField$Value",
     "transforms.removeId.exclude": "id",
-    "transforms.generateIndexFromDmsResource.type":"org.edfi.kafka.connect.transforms.GenerateIndexFromDmsResource",
-    "transforms.generateIndexFromDmsResource.field.name":"projectname, resourceversion, resourcename",
+    "transforms.toOpenSearchIndex.type":"org.edfi.kafka.connect.transforms.RenameDmsTopicToOpenSearchIndex",
 
     "behavior.on.version.conflict": "ignore",
     "behavior.on.null.values": "delete",
     "drop.invalid.message": "true",
     "index.write.method": "upsert"
-
   }
 }
