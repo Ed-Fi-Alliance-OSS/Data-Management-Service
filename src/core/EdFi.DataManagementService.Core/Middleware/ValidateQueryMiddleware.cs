@@ -3,13 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using Microsoft.Extensions.Logging;
+using static EdFi.DataManagementService.Core.UtilityService;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
@@ -91,15 +91,9 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
                 context.FrontendRequest.TraceId
             );
 
-            var options = new JsonSerializerOptions
-            {
-                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-                WriteIndented = true
-            };
-
             context.FrontendResponse = new FrontendResponse(
                 failureResponse.status,
-                JsonSerializer.Serialize(failureResponse, options),
+                JsonSerializer.Serialize(failureResponse, SerializerOptions),
                 []
             );
             return;
