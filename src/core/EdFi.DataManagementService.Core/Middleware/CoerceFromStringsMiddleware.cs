@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Core.ApiSchema.Extensions;
 using Microsoft.Extensions.Logging;
 using EdFi.DataManagementService.Core.Pipeline;
+using System.Text.Json.Nodes;
 
 namespace EdFi.DataManagementService.Core.Middleware
 {
@@ -19,19 +20,19 @@ namespace EdFi.DataManagementService.Core.Middleware
         {
             logger.LogDebug("Entering CoerceFromStringsMiddleware - {TraceId}", context.FrontendRequest.TraceId);
 
-            foreach (var path in context.ResourceSchema.BooleanJsonPaths.Select(path => path.Value))
+            foreach (string path in context.ResourceSchema.BooleanJsonPaths.Select(path => path.Value))
             {
-                var jsonNodes = context.ParsedBody.SelectNodesFromArrayPath(path, logger);
-                foreach (var jsonNode in jsonNodes)
+                IEnumerable<JsonNode?> jsonNodes = context.ParsedBody.SelectNodesFromArrayPath(path, logger);
+                foreach (JsonNode? jsonNode in jsonNodes)
                 {
-                    jsonNode?.TryCoerceBooleanToBoolean();
+                    jsonNode?.TryCoerceStringToBoolean();
                 }
             }
 
-            foreach (var path in context.ResourceSchema.NumericJsonPaths.Select(path => path.Value))
+            foreach (string path in context.ResourceSchema.NumericJsonPaths.Select(path => path.Value))
             {
-                var jsonNodes = context.ParsedBody.SelectNodesFromArrayPath(path, logger);
-                foreach (var jsonNode in jsonNodes)
+                IEnumerable<JsonNode?> jsonNodes = context.ParsedBody.SelectNodesFromArrayPath(path, logger);
+                foreach (JsonNode? jsonNode in jsonNodes)
                 {
                     jsonNode?.TryCoerceStringToNumber();
                 }

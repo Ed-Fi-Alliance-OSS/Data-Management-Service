@@ -3,13 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Backend.OpenSearch;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
 using OpenSearch.Client;
+using OpenSearch.Net;
 
-namespace EdFi.DataManagementService.Backend.Postgresql;
+namespace EdFi.DataManagementService.Backend.OpenSearch;
 
 public static class QueryOpenSearch
 {
@@ -19,7 +20,7 @@ public static class QueryOpenSearch
     /// </summary>
     private static string IndexFromResourceInfo(ResourceInfo resourceInfo)
     {
-        return $@"{resourceInfo.ProjectName.Value}${resourceInfo.ResourceVersion.Value}${resourceInfo.ResourceName.Value}"
+        return $@"{resourceInfo.ProjectName.Value}${resourceInfo.ResourceName.Value}"
             .ToLower()
             .Replace(".", "-");
     }
@@ -35,7 +36,13 @@ public static class QueryOpenSearch
         try
         {
             string openSearchIndex = IndexFromResourceInfo(queryRequest.ResourceInfo);
-            client.LowLevel.SearchAsync<SearchResponse<Document>>(index: openSearchIndex, )
+
+            var response = await client.SearchAsync<DynamicResponse>(s => s.Index(openSearchIndex));
+
+            var y = response.Documents.ToArray()[0].Body.hits.hits;
+
+            // var x = await client.LowLevel.SearchAsync<SearchResponse<Document>>(index: openSearchIndex, )
+            return new QueryResult.QuerySuccess([new JsonObject(y)], 1);
         }
         catch (Exception ex)
         {

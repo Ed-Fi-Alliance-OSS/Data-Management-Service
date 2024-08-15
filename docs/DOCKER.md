@@ -37,6 +37,7 @@ OAUTH_TOKEN_ENDPOINT=<Authentication service url>
 BYPASS_STRING_COERCION=<Boolean whether to bypass coercion of boolean and numeric values represented as strings to their natural type. Eg. "true" = true>
 DATABASE_ISOLATION_LEVEL=<The System.Data.IsolationLevel to use for transaction locking. Eg. RepeatableRead>
 DATABASE_CONNECTION_STRING=<The non-admin database connection string>
+OPENSEARCH_ENDPOINT=<The URL endpoint to the OpenSearch server>
 ```
 
 For example, you might have a `.env` file like the following:
@@ -52,6 +53,7 @@ OAUTH_TOKEN_ENDPOINT=http://localhost:8080/oauth/token
 BYPASS_STRING_COERCION=false
 DATABASE_ISOLATION_LEVEL=RepeatableRead
 DATABASE_CONNECTION_STRING=host=localhost;port=5432;username=dms;password=P@ssw0rd;database=edfi_datamanagementservice;
+OPENSEARCH_ENDPOINT=http://localhost:9200
 ```
 
 ## Orchestration

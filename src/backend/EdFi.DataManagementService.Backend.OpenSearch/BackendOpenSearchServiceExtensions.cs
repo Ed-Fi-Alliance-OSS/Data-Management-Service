@@ -17,19 +17,16 @@ public static class BackendOpenSearchServiceExtensions
     /// <summary>
     /// The OpenSearch backend service configuration
     /// </summary>
-    /// <param name="connectionUri">The OpenSearch connection Uri</param>
+    /// <param name="connectionUrl">The OpenSearch connection URL</param>
     public static IServiceCollection AddOpenSearchBackend(
         this IServiceCollection services,
-        Uri connectionUri
+        string connectionUrl
     )
     {
-        services.AddSingleton((sp) => new OpenSearchClient(new ConnectionSettings(connectionUri)));
+        services.AddSingleton<IOpenSearchClient>(
+            (sp) => new OpenSearchClient(new ConnectionSettings(new Uri(connectionUrl)))
+        );
         services.AddSingleton<IQueryHandler, OpenSearchQueryHandlerRepository>();
-        services.AddSingleton<IGetDocumentById, GetDocumentById>();
-        services.AddSingleton<IQueryDocument, QueryDocument>();
-        services.AddSingleton<IUpdateDocumentById, UpdateDocumentById>();
-        services.AddSingleton<IUpsertDocument, UpsertDocument>();
-        services.AddSingleton<IDeleteDocumentById, DeleteDocumentById>();
         return services;
     }
 }

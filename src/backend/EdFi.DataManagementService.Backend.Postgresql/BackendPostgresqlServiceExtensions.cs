@@ -26,7 +26,7 @@ public static class PostgresqlBackendServiceExtensions
     {
         services.AddSingleton((sp) => NpgsqlDataSource.Create(connectionString));
         services.AddSingleton<IDocumentStoreRepository, PostgresqlDocumentStoreRepository>();
-        services.AddSingleton<IQueryHandler, PostgresqlDocumentStoreRepository>();
+        // Replaced by OpenSearch: services.AddSingleton<IQueryHandler, PostgresqlDocumentStoreRepository>()
         services.AddSingleton<IGetDocumentById, GetDocumentById>();
         services.AddSingleton<IQueryDocument, QueryDocument>();
         services.AddSingleton<IUpdateDocumentById, UpdateDocumentById>();

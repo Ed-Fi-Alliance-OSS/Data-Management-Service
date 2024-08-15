@@ -8,7 +8,7 @@ using EdFi.DataManagementService.Core.External.Interface;
 using Microsoft.Extensions.Logging;
 using OpenSearch.Client;
 
-namespace EdFi.DataManagementService.Backend.Postgresql;
+namespace EdFi.DataManagementService.Backend.OpenSearch;
 
 public class OpenSearchQueryHandlerRepository(
     IOpenSearchClient openSearchClient,

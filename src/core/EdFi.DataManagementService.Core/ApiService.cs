@@ -62,7 +62,7 @@ internal class ApiService(
             }
             else
             {
-                    steps.Add(new CoerceFromStringsMiddleware(_logger));
+                steps.Add(new CoerceFromStringsMiddleware(_logger));
             }
 
             steps.AddRange(
@@ -142,7 +142,7 @@ internal class ApiService(
             }
             else
             {
-                    steps.Add(new CoerceFromStringsMiddleware(_logger));
+                steps.Add(new CoerceFromStringsMiddleware(_logger));
             }
 
             steps.AddRange(

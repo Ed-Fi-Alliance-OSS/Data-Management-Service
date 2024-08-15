@@ -7,6 +7,7 @@ using System.Net;
 using System.Threading.RateLimiting;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Deploy;
+using EdFi.DataManagementService.Backend.OpenSearch;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
@@ -25,6 +26,10 @@ public static class WebApplicationBuilderExtensions
             .Services.AddDmsDefaultConfiguration()
             .AddPostgresqlBackend(
                 webAppBuilder.Configuration.GetSection("ConnectionStrings:DatabaseConnection").Value
+                    ?? string.Empty
+            )
+            .AddOpenSearchBackend(
+                webAppBuilder.Configuration.GetSection("ConnectionStrings:OpenSearchUrl").Value
                     ?? string.Empty
             )
             .AddTransient<IContentProvider, ContentProvider>()
@@ -62,7 +67,7 @@ public static class WebApplicationBuilderExtensions
         {
             if (
                 string.Equals(
-                    webAppBuilder.Configuration.GetSection("AppSettings:DatabaseEngine").Value,
+                    webAppBuilder.Configuration.GetSection("AppSettings:Datastore").Value,
                     "postgresql",
                     StringComparison.OrdinalIgnoreCase
                 )

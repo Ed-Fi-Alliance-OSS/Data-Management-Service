@@ -28,6 +28,17 @@ POST http://localhost:{{port}}/data/ed-fi/schoolYearTypes
     "schoolYearDescription": "Year 2025"
 }
 
+### Test GET of school years
+
+GET http://localhost:{{port}}/data/ed-fi/schoolYearTypes
+
+
+### Direct call
+
+GET http://localhost:9200/ed-fi%24schoolyeartype/_search?typed_keys=true
+
+
+
 ### Setup - POST School1
 POST http://localhost:{{port}}/data/ed-fi/schools
 
