@@ -38,26 +38,22 @@ public static class QueryOpenSearch
         {
             string indexName = IndexFromResourceInfo(queryRequest.ResourceInfo);
 
-            // var response = await client.SearchAsync<DynamicResponse>(s => s.Index(openSearchIndex))
-            // var response = await client.SearchAsync<Document>(s => s.Index(openSearchIndex))
-
             var query = new
             {
                 size = 5
             };
 
-            var response = await client.Http.PostAsync<StringResponse>($"/{indexName}/_search", d => d.SerializableBody(query));
+            var response = await client.Http.PostAsync<BytesResponse>($"/{indexName}/_search", d => d.SerializableBody(query));
 
             var jsonRawBody = JsonSerializer.Deserialize<JsonNode>(response.Body);
 
-            JsonNode hits = jsonRawBody!["hits"]!["hits"]!;
+            JsonNode hits = jsonRawBody!["hits"]!;
 
-            JsonNode[] documents = hits.AsArray().Select(node => node!["_source"]!["edfidoc"])!.ToArray()!;
+            int totalCount = hits!["total"]!["value"]!.GetValue<int>();
 
+            JsonNode[] documents = hits!["hits"]!.AsArray().Select(node => node!["_source"]!["edfidoc"]!.DeepClone())!.ToArray()!;
 
-            logger.LogInformation(documents.ToString());
-            // var x = await client.LowLevel.SearchAsync<SearchResponse<Document>>(index: openSearchIndex, )
-            return new QueryResult.QuerySuccess(documents, -1);
+            return new QueryResult.QuerySuccess(new JsonArray(documents), totalCount);
         }
         catch (Exception ex)
         {

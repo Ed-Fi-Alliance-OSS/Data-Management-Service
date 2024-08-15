@@ -159,7 +159,7 @@ public static class SqlAction
     /// <summary>
     /// Returns an array of Documents from the database corresponding to the given ResourceName
     /// </summary>
-    public static async Task<JsonNode[]> GetAllDocumentsByResourceName(
+    public static async Task<JsonArray> GetAllDocumentsByResourceName(
         string resourceName,
         IPaginationParameters paginationParameters,
         NpgsqlConnection connection,
@@ -211,7 +211,7 @@ public static class SqlAction
                 throw;
             }
         });
-        return result;
+        return new(result);
     }
 
     /// <summary>

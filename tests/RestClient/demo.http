@@ -30,7 +30,7 @@ POST http://localhost:{{port}}/data/ed-fi/schoolYearTypes
 
 ### Test GET of school years
 
-GET http://localhost:{{port}}/data/ed-fi/schoolYearTypes
+GET http://localhost:{{port}}/data/ed-fi/schoolYearTypes?totalCount=true
 
 
 ### Setup - POST School1

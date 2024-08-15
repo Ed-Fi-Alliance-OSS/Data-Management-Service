@@ -16,7 +16,7 @@ public record QueryResult
     /// </summary>
     /// <param name="EdfiDocs">The documents returned from the query</param>
     /// <param name="TotalCount">The total number of documents returned</param>
-    public record QuerySuccess(JsonNode[] EdfiDocs, int? TotalCount)
+    public record QuerySuccess(JsonArray EdfiDocs, int? TotalCount)
         : QueryResult();
 
     /// <summary>
