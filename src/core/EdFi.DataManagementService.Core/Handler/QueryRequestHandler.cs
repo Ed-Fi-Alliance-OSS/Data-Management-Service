@@ -41,9 +41,17 @@ internal class QueryRequestHandler(IQueryHandler _queryHandler, ILogger _logger,
                 => new FrontendResponse(
                     StatusCode: 200,
                     Body: success.EdfiDocs.ToJsonString(),
+<<<<<<< HEAD
                     Headers: context.PaginationParameters.TotalCount
                         ? new() { { "Total-Count", (success.TotalCount ?? 0).ToString() } }
                         : []
+=======
+                    Headers:
+                        context.PaginationParameters.totalCount ? new()
+                        {
+                        {"Total-Count", (success.TotalCount ?? 0).ToString()}
+                    } : []
+>>>>>>> babdecc (checkpoint on deserializing opensearch documents)
                 ),
             QueryFailureInvalidQuery => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
             UnknownFailure failure
