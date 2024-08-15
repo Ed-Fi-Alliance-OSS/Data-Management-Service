@@ -1,0 +1,84 @@
+Feature: No Authenticated - No Authorized REST API Conventions
+
+        Background:
+            Given the user authenticated
+              And the user is authorized
+
+        @ignore
+        Scenario: 01 Ensure clients can create a resource
+             When a POST request is made to "/ed-fi/people" with
+                  """
+                  {
+                      "personId": "0123456789",
+                      "sourceSystemDescriptor": "uri://ed-fi.org/SourceSystemDescriptor#State"
+                  }
+                  """
+             Then it should respond with 201
+              And the response header contains
+                  """
+                  content-type: application/json; charset=utf-8
+                  """
+
+        @ignore
+        Scenario: 02 Ensure clients can retrieve a resource
+             When a POST request is made to "/ed-fi/people"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [
+                      {
+                          "personId": "0123456789",
+                          "sourceSystemDescriptor": "uri://ed-fi.org/SourceSystemDescriptor#State"
+                      }
+                  ]
+                  """
+              And the response header contains
+                  """
+                  content-type: application/json; charset=utf-8
+                  """
+
+        @ignore
+        Scenario: 03 Ensure clients can retrieve a resource by ID
+             When a POST request is made to "/ed-fi/people/{id}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                      "personId": "0123456789",
+                      "sourceSystemDescriptor": "uri://ed-fi.org/SourceSystemDescriptor#State"
+                  }
+                  """
+              And the response header contains
+                  """
+                  content-type: application/json; charset=utf-8
+                  """
+
+        @ignore
+        Scenario: 04 Ensure clients can update a resource by ID
+            Given the system has this "people"
+                  | personId   | sourceSystemDescriptor                       |
+                  | 0123456789 | uri://ed-fi.org/SourceSystemDescriptor#State |
+             When a PUT request is made to "/ed-fi/people/{id}" with
+                  """
+                  {
+                      "personId": "0123456789",
+                      "sourceSystemDescriptor": "uri://ed-fi.org/SourceSystemDescriptor#School"
+                  }
+                  """
+             Then it should respond with 204
+              And the response header contains
+                  """
+                  content-type: application/json; charset=utf-8
+                  """
+
+        @ignore
+        Scenario: 05 Ensure clients can delete a resource
+            Given the system has this "people"
+                  | personId   | sourceSystemDescriptor                        |
+                  | 0123456789 | uri://ed-fi.org/SourceSystemDescriptor#School |
+             When a DELETE request is made to "/ed-fi/people/{id}"
+             Then it should respond with 204
+              And the response header contains
+                  """
+                  content-type: application/json; charset=utf-8
+                  """
