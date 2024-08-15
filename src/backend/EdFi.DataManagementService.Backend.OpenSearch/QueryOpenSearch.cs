@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -35,14 +36,28 @@ public static class QueryOpenSearch
 
         try
         {
-            string openSearchIndex = IndexFromResourceInfo(queryRequest.ResourceInfo);
+            string indexName = IndexFromResourceInfo(queryRequest.ResourceInfo);
 
-            var response = await client.SearchAsync<DynamicResponse>(s => s.Index(openSearchIndex));
+            // var response = await client.SearchAsync<DynamicResponse>(s => s.Index(openSearchIndex))
+            // var response = await client.SearchAsync<Document>(s => s.Index(openSearchIndex))
 
-            var y = response.Documents.ToArray()[0].Body.hits.hits;
+            var query = new
+            {
+                size = 5
+            };
 
+            var response = await client.Http.PostAsync<StringResponse>($"/{indexName}/_search", d => d.SerializableBody(query));
+
+            var jsonRawBody = JsonSerializer.Deserialize<JsonNode>(response.Body);
+
+            JsonNode hits = jsonRawBody!["hits"]!["hits"]!;
+
+            JsonNode[] documents = hits.AsArray().Select(node => node!["_source"]!["edfidoc"])!.ToArray()!;
+
+
+            logger.LogInformation(documents.ToString());
             // var x = await client.LowLevel.SearchAsync<SearchResponse<Document>>(index: openSearchIndex, )
-            return new QueryResult.QuerySuccess([new JsonObject(y)], 1);
+            return new QueryResult.QuerySuccess(documents, -1);
         }
         catch (Exception ex)
         {
