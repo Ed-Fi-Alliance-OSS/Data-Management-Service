@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
+using Polly;
 using static EdFi.DataManagementService.Core.External.Backend.DeleteResult;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
@@ -22,7 +23,7 @@ public class DeleteByIdHandlerTests
 {
     internal static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
     {
-        return new DeleteByIdHandler(documentStoreRepository, NullLogger.Instance);
+        return new DeleteByIdHandler(documentStoreRepository, NullLogger.Instance, ResiliencePipeline.Empty);
     }
 
     [TestFixture]

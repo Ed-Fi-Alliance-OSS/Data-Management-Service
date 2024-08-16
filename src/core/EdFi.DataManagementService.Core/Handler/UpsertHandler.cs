@@ -25,14 +25,14 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        var upsertResut = await _resiliencePipeline.ExecuteAsync(async t =>
-        {
-            _logger.LogDebug("Entering UpsertHandler - {TraceId}", context.FrontendRequest.TraceId);
+        _logger.LogDebug("Entering UpsertHandler - {TraceId}", context.FrontendRequest.TraceId);
 
+        var upsertResult = await _resiliencePipeline.ExecuteAsync(async t =>
+        {
             // A document uuid that will be assigned if this is a new document
             DocumentUuid candidateDocumentUuid = new(Guid.NewGuid());
 
-            UpsertResult result = await _documentStoreRepository.UpsertDocument(
+            return await _documentStoreRepository.UpsertDocument(
                 new UpsertRequest(
                     ResourceInfo: context.ResourceInfo,
                     DocumentInfo: context.DocumentInfo,
@@ -41,17 +41,15 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
                     DocumentUuid: candidateDocumentUuid
                 )
             );
-
-            return result;
         });
 
         _logger.LogDebug(
                 "Document store UpsertDocument returned {UpsertResult}- {TraceId}",
-                upsertResut.GetType().FullName,
+                upsertResult.GetType().FullName,
                 context.FrontendRequest.TraceId
             );
 
-        context.FrontendResponse = upsertResut switch
+        context.FrontendResponse = upsertResult switch
         {
             InsertSuccess insertSuccess
                 => new FrontendResponse(

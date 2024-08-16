@@ -96,7 +96,7 @@ internal class ApiService(
                         new ParsePathMiddleware(_logger),
                         new ValidateEndpointMiddleware(_logger),
                         new BuildResourceInfoMiddleware(_logger),
-                        new GetByIdHandler(_documentStoreRepository, _logger)
+                        new GetByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline)
                     ]
                 )
         );
@@ -116,7 +116,7 @@ internal class ApiService(
                         new ValidateEndpointMiddleware(_logger),
                         new BuildResourceInfoMiddleware(_logger),
                         new ValidateQueryMiddleware(_logger),
-                        new QueryRequestHandler(_queryHandler, _logger)
+                        new QueryRequestHandler(_queryHandler, _logger, _resiliencePipeline)
                     ]
                 )
         );
@@ -158,7 +158,7 @@ internal class ApiService(
                     new BuildResourceInfoMiddleware(_logger),
                     new ExtractDocumentInfoMiddleware(_logger),
                     new DisallowDuplicateReferencesMiddleware(_logger),
-                    new UpdateByIdHandler(_documentStoreRepository, _logger)
+                    new UpdateByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline)
                 ]
             );
             return new PipelineProvider(steps);
@@ -178,7 +178,7 @@ internal class ApiService(
                         new ParsePathMiddleware(_logger),
                         new ValidateEndpointMiddleware(_logger),
                         new BuildResourceInfoMiddleware(_logger),
-                        new DeleteByIdHandler(_documentStoreRepository, _logger)
+                        new DeleteByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline)
                     ]
                 )
         );
