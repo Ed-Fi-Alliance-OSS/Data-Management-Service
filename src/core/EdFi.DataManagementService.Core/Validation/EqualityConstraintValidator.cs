@@ -31,7 +31,6 @@ internal class EqualityConstraintValidator : IEqualityConstraintValidator
         IEnumerable<EqualityConstraint> equalityConstraints
     )
     {
-        List<string> errors = [];
         var validationErrors = new Dictionary<string, string[]>();
         foreach (var equalityConstraint in equalityConstraints)
         {
@@ -55,6 +54,7 @@ internal class EqualityConstraintValidator : IEqualityConstraintValidator
 
             if (!AllEqual(sourceValues.Concat(targetValues).ToList()))
             {
+                List<string> errors = [];
                 string conflictValues = string.Join(
                     ", ",
                     sourceValues
@@ -70,7 +70,23 @@ internal class EqualityConstraintValidator : IEqualityConstraintValidator
                         + " and align the following conflicting values: "
                         + conflictValues
                 );
+
                 validationErrors.Add(sourcePath.ToString(), errors.ToArray());
+
+                // The source segment must also be included in the reported errors
+                string sourceSegment = sourcePath.Segments[^1].ToString().TrimStart('.');
+                string errorDetail =
+                    $"All values supplied for '{sourceSegment}' must match."
+                    + " Review all references (including those higher up in the resource's data)"
+                    + " and align the following conflicting values: "
+                    + conflictValues;
+
+                if (!errors.Contains(errorDetail))
+                {
+                    errors.Add(errorDetail);
+                }
+
+                validationErrors.Add(targetPath.ToString(), errors.ToArray());
             }
 
             bool AllEqual(IList<JsonNode?> nodes)
