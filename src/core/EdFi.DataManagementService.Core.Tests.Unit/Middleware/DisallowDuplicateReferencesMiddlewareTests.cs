@@ -11,7 +11,6 @@ using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
-using Json.Schema;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
@@ -41,9 +40,10 @@ public class DisallowDuplicateReferencesMiddlewareTests
 
         return result;
     }
+
     internal PipelineContext DocRefContext(FrontendRequest frontendRequest, RequestMethod method)
     {
-        PipelineContext _context =
+        PipelineContext docRefContext =
             new(frontendRequest, method)
             {
                 ApiSchemaDocument = DocRefSchemaDocument(),
@@ -53,33 +53,24 @@ public class DisallowDuplicateReferencesMiddlewareTests
                     DocumentUuid: No.DocumentUuid
                 )
             };
-        _context.ProjectSchema = new ProjectSchema(
-            _context.ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
+        docRefContext.ProjectSchema = new ProjectSchema(
+            docRefContext.ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
             NullLogger.Instance
         );
-        _context.ResourceSchema = new ResourceSchema(
-            _context.ProjectSchema.FindResourceSchemaNode(new("bellschedules")) ?? new JsonObject()
+        docRefContext.ResourceSchema = new ResourceSchema(
+            docRefContext.ProjectSchema.FindResourceSchemaNode(new("bellschedules")) ?? new JsonObject()
         );
 
-        if (_context.FrontendRequest.Body != null)
+        if (docRefContext.FrontendRequest.Body != null)
         {
-            var body = JsonNode.Parse(_context.FrontendRequest.Body);
+            var body = JsonNode.Parse(docRefContext.FrontendRequest.Body);
             if (body != null)
             {
-                _context.ParsedBody = body;
+                docRefContext.ParsedBody = body;
             }
         }
 
-        return _context;
-    }
-
-    // All the middlewares necessary tu test DisallowDuplicateReference
-    internal static IPipelineStep ProvideMiddleware(IApiSchemaProvider provider)
-    {
-        var apiValidator = new ApiSchemaValidator(
-            new ApiSchemaSchemaProvider(NullLogger<ApiSchemaSchemaProvider>.Instance)
-        );
-        return new ApiSchemaValidationMiddleware(provider, apiValidator, NullLogger.Instance);
+        return docRefContext;
     }
     
     internal static IPipelineStep BuildResourceInfo()
@@ -107,7 +98,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            var jsonBody = """
+            string jsonBody = """
                 {
                     "schoolReference": {
                         "schoolId": 1
@@ -143,10 +134,9 @@ public class DisallowDuplicateReferencesMiddlewareTests
 
             _context = DocRefContext(frontEndRequest, RequestMethod.POST);
 
-            await ProvideMiddleware(new ApiSchemaValidationMiddlewareTests.Given_An_Api_Schema_With_Validation_Errors.Provider()).Execute(_context, NullNext);
             await BuildResourceInfo().Execute(_context, NullNext);
             await ExtractDocument().Execute(_context, NullNext);
-            
+
             await Middleware().Execute(_context, NullNext);
         }
 
@@ -177,10 +167,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
             .WithStartProject()
             .WithStartResource("School")
             .WithStartDocumentPathsMapping()
-            .WithDocumentPathDescriptor(
-                "GradeLevelDescriptor",
-                "$.gradeLevels[*].gradeLevelDescriptor"
-            )
+            .WithDocumentPathDescriptor("GradeLevelDescriptor", "$.gradeLevels[*].gradeLevelDescriptor")
             .WithEndDocumentPathsMapping()
             .WithEndResource()
             .WithEndProject()
@@ -188,9 +175,10 @@ public class DisallowDuplicateReferencesMiddlewareTests
 
         return result;
     }
+
     internal PipelineContext DescRefContext(FrontendRequest frontendRequest, RequestMethod method)
     {
-        PipelineContext _context =
+        PipelineContext descRefContext =
             new(frontendRequest, method)
             {
                 ApiSchemaDocument = DescRefSchemaDocument(),
@@ -200,24 +188,24 @@ public class DisallowDuplicateReferencesMiddlewareTests
                     DocumentUuid: No.DocumentUuid
                 )
             };
-        _context.ProjectSchema = new ProjectSchema(
-            _context.ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
+        descRefContext.ProjectSchema = new ProjectSchema(
+            descRefContext.ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
             NullLogger.Instance
         );
-        _context.ResourceSchema = new ResourceSchema(
-            _context.ProjectSchema.FindResourceSchemaNode(new("schools")) ?? new JsonObject()
+        descRefContext.ResourceSchema = new ResourceSchema(
+            descRefContext.ProjectSchema.FindResourceSchemaNode(new("schools")) ?? new JsonObject()
         );
 
-        if (_context.FrontendRequest.Body != null)
+        if (descRefContext.FrontendRequest.Body != null)
         {
-            var body = JsonNode.Parse(_context.FrontendRequest.Body);
+            var body = JsonNode.Parse(descRefContext.FrontendRequest.Body);
             if (body != null)
             {
-                _context.ParsedBody = body;
+                descRefContext.ParsedBody = body;
             }
         }
 
-        return _context;
+        return descRefContext;
     }
 
     [TestFixture]
@@ -260,7 +248,6 @@ public class DisallowDuplicateReferencesMiddlewareTests
 
             _context = DescRefContext(frontEndRequest, RequestMethod.POST);
 
-            await ProvideMiddleware(new ApiSchemaValidationMiddlewareTests.Given_An_Api_Schema_With_Validation_Errors.Provider()).Execute(_context, NullNext);
             await BuildResourceInfo().Execute(_context, NullNext);
             await ExtractDocument().Execute(_context, NullNext);
 
