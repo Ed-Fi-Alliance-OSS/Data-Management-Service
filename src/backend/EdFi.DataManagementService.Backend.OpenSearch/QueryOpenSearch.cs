@@ -38,12 +38,12 @@ public static class QueryOpenSearch
         {
             string indexName = IndexFromResourceInfo(queryRequest.ResourceInfo);
 
-            var query = new
-            {
-                size = 5
-            };
+            var query = new { size = 5 };
 
-            var response = await client.Http.PostAsync<BytesResponse>($"/{indexName}/_search", d => d.SerializableBody(query));
+            var response = await client.Http.PostAsync<BytesResponse>(
+                $"/{indexName}/_search",
+                d => d.SerializableBody(query)
+            );
 
             var jsonRawBody = JsonSerializer.Deserialize<JsonNode>(response.Body);
 
@@ -51,7 +51,11 @@ public static class QueryOpenSearch
 
             int totalCount = hits!["total"]!["value"]!.GetValue<int>();
 
-            JsonNode[] documents = hits!["hits"]!.AsArray().Select(node => node!["_source"]!["edfidoc"]!.DeepClone())!.ToArray()!;
+            JsonNode[] documents = hits!["hits"]!
+                .AsArray()
+                // DeepClone() so they can be placed in a new JsonArray
+                .Select(node => node!["_source"]!["edfidoc"]!.DeepClone())!
+                .ToArray()!;
 
             return new QueryResult.QuerySuccess(new JsonArray(documents), totalCount);
         }
