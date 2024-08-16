@@ -43,8 +43,10 @@ namespace EdFi.DataManagementService.Backend.OpenSearch;
 public static class QueryOpenSearch
 {
     // Imposes a consistent sort order across queries without specifying a sort field
-    private static readonly JsonArray _sortDirective =
-        new(new JsonObject { ["_doc"] = new JsonObject { ["order"] = "asc" } });
+    private static JsonArray SortDirective()
+    {
+        return new(new JsonObject { ["_doc"] = new JsonObject { ["order"] = "asc" } });
+    }
 
     /// <summary>
     /// Returns OpenSearch index name from the given ResourceInfo.
@@ -90,11 +92,12 @@ public static class QueryOpenSearch
                 }
             }
 
-            JsonObject query = new()
-            {
-                ["query"] = new JsonObject { ["bool"] = new JsonObject { ["filter"] = terms } },
-                ["sort"] = _sortDirective
-            };
+            JsonObject query =
+                new()
+                {
+                    ["query"] = new JsonObject { ["bool"] = new JsonObject { ["filter"] = terms } },
+                    ["sort"] = SortDirective()
+                };
 
             if (queryRequest.PaginationParameters.limit != null)
             {
@@ -106,9 +109,11 @@ public static class QueryOpenSearch
                 query.Add(new("from", queryRequest.PaginationParameters.offset));
             }
 
+            string queryJsonString = query.ToJsonString();
+
             BytesResponse response = await client.Http.PostAsync<BytesResponse>(
                 $"/{indexName}/_search",
-                d => d.SerializableBody(query)
+                d => d.Body(queryJsonString)
             );
 
             JsonNode? jsonResponse = JsonSerializer.Deserialize<JsonNode>(response.Body);
