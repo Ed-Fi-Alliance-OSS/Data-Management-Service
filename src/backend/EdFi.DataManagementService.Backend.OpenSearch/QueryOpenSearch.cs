@@ -13,11 +13,42 @@ using OpenSearch.Net;
 
 namespace EdFi.DataManagementService.Backend.OpenSearch;
 
+/// <summary>
+/// Queries OpenSearch for documents. Example query DSL usage:
+///
+///  {
+///    "from": 100
+///    "size": 20,
+///    "query": {
+///      "bool": {
+///        "filter": [
+///          {
+///            "term": {
+///              "edfidoc.schoolYearDescription": {
+///                "value": "Year 2025"
+///              }
+///            }
+///          },
+///          {
+///            "term": {
+///              "edfidoc.currentSchoolYear": false
+///            }
+///          }
+///        ]
+///      }
+///    }
+///  }
+///
+/// </summary>
 public static class QueryOpenSearch
 {
+    // Imposes a consistent sort order across queries without specifying a sort field
+    private static readonly JsonArray _sortDirective =
+        new(new JsonObject { ["_doc"] = new JsonObject { ["order"] = "asc" } });
+
     /// <summary>
     /// Returns OpenSearch index name from the given ResourceInfo.
-    /// OpenSearch indexes are required to be lowercase only, with no pound signs or periods.
+    /// OpenSearch indexes are required to be lowercase only, with no periods.
     /// </summary>
     private static string IndexFromResourceInfo(ResourceInfo resourceInfo)
     {
@@ -38,16 +69,51 @@ public static class QueryOpenSearch
         {
             string indexName = IndexFromResourceInfo(queryRequest.ResourceInfo);
 
-            var query = new { size = 5 };
+            // API client requested filters
+            JsonArray terms = [];
+            if (queryRequest.SearchParameters.Count > 0)
+            {
+                foreach (var searchParameter in queryRequest.SearchParameters)
+                {
+                    terms.Add(
+                        new JsonObject
+                        {
+                            ["term"] = new JsonObject
+                            {
+                                [$@"edfidoc.{searchParameter.Key}"] = new JsonObject
+                                {
+                                    ["value"] = searchParameter.Value
+                                }
+                            }
+                        }
+                    );
+                }
+            }
 
-            var response = await client.Http.PostAsync<BytesResponse>(
+            JsonObject query = new()
+            {
+                ["query"] = new JsonObject { ["bool"] = new JsonObject { ["filter"] = terms } },
+                ["sort"] = _sortDirective
+            };
+
+            if (queryRequest.PaginationParameters.limit != null)
+            {
+                query.Add(new("size", queryRequest.PaginationParameters.limit));
+            }
+
+            if (queryRequest.PaginationParameters.offset != null)
+            {
+                query.Add(new("from", queryRequest.PaginationParameters.offset));
+            }
+
+            BytesResponse response = await client.Http.PostAsync<BytesResponse>(
                 $"/{indexName}/_search",
                 d => d.SerializableBody(query)
             );
 
-            var jsonRawBody = JsonSerializer.Deserialize<JsonNode>(response.Body);
+            JsonNode? jsonResponse = JsonSerializer.Deserialize<JsonNode>(response.Body);
 
-            JsonNode hits = jsonRawBody!["hits"]!;
+            JsonNode hits = jsonResponse!["hits"]!;
 
             int totalCount = hits!["total"]!["value"]!.GetValue<int>();
 
