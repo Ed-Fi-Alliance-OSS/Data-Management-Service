@@ -142,6 +142,30 @@ services:
       DISABLE_SECURITY_DASHBOARDS_PLUGIN: true
     restart: unless-stopped
 
+  dmsapi:
+    build:
+      context: ../src/
+      dockerfile: Dockerfile
+    environment:
+      ASPNETCORE_HTTP_PORTS: 8080
+      OAUTH_TOKEN_ENDPOINT: http://host.docker.internal:8000/oauth/token
+      NEED_DATABASE_SETUP: true
+      BYPASS_STRING_COERCION: false
+      POSTGRES_ADMIN_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_ADMIN_PASSWORD:  ${POSTGRES_PASSWORD:-abcdefgh1!}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-abcdefgh1!}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_HOST: db
+      LOG_LEVEL: Information
+    ports:
+      - 8080:8080
+    depends_on:
+      - db
+    restart: always
+    hostname: dms-api
+    container_name: dms-api
+
 volumes:
   zookeeper-logs:
   zookeeper-data:
