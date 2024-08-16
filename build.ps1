@@ -391,8 +391,7 @@ function SetUpKafkaConfiguration
 
     $sourceBody = Get-Content -Path .\kafka-poc\postgresql_connector.json -Raw
 
-    Invoke-RestMethod -Method Post `
-        -uri http://localhost:$sourcePort/connectors/ -ContentType "application/json" -Body $sourceBody
+    Invoke-RestMethod -Method Post -uri http://localhost:$sourcePort/connectors/ -ContentType "application/json" -Body $sourceBody
 
     Start-Sleep 1
 
@@ -414,8 +413,7 @@ function SetUpKafkaConfiguration
 
     $sinkBody = Get-Content -Path .\kafka-poc\opensearch_connector.json -Raw
 
-    Invoke-RestMethod -Method Post `
-        -uri http://localhost:$sinkPort/connectors/ -ContentType "application/json" -Body $sinkBody
+    Invoke-RestMethod -Method Post -uri http://localhost:$sinkPort/connectors/ -ContentType "application/json" -Body $sinkBody
 
     Start-Sleep 1
 
