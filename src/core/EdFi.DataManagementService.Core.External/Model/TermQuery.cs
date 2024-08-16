@@ -3,25 +3,19 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-namespace EdFi.DataManagementService.Core.External.Backend;
+namespace EdFi.DataManagementService.Core.External.Backend.Model;
 
 /// <summary>
-/// The special query parameters used to drive pagination
+/// A query parameter for a single term
 /// </summary>
-public interface IPaginationParameters
-{
+public record TermQuery(
     /// <summary>
-    /// The pagination limit
+    /// The term field
     /// </summary>
-    int? limit { get; }
+    string Field,
 
     /// <summary>
-    /// The pagination offset
+    /// The term value
     /// </summary>
-    int? offset { get; }
-
-    /// <summary>
-    /// The pagination totalCount
-    /// </summary>
-    bool totalCount { get; }
-}
+    string Value
+);

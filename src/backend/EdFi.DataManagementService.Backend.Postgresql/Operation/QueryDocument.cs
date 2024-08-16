@@ -39,7 +39,7 @@ public class QueryDocument(ILogger<QueryDocument> _logger) : IQueryDocument
                     connection,
                     transaction
                 ),
-                queryRequest.PaginationParameters.totalCount ? await GetTotalDocumentsForResourceName(resourceName, connection, transaction) : null
+                queryRequest.PaginationParameters.TotalCount ? await GetTotalDocumentsForResourceName(resourceName, connection, transaction) : null
             );
         }
         catch (Exception ex)

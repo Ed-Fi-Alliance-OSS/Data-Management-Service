@@ -22,7 +22,7 @@ internal class QueryRequestHandler(IQueryHandler _queryHandler, ILogger _logger)
         QueryResult result = await _queryHandler.QueryDocuments(
             new QueryRequest(
                 ResourceInfo: context.ResourceInfo,
-                SearchParameters: new Dictionary<string, string>(),
+                TermQueries: context.TermQueries,
                 PaginationParameters: context.PaginationParameters,
                 TraceId: context.FrontendRequest.TraceId
             )
@@ -42,7 +42,7 @@ internal class QueryRequestHandler(IQueryHandler _queryHandler, ILogger _logger)
                     StatusCode: 200,
                     Body: success.EdfiDocs.ToJsonString(),
                     Headers:
-                        context.PaginationParameters.totalCount ? new()
+                        context.PaginationParameters.TotalCount ? new()
                         {
                         {"Total-Count", (success.TotalCount ?? 0).ToString()}
                     } : []

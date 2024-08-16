@@ -73,40 +73,34 @@ public static class QueryOpenSearch
 
             // API client requested filters
             JsonArray terms = [];
-            if (queryRequest.SearchParameters.Count > 0)
+            foreach (var termQuery in queryRequest.TermQueries)
             {
-                foreach (var searchParameter in queryRequest.SearchParameters)
-                {
-                    terms.Add(
-                        new JsonObject
+                terms.Add(
+                    new JsonObject
+                    {
+                        ["match_phrase"] = new JsonObject
                         {
-                            ["term"] = new JsonObject
-                            {
-                                [$@"edfidoc.{searchParameter.Key}"] = new JsonObject
-                                {
-                                    ["value"] = searchParameter.Value
-                                }
-                            }
+                            [$@"edfidoc.{termQuery.Field}"] = termQuery.Value
                         }
-                    );
-                }
+                    }
+                );
             }
 
             JsonObject query =
                 new()
                 {
-                    ["query"] = new JsonObject { ["bool"] = new JsonObject { ["filter"] = terms } },
+                    ["query"] = new JsonObject { ["bool"] = new JsonObject { ["must"] = terms } },
                     ["sort"] = SortDirective()
                 };
 
-            if (queryRequest.PaginationParameters.limit != null)
+            if (queryRequest.PaginationParameters.Limit != null)
             {
-                query.Add(new("size", queryRequest.PaginationParameters.limit));
+                query.Add(new("size", queryRequest.PaginationParameters.Limit));
             }
 
-            if (queryRequest.PaginationParameters.offset != null)
+            if (queryRequest.PaginationParameters.Offset != null)
             {
-                query.Add(new("from", queryRequest.PaginationParameters.offset));
+                query.Add(new("from", queryRequest.PaginationParameters.Offset));
             }
 
             string queryJsonString = query.ToJsonString();

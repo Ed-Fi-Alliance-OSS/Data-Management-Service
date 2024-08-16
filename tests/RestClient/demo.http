@@ -30,43 +30,15 @@ POST http://localhost:{{port}}/data/ed-fi/schoolYearTypes
 
 ### Test GET of school years
 
-GET http://localhost:{{port}}/data/ed-fi/schoolYearTypes?schoolYear=111
-
-
-### Test direct
-
-POST http://localhost:9200/ed-fi$schoolyeartype/_search
-Content-Type: application/json
-
-{
-    "size": 5,
-    "query": {
-        "bool": {
-            "filter": [
-                {
-                    "term": {
-                        "resourcename": {
-                            "value": "schoolyeartype"
-                        }
-                    }
-                },
-                {
-                    "term": {
-                        "edfidoc.currentSchoolYear": false
-                    }
-                }
-            ]
-        }
-    }
-}
+GET http://localhost:{{port}}/data/ed-fi/schools?nameOfInstitution=School2000&educationOrganizationCategories.educationOrganizationCategoryDescriptor=string#string
 
 
 ### Setup - POST School1
 POST http://localhost:{{port}}/data/ed-fi/schools
 
 {
-    "schoolId": 12345678,
-    "nameOfInstitution": "School1",
+    "schoolId": 321,
+    "nameOfInstitution": "School2100",
     "educationOrganizationCategories": [
         {
             "educationOrganizationCategoryDescriptor": "string#string"
