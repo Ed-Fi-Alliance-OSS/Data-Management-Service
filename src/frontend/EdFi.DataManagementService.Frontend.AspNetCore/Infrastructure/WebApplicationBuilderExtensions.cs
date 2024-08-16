@@ -21,8 +21,10 @@ public static class WebApplicationBuilderExtensions
 {
     public static void AddServices(this WebApplicationBuilder webAppBuilder)
     {
+        var logger = ConfigureLogging();
+
         webAppBuilder
-            .Services.AddDmsDefaultConfiguration()
+            .Services.AddDmsDefaultConfiguration(logger, webAppBuilder.Configuration.GetSection("CircuitBreaker"))
             .AddPostgresqlBackend(
                 webAppBuilder.Configuration.GetSection("ConnectionStrings:DatabaseConnection").Value
                     ?? string.Empty
@@ -36,8 +38,6 @@ public static class WebApplicationBuilderExtensions
             .AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>()
             .Configure<ConnectionStrings>(webAppBuilder.Configuration.GetSection("ConnectionStrings"))
             .AddSingleton<IValidateOptions<ConnectionStrings>, ConnectionStringsValidator>();
-
-        var logger = ConfigureLogging();
 
         if (webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
         {

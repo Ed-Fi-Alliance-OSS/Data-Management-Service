@@ -3,15 +3,18 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Diagnostics;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Validation;
-using Json.Schema;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Polly;
 using Polly.CircuitBreaker;
+using Polly.Telemetry;
+using Serilog;
 
 namespace EdFi.DataManagementService.Core;
 
@@ -23,7 +26,7 @@ public static class DmsCoreServiceExtensions
     /// <summary>
     /// The DMS default service configuration
     /// </summary>
-    public static IServiceCollection AddDmsDefaultConfiguration(this IServiceCollection services)
+    public static IServiceCollection AddDmsDefaultConfiguration(this IServiceCollection services, Serilog.ILogger logger, IConfigurationSection circuitBreakerConfiguration)
     {
         services
             .AddSingleton<IApiSchemaProvider, ApiSchemaFileLoader>()
@@ -33,33 +36,40 @@ public static class DmsCoreServiceExtensions
             .AddTransient<IDocumentValidator, DocumentValidator>()
             .AddTransient<IMatchingDocumentUuidsValidator, MatchingDocumentUuidsValidator>()
             .AddTransient<IEqualityConstraintValidator, EqualityConstraintValidator>()
-            .AddResiliencePipeline("upsertCircuitBreaker", (builder) =>
+            .AddResiliencePipeline("upsertCircuitBreaker", builder =>
             {
-                var optionsUpsertFailure = new CircuitBreakerStrategyOptions
+                var telemetryOptions = new TelemetryOptions
                 {
-                    FailureRatio = 0.1,
-                    SamplingDuration = TimeSpan.FromSeconds(10),
-                    MinimumThroughput = 2,
-                    BreakDuration = TimeSpan.FromSeconds(30),
-                    ShouldHandle = new PredicateBuilder()
-                        .HandleResult(response => response is UpsertResult.UnknownFailure),
-                    OnOpened = (result) =>
-                    {
-                        Debug.WriteLine("OPENED");
-                        return ValueTask.CompletedTask;
-                    },
-                    OnHalfOpened = (result) =>
-                    {
-                        Debug.WriteLine("HALF OPENED");
-                        return ValueTask.CompletedTask;
-                    },
-                    OnClosed = (result) =>
-                    {
-                        Debug.WriteLine("CLOSED");
-                        return ValueTask.CompletedTask;
-                    }
+                    // Configure logging
+                    LoggerFactory = LoggerFactory.Create(builder => builder.AddSerilog(logger))
                 };
-                builder.AddCircuitBreaker(optionsUpsertFailure);
+
+                var breakerSettings = new CircuitBreakerSettings();
+                circuitBreakerConfiguration.Bind(breakerSettings);
+
+                var optionsUnknownFailure = new CircuitBreakerStrategyOptions
+                {
+                    FailureRatio = breakerSettings.FailureRatio,
+                    SamplingDuration = TimeSpan.FromSeconds(breakerSettings.SamplingDurationSeconds),
+                    MinimumThroughput = breakerSettings.MinimumThroughput,
+                    BreakDuration = TimeSpan.FromSeconds(breakerSettings.BreakDurationSeconds),
+                    ShouldHandle = new PredicateBuilder()
+                        .HandleResult(response =>
+                        {
+                            return response switch
+                            {
+                                DeleteResult.UnknownFailure => true,
+                                GetResult.UnknownFailure => true,
+                                QueryResult.UnknownFailure => true,
+                                UpdateResult.UnknownFailure => true,
+                                UpsertResult.UnknownFailure => true,
+                                _ => false
+                            };
+                        })
+                };
+                builder
+                    .ConfigureTelemetry(telemetryOptions)
+                    .AddCircuitBreaker(optionsUnknownFailure);
             });
 
         return services;
