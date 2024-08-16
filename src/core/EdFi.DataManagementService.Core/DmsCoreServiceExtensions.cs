@@ -40,7 +40,6 @@ public static class DmsCoreServiceExtensions
             {
                 var telemetryOptions = new TelemetryOptions
                 {
-                    // Configure logging
                     LoggerFactory = LoggerFactory.Create(builder => builder.AddSerilog(logger))
                 };
 

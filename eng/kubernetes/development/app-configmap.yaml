@@ -14,3 +14,7 @@ data:
     bypass-string-coercion: "false"
     database-isolation-level: "RepeatableRead"
     correlation-id-header: "correlationid"
+    failure-ratio: "0.1"
+    sampling-duration-seconds: "10"
+    minimum-throughput: 2
+    break-duration-seconds: 30
