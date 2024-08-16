@@ -160,6 +160,59 @@ public class DisallowDuplicateReferencesMiddlewareTests
         }
     }
 
+    // Happy path
+    [TestFixture]
+    public class Given_Pipeline_Context_With_One_Document_Reference
+       : DisallowDuplicateReferencesMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            string jsonBody = """
+                {
+                    "schoolReference": {
+                        "schoolId": 1
+                    },
+                    "bellScheduleName": "Test Schedule",
+                    "totalInstructionalTime": 325,
+                    "classPeriods": [
+                        {
+                            "classPeriodReference": {
+                                "classPeriodName": "01 - Traditional",
+                                "schoolId": 1
+                            }
+                        }
+                    ],
+                    "dates": [],
+                    "gradeLevels": []
+                }
+                """;
+
+            FrontendRequest frontEndRequest =
+                new(
+                    Path: "ed-fi/bellschedules",
+                    Body: jsonBody,
+                    QueryParameters: [],
+                    TraceId: new TraceId("")
+                );
+
+            _context = DocRefContext(frontEndRequest, RequestMethod.POST);
+
+            await BuildResourceInfo().Execute(_context, NullNext);
+            await ExtractDocument().Execute(_context, NullNext);
+
+            await Middleware().Execute(_context, NullNext);
+        }
+
+        [Test]
+        public void It_should_not_have_response()
+        {
+            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
     // Descriptor Reference evaluation
     internal static ApiSchemaDocument DescRefSchemaDocument()
     {
@@ -271,6 +324,48 @@ public class DisallowDuplicateReferencesMiddlewareTests
                     "validationErrors":{"$.gradeLevels[*].gradeLevelDescriptor":["The 2nd item of the gradeLevels has the same identifying values as another item earlier in the list.","The 3rd item of the gradeLevels has the same identifying values as another item earlier in the list."]}
                     """
                 );
+        }
+    }
+
+    [TestFixture]
+    public class Given_Pipeline_Context_With_OTwo_Different_Descriptor_Reference
+        : DisallowDuplicateReferencesMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            string jsonBody = """
+                {
+                  "schoolId":255901001,
+                  "nameOfInstitution":"School Test",
+                  "gradeLevels": [
+                      {
+                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
+                      },
+                      {
+                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Seven grade"
+                      }
+                   ]
+                }
+                """;
+
+            FrontendRequest frontEndRequest =
+                new(Path: "ed-fi/schools", Body: jsonBody, QueryParameters: [], TraceId: new TraceId(""));
+
+            _context = DescRefContext(frontEndRequest, RequestMethod.POST);
+
+            await BuildResourceInfo().Execute(_context, NullNext);
+            await ExtractDocument().Execute(_context, NullNext);
+
+            await Middleware().Execute(_context, NullNext);
+        }
+
+        [Test]
+        public void It_should_not_have_response()
+        {
+            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 }
