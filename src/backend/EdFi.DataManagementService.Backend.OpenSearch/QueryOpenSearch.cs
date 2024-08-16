@@ -101,6 +101,8 @@ public static class QueryOpenSearch
                 query.Add(new("from", queryRequest.PaginationParameters.Offset));
             }
 
+            string queryJsonString = query.ToJsonString();
+
             BytesResponse response = await client.Http.PostAsync<BytesResponse>(
                 $"/{indexName}/_search",
                 d => d.Body(query.ToJsonString())
