@@ -47,7 +47,7 @@ internal class QueryRequestHandler(IQueryHandler _queryHandler, ILogger _logger,
                         : []
 =======
                     Headers:
-                        context.PaginationParameters.totalCount ? new()
+                        context.PaginationParameters.TotalCount ? new()
                         {
                         {"Total-Count", (success.TotalCount ?? 0).ToString()}
                     } : []
