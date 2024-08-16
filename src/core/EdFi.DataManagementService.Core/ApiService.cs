@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
@@ -15,8 +16,10 @@ using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Validation;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Polly;
 
 namespace EdFi.DataManagementService.Core;
 
@@ -32,7 +35,8 @@ internal class ApiService(
     IMatchingDocumentUuidsValidator matchingDocumentUuidsValidator,
     IEqualityConstraintValidator _equalityConstraintValidator,
     ILogger<ApiService> _logger,
-    IOptions<AppSettings> _appSettings
+    IOptions<AppSettings> _appSettings,
+    [FromKeyedServices("upsertCircuitBreaker")] ResiliencePipeline _resiliencePipeline
 ) : IApiService
 {
     /// <summary>
@@ -72,7 +76,7 @@ internal class ApiService(
                     new BuildResourceInfoMiddleware(_logger),
                     new ExtractDocumentInfoMiddleware(_logger),
                     new DisallowDuplicateReferencesMiddleware(_logger),
-                    new UpsertHandler(_documentStoreRepository, _logger)
+                    new UpsertHandler(_documentStoreRepository, _logger, _resiliencePipeline)
                 ]
             );
             return new PipelineProvider(steps);
