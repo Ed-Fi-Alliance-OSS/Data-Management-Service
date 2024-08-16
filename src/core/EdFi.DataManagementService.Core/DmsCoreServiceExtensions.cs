@@ -36,7 +36,7 @@ public static class DmsCoreServiceExtensions
             .AddTransient<IDocumentValidator, DocumentValidator>()
             .AddTransient<IMatchingDocumentUuidsValidator, MatchingDocumentUuidsValidator>()
             .AddTransient<IEqualityConstraintValidator, EqualityConstraintValidator>()
-            .AddResiliencePipeline("upsertCircuitBreaker", builder =>
+            .AddResiliencePipeline("unknownFailureCircuitBreaker", builder =>
             {
                 var telemetryOptions = new TelemetryOptions
                 {
