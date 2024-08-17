@@ -29,7 +29,11 @@ spec:
 
         env:
         - name: 'OPENSEARCH_ADMIN_PASSWORD'
-          value: '$(OPENSEARCH_ADMIN_PASSWORD)'
+          valueFrom:
+            secretKeyRef:
+              name: opensearch-dashboard-secret
+              key: OPENSEARCH_ADMIN_PASSWORD
+
         - name: 'OPENSEARCH_HOSTS'
           value: '["http://dms-opensearch:9200"]'
         - name: "DISABLE_SECURITY_DASHBOARDS_PLUGIN"

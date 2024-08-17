@@ -28,11 +28,17 @@ spec:
         - containerPort: 9000
 
         env:
-        - name: "OPENSEARCH_INITIAL_ADMIN_PASSWORD"
-          value: ""
+        - name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: opensearch-secret
+              key: OPENSEARCH_INITIAL_ADMIN_PASSWORD
 
-        - name: "OPENSEARCH_ADMIN_PASSWORD"
-          value: "123"
+        - name: OPENSEARCH_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: opensearch-secret
+              key: OPENSEARCH_ADMIN_PASSWORD
 
         - name: "cluster.name"
           value: "opensearch-cluster"
