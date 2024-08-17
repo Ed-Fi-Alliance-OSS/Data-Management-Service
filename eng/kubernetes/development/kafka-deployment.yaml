@@ -36,12 +36,13 @@ spec:
 
         - name: "KAFKA_ADVERTISED_LISTENERS"
           value: "PLAINTEXT://dms-kafka1:9092"
-          #volumeMounts:
-        #- mountPath: /var/lib/postgresql/data
-        #name: pgsql-data
+
+        volumeMounts:
+        - mountPath: /kafka/data
+          name: kafka-data
       restartPolicy: Always
-      #volumes:
-      #- name: pgsql-data
-      #persistentVolumeClaim:
-      #claimName: pgsql-data
+      volumes:
+      - name: kafka-data
+        persistentVolumeClaim:
+          claimName: kafka-data
 status: {}

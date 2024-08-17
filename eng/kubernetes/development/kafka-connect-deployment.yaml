@@ -47,5 +47,13 @@ spec:
         - name: "STATUS_STORAGE_TOPIC"
           value: "debezium_sink_status"
 
+        volumeMounts:
+        - mountPath: /kafka/config
+          name: connect-source-config
+
       restartPolicy: Always
+      volumes:
+      - name: connect-source-config
+        persistentVolumeClaim:
+          claimName: connect-source-config
 status: {}

@@ -28,10 +28,5 @@ spec:
         - containerPort: 2181
         - containerPort: 2888
         - containerPort: 3888
-          #volumes:
-          #- zookeeper-logs:/zookeeper/logs
-          #- zookeeper-data:/zookeeper/data
-          #- zookeeper-txns:/zookeeper/txns
-          #- zookeeper-conf:/zookeeper/conf
       restartPolicy: Always
 status: {}
