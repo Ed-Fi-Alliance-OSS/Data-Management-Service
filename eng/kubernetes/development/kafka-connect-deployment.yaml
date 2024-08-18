@@ -55,5 +55,16 @@ spec:
       volumes:
       - name: connect-source-config
         persistentVolumeClaim:
-          claimName: connect-source-config
+          claimName: kafka-connect-claim
 status: {}
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: kafka-connect-claim
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Mi

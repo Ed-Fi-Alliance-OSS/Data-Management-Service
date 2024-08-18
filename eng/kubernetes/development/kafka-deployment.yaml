@@ -44,5 +44,16 @@ spec:
       volumes:
       - name: kafka-data
         persistentVolumeClaim:
-          claimName: kafka-data
+          claimName: kafka-conf-claim
 status: {}
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: kafka-conf-claim
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Mi
