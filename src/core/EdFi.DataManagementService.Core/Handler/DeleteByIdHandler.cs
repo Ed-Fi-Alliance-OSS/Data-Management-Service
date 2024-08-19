@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.External.Backend.DeleteResult;
+using static EdFi.DataManagementService.Core.Handler.Utility;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
@@ -57,8 +58,17 @@ internal class DeleteByIdHandler(IDocumentStoreRepository _documentStoreReposito
                 ),
             DeleteFailureWriteConflict => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),
             UnknownFailure failure
-                => new(StatusCode: 500, Body: failure.FailureMessage.ToJsonError(), Headers: []),
-            _ => new(StatusCode: 500, Body: "Unknown DeleteResult".ToJsonError(), Headers: [])
+                => new(
+                    StatusCode: 500,
+                    Body: ToJsonError(failure.FailureMessage, context.FrontendRequest.TraceId),
+                    Headers: []
+                ),
+            _
+                => new(
+                    StatusCode: 500,
+                    Body: ToJsonError("Unknown DeleteResult", context.FrontendRequest.TraceId),
+                    Headers: []
+                )
         };
     }
 }

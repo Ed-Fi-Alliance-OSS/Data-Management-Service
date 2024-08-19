@@ -1,9 +1,12 @@
 # PostgreSQL -> Kafka -> OpenSearch
 
->⚠️  **WARNING: NOT FOR PRODUCTION USE!** Includes passwords in the default configuration that are visible in this repo and should never be used in real life. Be very careful!
+> [!WARNING]
+> **NOT FOR PRODUCTION USE!** Includes passwords in the default configuration that are
+> visible in this repo and should never be used in real life. Be very careful!
 
-For requirements and design background, see [Change Data Capture to
-Stream](https://github.com/Ed-Fi-Alliance-OSS/Project-Tanager/blob/main/docs/DMS/CDC-STREAMING.md).
+This document describes how to set up a development environment that uses Kafka and OpenSearch
+(along with PostgreSQL) to handle GET by queries. For requirements and design background, see
+[Change Data Capture to Stream](https://github.com/Ed-Fi-Alliance-OSS/Project-Tanager/blob/main/docs/DMS/CDC-STREAMING.md).
 
 1. Start these containers.
 
@@ -29,12 +32,14 @@ Stream](https://github.com/Ed-Fi-Alliance-OSS/Project-Tanager/blob/main/docs/DMS
     ```
 1. Run `setup.ps1` to inject the connector configurations into the respective
    sink and source connector containers.
+1. In the DMS `appsettings.json`, change `AppSettings.QueryHandler` to `opensearch`, and add
+   `ConnectionStrings.OpenSearchUrl` set to `http://localhost:9200`.
 1. Start the DMS and begin inserting and updating documents.
-1. View Kafka changes in Kafdrop and OpenSearch changes in its Dashboard
+1. View Kafka changes in Kafka UI and OpenSearch changes in its Dashboard
 
 Tools
 
-* [Kafdrop](http://localhost:9000/)
+* [Kafka UI](http://localhost:8080/)
 * [OpenSearch Dashboard](http://localhost:5601/)
   * After a record has been inserted, create an [index
     pattern](http://localhost:5601/app/management/opensearch-dashboards/indexPatterns): `ed-fi$*`
@@ -42,17 +47,6 @@ Tools
 Known problems:
 
 * DELETE is not having any impact on OpenSearch.
-  * We never even tried to get it working in Meadowlark, so there's no value in
-    reviewing that project.
-* The indexing in OpenSearch is not automagically detecting the fields inside
-  the `edfidoc`, so there is no searching inside the document.
-  * We _did_ have this working in Meadowlark, so it may be worthwhile to
-    startup Meadowlark and review that.
-  * There is one crucial difference: in Meadowlark we had this working _with
-    MongoDB_, not with PostgreSQL. So the document shape or the Kafka message
-    shape might have been slightly different.
-  * Maybe disabling the schema in the Kafka message was actually a bad idea? I
-    don't think we disabled the schema in Meadowlark.
 
 ## Clearing Out All Data in OpenSearch
 

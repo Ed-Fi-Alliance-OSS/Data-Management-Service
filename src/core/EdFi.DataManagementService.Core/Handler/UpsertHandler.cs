@@ -13,6 +13,7 @@ using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.External.Backend.UpsertResult;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
+using static EdFi.DataManagementService.Core.Handler.Utility;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
@@ -111,8 +112,17 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
                 ),
             UpsertFailureWriteConflict => new(StatusCode: 409, Body: null, Headers: []),
             UnknownFailure failure
-                => new(StatusCode: 500, Body: failure.FailureMessage.ToJsonError(), Headers: []),
-            _ => new(StatusCode: 500, Body: "Unknown UpsertResult".ToJsonError(), Headers: [])
+                => new(
+                    StatusCode: 500,
+                    Body: ToJsonError(failure.FailureMessage, context.FrontendRequest.TraceId),
+                    Headers: []
+                ),
+            _
+                => new(
+                    StatusCode: 500,
+                    Body: ToJsonError("Unknown UpsertResult", context.FrontendRequest.TraceId),
+                    Headers: []
+                )
         };
     }
 }

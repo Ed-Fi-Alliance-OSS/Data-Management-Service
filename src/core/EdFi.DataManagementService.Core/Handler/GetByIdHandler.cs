@@ -3,13 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using Microsoft.Extensions.Logging;
-using EdFi.DataManagementService.Core.Pipeline;
-using static EdFi.DataManagementService.Core.External.Backend.GetResult;
-using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.Pipeline;
+using Microsoft.Extensions.Logging;
+using static EdFi.DataManagementService.Core.External.Backend.GetResult;
+using static EdFi.DataManagementService.Core.Handler.Utility;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
@@ -39,10 +40,21 @@ internal class GetByIdHandler(IDocumentStoreRepository _documentStoreRepository,
 
         context.FrontendResponse = result switch
         {
-            GetSuccess success => new FrontendResponse(StatusCode: 200, Body: success.EdfiDoc.ToJsonString(), Headers: []),
+            GetSuccess success
+                => new FrontendResponse(StatusCode: 200, Body: success.EdfiDoc.ToJsonString(), Headers: []),
             GetFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
-            UnknownFailure failure => new FrontendResponse(StatusCode: 500, Body: failure.FailureMessage.ToJsonError(), Headers: []),
-            _ => new(StatusCode: 500, Body: "Unknown GetResult".ToJsonError(), Headers: [])
+            UnknownFailure failure
+                => new FrontendResponse(
+                    StatusCode: 500,
+                    Body: ToJsonError(failure.FailureMessage, context.FrontendRequest.TraceId),
+                    Headers: []
+                ),
+            _
+                => new(
+                    StatusCode: 500,
+                    Body: ToJsonError("Unknown GetResult", context.FrontendRequest.TraceId),
+                    Headers: []
+                )
         };
     }
 }

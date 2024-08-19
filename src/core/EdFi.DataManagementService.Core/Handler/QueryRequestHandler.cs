@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.External.Backend.QueryResult;
+using static EdFi.DataManagementService.Core.Handler.Utility;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
@@ -37,20 +38,26 @@ internal class QueryRequestHandler(IQueryHandler _queryHandler, ILogger _logger)
         context.FrontendResponse = result switch
         {
             QuerySuccess success
-                =>
-                new FrontendResponse(
+                => new FrontendResponse(
                     StatusCode: 200,
                     Body: success.EdfiDocs.ToJsonString(),
-                    Headers:
-                        context.PaginationParameters.TotalCount ? new()
-                        {
-                        {"Total-Count", (success.TotalCount ?? 0).ToString()}
-                    } : []
+                    Headers: context.PaginationParameters.TotalCount
+                        ? new() { { "Total-Count", (success.TotalCount ?? 0).ToString() } }
+                        : []
                 ),
             QueryFailureInvalidQuery => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
             UnknownFailure failure
-                => new FrontendResponse(StatusCode: 500, Body: failure.FailureMessage.ToJsonError(), Headers: []),
-            _ => new(StatusCode: 500, Body: "Unknown QueryResult".ToJsonError(), Headers: [])
+                => new FrontendResponse(
+                    StatusCode: 500,
+                    Body: ToJsonError(failure.FailureMessage, context.FrontendRequest.TraceId),
+                    Headers: []
+                ),
+            _
+                => new(
+                    StatusCode: 500,
+                    Body: ToJsonError("Unknown QueryResult", context.FrontendRequest.TraceId),
+                    Headers: []
+                )
         };
     }
 }
