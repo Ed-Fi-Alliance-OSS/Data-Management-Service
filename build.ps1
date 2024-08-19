@@ -368,56 +368,87 @@ function RunCommandInContainer ([string] $ContainerName)
     Write-Output "Commands executed on the database container."
 }
 
+function IsReady([string] $Url)
+{
+    $maxAttempts = 3
+    $attempt = 0
+    $waitTime = 5
+    while ($attempt -lt $maxAttempts) {
+        try {
+            Invoke-RestMethod -Uri $Url -Method Get -TimeoutSec 5
+            return $true;
+        }
+        catch {
+            Start-Sleep -Seconds $waitTime
+            $attempt++
+        }
+    }
+    return $false;
+}
+
 function SetUpKafkaConfiguration
 {
     $sourcePort="8083"
     $sinkPort="8084"
 
-    $sourceUrl = "http://localhost:$sourcePort/connectors/fulfillment-connector"
-    $sinkUrl = "http://localhost:$sinkPort/connectors/search-engine"
+    $sourceBase = "http://localhost:$sourcePort/connectors"
+    $sinkBase = "http://localhost:$sinkPort/connectors"
+    $sourceUrl = "$sourceBase/fulfillment-connector"
+    $sinkUrl = "$sinkBase/search-engine"
 
-    try {
-        $sourceResponse = Invoke-RestMethod -Uri $sourceUrl -Method Get -ErrorAction SilentlyContinue
-        if($sourceResponse)
-        {
-            Invoke-RestMethod -Method Delete -uri $sourceUrl
+    # Source connector
+    if(IsReady($sourceBase))
+    {
+        try {
+            $sourceResponse = Invoke-RestMethod -Uri $sourceUrl -Method Get
+            if($sourceResponse)
+            {
+                Write-Output "Deleting existing source connector configuration."
+                Invoke-RestMethod -Method Delete -uri $sourceUrl
+            }
         }
-    }
-    catch {}
+        catch {}
 
-    Start-Sleep 1
-
-    Write-Output "Post source connector configuration"
-
-    $sourceBody = Get-Content -Path .\kafka-poc\postgresql_connector.json -Raw
-
-    Invoke-RestMethod -Method Post -uri http://localhost:$sourcePort/connectors/ -ContentType "application/json" -Body $sourceBody
-
-    Start-Sleep 1
-
-    Invoke-RestMethod -Method Get -uri $sourceUrl
-
-    ##
-    try {
-        $sinkResponse = Invoke-RestMethod -Uri $sinkUrl -Method Get -ErrorAction SilentlyContinue
-        if($sinkResponse)
-        {
-            Invoke-RestMethod -Method Delete -uri $sinkUrl
+        try {
+            $sourceBody = Get-Content -Path .\kafka-poc\postgresql_connector.json -Raw
+            Invoke-RestMethod -Method Post -uri $sourceBase -ContentType "application/json" -Body $sourceBody
         }
+        catch {
+            Write-Output $_.Exception.Message
+        }
+        Start-Sleep 2
+        Invoke-RestMethod -Method Get -uri $sourceUrl
     }
-    catch {}
+    else {
+        Write-Output "Service at $sourceBase not available."
+    }
 
-    Start-Sleep 1
+    # Sink connector
+    if(IsReady($sinkBase))
+    {
+        try {
+            $sinkResponse = Invoke-RestMethod -Uri $sinkUrl -Method Get
+            if($sinkResponse)
+            {
+                Write-Output "Deleting existing sink connector configuration."
+                Invoke-RestMethod -Method Delete -uri $sinkUrl
+            }
+        }
+        catch {}
 
-    Write-Output "Post sink connector configuration"
-
-    $sinkBody = Get-Content -Path .\kafka-poc\opensearch_connector.json -Raw
-
-    Invoke-RestMethod -Method Post -uri http://localhost:$sinkPort/connectors/ -ContentType "application/json" -Body $sinkBody
-
-    Start-Sleep 1
-
-    Invoke-RestMethod -Method Get -uri $sinkUrl
+        try {
+        $sinkBody = Get-Content -Path .\kafka-poc\opensearch_connector.json -Raw
+        Invoke-RestMethod -Method Post -uri $sinkBase -ContentType "application/json" -Body $sinkBody
+        }
+        catch {
+            Write-Output $_.Exception.Message
+        }
+        Start-Sleep 2
+        Invoke-RestMethod -Method Get -uri $sinkUrl
+    }
+    else {
+        Write-Output "Service at $sinkBase not available."
+    }
 }
 
 function SetUpKafka
