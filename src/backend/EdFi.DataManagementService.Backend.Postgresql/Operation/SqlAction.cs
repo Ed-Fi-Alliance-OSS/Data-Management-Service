@@ -179,8 +179,8 @@ public static class SqlAction
                     Parameters =
                     {
                         new() { Value = resourceName },
-                        new() { Value = paginationParameters.Offset },
-                        new() { Value = paginationParameters.Limit },
+                        new() { Value = paginationParameters.Offset ?? 0 },
+                        new() { Value = paginationParameters.Limit ?? 25 },
                     }
                 };
 
