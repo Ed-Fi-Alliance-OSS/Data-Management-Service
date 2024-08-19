@@ -12,13 +12,13 @@ namespace EdFi.DataManagementService.Backend.OpenSearch;
 /// <summary>
 /// The Backend OpenSearch service extensions to be registered to a Frontend DI container
 /// </summary>
-public static class BackendOpenSearchServiceExtensions
+public static class OpenSearchServiceExtensions
 {
     /// <summary>
-    /// The OpenSearch backend service configuration
+    /// The OpenSearch backend query handler configuration
     /// </summary>
     /// <param name="connectionUrl">The OpenSearch connection URL</param>
-    public static IServiceCollection AddOpenSearchBackend(
+    public static IServiceCollection AddOpenSearchQueryHandler(
         this IServiceCollection services,
         string connectionUrl
     )
