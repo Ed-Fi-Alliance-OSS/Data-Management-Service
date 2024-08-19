@@ -30,9 +30,12 @@ public class AppSettingsValidator : IValidateOptions<AppSettings>
             return ValidateOptionsResult.Fail("Missing required AppSettings value: Datastore");
         }
 
-        if (!options.Datastore.Equals("postgresql", StringComparison.CurrentCultureIgnoreCase))
+        if (
+            !options.Datastore.Equals("postgresql", StringComparison.CurrentCultureIgnoreCase)
+            && !options.Datastore.Equals("mssql", StringComparison.CurrentCultureIgnoreCase)
+        )
         {
-            return ValidateOptionsResult.Fail("AppSettings value Datastore must be one of: postgresql");
+            return ValidateOptionsResult.Fail("AppSettings value Datastore must be one of: postgresql, mssql");
         }
 
         if (string.IsNullOrWhiteSpace(options.QueryHandler))
