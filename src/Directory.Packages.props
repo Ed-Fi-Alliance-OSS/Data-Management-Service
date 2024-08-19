@@ -20,6 +20,7 @@
     <PackageVersion Include="Npgsql" Version="8.0.3" />
     <PackageVersion Include="Npgsql.DependencyInjection" Version="8.0.3" />
     <PackageVersion Include="Polly.Core" Version="8.4.1" />
+    <PackageVersion Include="Polly.Extensions" Version="8.4.1" />
     <PackageVersion Include="Respawn" Version="6.2.1" />
     <PackageVersion Include="Serilog" Version="4.0.0" />
     <PackageVersion Include="Serilog.Extensions.Logging" Version="8.0.0" />

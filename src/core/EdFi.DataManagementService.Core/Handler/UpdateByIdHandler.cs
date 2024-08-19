@@ -6,12 +6,12 @@
 using System.Diagnostics;
 using System.Text.Json;
 using EdFi.DataManagementService.Core.Backend;
-using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using Microsoft.Extensions.Logging;
+using Polly;
 using static EdFi.DataManagementService.Core.External.Backend.UpdateResult;
 
 namespace EdFi.DataManagementService.Core.Handler;
@@ -19,7 +19,7 @@ namespace EdFi.DataManagementService.Core.Handler;
 /// <summary>
 /// Handles an update request that has made it through the middleware pipeline steps.
 /// </summary>
-internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger)
+internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger, ResiliencePipeline _resiliencePipeline)
     : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
@@ -27,7 +27,7 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
         _logger.LogDebug("Entering UpdateByIdHandler - {TraceId}", context.FrontendRequest.TraceId);
         Trace.Assert(context.ParsedBody != null, "Unexpected null Body on Frontend Request from PUT");
 
-        UpdateResult result = await _documentStoreRepository.UpdateDocumentById(
+        var updateResult = await _resiliencePipeline.ExecuteAsync(async t => await _documentStoreRepository.UpdateDocumentById(
             new UpdateRequest(
                 DocumentUuid: context.PathComponents.DocumentUuid,
                 ResourceInfo: context.ResourceInfo,
@@ -35,15 +35,15 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
                 EdfiDoc: context.ParsedBody,
                 TraceId: context.FrontendRequest.TraceId
             )
-        );
+        ));
 
         _logger.LogDebug(
             "Document store UpdateDocumentById returned {UpdateResult}- {TraceId}",
-            result.GetType().FullName,
+            updateResult.GetType().FullName,
             context.FrontendRequest.TraceId
         );
 
-        context.FrontendResponse = result switch
+        context.FrontendResponse = updateResult switch
         {
             UpdateSuccess updateSuccess
                 => new FrontendResponse(
