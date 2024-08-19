@@ -21,16 +21,14 @@ namespace EdFi.DataManagementService.Backend.OpenSearch;
 ///    "size": 20,
 ///    "query": {
 ///      "bool": {
-///        "filter": [
+///        "must": [
 ///          {
-///            "term": {
-///              "edfidoc.schoolYearDescription": {
-///                "value": "Year 2025"
-///              }
+///            "match_phrase": {
+///              "edfidoc.schoolYearDescription": "Year 2025"
 ///            }
 ///          },
 ///          {
-///            "term": {
+///            "match_phrase": {
 ///              "edfidoc.currentSchoolYear": false
 ///            }
 ///          }
@@ -71,7 +69,7 @@ public static class QueryOpenSearch
         {
             string indexName = IndexFromResourceInfo(queryRequest.ResourceInfo);
 
-            // API client requested filters
+            // Build API client requested filters
             JsonArray terms = [];
             foreach (var termQuery in queryRequest.TermQueries)
             {
@@ -103,16 +101,12 @@ public static class QueryOpenSearch
                 query.Add(new("from", queryRequest.PaginationParameters.Offset));
             }
 
-            string queryJsonString = query.ToJsonString();
-
             BytesResponse response = await client.Http.PostAsync<BytesResponse>(
                 $"/{indexName}/_search",
-                d => d.Body(queryJsonString)
+                d => d.Body(query.ToJsonString())
             );
 
-            JsonNode? jsonResponse = JsonSerializer.Deserialize<JsonNode>(response.Body);
-
-            JsonNode hits = jsonResponse!["hits"]!;
+            JsonNode hits = JsonSerializer.Deserialize<JsonNode>(response.Body)!["hits"]!;
 
             int totalCount = hits!["total"]!["value"]!.GetValue<int>();
 

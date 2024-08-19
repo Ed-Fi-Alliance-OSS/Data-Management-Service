@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
-using System.Diagnostics;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Operation;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -202,7 +201,7 @@ public abstract class DatabaseTest : DatabaseTestBase
     protected static IQueryRequest CreateQueryRequest(
         string resourceName,
         Dictionary<string, string>? searchParameters,
-        IPaginationParameters? paginationParameters
+        PaginationParameters? paginationParameters
     )
     {
         return (
