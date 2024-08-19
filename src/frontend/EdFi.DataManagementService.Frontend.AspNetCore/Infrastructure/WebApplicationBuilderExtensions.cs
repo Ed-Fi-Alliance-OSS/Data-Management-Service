@@ -27,14 +27,6 @@ public static class WebApplicationBuilderExtensions
         webAppBuilder
             .Services.AddDmsDefaultConfiguration(logger, webAppBuilder.Configuration.GetSection("CircuitBreaker"))
             .Services.AddDmsDefaultConfiguration()
-            .AddPostgresqlBackend(
-                webAppBuilder.Configuration.GetSection("ConnectionStrings:DatabaseConnection").Value
-                    ?? string.Empty
-            )
-            .AddOpenSearchBackend(
-                webAppBuilder.Configuration.GetSection("ConnectionStrings:OpenSearchUrl").Value
-                    ?? string.Empty
-            )
             .AddTransient<IContentProvider, ContentProvider>()
             .AddTransient<IVersionProvider, VersionProvider>()
             .AddTransient<IAssemblyProvider, AssemblyProvider>()
