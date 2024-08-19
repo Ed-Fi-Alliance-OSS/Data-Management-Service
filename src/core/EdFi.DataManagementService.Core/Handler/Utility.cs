@@ -15,6 +15,6 @@ public static class Utility
     /// </summary>
     public static string ToJsonError(string errorInfo, TraceId traceId)
     {
-        return JsonSerializer.Serialize(new { errorInfo, correlationId = traceId });
+        return JsonSerializer.Serialize(new { error = errorInfo, correlationId = traceId });
     }
 }

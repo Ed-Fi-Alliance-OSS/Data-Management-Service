@@ -259,7 +259,7 @@ public class UpdateByIdHandlerTests
         public void It_has_the_correct_response()
         {
             context.FrontendResponse.StatusCode.Should().Be(500);
-            context.FrontendResponse.Body.Should().Be($"{{\"error\":\"{Repository.ResponseBody}\"}}");
+            context.FrontendResponse.Body.Should().Be($"{{\"error\":\"{Repository.ResponseBody}\",\"correlationId\":{{\"Value\":\"\"}}}}");
         }
     }
 }
