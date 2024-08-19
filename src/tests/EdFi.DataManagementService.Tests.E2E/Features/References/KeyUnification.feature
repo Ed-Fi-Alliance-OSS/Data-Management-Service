@@ -72,6 +72,9 @@ Feature: Validation of Natural Key Unification
                       "validationErrors":{
                         "$.schoolReference.schoolId": [
                           "All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '123', '999'"
+                        ],
+                        "$.sessionReference.schoolId": [
+                          "All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '123', '999'"
                         ]
                       },
                       "errors": [],
@@ -119,7 +122,10 @@ Feature: Validation of Natural Key Unification
                       "validationErrors":{
 		                    "$.schoolReference.schoolId":[
 			                    "All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '725', '999'"
-			                    ]
+			                    ],
+                        "$.sessionReference.schoolId":[
+                          "All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '725', '999'"
+                          ]
 		                    },
                       "errors": []
                   }
