@@ -16,5 +16,5 @@ data:
     correlation-id-header: "correlationid"
     failure-ratio: "0.1"
     sampling-duration-seconds: "10"
-    minimum-throughput: 2
-    break-duration-seconds: 30
+    minimum-throughput: "2"
+    break-duration-seconds: "30"
