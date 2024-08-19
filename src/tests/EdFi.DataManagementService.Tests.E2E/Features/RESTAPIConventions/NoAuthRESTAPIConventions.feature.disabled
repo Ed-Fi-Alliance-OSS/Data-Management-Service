@@ -1,4 +1,4 @@
-Feature: No Authenticated - No Authorized REST API Conventions
+Feature: Access to the Ed-Fi Resources API requires a valid authorization token
 
     Rule: Not Authenticated
 
