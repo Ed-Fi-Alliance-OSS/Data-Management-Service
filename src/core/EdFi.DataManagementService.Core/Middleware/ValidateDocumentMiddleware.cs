@@ -3,13 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Validation;
 using Microsoft.Extensions.Logging;
+using static EdFi.DataManagementService.Core.UtilityService;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
@@ -19,9 +19,6 @@ namespace EdFi.DataManagementService.Core.Middleware;
 internal class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _documentValidator)
     : IPipelineStep
 {
-    private static readonly JsonSerializerOptions _serializerOptions =
-        new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
-
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         _logger.LogDebug("Entering ValidateDocumentMiddleware- {TraceId}", context.FrontendRequest.TraceId);
@@ -64,7 +61,7 @@ internal class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _d
 
             context.FrontendResponse = new FrontendResponse(
                 StatusCode: failureResponse.status,
-                Body: JsonSerializer.Serialize(failureResponse, _serializerOptions),
+                Body: JsonSerializer.Serialize(failureResponse, SerializerOptions),
                 Headers: []
             );
         }
