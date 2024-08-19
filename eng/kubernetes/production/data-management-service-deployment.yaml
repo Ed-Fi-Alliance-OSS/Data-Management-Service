@@ -76,6 +76,26 @@ spec:
                 configMapKeyRef:
                   name: app-configmap
                   key: database-isolation-level
+            - name: FAILURE_RATIO
+              valueFrom:
+                configMapKeyRef:
+                  name: app-configmap
+                  key: failure-ratio
+            - name: SAMPLING_DURATION_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: app-configmap
+                  key: sampling-duration-seconds
+            - name: MINIMUM_THROUGHPUT
+              valueFrom:
+                configMapKeyRef:
+                  name: app-configmap
+                  key: minimum-throughput
+            - name: BREAK_DURATION_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: app-configmap
+                  key: break-duration-seconds
             - name: CORRELATION_ID_HEADER
               valueFrom:
                 configMapKeyRef:

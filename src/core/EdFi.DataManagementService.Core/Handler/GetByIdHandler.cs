@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using Polly;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -17,28 +18,28 @@ namespace EdFi.DataManagementService.Core.Handler;
 /// <summary>
 /// Handles a get by id request that has made it through the middleware pipeline steps.
 /// </summary>
-internal class GetByIdHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger)
+internal class GetByIdHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger, ResiliencePipeline _resiliencePipeline)
     : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         _logger.LogDebug("Entering GetByIdHandler - {TraceId}", context.FrontendRequest.TraceId);
 
-        GetResult result = await _documentStoreRepository.GetDocumentById(
+        var getResult = await _resiliencePipeline.ExecuteAsync(async t => await _documentStoreRepository.GetDocumentById(
             new GetRequest(
                 DocumentUuid: context.PathComponents.DocumentUuid,
                 ResourceInfo: context.ResourceInfo,
                 TraceId: context.FrontendRequest.TraceId
             )
-        );
+        ));
 
         _logger.LogDebug(
             "Document store GetDocumentById returned {GetResult}- {TraceId}",
-            result.GetType().FullName,
+            getResult.GetType().FullName,
             context.FrontendRequest.TraceId
         );
 
-        context.FrontendResponse = result switch
+        context.FrontendResponse = getResult switch
         {
             GetSuccess success
                 => new FrontendResponse(StatusCode: 200, Body: success.EdfiDoc.ToJsonString(), Headers: []),

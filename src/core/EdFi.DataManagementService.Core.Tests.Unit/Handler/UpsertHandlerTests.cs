@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
+using Polly;
 using static EdFi.DataManagementService.Core.External.Backend.UpsertResult;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
@@ -22,7 +23,7 @@ public class UpsertHandlerTests
 {
     internal static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
     {
-        return new UpsertHandler(documentStoreRepository, NullLogger.Instance);
+        return new UpsertHandler(documentStoreRepository, NullLogger.Instance, ResiliencePipeline.Empty);
     }
 
     [TestFixture]

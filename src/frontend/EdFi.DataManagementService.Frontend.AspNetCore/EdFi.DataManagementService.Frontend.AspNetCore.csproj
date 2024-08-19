@@ -11,16 +11,18 @@
     <Content Include="EdFi.DataManagementService.Frontend.AspNetCore.nuspec" CopyToPublishDirectory="Always" CopyToOutputDirectory="Never" />
     <PackageReference Include="EdFi.DataStandard51.ApiSchema" />
     <PackageReference Include="Microsoft.CodeAnalysis" />
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle" >
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle">
         <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <PackageReference Include="Polly.Core" />
+    <PackageReference Include="Polly.Extensions" />
     <PackageReference Include="Serilog" />
     <PackageReference Include="Serilog.Extensions.Logging" />
     <PackageReference Include="Serilog.Settings.Configuration" />
     <PackageReference Include="Serilog.Sinks.Console" />
     <PackageReference Include="Serilog.Sinks.File" />
-    <PackageReference Include="SonarAnalyzer.CSharp" >
+    <PackageReference Include="SonarAnalyzer.CSharp">
         <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         <PrivateAssets>all</PrivateAssets>
     </PackageReference>

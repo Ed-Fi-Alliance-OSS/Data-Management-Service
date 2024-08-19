@@ -4,38 +4,38 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.Backend;
-using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
+using Polly;
 using static EdFi.DataManagementService.Core.External.Backend.QueryResult;
 using static EdFi.DataManagementService.Core.Handler.Utility;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
-internal class QueryRequestHandler(IQueryHandler _queryHandler, ILogger _logger) : IPipelineStep
+internal class QueryRequestHandler(IQueryHandler _queryHandler, ILogger _logger, ResiliencePipeline _resiliencePipeline) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         _logger.LogDebug("Entering QueryRequestHandler - {TraceId}", context.FrontendRequest.TraceId);
 
-        QueryResult result = await _queryHandler.QueryDocuments(
+        var queryResult = await _resiliencePipeline.ExecuteAsync(async t => await _queryHandler.QueryDocuments(
             new QueryRequest(
                 ResourceInfo: context.ResourceInfo,
                 TermQueries: context.TermQueries,
                 PaginationParameters: context.PaginationParameters,
                 TraceId: context.FrontendRequest.TraceId
             )
-        );
+        ));
 
         _logger.LogDebug(
             "QueryHandler returned {QueryResult}- {TraceId}",
-            result.GetType().FullName,
+            queryResult.GetType().FullName,
             context.FrontendRequest.TraceId
         );
 
-        context.FrontendResponse = result switch
+        context.FrontendResponse = queryResult switch
         {
             QuerySuccess success
                 => new FrontendResponse(
