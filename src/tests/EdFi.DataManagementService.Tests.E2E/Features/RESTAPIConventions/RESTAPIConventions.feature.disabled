@@ -1,5 +1,4 @@
-Feature: No Authenticated - No Authorized REST API Conventions
-
+Feature: Authenticated REST API Conventions
         Background:
             Given the user authenticated
               And the user is authorized

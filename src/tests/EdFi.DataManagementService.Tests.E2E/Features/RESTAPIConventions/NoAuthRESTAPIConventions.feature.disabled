@@ -20,7 +20,7 @@ Feature: No Authenticated - No Authorized REST API Conventions
                       "errors": [
                           "Authorization header is missing."
                       ]
-                      }
+                  }
                   """
               And the response header contains
                   """
