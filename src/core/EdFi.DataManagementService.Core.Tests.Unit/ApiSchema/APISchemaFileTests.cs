@@ -15,6 +15,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
+using Polly;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.ApiSchema;
 
@@ -44,7 +45,8 @@ public class APISchemaFileTests
                 new MatchingDocumentUuidsValidator(),
                 new EqualityConstraintValidator(),
                 NullLogger<ApiService>.Instance,
-                Options.Create(new AppSettings())
+                Options.Create(new AppSettings()),
+                ResiliencePipeline.Empty
             );
         }
 

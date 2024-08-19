@@ -5,12 +5,12 @@
 
 using System.Text.Json;
 using EdFi.DataManagementService.Core.Backend;
-using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using Microsoft.Extensions.Logging;
+using Polly;
 using static EdFi.DataManagementService.Core.External.Backend.DeleteResult;
 
 namespace EdFi.DataManagementService.Core.Handler;
@@ -18,29 +18,29 @@ namespace EdFi.DataManagementService.Core.Handler;
 /// <summary>
 /// Handles a delete request that has made it through the middleware pipeline steps.
 /// </summary>
-internal class DeleteByIdHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger)
+internal class DeleteByIdHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger, ResiliencePipeline _resiliencePipeline)
     : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         _logger.LogDebug("Entering DeleteByIdHandler - {TraceId}", context.FrontendRequest.TraceId);
 
-        DeleteResult result = await _documentStoreRepository.DeleteDocumentById(
+        var deleteResult = await _resiliencePipeline.ExecuteAsync(async t => await _documentStoreRepository.DeleteDocumentById(
             new DeleteRequest(
                 DocumentUuid: context.PathComponents.DocumentUuid,
                 ResourceInfo: context.ResourceInfo,
                 validateNoReferencesToDocument: false,
                 TraceId: context.FrontendRequest.TraceId
             )
-        );
+        ));
 
         _logger.LogDebug(
             "Document store DeleteDocumentById returned {DeleteResult}- {TraceId}",
-            result.GetType().FullName,
+            deleteResult.GetType().FullName,
             context.FrontendRequest.TraceId
         );
 
-        context.FrontendResponse = result switch
+        context.FrontendResponse = deleteResult switch
         {
             DeleteSuccess => new FrontendResponse(StatusCode: 204, Body: null, Headers: []),
             DeleteFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),

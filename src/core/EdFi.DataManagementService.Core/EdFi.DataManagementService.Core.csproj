@@ -20,6 +20,8 @@
     <PackageReference Include="Microsoft.Extensions.Logging" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Npgsql" />
+    <PackageReference Include="Polly.Core" />
+    <PackageReference Include="Polly.Extensions" />
     <PackageReference Include="Serilog" />
     <PackageReference Include="Serilog.Extensions.Logging" />
     <PackageReference Include="Serilog.Settings.Configuration" />
