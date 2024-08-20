@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Model;
 using Json.More;
+using Json.Path;
 
 namespace EdFi.DataManagementService.Core.Validation;
 
@@ -31,12 +32,11 @@ internal class EqualityConstraintValidator : IEqualityConstraintValidator
         IEnumerable<EqualityConstraint> equalityConstraints
     )
     {
-        List<string> errors = [];
         var validationErrors = new Dictionary<string, string[]>();
         foreach (var equalityConstraint in equalityConstraints)
         {
-            var sourcePath = Json.Path.JsonPath.Parse(equalityConstraint.SourceJsonPath.Value);
-            var targetPath = Json.Path.JsonPath.Parse(equalityConstraint.TargetJsonPath.Value);
+            var sourcePath = JsonPath.Parse(equalityConstraint.SourceJsonPath.Value);
+            var targetPath = JsonPath.Parse(equalityConstraint.TargetJsonPath.Value);
 
             var sourcePathResult = sourcePath.Evaluate(documentBody);
             var targetPathResult = targetPath.Evaluate(documentBody);
@@ -50,35 +50,33 @@ internal class EqualityConstraintValidator : IEqualityConstraintValidator
                 "Evaluation of targetPathResult.Matches resulted in unexpected null"
             );
 
-            var sourceValues = sourcePathResult.Matches.Select(s => s.Value);
-            var targetValues = targetPathResult.Matches.Select(t => t.Value);
+            var combinedValues = new HashSet<JsonNode?>(sourcePathResult.Matches.Select(s => s.Value), new JsonNodeEqualityComparer());
+            combinedValues.UnionWith(targetPathResult.Matches.Select(t => t.Value));
 
-            if (!AllEqual(sourceValues.Concat(targetValues).ToList()))
+            if (combinedValues.Count > 1)
             {
-                string conflictValues = string.Join(
-                    ", ",
-                    sourceValues
-                        .Concat(targetValues)
-                        .Distinct(new JsonNodeEqualityComparer())
-                        .Select(x => $"'{x}'")
-                        .ToArray()
-                );
-                string targetSegment = targetPath.Segments[^1].ToString().TrimStart('.');
-                errors.Add(
-                    $"All values supplied for '{targetSegment}' must match."
-                        + " Review all references (including those higher up in the resource's data)"
-                        + " and align the following conflicting values: "
-                        + conflictValues
-                );
-                validationErrors.Add(sourcePath.ToString(), errors.ToArray());
-            }
-
-            bool AllEqual(IList<JsonNode?> nodes)
-            {
-                return nodes.All(n => JsonNode.DeepEquals(nodes[0], n));
+                string conflictValues = string.Join(", ", combinedValues.Select(x => $"'{x}'"));
+                AddValidationError(validationErrors, sourcePath, conflictValues);
+                AddValidationError(validationErrors, targetPath, conflictValues);
             }
         }
-
         return validationErrors;
+    }
+
+    private void AddValidationError(Dictionary<string, string[]> validationErrors, JsonPath path, string conflictValues)
+    {
+        string segment = path.Segments[^1].ToString().TrimStart('.');
+        string errorMessage = $"All values supplied for '{segment}' must match."
+                + " Review all references (including those higher up in the resource's data)"
+                + $" and align the following conflicting values: {conflictValues}";
+
+        if (validationErrors.TryGetValue(path.ToString(), out string[]? existingErrors))
+        {
+            validationErrors[path.ToString()] = existingErrors.Append(errorMessage).ToArray();
+        }
+        else
+        {
+            validationErrors[path.ToString()] = new[] { errorMessage };
+        }
     }
 }
