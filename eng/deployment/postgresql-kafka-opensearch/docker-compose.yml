@@ -164,6 +164,8 @@ services:
       LOG_LEVEL: Information
     ports:
       - 8080:8080
+    volumes:
+      - ./debezium_publication.sh:/app/debezium_publication.sh
     depends_on:
       - db
     restart: always
