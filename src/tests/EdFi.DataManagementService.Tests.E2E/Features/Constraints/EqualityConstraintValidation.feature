@@ -81,6 +81,9 @@ Feature: Equality Constraint Validation
                     "validationErrors": {
                           "$.classPeriods[*].classPeriodReference.schoolId": [
                               "All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '1', '255901001'"
+                          ],
+                          "$.schoolReference.schoolId": [
+                              "All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '1', '255901001'"
                           ]
                       },
                     "errors": []
@@ -119,6 +122,9 @@ Feature: Equality Constraint Validation
                     "correlationId": null,
                     "validationErrors": {
                           "$.classPeriods[*].classPeriodReference.schoolId": [
+                              "All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '255901107', '255901001'"
+                          ],
+                          "$.courseOfferingReference.schoolId": [
                               "All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '255901107', '255901001'"
                           ]
                       },
@@ -164,6 +170,9 @@ Feature: Equality Constraint Validation
                     "correlationId": null,
                     "validationErrors": {
                           "$.classPeriods[*].classPeriodReference.schoolId": [
+                              "All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '1', '255901001'"
+                          ],
+                          "$.courseOfferingReference.schoolId": [
                               "All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '1', '255901001'"
                           ]
                       },
