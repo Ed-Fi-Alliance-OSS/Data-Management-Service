@@ -3,8 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Core.External.Model;
-
 namespace EdFi.DataManagementService.Core.Response;
 
 /// <summary>
@@ -35,7 +33,7 @@ internal record FailureResponseWithErrors(
     /// <summary>
     /// Gets or sets a correlation id that is logged with the details of the exception.
     /// </summary>
-    string? correlationId,
+    string correlationId,
     /// <summary>
     /// Contains arrays of validation errors keyed by JSON Path (intended for use by a domain expert).
     /// </summary>

@@ -1,0 +1,33 @@
+{
+  "name": "postgresql-source",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "plugin.name": "pgoutput",
+    "database.hostname": "dms-postgresql",
+    "database.port": "5432",
+    "database.user": "postgres",
+    "database.password": "abcdefgh1!",
+    "database.dbname" : "edfi_datamanagementservice",
+
+    "publication.name": "to_debezium",
+    "slot.name": "debezium",
+
+    "topic.prefix": "edfi",
+    "table.include.list": "dms.document",
+
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false",
+
+    "transforms": "unwrap, extractId, expandJson",
+
+    "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+    "transforms.unwrap.drop.tombstones": "false",
+    "transforms.unwrap.delete.handling.mode": "none",
+
+    "transforms.extractId.type": "org.apache.kafka.connect.transforms.ExtractField$Key",
+    "transforms.extractId.field": "id",
+
+    "transforms.expandJson.type": "com.redhat.insights.expandjsonsmt.ExpandJSON$Value",
+    "transforms.expandJson.sourceFields": "edfidoc"
+  }
+}

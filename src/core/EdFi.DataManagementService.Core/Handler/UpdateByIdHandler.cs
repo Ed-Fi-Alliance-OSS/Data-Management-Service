@@ -13,6 +13,7 @@ using EdFi.DataManagementService.Core.Response;
 using Microsoft.Extensions.Logging;
 using Polly;
 using static EdFi.DataManagementService.Core.External.Backend.UpdateResult;
+using static EdFi.DataManagementService.Core.Handler.Utility;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
@@ -115,13 +116,13 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
             UnknownFailure failure
                 => new FrontendResponse(
                     StatusCode: 500,
-                    Body: failure.FailureMessage.ToJsonError(),
+                    Body: ToJsonError(failure.FailureMessage, context.FrontendRequest.TraceId),
                     Headers: []
                 ),
             _
                 => new FrontendResponse(
                     StatusCode: 500,
-                    Body: "Unknown UpdateResult".ToJsonError(),
+                    Body: ToJsonError("Unknown UpdateResult", context.FrontendRequest.TraceId),
                     Headers: []
                 )
         };

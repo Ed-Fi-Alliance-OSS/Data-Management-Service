@@ -1,0 +1,34 @@
+{
+  "name":"opensearch-sink",
+  "config": {
+    "connector.class": "io.aiven.kafka.connect.opensearch.OpensearchSinkConnector",
+    "topics": "edfi.dms.document",
+    "type_name": "_doc",
+
+    "connection.url": "http://dms-opensearch:9200",
+    "connection.username": "admin",
+    "connection.password": "abcdefgh1!",
+
+    "max.in.flight.requests":"1",
+
+    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false",
+
+    "schema.ignore": "true",
+
+    "compact.map.entries": "true",
+
+    "transforms": "removeId, toOpenSearchIndex",
+    "transforms.removeId.type": "org.apache.kafka.connect.transforms.ReplaceField$Value",
+    "transforms.removeId.exclude": "id",
+    "transforms.toOpenSearchIndex.type":"org.edfi.kafka.connect.transforms.RenameDmsTopicToOpenSearchIndex",
+
+    "behavior.on.version.conflict": "ignore",
+    "behavior.on.null.values": "delete",
+    "drop.invalid.message": "true",
+    "index.write.method": "upsert"
+
+  }
+}

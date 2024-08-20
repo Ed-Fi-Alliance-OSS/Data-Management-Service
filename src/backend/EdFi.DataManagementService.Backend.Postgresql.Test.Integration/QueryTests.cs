@@ -3,13 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
-
-internal record PaginationParameters(int? limit, int? offset, bool totalCount) : IPaginationParameters;
 
 [TestFixture]
 public class QueryTests : DatabaseTest
@@ -71,7 +71,7 @@ public class QueryTests : DatabaseTest
         public void It_should_be_found_by_query()
         {
             _queryResult!.Should().BeOfType<QueryResult.QuerySuccess>();
-            (_queryResult! as QueryResult.QuerySuccess)!.EdfiDocs.Length.Should().Be(1);
+            (_queryResult! as QueryResult.QuerySuccess)!.EdfiDocs.Count.Should().Be(1);
         }
 
         [Test]
@@ -120,7 +120,7 @@ public class QueryTests : DatabaseTest
         public void It_should_be_found_by_query()
         {
             _queryResults!.Should().BeOfType<QueryResult.QuerySuccess>();
-            (_queryResults! as QueryResult.QuerySuccess)!.EdfiDocs.Length.Should().Be(3);
+            (_queryResults! as QueryResult.QuerySuccess)!.EdfiDocs.Count.Should().Be(3);
         }
 
         [Test]
@@ -191,10 +191,11 @@ public class QueryTests : DatabaseTest
         {
             _queryResults1!.Should().BeOfType<QueryResult.QuerySuccess>();
             QueryResult.QuerySuccess success = (_queryResults1! as QueryResult.QuerySuccess)!;
-            success.EdfiDocs.Length.Should().Be(3);
-            success.EdfiDocs[0].ToJsonString().Should().NotContain("\"abc\":4");
-            success.EdfiDocs[1].ToJsonString().Should().NotContain("\"abc\":4");
-            success.EdfiDocs[2].ToJsonString().Should().NotContain("\"abc\":4");
+            JsonNode[] edfiDocs = success.EdfiDocs.ToArray()!;
+            edfiDocs.Length.Should().Be(3);
+            edfiDocs[0].ToJsonString().Should().NotContain("\"abc\":4");
+            edfiDocs[1].ToJsonString().Should().NotContain("\"abc\":4");
+            edfiDocs[2].ToJsonString().Should().NotContain("\"abc\":4");
         }
 
         [Test]
@@ -202,8 +203,9 @@ public class QueryTests : DatabaseTest
         {
             _queryResults2!.Should().BeOfType<QueryResult.QuerySuccess>();
             QueryResult.QuerySuccess success = (_queryResults2! as QueryResult.QuerySuccess)!;
-            success.EdfiDocs.Length.Should().Be(1);
-            success.EdfiDocs[0].ToJsonString().Should().Contain("\"abc\":4");
+            JsonNode[] edfiDocs = success.EdfiDocs.ToArray()!;
+            edfiDocs.Length.Should().Be(1);
+            edfiDocs[0].ToJsonString().Should().Contain("\"abc\":4");
         }
 
         [Test]
