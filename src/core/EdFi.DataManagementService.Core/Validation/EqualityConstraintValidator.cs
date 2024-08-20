@@ -49,9 +49,6 @@ internal class EqualityConstraintValidator : IEqualityConstraintValidator
                 "Evaluation of targetPathResult.Matches resulted in unexpected null"
             );
 
-            var sourceValues = sourcePathResult.Matches.Select(s => s.Value);
-            var targetValues = targetPathResult.Matches.Select(t => t.Value);
-
             var combinedValues = new HashSet<JsonNode?>(sourcePathResult.Matches.Select(s => s.Value), new JsonNodeEqualityComparer());
             combinedValues.UnionWith(targetPathResult.Matches.Select(t => t.Value));
 
@@ -71,13 +68,13 @@ internal class EqualityConstraintValidator : IEqualityConstraintValidator
         string segment = path.Segments[^1].ToString().TrimStart('.');
         string errorMessage = $"All values supplied for '{segment}' must match."
                 + " Review all references (including those higher up in the resource's data)"
-                + $" and align the following conflicting values: '{conflictValues}'";
+                + $" and align the following conflicting values: {conflictValues}";
 
-        if (validationErrors.TryGetValue(path.ToString(), out var existingErrors))
+        if (validationErrors.TryGetValue(path.ToString(), out string[]? existingErrors))
         {
             if (!existingErrors.Contains(errorMessage))
             {
-                var updatedErrors = existingErrors.Append(errorMessage).ToArray();
+                string[] updatedErrors = existingErrors.Append(errorMessage).ToArray();
                 validationErrors[path.ToString()] = updatedErrors;
             }
         }
