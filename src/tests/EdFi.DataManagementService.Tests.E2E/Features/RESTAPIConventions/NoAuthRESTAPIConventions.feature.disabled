@@ -1,0 +1,232 @@
+Feature: Access to the Ed-Fi Resources API requires a valid authorization token
+
+    Rule: Not Authenticated
+
+        Background:
+            Given the user is not authenticated
+
+        @ignore
+        Scenario: 01 Verify user cannot retrieve a resource being unauthenticated
+             When a GET request is made to "/ed-fi/students"
+             Then it should respond with 401
+              And the response body is
+                  """
+                  {
+                      "detail": "The caller could not be authenticated.",
+                      "type": "urn:ed-fi:api:security:authentication",
+                      "title": "Authentication Failed",
+                      "status": 401,
+                      "correlationId": null,
+                      "errors": [
+                          "Authorization header is missing."
+                      ]
+                  }
+                  """
+              And the response header contains
+                  """
+                  content-type: application/problem+json
+                  """
+
+        @ignore
+        Scenario: 02 Verify clients cannot post a resource being unauthenticated
+             When a POST request is made to "/ed-fi/students" with
+                  """
+                  {
+                      "studentUniqueId": "54721642123",
+                      "birthDate": "2007-08-13",
+                      "firstName": "John",
+                      "lastSurname": "Doe"
+                  }
+                  """
+             Then it should respond with 401
+              And the response body is
+                  """
+                  {
+                      "detail": "The caller could not be authenticated.",
+                      "type": "urn:ed-fi:api:security:authentication",
+                      "title": "Authentication Failed",
+                      "status": 401,
+                      "correlationId": "4ebd1a6d-5ab2-40c8-a54b-fb8a5103c18b",
+                      "errors": [
+                          "Authorization header is missing."
+                      ]
+                  }
+                  """
+              And the response header contains
+                  """
+                  content-type: application/problem+json
+                  """
+
+        @ignore
+        Scenario: 03 Verify clients cannot update a resource being unauthenticated
+            Given the system has this "students"
+                  | studentUniqueId | birthDate  | firstName | lastSurname |
+                  | 54721642123     | 2007-08-13 | John      | Doe         |
+             When a PUT request is made to "/ed-fi/students/{id}" with
+                  """
+                  {
+                      "studentUniqueId": "54721642123",
+                      "birthDate": "2005-08-13",
+                      "firstName": "Jonathan",
+                      "lastSurname": "Doe"
+                  }
+                  """
+             Then it should respond with 401
+              And the response body is
+                  """
+                  {
+                      "detail": "The caller could not be authenticated.",
+                      "type": "urn:ed-fi:api:security:authentication",
+                      "title": "Authentication Failed",
+                      "status": 401,
+                      "correlationId": "2ed4f7e1-538f-4e3d-a923-52b5528aa26d",
+                      "errors": [
+                          "Authorization header is missing."
+                      ]
+                  }
+                  """
+              And the response header contains
+                  """
+                  content-type: application/problem+json
+                  """
+
+        @ignore
+        Scenario: 04 Verify clients cannot delete a resource being unauthenticated
+            Given the system has this "students"
+                  | studentUniqueId | birthDate  | firstName | lastSurname |
+                  | 54721642123     | 2007-08-13 | John      | Doe         |
+             When a PUT request is made to "/ed-fi/students/{id}"
+             Then it should respond with 401
+              And the response body is
+                  """
+                  {
+                      "detail": "The caller could not be authenticated.",
+                      "type": "urn:ed-fi:api:security:authentication",
+                      "title": "Authentication Failed",
+                      "status": 401,
+                      "correlationId": "2ed4f7e1-538f-4e3d-a923-52b5528aa26d",
+                      "errors": [
+                          "Authorization header is missing."
+                      ]
+                  }
+                  """
+              And the response header contains
+                  """
+                  content-type: application/problem+json
+                  """
+
+    Rule: Expired token
+
+        Background:
+            Given the user is authenticated
+              And the token is expired
+
+        @ignore
+        Scenario: 01 Verify user cannot retrieve a resource
+             When a GET request is made to "/ed-fi/students"
+             Then it should respond with 401
+              And the response body is
+                  """
+                  {
+                      "detail": "The caller could not be authenticated.",
+                      "type": "urn:ed-fi:api:security:authentication",
+                      "title": "Authentication Failed",
+                      "status": 401,
+                      "correlationId": null,
+                      "errors": [
+                          "Authorization header is missing."
+                      ]
+                      }
+                  """
+              And the response header contains
+                  """
+                  content-type: application/problem+json
+                  """
+
+        @ignore
+        Scenario: 02 Verify clients cannot post a resource
+             When a POST request is made to "/ed-fi/students" with
+                  """
+                  {
+                      "studentUniqueId": "54721642123",
+                      "birthDate": "2007-08-13",
+                      "firstName": "John",
+                      "lastSurname": "Doe"
+                  }
+                  """
+             Then it should respond with 401
+              And the response body is
+                  """
+                  {
+                      "detail": "The caller could not be authenticated.",
+                      "type": "urn:ed-fi:api:security:authentication",
+                      "title": "Authentication Failed",
+                      "status": 401,
+                      "correlationId": "4ebd1a6d-5ab2-40c8-a54b-fb8a5103c18b",
+                      "errors": [
+                          "Authorization header is missing."
+                      ]
+                  }
+                  """
+              And the response header contains
+                  """
+                  content-type: application/problem+json
+                  """
+
+        @ignore
+        Scenario: 03 Verify clients cannot update a resource
+            Given the system has this "students"
+                  | studentUniqueId | birthDate  | firstName | lastSurname |
+                  | 54721642123     | 2007-08-13 | John      | Doe         |
+             When a PUT request is made to "/ed-fi/students/{id}" with
+                  """
+                  {
+                      "studentUniqueId": "54721642123",
+                      "birthDate": "2005-08-13",
+                      "firstName": "Jonathan",
+                      "lastSurname": "Doe"
+                  }
+                  """
+             Then it should respond with 401
+              And the response body is
+                  """
+                  {
+                      "detail": "The caller could not be authenticated.",
+                      "type": "urn:ed-fi:api:security:authentication",
+                      "title": "Authentication Failed",
+                      "status": 401,
+                      "correlationId": "2ed4f7e1-538f-4e3d-a923-52b5528aa26d",
+                      "errors": [
+                          "Authorization header is missing."
+                      ]
+                  }
+                  """
+              And the response header contains
+                  """
+                  content-type: application/problem+json
+                  """
+
+        @ignore
+        Scenario: 04 Verify clients cannot delete a resource
+            Given the system has this "students"
+                  | studentUniqueId | birthDate  | firstName | lastSurname |
+                  | 54721642123     | 2007-08-13 | John      | Doe         |
+             When a PUT request is made to "/ed-fi/students/{id}"
+             Then it should respond with 401
+              And the response body is
+                  """
+                  {
+                      "detail": "The caller could not be authenticated.",
+                      "type": "urn:ed-fi:api:security:authentication",
+                      "title": "Authentication Failed",
+                      "status": 401,
+                      "correlationId": "2ed4f7e1-538f-4e3d-a923-52b5528aa26d",
+                      "errors": [
+                          "Authorization header is missing."
+                      ]
+                  }
+                  """
+              And the response header contains
+                  """
+                  content-type: application/problem+json
+                  """
