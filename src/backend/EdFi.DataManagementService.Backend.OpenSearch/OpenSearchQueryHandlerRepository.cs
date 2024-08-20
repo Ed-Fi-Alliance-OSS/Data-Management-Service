@@ -12,25 +12,25 @@ namespace EdFi.DataManagementService.Backend.OpenSearch;
 
 public class OpenSearchQueryHandlerRepository(
     IOpenSearchClient openSearchClient,
-    ILogger<OpenSearchQueryHandlerRepository> _logger
+    ILogger<OpenSearchQueryHandlerRepository> logger
 ) : IQueryHandler
 {
     public async Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
     {
-        _logger.LogDebug(
+        logger.LogDebug(
             "Entering OpenSearchQueryHandlerRepository.QueryDocuments - {TraceId}",
             queryRequest.TraceId
         );
 
         try
         {
-            QueryResult result = await QueryOpenSearch.QueryDocuments(openSearchClient, queryRequest, _logger);
+            QueryResult result = await QueryOpenSearch.QueryDocuments(openSearchClient, queryRequest, logger);
 
             return result;
         }
         catch (Exception ex)
         {
-            _logger.LogCritical(ex, "Uncaught QueryDocuments failure - {TraceId}", queryRequest.TraceId);
+            logger.LogCritical(ex, "Uncaught QueryDocuments failure - {TraceId}", queryRequest.TraceId);
             return new QueryResult.UnknownFailure("Unknown Failure");
         }
     }

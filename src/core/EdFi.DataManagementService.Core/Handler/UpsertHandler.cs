@@ -5,7 +5,6 @@
 
 using System.Text.Json;
 using EdFi.DataManagementService.Core.Backend;
-using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;

@@ -5,7 +5,6 @@
 
 using Polly;
 using EdFi.DataManagementService.Core.Backend;
-using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
