@@ -130,7 +130,6 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
 
         return (number % 10) switch
         {
-            1 => $"{number}st",
             2 => $"{number}nd",
             3 => $"{number}rd",
             _ => $"{number}th"
