@@ -19,6 +19,7 @@
     <PackageVersion Include="Microsoft.Extensions.Options" Version="8.0.2" />
     <PackageVersion Include="Npgsql" Version="8.0.3" />
     <PackageVersion Include="Npgsql.DependencyInjection" Version="8.0.3" />
+    <PackageVersion Include="OpenSearch.Client" Version="1.7.1" />
     <PackageVersion Include="Polly.Core" Version="8.4.1" />
     <PackageVersion Include="Polly.Extensions" Version="8.4.1" />
     <PackageVersion Include="Respawn" Version="6.2.1" />

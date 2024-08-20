@@ -18,7 +18,7 @@ public class Options
         Required = true,
         HelpText = "The database engine to deploy. Valid values are 'postgresql' and 'mssql'"
     )]
-    public string? DatabaseEngine { get; set; }
+    public string? Datastore { get; set; }
 
     [Option('c', "connectionString", Required = true, HelpText = "The connection string to the database.")]
     public string? ConnectionString { get; set; }
@@ -35,7 +35,7 @@ public static class Program
         _parseResult
             .WithParsed(runOptions =>
             {
-                switch (runOptions.DatabaseEngine)
+                switch (runOptions.Datastore)
                 {
                     case "postgresql":
                         HandleResult(

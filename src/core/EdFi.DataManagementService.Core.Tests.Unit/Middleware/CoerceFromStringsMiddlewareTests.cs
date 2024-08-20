@@ -19,7 +19,7 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
 {
-    public class CoerceStringTypeMiddlewareTests
+    public class CoerceFromStringsMiddlewareTests
     {
         public static Func<Task> Next()
         {
@@ -71,7 +71,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
 
         internal static IPipelineStep Middleware()
         {
-            return new CoerceStringTypeMiddleware(NullLogger.Instance);
+            return new CoerceFromStringsMiddleware(NullLogger.Instance);
         }
 
         internal PipelineContext Context(FrontendRequest frontendRequest, RequestMethod method)
@@ -107,7 +107,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         }
 
         [TestFixture]
-        public class Given_A_Request_With_Boolean_And_Numeric_Property_As_String : CoerceStringTypeMiddlewareTests
+        public class Given_A_Request_With_Boolean_And_Numeric_Property_As_String : CoerceFromStringsMiddlewareTests
         {
             private PipelineContext _context = No.PipelineContext();
 

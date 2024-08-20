@@ -10,7 +10,8 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 public class AppSettings
 {
     public required string AuthenticationService { get; set; }
-    public required string DatabaseEngine { get; set; }
+    public required string Datastore { get; set; }
+    public required string QueryHandler { get; set; }
     public bool DeployDatabaseOnStartup { get; set; }
     public required string CorrelationIdHeader { get; set; }
 }
@@ -24,9 +25,32 @@ public class AppSettingsValidator : IValidateOptions<AppSettings>
             return ValidateOptionsResult.Fail("Missing required AppSettings value: AuthenticationService");
         }
 
-        if (string.IsNullOrWhiteSpace(options.DatabaseEngine))
+        if (string.IsNullOrWhiteSpace(options.Datastore))
         {
-            return ValidateOptionsResult.Fail("Missing required AppSettings value: DatabaseEngine");
+            return ValidateOptionsResult.Fail("Missing required AppSettings value: Datastore");
+        }
+
+        if (
+            !options.Datastore.Equals("postgresql", StringComparison.CurrentCultureIgnoreCase)
+            && !options.Datastore.Equals("mssql", StringComparison.CurrentCultureIgnoreCase)
+        )
+        {
+            return ValidateOptionsResult.Fail("AppSettings value Datastore must be one of: postgresql, mssql");
+        }
+
+        if (string.IsNullOrWhiteSpace(options.QueryHandler))
+        {
+            return ValidateOptionsResult.Fail("Missing required AppSettings value: Datastore");
+        }
+
+        if (
+            !options.QueryHandler.Equals("postgresql", StringComparison.CurrentCultureIgnoreCase)
+            && !options.QueryHandler.Equals("opensearch", StringComparison.CurrentCultureIgnoreCase)
+        )
+        {
+            return ValidateOptionsResult.Fail(
+                "AppSettings value QueryHandler must be one of: postgresql, opensearch"
+            );
         }
 
         return ValidateOptionsResult.Success;

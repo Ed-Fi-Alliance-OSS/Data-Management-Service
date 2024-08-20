@@ -27,7 +27,7 @@ public class QueryDocument(ILogger<QueryDocument> _logger) : IQueryDocument
         NpgsqlTransaction transaction
     )
     {
-        _logger.LogDebug("Entering GetDocumentByKey.QueryDocuments - {TraceId}", queryRequest.TraceId);
+        _logger.LogDebug("Entering QueryDocument.QueryDocuments - {TraceId}", queryRequest.TraceId);
         try
         {
             string resourceName = queryRequest.ResourceInfo.ResourceName.Value;
@@ -39,12 +39,12 @@ public class QueryDocument(ILogger<QueryDocument> _logger) : IQueryDocument
                     connection,
                     transaction
                 ),
-                queryRequest.PaginationParameters.totalCount ? await GetTotalDocumentsForResourceName(resourceName, connection, transaction) : null
+                queryRequest.PaginationParameters.TotalCount ? await GetTotalDocumentsForResourceName(resourceName, connection, transaction) : null
             );
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "GetDocumentByKey.QueryDocuments failure - {TraceId}", queryRequest.TraceId);
+            _logger.LogError(ex, "QueryDocument.QueryDocuments failure - {TraceId}", queryRequest.TraceId);
             return new QueryResult.UnknownFailure("Unknown Failure");
         }
     }

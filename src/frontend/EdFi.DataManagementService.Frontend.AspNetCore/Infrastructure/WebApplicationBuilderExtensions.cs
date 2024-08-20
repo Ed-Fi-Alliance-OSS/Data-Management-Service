@@ -7,6 +7,7 @@ using System.Net;
 using System.Threading.RateLimiting;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Deploy;
+using EdFi.DataManagementService.Backend.OpenSearch;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
@@ -25,10 +26,6 @@ public static class WebApplicationBuilderExtensions
 
         webAppBuilder
             .Services.AddDmsDefaultConfiguration(logger, webAppBuilder.Configuration.GetSection("CircuitBreaker"))
-            .AddPostgresqlBackend(
-                webAppBuilder.Configuration.GetSection("ConnectionStrings:DatabaseConnection").Value
-                    ?? string.Empty
-            )
             .AddTransient<IContentProvider, ContentProvider>()
             .AddTransient<IVersionProvider, VersionProvider>()
             .AddTransient<IAssemblyProvider, AssemblyProvider>()
@@ -44,7 +41,9 @@ public static class WebApplicationBuilderExtensions
             logger.Information("Injecting rate limiting");
             ConfigureRateLimit(webAppBuilder);
         }
-        ConfigureDatabase(logger);
+
+        ConfigureDatastore(webAppBuilder, logger);
+        ConfigureQueryHandler(webAppBuilder, logger);
 
         Serilog.ILogger ConfigureLogging()
         {
@@ -57,28 +56,52 @@ public static class WebApplicationBuilderExtensions
 
             return logger;
         }
+    }
 
-        void ConfigureDatabase(Serilog.ILogger logger)
-        {
-            if (
-                string.Equals(
-                    webAppBuilder.Configuration.GetSection("AppSettings:DatabaseEngine").Value,
-                    "postgresql",
-                    StringComparison.OrdinalIgnoreCase
-                )
+    private static void ConfigureDatastore(WebApplicationBuilder webAppBuilder, Serilog.ILogger logger)
+    {
+        if (
+            string.Equals(
+                webAppBuilder.Configuration.GetSection("AppSettings:Datastore").Value,
+                "postgresql",
+                StringComparison.OrdinalIgnoreCase
             )
-            {
-                logger.Information("Injecting PostgreSQL as the primary backend datastore");
-                webAppBuilder.Services.AddSingleton<
-                    IDatabaseDeploy,
-                    Backend.Postgresql.Deploy.DatabaseDeploy
-                >();
-            }
-            else
-            {
-                logger.Information("Injecting MSSQL as the primary backend datastore");
-                webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Mssql.Deploy.DatabaseDeploy>();
-            }
+        )
+        {
+            logger.Information("Injecting PostgreSQL as the primary backend datastore");
+            webAppBuilder.Services.AddPostgresqlDatastore(
+                webAppBuilder.Configuration.GetSection("ConnectionStrings:DatabaseConnection").Value
+                    ?? string.Empty
+            );
+            webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Postgresql.Deploy.DatabaseDeploy>();
+        }
+        else
+        {
+            logger.Information("Injecting MSSQL as the primary backend datastore");
+            webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Mssql.Deploy.DatabaseDeploy>();
+        }
+    }
+
+    private static void ConfigureQueryHandler(WebApplicationBuilder webAppBuilder, Serilog.ILogger logger)
+    {
+        if (
+            string.Equals(
+                webAppBuilder.Configuration.GetSection("AppSettings:QueryHandler").Value,
+                "postgresql",
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
+        {
+            logger.Information("Injecting PostgreSQL as the backend query handler");
+            webAppBuilder.Services.AddPostgresqlQueryHandler();
+        }
+        else
+        {
+            logger.Information("Injecting OpenSearch as the backend query handler");
+            webAppBuilder.Services.AddOpenSearchQueryHandler(
+                webAppBuilder.Configuration.GetSection("ConnectionStrings:OpenSearchUrl").Value
+                    ?? string.Empty
+            );
         }
     }
 

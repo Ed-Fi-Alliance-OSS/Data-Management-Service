@@ -7,7 +7,6 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
-using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.Postgresql.Operation.Resilience;
@@ -159,9 +158,9 @@ public static class SqlAction
     /// <summary>
     /// Returns an array of Documents from the database corresponding to the given ResourceName
     /// </summary>
-    public static async Task<JsonNode[]> GetAllDocumentsByResourceName(
+    public static async Task<JsonArray> GetAllDocumentsByResourceName(
         string resourceName,
-        IPaginationParameters paginationParameters,
+        PaginationParameters paginationParameters,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     )
@@ -180,8 +179,8 @@ public static class SqlAction
                     Parameters =
                     {
                         new() { Value = resourceName },
-                        new() { Value = paginationParameters.offset },
-                        new() { Value = paginationParameters.limit },
+                        new() { Value = paginationParameters.Offset ?? 0 },
+                        new() { Value = paginationParameters.Limit ?? 25 },
                     }
                 };
 
@@ -211,7 +210,7 @@ public static class SqlAction
                 throw;
             }
         });
-        return result;
+        return new(result);
     }
 
     /// <summary>
