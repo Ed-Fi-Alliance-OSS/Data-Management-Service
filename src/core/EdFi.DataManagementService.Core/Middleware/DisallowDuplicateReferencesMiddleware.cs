@@ -31,8 +31,7 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
                 context.DocumentInfo.DocumentReferences,
                 item => item.ReferentialId.Value,
                 item => item.ResourceInfo.ResourceName.Value,
-                validationErrors,
-                initialPosition: 1
+                validationErrors
             );
         }
 
@@ -44,8 +43,7 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
                 context.DocumentInfo.DescriptorReferences,
                 item => item.ReferentialId.Value,
                 item => item.Path.Value,
-                validationErrors,
-                initialPosition: 0
+                validationErrors
             );
         }
 
@@ -76,32 +74,35 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         IEnumerable<T> items,
         Func<T, Guid> getReferentialId,
         Func<T, string> getPath,
-        Dictionary<string, string[]> validationErrors,
-        int initialPosition
+        Dictionary<string, string[]> validationErrors
     )
     {
         var seenItems = new HashSet<Guid>();
-        int position = initialPosition;
+        var positions = new Dictionary<string, int>();
 
         foreach (var item in items)
         {
             Guid referentialId = getReferentialId(item);
+            string path = getPath(item);
+
+            // the propertyName varies according to the origin (DescriptorReference or DocumentReferences)
+            string propertyName = path.StartsWith("$", StringComparison.InvariantCultureIgnoreCase)
+                ? path
+                : $"$.{path}";
+
+            if (!positions.ContainsKey(propertyName))
+            {
+                positions[propertyName] = 1;
+            }
 
             if (seenItems.Contains(referentialId))
             {
-                string path = getPath(item);
-
-                // the propertyName varies according to the origin (DescriptorReference or DocumentReferences)
-                string propertyName = path.StartsWith("$", StringComparison.InvariantCultureIgnoreCase)
-                    ? path
-                    : $"$.{path}";
-
                 path = path.StartsWith("$", StringComparison.InvariantCultureIgnoreCase)
                     ? ExtractArrayName(path)
                     : path;
 
                 string errorMessage =
-                    $"The {GetOrdinal(position)} item of the {path} has the same identifying values as another item earlier in the list.";
+                    $"The {GetOrdinal(positions[propertyName])} item of the {path} has the same identifying values as another item earlier in the list.";
 
                 if (validationErrors.ContainsKey(propertyName))
                 {
@@ -118,7 +119,7 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
             {
                 seenItems.Add(referentialId);
             }
-            position++;
+            positions[propertyName]++;
         }
     }
 
