@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Model;
 using Json.More;
+using Json.Path;
 
 namespace EdFi.DataManagementService.Core.Validation;
 
@@ -34,8 +35,8 @@ internal class EqualityConstraintValidator : IEqualityConstraintValidator
         var validationErrors = new Dictionary<string, string[]>();
         foreach (var equalityConstraint in equalityConstraints)
         {
-            var sourcePath = Json.Path.JsonPath.Parse(equalityConstraint.SourceJsonPath.Value);
-            var targetPath = Json.Path.JsonPath.Parse(equalityConstraint.TargetJsonPath.Value);
+            var sourcePath = JsonPath.Parse(equalityConstraint.SourceJsonPath.Value);
+            var targetPath = JsonPath.Parse(equalityConstraint.TargetJsonPath.Value);
 
             var sourcePathResult = sourcePath.Evaluate(documentBody);
             var targetPathResult = targetPath.Evaluate(documentBody);
@@ -59,11 +60,10 @@ internal class EqualityConstraintValidator : IEqualityConstraintValidator
                 AddValidationError(validationErrors, targetPath, conflictValues);
             }
         }
-
         return validationErrors;
     }
 
-    private void AddValidationError(Dictionary<string, string[]> validationErrors, Json.Path.JsonPath path, string conflictValues)
+    private void AddValidationError(Dictionary<string, string[]> validationErrors, JsonPath path, string conflictValues)
     {
         string segment = path.Segments[^1].ToString().TrimStart('.');
         string errorMessage = $"All values supplied for '{segment}' must match."
@@ -72,11 +72,7 @@ internal class EqualityConstraintValidator : IEqualityConstraintValidator
 
         if (validationErrors.TryGetValue(path.ToString(), out string[]? existingErrors))
         {
-            if (!existingErrors.Contains(errorMessage))
-            {
-                string[] updatedErrors = existingErrors.Append(errorMessage).ToArray();
-                validationErrors[path.ToString()] = updatedErrors;
-            }
+            validationErrors[path.ToString()] = existingErrors.Append(errorMessage).ToArray();
         }
         else
         {
