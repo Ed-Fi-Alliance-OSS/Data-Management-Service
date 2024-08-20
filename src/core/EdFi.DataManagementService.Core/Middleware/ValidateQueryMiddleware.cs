@@ -4,7 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
-using EdFi.DataManagementService.Core.Backend;
+using EdFi.DataManagementService.Core.External.Backend.Model;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
@@ -15,20 +16,22 @@ namespace EdFi.DataManagementService.Core.Middleware;
 
 internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
 {
+    private static readonly string[] _disallowedQueryFields = ["limit", "offset", "totalCount"];
+
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         _logger.LogDebug("Entering ValidateQueryMiddleware - {TraceId}", context.FrontendRequest.TraceId);
 
-        int offset = 0;
-        int limit = 25;
+        int? offset = null;
+        int? limit = null;
         bool totalCount = false;
-        List<string> errors = new();
+        List<string> errors = [];
 
         if (context.FrontendRequest.QueryParameters.ContainsKey("offset"))
         {
             if (
-                !int.TryParse(context.FrontendRequest.QueryParameters["offset"], out int offserVal)
-                || offserVal < 0
+                !int.TryParse(context.FrontendRequest.QueryParameters["offset"], out int offsetVal)
+                || offsetVal < 0
             )
             {
                 errors.Add("Offset must be a numeric value greater than or equal to 0.");
@@ -75,6 +78,8 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
             }
         }
 
+        // TODO: DMS-312 Validate all other query parameters are valid ones for the current resource
+
         if (errors.Count > 0)
         {
             FailureResponseWithErrors failureResponse = FailureResponse.ForBadRequest(
@@ -100,6 +105,11 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
         }
 
         context.PaginationParameters = new PaginationParameters(limit, offset, totalCount);
+
+        context.TermQueries = context
+            .FrontendRequest.QueryParameters.ExceptBy(_disallowedQueryFields, (term) => term.Key)
+            .Select(term => new TermQuery(term.Key, term.Value))
+            .ToArray();
 
         await next();
     }
