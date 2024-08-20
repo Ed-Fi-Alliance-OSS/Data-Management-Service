@@ -33,7 +33,7 @@ services:
     container_name: kafka-ui
     image: provectuslabs/kafka-ui:latest
     ports:
-      - 8080:8080
+      - 8085:8080
     links:
       - kafka
       - kafka-postgresql-source
@@ -91,12 +91,13 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-abcdefgh1!}
     ports:
     # If no port provided through an env file, default to 5432
-      - ${POSTGRES_PORT:-5432}:5432
+      - ${POSTGRES_PORT:-5435}:5432
     volumes:
       - dms-postgresql:/var/lib/postgresql/data
+      - ./debezium_config.sh:/docker-entrypoint-initdb.d/debezium_config.sh
 
   opensearch:
-    image: opensearchproject/opensearch:2.15.0@sha256:1a6d62f4ff2215f66792362a56c64cea29ff6cbe700f95881857f045a6fea3c9
+    image: opensearchproject/opensearch:2.16.0@sha256:36b60c4692d504ace282028659316b245ed6f53145330313ce8e6a44da4c447c
     container_name: dms-opensearch
     hostname: dms-opensearch
     environment:
@@ -144,7 +145,7 @@ services:
 
   dmsapi:
     build:
-      context: ../src/
+      context: ../../../src/
       dockerfile: Dockerfile
     environment:
       ASPNETCORE_HTTP_PORTS: 8080
@@ -157,6 +158,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-abcdefgh1!}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
       POSTGRES_HOST: db
+      DATABASE_ISOLATION_LEVEL: ${DATABASE_ISOLATION_LEVEL:-RepeatableRead}
+      OPENSEARCH_URL: ${OPENSEARCH_URL:-http://localhost:9200}
+      DATABASE_CONNECTION_STRING: ${DATABASE_CONNECTION_STRING:-host=db;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;}
       LOG_LEVEL: Information
     ports:
       - 8080:8080

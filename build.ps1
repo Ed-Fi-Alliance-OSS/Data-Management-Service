@@ -95,6 +95,8 @@ $thresholdCoverage = 58
 $coverageOutputFile = "coverage.cobertura.xml"
 $targetDir = "coveragereport"
 
+$kafkaOpenSearchRoot = "./eng/deployment/postgresql-kafka-opensearch"
+
 $maintainers = "Ed-Fi Alliance, LLC and contributors"
 
 Import-Module -Name "$PSScriptRoot/eng/build-helpers.psm1" -Force
@@ -347,27 +349,6 @@ function Run {
     }
 }
 
-function IsDatabaseContainerRunning ([string] $ContainerName)
-{
-    $status = &docker inspect -f "{{.State.Running}}" $ContainerName
-    return $status -eq "true"
-}
-
-function RunCommandInContainer ([string] $ContainerName)
-{
-    $hostCommand = 'echo "host    replication    postgres         kafka-connect-source    trust" >> /var/lib/postgresql/data/pg_hba.conf'
-    &docker exec $ContainerName bash -c $hostCommand
-
-    $walCommand = 'echo "wal_level = logical" >> /var/lib/postgresql/data/postgresql.conf'
-    &docker exec $ContainerName bash -c $walCommand
-
-    Write-Output "Restarting the database container"
-
-    &docker restart $ContainerName
-
-    Write-Output "Commands executed on the database container."
-}
-
 function IsReady([string] $Url)
 {
     $maxAttempts = 3
@@ -393,8 +374,8 @@ function SetUpKafkaConfiguration
 
     $sourceBase = "http://localhost:$sourcePort/connectors"
     $sinkBase = "http://localhost:$sinkPort/connectors"
-    $sourceUrl = "$sourceBase/fulfillment-connector"
-    $sinkUrl = "$sinkBase/search-engine"
+    $sourceUrl = "$sourceBase/postgresql-source"
+    $sinkUrl = "$sinkBase/opensearch-sink"
 
     # Source connector
     if(IsReady($sourceBase))
@@ -410,7 +391,7 @@ function SetUpKafkaConfiguration
         catch {}
 
         try {
-            $sourceBody = Get-Content -Path .\kafka-poc\postgresql_connector.json -Raw
+            $sourceBody = Get-Content -Path "$kafkaOpenSearchRoot\postgresql_connector.json" -Raw
             Invoke-RestMethod -Method Post -uri $sourceBase -ContentType "application/json" -Body $sourceBody
         }
         catch {
@@ -437,8 +418,8 @@ function SetUpKafkaConfiguration
         catch {}
 
         try {
-        $sinkBody = Get-Content -Path .\kafka-poc\opensearch_connector.json -Raw
-        Invoke-RestMethod -Method Post -uri $sinkBase -ContentType "application/json" -Body $sinkBody
+            $sinkBody = Get-Content -Path "$kafkaOpenSearchRoot\opensearch_connector.json" -Raw
+            Invoke-RestMethod -Method Post -uri $sinkBase -ContentType "application/json" -Body $sinkBody
         }
         catch {
             Write-Output $_.Exception.Message
@@ -453,17 +434,7 @@ function SetUpKafkaConfiguration
 
 function SetUpKafka
 {
-    $containerName = "dms-postgresql"
-    &docker compose -f "./kafka-poc/docker-compose.yml" up -d
-
-    while (-not (IsDatabaseContainerRunning $containerName)) {
-        Write-Output "Container is not running. Waiting..."
-        Start-Sleep -Seconds 5
-    }
-    Write-Output "Database container is running. Executing command..."
-
-    RunCommandInContainer $containerName
-
+    &docker compose -f "$kafkaOpenSearchRoot\docker-compose.yml" up -d
     SetUpKafkaConfiguration
 }
 
