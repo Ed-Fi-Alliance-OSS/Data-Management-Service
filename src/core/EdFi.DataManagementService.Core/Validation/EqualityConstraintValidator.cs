@@ -52,49 +52,38 @@ internal class EqualityConstraintValidator : IEqualityConstraintValidator
             var sourceValues = sourcePathResult.Matches.Select(s => s.Value);
             var targetValues = targetPathResult.Matches.Select(t => t.Value);
 
-            if (!AllEqual(sourceValues.Concat(targetValues).ToList()))
+            var combinedValues = new HashSet<JsonNode?>(sourcePathResult.Matches.Select(s => s.Value), new JsonNodeEqualityComparer());
+            combinedValues.UnionWith(targetPathResult.Matches.Select(t => t.Value));
+
+            if (combinedValues.Count > 1)
             {
-                List<string> errors = [];
-                string conflictValues = string.Join(
-                    ", ",
-                    sourceValues
-                        .Concat(targetValues)
-                        .Distinct(new JsonNodeEqualityComparer())
-                        .Select(x => $"'{x}'")
-                        .ToArray()
-                );
-                string targetSegment = targetPath.Segments[^1].ToString().TrimStart('.');
-                errors.Add(
-                    $"All values supplied for '{targetSegment}' must match."
-                        + " Review all references (including those higher up in the resource's data)"
-                        + " and align the following conflicting values: "
-                        + conflictValues
-                );
-
-                validationErrors.Add(sourcePath.ToString(), errors.ToArray());
-
-                // The source segment must also be included in the reported errors
-                string sourceSegment = sourcePath.Segments[^1].ToString().TrimStart('.');
-                string errorDetail =
-                    $"All values supplied for '{sourceSegment}' must match."
-                    + " Review all references (including those higher up in the resource's data)"
-                    + " and align the following conflicting values: "
-                    + conflictValues;
-
-                if (!errors.Contains(errorDetail))
-                {
-                    errors.Add(errorDetail);
-                }
-
-                validationErrors.Add(targetPath.ToString(), errors.ToArray());
-            }
-
-            bool AllEqual(IList<JsonNode?> nodes)
-            {
-                return nodes.All(n => JsonNode.DeepEquals(nodes[0], n));
+                string conflictValues = string.Join(", ", combinedValues.Select(x => $"'{x}'"));
+                AddValidationError(validationErrors, sourcePath, conflictValues);
+                AddValidationError(validationErrors, targetPath, conflictValues);
             }
         }
 
         return validationErrors;
+    }
+
+    private void AddValidationError(Dictionary<string, string[]> validationErrors, Json.Path.JsonPath path, string conflictValues)
+    {
+        string segment = path.Segments[^1].ToString().TrimStart('.');
+        string errorMessage = $"All values supplied for '{segment}' must match."
+                + " Review all references (including those higher up in the resource's data)"
+                + $" and align the following conflicting values: '{conflictValues}'";
+
+        if (validationErrors.TryGetValue(path.ToString(), out var existingErrors))
+        {
+            if (!existingErrors.Contains(errorMessage))
+            {
+                var updatedErrors = existingErrors.Append(errorMessage).ToArray();
+                validationErrors[path.ToString()] = updatedErrors;
+            }
+        }
+        else
+        {
+            validationErrors[path.ToString()] = new[] { errorMessage };
+        }
     }
 }
