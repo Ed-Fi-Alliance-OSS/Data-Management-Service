@@ -279,7 +279,28 @@ public class DisallowDuplicateReferencesMiddlewareTests
                         "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
                       },
                       {
-                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Seven grade"
+                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
+                      },
+                      {
+                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
+                      },
+                      {
+                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
+                      },
+                      {
+                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#First grade"
+                      },
+                      {
+                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Second grade"
+                      },
+                      {
+                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Third grade"
+                      },
+                      {
+                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Fourth grade"
+                      },
+                      {
+                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Fifth grade"
                       },
                       {
                         "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Seven grade"
@@ -321,7 +342,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
                 .FrontendResponse.Body.Should()
                 .Contain(
                     """
-                    "validationErrors":{"$.gradeLevels[*].gradeLevelDescriptor":["The 3rd item of the gradeLevels has the same identifying values as another item earlier in the list.","The 4th item of the gradeLevels has the same identifying values as another item earlier in the list."]}
+                    "validationErrors":{"$.gradeLevels[*].gradeLevelDescriptor":["The 2nd item of the gradeLevels has the same identifying values as another item earlier in the list.","The 3rd item of the gradeLevels has the same identifying values as another item earlier in the list.","The 4th item of the gradeLevels has the same identifying values as another item earlier in the list.","The 11th item of the gradeLevels has the same identifying values as another item earlier in the list."]}
                     """
                 );
         }
