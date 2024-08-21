@@ -20,35 +20,76 @@ spec:
       - name: postgres-db
         image: postgres:16.3-alpine3.20@sha256:e89da2c083a5405943408b6807cd1fd25dc9010c1294e30611b841778bedc653
         ports:
-            - containerPort: 5432
+        - containerPort: 5432
+        readinessProbe:
+          exec:
+            command:
+            - stat
+            - /tmp/ready
+          initialDelaySeconds: 10
+          periodSeconds: 5
         env:
-          - name: POSTGRES_USER
-            valueFrom:
-              configMapKeyRef:
-                name: app-configmap
-                key: postgres-admin-user
-          - name: POSTGRES_PASSWORD
-            valueFrom:
-              secretKeyRef:
-                name: app-secret
-                key: postgres-admin-password
-          - name: POSTGRES_HOST
-            valueFrom:
-              configMapKeyRef:
-                name: app-configmap
-                key: postgres-host
-          - name: POSTGRES_PORT
-            valueFrom:
-              configMapKeyRef:
-                name: app-configmap
-                key: postgres-port
+        - name: POSTGRES_USER
+          valueFrom:
+            configMapKeyRef:
+              name: app-configmap
+              key: postgres-admin-user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: app-secret
+              key: postgres-admin-password
+        - name: POSTGRES_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: app-configmap
+              key: postgres-host
+        - name: POSTGRES_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: app-configmap
+              key: postgres-port
+        #command: ["/bin/sh"]
+        #args: ["-c", "printenv; #OR WHATEVER COMMAND YOU WANT"]
         resources: {}
+        #command: ['sh', '-c', 'echo "host replication postgres kafka-connect-source trust" >> /var/lib/postgresql/data/pg_hba.conf && sleep 3600']
+        #command: ['sh', '-c', 'echo The app is running! && sleep 10']
+
+        #command: ['/bin/sh', '-c', 'echo "host replication postgres kafka-connect-source trust" >> /var/lib/postgresql/data/pg_hba.conf && sleep 3600']
+        #command: ["sh", "-c"]
+        #args:
+        #- |
+        #  echo "host replication postgres kafka-connect-source trust" >> /var/lib/postgresql/data/pg_hba.conf
+        #  sleep 3600
+
+        #command: ["bin/bash", "-c", 'echo "host replication postgres kafka-connect-source trust" >> /var/lib/postgresql/data/pg_hba.conf', 'echo "wal_level = logical" >> /var/lib/postgresql/data/postgresql.conf']
         volumeMounts:
-          - mountPath: /var/lib/postgresql/data
-            name: pgsql-data
+        - mountPath: /var/lib/postgresql/data
+          name: pgsql-data
+
+        #- mountPath: /script
+        #  name: debezium-config
+        #command: ["/script/debezium-config.sh"]
+
+        #- ./debezium_config.sh:/docker-entrypoint-initdb.d/debezium_config.sh
       restartPolicy: Always
       volumes:
-        - name: pgsql-data
-          persistentVolumeClaim:
-            claimName: pgsql-data
+      - name: pgsql-data
+        persistentVolumeClaim:
+          claimName: pgsql-data
+          #- name: debezium-config
+          #  configMap:
+          #    name: debezium-config
+          #    defaultMode: 0744
 status: {}
+#---
+#apiVersion: v1
+#kind: ConfigMap
+#metadata:
+#  name: debezium-config
+#data:
+#  debezium-config.sh: |
+#    #!/bin/bash
+#    echo "Setting up the wal level"
+#    echo "host    replication    postgres         kafka-postgresql-source    trust" >> /var/lib/postgresql/data/pg_hba.conf
+#    echo "wal_level = logical" >> /var/lib/postgresql/data/postgresql.conf

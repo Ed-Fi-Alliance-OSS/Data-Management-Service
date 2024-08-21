@@ -1,0 +1,70 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    serviceName: kafka-connect-source
+  name: kafka-connect-source
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      serviceName: kafka-connect-source
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        serviceName: kafka-connect-source
+    spec:
+      containers:
+      # image: debezium/connect:2.7.0-Final@sha256:a69c0bf30a269a0c53a98d9caf61a45f74a7bab18ebac6081a53af64ceba78b4
+      # image: edfialliance/connect-meadowlark:2.3-2@sha256:e6792ab9c797a27ae15e2fba68e874cf9898658f947ba0448182b5e269b1bbb8
+      #image: local/kafka-connect-service:latest
+      - name: kafka-connect-source
+        image: edfialliance/ed-fi-kafka-connect:pre
+        ports:
+        - containerPort: 8083
+
+        env:
+        # https://hub.docker.com/r/debezium/connect
+        - name: "BOOTSTRAP_SERVERS"
+          value: "dms-kafka1:9092"
+
+        - name: "GROUP_ID"
+          value: "2"
+
+        - name: "CONFIG_STORAGE_TOPIC"
+          value: "debezium_source_config"
+
+        - name: "OFFSET_STORAGE_TOPIC"
+          value: "debezium_source_offset"
+
+        - name: "STATUS_STORAGE_TOPIC"
+          value: "debezium_source_status"
+
+        volumeMounts:
+        - mountPath: /kafka/config
+          name: connect-source-config
+
+      restartPolicy: Always
+      volumes:
+      - name: connect-source-config
+        persistentVolumeClaim:
+          claimName: kafka-connect-source-claim
+status: {}
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: kafka-connect-source-claim
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Mi
