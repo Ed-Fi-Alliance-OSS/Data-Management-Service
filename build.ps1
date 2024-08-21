@@ -351,7 +351,7 @@ function Run {
 
 function IsReady([string] $Url)
 {
-    $maxAttempts = 3
+    $maxAttempts = 4
     $attempt = 0
     $waitTime = 5
     while ($attempt -lt $maxAttempts) {
@@ -458,6 +458,7 @@ function SetUpKafka
 {
     &docker compose -f "$kafkaOpenSearchRoot\docker-compose.yml" up -d
     SetupDebeziumPublication
+    Start-Sleep 5
     SetUpKafkaConfiguration
 }
 
