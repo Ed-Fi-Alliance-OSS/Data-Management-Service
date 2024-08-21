@@ -21,13 +21,6 @@ spec:
         image: postgres:16.3-alpine3.20@sha256:e89da2c083a5405943408b6807cd1fd25dc9010c1294e30611b841778bedc653
         ports:
         - containerPort: 5432
-        readinessProbe:
-          exec:
-            command:
-            - stat
-            - /tmp/ready
-          initialDelaySeconds: 10
-          periodSeconds: 5
         env:
         - name: POSTGRES_USER
           valueFrom:

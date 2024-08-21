@@ -7,35 +7,29 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    serviceName: dms-kafdrop
-  name: dms-kafdrop
+    serviceName: kafka-ui
+  name: kafka-ui
 spec:
   replicas: 1
   selector:
     matchLabels:
-      serviceName: dms-kafdrop
+      serviceName: kafka-ui
   strategy:
     type: Recreate
   template:
     metadata:
       labels:
-        serviceName: dms-kafdrop
+        serviceName: kafka-ui
     spec:
       containers:
-      - name: dms-kafdrop
-        image: obsidiandynamics/kafdrop:4.0.2@sha256:b1a316d2c2e3ef783758ba2d253eb7cfa65c1bc8ae4c6cd3686942cdec7f96e7
+      - name: kafka-ui
+        image: provectuslabs/kafka-ui:latest
         ports:
-        - containerPort: 9000
+        - containerPort: 8080
 
         env:
-        - name: "KAFKA_BROKERCONNECT"
-          value: "dms-kafka1:9092"
-
-        - name: "JVM_OPTS"
-          value: "-Xms32M -Xmx64M"
-
-        - name: "SERVER_SERVLET_CONTEXTPATH"
-          value: "/"
+        - name: "DYNAMIC_CONFIG_ENABLED"
+          value: "true"
 
       restartPolicy: Always
 status: {}

@@ -9,7 +9,7 @@ spec:
     serviceName: postgres
   type: NodePort
   ports:
-    - protocol: TCP
-      port: 5402
-      targetPort: 5432
-      nodePort: 30000
+  - protocol: TCP
+    port: 5432
+    targetPort: 5432
+    nodePort: 30000
