@@ -321,7 +321,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
                 .FrontendResponse.Body.Should()
                 .Contain(
                     """
-                    "validationErrors":{"$.gradeLevels[*].gradeLevelDescriptor":["The 2nd item of the gradeLevels has the same identifying values as another item earlier in the list.","The 3rd item of the gradeLevels has the same identifying values as another item earlier in the list."]}
+                    "validationErrors":{"$.gradeLevels[*].gradeLevelDescriptor":["The 3rd item of the gradeLevels has the same identifying values as another item earlier in the list.","The 4th item of the gradeLevels has the same identifying values as another item earlier in the list."]}
                     """
                 );
         }

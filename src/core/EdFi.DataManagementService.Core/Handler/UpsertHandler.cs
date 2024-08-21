@@ -12,7 +12,6 @@ using Microsoft.Extensions.Logging;
 using Polly;
 using static EdFi.DataManagementService.Core.External.Backend.UpsertResult;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
-using static EdFi.DataManagementService.Core.Handler.Utility;
 using static EdFi.DataManagementService.Core.UtilityService;
 
 

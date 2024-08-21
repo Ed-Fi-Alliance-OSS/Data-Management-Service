@@ -6,6 +6,7 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core;
 
@@ -31,5 +32,10 @@ public static partial class UtilityService
     {
         return JsonSerializer.Serialize(obj, SerializerOptions);
     }
-}
 
+    /// Formats an error result string from the given error information and traceId
+    public static string ToJsonError(string errorInfo, TraceId traceId)
+    {
+        return SerializeBody(new { error = errorInfo, correlationId = traceId });
+    }
+}

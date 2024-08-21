@@ -10,7 +10,7 @@ using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 using Polly;
 using static EdFi.DataManagementService.Core.External.Backend.QueryResult;
-using static EdFi.DataManagementService.Core.Handler.Utility;
+using static EdFi.DataManagementService.Core.UtilityService;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
