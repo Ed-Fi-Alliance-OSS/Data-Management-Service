@@ -2,12 +2,13 @@
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
-using System.Text.Json;
+
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.ApiSchema;
 using Json.Schema;
 using Microsoft.Extensions.Logging.Abstractions;
+using static EdFi.DataManagementService.Core.UtilityService;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit;
 
@@ -237,7 +238,7 @@ public class ApiSchemaBuilder
         {
             throw new InvalidOperationException();
         }
-        var serializedJson = JsonSerializer.Serialize(jsonSchema);
+        var serializedJson = SerializeBody(jsonSchema);
         _currentResourceNode["jsonSchemaForInsert"] = JsonNode.Parse(serializedJson);
 
         return this;

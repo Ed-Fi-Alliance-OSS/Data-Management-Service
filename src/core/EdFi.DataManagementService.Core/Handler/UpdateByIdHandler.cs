@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
-using System.Text.Json;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
@@ -14,6 +13,7 @@ using Microsoft.Extensions.Logging;
 using Polly;
 using static EdFi.DataManagementService.Core.External.Backend.UpdateResult;
 using static EdFi.DataManagementService.Core.Handler.Utility;
+using static EdFi.DataManagementService.Core.UtilityService;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
@@ -28,7 +28,7 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
         _logger.LogDebug("Entering UpdateByIdHandler - {TraceId}", context.FrontendRequest.TraceId);
         Trace.Assert(context.ParsedBody != null, "Unexpected null Body on Frontend Request from PUT");
 
-        var updateResult = await _resiliencePipeline.ExecuteAsync(async t => await _documentStoreRepository.UpdateDocumentById(
+        var updateResult = await _resiliencePipeline.ExecuteAsync(async _ => await _documentStoreRepository.UpdateDocumentById(
             new UpdateRequest(
                 DocumentUuid: context.PathComponents.DocumentUuid,
                 ResourceInfo: context.ResourceInfo,
@@ -59,7 +59,7 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
             UpdateFailureNotExists
                 => new FrontendResponse(
                     StatusCode: 404,
-                    Body: JsonSerializer.Serialize(
+                    Body: SerializeBody(
                         FailureResponse.ForNotFound(
                             "Resource to update was not found",
                             traceId: context.FrontendRequest.TraceId
@@ -70,7 +70,7 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
             UpdateFailureDescriptorReference failure
                 => new(
                     StatusCode: 400,
-                    Body: JsonSerializer.Serialize(
+                    Body: SerializeBody(
                         FailureResponse.ForBadRequest(
                             "Data validation failed. See 'validationErrors' for details.",
                             traceId: context.FrontendRequest.TraceId,
@@ -90,7 +90,7 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
             UpdateFailureReference failure
                 => new FrontendResponse(
                     StatusCode: 409,
-                    Body: JsonSerializer.Serialize(
+                    Body: SerializeBody(
                         FailureResponse.ForInvalidReferences(
                             failure.ReferencingDocumentInfo,
                             traceId: context.FrontendRequest.TraceId
@@ -104,7 +104,7 @@ internal class UpdateByIdHandler(IDocumentStoreRepository _documentStoreReposito
             UpdateFailureImmutableIdentity failure
                 => new FrontendResponse(
                     StatusCode: 400,
-                    Body: JsonSerializer.Serialize(
+                    Body: SerializeBody(
                         FailureResponse.ForImmutableIdentity(
                             failure.FailureMessage,
                             traceId: context.FrontendRequest.TraceId

@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
@@ -28,7 +27,7 @@ namespace EdFi.DataManagementService.Core.Middleware
                 errors
             );
 
-            return JsonSerializer.Serialize(response, SerializerOptions);
+            return SerializeBody(response);
         }
 
         public static string GenerateFrontendValidationErrorResponse(string errorDetail, TraceId traceId)
@@ -45,7 +44,7 @@ namespace EdFi.DataManagementService.Core.Middleware
                 []
             );
 
-            return JsonSerializer.Serialize(response, SerializerOptions);
+            return SerializeBody(response);
         }
 
         public async Task Execute(PipelineContext context, Func<Task> next)

@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.ApiSchema;
@@ -12,6 +11,7 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Json.Pointer;
 using Json.Schema;
+using static EdFi.DataManagementService.Core.UtilityService;
 
 namespace EdFi.DataManagementService.Core.Validation;
 
@@ -31,7 +31,7 @@ internal class DocumentValidator() : IDocumentValidator
     private static JsonSchema GetSchema(ResourceSchema resourceSchema, RequestMethod method)
     {
         JsonNode jsonSchemaForResource = resourceSchema.JsonSchemaForRequestMethod(method);
-        string stringifiedJsonSchema = JsonSerializer.Serialize(jsonSchemaForResource);
+        string stringifiedJsonSchema = SerializeBody(jsonSchemaForResource);
         return JsonSchema.FromText(stringifiedJsonSchema);
     }
 

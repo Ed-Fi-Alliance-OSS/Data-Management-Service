@@ -3,10 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
+using static EdFi.DataManagementService.Core.UtilityService;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
@@ -31,7 +31,7 @@ internal class CoreLoggingMiddleware(ILogger _logger) : IPipelineStep
             // Replace the frontend response (if any) with a 500 error
             context.FrontendResponse = new FrontendResponse(
                 StatusCode: 500,
-                Body: JsonSerializer.Serialize(
+                Body: SerializeBody(
                     new
                     {
                         message = "The server encountered an unexpected condition that prevented it from fulfilling the request.",

@@ -25,5 +25,11 @@ public static partial class UtilityService
     //Use to avoid HTML escaping in output message that we construct
     public static readonly JsonSerializerOptions SerializerOptions =
         new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
+    // Serialize the content of body frontend response
+    public static string SerializeBody(object obj)
+    {
+        return JsonSerializer.Serialize(obj, SerializerOptions);
+    }
 }
 

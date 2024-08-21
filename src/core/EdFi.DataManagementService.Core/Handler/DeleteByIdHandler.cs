@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
@@ -13,6 +12,7 @@ using Microsoft.Extensions.Logging;
 using Polly;
 using static EdFi.DataManagementService.Core.External.Backend.DeleteResult;
 using static EdFi.DataManagementService.Core.Handler.Utility;
+using static EdFi.DataManagementService.Core.UtilityService;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
@@ -26,7 +26,7 @@ internal class DeleteByIdHandler(IDocumentStoreRepository _documentStoreReposito
     {
         _logger.LogDebug("Entering DeleteByIdHandler - {TraceId}", context.FrontendRequest.TraceId);
 
-        var deleteResult = await _resiliencePipeline.ExecuteAsync(async t => await _documentStoreRepository.DeleteDocumentById(
+        var deleteResult = await _resiliencePipeline.ExecuteAsync(async _ => await _documentStoreRepository.DeleteDocumentById(
             new DeleteRequest(
                 DocumentUuid: context.PathComponents.DocumentUuid,
                 ResourceInfo: context.ResourceInfo,
@@ -48,7 +48,7 @@ internal class DeleteByIdHandler(IDocumentStoreRepository _documentStoreReposito
             DeleteFailureReference failure
                 => new FrontendResponse(
                     StatusCode: 409,
-                    Body: JsonSerializer.Serialize(
+                    Body: SerializeBody(
                         FailureResponse.ForDataConflict(
                             failure.ReferencingDocumentResourceNames,
                             traceId: context.FrontendRequest.TraceId

@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
@@ -14,6 +13,8 @@ using Polly;
 using static EdFi.DataManagementService.Core.External.Backend.UpsertResult;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
 using static EdFi.DataManagementService.Core.Handler.Utility;
+using static EdFi.DataManagementService.Core.UtilityService;
+
 
 namespace EdFi.DataManagementService.Core.Handler;
 
@@ -74,7 +75,7 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
             UpsertFailureDescriptorReference failure
                 => new(
                     StatusCode: 400,
-                    Body: JsonSerializer.Serialize(
+                    Body: SerializeBody(
                         ForBadRequest(
                             "Data validation failed. See 'validationErrors' for details.",
                             traceId: context.FrontendRequest.TraceId,
@@ -94,7 +95,7 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
             UpsertFailureReference failure
                 => new(
                     StatusCode: 409,
-                    Body: JsonSerializer.Serialize(
+                    Body: SerializeBody(
                         ForInvalidReferences(failure.ResourceNames, traceId: context.FrontendRequest.TraceId)
                     ),
                     Headers: []
@@ -102,7 +103,7 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
             UpsertFailureIdentityConflict failure
                 => new FrontendResponse(
                     StatusCode: 409,
-                    Body: JsonSerializer.Serialize(
+                    Body: SerializeBody(
                         ForIdentityConflict(
                             [
                                 $"A natural key conflict occurred when attempting to create a new resource {failure.ResourceName.Value} with a duplicate key. "
