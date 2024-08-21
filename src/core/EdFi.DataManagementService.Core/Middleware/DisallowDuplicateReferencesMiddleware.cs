@@ -90,12 +90,9 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
                 ? path
                 : $"$.{path}";
 
-            if (!positions.ContainsKey(propertyName))
-            {
-                positions[propertyName] = 1;
-            }
+            positions.TryAdd(propertyName, 1);
 
-            if (seenItems.Contains(referentialId))
+            if (!seenItems.Add(referentialId))
             {
                 path = path.StartsWith("$", StringComparison.InvariantCultureIgnoreCase)
                     ? ExtractArrayName(path)
@@ -112,12 +109,8 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
                 }
                 else
                 {
-                    validationErrors[propertyName] = new[] { errorMessage };
+                    validationErrors[propertyName] = [errorMessage];
                 }
-            }
-            else
-            {
-                seenItems.Add(referentialId);
             }
             positions[propertyName]++;
         }
@@ -130,7 +123,6 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
 
         return (number % 10) switch
         {
-            1 => $"{number}st",
             2 => $"{number}nd",
             3 => $"{number}rd",
             _ => $"{number}th"
@@ -140,7 +132,7 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
     private static string ExtractArrayName(string path)
     {
         // Logic to extract the array name from the JSON path, e.g., "gradeLevels".
-        var parts = path.Split('.');
+        string[] parts = path.Split('.');
         return parts.Length > 1 ? parts[1].Trim('[', ']', '*') : string.Empty;
     }
 }
