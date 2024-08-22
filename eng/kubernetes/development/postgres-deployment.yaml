@@ -42,47 +42,34 @@ spec:
             configMapKeyRef:
               name: app-configmap
               key: postgres-port
-        #command: ["/bin/sh"]
-        #args: ["-c", "printenv; #OR WHATEVER COMMAND YOU WANT"]
         resources: {}
-        #command: ['sh', '-c', 'echo "host replication postgres kafka-connect-source trust" >> /var/lib/postgresql/data/pg_hba.conf && sleep 3600']
-        #command: ['sh', '-c', 'echo The app is running! && sleep 10']
 
-        #command: ['/bin/sh', '-c', 'echo "host replication postgres kafka-connect-source trust" >> /var/lib/postgresql/data/pg_hba.conf && sleep 3600']
-        #command: ["sh", "-c"]
-        #args:
-        #- |
-        #  echo "host replication postgres kafka-connect-source trust" >> /var/lib/postgresql/data/pg_hba.conf
-        #  sleep 3600
-
-        #command: ["bin/bash", "-c", 'echo "host replication postgres kafka-connect-source trust" >> /var/lib/postgresql/data/pg_hba.conf', 'echo "wal_level = logical" >> /var/lib/postgresql/data/postgresql.conf']
         volumeMounts:
-        - mountPath: /var/lib/postgresql/data
-          name: pgsql-data
+        - name: pgsql-data
+          mountPath: /var/lib/postgresql/data
 
-        #- mountPath: /script
-        #  name: debezium-config
-        #command: ["/script/debezium-config.sh"]
+        - name: debezium-config-volume
+          mountPath: /docker-entrypoint-initdb.d
 
-        #- ./debezium_config.sh:/docker-entrypoint-initdb.d/debezium_config.sh
       restartPolicy: Always
       volumes:
       - name: pgsql-data
         persistentVolumeClaim:
           claimName: pgsql-data
-          #- name: debezium-config
-          #  configMap:
-          #    name: debezium-config
-          #    defaultMode: 0744
+      - name: debezium-config-volume
+        configMap:
+          name: debezium-config
+          defaultMode: 0744
 status: {}
-#---
-#apiVersion: v1
-#kind: ConfigMap
-#metadata:
-#  name: debezium-config
-#data:
-#  debezium-config.sh: |
-#    #!/bin/bash
-#    echo "Setting up the wal level"
-#    echo "host    replication    postgres         kafka-postgresql-source    trust" >> /var/lib/postgresql/data/pg_hba.conf
-#    echo "wal_level = logical" >> /var/lib/postgresql/data/postgresql.conf
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: debezium-config
+data:
+  debezium-config.sh: |
+    #!/bin/bash
+    echo "Setting up the wal level"
+    echo "host replication postgres kafka-postgresql-source trust" >> /var/lib/postgresql/data/pg_hba.conf
+    echo "wal_level = logical" >> /var/lib/postgresql/data/postgresql.conf
+    echo "Setting up the wal level is done"

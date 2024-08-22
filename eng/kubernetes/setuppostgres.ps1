@@ -12,3 +12,8 @@ Write-Host $podName
 
 kubectl exec $podName -- /bin/sh -c "echo `"host replication postgres kafka-connect-source trust`" >> /var/lib/postgresql/data/pg_hba.conf"
 kubectl exec $podName -- /bin/sh -c "echo `"wal_level = logical`" >> /var/lib/postgresql/data/postgresql.conf"
+
+#kubectl exec $podName -- /bin/sh -c "echo pg_ctl -D /var/lib/postgresql/data -m fast stop"
+#kubectl exec $podName -- /bin/sh -c "echo systemctl status postgresql"
+#kubectl exec $podName -- /bin/sh -c "echo pg_ctl -D /var/lib/postgresql/data -m fast start"
+
