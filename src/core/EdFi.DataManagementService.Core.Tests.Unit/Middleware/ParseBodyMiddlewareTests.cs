@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
+using Json.More;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
@@ -56,7 +57,10 @@ public class ParseBodyMiddlewareTests
         [Test]
         public void It_returns_error_message_body()
         {
-            _context?.FrontendResponse.Body.Should().Contain("A non-empty request body is required");
+            _context
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("A non-empty request body is required");
         }
     }
 
@@ -93,7 +97,10 @@ public class ParseBodyMiddlewareTests
         [Test]
         public void It_returns_error_message_body()
         {
-            _context?.FrontendResponse.Body.Should().Contain("A non-empty request body is required");
+            _context
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("A non-empty request body is required");
         }
     }
 
@@ -131,8 +138,9 @@ public class ParseBodyMiddlewareTests
         public void It_returns_error_message_body()
         {
             _context
-                ?.FrontendResponse.Body.Should()
-                .Contain("Data validation failed. See 'validationErrors' for details.");
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("Data validation failed.");
         }
     }
 }

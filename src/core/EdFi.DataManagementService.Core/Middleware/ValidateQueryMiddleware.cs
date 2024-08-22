@@ -3,14 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Backend.Model;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using Microsoft.Extensions.Logging;
-using static EdFi.DataManagementService.Core.UtilityService;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
@@ -82,7 +81,7 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
 
         if (errors.Count > 0)
         {
-            FailureResponseWithErrors failureResponse = FailureResponse.ForBadRequest(
+            JsonNode failureResponse = FailureResponse.ForBadRequest(
                 "The request could not be processed. See 'errors' for details.",
                 context.FrontendRequest.TraceId,
                 [],
@@ -91,14 +90,14 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
 
             _logger.LogDebug(
                 "'{Status}'.'{EndpointName}' - {TraceId}",
-                failureResponse.status.ToString(),
+                "400",
                 context.PathComponents.EndpointName,
                 context.FrontendRequest.TraceId
             );
 
             context.FrontendResponse = new FrontendResponse(
-                failureResponse.status,
-                JsonSerializer.Serialize(failureResponse, SerializerOptions),
+                StatusCode: 400,
+                Body: failureResponse,
                 []
             );
             return;

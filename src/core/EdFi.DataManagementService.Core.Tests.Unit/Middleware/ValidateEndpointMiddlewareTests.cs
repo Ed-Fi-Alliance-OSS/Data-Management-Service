@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
+using Json.More;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
@@ -67,7 +68,7 @@ public class ValidateEndpointMiddlewareTests
         [Test]
         public void It_returns_message_body()
         {
-            _context?.FrontendResponse.Body.Should().Contain("Invalid resource");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Invalid resource");
         }
 
         [Test]
@@ -115,7 +116,7 @@ public class ValidateEndpointMiddlewareTests
         [Test]
         public void It_returns_message_body()
         {
-            _context?.FrontendResponse.Body.Should().Contain("Invalid resource");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Invalid resource");
         }
 
         [Test]

@@ -3,7 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
@@ -19,21 +19,26 @@ namespace EdFi.DataManagementService.Core.Handler;
 /// <summary>
 /// Handles a delete request that has made it through the middleware pipeline steps.
 /// </summary>
-internal class DeleteByIdHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger, ResiliencePipeline _resiliencePipeline)
-    : IPipelineStep
+internal class DeleteByIdHandler(
+    IDocumentStoreRepository _documentStoreRepository,
+    ILogger _logger,
+    ResiliencePipeline _resiliencePipeline
+) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         _logger.LogDebug("Entering DeleteByIdHandler - {TraceId}", context.FrontendRequest.TraceId);
 
-        var deleteResult = await _resiliencePipeline.ExecuteAsync(async t => await _documentStoreRepository.DeleteDocumentById(
-            new DeleteRequest(
-                DocumentUuid: context.PathComponents.DocumentUuid,
-                ResourceInfo: context.ResourceInfo,
-                validateNoReferencesToDocument: false,
-                TraceId: context.FrontendRequest.TraceId
+        var deleteResult = await _resiliencePipeline.ExecuteAsync(async t =>
+            await _documentStoreRepository.DeleteDocumentById(
+                new DeleteRequest(
+                    DocumentUuid: context.PathComponents.DocumentUuid,
+                    ResourceInfo: context.ResourceInfo,
+                    validateNoReferencesToDocument: false,
+                    TraceId: context.FrontendRequest.TraceId
+                )
             )
-        ));
+        );
 
         _logger.LogDebug(
             "Document store DeleteDocumentById returned {DeleteResult}- {TraceId}",
@@ -48,11 +53,9 @@ internal class DeleteByIdHandler(IDocumentStoreRepository _documentStoreReposito
             DeleteFailureReference failure
                 => new FrontendResponse(
                     StatusCode: 409,
-                    Body: JsonSerializer.Serialize(
-                        FailureResponse.ForDataConflict(
-                            failure.ReferencingDocumentResourceNames,
-                            traceId: context.FrontendRequest.TraceId
-                        )
+                    Body: FailureResponse.ForDataConflict(
+                        failure.ReferencingDocumentResourceNames,
+                        traceId: context.FrontendRequest.TraceId
                     ),
                     Headers: []
                 ),

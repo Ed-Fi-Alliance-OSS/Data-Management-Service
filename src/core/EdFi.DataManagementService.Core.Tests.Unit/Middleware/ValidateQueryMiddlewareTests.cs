@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
+using Json.More;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
@@ -58,14 +59,18 @@ public class ValidateQueryMiddlewareTests
         [Test]
         public void It_should_be_errors()
         {
-            _context.FrontendResponse.Body.Should().Contain("See 'errors' for detail");
+            _context
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("The request could not be processed.");
         }
 
         [Test]
         public void It_should_be_offset_errors()
         {
             _context
-                .FrontendResponse.Body.Should()
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
                 .Contain("Offset must be a numeric value greater than or equal to 0.");
         }
 
@@ -73,14 +78,18 @@ public class ValidateQueryMiddlewareTests
         public void It_should_be_limit_errors()
         {
             _context
-                .FrontendResponse.Body.Should()
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
                 .Contain("Limit must be a numeric value greater than or equal to 0.");
         }
 
         [Test]
         public void It_should_be_total_count_errors()
         {
-            _context.FrontendResponse.Body.Should().Contain("TotalCount must be a boolean value.");
+            _context
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("TotalCount must be a boolean value.");
         }
     }
 }

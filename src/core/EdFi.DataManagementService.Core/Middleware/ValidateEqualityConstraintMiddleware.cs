@@ -51,14 +51,14 @@ internal class ValidateEqualityConstraintMiddleware(
 
             _logger.LogDebug(
                 "'{Status}'.'{EndpointName}' - {TraceId}",
-                failureResponse.status.ToString(),
+                "400",
                 context.PathComponents.EndpointName,
                 context.FrontendRequest.TraceId
             );
 
             context.FrontendResponse = new FrontendResponse(
-                StatusCode: failureResponse.status,
-                Body: JsonSerializer.Serialize(failureResponse, SerializerOptions),
+                StatusCode: 400,
+                Body: failureResponse,
                 Headers: []
             );
             return;

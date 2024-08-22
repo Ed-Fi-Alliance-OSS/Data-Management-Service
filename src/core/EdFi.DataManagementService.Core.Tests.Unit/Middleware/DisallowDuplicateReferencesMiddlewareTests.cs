@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
+using Json.More;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
@@ -72,7 +73,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
 
         return docRefContext;
     }
-    
+
     internal static IPipelineStep BuildResourceInfo()
     {
         return new BuildResourceInfoMiddleware(NullLogger.Instance);
@@ -149,9 +150,14 @@ public class DisallowDuplicateReferencesMiddlewareTests
         [Test]
         public void It_returns_validation_error_with_duplicated_document_reference()
         {
-            _context.FrontendResponse.Body.Should().Contain("Data Validation Failed");
             _context
-                .FrontendResponse.Body.Should()
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("Data Validation Failed");
+
+            _context
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
                 .Contain(
                     """
                     "validationErrors":{"$.ClassPeriod":["The 2nd item of the ClassPeriod has the same identifying values as another item earlier in the list."]}
@@ -163,7 +169,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
     // Happy path
     [TestFixture]
     public class Given_Pipeline_Context_With_One_Document_Reference
-       : DisallowDuplicateReferencesMiddlewareTests
+        : DisallowDuplicateReferencesMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -337,9 +343,14 @@ public class DisallowDuplicateReferencesMiddlewareTests
         [Test]
         public void It_returns_message_body_with_failure_duplicated_descriptor()
         {
-            _context.FrontendResponse.Body.Should().Contain("Data Validation Failed");
             _context
-                .FrontendResponse.Body.Should()
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("Data Validation Failed");
+
+            _context
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
                 .Contain(
                     """
                     "validationErrors":{"$.gradeLevels[*].gradeLevelDescriptor":["The 2nd item of the gradeLevels has the same identifying values as another item earlier in the list.","The 3rd item of the gradeLevels has the same identifying values as another item earlier in the list.","The 4th item of the gradeLevels has the same identifying values as another item earlier in the list.","The 11th item of the gradeLevels has the same identifying values as another item earlier in the list."]}

@@ -3,13 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Validation;
 using Microsoft.Extensions.Logging;
-using static EdFi.DataManagementService.Core.UtilityService;
 
 namespace EdFi.DataManagementService.Core.Middleware
 {
@@ -33,7 +32,7 @@ namespace EdFi.DataManagementService.Core.Middleware
             }
             else
             {
-                FailureResponseWithErrors failureResponse = FailureResponse.ForBadRequest(
+                JsonNode failureResponse = FailureResponse.ForBadRequest(
                     "The request could not be processed. See 'errors' for details.",
                     context.FrontendRequest.TraceId,
                     [],
@@ -42,14 +41,14 @@ namespace EdFi.DataManagementService.Core.Middleware
 
                 _logger.LogDebug(
                     "'{Status}'.'{EndpointName}' - {TraceId}",
-                    failureResponse.status.ToString(),
+                    "400",
                     context.PathComponents.EndpointName,
                     context.FrontendRequest.TraceId
                 );
 
                 context.FrontendResponse = new FrontendResponse(
-                    StatusCode: failureResponse.status,
-                    Body: JsonSerializer.Serialize(failureResponse, SerializerOptions),
+                    StatusCode: 400,
+                    Body: failureResponse,
                     Headers: []
                 );
             }
