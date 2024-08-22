@@ -44,7 +44,7 @@ services:
   kafka-postgresql-source:
     hostname: kafka-postgresql-source
     container_name: kafka-postgresql-source
-    image: edfialliance/ed-fi-kafka-connect:pre
+    image: edfialliance/ed-fi-kafka-connect:pre@sha256:6354c34dba9928362bb6522932157635c792f00d1b8cac320a95d088b531f8eb
     ports:
       - 8083:8083
     links:
@@ -63,7 +63,7 @@ services:
   kafka-opensearch-sink:
     hostname: kafka-opensearch-sink
     container_name: kafka-opensearch-sink
-    image: edfialliance/ed-fi-kafka-connect:pre
+    image: edfialliance/ed-fi-kafka-connect:pre@sha256:6354c34dba9928362bb6522932157635c792f00d1b8cac320a95d088b531f8eb
     ports:
       - 8084:8083
     links:
