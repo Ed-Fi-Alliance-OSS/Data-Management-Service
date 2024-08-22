@@ -432,32 +432,9 @@ function SetUpKafkaConfiguration
     }
 }
 
-function IsContainerRunning ([string] $ContainerName)
-{
-    $status = &docker inspect -f "{{.State.Running}}" $ContainerName
-    return $status -eq "true"
-}
-
-function SetupDebeziumPublication ()
-{
-    $containerName = "dms-api"
-    while (-not (IsContainerRunning $containerName)) {
-        Write-Output "Container is not running. Waiting..."
-        Start-Sleep -Seconds 5
-    }
-
-    Write-Output "DMS container is running. Executing command..."
-    $commandFile = "/app/debezium_publication.sh"
-
-    Start-Sleep 5
-    &docker exec -it $ContainerName /bin/bash -c $commandFile
-    Write-Output "Added Debezium Publication."
-}
-
 function SetUpKafka
 {
     &docker compose -f "$kafkaOpenSearchRoot\docker-compose.yml" up -d
-    SetupDebeziumPublication
     Start-Sleep 5
     SetUpKafkaConfiguration
 }

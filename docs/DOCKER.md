@@ -42,6 +42,7 @@ FAILURE_RATIO=<decimal between 0 and 1 indicating the failure to success ratio a
 SAMPLING_DURATION_SECONDS=<This is the duration in seconds of the sampling over which failure ratios are assessed. Eg. 10>
 MINIMUM_THROUGHPUT=<Integer, this many actions or more must pass through the circuit in the time-slice, for statistics to be considered significant and the circuit-breaker to come into action. The minimum value is 2.>
 BREAK_DURATION_SECONDS=<The number of seconds a broken circuit will stay open before resetting. Eg. 30>
+QUERY_HANDLER=<Type of query handler. Eg. opensearch, postgresql>
 ```
 
 For example, you might have a `.env` file like the following:
@@ -62,6 +63,7 @@ FAILURE_RATIO=0.1
 SAMPLING_DURATION_SECONDS=10
 MINIMUM_THROUGHPUT=2
 BREAK_DURATION_SECONDS=30
+QUERY_HANDLER=opensearch
 ```
 
 ## Orchestration
