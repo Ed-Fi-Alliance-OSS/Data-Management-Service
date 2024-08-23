@@ -1,11 +1,26 @@
-$sourcePort="8083"
-$sinkPort="8084"
+
+# Read .env file
+$envFile = @{}
+
+Get-Content .env | ForEach-Object {
+    $split = $_.split('=')
+    $key = $split[0]
+    $value = $split[1]
+    $envFile[$key] = $value
+}
+
+$sourcePort=$envFile["CONNECT_SOURCE_PORT"]
+$sinkPort=$envFile["CONNECT_SINK_PORT"]
+
+$postgreSQLConnector = Get-Content ./postgresql_connector.json
+$postgreSQLConnector = $postgreSQLConnector.Replace("abcdefgh1!", $envFile["POSTGRES_PASSWORD"])
 
 Invoke-RestMethod -Method Delete -uri http://localhost:$sourcePort/connectors/postgresql-source
 
 Start-Sleep 1
 
-Invoke-RestMethod -Method Post -InFile .\postgresql_connector.json `
+
+Invoke-RestMethod -Method Post -Body $postgreSQLConnector `
     -uri http://localhost:$sourcePort/connectors/ -ContentType "application/json"
 
 Start-Sleep 1
@@ -18,7 +33,10 @@ Invoke-RestMethod -Method Delete -uri http://localhost:$sinkPort/connectors/open
 
 Start-Sleep 1
 
-Invoke-RestMethod -Method Post -InFile .\opensearch_connector.json `
+$opensearchConnector = Get-Content ./opensearch_connector.json
+$opensearchConnector = $opensearchConnector.Replace("abcdefgh1!", $envFile["OPENSEARCH_ADMIN_PASSWORD"])
+
+Invoke-RestMethod -Method Post -Body $opensearchConnector `
     -uri http://localhost:$sinkPort/connectors/ -ContentType "application/json"
 
 Start-Sleep 1
