@@ -1,5 +1,7 @@
 @port = 5198
 
+###
+GET http://localhost:{{port}}/data/ed-fi/educationOrganizationCategoryDescriptors
 
 ### Setup - POST Descriptors
 POST http://localhost:{{port}}/data/ed-fi/educationOrganizationCategoryDescriptors
@@ -7,7 +9,7 @@ POST http://localhost:{{port}}/data/ed-fi/educationOrganizationCategoryDescripto
 {
     "namespace": "string",
     "codeValue": "string",
-    "shortDescription": "string"
+    "shortDescription": "string2"
 }
 
 ### Setup - POST Descriptors
