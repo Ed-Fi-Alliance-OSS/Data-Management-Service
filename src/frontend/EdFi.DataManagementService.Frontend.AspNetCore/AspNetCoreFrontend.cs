@@ -93,7 +93,7 @@ public static class AspNetCoreFrontend
 
         return Results.Content(
             statusCode: frontendResponse.StatusCode,
-            content: JsonSerializer.Serialize(frontendResponse.Body),
+            content: frontendResponse.Body == null ? null : JsonSerializer.Serialize(frontendResponse.Body),
             contentType: "application/json",
             contentEncoding: System.Text.Encoding.UTF8
         );

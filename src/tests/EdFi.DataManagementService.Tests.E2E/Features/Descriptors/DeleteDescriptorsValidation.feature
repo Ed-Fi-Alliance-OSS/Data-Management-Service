@@ -67,13 +67,13 @@ Feature: Delete a Descriptor
               And the response body is
                   """
                   {
-                    "validationErrors": {},
-                    "errors": [],
                     "detail": "The requested action cannot be performed because this item is referenced by existing School item(s).",
                     "type": "urn:ed-fi:api:data-conflict:dependent-item-exists",
                     "title": "Dependent Item Exists",
                     "status": 409,
-                    "correlationId": null
+                    "correlationId": null,
+                    "validationErrors": {},
+                    "errors":[]
                   }
                   """
 

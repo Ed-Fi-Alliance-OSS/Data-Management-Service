@@ -62,7 +62,9 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Unresolved Reference",
                       "status": 409,
-                      "correlationId": null
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
                   }
                   """
 
@@ -130,7 +132,9 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Unresolved Reference",
                       "status": 409,
-                      "correlationId": null
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
                   }
                   """
 

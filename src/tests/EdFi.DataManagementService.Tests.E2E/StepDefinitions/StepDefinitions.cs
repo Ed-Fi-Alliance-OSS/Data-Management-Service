@@ -287,7 +287,17 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         {
             url = addDataPrefixIfNecessary(url).Replace("{id}", _id);
 
-            _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(url)!;
+            try
+            {
+                _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(url)!;
+            }
+            catch (Exception e)
+            {
+                throw new Exception(
+                    $"API Response Error: {e.Message}",
+                    e
+                );
+            }
         }
 
         [When("a DELETE request is made to referenced resource {string}")]
@@ -385,11 +395,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         }
 
         [Then("the response body is")]
-        public void ThenTheResponseBodyIs(string expectedBody)
+        public async Task ThenTheResponseBodyIs(string expectedBody)
         {
             // Parse the API response to JsonNode
-            string responseBody = _apiResponse.TextAsync().Result;
-            JsonNode responseJson = JsonNode.Parse(responseBody)!;
+            string responseJsonString = await _apiResponse.TextAsync();
+            JsonDocument responseJsonDoc = JsonDocument.Parse(responseJsonString);
+            JsonNode responseJson = JsonNode.Parse(responseJsonDoc.RootElement.ToString())!;
 
             expectedBody = ReplacePlaceholders(expectedBody, responseJson);
             JsonNode expectedBodyJson = JsonNode.Parse(expectedBody)!;
@@ -504,8 +515,11 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             body = body.Replace("{id}", _id);
             JsonNode bodyJson = JsonNode.Parse(body)!;
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(_location)!;
-            string responseJsonString = _apiResponse.TextAsync().Result;
-            JsonNode responseJson = JsonNode.Parse(responseJsonString)!;
+
+            string responseJsonString = await _apiResponse.TextAsync();
+            JsonDocument responseJsonDoc = JsonDocument.Parse(responseJsonString);
+            JsonNode responseJson = JsonNode.Parse(responseJsonDoc.RootElement.ToString())!;
+
             _logger.log.Information(responseJson.ToString());
 
             responseJson = OrderJsonProperties(responseJson);
@@ -544,11 +558,14 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         }
 
         [Then("getting less schools than the total-count")]
-        public void ThenGettingLessSchoolsThanTheTotalCount()
+        public async Task ThenGettingLessSchoolsThanTheTotalCount()
         {
             var headers = _apiResponse.Headers;
 
-            JsonNode responseJson = JsonNode.Parse(_apiResponse.TextAsync().Result)!;
+            string responseJsonString = await _apiResponse.TextAsync();
+            JsonDocument responseJsonDoc = JsonDocument.Parse(responseJsonString);
+            JsonNode responseJson = JsonNode.Parse(responseJsonDoc.RootElement.ToString())!;
+
             _logger.log.Information(responseJson.ToString());
 
             int count = responseJson.AsArray().Count();

@@ -38,7 +38,7 @@ internal static class FailureResponse
             ["title"] = title,
             ["status"] = status,
             ["correlationId"] = correlationId,
-            ["validationErrors"] = validationErrors != null ? JsonSerializer.SerializeToNode(validationErrors, SerializerOptions) : new JsonArray(),
+            ["validationErrors"] = validationErrors != null ? JsonSerializer.SerializeToNode(validationErrors, SerializerOptions) : new JsonObject(),
             ["errors"] = errors != null ? JsonSerializer.SerializeToNode(errors, SerializerOptions) : new JsonArray()
         };
     }

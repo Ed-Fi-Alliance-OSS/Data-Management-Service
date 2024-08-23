@@ -90,7 +90,7 @@ public class UpsertHandlerTests
                 .FrontendResponse.Body?.AsJsonString().Should()
                 .Be(
                     """
-                    {"detail":"The referenced BadResourceName1, BadResourceName2 item(s) do not exist.","type":"urn:ed-fi:api:data-conflict:unresolved-reference","title":"Unresolved Reference","status":409,"correlationId":"","validationErrors":[],"errors":[]}
+                    {"detail":"The referenced BadResourceName1, BadResourceName2 item(s) do not exist.","type":"urn:ed-fi:api:data-conflict:unresolved-reference","title":"Unresolved Reference","status":409,"correlationId":"","validationErrors":{},"errors":[]}
                     """
                 );
             context.FrontendResponse.Headers.Should().BeEmpty();
