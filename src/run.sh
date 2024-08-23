@@ -9,7 +9,11 @@ set +x
 
 envsubst < /app/appsettings.template.json > /app/appsettings.json
 
-until pg_isready -h ${POSTGRES_HOST} -p ${POSTGRES_PORT} -U ${POSTGRES_ADMIN_USER}; do
+# The following command effectively splits the connection string into separate variables
+eval ${DATABASE_CONNECTION_STRING_ADMIN}
+
+
+until pg_isready -h ${host} -p ${port} -U ${username}; do
   echo "Waiting for PostgreSQL to start..."
   sleep 2
 done
@@ -21,7 +25,7 @@ if [ "$NEED_DATABASE_SETUP" = true ]; then
   DATABASE="edfi_datamanagementservice"
 
   echo "Installing Data Management Service schema."
-  dotnet Installer/EdFi.DataManagementService.Backend.Installer.dll -e postgresql -c "host=${POSTGRES_HOST};port=${POSTGRES_PORT};username=${POSTGRES_ADMIN_USER};password=${POSTGRES_ADMIN_PASSWORD};database=${DATABASE};"
+  dotnet Installer/EdFi.DataManagementService.Backend.Installer.dll -e postgresql -c ${DATABASE_CONNECTION_STRING_ADMIN}
 
   export NEED_DATABASE_SETUP=false
 
