@@ -78,7 +78,7 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
             }
         }
 
-        // TODO: DMS-312 Validate all other query parameters are valid ones for the current resource
+        // DMS-312 Validate all other query parameters are valid ones for the current resource
 
         if (errors.Count > 0)
         {

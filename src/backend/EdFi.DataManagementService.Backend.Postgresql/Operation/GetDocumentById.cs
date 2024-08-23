@@ -52,7 +52,6 @@ public class GetDocumentById(ILogger<GetDocumentById> _logger) : IGetDocumentByI
                 return new GetResult.GetFailureNotExists();
             }
 
-            // TODO: Documents table needs a last modified datetime
             return new GetResult.GetSuccess(getRequest.DocumentUuid, edfiDoc, DateTime.Now);
         }
         catch (Exception ex)
