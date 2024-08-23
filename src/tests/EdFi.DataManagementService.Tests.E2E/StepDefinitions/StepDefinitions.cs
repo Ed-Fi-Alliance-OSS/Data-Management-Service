@@ -286,18 +286,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         public async Task WhenADELETERequestIsMadeTo(string url)
         {
             url = addDataPrefixIfNecessary(url).Replace("{id}", _id);
-
-            try
-            {
-                _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(url)!;
-            }
-            catch (Exception e)
-            {
-                throw new Exception(
-                    $"API Response Error: {e.Message}",
-                    e
-                );
-            }
+            _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(url)!;
         }
 
         [When("a DELETE request is made to referenced resource {string}")]
