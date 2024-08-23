@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
+using Json.More;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using Polly;
@@ -86,10 +87,10 @@ public class UpsertHandlerTests
         {
             context.FrontendResponse.StatusCode.Should().Be(409);
             context
-                .FrontendResponse.Body.Should()
+                .FrontendResponse.Body?.AsJsonString().Should()
                 .Be(
                     """
-                    {"detail":"The referenced BadResourceName1, BadResourceName2 item(s) do not exist.","type":"urn:ed-fi:api:data-conflict:unresolved-reference","title":"Unresolved Reference","status":409,"correlationId":""}
+                    {"detail":"The referenced BadResourceName1, BadResourceName2 item(s) do not exist.","type":"urn:ed-fi:api:data-conflict:unresolved-reference","title":"Unresolved Reference","status":409,"correlationId":"","validationErrors":{},"errors":[]}
                     """
                 );
             context.FrontendResponse.Headers.Should().BeEmpty();
@@ -128,7 +129,7 @@ public class UpsertHandlerTests
         public void It_has_the_correct_response()
         {
             context.FrontendResponse.StatusCode.Should().Be(409);
-            context.FrontendResponse.Body.Should().Contain("key = value");
+            context.FrontendResponse.Body?.ToJsonString().Should().Contain("key = value");
             context.FrontendResponse.Headers.Should().BeEmpty();
             context.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }
@@ -189,7 +190,9 @@ public class UpsertHandlerTests
         public void It_has_the_correct_response()
         {
             context.FrontendResponse.StatusCode.Should().Be(500);
-            context.FrontendResponse.Body.Should().Be($"{{\"error\":\"{Repository.ResponseBody}\",\"correlationId\":{{\"Value\":\"\"}}}}");
+            context
+                .FrontendResponse.Body?.AsValue().ToString().Should()
+                .Be($"{{\"error\":\"{Repository.ResponseBody}\",\"correlationId\":{{\"Value\":\"\"}}}}");
             context.FrontendResponse.Headers.Should().BeEmpty();
             context.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }

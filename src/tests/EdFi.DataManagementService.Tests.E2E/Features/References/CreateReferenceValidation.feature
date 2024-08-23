@@ -37,7 +37,9 @@ Feature: Create Reference Validation
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Unresolved Reference",
                       "status": 409,
-                      "correlationId": null
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
                   }
                   """
               And it should respond with 409
@@ -68,7 +70,9 @@ Feature: Create Reference Validation
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Unresolved Reference",
                       "status": 409,
-                      "correlationId": null
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
                   }
                   """
               And it should respond with 409
@@ -95,7 +99,9 @@ Feature: Create Reference Validation
                     "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                     "title": "Unresolved Reference",
                     "status": 409,
-                    "correlationId": null
+                    "correlationId": null,
+                    "validationErrors": {},
+                    "errors": []
                   }
                   """
 
@@ -127,7 +133,9 @@ Feature: Create Reference Validation
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Unresolved Reference",
                       "status": 409,
-                      "correlationId": null
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
                   }
                   """
 
@@ -193,7 +201,9 @@ Feature: Create Reference Validation
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Unresolved Reference",
                       "status": 409,
-                      "correlationId": null
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
                   }
                   """
               And it should respond with 409

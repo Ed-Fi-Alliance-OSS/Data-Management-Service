@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
+using Json.More;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using Polly;
@@ -79,11 +80,12 @@ public class UpdateByIdHandlerTests
         {
             context.FrontendResponse.StatusCode.Should().Be(404);
             context
-                .FrontendResponse.Body.Should()
+                .FrontendResponse.Body?.AsJsonString()
+                .Should()
                 .Be(
-                    """
-                    {"validationErrors":{},"errors":[],"detail":"Resource to update was not found","type":"urn:ed-fi:api:not-found","title":"Not Found","status":404,"correlationId":""}
-                    """
+                    """"
+                    {"detail":"Resource to update was not found","type":"urn:ed-fi:api:not-found","title":"Not Found","status":404,"correlationId":"","validationErrors":{},"errors":[]}
+                    """"
                 );
         }
     }
@@ -114,7 +116,7 @@ public class UpdateByIdHandlerTests
         public void It_has_the_correct_response()
         {
             context.FrontendResponse.StatusCode.Should().Be(409);
-            context.FrontendResponse.Body.Should().Contain(Repository.ResponseBody);
+            context.FrontendResponse.Body?.ToJsonString().Should().Contain(Repository.ResponseBody);
         }
     }
 
@@ -144,7 +146,7 @@ public class UpdateByIdHandlerTests
         public void It_has_the_correct_response()
         {
             context.FrontendResponse.StatusCode.Should().Be(400);
-            context.FrontendResponse.Body.Should().Be(Repository.ResponseBody);
+            context.FrontendResponse.Body?.AsValue().ToString().Should().Be(Repository.ResponseBody);
         }
     }
 
@@ -260,7 +262,11 @@ public class UpdateByIdHandlerTests
         public void It_has_the_correct_response()
         {
             context.FrontendResponse.StatusCode.Should().Be(500);
-            context.FrontendResponse.Body.Should().Be($"{{\"error\":\"{Repository.ResponseBody}\",\"correlationId\":{{\"Value\":\"\"}}}}");
+            context
+                .FrontendResponse.Body?.AsValue()
+                .ToString()
+                .Should()
+                .Be($"{{\"error\":\"{Repository.ResponseBody}\",\"correlationId\":{{\"Value\":\"\"}}}}");
         }
     }
 }

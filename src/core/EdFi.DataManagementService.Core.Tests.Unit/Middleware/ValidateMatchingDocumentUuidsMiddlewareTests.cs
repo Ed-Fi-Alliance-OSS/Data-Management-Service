@@ -165,7 +165,8 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
             public void It_returns_message_body_with_error()
             {
                 _context
-                    ?.FrontendResponse.Body.Should()
+                    .FrontendResponse.Body?.ToJsonString()
+                    .Should()
                     .Contain("Request body id must match the id in the url.");
             }
         }
@@ -221,7 +222,8 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
             public void It_returns_message_body_with_error()
             {
                 _context
-                    ?.FrontendResponse.Body.Should()
+                    .FrontendResponse.Body?.ToJsonString()
+                    .Should()
                     .Contain("Request body id must match the id in the url.");
             }
         }
@@ -277,7 +279,8 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
             public void It_returns_message_body_with_error()
             {
                 _context
-                    ?.FrontendResponse.Body.Should()
+                    .FrontendResponse.Body?.ToJsonString()
+                    .Should()
                     .Contain("Request body id must match the id in the url.");
             }
         }

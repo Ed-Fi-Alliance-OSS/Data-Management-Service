@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
@@ -92,7 +93,7 @@ public static class AspNetCoreFrontend
 
         return Results.Content(
             statusCode: frontendResponse.StatusCode,
-            content: frontendResponse.Body,
+            content: frontendResponse.Body == null ? null : JsonSerializer.Serialize(frontendResponse.Body),
             contentType: "application/json",
             contentEncoding: System.Text.Encoding.UTF8
         );

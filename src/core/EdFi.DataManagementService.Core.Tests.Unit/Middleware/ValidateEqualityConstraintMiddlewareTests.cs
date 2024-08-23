@@ -13,7 +13,9 @@ using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Validation;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Text.Json;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Core.UtilityService;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
@@ -187,11 +189,13 @@ public class ValidateEqualityConstraintMiddlewareTests
         [Test]
         public void It_returns_message_body_with_failures()
         {
-            _context?.FrontendResponse.Body.Should().Contain("Data Validation Failed");
-            _context
-                ?.FrontendResponse.Body.Should()
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Data Validation Failed");
+            
+            string response = JsonSerializer.Serialize(_context.FrontendResponse.Body, SerializerOptions);
+
+            response.Should()
                 .Contain(
-                    "{\"validationErrors\":{\"$.classPeriods[*].classPeriodReference.schoolId\":[\"All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '2', '1'\"],\"$.schoolReference.schoolId\":[\"All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '2', '1'\"]}"
+                    "\"validationErrors\":{\"$.classPeriods[*].classPeriodReference.schoolId\":[\"All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '2', '1'\"],\"$.schoolReference.schoolId\":[\"All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '2', '1'\"]}"
                 );
         }
     }

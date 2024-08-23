@@ -67,7 +67,7 @@ public class ValidateEndpointMiddlewareTests
         [Test]
         public void It_returns_message_body()
         {
-            _context?.FrontendResponse.Body.Should().Contain("Invalid resource");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Invalid resource");
         }
 
         [Test]
@@ -115,7 +115,7 @@ public class ValidateEndpointMiddlewareTests
         [Test]
         public void It_returns_message_body()
         {
-            _context?.FrontendResponse.Body.Should().Contain("Invalid resource");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Invalid resource");
         }
 
         [Test]

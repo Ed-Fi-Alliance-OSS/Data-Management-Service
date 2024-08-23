@@ -63,7 +63,9 @@ Feature: School Year Reference Validation
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Unresolved Reference",
                       "status": 409,
-                      "correlationId": null
+                      "correlationId": null,
+                      "validationErrors":{},
+                      "errors":[]
                      }
                   """
 
@@ -111,6 +113,8 @@ Feature: School Year Reference Validation
                           "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                           "title": "Unresolved Reference",
                           "status": 409,
-                          "correlationId": null
+                          "correlationId": null,
+                          "validationErrors": {},
+                          "errors": []
                       }
                   """

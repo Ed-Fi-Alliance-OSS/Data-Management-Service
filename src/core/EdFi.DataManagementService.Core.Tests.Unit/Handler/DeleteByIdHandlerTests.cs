@@ -108,7 +108,10 @@ public class DeleteByIdHandlerTests
         public void It_has_the_correct_response()
         {
             context.FrontendResponse.StatusCode.Should().Be(409);
-            context.FrontendResponse.Body.Should().Contain(string.Join(", ", Repository.ResponseBody));
+            context
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain(string.Join(", ", Repository.ResponseBody));
         }
     }
 
@@ -165,7 +168,11 @@ public class DeleteByIdHandlerTests
         public void It_has_the_correct_response()
         {
             context.FrontendResponse.StatusCode.Should().Be(500);
-            context.FrontendResponse.Body.Should().Be($"{{\"error\":\"{Repository.ResponseBody}\",\"correlationId\":{{\"Value\":\"\"}}}}");
+
+            context
+                .FrontendResponse.Body?.AsValue().ToString()
+                .Should()
+                .Be($"{{\"error\":\"{Repository.ResponseBody}\",\"correlationId\":{{\"Value\":\"\"}}}}");
         }
     }
 }

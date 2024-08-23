@@ -295,17 +295,17 @@ Feature: Create a Descriptor
               And the response body is
                   """
                   {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null,
                     "validationErrors": {
                         "$.": [
                         "The JSON object contains a trailing comma at the end which is not supported in this mode. Change the reader options. LineNumber: 6 | BytePositionInLine: 2."
                         ]
                     },
-                    "errors": [],
-                    "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-                    "title": "Data Validation Failed",
-                    "status": 400,
-                    "correlationId": null
+                    "errors": []
                   }
                   """
 
@@ -324,16 +324,16 @@ Feature: Create a Descriptor
              Then it should respond with 400
               And the response body is
                   """
-                  {
-                    "validationErrors": {},
-                    "errors": [
-                      "Resource identifiers cannot be assigned by the client. The 'id' property should not be included in the request body."
-                    ],
+                  { 
                     "detail": "The request data was constructed incorrectly.",
                     "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
-                    "correlationId": null
+                    "correlationId": null,
+                    "validationErrors":{},
+                    "errors": [
+                      "Resource identifiers cannot be assigned by the client. The 'id' property should not be included in the request body."
+                    ]
                   }
                   """
         Scenario: 12 Post a new descriptor with required attributes only

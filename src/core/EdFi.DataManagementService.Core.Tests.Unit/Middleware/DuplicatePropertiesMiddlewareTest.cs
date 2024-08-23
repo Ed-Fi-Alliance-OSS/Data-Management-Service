@@ -68,9 +68,14 @@ public class DuplicatePropertiesMiddlewareTest
         [Test]
         public void It_returns_message_body_with_failure_duplicated_property()
         {
-            _context?.FrontendResponse.Body.Should().Contain("Data Validation Failed");
             _context
-                ?.FrontendResponse.Body.Should()
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("Data Validation Failed");
+
+            _context
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
                 .Contain(
                     """
                     "validationErrors":{"$.schoolId":["An item with the same key has already been added."]}
@@ -128,9 +133,16 @@ public class DuplicatePropertiesMiddlewareTest
         [Test]
         public void It_returns_message_body_with_failure_duplicated_property()
         {
-            _context?.FrontendResponse.Body.Should().Contain("Data Validation Failed");
             _context
-                ?.FrontendResponse.Body.Should()
+                ?.FrontendResponse.Body?.ToJsonString()
+                .ToString()
+                .Should()
+                .Contain("Data Validation Failed");
+
+            _context
+                ?.FrontendResponse.Body?.ToJsonString()
+                .ToString()
+                .Should()
                 .Contain(
                     """
                     "validationErrors":{"$.gradeLevels":["An item with the same key has already been added."]}
@@ -185,9 +197,14 @@ public class DuplicatePropertiesMiddlewareTest
         [Test]
         public void It_returns_message_body_with_failure_duplicated_property()
         {
-            _context?.FrontendResponse.Body.Should().Contain("Data Validation Failed");
             _context
-                ?.FrontendResponse.Body.Should()
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("Data Validation Failed");
+
+            _context
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
                 .Contain(
                     """
                     "validationErrors":{"$.classPeriods[0].classPeriodReference.classPeriodName":["An item with the same key has already been added."]}
@@ -245,9 +262,14 @@ public class DuplicatePropertiesMiddlewareTest
         [Test]
         public void It_returns_message_body_with_failure_duplicated_property()
         {
-            _context?.FrontendResponse.Body.Should().Contain("Data Validation Failed");
             _context
-                ?.FrontendResponse.Body.Should()
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("Data Validation Failed");
+
+            _context
+                ?.FrontendResponse.Body?.ToJsonString()
+                .Should()
                 .Contain(
                     """
                     "validationErrors":{"$.gradeLevels":["An item with the same key has already been added."]}
@@ -306,9 +328,14 @@ public class DuplicatePropertiesMiddlewareTest
         [Test]
         public void It_returns_message_body_with_failure_duplicated_property()
         {
-            _context?.FrontendResponse.Body.Should().Contain("Data Validation Failed");
             _context
-                ?.FrontendResponse.Body.Should()
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("Data Validation Failed");
+
+            _context
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
                 .Contain(
                     """
                     "validationErrors":{"$.schoolId":["An item with the same key has already been added."]}
@@ -356,9 +383,14 @@ public class DuplicatePropertiesMiddlewareTest
         [Test]
         public void It_returns_message_body_with_failure_duplicated_property()
         {
-            _context?.FrontendResponse.Body.Should().Contain("Data Validation Failed");
             _context
-                ?.FrontendResponse.Body.Should()
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("Data Validation Failed");
+
+            _context
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
                 .Contain(
                     """
                     "validationErrors":{"$.firstName":["An item with the same key has already been added."]}
@@ -419,16 +451,23 @@ public class DuplicatePropertiesMiddlewareTest
         [Test]
         public void It_returns_message_body_with_failure_duplicated_property()
         {
-            _context?.FrontendResponse.Body.Should().Contain("Data Validation Failed");
             _context
-                ?.FrontendResponse.Body.Should()
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("Data Validation Failed");
+
+            _context
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
                 .Contain(
                     """
                     "correlationId":"traceId"
                     """
                 );
+
             _context
-                ?.FrontendResponse.Body.Should()
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
                 .Contain(
                     """
                     "validationErrors":{"$.schoolId":["An item with the same key has already been added."]

@@ -3,12 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
-using static EdFi.DataManagementService.Core.UtilityService;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
@@ -53,14 +51,11 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
 
             context.FrontendResponse = new FrontendResponse(
                 StatusCode: 400,
-                JsonSerializer.Serialize(
-                    ForDataValidation(
-                        "Data validation failed. See 'validationErrors' for details.",
-                        traceId: context.FrontendRequest.TraceId,
-                        validationErrors,
-                        []
-            ),
-                    SerializerOptions
+                Body: ForDataValidation(
+                    "Data validation failed. See 'validationErrors' for details.",
+                    traceId: context.FrontendRequest.TraceId,
+                    validationErrors,
+                    []
                 ),
                 Headers: []
             );

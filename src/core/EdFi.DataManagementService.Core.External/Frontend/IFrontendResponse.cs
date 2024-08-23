@@ -1,7 +1,9 @@
-﻿// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Text.Json.Nodes;
 
 namespace EdFi.DataManagementService.Core.External.Frontend;
 
@@ -9,7 +11,7 @@ namespace EdFi.DataManagementService.Core.External.Frontend;
 /// The API response returned to the frontend
 /// </summary>
 /// <param name="StatusCode">T</param>
-/// <param name="Body">The body to return as a string, or null if there is no body to return</param>
+/// <param name="Body">The body to return as a JsonNode object, or null if there is no a body to return</param>
 /// <param name="Headers">A dictionary of response headers to return</param>
 /// <param name="LocationHeaderPath">The path portion of a Location header URL for the response,
 ///     or null if there is no Location header for the response. Always begins with a forward-slash.
@@ -22,9 +24,9 @@ public interface IFrontendResponse
     int StatusCode { get; }
 
     /// <summary>
-    /// The body to return as a string, or null if there is no body to return
+    /// The body to return as a JsonNode object, or null if there is no a body to return
     /// </summary>
-    string? Body { get; }
+    JsonNode? Body { get; }
 
     /// <summary>
     /// A dictionary of response headers to return

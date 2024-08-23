@@ -58,7 +58,7 @@ public class ApiSchemaValidationMiddlewareTests
         [Test]
         public void It_returns_empty_body()
         {
-            _context?.FrontendResponse.Body.Should().BeEmpty();
+            _context?.FrontendResponse.Body?.AsValue().ToString().Should().Be(string.Empty);
         }
     }
 }
