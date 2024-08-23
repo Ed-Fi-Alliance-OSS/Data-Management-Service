@@ -170,7 +170,7 @@ public class DeleteTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString2
                     );
-                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction);
+                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction, []);
                 }
             );
         }
@@ -222,7 +222,7 @@ public class DeleteTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString2
                     );
-                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction);
+                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction, []);
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {

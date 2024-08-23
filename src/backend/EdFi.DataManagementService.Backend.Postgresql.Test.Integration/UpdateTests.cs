@@ -31,7 +31,7 @@ public class UpdateTests : DatabaseTest
                 Guid.NewGuid(),
                 _edFiDocString
             );
-            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
+            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!, []);
         }
 
         [Test]
@@ -83,7 +83,7 @@ public class UpdateTests : DatabaseTest
                 _referentialIdGuid,
                 _edFiDocString2
             );
-            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
+            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!, []);
 
             // Confirm change was made
             IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
@@ -135,7 +135,7 @@ public class UpdateTests : DatabaseTest
                 _referentialIdGuid2,
                 _edFiDocString2
             );
-            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
+            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!, []);
         }
 
         [Test]
@@ -196,7 +196,7 @@ public class UpdateTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString2
                     );
-                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction);
+                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction, []);
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
@@ -206,7 +206,7 @@ public class UpdateTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString3
                     );
-                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction);
+                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction, []);
                 }
             );
         }
@@ -278,7 +278,7 @@ public class UpdateTests : DatabaseTest
                 updatedReferencedDocString,
                 CreateDocumentReferences([new(_referencingResourceName, _invalidReferentialIdGuid)])
             );
-            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
+            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!, []);
         }
 
         [Test]
@@ -343,7 +343,7 @@ public class UpdateTests : DatabaseTest
                 updatedReferencingDocString,
                 CreateDocumentReferences([new(_referencingResourceName, _referencedRefIdGuid)])
             );
-            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
+            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!, []);
         }
 
         [Test]
@@ -408,7 +408,7 @@ public class UpdateTests : DatabaseTest
                 """{"abc":3}""",
                 CreateDocumentReferences(references)
             );
-            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
+            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!, []);
         }
 
         [Test]
@@ -474,7 +474,7 @@ public class UpdateTests : DatabaseTest
                 CreateDocumentReferences([new(_subclassResourceName, _superclassRefIdGuid)])
             );
 
-            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
+            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!, []);
         }
 
         [Test]
@@ -543,7 +543,7 @@ public class UpdateTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString2
                     );
-                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction);
+                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction, []);
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
@@ -553,7 +553,7 @@ public class UpdateTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString3
                     );
-                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction);
+                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction, []);
                 }
             );
         }

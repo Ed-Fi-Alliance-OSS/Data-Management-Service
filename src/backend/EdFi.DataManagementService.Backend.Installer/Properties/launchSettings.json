@@ -2,7 +2,7 @@
   "profiles": {
     "EdFi.DataManagementService.Backend.Installer": {
       "commandName": "Project",
-      "commandLineArgs": "-e postgresql -c host=localhost;port=5432;username=postgres;database=edfi_datamanagementservice;"
+      "commandLineArgs": "-e postgresql -c host=localhost;port=5432;username=postgres;database=edfi_datamanagementservice;password=abcdefgh1!"
     }
   }
 }

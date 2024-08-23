@@ -39,7 +39,7 @@ services:
       - kafka-postgresql-source
       - kafka-opensearch-sink
     environment:
-      DYNAMIC_CONFIG_ENABLED: 'true'
+      DYNAMIC_CONFIG_ENABLED: "true"
 
   kafka-postgresql-source:
     hostname: kafka-postgresql-source
@@ -85,25 +85,26 @@ services:
     image: postgres:16.3-alpine
     restart: always
     environment:
-    # If username and password not provided through and env file
-    # default to postgres/abcdefgh1!
+      # If username and password not provided through and env file
+      # default to postgres/abcdefgh1!
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-abcdefgh1!}
     ports:
-    # If no port provided through an env file, default to 5432
+      # If no port provided through an env file, default to 5432
       - ${POSTGRES_PORT:-5432}:5432
     volumes:
       - dms-postgresql:/var/lib/postgresql/data
 
   opensearch:
-    image: opensearchproject/opensearch:2.15.0@sha256:1a6d62f4ff2215f66792362a56c64cea29ff6cbe700f95881857f045a6fea3c9
+    image: opensearchproject/opensearch:2.16.0@sha256:36b60c4692d504ace282028659316b245ed6f53145330313ce8e6a44da4c447c
     container_name: dms-opensearch
     hostname: dms-opensearch
     environment:
       OPENSEARCH_INITIAL_ADMIN_PASSWORD: "abcdefgh1!"
       OPENSEARCH_ADMIN_PASSWORD: "abcdefgh1!"
-      cluster.name: opensearch-cluster
-       # along with the memlock settings below, disables swapping
+      cluster.name:
+        opensearch-cluster
+        # along with the memlock settings below, disables swapping
       bootstrap.memory_lock: true
       # minimum and maximum Java heap size, recommend setting both to 50% of system RAM
       OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
@@ -137,8 +138,9 @@ services:
       - 5601
     environment:
       OPENSEARCH_ADMIN_PASSWORD: abcdefgh1!
-      OPENSEARCH_HOSTS: '["http://dms-opensearch:9200"]'
-       # disables security dashboards plugin in OpenSearch Dashboards, otherwise will have TLS errors
+      OPENSEARCH_HOSTS:
+        '["http://dms-opensearch:9200"]'
+        # disables security dashboards plugin in OpenSearch Dashboards, otherwise will have TLS errors
       DISABLE_SECURITY_DASHBOARDS_PLUGIN: true
     restart: unless-stopped
 

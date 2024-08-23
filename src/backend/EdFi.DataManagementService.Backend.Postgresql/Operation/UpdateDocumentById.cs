@@ -20,7 +20,8 @@ public interface IUpdateDocumentById
     public Task<UpdateResult> UpdateById(
         IUpdateRequest updateRequest,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction transaction,
+        List<string> allowIdentityUpdateOverrides
     );
 }
 
@@ -59,7 +60,8 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
     public async Task<UpdateResult> UpdateById(
         IUpdateRequest updateRequest,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction transaction,
+        List<string> allowIdentityUpdateOverrides
     )
     {
         _logger.LogDebug("Entering UpdateDocumentById.UpdateById - {TraceId}", updateRequest.TraceId);
@@ -94,13 +96,24 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
             if (!validationResult.ReferentialIdUnchanged)
             {
                 // Extracted referential id does not match stored. Must be attempting to change natural key.
-                _logger.LogInformation(
-                    "Failure: Natural key does not match on update - {TraceId}",
-                    updateRequest.TraceId
-                );
-                return new UpdateResult.UpdateFailureImmutableIdentity(
-                    $"Identifying values for the {updateRequest.ResourceInfo.ResourceName.Value} resource cannot be changed. Delete and recreate the resource item instead."
-                );
+                if (updateRequest.ResourceInfo.AllowIdentityUpdates || allowIdentityUpdateOverrides.Contains(updateRequest.ResourceInfo.ResourceName.Value))
+                {
+                    _logger.LogInformation(
+                        "Updating Natural Key - {TraceId}",
+                        updateRequest.TraceId
+                    );
+                }
+                else
+                {
+                    // Natural key update not allowed
+                    _logger.LogInformation(
+                        "Failure: Natural key does not match on update - {TraceId}",
+                        updateRequest.TraceId
+                    );
+                    return new UpdateResult.UpdateFailureImmutableIdentity(
+                        $"Identifying values for the {updateRequest.ResourceInfo.ResourceName.Value} resource cannot be changed. Delete and recreate the resource item instead."
+                    );
+                }
             }
 
             int rowsAffected = await UpdateDocumentEdfiDoc(
