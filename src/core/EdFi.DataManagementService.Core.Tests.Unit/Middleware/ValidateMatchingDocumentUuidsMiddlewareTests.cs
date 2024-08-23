@@ -12,7 +12,6 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Validation;
 using FluentAssertions;
-using Json.More;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 

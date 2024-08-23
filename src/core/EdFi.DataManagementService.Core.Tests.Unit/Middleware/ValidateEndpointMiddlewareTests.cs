@@ -8,7 +8,6 @@ using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
-using Json.More;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
