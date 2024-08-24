@@ -93,16 +93,12 @@ function Get-NugetPackage {
                         | Where-Object { $_."@type" -like "PackageBaseAddress*" } `
                         | Select-Object -Property "@id" -ExpandProperty "@id"
 
-    # pad this out to three part semver
-    $versionSearch
+    $versionSearch = $PackageVersion
+
+    # pad this out to three part semver if only partial
     switch ($PackageVersion.split(".").length) {
         1 { $versionSearch = "$PackageVersion.*.*"}
         2 { $versionSearch = "$PackageVersion.*" }
-        3 { $versionSearch = $PackageVersion }
-        default: { throw @"
-Invalid version string ``$($PackageVersion)``. Should be one, two, or three components from a Semantic Version"
-"@.Trim()
-}
     }
     $lowerId = $PackageName.ToLower()
 
