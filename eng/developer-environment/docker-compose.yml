@@ -35,12 +35,16 @@ services:
     image: provectuslabs/kafka-ui:latest
     ports:
       - ${KAFKA_UI_PORT:-8088}:8080
+    depends_on:
+      - kafka
     links:
       - kafka
       - kafka-postgresql-source
       - kafka-opensearch-sink
     environment:
       DYNAMIC_CONFIG_ENABLED: 'true'
+      KAFKA_CLUSTERS_0_NAME: kafka1
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
 
   kafka-postgresql-source:
     hostname: kafka-postgresql-source
