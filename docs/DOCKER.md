@@ -66,6 +66,6 @@ BREAK_DURATION_SECONDS=30
 
 ## Orchestration
 
-We provide a Kubernetes-orchestrated local deployment out of the box. See
-[kubernetes/README.md](../src/deployments/kubernetes/) for detailed
+We provide a Docker Compose based local deployment out of the box. See
+[docker-compose/README.md](../eng/docker-compose/README.md) for detailed
 instructions.

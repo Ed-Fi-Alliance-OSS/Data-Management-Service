@@ -1,7 +1,8 @@
 # Running the Application Locally
 
-> [!TIP] This describes command line operations in the immediate "local"
-> context, without using Kubernetes and not running the application in Docker.
+> [!TIP]
+> This describes command line operations in the immediate "local"
+> context, without using Docker and not running the application in Docker.
 
 > [!NOTE] If using a custom connection string or custom app settings in your
 > .NET application, it's highly recommended to add an
@@ -31,6 +32,7 @@ cd ../
 ```
 
 ## Running the EdFi.DataManagementService.Backend.Postgresql.Test.Integration
+
 To run the integration tests locally, execute the following command in a PowerShell
 terminal:
 
@@ -38,7 +40,12 @@ terminal:
 # From base directory
 ./build.ps1 IntegrationTest -Configuration Debug
 ```
-You can see the result in the `TestResults` folder (located in the base directory). The file containing the result is of the type `Test Result File (.trx)`. To better understand the format, is recommended that you open it using Visual Studio. The file name is `EdFi.DataManagementService.Backend.Postgresql.Test.Integration.trx`.
+
+You can see the result in the `TestResults` folder (located in the base
+directory). The file containing the result is of the type `Test Result File
+(.trx)`. To better understand the format, is recommended that you open it using
+Visual Studio. The file name is
+`EdFi.DataManagementService.Backend.Postgresql.Test.Integration.trx`.
 
 ## Running the EdFi.DataManagementService.Api.Tests.Integration
 
