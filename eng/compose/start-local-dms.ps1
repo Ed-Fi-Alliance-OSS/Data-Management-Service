@@ -7,22 +7,44 @@
 param (
     # Stop services instead of starting them
     [Switch]
-    $Down,
+    $d,
 
     # Delete volumes after stopping services
     [Switch]
-    $Clean
+    $v,
+
+    # Force rebuild of the local image
+    [Switch]
+    $b,
+
+    # Force re-pull of all Docker hub images
+    [Switch]
+    $p
 )
 
-if ($Down) {
-    if ($Clean) {
+if ($d) {
+    if ($v) {
+        Write-Output "Shutting down services and deleting volumes"
         docker compose -f docker-compose.yml -f dms-local.yml down -v
     }
     else {
+        Write-Output "Shutting down services"
         docker compose -f docker-compose.yml -f dms-local.yml down
     }
 }
 else {
-    docker compose -f docker-compose.yml -f dms-local.yml up -d
-    ./setup.ps1
+    if ($b) {
+        Write-Output "Rebuilding the local image"
+        docker compose -f dms-local.yml build
+    }
+    $pull = "never"
+    if ($p) {
+        $pull = "always"
+    }
+
+    Write-Output "Starting services"
+    docker compose -f docker-compose.yml -f dms-local.yml up --pull $pull -d
+
+    Start-Sleep -Seconds 3
+    ./setup-connectors.ps1
 }

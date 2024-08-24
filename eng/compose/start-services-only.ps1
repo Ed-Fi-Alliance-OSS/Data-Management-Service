@@ -7,15 +7,19 @@
 param (
     # Stop services instead of starting them
     [Switch]
-    $Down,
+    $d,
 
     # Delete volumes after stopping services
     [Switch]
-    $Clean
+    $v,
+
+    # Force re-pull of all Docker hub images
+    [Switch]
+    $p
 )
 
-if ($Down) {
-    if ($Clean) {
+if ($d) {
+    if ($v) {
         docker compose down -v
     }
     else {
@@ -23,6 +27,12 @@ if ($Down) {
     }
 }
 else {
-    docker compose up -d
-    ./setup.ps1
+    $pull = "never"
+    if ($p) {
+        $pull = "--pull"
+    }
+    docker compose -f docker-compose.yml -f dms-local.yml up --pull $pull -d
+
+    Start-Sleep -Seconds 3
+    ./setup-connectors.ps1
 }
