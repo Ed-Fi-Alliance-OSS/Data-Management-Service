@@ -45,6 +45,6 @@ else {
     Write-Output "Starting services"
     docker compose -f docker-compose.yml -f dms-local.yml up --pull $pull -d
 
-    Start-Sleep -Seconds 3
+    Start-Sleep -Seconds 10
     ./setup-connectors.ps1
 }
