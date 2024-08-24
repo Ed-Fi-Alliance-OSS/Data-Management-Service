@@ -68,3 +68,9 @@ Delete all indices:
 ```none
 DELETE *
 ```
+
+## sf notes
+
+`docker-compose --pull always`
+
+docker compose -f docker-compose.yml -f dms-local.yml up -d
