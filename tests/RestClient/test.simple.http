@@ -225,3 +225,39 @@ POST http://localhost:{{port}}/data/ed-fi/sections
         }
     ]
 }
+
+
+###
+GET http://localhost:{{port}}/data/ed-fi/schools
+
+###
+GET http://localhost:{{port}}/data/ed-fi/students
+
+###
+GET http://localhost:{{port}}/data/ed-fi/schoolYearTypes
+
+###
+POST http://localhost:{{port}}/data/ed-fi/schoolYearTypes
+
+{
+    "schoolYear": 2021,
+    "schoolYearDescription": "2021-2022",
+    "currentSchoolYear": true
+}
+
+###
+POST http://localhost:{{port}}/data/ed-fi/sessions
+
+{
+    "sessionName": "2021-2022 Fall Semester",
+    "schoolYearTypeReference": {
+        "schoolYear": "2021"
+    },
+    "beginDate": "2021-08-23",
+    "endDate": "2021-12-17",
+    "termDescriptor": "uri://ed-fi.org/TermDescriptor#Fall Semester",
+    "totalInstructionalDays": 81,
+    "schoolReference": {
+        "schoolId": 255901001
+    }
+}
