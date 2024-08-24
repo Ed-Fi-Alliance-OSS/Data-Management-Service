@@ -100,12 +100,10 @@ services:
       - ./postgresql-init.sh:/docker-entrypoint-initdb.d/postgresql-init.sh
 
   opensearch:
-    image: opensearchproject/opensearch:2.16.0@sha256:36b60c4692d504ace282028659316b245ed6f53145330313ce8e6a44da4c447c
+    image: opensearchproject/opensearch:2.15.0@sha256:1963b3ece46dfe1a17cd633fb2e9cea22bd20753a295f39c2f513ce0070cad42
     container_name: dms-opensearch
     hostname: dms-opensearch
     environment:
-      OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${OPENSEARCH_INITIAL_ADMIN_PASSWORD:-abcdefgh1!}
-      OPENSEARCH_ADMIN_PASSWORD: ${OPENSEARCH_ADMIN_PASSWORD:-abcdefgh1!}
       cluster.name: opensearch-cluster
        # along with the memlock settings below, disables swapping
       bootstrap.memory_lock: true
@@ -138,14 +136,13 @@ services:
       retries: 50
 
   opensearch-dashboards:
-    image: opensearchproject/opensearch-dashboards:2.16.0@sha256:871ae0150644ec9568a2f6c42ef6422958dac8165d22094dd7fe65759b97f041
+    image: opensearchproject/opensearch-dashboards:2.15.0@sha256:b7c26c60bfafcbb90c538316570b84bab85f5dc82339aa7feefc3014274c689e
     container_name: dms-opensearch-dashboards
     ports:
       - ${OPENSEARCH_DASHBOARD_PORT:-5601}:5601
     expose:
       - ${OPENSEARCH_DASHBOARD_PORT:-5601}
     environment:
-      OPENSEARCH_ADMIN_PASSWORD: ${OPENSEARCH_ADMIN_PASSWORD:-abcdefgh1!}
       OPENSEARCH_HOSTS: '["http://dms-opensearch:9200"]'
        # disables security dashboards plugin in OpenSearch Dashboards, otherwise will have TLS errors
       DISABLE_SECURITY_DASHBOARDS_PLUGIN: true
