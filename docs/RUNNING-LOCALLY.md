@@ -57,6 +57,15 @@ Visual Studio. The file name is
 
 ## Running Unit Tests and Generate Code Coverage Report
 
+> [!CAUTION]
+> The DMS unit tests include code coverage analysis, which requires installation
+> of two additional tools:
+>
+> ```shell
+> dotnet tool install --global coverlet.console
+> dotnet tool install --global dotnet-reportgenerator-globaltool
+> ```
+
 To run the unit tests locally, execute the following command in a PowerShell
 terminal:
 
