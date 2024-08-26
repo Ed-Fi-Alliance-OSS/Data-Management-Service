@@ -42,7 +42,9 @@ function Import-SampleData {
         return (Get-SouthridgeSampleData)
     }
     else {
-        return (Get-SampleData $Version).Trim()
+        $preRelease = $Version.Contains('-') # example: 5.1.0-dev.1
+
+        return (Get-SampleData -PackageVersion $Version -PreRelease:$preRelease).Trim()
     }
 }
 
