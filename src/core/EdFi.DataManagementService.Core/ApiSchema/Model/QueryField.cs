@@ -3,19 +3,20 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-namespace EdFi.DataManagementService.Core.External.Backend.Model;
+using EdFi.DataManagementService.Core.External.Model;
+
+namespace EdFi.DataManagementService.Core.ApiSchema.Model;
 
 /// <summary>
-/// A query parameter for a single term
+/// A mapping from a query field name to the document paths the query field applies to
 /// </summary>
-public record TermQuery(
+internal record QueryField(
     /// <summary>
-    /// The term field
+    /// The query field name
     /// </summary>
-    string Field,
-
+    string QueryFieldName,
     /// <summary>
-    /// The term value
+    /// The document paths the query field applies to
     /// </summary>
-    string Value
+    JsonPath[] DocumentPaths
 );

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.External.Backend.Model;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
@@ -17,10 +18,12 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
 {
     private static readonly string[] _disallowedQueryFields = ["limit", "offset", "totalCount"];
 
-    public async Task Execute(PipelineContext context, Func<Task> next)
+    /// <summary>
+    /// Finds and sets PaginationParameters on the context by parsing the client request.
+    /// Returns any errors found for those parameters.
+    /// </summary>
+    private static List<string> SetPaginationParametersOn(PipelineContext context)
     {
-        _logger.LogDebug("Entering ValidateQueryMiddleware - {TraceId}", context.FrontendRequest.TraceId);
-
         int? offset = null;
         int? limit = null;
         bool totalCount = false;
@@ -77,7 +80,44 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
             }
         }
 
-        // TODO: DMS-312 Validate all other query parameters are valid ones for the current resource
+        if (errors.Count == 0)
+        {
+            context.PaginationParameters = new PaginationParameters(limit, offset, totalCount);
+        }
+        return errors;
+    }
+
+    /// <summary>
+    /// Returns a QueryElement for the given client query term using the list of possible query fields,
+    /// or null if there is not a match with a valid query field name.
+    /// </summary>
+    private static QueryElement? queryElementFrom(
+        KeyValuePair<string, string> clientQueryTerm,
+        QueryField[] possibleQueryFields
+    )
+    {
+        QueryField? matchingQueryField = possibleQueryFields.FirstOrDefault(
+            queryField => queryField?.QueryFieldName == clientQueryTerm.Key,
+            null
+        );
+
+        if (matchingQueryField == null)
+        {
+            return null;
+        }
+
+        return new QueryElement(
+            QueryFieldName: clientQueryTerm.Key,
+            DocumentPaths: matchingQueryField.DocumentPaths,
+            clientQueryTerm.Value
+        );
+    }
+
+    public async Task Execute(PipelineContext context, Func<Task> next)
+    {
+        _logger.LogDebug("Entering ValidateQueryMiddleware - {TraceId}", context.FrontendRequest.TraceId);
+
+        List<string> errors = SetPaginationParametersOn(context);
 
         if (errors.Count > 0)
         {
@@ -103,12 +143,38 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
             return;
         }
 
-        context.PaginationParameters = new PaginationParameters(limit, offset, totalCount);
+        IEnumerable<KeyValuePair<string, string>> nonPaginationQueryTerms =
+            context.FrontendRequest.QueryParameters.ExceptBy(_disallowedQueryFields, (term) => term.Key);
 
-        context.TermQueries = context
-            .FrontendRequest.QueryParameters.ExceptBy(_disallowedQueryFields, (term) => term.Key)
-            .Select(term => new TermQuery(term.Key, term.Value))
-            .ToArray();
+        QueryField[] possibleQueryFields = context.ResourceSchema.QueryFields.ToArray();
+
+        List<QueryElement> queryElements = [];
+
+        foreach (KeyValuePair<string, string> clientQueryTerm in nonPaginationQueryTerms)
+        {
+            QueryElement? queryElement = queryElementFrom(clientQueryTerm, possibleQueryFields);
+
+            if (queryElement == null)
+            {
+                FailureResponseWithErrors failureResponse = FailureResponse.ForBadRequest(
+                    "The request could not be processed. See 'errors' for details.",
+                    context.FrontendRequest.TraceId,
+                    [],
+                    [$@"The query field '{clientQueryTerm.Key}' is not valid for this resource."]
+                );
+
+                context.FrontendResponse = new FrontendResponse(
+                    failureResponse.status,
+                    JsonSerializer.Serialize(failureResponse, SerializerOptions),
+                    []
+                );
+                return;
+            }
+
+            queryElements.Add(queryElement);
+        }
+
+        context.QueryElements = queryElements.ToArray();
 
         await next();
     }
