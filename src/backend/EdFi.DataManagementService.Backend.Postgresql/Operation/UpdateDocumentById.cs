@@ -95,25 +95,35 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
 
             if (!validationResult.ReferentialIdUnchanged)
             {
-                // Extracted referential id does not match stored. Must be attempting to change natural key.
+                // Extracted referential id does not match stored. Must be attempting to change identity.
                 if (updateRequest.ResourceInfo.AllowIdentityUpdates || allowIdentityUpdateOverrides.Contains(updateRequest.ResourceInfo.ResourceName.Value))
                 {
+                    // Identity update is allowed
                     _logger.LogInformation(
                         "Updating Natural Key - {TraceId}",
                         updateRequest.TraceId
                     );
 
-                    await UpdateAliasReferentialIdByDocumentUuid(
+                    int aliasRowsAffected = await UpdateAliasReferentialIdByDocumentUuid(
                         PartitionKeyFor(updateRequest.DocumentInfo.ReferentialId).Value,
                         updateRequest.DocumentInfo.ReferentialId.Value,
                         PartitionKeyFor(updateRequest.DocumentUuid).Value,
                         updateRequest.DocumentUuid.Value,
                         connection, transaction
                     );
+
+                    if (aliasRowsAffected == 0)
+                    {
+                        _logger.LogInformation(
+                            "Failure: Alias record to update does not exist - {TraceId}",
+                            updateRequest.TraceId
+                        );
+                        return new UpdateResult.UpdateFailureNotExists();
+                    }
                 }
                 else
                 {
-                    // Natural key update not allowed
+                    // Identity update not allowed
                     _logger.LogInformation(
                         "Failure: Natural key does not match on update - {TraceId}",
                         updateRequest.TraceId

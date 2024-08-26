@@ -467,6 +467,10 @@ public static class SqlAction
         return result;
     }
 
+    /// <summary>
+    /// Update the ReferentialId of a document by its DocumentUuid for cases
+    /// when identity updates are permitted. 
+    /// </summary>
     public static async Task<int> UpdateAliasReferentialIdByDocumentUuid(
         short referentialPartitionKey,
         Guid referentialId,
