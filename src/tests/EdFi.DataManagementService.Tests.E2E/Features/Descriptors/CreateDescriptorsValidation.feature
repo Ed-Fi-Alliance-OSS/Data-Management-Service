@@ -52,17 +52,17 @@ Feature: Create a Descriptor
               And the response body is
                   """
                   {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null,
                     "validationErrors": {
                         "$.codeValue": [
                         "codeValue Value should be at most 50 characters"
                         ]
                     },
-                    "errors": [],
-                    "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-                    "title": "Data Validation Failed",
-                    "status": 400,
-                    "correlationId": null
+                    "errors": []
                     }
                   """
 

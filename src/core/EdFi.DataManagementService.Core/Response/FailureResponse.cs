@@ -38,11 +38,14 @@ internal static class FailureResponse
             ["title"] = title,
             ["status"] = status,
             ["correlationId"] = correlationId,
-            ["validationErrors"] = validationErrors != null ? JsonSerializer.SerializeToNode(validationErrors, SerializerOptions) : new JsonObject(),
-            ["errors"] = errors != null ? JsonSerializer.SerializeToNode(errors, SerializerOptions) : new JsonArray()
+            ["validationErrors"] =
+                validationErrors != null
+                    ? JsonSerializer.SerializeToNode(validationErrors, SerializerOptions)
+                    : new JsonObject(),
+            ["errors"] =
+                errors != null ? JsonSerializer.SerializeToNode(errors, SerializerOptions) : new JsonArray()
         };
     }
-
 
     public static JsonNode ForDataValidation(
         string detail,
@@ -114,8 +117,7 @@ internal static class FailureResponse
     public static JsonNode ForInvalidReferences(ResourceName[] resourceNames, TraceId traceId)
     {
         string resources = string.Join(", ", resourceNames.Select(x => x.Value));
-        return CreateBaseJsonObject
-        (
+        return CreateBaseJsonObject(
             detail: $"The referenced {resources} item(s) do not exist.",
             type: $"{_dataConflictTypePrefix}:unresolved-reference",
             title: "Unresolved Reference",
@@ -130,6 +132,17 @@ internal static class FailureResponse
             type: _keyChangeNotSupported,
             title: "Key Change Not Supported",
             status: 400,
+            correlationId: traceId.Value,
+            validationErrors: [],
+            errors: []
+        );
+
+    public static JsonNode ForInvalidPath(string detail, TraceId traceId) =>
+        CreateBaseJsonObject(
+            detail,
+            type: $"{_badRequestTypePrefix}:data-validation-failed",
+            title: "Data Validation Failed",
+            status: 404,
             correlationId: traceId.Value,
             validationErrors: [],
             errors: []

@@ -568,8 +568,6 @@ Feature: Update a Descriptor
                   }
                   """
 
-        # DMS-309
-        @ignore
         Scenario: 20 Verify response code 404 when ID is not valid
              When a PUT request is made to "/ed-fi/disabilityDescriptors/00112233445566" with
                   """
@@ -584,15 +582,12 @@ Feature: Update a Descriptor
               And the response body is
                   """
                   {
-                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "detail": "The document Id provided is invalid.",
                       "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                       "title": "Data Validation Failed",
                       "status": 404,
                       "correlationId": null,
-                      "validationErrors": {
-                          "$.id": [
-                              "The value '00112233445566' is not valid."
-                          ]
-                      }
+                      "validationErrors": {},
+                      "errors": []
                   }
                   """

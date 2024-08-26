@@ -19,24 +19,20 @@ Feature: Delete a Descriptor
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 204
 
-        # Restore with DMS-309
-        @ignore
+
         Scenario: 02 Verify error handling when deleting a descriptor using a invalid id
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/00112233445566"
              Then it should respond with 404
               And the response body is
                   """
                   {
-                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "detail": "The document Id provided is invalid.",
                       "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                       "title": "Data Validation Failed",
                       "status": 404,
                       "correlationId": null,
-                      "validationErrors": {
-                          "$.id": [
-                              "The value '00112233445566' is not valid."
-                          ]
-                      }
+                      "validationErrors": {},
+                      "errors" : []
                   }
                   """
 

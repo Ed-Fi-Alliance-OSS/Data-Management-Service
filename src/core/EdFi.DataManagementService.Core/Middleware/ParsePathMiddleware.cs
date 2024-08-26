@@ -2,10 +2,12 @@
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
+
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Response;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
@@ -13,10 +15,10 @@ namespace EdFi.DataManagementService.Core.Middleware;
 internal record PathInfo(string ProjectNamespace, string EndpointName, string? DocumentUuid);
 
 /// <summary>
-/// Parses and validates the path from the frontend is well formed. Adds PathComponents
+/// Parses and validates the path from the frontend is well-formed. Adds PathComponents
 /// to the context if it is.
 /// </summary>
-internal partial class ParsePathMiddleware(ILogger _logger) : IPipelineStep
+internal class ParsePathMiddleware(ILogger logger) : IPipelineStep
 {
     /// <summary>
     /// Uses a regex to split the path into PathComponents, or return null if the path is invalid
@@ -41,7 +43,7 @@ internal partial class ParsePathMiddleware(ILogger _logger) : IPipelineStep
     }
 
     /// <summary>
-    /// Check that this is a well formed UUID v4 string
+    /// Check that this is a well-formed UUID v4 string
     /// </summary>
     private static bool IsDocumentUuidWellFormed(string documentUuidString)
     {
@@ -50,33 +52,52 @@ internal partial class ParsePathMiddleware(ILogger _logger) : IPipelineStep
 
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        _logger.LogDebug("Entering ParsePathMiddleware - {TraceId}", context.FrontendRequest.TraceId);
+        logger.LogDebug("Entering ParsePathMiddleware - {TraceId}", context.FrontendRequest.TraceId);
 
         PathInfo? pathInfo = PathInfoFrom(context.FrontendRequest.Path);
 
         if (pathInfo == null)
         {
-            _logger.LogDebug(
+            logger.LogDebug(
                 "ParsePathMiddleware: Not a valid path - {TraceId}",
                 context.FrontendRequest.TraceId
             );
-            context.FrontendResponse = new FrontendResponse(StatusCode: 404, Body: "", Headers: []);
+            context.FrontendResponse = new FrontendResponse(
+                StatusCode: 404,
+                Body: FailureResponse.ForInvalidPath(
+                    detail: "The path provided is invalid.",
+                    traceId: context.FrontendRequest.TraceId
+                ),
+                Headers: []
+            );
             return;
         }
 
         if (pathInfo.DocumentUuid != null && !IsDocumentUuidWellFormed(pathInfo.DocumentUuid))
         {
-            _logger.LogDebug(
+            logger.LogDebug(
                 "ParsePathMiddleware: Not a valid document UUID - {TraceId}",
                 context.FrontendRequest.TraceId
             );
-            context.FrontendResponse = new FrontendResponse(StatusCode: 404, Body: "", Headers: []);
+            context.FrontendResponse = new FrontendResponse(
+                StatusCode: 404,
+                Body: FailureResponse.ForInvalidPath(
+                    detail: "The document Id provided is invalid.",
+                    traceId: context.FrontendRequest.TraceId
+                ),
+                Headers: []
+            );
             return;
         }
 
-        DocumentUuid documentUuid = pathInfo.DocumentUuid == null ? No.DocumentUuid : new(new(pathInfo.DocumentUuid));
+        DocumentUuid documentUuid =
+            pathInfo.DocumentUuid == null ? No.DocumentUuid : new(new(pathInfo.DocumentUuid));
 
-        context.PathComponents = new(ProjectNamespace: new(pathInfo.ProjectNamespace), EndpointName: new(pathInfo.EndpointName), DocumentUuid: documentUuid);
+        context.PathComponents = new(
+            ProjectNamespace: new(pathInfo.ProjectNamespace),
+            EndpointName: new(pathInfo.EndpointName),
+            DocumentUuid: documentUuid
+        );
 
         await next();
     }

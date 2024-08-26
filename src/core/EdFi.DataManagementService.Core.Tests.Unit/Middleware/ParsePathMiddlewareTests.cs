@@ -172,5 +172,13 @@ public class ParsePathMiddlewareTests
         {
             _context?.FrontendResponse.StatusCode.Should().Be(404);
         }
+
+        [Test]
+        public void It_returns_invalid_Id_message()
+        {
+            _context?.FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("The document Id provided is invalid.");
+        }
     }
 }
