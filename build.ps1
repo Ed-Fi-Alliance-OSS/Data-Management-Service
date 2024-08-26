@@ -188,7 +188,8 @@ function RunTests {
                 dotnet test $target `
                     --logger "trx;LogFileName=$trx.trx" `
                     --logger "console" `
-                    --nologo
+                    --nologo `
+                    --blame
             }
         }
         else {
