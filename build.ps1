@@ -177,7 +177,7 @@ function RunTests {
             Invoke-Execute {
                 # Execution with coverlet to generate code coverage analysis
                 coverlet $($_) `
-                    --target dotnet --targetargs "test $target --logger:console --logger:trx --nologo"`
+                    --target dotnet --targetargs "test $target --logger:console --logger:trx --nologo --blame"`
                     --threshold $thresholdCoverage `
                     --threshold-type line `
                     --threshold-type branch `
