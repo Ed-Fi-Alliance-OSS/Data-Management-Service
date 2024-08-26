@@ -20,8 +20,7 @@ public interface IUpdateDocumentById
     public Task<UpdateResult> UpdateById(
         IUpdateRequest updateRequest,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        List<string> allowIdentityUpdateOverrides
+        NpgsqlTransaction transaction
     );
 }
 
@@ -60,8 +59,7 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
     public async Task<UpdateResult> UpdateById(
         IUpdateRequest updateRequest,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        List<string> allowIdentityUpdateOverrides
+        NpgsqlTransaction transaction
     )
     {
         _logger.LogDebug("Entering UpdateDocumentById.UpdateById - {TraceId}", updateRequest.TraceId);
@@ -96,11 +94,11 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
             if (!validationResult.ReferentialIdUnchanged)
             {
                 // Extracted referential id does not match stored. Must be attempting to change identity.
-                if (updateRequest.ResourceInfo.AllowIdentityUpdates || allowIdentityUpdateOverrides.Contains(updateRequest.ResourceInfo.ResourceName.Value))
+                if (updateRequest.ResourceInfo.AllowIdentityUpdates)
                 {
                     // Identity update is allowed
                     _logger.LogInformation(
-                        "Updating Natural Key - {TraceId}",
+                        "Updating Identity - {TraceId}",
                         updateRequest.TraceId
                     );
 
@@ -125,7 +123,7 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
                 {
                     // Identity update not allowed
                     _logger.LogInformation(
-                        "Failure: Natural key does not match on update - {TraceId}",
+                        "Failure: Identity does not match on update - {TraceId}",
                         updateRequest.TraceId
                     );
                     return new UpdateResult.UpdateFailureImmutableIdentity(

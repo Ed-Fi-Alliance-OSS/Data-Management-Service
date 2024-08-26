@@ -8,5 +8,11 @@ namespace EdFi.DataManagementService.Core.Configuration
     public class AppSettings
     {
         public bool BypassStringTypeCoercion { get; set; }
+
+        /// <summary>
+        /// Comma separated list of resource names that allow identity updates,
+        /// overriding the default behavior to reject identity updates.
+        /// </summary>
+        public required string AllowIdentityUpdateOverrides { get; set; }
     }
 }

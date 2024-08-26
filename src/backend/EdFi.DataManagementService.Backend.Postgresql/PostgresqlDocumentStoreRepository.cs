@@ -106,8 +106,7 @@ public class PostgresqlDocumentStoreRepository(
             UpdateResult result = await _updateDocumentById.UpdateById(
                 updateRequest,
                 connection,
-                transaction,
-                _databaseOptions.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
+                transaction
             );
 
             switch (result)

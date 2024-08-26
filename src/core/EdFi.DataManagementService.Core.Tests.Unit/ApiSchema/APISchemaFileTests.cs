@@ -45,7 +45,10 @@ public class APISchemaFileTests
                 new MatchingDocumentUuidsValidator(),
                 new EqualityConstraintValidator(),
                 NullLogger<ApiService>.Instance,
-                Options.Create(new AppSettings()),
+                Options.Create(new AppSettings
+                {
+                    AllowIdentityUpdateOverrides = ""
+                }),
                 ResiliencePipeline.Empty
             );
         }

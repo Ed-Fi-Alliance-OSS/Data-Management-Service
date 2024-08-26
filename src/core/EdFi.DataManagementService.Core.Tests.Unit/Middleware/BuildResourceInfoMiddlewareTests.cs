@@ -18,9 +18,9 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [TestFixture]
 public class BuildResourceInfoMiddlewareTests
 {
-    internal static IPipelineStep BuildMiddleware()
+    internal static IPipelineStep BuildMiddleware(List<string> allowIdentityUpdateOverrides)
     {
-        return new BuildResourceInfoMiddleware(NullLogger.Instance);
+        return new BuildResourceInfoMiddleware(NullLogger.Instance, allowIdentityUpdateOverrides);
     }
 
     [TestFixture]
@@ -46,7 +46,7 @@ public class BuildResourceInfoMiddlewareTests
                 context.ProjectSchema.FindResourceSchemaNode(new("schools")) ?? new JsonObject()
             );
 
-            await BuildMiddleware().Execute(context, NullNext);
+            await BuildMiddleware([]).Execute(context, NullNext);
         }
 
         [Test]
@@ -57,6 +57,43 @@ public class BuildResourceInfoMiddlewareTests
             context.ResourceInfo.ResourceVersion.Value.Should().Be("5.0.0");
             context.ResourceInfo.IsDescriptor.Should().BeFalse();
             context.ResourceInfo.AllowIdentityUpdates.Should().BeFalse();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Pipeline_Context_Has_Project_And_Resource_Schemas_And_Overrides_Allow_Identity_Updates : BuildResourceInfoMiddlewareTests
+    {
+        private readonly PipelineContext context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
+                .WithStartProject("Ed-Fi", "5.0.0")
+                .WithStartResource("School")
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocument();
+
+            context.ProjectSchema = new ProjectSchema(
+                apiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
+                NullLogger.Instance
+            );
+            context.ResourceSchema = new ResourceSchema(
+                context.ProjectSchema.FindResourceSchemaNode(new("schools")) ?? new JsonObject()
+            );
+
+            await BuildMiddleware(["School"]).Execute(context, NullNext);
+        }
+
+        [Test]
+        public void It_has_built_the_resource_info()
+        {
+            context.ResourceInfo.ProjectName.Value.Should().Be("Ed-Fi");
+            context.ResourceInfo.ResourceName.Value.Should().Be("School");
+            context.ResourceInfo.ResourceVersion.Value.Should().Be("5.0.0");
+            context.ResourceInfo.IsDescriptor.Should().BeFalse();
+            context.ResourceInfo.AllowIdentityUpdates.Should().BeTrue();
         }
     }
 }

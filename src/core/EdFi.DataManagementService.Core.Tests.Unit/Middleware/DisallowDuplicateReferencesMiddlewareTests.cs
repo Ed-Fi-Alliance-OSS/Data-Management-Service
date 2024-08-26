@@ -75,7 +75,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
 
     internal static IPipelineStep BuildResourceInfo()
     {
-        return new BuildResourceInfoMiddleware(NullLogger.Instance);
+        return new BuildResourceInfoMiddleware(NullLogger.Instance, new List<string>());
     }
 
     internal static IPipelineStep ExtractDocument()

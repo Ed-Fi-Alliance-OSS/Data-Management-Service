@@ -12,10 +12,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit
     [TestFixture]
     public class DatabaseOptionsTests
     {
-        private readonly DatabaseOptions _databaseOptions = new()
-        {
-            AllowIdentityUpdateOverrides = ""
-        };
+        private readonly DatabaseOptions _databaseOptions = new();
         private readonly IsolationLevel _isolationLevel = IsolationLevel.Chaos;
 
         [SetUp]
