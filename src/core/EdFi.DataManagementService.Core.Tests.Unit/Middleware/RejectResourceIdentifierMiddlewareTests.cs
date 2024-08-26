@@ -58,9 +58,11 @@ public class RejectResourceIdentifierMiddlewareTests
         public void It_returns_message_body_with_resource_identifiers_validation_error()
         {
             _context
-                ?.FrontendResponse.Body.Should()
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
                 .Contain("Resource identifiers cannot be assigned by the client");
-            _context?.FrontendResponse.Body.Should().Contain("id");
+
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("id");
         }
     }
 

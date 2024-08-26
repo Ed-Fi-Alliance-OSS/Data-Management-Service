@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
@@ -12,16 +11,19 @@ using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 using Polly;
 using static EdFi.DataManagementService.Core.External.Backend.UpsertResult;
-using static EdFi.DataManagementService.Core.Response.FailureResponse;
 using static EdFi.DataManagementService.Core.Handler.Utility;
+using static EdFi.DataManagementService.Core.Response.FailureResponse;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
 /// <summary>
 /// Handles an upsert request that has made it through the middleware pipeline steps.
 /// </summary>
-internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger, ResiliencePipeline _resiliencePipeline)
-    : IPipelineStep
+internal class UpsertHandler(
+    IDocumentStoreRepository _documentStoreRepository,
+    ILogger _logger,
+    ResiliencePipeline _resiliencePipeline
+) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
@@ -44,10 +46,10 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
         });
 
         _logger.LogDebug(
-                "Document store UpsertDocument returned {UpsertResult}- {TraceId}",
-                upsertResult.GetType().FullName,
-                context.FrontendRequest.TraceId
-            );
+            "Document store UpsertDocument returned {UpsertResult}- {TraceId}",
+            upsertResult.GetType().FullName,
+            context.FrontendRequest.TraceId
+        );
 
         context.FrontendResponse = upsertResult switch
         {
@@ -74,42 +76,39 @@ internal class UpsertHandler(IDocumentStoreRepository _documentStoreRepository, 
             UpsertFailureDescriptorReference failure
                 => new(
                     StatusCode: 400,
-                    Body: JsonSerializer.Serialize(
-                        ForBadRequest(
-                            "Data validation failed. See 'validationErrors' for details.",
-                            traceId: context.FrontendRequest.TraceId,
-                            failure.InvalidDescriptorReferences.ToDictionary(
-                                d => d.Path.Value,
-                                d =>
-                                    d.DocumentIdentity.DocumentIdentityElements.Select(e =>
-                                            $"{d.ResourceInfo.ResourceName.Value} value '{e.IdentityValue}' does not exist."
-                                        )
-                                        .ToArray()
-                            ),
-                            []
-                        )
+                    Body: ForBadRequest(
+                        "Data validation failed. See 'validationErrors' for details.",
+                        traceId: context.FrontendRequest.TraceId,
+                        failure.InvalidDescriptorReferences.ToDictionary(
+                            d => d.Path.Value,
+                            d =>
+                                d.DocumentIdentity.DocumentIdentityElements.Select(e =>
+                                        $"{d.ResourceInfo.ResourceName.Value} value '{e.IdentityValue}' does not exist."
+                                    )
+                                    .ToArray()
+                        ),
+                        []
                     ),
                     Headers: []
                 ),
             UpsertFailureReference failure
                 => new(
                     StatusCode: 409,
-                    Body: JsonSerializer.Serialize(
-                        ForInvalidReferences(failure.ResourceNames, traceId: context.FrontendRequest.TraceId)
+                    Body: ForInvalidReferences(
+                        failure.ResourceNames,
+                        traceId: context.FrontendRequest.TraceId
                     ),
                     Headers: []
                 ),
             UpsertFailureIdentityConflict failure
                 => new FrontendResponse(
                     StatusCode: 409,
-                    Body: JsonSerializer.Serialize(
-                        ForIdentityConflict(
-                            [
-                                $"A natural key conflict occurred when attempting to create a new resource {failure.ResourceName.Value} with a duplicate key. "
+                    Body: ForIdentityConflict(
+                        [
+                            $"A natural key conflict occurred when attempting to create a new resource {failure.ResourceName.Value} with a duplicate key. "
                                 + $"The duplicate keys and values are {string.Join(',', failure.DuplicateIdentityValues.Select(d => $"({d.Key} = {d.Value})"))}"
-                            ],
-                            traceId: context.FrontendRequest.TraceId
-                        )
+                        ],
+                        traceId: context.FrontendRequest.TraceId
                     ),
                     Headers: []
                 ),

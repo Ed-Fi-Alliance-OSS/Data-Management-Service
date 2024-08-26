@@ -315,15 +315,15 @@ Feature: Update a Descriptor
               And the response body is
                   """
                   {
-                    "validationErrors": {},
-                    "errors": [
-                        "A non-empty request body is required."
-                    ],
                     "detail": "The request could not be processed. See 'errors' for details.",
                     "type": "urn:ed-fi:api:bad-request",
                     "title": "Bad Request",
                     "status": 400,
-                    "correlationId": null
+                    "correlationId": null,
+                    "validationErrors":{},
+                    "errors": [
+                        "A non-empty request body is required."
+                    ]
                   }
                   """
 

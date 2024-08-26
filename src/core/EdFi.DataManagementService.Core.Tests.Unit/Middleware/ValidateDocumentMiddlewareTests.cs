@@ -347,8 +347,8 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_returns_message_body_with_required_validation_error()
         {
-            _context?.FrontendResponse.Body.Should().Contain("is required");
-            _context?.FrontendResponse.Body.Should().Contain("schoolId");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("is required");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("schoolId");
         }
     }
 
@@ -388,8 +388,8 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_returns_message_body_with_wrong_data_type_validation_error()
         {
-            _context?.FrontendResponse.Body.Should().Contain("schoolId Value is");
-            _context?.FrontendResponse.Body.Should().Contain("integer");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("schoolId Value is");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("integer");
         }
     }
 
@@ -429,8 +429,8 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_returns_message_body_with_required_validation_error()
         {
-            _context?.FrontendResponse.Body.Should().Contain("is required");
-            _context?.FrontendResponse.Body.Should().Contain("id");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("is required");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("id");
         }
     }
 
@@ -471,8 +471,11 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_returns_message_body_with_required_validation_error()
         {
-            _context?.FrontendResponse.Body.Should().Contain("nameOfInstitution");
-            _context?.FrontendResponse.Body.Should().Contain("cannot contain leading or trailing spaces");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("nameOfInstitution");
+            _context
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("cannot contain leading or trailing spaces");
         }
     }
 
@@ -513,8 +516,11 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_returns_message_body_with_required_validation_error()
         {
-            _context?.FrontendResponse.Body.Should().Contain("nameOfInstitution");
-            _context?.FrontendResponse.Body.Should().Contain("nameOfInstitution is required");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("nameOfInstitution");
+            _context
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("nameOfInstitution is required");
         }
     }
 
@@ -584,8 +590,11 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_returns_message_body_with_required_validation_error()
         {
-            _context?.FrontendResponse.Body.Should().Contain("identityProperty");
-            _context?.FrontendResponse.Body.Should().Contain("cannot contain leading or trailing spaces");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("identityProperty");
+            _context
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("cannot contain leading or trailing spaces");
         }
     }
 
@@ -626,9 +635,12 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_returns_message_body_with_required_validation_error()
         {
-            _context?.FrontendResponse.Body.Should().Contain("identityProperty");
-            _context?.FrontendResponse.Body.Should().Contain("cannot contain leading or trailing spaces");
-            _context?.FrontendResponse.Body.Should().Contain("traceId");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("identityProperty");
+            _context
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("cannot contain leading or trailing spaces");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("traceId");
         }
     }
 
@@ -668,9 +680,12 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_returns_message_body_with_required_validation_error()
         {
-            _context?.FrontendResponse.Body.Should().Contain("identityProperty");
-            _context?.FrontendResponse.Body.Should().Contain("is required and should not be left empty.");
-            _context?.FrontendResponse.Body.Should().Contain("traceId");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("identityProperty");
+            _context
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("is required and should not be left empty.");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("traceId");
         }
     }
 

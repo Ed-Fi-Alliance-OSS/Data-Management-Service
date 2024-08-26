@@ -22,7 +22,9 @@ Feature: CorrleationId
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Unresolved Reference",
                       "status": 409,
-                      "correlationId": "test-correlationId"
+                      "correlationId": "test-correlationId",
+                      "validationErrors": {},
+                      "errors": []
                   }
                   """
               And it should respond with 409
