@@ -7,7 +7,7 @@ the codebase.
 ## Building the DMS container
 
 From the `src` directory, and run:
-`docker build -t local/edfi-data-management-service . -f Dockerfile`
+`docker build -t local/data-management-service . -f Dockerfile`
 This will copy the current DMS solution into the container, build it and start
 it.
 

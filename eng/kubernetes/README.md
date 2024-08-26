@@ -41,7 +41,7 @@ First, build a locally-tagged image of the Data Management Service. Two ways:
 1. From `src` directory:
 
    ```shell
-   docker build -t local/edfi-data-management-service:latest .
+   docker build -t local/data-management-service:latest .
    ```
 
 2. Or use the PowerShell script from the base directory:
@@ -55,7 +55,7 @@ First, build a locally-tagged image of the Data Management Service. Two ways:
 In `eng/kubernetes/<folder>` where `<folder>` could be development or production:
 
 > [!TIP]
-> development folder will use the local data-management-service docker image `image: local/edfi-data-management-service:latest`;
+> development folder will use the local data-management-service docker image `image: local/data-management-service:latest`;
 > production folder will pull the published image from the docker hub `image: edfialliance/data-management-service:pre`
 
 * Create an app-secret.yaml file with a encrypted password, see

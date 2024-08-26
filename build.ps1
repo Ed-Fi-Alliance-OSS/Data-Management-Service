@@ -324,7 +324,7 @@ function Invoke-PushPackage {
 }
 
 $dockerTagBase = "local"
-$dockerTagDMS = "$($dockerTagBase)/edfi-data-management-service"
+$dockerTagDMS = "$($dockerTagBase)/data-management-service"
 
 function DockerBuild {
     Push-Location src/

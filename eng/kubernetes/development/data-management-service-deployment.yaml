@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: data-management-service
-          image: local/edfi-data-management-service:latest
+          image: local/data-management-service:latest
           imagePullPolicy: Never
           env:
             - name: NEED_DATABASE_SETUP
