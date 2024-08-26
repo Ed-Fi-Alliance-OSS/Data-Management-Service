@@ -5,9 +5,7 @@
 
 DO
 $do$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_replication_slots where slot_name = 'debezium') THEN
-        PERFORM pg_create_logical_replication_slot('debezium', 'pgoutput');
-    END IF;
-END
+IF NOT EXISTS (SELECT 1 FROM pg_replication_slots where slot_name = 'debezium') THEN
+    PERFORM pg_create_logical_replication_slot('debezium', 'pgoutput');
+END IF;
 $do$;
