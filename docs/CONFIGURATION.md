@@ -4,12 +4,13 @@ The sections below describe custom configuration options in the `appSettings.jso
 
 ## AppSettings
 
-| Parameter                | Description                                                                                                                                                                                             |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Datastore                | The primary datastore used by the DataManagementService. Valid values are `postgresql` and `mssql`                                                                                                      |
-| QueryHandler             | The query handling datastore used by the DataManagementService. Valid values are `postgresql` and `opensearch`                                                                                          |
-| DeployDatabaseOnStartup  | When `true` the database in `ConnectionStrings:DatabaseConnection` will be created and initialized on startup.                                                                                          |
-| BypassStringTypeCoercion | String type coercion attempts to coerce boolean and numeric strings to their proper type on `POST` and `PUT` requests. For example `"true"` becomes `true`. This setting bypasses that for performance. |
+| Parameter                    | Description                                                                                                                                                                                             |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Datastore                    | The primary datastore used by the DataManagementService. Valid values are `postgresql` and `mssql`                                                                                                      |
+| QueryHandler                 | The query handling datastore used by the DataManagementService. Valid values are `postgresql` and `opensearch`                                                                                          |
+| DeployDatabaseOnStartup      | When `true` the database in `ConnectionStrings:DatabaseConnection` will be created and initialized on startup.                                                                                          |
+| BypassStringTypeCoercion     | String type coercion attempts to coerce boolean and numeric strings to their proper type on `POST` and `PUT` requests. For example `"true"` becomes `true`. This setting bypasses that for performance. |
+| AllowIdentityUpdateOverrides | Comma separated list of resource names that allow identity updates, overriding the default behavior to reject identity updates.                                                                         |
 
 ## ConnectionStrings
 
@@ -20,10 +21,9 @@ The sections below describe custom configuration options in the `appSettings.jso
 
 ## DatabaseOptions
 
-| Parameter                    | Description                                                                                                                                                              |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| IsolationLevel               | The `System.Data.IsolationLevel` to use for transaction locks. See [documentation](https://learn.microsoft.com/en-us/dotnet/api/system.data.isolationlevel?view=net-8.0) |
-| AllowIdentityUpdateOverrides | Comma separated list of resource names that allow identity updates, overriding the default behavior to reject identity updates.                                          |
+| Parameter      | Description                                                                                                                                                              |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| IsolationLevel | The `System.Data.IsolationLevel` to use for transaction locks. See [documentation](https://learn.microsoft.com/en-us/dotnet/api/system.data.isolationlevel?view=net-8.0) |
 
 ## RateLimit
 
