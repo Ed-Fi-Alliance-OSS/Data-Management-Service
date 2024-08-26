@@ -3,9 +3,5 @@
 -- The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 -- See the LICENSE and NOTICES files in the project root for more information.
 
-DO
-$do$
-IF NOT EXISTS (SELECT 1 FROM pg_replication_slots where slot_name = 'debezium') THEN
-    PERFORM pg_create_logical_replication_slot('debezium', 'pgoutput');
-END IF;
-$do$;
+DROP PUBLICATION IF EXISTS to_debezium;
+CREATE PUBLICATION to_debezium FOR TABLE dms.document WITH (publish = 'insert, update, delete, truncate', publish_via_partition_root = true);
