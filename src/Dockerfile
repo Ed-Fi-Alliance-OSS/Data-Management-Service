@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-FROM mcr.microsoft.com/dotnet/sdk:8.0.303-alpine3.20@sha256:6e8997576d16a6d7b4e6ba7ac0956d3ae46cb7a376581c40eabd20fbc5c28b8d AS build
+FROM mcr.microsoft.com/dotnet/sdk:8.0.401-alpine3.20@sha256:658c93223111638f9bb54746679e554b2cf0453d8fb7b9fed32c3c0726c210fe AS build
 
 WORKDIR /source
 
@@ -30,32 +30,13 @@ WORKDIR /source/backend/EdFi.DataManagementService.Backend.Installer
 RUN dotnet build -c Release --no-restore && \
     dotnet publish -c Release -o /app/Installer --no-restore --no-build
 
-FROM mcr.microsoft.com/dotnet/aspnet:8.0.7-alpine3.20-amd64@sha256:584dee34a962d98782a7f593413bfec317088b7c9806dc55441e6d9ffbb5b055 AS runtimebase
+FROM mcr.microsoft.com/dotnet/aspnet:8.0.8-alpine3.20-amd64@sha256:98fa594b91cda6cac28d2aae25567730db6f8857367fab7646bdda91bc784b5f AS runtimebase
 
 RUN apk --no-cache add bash=~5 postgresql16-client=~16 gettext=~0
 
 FROM runtimebase AS setup
 
 ENV ASPNETCORE_HTTP_PORTS=8080
-ENV OAUTH_TOKEN_ENDPOINT=${OAUTH_TOKEN_ENDPOINT}
-ENV NEED_DATABASE_SETUP=${NEED_DATABASE_SETUP}
-ENV BYPASS_STRING_COERCION=${BYPASS_STRING_COERCION}
-ENV CORRELATION_ID_HEADER=${CORRELATION_ID_HEADER}
-ENV DATABASE_ISOLATION_LEVEL=${DATABASE_ISOLATION_LEVEL}
-ENV ALLOW_IDENTITY_UPDATE_OVERRIDES=${ALLOW_IDENTITY_UPDATE_OVERRIDES}
-ENV POSTGRES_ADMIN_USER=${POSTGRES_ADMIN_USER}
-ENV POSTGRES_ADMIN_PASSWORD=${POSTGRES_ADMIN_PASSWORD}
-
-ENV FAILURE_RATIO=${FAILURE_RATIO}
-ENV SAMPLING_DURATION_SECONDS=${SAMPLING_DURATION_SECONDS}
-ENV MINIMUM_THROUGHPUT=${MINIMUM_THROUGHPUT}
-ENV BREAK_DURATION_SECONDS=${BREAK_DURATION_SECONDS}
-
-ENV DATABASE_CONNECTION_STRING=${DATABASE_CONNECTION_STRING}
-
-ENV POSTGRES_PORT=${POSTGRES_PORT}
-ENV POSTGRES_HOST=${POSTGRES_HOST}
-ENV LOG_LEVEL=${LOG_LEVEL}
 
 WORKDIR /app
 
