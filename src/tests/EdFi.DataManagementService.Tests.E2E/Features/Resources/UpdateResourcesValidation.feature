@@ -543,6 +543,11 @@ Feature: Resources "Update" Operation validations
             Given the system has these "classPeriods"
                   | schoolReference    | classPeriodName |
                   | {"schoolId": 4003} | "first period"  |
+
+            Given the system has these "bellSchedules"
+                  | schoolReference    | classPeriods                                                                         | bellScheduleName    |
+                  | {"schoolId": 4003} | [ { "classPeriodReference": {"classPeriodName": "first period", "schoolId": 155} } ] | "Saved By The Bell" |
+
              # classPeriodName is part of the identity of a classPeriod
              When a PUT request is made to "/ed-fi/classPeriods/{id}" with
                   """
