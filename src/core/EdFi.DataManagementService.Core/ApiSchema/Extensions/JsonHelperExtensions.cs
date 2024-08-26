@@ -3,10 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using Microsoft.Extensions.Logging;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Json.Path;
-using System.Text.Json;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.ApiSchema.Extensions;
 
@@ -35,8 +35,18 @@ internal static class JsonHelperExtensions
                 throw new InvalidOperationException($"Unexpected Json.Path error for '{jsonPathString}'");
             }
 
-            if (result.Matches.Count == 0)
-                return null;
+            try
+            {
+                if (result.Matches.Count == 0)
+                    return null;
+            }
+            catch (System.ArgumentException ae)
+            {
+                throw new InvalidOperationException(
+                    $"JSON value to be parsed is problematic, for example might contain duplicate keys.",
+                    ae
+                );
+            }
 
             if (result.Matches.Count != 1)
             {
@@ -84,9 +94,7 @@ internal static class JsonHelperExtensions
                 throw new InvalidOperationException($"Unexpected Json.Path error for '{jsonPathString}'");
             }
 
-            return result.Matches.Select(x =>
-                x.Value
-            );
+            return result.Matches.Select(x => x.Value);
         }
         catch (PathParseException)
         {
@@ -111,22 +119,6 @@ internal static class JsonHelperExtensions
                 jsonNode?.AsValue() ?? throw new InvalidOperationException("Unexpected JSONPath value error");
             return result.ToString();
         });
-    }
-
-    /// <summary>
-    /// Helper to go from a scalar JSONPath selection directly to the selected JsonNode.
-    /// Throws if the value does not exist
-    /// </summary>
-    public static JsonNode SelectRequiredNodeFromPath(
-        this JsonNode jsonNode,
-        string jsonPathString,
-        ILogger logger
-    )
-    {
-        JsonNode? result =
-            SelectNodeFromPath(jsonNode, jsonPathString, logger)
-            ?? throw new InvalidOperationException($"Node at path '{jsonPathString}' not found");
-        return result;
     }
 
     /// <summary>
@@ -253,9 +245,6 @@ internal static class JsonHelperExtensions
             throw new InvalidOperationException("Unexpected null");
         }
 
-        return nodeKeys
-            .Where(x => x.Value != null)
-            .Select(x => x.Value ?? new JsonObject())
-            .ToList();
+        return nodeKeys.Where(x => x.Value != null).Select(x => x.Value ?? new JsonObject()).ToList();
     }
 }
