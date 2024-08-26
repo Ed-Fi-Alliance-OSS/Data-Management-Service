@@ -19,12 +19,14 @@ public class ContainerSetup
         var network = new NetworkBuilder().Build();
 
         // Images need to be previously built
-        string apiImageName = "local/edfi-data-management-service";
+        string apiImageName = "local/data-management-service";
         string dbImageName = "postgres:16.3-alpine3.20";
 
         var pgAdminUser = "postgres";
         var pgAdminPassword = "P@ssw0rd";
         var dbContainerName = "dmsdb";
+        var connectionString =
+            $"host=dmsdb;port=5432;username={pgAdminUser};password={pgAdminPassword};database=edfi_datamanagementservice;";
 
         var loggerFactory = LoggerFactory.Create(builder =>
         {
@@ -45,16 +47,10 @@ public class ContainerSetup
             .WithImage(apiImageName)
             .WithPortBinding(8080)
             .WithEnvironment("NEED_DATABASE_SETUP", "true")
-            .WithEnvironment(
-                "DATABASE_CONNECTION_STRING",
-                "host=dmsdb;port=5432;username=postgres;password=P@ssw0rd;database=edfi_datamanagementservice;"
-            )
-            .WithEnvironment("POSTGRES_ADMIN_USER", pgAdminUser)
-            .WithEnvironment("POSTGRES_ADMIN_PASSWORD", pgAdminPassword)
-            .WithEnvironment("POSTGRES_PORT", "5432")
-            .WithEnvironment("POSTGRES_HOST", dbContainerName)
+            .WithEnvironment("DATABASE_CONNECTION_STRING", connectionString)
+            .WithEnvironment("DATABASE_CONNECTION_STRING_ADMIN", connectionString)
             .WithEnvironment("LOG_LEVEL", "Debug")
-            .WithEnvironment("OAUTH_TOKEN_ENDPOINT", "http://127.0.0.1:8080/oauth/token")
+            .WithEnvironment("OAUTH_TOKEN_ENDPOINT", $"http://127.0.0.1:8080/oauth/token")
             .WithEnvironment("BYPASS_STRING_COERCION", "false")
             .WithEnvironment("CORRELATION_ID_HEADER", "correlationid")
             .WithEnvironment("DATABASE_ISOLATION_LEVEL", "RepeatableRead")
@@ -62,6 +58,8 @@ public class ContainerSetup
             .WithEnvironment("SAMPLING_DURATION_SECONDS", "10")
             .WithEnvironment("MINIMUM_THROUGHPUT", "2")
             .WithEnvironment("BREAK_DURATION_SECONDS", "30")
+            .WithEnvironment("DMS_DATASTORE", "postgresql")
+            .WithEnvironment("DMS_QUERYHANDLER", "postgresql")
             .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(8080)))
             .WithNetwork(network)
             .WithLogger(loggerFactory.CreateLogger("apiContainer"))
