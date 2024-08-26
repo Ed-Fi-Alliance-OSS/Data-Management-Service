@@ -30,7 +30,7 @@
     <PackageVersion Include="Serilog.Sinks.File" Version="6.0.0" />
     <PackageVersion Include="SonarAnalyzer.CSharp" Version="9.26.0.92422" />
     <PackageVersion Include="JsonSchema.Net" Version="7.2.0" />
-    <PackageVersion Include="JsonPath.Net" Version="1.1.2" />
+    <PackageVersion Include="JsonPath.Net" Version="1.1.4" />
   </ItemGroup>
   <!-- Testing Packages -->
   <ItemGroup>
