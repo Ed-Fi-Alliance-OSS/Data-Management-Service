@@ -98,12 +98,6 @@ public class PostgresqlDocumentStoreRepository(
             updateRequest.TraceId
         );
 
-        if (_databaseOptions.Value.AllowIdentityUpdateOverrides != null)
-            foreach (var o in _databaseOptions.Value.AllowIdentityUpdateOverrides)
-            {
-                _logger.LogDebug(o);
-            }
-
         try
         {
             await using var connection = await _dataSource.OpenConnectionAsync();

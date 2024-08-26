@@ -88,6 +88,68 @@ public static class SqlAction
         return result;
     }
 
+    public static async Task<Document?> FindDocumentByDocumentUuid(
+        DocumentUuid documentUuid,
+        string resourceName,
+        PartitionKey partitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        LockOption lockOption
+    )
+    {
+        var result = await GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
+        {
+            try
+            {
+                await using NpgsqlCommand command =
+                    new(
+                        $@"SELECT * FROM dms.Document WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 AND ResourceName = $3 {SqlFor(lockOption)};",
+                        connection,
+                        transaction
+                    )
+                    {
+                        Parameters =
+                        {
+                            new() { Value = partitionKey.Value },
+                            new() { Value = documentUuid.Value },
+                            new() { Value = resourceName }
+                        }
+                    };
+
+                await command.PrepareAsync();
+                await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+
+                if (!reader.HasRows)
+                {
+                    return null;
+                }
+
+                // Assumes only one row returned (should never be more due to DB unique constraint)
+                await reader.ReadAsync();
+
+                return new Document(
+                    Id: reader.GetInt64(reader.GetOrdinal("Id")),
+                    DocumentPartitionKey: reader.GetInt16(reader.GetOrdinal("DocumentPartitionKey")),
+                    DocumentUuid: reader.GetGuid(reader.GetOrdinal("DocumentUuid")),
+                    ResourceName: reader.GetString(reader.GetOrdinal("ResourceName")),
+                    ResourceVersion: reader.GetString(reader.GetOrdinal("ResourceVersion")),
+                    ProjectName: reader.GetString(reader.GetOrdinal("ProjectName")),
+                    EdfiDoc: await reader.GetFieldValueAsync<JsonElement>(reader.GetOrdinal("EdfiDoc")),
+                    CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
+                    LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt"))
+                );
+            }
+            catch (PostgresException)
+            {
+                // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
+                // Must roll back the transaction before retry.
+                await transaction.RollbackAsync();
+                throw;
+            }
+        });
+        return result;
+    }
+
     /// <summary>
     /// Returns a single Document from the database corresponding to the given ReferentialId,
     /// or null if no matching Document was found.
@@ -455,6 +517,52 @@ public static class SqlAction
 
                 await command.PrepareAsync();
                 return Convert.ToInt64(await command.ExecuteScalarAsync());
+            }
+            catch (PostgresException pe) when (pe.SqlState != PostgresErrorCodes.ForeignKeyViolation && pe.SqlState != PostgresErrorCodes.UniqueViolation)
+            {
+                // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
+                // Must roll back the transaction before retry.
+                await transaction.RollbackAsync();
+                throw;
+            }
+        });
+        return result;
+    }
+
+    public static async Task<int> UpdateAliasReferentialIdByDocumentId(
+        short referentialPartitionKey,
+        Guid referentialId,
+        short documentPartitionKey,
+        long documentId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        var result = await GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
+        {
+            try
+            {
+                await using var command = new NpgsqlCommand(
+                    @"UPDATE dms.Alias
+                        SET ReferentialPartitionKey = $1,
+                            ReferentialId = $2
+                        WHERE DocumentPartitionKey = $3
+                            AND DocumentId = $4",
+                    connection,
+                    transaction
+                )
+                {
+                    Parameters =
+                    {
+                        new() { Value = referentialPartitionKey },
+                        new() { Value = referentialId },
+                        new() { Value = documentId },
+                        new() { Value = documentPartitionKey },
+                    }
+                };
+
+                await command.PrepareAsync();
+                return await command.ExecuteNonQueryAsync();
             }
             catch (PostgresException pe) when (pe.SqlState != PostgresErrorCodes.ForeignKeyViolation && pe.SqlState != PostgresErrorCodes.UniqueViolation)
             {

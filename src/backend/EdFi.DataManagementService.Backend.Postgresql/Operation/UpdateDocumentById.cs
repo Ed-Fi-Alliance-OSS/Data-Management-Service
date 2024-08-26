@@ -102,6 +102,24 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
                         "Updating Natural Key - {TraceId}",
                         updateRequest.TraceId
                     );
+
+                    var existingDocument = await FindDocumentByDocumentUuid(
+                        updateRequest.DocumentUuid,
+                        updateRequest.ResourceInfo.ResourceName.Value,
+                        PartitionKeyFor(updateRequest.DocumentUuid),
+                        connection, transaction,
+                        LockOption.BlockUpdateDelete);
+
+                    if (existingDocument != null)
+                    {
+                        await UpdateAliasReferentialIdByDocumentId(
+                            PartitionKeyFor(updateRequest.DocumentInfo.ReferentialId).Value,
+                            updateRequest.DocumentInfo.ReferentialId.Value,
+                            existingDocument.DocumentPartitionKey,
+                            existingDocument.Id.GetValueOrDefault(),
+                            connection, transaction
+                        );
+                    }
                 }
                 else
                 {
