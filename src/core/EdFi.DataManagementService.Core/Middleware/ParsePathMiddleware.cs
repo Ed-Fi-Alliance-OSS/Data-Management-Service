@@ -79,11 +79,17 @@ internal class ParsePathMiddleware(ILogger logger) : IPipelineStep
                 "ParsePathMiddleware: Not a valid document UUID - {TraceId}",
                 context.FrontendRequest.TraceId
             );
+
             context.FrontendResponse = new FrontendResponse(
-                StatusCode: 404,
-                Body: FailureResponse.ForInvalidPath(
-                    detail: "The document Id provided is invalid.",
-                    traceId: context.FrontendRequest.TraceId
+                StatusCode: 400,
+                Body: FailureResponse.ForDataValidation(
+                    detail: "Data validation failed. See 'validationErrors' for details.",
+                    traceId: context.FrontendRequest.TraceId,
+                    validationErrors: new Dictionary<string, string[]>
+                    {
+                        { "$.id", new[] { $"The value '{pathInfo.DocumentUuid}' is not valid." } }
+                    },
+                    errors: []
                 ),
                 Headers: []
             );

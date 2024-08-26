@@ -31,7 +31,8 @@ public class ParsePathMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            FrontendRequest frontendRequest = new(Body: "{}", Path: "", QueryParameters: [], TraceId: new TraceId(""));
+            FrontendRequest frontendRequest =
+                new(Body: "{}", Path: "", QueryParameters: [], TraceId: new TraceId(""));
             _context = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
         }
@@ -57,7 +58,8 @@ public class ParsePathMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            FrontendRequest frontendRequest = new(Body: "{}", Path: "badpath", QueryParameters: [], TraceId: new TraceId(""));
+            FrontendRequest frontendRequest =
+                new(Body: "{}", Path: "badpath", QueryParameters: [], TraceId: new TraceId(""));
             _context = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
         }
@@ -168,17 +170,18 @@ public class ParsePathMiddlewareTests
         }
 
         [Test]
-        public void It_returns_status_404()
+        public void It_returns_status_400()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(404);
+            _context?.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_invalid_Id_message()
         {
-            _context?.FrontendResponse.Body?.ToJsonString()
+            _context
+                .FrontendResponse.Body?.ToJsonString()
                 .Should()
-                .Contain("The document Id provided is invalid.");
+                .Contain("$.id");
         }
     }
 }

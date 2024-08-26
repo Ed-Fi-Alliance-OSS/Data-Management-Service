@@ -578,16 +578,20 @@ Feature: Update a Descriptor
                     "shortDescription": "Visual Impairment, including Blindness"
                   }
                   """
-             Then it should respond with 404
+             Then it should respond with 400
               And the response body is
                   """
                   {
-                      "detail": "The document Id provided is invalid.",
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
                       "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                       "title": "Data Validation Failed",
-                      "status": 404,
+                      "status": 400,
                       "correlationId": null,
-                      "validationErrors": {},
+                      "validationErrors": {
+                        "$.id": [
+                            "The value '00112233445566' is not valid."
+                        ]
+                      },
                       "errors": []
                   }
                   """
