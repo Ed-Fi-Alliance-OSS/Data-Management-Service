@@ -107,7 +107,7 @@ public class PostgresqlDocumentStoreRepository(
                 updateRequest,
                 connection,
                 transaction,
-                _databaseOptions.Value.AllowIdentityUpdateOverrides ?? []
+                _databaseOptions.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             );
 
             switch (result)

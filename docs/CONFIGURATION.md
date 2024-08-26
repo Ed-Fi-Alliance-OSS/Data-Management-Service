@@ -13,17 +13,17 @@ The sections below describe custom configuration options in the `appSettings.jso
 
 ## ConnectionStrings
 
-| Parameter          | Description                                                                                                                                                              |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| DatabaseConnection | The database connection string to the primary datastore                                                                                                                  |
-| OpenSearchUrl      | The OpenSearch endpoint URL, if OpenSearch is being used as the query handler                                                                                            |
+| Parameter          | Description                                                                   |
+| ------------------ | ----------------------------------------------------------------------------- |
+| DatabaseConnection | The database connection string to the primary datastore                       |
+| OpenSearchUrl      | The OpenSearch endpoint URL, if OpenSearch is being used as the query handler |
 
 ## DatabaseOptions
 
-| Parameter      | Description                                                                                                                                                              |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| IsolationLevel | The `System.Data.IsolationLevel` to use for transaction locks. See [documentation](https://learn.microsoft.com/en-us/dotnet/api/system.data.isolationlevel?view=net-8.0) |
-
+| Parameter                    | Description                                                                                                                                                              |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| IsolationLevel               | The `System.Data.IsolationLevel` to use for transaction locks. See [documentation](https://learn.microsoft.com/en-us/dotnet/api/system.data.isolationlevel?view=net-8.0) |
+| AllowIdentityUpdateOverrides | Comma separated list of resource names that allow identity updates, overriding the default behavior to reject identity updates.                                          |
 
 ## RateLimit
 
@@ -34,8 +34,8 @@ globally and apply to all application endpoints.
 
 The `RateLimit` object should have the following parameters.
 
-| Parameter     | Description                                                                                                                                                                                                                                                                |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Parameter   | Description                                                                                                                                                                                                                                                                |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | PermitLimit | The number of requests permitted within the window time span. This will be the number of requests, per hostname permitted per timeframe (`Window`). Must be > 0.                                                                                                           |
 | Window      | The number of seconds before the `PermitLimit` is reset. Must be > 0.                                                                                                                                                                                                      |
 | QueueLimit  | The maximum number of requests that can be Queued once `PermitLimit`s are exhausted. These requests will wait until the `Window` expires and will be processed FIFO. When the queue is exhausted, clients will receive a `429` `Too Many Requests` response. Must be >= 0. |

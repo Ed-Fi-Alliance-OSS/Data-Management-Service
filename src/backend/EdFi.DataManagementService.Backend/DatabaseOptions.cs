@@ -19,8 +19,9 @@ namespace EdFi.DataManagementService.Backend
         public IsolationLevel IsolationLevel { get; set; }
 
         /// <summary>
-        /// 
+        /// Comma separated list of resource names that allow identity updates,
+        /// overriding the default behavior to reject identity updates.
         /// </summary>
-        public List<string>? AllowIdentityUpdateOverrides { get; set; }
+        public required string AllowIdentityUpdateOverrides { get; set; }
     }
 }

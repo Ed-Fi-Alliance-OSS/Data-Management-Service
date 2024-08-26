@@ -36,6 +36,7 @@ LOG_LEVEL=<serilog log level i.e. Information>
 OAUTH_TOKEN_ENDPOINT=<Authentication service url>
 BYPASS_STRING_COERCION=<Boolean whether to bypass coercion of boolean and numeric values represented as strings to their natural type. Eg. "true" = true>
 DATABASE_ISOLATION_LEVEL=<The System.Data.IsolationLevel to use for transaction locking. Eg. RepeatableRead>
+ALLOW_IDENTITY_UPDATE_OVERRIDES=<Comma separated list of resource names that allow identity updates, overriding the default behavior to reject identity updates. Eg "accountabilityRatings,bellSchedules">
 DATABASE_CONNECTION_STRING=<The non-admin database connection string>
 OPENSEARCH_ENDPOINT=<The URL endpoint to the OpenSearch server>
 FAILURE_RATIO=<decimal between 0 and 1 indicating the failure to success ratio at which the backend circuit breaker will break. Eg. 0.1 represents 10%>
@@ -56,6 +57,7 @@ LOG_LEVEL=Information
 OAUTH_TOKEN_ENDPOINT=http://localhost:8080/oauth/token
 BYPASS_STRING_COERCION=false
 DATABASE_ISOLATION_LEVEL=RepeatableRead
+ALLOW_IDENTITY_UPDATE_OVERRIDES=""
 DATABASE_CONNECTION_STRING=host=localhost;port=5432;username=dms;password=P@ssw0rd;database=edfi_datamanagementservice;
 OPENSEARCH_ENDPOINT=http://localhost:9200
 FAILURE_RATIO=0.1

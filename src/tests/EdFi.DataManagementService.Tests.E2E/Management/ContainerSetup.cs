@@ -58,6 +58,7 @@ public class ContainerSetup
             .WithEnvironment("BYPASS_STRING_COERCION", "false")
             .WithEnvironment("CORRELATION_ID_HEADER", "correlationid")
             .WithEnvironment("DATABASE_ISOLATION_LEVEL", "RepeatableRead")
+            .WithEnvironment("ALLOW_IDENTITY_UPDATE_OVERRIDES", "")
             .WithEnvironment("FAILURE_RATIO", "0.1")
             .WithEnvironment("SAMPLING_DURATION_SECONDS", "10")
             .WithEnvironment("MINIMUM_THROUGHPUT", "2")
