@@ -29,7 +29,7 @@ public partial class XsdMetadataEndpointModule : IEndpointModule
         endpoints.MapGet("/metadata/xsd/{section}/{fileName}.xsd", GetXsdMetadataFileContent);
     }
 
-    internal async Task GetSections(HttpContext httpContext, IApiService apiService)
+    internal static async Task GetSections(HttpContext httpContext, IApiService apiService)
     {
         var baseUrl = httpContext.Request.UrlWithPathSegment();
         List<XsdMetaDataSectionInfo> sections = [];

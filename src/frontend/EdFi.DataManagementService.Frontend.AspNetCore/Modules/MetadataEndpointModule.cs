@@ -51,7 +51,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         await httpContext.Response.WriteAsJsonAsync(content);
     }
 
-    internal async Task GetDependencies(HttpContext httpContext, IApiService apiService)
+    internal static async Task GetDependencies(HttpContext httpContext, IApiService apiService)
     {
         var content = apiService.GetDependencies();
         await httpContext.Response.WriteAsSerializedJsonAsync(content);

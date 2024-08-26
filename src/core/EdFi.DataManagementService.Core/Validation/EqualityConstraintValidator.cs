@@ -63,7 +63,7 @@ internal class EqualityConstraintValidator : IEqualityConstraintValidator
         return validationErrors;
     }
 
-    private void AddValidationError(Dictionary<string, string[]> validationErrors, JsonPath path, string conflictValues)
+    private static void AddValidationError(Dictionary<string, string[]> validationErrors, JsonPath path, string conflictValues)
     {
         string segment = path.Segments[^1].ToString().TrimStart('.');
         string errorMessage = $"All values supplied for '{segment}' must match."
@@ -76,7 +76,7 @@ internal class EqualityConstraintValidator : IEqualityConstraintValidator
         }
         else
         {
-            validationErrors[path.ToString()] = new[] { errorMessage };
+            validationErrors[path.ToString()] = [errorMessage];
         }
     }
 }
