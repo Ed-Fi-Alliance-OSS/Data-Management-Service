@@ -3,10 +3,11 @@ services:
     hostname: dms-zookeeper1
     container_name: dms-zookeeper1
     image: debezium/zookeeper:2.7.0.Final@sha256:47d988f5db17fc3493de683e456cfb8dc8cafcaae4d36d3885c778e9a39d62eb
-    ports:
-      - 2181:2181
-      - 2888:2888
-      - 3888:3888
+    # Unlikely to need ability to connect directly into Zookeeper
+    # ports:
+    #   - 2181:2181
+    #   - 2888:2888
+    #   - 3888:3888
     volumes:
       - zookeeper-logs:/zookeeper/logs
       - zookeeper-data:/zookeeper/data
@@ -18,7 +19,7 @@ services:
     container_name: dms-kafka1
     image: debezium/kafka:2.7.0.Final@sha256:6b233b44f29522f8ce6018e4c95dae8be7688c82183d95da348a95bcedc6fcc6
     ports:
-      - 9092:9092
+      - ${KAFKA_PORT:-9092}:9092
     links:
       - zookeeper
     environment:
@@ -28,25 +29,29 @@ services:
       - kafka-data:/kafka/data
       - kafka-logs:/kafka/logs
 
-  # Kafka UI on port 8080 - https://docs.kafka-ui.provectus.io/
+  # Kafka UI https://docs.kafka-ui.provectus.io/
   kafka-ui:
     container_name: kafka-ui
     image: provectuslabs/kafka-ui:latest
     ports:
-      - 8080:8080
+      - ${KAFKA_UI_PORT:-8088}:8080
+    depends_on:
+      - kafka
     links:
       - kafka
       - kafka-postgresql-source
       - kafka-opensearch-sink
     environment:
       DYNAMIC_CONFIG_ENABLED: 'true'
+      KAFKA_CLUSTERS_0_NAME: kafka1
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
 
   kafka-postgresql-source:
     hostname: kafka-postgresql-source
     container_name: kafka-postgresql-source
     image: edfialliance/ed-fi-kafka-connect:pre
     ports:
-      - 8083:8083
+      - ${CONNECT_SOURCE_PORT:-8083}:8083
     links:
       - kafka
       - zookeeper
@@ -65,7 +70,7 @@ services:
     container_name: kafka-opensearch-sink
     image: edfialliance/ed-fi-kafka-connect:pre
     ports:
-      - 8084:8083
+      - ${CONNECT_SINK_PORT:-8084}:8083
     links:
       - kafka
       - zookeeper
@@ -85,18 +90,17 @@ services:
     image: postgres:16.3-alpine
     restart: always
     environment:
-    # If username and password not provided through and env file
-    # default to postgres/abcdefgh1!
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-abcdefgh1!}
+      POSTGRES_DB_NAME: ${POSTGRES_DB_NAME:-edfi_datamanagementservice}
     ports:
-    # If no port provided through an env file, default to 5432
       - ${POSTGRES_PORT:-5432}:5432
     volumes:
       - dms-postgresql:/var/lib/postgresql/data
+      - ./postgresql-init.sh:/docker-entrypoint-initdb.d/postgresql-init.sh
 
   opensearch:
-    image: opensearchproject/opensearch:2.15.0@sha256:1a6d62f4ff2215f66792362a56c64cea29ff6cbe700f95881857f045a6fea3c9
+    image: opensearchproject/opensearch:2.15.0@sha256:1963b3ece46dfe1a17cd633fb2e9cea22bd20753a295f39c2f513ce0070cad42
     container_name: dms-opensearch
     hostname: dms-opensearch
     environment:
@@ -124,19 +128,23 @@ services:
     volumes:
       - opensearch-data1:/usr/share/opensearch/data
     ports:
-      - 9200:9200
-      - 9600:9600 # required for Performance Analyzer
+      - ${OPENSEARCH_HTTP_PORT:-9200}:9200
+      - ${OPENSEARCH_ANALYZER_PORT:-9600}:9600 # required for Performance Analyzer
     restart: unless-stopped
+    healthcheck:
+      test: curl -s http://localhost:9200/_cat/health >/dev/null || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 50
 
   opensearch-dashboards:
-    image: opensearchproject/opensearch-dashboards:latest
+    image: opensearchproject/opensearch-dashboards:2.15.0@sha256:b7c26c60bfafcbb90c538316570b84bab85f5dc82339aa7feefc3014274c689e
     container_name: dms-opensearch-dashboards
     ports:
-      - 5601:5601
+      - ${OPENSEARCH_DASHBOARD_PORT:-5601}:5601
     expose:
-      - 5601
+      - ${OPENSEARCH_DASHBOARD_PORT:-5601}
     environment:
-      OPENSEARCH_ADMIN_PASSWORD: abcdefgh1!
       OPENSEARCH_HOSTS: '["http://dms-opensearch:9200"]'
        # disables security dashboards plugin in OpenSearch Dashboards, otherwise will have TLS errors
       DISABLE_SECURITY_DASHBOARDS_PLUGIN: true
