@@ -14,7 +14,7 @@ public class TokenEndpointModule : IEndpointModule
         endpoints.MapPost("/oauth/token", GenerateToken);
     }
 
-    internal async Task GenerateToken(HttpContext httpContext)
+    internal static async Task GenerateToken(HttpContext httpContext)
     {
         var tokenDetails = new TokenResponse("temporary-fake-token", 1800, "bearer");
         httpContext.Response.StatusCode = StatusCodes.Status200OK;

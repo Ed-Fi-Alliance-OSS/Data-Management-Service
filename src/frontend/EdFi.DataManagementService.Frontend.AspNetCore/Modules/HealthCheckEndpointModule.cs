@@ -15,7 +15,7 @@ public class HealthCheckEndpointModule : IEndpointModule
         endpoints.MapGet("/ping", GetDateTime);
     }
 
-    internal async Task GetDateTime(HttpContext httpContext)
+    internal static async Task GetDateTime(HttpContext httpContext)
     {
         await httpContext.Response.WriteAsSerializedJsonAsync(DateTime.Now);
     }
