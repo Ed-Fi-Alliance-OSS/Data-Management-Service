@@ -176,15 +176,19 @@ function RunTests {
         if ($Filter.Equals("*.Tests.Unit")) {
             Invoke-Execute {
                 # Execution with coverlet to generate code coverage analysis
-                coverlet $($_) `
-                    --target dotnet --targetargs "test $target --logger:console --logger:trx --nologo --blame"`
-                    --threshold $thresholdCoverage `
-                    --threshold-type line `
-                    --threshold-type branch `
-                    --threshold-stat total `
-                    --format json `
-                    --format cobertura `
-                    --merge-with "coverage.json"
+                # coverlet $($_) `
+                #     --target dotnet --targetargs "test $target --logger:console --logger:trx --nologo --blame"`
+                #     --threshold $thresholdCoverage `
+                #     --threshold-type line `
+                #     --threshold-type branch `
+                #     --threshold-stat total `
+                #     --format json `
+                #     --format cobertura `
+                #     --merge-with "coverage.json"
+                dotnet test $target `
+                    --logger "trx;LogFileName=$trx.trx" `
+                    --logger "console" `
+                    --nologo
             }
         }
         else {
