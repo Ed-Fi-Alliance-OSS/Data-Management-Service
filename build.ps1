@@ -175,8 +175,7 @@ function RunTests {
 
         if ($Filter.Equals("*.Tests.Unit")) {
             Invoke-Execute {
-                #Execution with coverage
-                # Threshold need to be defined
+                # Execution with coverlet to generate code coverage analysis
                 coverlet $($_) `
                     --target dotnet --targetargs "test $target --logger:console --logger:trx --nologo"`
                     --threshold $thresholdCoverage `
