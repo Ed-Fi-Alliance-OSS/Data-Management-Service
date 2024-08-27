@@ -19,7 +19,7 @@ public class ContainerSetup
         var network = new NetworkBuilder().Build();
 
         // Images need to be previously built
-        string apiImageName = "local/edfi-data-management-service";
+        string apiImageName = "local/data-management-service";
         string dbImageName = "postgres:16.3-alpine3.20";
 
         var pgAdminUser = "postgres";
@@ -27,6 +27,7 @@ public class ContainerSetup
         var dbContainerName = "dmsdb";
         var connectionString =
             $"host=dmsdb;port=5432;username={pgAdminUser};password={pgAdminPassword};database=edfi_datamanagementservice;";
+        var httpPort = 8987;
 
         var loggerFactory = LoggerFactory.Create(builder =>
         {
@@ -45,12 +46,10 @@ public class ContainerSetup
 
         ApiContainer = new ContainerBuilder()
             .WithImage(apiImageName)
-            .WithPortBinding(8080)
+            .WithPortBinding(httpPort)
+            .WithEnvironment("ASPNETCORE_HTTP_PORTS", httpPort.ToString())
             .WithEnvironment("NEED_DATABASE_SETUP", "true")
-            .WithEnvironment(
-                "DATABASE_CONNECTION_STRING",
-                "host=dmsdb;port=5432;username=postgres;password=P@ssw0rd;database=edfi_datamanagementservice;"
-            )
+            .WithEnvironment("DATABASE_CONNECTION_STRING", connectionString)
             .WithEnvironment("DATABASE_CONNECTION_STRING_ADMIN", connectionString)
             .WithEnvironment("LOG_LEVEL", "Debug")
             .WithEnvironment("OAUTH_TOKEN_ENDPOINT", "http://127.0.0.1:8080/oauth/token")
@@ -64,7 +63,7 @@ public class ContainerSetup
             .WithEnvironment("BREAK_DURATION_SECONDS", "30")
             .WithEnvironment("DMS_DATASTORE", "postgresql")
             .WithEnvironment("DMS_QUERYHANDLER", "postgresql")
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(8080)))
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort((ushort)httpPort)))
             .WithNetwork(network)
             .WithLogger(loggerFactory.CreateLogger("apiContainer"))
             .Build();
@@ -75,7 +74,7 @@ public class ContainerSetup
         return new UriBuilder(
             Uri.UriSchemeHttp,
             ApiContainer.Hostname,
-            ApiContainer.GetMappedPublicPort(8080)
+            ApiContainer.GetMappedPublicPort(httpPort)
         ).ToString();
     }
 }
