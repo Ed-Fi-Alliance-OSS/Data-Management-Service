@@ -10,8 +10,10 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Text.Json;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
+using static EdFi.DataManagementService.Core.UtilityService;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
@@ -178,10 +180,11 @@ public class ParsePathMiddlewareTests
         [Test]
         public void It_returns_invalid_Id_message()
         {
-            _context
-                .FrontendResponse.Body?.ToJsonString()
+            string response = JsonSerializer.Serialize(_context.FrontendResponse.Body, SerializerOptions);
+
+            response
                 .Should()
-                .Contain("$.id");
+                .Contain("\"validationErrors\":{\"$.id\":[\"The value 'invalidId' is not valid.\"]}");
         }
     }
 }
