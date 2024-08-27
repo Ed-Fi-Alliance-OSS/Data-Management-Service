@@ -135,11 +135,7 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
                 context.FrontendRequest.TraceId
             );
 
-            context.FrontendResponse = new FrontendResponse(
-                StatusCode: 400,
-                Body: failureResponse,
-                []
-            );
+            context.FrontendResponse = new FrontendResponse(StatusCode: 400, Body: failureResponse, []);
             return;
         }
 
@@ -156,18 +152,14 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
 
             if (queryElement == null)
             {
-                FailureResponseWithErrors failureResponse = FailureResponse.ForBadRequest(
+                JsonNode failureResponse = FailureResponse.ForBadRequest(
                     "The request could not be processed. See 'errors' for details.",
                     context.FrontendRequest.TraceId,
                     [],
                     [$@"The query field '{clientQueryTerm.Key}' is not valid for this resource."]
                 );
 
-                context.FrontendResponse = new FrontendResponse(
-                    failureResponse.status,
-                    JsonSerializer.Serialize(failureResponse, SerializerOptions),
-                    []
-                );
+                context.FrontendResponse = new FrontendResponse(StatusCode: 400, Body: failureResponse, []);
                 return;
             }
 
