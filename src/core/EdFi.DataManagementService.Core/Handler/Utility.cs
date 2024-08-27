@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Handler;
@@ -13,8 +14,8 @@ public static class Utility
     /// <summary>
     /// Formats a error result string from the given error information and traceId
     /// </summary>
-    public static string ToJsonError(string errorInfo, TraceId traceId)
+    public static JsonNode? ToJsonError(string errorInfo, TraceId traceId)
     {
-        return JsonSerializer.Serialize(new { error = errorInfo, correlationId = traceId });
+        return JsonSerializer.SerializeToNode(new { error = errorInfo, correlationId = traceId });
     }
 }
