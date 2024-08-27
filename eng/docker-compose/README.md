@@ -43,6 +43,7 @@ configurations.
 > The script `setup-connectors.ps1` first attempts to delete connectors that are
 > already installed. On first execution, this results in a 404 error. _This is
 > normal_. Ignore that initial 404 error message.
+
 Convenience PowerShell scripts have been included in the directory:
 
 ```pwsh
@@ -50,12 +51,15 @@ Convenience PowerShell scripts have been included in the directory:
 ./start-services-only.ps1
 ./start-local-dms.ps1
 ./start-published-dms.ps1
+
 # With the local image, you can optionally force rebuilding the image
 ./start-local-dms.ps1 -b
+
 # Stop the services, keeping volumes
 ./start-services-only.ps1 -d
 ./start-local-dms.ps1 -d
 ./start-published-dms.ps1 -d
+
 # Stop the services and delete volumes
 ./start-services-only.ps1 -d -v
 ./start-local-dms.ps1 -d -v
