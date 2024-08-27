@@ -12,23 +12,29 @@ namespace EdFi.DataManagementService.Tests.E2E.Hooks;
 [Binding]
 public class SetupHooks
 {
-    private static IConfiguration? _configuration;
+    private static IConfiguration? _configuration = new ConfigurationBuilder()
+        .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+        .Build();
 
     [BeforeFeature]
     public static async Task BeforeFeature(PlaywrightContext context, TestLogger logger)
     {
         try
         {
-            _configuration ??= new ConfigurationBuilder()
-                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-                .Build();
-
-            bool.TryParse(_configuration["useTestContainers"], out bool useTestContainers);
+            bool.TryParse(_configuration!["useTestContainers"], out bool useTestContainers);
+            bool.TryParse(_configuration!["OpenSearchEnabled"], out bool OpenSearchEnabled);
 
             if (useTestContainers)
             {
                 logger.log.Debug("Using TestContainers to set environment");
-                context.ApiUrl = await ContainerSetup.SetupDataManagement();
+                if (OpenSearchEnabled)
+                {
+                    context.ApiUrl = await OpenSearchContainerSetup.CreateContainers();
+                }
+                else
+                {
+                    context.ApiUrl = await ContainerSetup.SetupDataManagement();
+                }
             }
             else
             {
@@ -46,21 +52,16 @@ public class SetupHooks
     [AfterFeature]
     public static async Task AfterFeature(PlaywrightContext context, TestLogger logger)
     {
-        if (ContainerSetup.ApiContainer == null || ContainerSetup.DbContainer == null)
+        bool.TryParse(_configuration!["OpenSearchEnabled"], out bool OpenSearchEnabled);
+
+        if (OpenSearchEnabled)
         {
-            return;
+            await OpenSearchContainerSetup.ClearContainers(context, logger);
         }
-
-        var logs = await ContainerSetup.ApiContainer!.GetLogsAsync();
-        logger.log.Information($"{Environment.NewLine}API stdout logs:{Environment.NewLine}{logs.Stdout}");
-
-        if (!string.IsNullOrEmpty(logs.Stderr))
+        else
         {
-            logger.log.Error($"{Environment.NewLine}API stderr logs:{Environment.NewLine}{logs.Stderr}");
+            await ContainerSetup.ClearContainers(context, logger);
         }
-
-        await ContainerSetup.DbContainer!.DisposeAsync();
-        await ContainerSetup.ApiContainer!.DisposeAsync();
     }
 
     [AfterTestRun]

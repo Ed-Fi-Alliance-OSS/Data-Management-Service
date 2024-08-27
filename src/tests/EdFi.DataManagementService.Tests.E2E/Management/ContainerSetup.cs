@@ -62,6 +62,7 @@ public class ContainerSetup
             .WithEnvironment("SAMPLING_DURATION_SECONDS", "10")
             .WithEnvironment("MINIMUM_THROUGHPUT", "2")
             .WithEnvironment("BREAK_DURATION_SECONDS", "30")
+            .WithEnvironment("QUERY_HANDLER", "postgresql")
             .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(8080)))
             .WithNetwork(network)
             .WithLogger(loggerFactory.CreateLogger("apiContainer"))
@@ -75,5 +76,24 @@ public class ContainerSetup
             ApiContainer.Hostname,
             ApiContainer.GetMappedPublicPort(8080)
         ).ToString();
+    }
+
+    public static async Task ClearContainers(PlaywrightContext context, TestLogger logger)
+    {
+        if (ApiContainer == null || DbContainer == null)
+        {
+            return;
+        }
+
+        var logs = await ApiContainer!.GetLogsAsync();
+        logger.log.Information($"{Environment.NewLine}API stdout logs:{Environment.NewLine}{logs.Stdout}");
+
+        if (!string.IsNullOrEmpty(logs.Stderr))
+        {
+            logger.log.Error($"{Environment.NewLine}API stderr logs:{Environment.NewLine}{logs.Stderr}");
+        }
+
+        await DbContainer!.DisposeAsync();
+        await ApiContainer!.DisposeAsync();
     }
 }

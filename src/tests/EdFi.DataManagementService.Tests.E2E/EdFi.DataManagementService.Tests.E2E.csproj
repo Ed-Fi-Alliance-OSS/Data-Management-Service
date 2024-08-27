@@ -52,4 +52,16 @@
   <ItemGroup>
     <Using Include="NUnit.Framework" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Update="OpenSearchFiles\debezium_config.sh">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="OpenSearchFiles\opensearch_connector.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="OpenSearchFiles\postgresql_connector.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>
