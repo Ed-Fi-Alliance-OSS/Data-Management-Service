@@ -158,6 +158,71 @@ public class UpdateTests : DatabaseTest
     }
 
     [TestFixture]
+    public class Given_an_update_of_an_existing_document_with_different_referentialId_Allow_Identity_Update : UpdateTests
+    {
+        private UpdateResult? _updateResult;
+
+        private static readonly Guid _documentUuidGuid = Guid.NewGuid();
+        private static readonly Guid _referentialIdGuid1 = Guid.NewGuid();
+        private static readonly Guid _referentialIdGuid2 = Guid.NewGuid();
+        private static readonly string _edFiDocString1 = """{"abc":1}""";
+        private static readonly string _edFiDocString2 = """{"abc":2}""";
+
+        private static readonly string _referencingResourceName = "ReferencingResource";
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Create referenced document
+            IUpsertRequest upsertRequest = CreateUpsertRequest(
+                _defaultResourceName,
+                _documentUuidGuid,
+                _referentialIdGuid1,
+                _edFiDocString1,
+                allowIdentityUpdates: true
+            );
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+
+            // Create referencing document referencing the first
+            IUpsertRequest upsertReferencingRequest = CreateUpsertRequest(
+                _referencingResourceName,
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                """{"xyz":1}""",
+                CreateDocumentReferences([new(_referencingResourceName, _referentialIdGuid1)])
+            );
+
+            // Update the first document's referential id, allow identity updates
+            IUpdateRequest updateRequest = CreateUpdateRequest(
+                _defaultResourceName,
+                _documentUuidGuid,
+                _referentialIdGuid2,
+                _edFiDocString2,
+                allowIdentityUpdates: true
+            );
+            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
+        }
+
+        [Test]
+        public void It_should_be_a_successful_update()
+        {
+            _updateResult!.Should().BeOfType<UpdateResult.UpdateSuccess>();
+        }
+
+        [Test]
+        public async Task It_should_have_changed_the_document()
+        {
+            var getResult = await CreateGetById()
+                .GetById(
+                    CreateGetRequest(_defaultResourceName, _documentUuidGuid),
+                    Connection!,
+                    Transaction!
+                );
+            (getResult as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":2");
+        }
+    }
+
+    [TestFixture]
     public class Given_an_update_of_the_same_document_with_two_overlapping_request : UpdateTests
     {
         private UpdateResult? _updateResult1;

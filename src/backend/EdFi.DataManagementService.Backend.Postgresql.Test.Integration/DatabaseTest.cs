@@ -65,11 +65,11 @@ public abstract class DatabaseTest : DatabaseTestBase
         return (new { Value = value }).ActLike<T>();
     }
 
-    protected static ResourceInfo CreateResourceInfo(string resourceName)
+    protected static ResourceInfo CreateResourceInfo(string resourceName, bool allowIdentityUpdates = false)
     {
         return new(
             ResourceVersion: new("5.0.0"),
-            AllowIdentityUpdates: false,
+            AllowIdentityUpdates: allowIdentityUpdates,
             ProjectName: new("ProjectName"),
             ResourceName: new(resourceName),
             IsDescriptor: false
@@ -139,13 +139,14 @@ public abstract class DatabaseTest : DatabaseTestBase
         string edfiDocString,
         DocumentReference[]? documentReferences = null,
         DescriptorReference[]? descriptorReferences = null,
-        SuperclassIdentity? superclassIdentity = null
+        SuperclassIdentity? superclassIdentity = null,
+        bool allowIdentityUpdates = false
     )
     {
         return (
             new
             {
-                ResourceInfo = CreateResourceInfo(resourceName),
+                ResourceInfo = CreateResourceInfo(resourceName, allowIdentityUpdates),
                 DocumentInfo = CreateDocumentInfo(referentialIdGuid, documentReferences, descriptorReferences, superclassIdentity),
                 EdfiDoc = JsonNode.Parse(edfiDocString),
                 TraceId = new TraceId("123"),
@@ -171,13 +172,14 @@ public abstract class DatabaseTest : DatabaseTestBase
         string edFiDocString,
         DocumentReference[]? documentReferences = null,
         DescriptorReference[]? descriptorReferences = null,
-        SuperclassIdentity? superclassIdentity = null
+        SuperclassIdentity? superclassIdentity = null,
+        bool allowIdentityUpdates = false
     )
     {
         return (
             new
             {
-                ResourceInfo = CreateResourceInfo(resourceName),
+                ResourceInfo = CreateResourceInfo(resourceName, allowIdentityUpdates),
                 DocumentInfo = CreateDocumentInfo(referentialIdGuid, documentReferences, descriptorReferences, superclassIdentity),
                 EdfiDoc = JsonNode.Parse(edFiDocString),
                 TraceId = new TraceId("123"),

@@ -73,7 +73,7 @@ internal class ApiService(
                 [
                     new ValidateDocumentMiddleware(_logger, _documentValidator),
                     new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
-                    new BuildResourceInfoMiddleware(_logger),
+                    new BuildResourceInfoMiddleware(_logger, _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()),
                     new ExtractDocumentInfoMiddleware(_logger),
                     new DisallowDuplicateReferencesMiddleware(_logger),
                     new UpsertHandler(_documentStoreRepository, _logger, _resiliencePipeline)
@@ -95,7 +95,7 @@ internal class ApiService(
                         new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                         new ParsePathMiddleware(_logger),
                         new ValidateEndpointMiddleware(_logger),
-                        new BuildResourceInfoMiddleware(_logger),
+                        new BuildResourceInfoMiddleware(_logger, _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()),
                         new GetByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline)
                     ]
                 )
@@ -114,7 +114,7 @@ internal class ApiService(
                         new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                         new ParsePathMiddleware(_logger),
                         new ValidateEndpointMiddleware(_logger),
-                        new BuildResourceInfoMiddleware(_logger),
+                        new BuildResourceInfoMiddleware(_logger, _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()),
                         new ValidateQueryMiddleware(_logger),
                         new QueryRequestHandler(_queryHandler, _logger, _resiliencePipeline)
                     ]
@@ -155,7 +155,7 @@ internal class ApiService(
                     new ValidateDocumentMiddleware(_logger, _documentValidator),
                     new ValidateMatchingDocumentUuidsMiddleware(_logger, matchingDocumentUuidsValidator),
                     new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
-                    new BuildResourceInfoMiddleware(_logger),
+                    new BuildResourceInfoMiddleware(_logger, _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()),
                     new ExtractDocumentInfoMiddleware(_logger),
                     new DisallowDuplicateReferencesMiddleware(_logger),
                     new UpdateByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline)
@@ -177,7 +177,7 @@ internal class ApiService(
                         new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                         new ParsePathMiddleware(_logger),
                         new ValidateEndpointMiddleware(_logger),
-                        new BuildResourceInfoMiddleware(_logger),
+                        new BuildResourceInfoMiddleware(_logger, _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()),
                         new DeleteByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline)
                     ]
                 )
