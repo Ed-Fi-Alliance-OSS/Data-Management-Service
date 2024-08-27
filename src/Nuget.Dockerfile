@@ -11,8 +11,8 @@ RUN apk --no-cache add gettext=~0 postgresql16-client=~16
 
 FROM runtimebase AS setup
 
-ENV LOG_LEVEL=${LOG_LEVEL}
 ARG VERSION=0.0.0
+ENV ASPNETCORE_HTTP_PORTS=8080
 
 WORKDIR /app
 

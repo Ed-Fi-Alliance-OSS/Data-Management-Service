@@ -32,6 +32,9 @@ RUN dotnet build -c Release --no-restore && \
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0.8-alpine3.20-amd64@sha256:98fa594b91cda6cac28d2aae25567730db6f8857367fab7646bdda91bc784b5f AS runtimebase
 
+# bash: used in startup script and debugging
+# postgresql: used to test for PostgreSQL readiness
+# gettext: provides `envsubst`, used to inject env values into appsettings
 RUN apk --no-cache add bash=~5 postgresql16-client=~16 gettext=~0
 
 FROM runtimebase AS setup
