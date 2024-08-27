@@ -70,6 +70,11 @@ spec:
                 configMapKeyRef:
                   name: app-configmap
                   key: database-isolation-level
+            - name: ALLOW_IDENTITY_UPDATE_OVERRIDES
+              valueFrom:
+                 configMapKeyRef:
+                   name: app-configmap
+                   key: allow-identity-update-overrides
             - name: FAILURE_RATIO
               valueFrom:
                 configMapKeyRef:

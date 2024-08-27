@@ -7,4 +7,4 @@
 -- Omitting this FK effectively disables reference validation
 ALTER TABLE dms.Reference
 ADD CONSTRAINT FK_Reference_ReferencedAlias FOREIGN KEY (ReferentialPartitionKey, ReferentialId)
-REFERENCES dms.Alias (ReferentialPartitionKey, ReferentialId) ON DELETE RESTRICT;
+REFERENCES dms.Alias (ReferentialPartitionKey, ReferentialId) ON DELETE RESTRICT ON UPDATE CASCADE;

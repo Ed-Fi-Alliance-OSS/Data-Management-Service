@@ -421,37 +421,37 @@ Feature: Resources "Update" Operation validations
                       "errors": []
                     }
                   """
-# 
+
         Scenario: 16 Verify clients cannot update a resource with a duplicate descriptor
-            When a PUT request is made to "/ed-fi/schools/{id}" with
-            """
-            {
-                "id": "{id}",
-                "schoolId":255901001,
-                "nameOfInstitution":"School Test",
-                "gradeLevels": [
-                    {
-                    "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
-                    },
-                    {
-                    "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Seven grade"
-                    },
-                    {
-                    "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Seven grade"
-                    },
-                    {
-                    "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
-                    }
-                ],  
-                "educationOrganizationCategories":[
-                    {
-                        "educationOrganizationCategoryDescriptor":"uri://ed-fi.org/educationOrganizationCategoryDescriptor#School"
-                    }
-                ]
-            }
-            """
-            Then it should respond with 400
-            And the response body is
+             When a PUT request is made to "/ed-fi/schools/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "schoolId":255901001,
+                      "nameOfInstitution":"School Test",
+                      "gradeLevels": [
+                          {
+                          "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
+                          },
+                          {
+                          "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Seven grade"
+                          },
+                          {
+                          "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Seven grade"
+                          },
+                          {
+                          "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
+                          }
+                      ],
+                      "educationOrganizationCategories":[
+                          {
+                              "educationOrganizationCategoryDescriptor":"uri://ed-fi.org/educationOrganizationCategoryDescriptor#School"
+                          }
+                      ]
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
                   """
                   {
                         "validationErrors": {
@@ -470,54 +470,54 @@ Feature: Resources "Update" Operation validations
                   """
 
         Scenario: 17 Verify clients cannot upadate a resource with a duplicate resource reference
-            When a PUT request is made to "/ed-fi/bellschedules/{id}" with
-            """
-            {
-                "id": "{id}",
-                "schoolReference": {
-                    "schoolId": 1
-                },
-                "bellScheduleName": "Test Schedule",    
-                "totalInstructionalTime": 325,
-                "classPeriods": [
-                    {
-                        "classPeriodReference": {
-                            "classPeriodName": "01 - Traditional",
-                            "schoolId": 1
-                        }
-                    },
-                    {
-                        "classPeriodReference": {
-                            "classPeriodName": "02 - Traditional",
-                            "schoolId": 1
-                        }
-                    },
-                    {
-                        "classPeriodReference": {
-                            "classPeriodName": "03 - Traditional",
-                            "schoolId": 1
-                        }
-                    },
-                    {
-                        "classPeriodReference": {
-                            "classPeriodName": "01 - Traditional",
-                            "schoolId": 1
-                        }
-                    },
-                    {
-                        "classPeriodReference": {
-                            "classPeriodName": "02 - Traditional",
-                            "schoolId": 1
-                        }
-                    }
-
-                ],
-                "dates": [],
-                "gradeLevels": []
-            }
-            """
-            Then it should respond with 400
-            And the response body is
+             When a PUT request is made to "/ed-fi/bellschedules/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "schoolReference": {
+                          "schoolId": 1
+                      },
+                      "bellScheduleName": "Test Schedule",
+                      "totalInstructionalTime": 325,
+                      "classPeriods": [
+                          {
+                              "classPeriodReference": {
+                                  "classPeriodName": "01 - Traditional",
+                                  "schoolId": 1
+                              }
+                          },
+                          {
+                              "classPeriodReference": {
+                                  "classPeriodName": "02 - Traditional",
+                                  "schoolId": 1
+                              }
+                          },
+                          {
+                              "classPeriodReference": {
+                                  "classPeriodName": "03 - Traditional",
+                                  "schoolId": 1
+                              }
+                          },
+                          {
+                              "classPeriodReference": {
+                                  "classPeriodName": "01 - Traditional",
+                                  "schoolId": 1
+                              }
+                          },
+                          {
+                              "classPeriodReference": {
+                                  "classPeriodName": "02 - Traditional",
+                                  "schoolId": 1
+                              }
+                          }
+                  
+                      ],
+                      "dates": [],
+                      "gradeLevels": []
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
                   """
                   {
                         "validationErrors": {
@@ -532,5 +532,41 @@ Feature: Resources "Update" Operation validations
                         "title": "Data Validation Failed",
                         "status": 400,
                         "correlationId": null
+                  }
+                  """
+
+        Scenario: 18 Verify clients can update the identity of resources that allow identity updates
+            Given the system has these "schools"
+                  | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
+                  | 4003     | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+
+            Given the system has these "classPeriods"
+                  | schoolReference    | classPeriodName |
+                  | {"schoolId": 4003} | "first period"  |
+
+            Given the system has these "bellSchedules"
+                  | schoolReference    | classPeriods                                                                         | bellScheduleName    |
+                  | {"schoolId": 4003} | [ { "classPeriodReference": {"classPeriodName": "first period", "schoolId": 155} } ] | "Saved By The Bell" |
+
+             # classPeriodName is part of the identity of a classPeriod
+             When a PUT request is made to "/ed-fi/classPeriods/{id}" with
+                  """
+                     {
+                         "id": "{id}",
+                         "classPeriodName": "second period",
+                         "schoolReference": {
+                             "schoolId": 4003
+                         }
+                     }
+                  """
+             Then it should respond with 204
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                      "id": "{id}",
+                      "classPeriodName": "second period",
+                      "schoolReference": {
+                          "schoolId": 4003
+                      }
                   }
                   """

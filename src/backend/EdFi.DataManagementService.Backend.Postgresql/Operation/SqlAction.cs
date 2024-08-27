@@ -468,6 +468,56 @@ public static class SqlAction
     }
 
     /// <summary>
+    /// Update the ReferentialId of a document by its DocumentUuid for cases
+    /// when identity updates are permitted. 
+    /// </summary>
+    public static async Task<int> UpdateAliasReferentialIdByDocumentUuid(
+        short referentialPartitionKey,
+        Guid referentialId,
+        short documentPartitionKey,
+        Guid documentUuid,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        var result = await GetPostgresExceptionRetryPipeline().ExecuteAsync(async _ =>
+        {
+            try
+            {
+                await using var command = new NpgsqlCommand(
+                    @"UPDATE dms.Alias AS a
+                        SET ReferentialPartitionKey = $1, ReferentialId = $2
+                        FROM dms.Document AS d
+                        WHERE d.Id = a.DocumentId AND d.DocumentPartitionKey = a.DocumentPartitionKey
+                        AND d.DocumentPartitionKey = $3 AND d.DocumentUuid = $4;",
+                    connection,
+                    transaction
+                )
+                {
+                    Parameters =
+                    {
+                        new() { Value = referentialPartitionKey },
+                        new() { Value = referentialId },
+                        new() { Value = documentPartitionKey },
+                        new() { Value = documentUuid },
+                    }
+                };
+
+                await command.PrepareAsync();
+                return await command.ExecuteNonQueryAsync();
+            }
+            catch (PostgresException)
+            {
+                // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
+                // Must roll back the transaction before retry.
+                await transaction.RollbackAsync();
+                throw;
+            }
+        });
+        return result;
+    }
+
+    /// <summary>
     /// Attempt to insert references into the Reference table.
     /// If any referentialId is invalid, rolls back and returns an array of invalid referentialIds.
     /// </summary>

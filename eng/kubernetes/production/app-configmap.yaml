@@ -13,6 +13,7 @@ data:
     oauth-token-endpoint: "http://localhost:8080/oauth/token"
     bypass-string-coercion: "false"
     database-isolation-level: "RepeatableRead"
+    allow-identity-update-overrides: ""
     correlation-id-header: "correlationid"
     failure-ratio: "0.1"
     sampling-duration-seconds: "10"

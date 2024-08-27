@@ -93,14 +93,43 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
 
             if (!validationResult.ReferentialIdUnchanged)
             {
-                // Extracted referential id does not match stored. Must be attempting to change natural key.
-                _logger.LogInformation(
-                    "Failure: Natural key does not match on update - {TraceId}",
-                    updateRequest.TraceId
-                );
-                return new UpdateResult.UpdateFailureImmutableIdentity(
-                    $"Identifying values for the {updateRequest.ResourceInfo.ResourceName.Value} resource cannot be changed. Delete and recreate the resource item instead."
-                );
+                // Extracted referential id does not match stored. Must be attempting to change identity.
+                if (updateRequest.ResourceInfo.AllowIdentityUpdates)
+                {
+                    // Identity update is allowed
+                    _logger.LogInformation(
+                        "Updating Identity - {TraceId}",
+                        updateRequest.TraceId
+                    );
+
+                    int aliasRowsAffected = await UpdateAliasReferentialIdByDocumentUuid(
+                        PartitionKeyFor(updateRequest.DocumentInfo.ReferentialId).Value,
+                        updateRequest.DocumentInfo.ReferentialId.Value,
+                        PartitionKeyFor(updateRequest.DocumentUuid).Value,
+                        updateRequest.DocumentUuid.Value,
+                        connection, transaction
+                    );
+
+                    if (aliasRowsAffected == 0)
+                    {
+                        _logger.LogInformation(
+                            "Failure: Alias record to update does not exist - {TraceId}",
+                            updateRequest.TraceId
+                        );
+                        return new UpdateResult.UpdateFailureNotExists();
+                    }
+                }
+                else
+                {
+                    // Identity update not allowed
+                    _logger.LogInformation(
+                        "Failure: Identity does not match on update - {TraceId}",
+                        updateRequest.TraceId
+                    );
+                    return new UpdateResult.UpdateFailureImmutableIdentity(
+                        $"Identifying values for the {updateRequest.ResourceInfo.ResourceName.Value} resource cannot be changed. Delete and recreate the resource item instead."
+                    );
+                }
             }
 
             int rowsAffected = await UpdateDocumentEdfiDoc(
