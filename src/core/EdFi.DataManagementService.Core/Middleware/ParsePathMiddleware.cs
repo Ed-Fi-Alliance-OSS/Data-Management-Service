@@ -2,10 +2,12 @@
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
+
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Response;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
@@ -13,10 +15,10 @@ namespace EdFi.DataManagementService.Core.Middleware;
 internal record PathInfo(string ProjectNamespace, string EndpointName, string? DocumentUuid);
 
 /// <summary>
-/// Parses and validates the path from the frontend is well formed. Adds PathComponents
+/// Parses and validates the path from the frontend is well-formed. Adds PathComponents
 /// to the context if it is.
 /// </summary>
-internal partial class ParsePathMiddleware(ILogger _logger) : IPipelineStep
+internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
 {
     /// <summary>
     /// Uses a regex to split the path into PathComponents, or return null if the path is invalid
@@ -41,7 +43,7 @@ internal partial class ParsePathMiddleware(ILogger _logger) : IPipelineStep
     }
 
     /// <summary>
-    /// Check that this is a well formed UUID v4 string
+    /// Check that this is a well-formed UUID v4 string
     /// </summary>
     private static bool IsDocumentUuidWellFormed(string documentUuidString)
     {
@@ -70,13 +72,31 @@ internal partial class ParsePathMiddleware(ILogger _logger) : IPipelineStep
                 "ParsePathMiddleware: Not a valid document UUID - {TraceId}",
                 context.FrontendRequest.TraceId
             );
-            context.FrontendResponse = new FrontendResponse(StatusCode: 404, Body: "", Headers: []);
+
+            context.FrontendResponse = new FrontendResponse(
+                StatusCode: 400,
+                Body: FailureResponse.ForDataValidation(
+                    detail: "Data validation failed. See 'validationErrors' for details.",
+                    traceId: context.FrontendRequest.TraceId,
+                    validationErrors: new Dictionary<string, string[]>
+                    {
+                        { "$.id", new[] { $"The value '{pathInfo.DocumentUuid}' is not valid." } }
+                    },
+                    errors: []
+                ),
+                Headers: []
+            );
             return;
         }
 
-        DocumentUuid documentUuid = pathInfo.DocumentUuid == null ? No.DocumentUuid : new(new(pathInfo.DocumentUuid));
+        DocumentUuid documentUuid =
+            pathInfo.DocumentUuid == null ? No.DocumentUuid : new(new(pathInfo.DocumentUuid));
 
-        context.PathComponents = new(ProjectNamespace: new(pathInfo.ProjectNamespace), EndpointName: new(pathInfo.EndpointName), DocumentUuid: documentUuid);
+        context.PathComponents = new(
+            ProjectNamespace: new(pathInfo.ProjectNamespace),
+            EndpointName: new(pathInfo.EndpointName),
+            DocumentUuid: documentUuid
+        );
 
         await next();
     }
