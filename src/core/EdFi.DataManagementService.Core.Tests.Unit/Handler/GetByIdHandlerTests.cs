@@ -113,11 +113,21 @@ public class GetByIdHandlerTests
         public void It_has_the_correct_response()
         {
             context.FrontendResponse.StatusCode.Should().Be(500);
-            context
-                .FrontendResponse.Body?.AsValue()
-                .ToString()
-                .Should()
-                .Be($"{{\"error\":\"{Repository.ResponseBody}\",\"correlationId\":{{\"Value\":\"\"}}}}");
+
+            context.FrontendResponse.Body.Should().NotBeNull();
+            JsonNode.DeepEquals(
+                context.FrontendResponse.Body,
+                JsonNode.Parse(
+                    """
+{
+  "error": "FailureMessage",
+  "correlationId": {
+    "Value": ""
+  }
+}
+"""
+                )
+            ).Should().BeTrue();
         }
     }
 }
