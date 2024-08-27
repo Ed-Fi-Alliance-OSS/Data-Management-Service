@@ -11,11 +11,11 @@ public class PlaywrightContext
 {
     private static Task<IAPIRequestContext>? _requestContext;
 
-    public string ApiUrl { get; set; } = "http://localhost:5198";
+    public string ApiUrl { get; set; } = "http://localhost:8987";
 
     public IAPIRequestContext? ApiRequestContext => _requestContext?.GetAwaiter().GetResult();
 
-    public void Dispose()
+    public static void Dispose()
     {
         _requestContext?.Dispose();
     }

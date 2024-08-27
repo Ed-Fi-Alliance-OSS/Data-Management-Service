@@ -52,7 +52,7 @@ public class ContainerSetup
             .WithEnvironment("DATABASE_CONNECTION_STRING", connectionString)
             .WithEnvironment("DATABASE_CONNECTION_STRING_ADMIN", connectionString)
             .WithEnvironment("LOG_LEVEL", "Debug")
-            .WithEnvironment("OAUTH_TOKEN_ENDPOINT", "http://127.0.0.1:8080/oauth/token")
+            .WithEnvironment("OAUTH_TOKEN_ENDPOINT", $"http://127.0.0.1:{httpPort}/oauth/token")
             .WithEnvironment("BYPASS_STRING_COERCION", "false")
             .WithEnvironment("CORRELATION_ID_HEADER", "correlationid")
             .WithEnvironment("DATABASE_ISOLATION_LEVEL", "RepeatableRead")

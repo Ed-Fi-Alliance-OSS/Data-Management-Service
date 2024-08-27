@@ -64,8 +64,8 @@ public class SetupHooks
     }
 
     [AfterTestRun]
-    public static void AfterTestRun(PlaywrightContext context, TestLogger logger)
+    public static void AfterTestRun()
     {
-        context.Dispose();
+        PlaywrightContext.Dispose();
     }
 }
