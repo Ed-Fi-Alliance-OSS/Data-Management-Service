@@ -136,15 +136,4 @@ internal static class FailureResponse
             validationErrors: [],
             errors: []
         );
-
-    public static JsonNode ForInvalidPath(string detail, TraceId traceId) =>
-        CreateBaseJsonObject(
-            detail,
-            type: $"{_badRequestTypePrefix}:data-validation-failed",
-            title: "Data Validation Failed",
-            status: 404,
-            correlationId: traceId.Value,
-            validationErrors: [],
-            errors: []
-        );
 }

@@ -18,7 +18,7 @@ internal record PathInfo(string ProjectNamespace, string EndpointName, string? D
 /// Parses and validates the path from the frontend is well-formed. Adds PathComponents
 /// to the context if it is.
 /// </summary>
-internal class ParsePathMiddleware(ILogger logger) : IPipelineStep
+internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
 {
     /// <summary>
     /// Uses a regex to split the path into PathComponents, or return null if the path is invalid
@@ -52,30 +52,23 @@ internal class ParsePathMiddleware(ILogger logger) : IPipelineStep
 
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        logger.LogDebug("Entering ParsePathMiddleware - {TraceId}", context.FrontendRequest.TraceId);
+        _logger.LogDebug("Entering ParsePathMiddleware - {TraceId}", context.FrontendRequest.TraceId);
 
         PathInfo? pathInfo = PathInfoFrom(context.FrontendRequest.Path);
 
         if (pathInfo == null)
         {
-            logger.LogDebug(
+            _logger.LogDebug(
                 "ParsePathMiddleware: Not a valid path - {TraceId}",
                 context.FrontendRequest.TraceId
             );
-            context.FrontendResponse = new FrontendResponse(
-                StatusCode: 404,
-                Body: FailureResponse.ForInvalidPath(
-                    detail: "The path provided is invalid.",
-                    traceId: context.FrontendRequest.TraceId
-                ),
-                Headers: []
-            );
+            context.FrontendResponse = new FrontendResponse(StatusCode: 404, Body: "", Headers: []);
             return;
         }
 
         if (pathInfo.DocumentUuid != null && !IsDocumentUuidWellFormed(pathInfo.DocumentUuid))
         {
-            logger.LogDebug(
+            _logger.LogDebug(
                 "ParsePathMiddleware: Not a valid document UUID - {TraceId}",
                 context.FrontendRequest.TraceId
             );

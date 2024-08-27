@@ -568,7 +568,7 @@ Feature: Update a Descriptor
                   }
                   """
 
-        Scenario: 20 Verify response code 404 when ID is not valid
+        Scenario: 20 Verify response code 400 when ID is not valid
              When a PUT request is made to "/ed-fi/disabilityDescriptors/00112233445566" with
                   """
                   {
