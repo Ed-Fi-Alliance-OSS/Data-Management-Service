@@ -21,7 +21,7 @@ param(
 
     # Use 5.0.0 even if we're using 5.1.0 Data Standard, because there is no 5.1.0 file yet.
     [string]
-    $SampleDataVersion = "5.0.0",
+    $SampleDataVersion = "5.1.0-dev.3",
 
     # When false (default), only loads descriptors
     [switch]

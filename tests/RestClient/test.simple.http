@@ -1,10 +1,3 @@
-/*
- * SPDX-License-Identifier: Apache-2.0
- * Licensed to the Ed-Fi Alliance under one or more agreements.
- * The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
- * See the LICENSE and NOTICES files in the project root for more information.
- */
-
 ### Test POST of invalid resource
 
 @port = 8080
@@ -35,6 +28,8 @@ POST http://localhost:{{port}}/data/ed-fi/contentClassDescriptors/
 
 GET http://localhost:{{port}}/data/ed-fi/contentClassDescriptors/a71c8b76-261b-4452-9862-7f4df0b60758
 
+###
+GET http://localhost:{{port}}/data/ed-fi/contentClassDescriptors
 
 ### Test PUT of descriptor
 
@@ -225,3 +220,27 @@ POST http://localhost:{{port}}/data/ed-fi/sections
         }
     ]
 }
+
+
+###
+POST http://localhost:{{port}}/data/ed-fi/schoolYearTypes
+
+{
+    "schoolYear": 2021,
+    "schoolYearDescription": "2021-2022",
+    "currentSchoolYear": true
+}
+
+
+###
+POST http://localhost:{{port}}/data/ed-fi/schoolYearTypes
+
+{
+    "schoolYear": 2022,
+    "schoolYearDescription": "2022-2023",
+    "currentSchoolYear": true
+}
+
+
+###
+GET http://localhost:{{port}}/data/ed-fi/schoolYearTypes

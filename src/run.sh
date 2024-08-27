@@ -9,7 +9,12 @@ set +x
 
 envsubst < /app/appsettings.template.json > /app/appsettings.json
 
-until pg_isready -h ${POSTGRES_HOST} -p ${POSTGRES_PORT} -U ${POSTGRES_ADMIN_USER}; do
+# Safely extract a few environment variables from the admin connection string
+host=$(echo ${DATABASE_CONNECTION_STRING_ADMIN} | grep -Eo "host([^;]+)" | awk -F= '{print $2}')
+port=$(echo ${DATABASE_CONNECTION_STRING_ADMIN} | grep -Eo "port([^;]+)" | awk -F= '{print $2}')
+username=$(echo ${DATABASE_CONNECTION_STRING_ADMIN} | grep -Eo "username([^;]+)" | awk -F= '{print $2}')
+
+until pg_isready -h ${host} -p ${port} -U ${username}; do
   echo "Waiting for PostgreSQL to start..."
   sleep 2
 done
@@ -21,7 +26,7 @@ if [ "$NEED_DATABASE_SETUP" = true ]; then
   DATABASE="edfi_datamanagementservice"
 
   echo "Installing Data Management Service schema."
-  dotnet Installer/EdFi.DataManagementService.Backend.Installer.dll -e postgresql -c "host=${POSTGRES_HOST};port=${POSTGRES_PORT};username=${POSTGRES_ADMIN_USER};password=${POSTGRES_ADMIN_PASSWORD};database=${DATABASE};"
+  dotnet Installer/EdFi.DataManagementService.Backend.Installer.dll -e postgresql -c ${DATABASE_CONNECTION_STRING_ADMIN}
 
   export NEED_DATABASE_SETUP=false
 

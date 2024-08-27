@@ -35,8 +35,18 @@ internal static class JsonHelperExtensions
                 throw new InvalidOperationException($"Unexpected Json.Path error for '{jsonPathString}'");
             }
 
-            if (result.Matches.Count == 0)
-                return null;
+            try
+            {
+                if (result.Matches.Count == 0)
+                    return null;
+            }
+            catch (System.ArgumentException ae)
+            {
+                throw new InvalidOperationException(
+                    $"JSON value to be parsed is problematic, for example might contain duplicate keys.",
+                    ae
+                );
+            }
 
             if (result.Matches.Count != 1)
             {
@@ -111,22 +121,6 @@ internal static class JsonHelperExtensions
                 jsonNode?.AsValue() ?? throw new InvalidOperationException("Unexpected JSONPath value error");
             return result.ToString();
         });
-    }
-
-    /// <summary>
-    /// Helper to go from a scalar JSONPath selection directly to the selected JsonNode.
-    /// Throws if the value does not exist
-    /// </summary>
-    public static JsonNode SelectRequiredNodeFromPath(
-        this JsonNode jsonNode,
-        string jsonPathString,
-        ILogger logger
-    )
-    {
-        JsonNode? result =
-            SelectNodeFromPath(jsonNode, jsonPathString, logger)
-            ?? throw new InvalidOperationException($"Node at path '{jsonPathString}' not found");
-        return result;
     }
 
     /// <summary>

@@ -175,10 +175,9 @@ function RunTests {
 
         if ($Filter.Equals("*.Tests.Unit")) {
             Invoke-Execute {
-                #Execution with coverage
-                # Threshold need to be defined
+                # Execution with coverlet to generate code coverage analysis
                 coverlet $($_) `
-                    --target dotnet --targetargs "test $target --logger:console --logger:trx --nologo"`
+                    --target dotnet --targetargs "test $target --logger:console --logger:trx --nologo --blame"`
                     --threshold $thresholdCoverage `
                     --threshold-type line `
                     --threshold-type branch `
@@ -324,7 +323,7 @@ function Invoke-PushPackage {
 }
 
 $dockerTagBase = "local"
-$dockerTagDMS = "$($dockerTagBase)/edfi-data-management-service"
+$dockerTagDMS = "$($dockerTagBase)/data-management-service"
 
 function DockerBuild {
     Push-Location src/
