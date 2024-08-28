@@ -26,7 +26,7 @@ public sealed class PingStepDefinitions
     [Given("a ping to the server")]
     public async Task Given_a_ping_to_the_server()
     {
-        _APIResponse = await _playwrightContext.ApiRequestContext?.GetAsync("ping")!;
+        _APIResponse = await _playwrightContext.ApiRequestContext?.GetAsync("health")!;
     }
 
     [Then("it returns the dateTime")]

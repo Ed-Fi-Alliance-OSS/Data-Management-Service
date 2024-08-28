@@ -12,7 +12,7 @@ public class HealthCheckEndpointModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/ping", GetDateTime);
+        endpoints.MapGet("/health", GetDateTime);
     }
 
     internal static async Task GetDateTime(HttpContext httpContext)
