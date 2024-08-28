@@ -40,7 +40,7 @@ internal class QueryRequestHandler(IQueryHandler _queryHandler, ILogger _logger,
             QuerySuccess success
                 => new FrontendResponse(
                     StatusCode: 200,
-                    Body: success.EdfiDocs.ToJsonString(),
+                    Body: success.EdfiDocs,
                     Headers: context.PaginationParameters.TotalCount
                         ? new() { { "Total-Count", (success.TotalCount ?? 0).ToString() } }
                         : []

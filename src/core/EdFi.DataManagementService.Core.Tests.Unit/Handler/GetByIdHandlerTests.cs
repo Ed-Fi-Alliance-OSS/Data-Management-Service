@@ -100,7 +100,8 @@ public class GetByIdHandlerTests
             }
         }
 
-        private readonly PipelineContext context = No.PipelineContext();
+        private static readonly string _traceId = "xyz";
+        private readonly PipelineContext context = No.PipelineContext(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -113,11 +114,25 @@ public class GetByIdHandlerTests
         public void It_has_the_correct_response()
         {
             context.FrontendResponse.StatusCode.Should().Be(500);
-            context
-                .FrontendResponse.Body?.AsValue()
-                .ToString()
+
+            var expected = $$"""
+{
+  "error": "FailureMessage",
+  "correlationId": "{{_traceId}}"
+}
+""";
+
+            context.FrontendResponse.Body.Should().NotBeNull();
+            JsonNode
+                .DeepEquals(context.FrontendResponse.Body, JsonNode.Parse(expected))
                 .Should()
-                .Be($"{{\"error\":\"{Repository.ResponseBody}\",\"correlationId\":{{\"Value\":\"\"}}}}");
+                .BeTrue(
+                    $"""
+expected: {expected}
+
+actual: {context.FrontendResponse.Body}
+"""
+                );
         }
     }
 }
