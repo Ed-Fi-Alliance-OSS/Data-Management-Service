@@ -147,6 +147,7 @@ public class DeleteByIdHandlerTests
     [TestFixture]
     public class Given_A_Repository_That_Returns_Unknown_Failure : DeleteByIdHandlerTests
     {
+
         internal class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly string ResponseBody = "FailureMessage";
@@ -157,7 +158,8 @@ public class DeleteByIdHandlerTests
             }
         }
 
-        private readonly PipelineContext context = No.PipelineContext();
+        private static readonly string _traceId = "xyz";
+        private readonly PipelineContext context = No.PipelineContext(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -171,20 +173,24 @@ public class DeleteByIdHandlerTests
         {
             context.FrontendResponse.StatusCode.Should().Be(500);
 
-            context.FrontendResponse.Body.Should().NotBeNull();
-            JsonNode.DeepEquals(
-                context.FrontendResponse.Body,
-                JsonNode.Parse(
-                    """
+            var expected = $$"""
 {
   "error": "FailureMessage",
-  "correlationId": {
-    "Value": ""
-  }
+  "correlationId": "{{_traceId}}"
 }
+""";
+
+            context.FrontendResponse.Body.Should().NotBeNull();
+            JsonNode
+                .DeepEquals(context.FrontendResponse.Body, JsonNode.Parse(expected))
+                .Should()
+                .BeTrue(
+                    $"""
+expected: {expected}
+
+actual: {context.FrontendResponse.Body}
 """
-                )
-            ).Should().BeTrue();
+                );
         }
     }
 }

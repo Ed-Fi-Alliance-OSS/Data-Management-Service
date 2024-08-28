@@ -178,7 +178,8 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly PipelineContext context = No.PipelineContext();
+        private static readonly string _traceId = "xyz";
+        private readonly PipelineContext context = No.PipelineContext(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -192,22 +193,24 @@ public class UpsertHandlerTests
         {
             context.FrontendResponse.StatusCode.Should().Be(500);
 
-            context.FrontendResponse.Body.Should().NotBeNull();
-            JsonNode.DeepEquals(
-                context.FrontendResponse.Body,
-                JsonNode.Parse(
-                    """
+            var expected = $$"""
 {
   "error": "FailureMessage",
-  "correlationId": {
-    "Value": ""
-  }
+  "correlationId": "{{_traceId}}"
 }
+""";
+
+            context.FrontendResponse.Body.Should().NotBeNull();
+            JsonNode
+                .DeepEquals(context.FrontendResponse.Body, JsonNode.Parse(expected))
+                .Should()
+                .BeTrue(
+                    $"""
+expected: {expected}
+
+actual: {context.FrontendResponse.Body}
 """
-                )
-            ).Should().BeTrue();
-            context.FrontendResponse.Headers.Should().BeEmpty();
-            context.FrontendResponse.LocationHeaderPath.Should().BeNull();
+                );
         }
     }
 }

@@ -83,8 +83,7 @@ internal static class No
     /// <summary>
     /// The null object for FrontendRequest
     /// </summary>
-    public static readonly FrontendRequest FrontendRequest =
-        new(Body: "{}", Path: "", QueryParameters: [], TraceId: new TraceId(""));
+    public static FrontendRequest CreateFrontendRequest(string traceId) => new(Body: "{}", Path: "", QueryParameters: [], TraceId: new TraceId(traceId));
 
     /// <summary>
     /// The null object for FrontendResponse
@@ -98,8 +97,8 @@ internal static class No
     /// <summary>
     /// A constructor of a PipelineContext initialized with null objects
     /// </summary>
-    public static PipelineContext PipelineContext()
+    public static PipelineContext PipelineContext(string traceId = "")
     {
-        return new PipelineContext(FrontendRequest, RequestMethod.GET);
+        return new PipelineContext(CreateFrontendRequest(traceId), RequestMethod.GET);
     }
 }
