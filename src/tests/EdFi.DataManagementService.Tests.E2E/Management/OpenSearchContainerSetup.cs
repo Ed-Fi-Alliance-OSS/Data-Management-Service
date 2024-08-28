@@ -3,26 +3,21 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System;
-using System.IO;
 using System.Reflection;
 using System.Text;
-using System.Text.Json;
-using Docker.DotNet.Models;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Networks;
 using Microsoft.Extensions.Logging;
-using Npgsql;
 using OpenSearch.Client;
 using LogLevel = Microsoft.Extensions.Logging.LogLevel;
 
 namespace EdFi.DataManagementService.Tests.E2E.Management;
 
-public class OpenSearchContainerSetup
+public class OpenSearchContainerSetup : ContainerSetupBase
 {
     public static IContainer? DbContainer;
-    public static IContainer? ApiContainer;
+    public static IContainer? DmsApiContainer;
     public static IContainer? ZooKeeperContainer;
     public static IContainer? KafkaContainer;
     public static IContainer? KafkaSourceContainer;
@@ -30,17 +25,9 @@ public class OpenSearchContainerSetup
     public static IContainer? OpenSearchContainer;
     public static INetwork? network;
 
-    public static async Task CreateContainers()
+    public override async Task StartContainers()
     {
         network = new NetworkBuilder().Build();
-
-        // Images need to be previously built
-        string apiImageName = "local/edfi-data-management-service";
-        string dbImageName = "postgres:16.3-alpine3.20";
-
-        var pgAdminUser = "postgres";
-        var pgAdminPassword = "abcdefgh1!";
-        var dbContainerName = "dms-postgresql";
         var assemblyLocation = "";
 
         var loggerFactory = LoggerFactory.Create(builder =>
@@ -104,14 +91,16 @@ public class OpenSearchContainerSetup
             assemblyLocation = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             string filePath = Path.Combine(assemblyLocation!, "OpenSearchFiles/debezium_config.sh");
 
+            //DbContainer = DatabaseContainer(loggerFactory, network, filePath);
+
             DbContainer = new ContainerBuilder()
-                .WithHostname(dbContainerName)
-                .WithImage(dbImageName)
+                .WithHostname("dms-postgresql")
+                .WithImage("postgres:16.3-alpine3.20")
                 .WithPortBinding(5435, 5432)
                 .WithNetwork(network)
-                .WithNetworkAliases(dbContainerName)
-                .WithEnvironment("POSTGRES_USER", pgAdminUser)
-                .WithEnvironment("POSTGRES_PASSWORD", pgAdminPassword)
+                .WithNetworkAliases("dms-postgresql")
+                .WithEnvironment("POSTGRES_USER", "postgres")
+                .WithEnvironment("POSTGRES_PASSWORD", "abcdefgh1!")
                 .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(5432))
                 .WithBindMount(filePath, "/docker-entrypoint-initdb.d/debezium_config.sh")
                 .WithLogger(loggerFactory.CreateLogger("dbContainer"))
@@ -134,34 +123,12 @@ public class OpenSearchContainerSetup
                 .WithEnvironment("DISABLE_SECURITY_PLUGIN", "true")
                 .Build();
 
-            ApiContainer = new ContainerBuilder()
-                .WithImage(apiImageName)
-                .WithPortBinding(8080)
-                .WithEnvironment("NEED_DATABASE_SETUP", "true")
-                .WithEnvironment(
-                    "DATABASE_CONNECTION_STRING",
-                    "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;"
-                )
-                .DependsOn(DbContainer)
-                .WithEnvironment("POSTGRES_ADMIN_USER", pgAdminUser)
-                .WithEnvironment("POSTGRES_ADMIN_PASSWORD", pgAdminPassword)
-                .WithEnvironment("POSTGRES_PORT", "5432")
-                .WithEnvironment("POSTGRES_HOST", dbContainerName)
-                .WithEnvironment("LOG_LEVEL", "Debug")
-                .WithEnvironment("OAUTH_TOKEN_ENDPOINT", "http://127.0.0.1:8080/oauth/token")
-                .WithEnvironment("BYPASS_STRING_COERCION", "false")
-                .WithEnvironment("CORRELATION_ID_HEADER", "correlationid")
-                .WithEnvironment("DATABASE_ISOLATION_LEVEL", "RepeatableRead")
-                .WithEnvironment("FAILURE_RATIO", "0.1")
-                .WithEnvironment("SAMPLING_DURATION_SECONDS", "10")
-                .WithEnvironment("MINIMUM_THROUGHPUT", "2000")
-                .WithEnvironment("BREAK_DURATION_SECONDS", "30")
-                .WithEnvironment("QUERY_HANDLER", "opensearch")
-                .WithEnvironment("OPENSEARCH_URL", @"http://dms-opensearch:9200")
-                .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(8080)))
-                .WithNetwork(network)
-                .WithLogger(loggerFactory.CreateLogger("apiContainer"))
-                .Build();
+            DmsApiContainer = ApiContainer(
+                "opensearch",
+                loggerFactory,
+                network,
+                "http://dms-opensearch:9200"
+            );
 
             await network.CreateAsync().ConfigureAwait(false);
             await Task.WhenAll(
@@ -171,7 +138,7 @@ public class OpenSearchContainerSetup
                     KafkaSinkContainer.StartAsync(),
                     DbContainer.StartAsync(),
                     OpenSearchContainer.StartAsync(),
-                    ApiContainer.StartAsync()
+                    DmsApiContainer.StartAsync()
                 )
                 .ConfigureAwait(false);
 
@@ -192,14 +159,10 @@ public class OpenSearchContainerSetup
         {
             var a = ex.Message;
         }
-
-        await Task.Delay(5000);
-
         async Task InjectConnectorConfiguration(string url, string configFilePath)
         {
             var _client = new HttpClient();
             _client.BaseAddress = new Uri(url);
-
             var connectorConfig = Path.Combine(assemblyLocation!, configFilePath);
             string content = await File.ReadAllTextAsync(connectorConfig);
             var stringContent = new StringContent(content, Encoding.UTF8, "application/json");
@@ -207,29 +170,30 @@ public class OpenSearchContainerSetup
         }
     }
 
-    public static async Task<string> StartContainers(PlaywrightContext context, TestLogger logger)
+    public override async Task ApiLogs(TestLogger logger)
     {
-        while (ApiContainer!.State != TestcontainersStates.Running)
-        {
-            await Task.Delay(1000);
-        }
-        return new UriBuilder(
-            Uri.UriSchemeHttp,
-            ApiContainer?.Hostname,
-            ApiContainer!.GetMappedPublicPort(8080)
-        ).ToString();
-    }
-
-    public static async Task ResetContainers(PlaywrightContext context, TestLogger logger)
-    {
-        var logs = await ApiContainer!.GetLogsAsync();
+        var logs = await DmsApiContainer!.GetLogsAsync();
         logger.log.Information($"{Environment.NewLine}API stdout logs:{Environment.NewLine}{logs.Stdout}");
 
         if (!string.IsNullOrEmpty(logs.Stderr))
         {
             logger.log.Error($"{Environment.NewLine}API stderr logs:{Environment.NewLine}{logs.Stderr}");
         }
+    }
 
+    public override async Task<string> ApiUrl()
+    {
+        return await ValidateApiContainer(DmsApiContainer!);
+    }
+
+    public override async Task ResetData()
+    {
+        await ResetOpenSearch();
+        await ResetDatabase();
+    }
+
+    private async Task ResetOpenSearch()
+    {
         OpenSearchClient openSearchClient = new();
         var indices = openSearchClient.Cat.Indices();
 
@@ -237,19 +201,5 @@ public class OpenSearchContainerSetup
         {
             await openSearchClient.Indices.DeleteAsync(index.Index);
         }
-
-        var connString =
-            "host=localhost;port=5435;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;";
-        using var conn = new NpgsqlConnection(connString);
-        await conn.OpenAsync();
-
-        var deleteRefCmd = new NpgsqlCommand($"DELETE FROM dms.Reference;", conn);
-        await deleteRefCmd.ExecuteNonQueryAsync();
-
-        var deleteAliCmd = new NpgsqlCommand($"DELETE FROM dms.Alias;", conn);
-        await deleteAliCmd.ExecuteNonQueryAsync();
-
-        var deleteDocCmd = new NpgsqlCommand($"DELETE FROM dms.Document;", conn);
-        await deleteDocCmd.ExecuteNonQueryAsync();
     }
 }

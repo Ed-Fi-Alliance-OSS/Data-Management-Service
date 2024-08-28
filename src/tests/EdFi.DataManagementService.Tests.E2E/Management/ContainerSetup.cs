@@ -6,122 +6,48 @@
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using Microsoft.Extensions.Logging;
-using Npgsql;
-using OpenSearch.Client;
 
 namespace EdFi.DataManagementService.Tests.E2E.Management;
 
-public class ContainerSetup
+public class ContainerSetup : ContainerSetupBase
 {
-    public static IContainer? DbContainer;
-    public static IContainer? ApiContainer;
+    public IContainer? DbContainer;
+    public IContainer? DmsApiContainer;
 
-    public static async Task CreateContainers()
+    public override async Task<string> ApiUrl()
+    {
+        return await ValidateApiContainer(DmsApiContainer!);
+    }
+
+    public override async Task ApiLogs(TestLogger logger)
+    {
+        var logs = await DmsApiContainer!.GetLogsAsync();
+        logger.log.Information($"{Environment.NewLine}API stdout logs:{Environment.NewLine}{logs.Stdout}");
+
+        if (!string.IsNullOrEmpty(logs.Stderr))
+        {
+            logger.log.Error($"{Environment.NewLine}API stderr logs:{Environment.NewLine}{logs.Stderr}");
+        }
+    }
+
+    public override async Task ResetData()
+    {
+        await ResetDatabase();
+    }
+
+    public override async Task StartContainers()
     {
         var network = new NetworkBuilder().Build();
 
-        // Images need to be previously built
-        string apiImageName = "local/edfi-data-management-service";
-        string dbImageName = "postgres:16.3-alpine3.20";
-
-        var pgAdminUser = "postgres";
-        var pgAdminPassword = "P@ssw0rd";
-        var dbContainerName = "dmsdb";
-
         var loggerFactory = LoggerFactory.Create(builder =>
         {
-            builder.SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Trace).AddDebug().AddConsole();
+            builder.SetMinimumLevel(LogLevel.Trace).AddDebug().AddConsole();
         });
 
-        DbContainer = new ContainerBuilder()
-            .WithImage(dbImageName)
-            .WithPortBinding(5435, 5432)
-            .WithNetwork(network)
-            .WithNetworkAliases(dbContainerName)
-            .WithEnvironment("POSTGRES_PASSWORD", pgAdminPassword)
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(5432))
-            .WithLogger(loggerFactory.CreateLogger("dbContainer"))
-            .Build();
-
-        ApiContainer = new ContainerBuilder()
-            .WithImage(apiImageName)
-            .WithPortBinding(8080)
-            .WithEnvironment("NEED_DATABASE_SETUP", "true")
-            .WithEnvironment(
-                "DATABASE_CONNECTION_STRING",
-                "host=dmsdb;port=5432;username=postgres;password=P@ssw0rd;database=edfi_datamanagementservice;"
-            )
-            .WithEnvironment("POSTGRES_ADMIN_USER", pgAdminUser)
-            .WithEnvironment("POSTGRES_ADMIN_PASSWORD", pgAdminPassword)
-            .WithEnvironment("POSTGRES_PORT", "5432")
-            .WithEnvironment("POSTGRES_HOST", dbContainerName)
-            .WithEnvironment("LOG_LEVEL", "Debug")
-            .WithEnvironment("OAUTH_TOKEN_ENDPOINT", "http://127.0.0.1:8080/oauth/token")
-            .WithEnvironment("BYPASS_STRING_COERCION", "false")
-            .WithEnvironment("CORRELATION_ID_HEADER", "correlationid")
-            .WithEnvironment("DATABASE_ISOLATION_LEVEL", "RepeatableRead")
-            .WithEnvironment("FAILURE_RATIO", "0.1")
-            .WithEnvironment("SAMPLING_DURATION_SECONDS", "10")
-            .WithEnvironment("MINIMUM_THROUGHPUT", "2")
-            .WithEnvironment("BREAK_DURATION_SECONDS", "30")
-            .WithEnvironment("QUERY_HANDLER", "postgresql")
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(8080)))
-            .WithNetwork(network)
-            .WithLogger(loggerFactory.CreateLogger("apiContainer"))
-            .Build();
+        DbContainer = DatabaseContainer(loggerFactory, network);
+        DmsApiContainer = ApiContainer("postgresql", loggerFactory, network);
 
         await network.CreateAsync().ConfigureAwait(false);
-        await Task.WhenAll(DbContainer.StartAsync(), ApiContainer.StartAsync()).ConfigureAwait(false);
+        await Task.WhenAll(DbContainer.StartAsync(), DmsApiContainer.StartAsync()).ConfigureAwait(false);
     }
-
-    public static async Task<string> StartContainers(PlaywrightContext context, TestLogger logger)
-    {
-        while (ApiContainer!.State != TestcontainersStates.Running)
-        {
-            await Task.Delay(1000);
-        }
-        return new UriBuilder(
-            Uri.UriSchemeHttp,
-            ApiContainer?.Hostname,
-            ApiContainer!.GetMappedPublicPort(8080)
-        ).ToString();
-    }
-
-    public static async Task ResetContainers(PlaywrightContext context, TestLogger logger)
-    {
-        var connString =
-            "host=localhost;port=5435;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;";
-        using var conn = new NpgsqlConnection(connString);
-        await conn.OpenAsync();
-
-        var deleteRefCmd = new NpgsqlCommand($"DELETE FROM dms.Reference;", conn);
-        await deleteRefCmd.ExecuteNonQueryAsync();
-
-        var deleteAliCmd = new NpgsqlCommand($"DELETE FROM dms.Alias;", conn);
-        await deleteAliCmd.ExecuteNonQueryAsync();
-
-        var deleteDocCmd = new NpgsqlCommand($"DELETE FROM dms.Document;", conn);
-        await deleteDocCmd.ExecuteNonQueryAsync();
-
-        await Task.Delay(5000);
-    }
-
-    //public static async Task ClearContainers(PlaywrightContext context, TestLogger logger)
-    //{
-    //    if (ApiContainer == null || DbContainer == null)
-    //    {
-    //        return;
-    //    }
-
-    //    var logs = await ApiContainer!.GetLogsAsync();
-    //    logger.log.Information($"{Environment.NewLine}API stdout logs:{Environment.NewLine}{logs.Stdout}");
-
-    //    if (!string.IsNullOrEmpty(logs.Stderr))
-    //    {
-    //        logger.log.Error($"{Environment.NewLine}API stderr logs:{Environment.NewLine}{logs.Stderr}");
-    //    }
-
-    //    await DbContainer!.DisposeAsync();
-    //    await ApiContainer!.DisposeAsync();
-    //}
 }

@@ -15,21 +15,28 @@ public class SetupHooks
     private static IConfiguration? _configuration = new ConfigurationBuilder()
         .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
         .Build();
+    private static ContainerSetupBase? _containerSetup;
+
+    private static bool _useTestContainers = false;
+    private static bool _openSearchEnabled = false;
 
     [BeforeTestRun]
-    public static async Task BeforeTestRun(PlaywrightContext context, TestLogger logger)
+    public static async Task BeforeTestRun()
     {
-        bool.TryParse(_configuration!["useTestContainers"], out bool useTestContainers);
-        bool.TryParse(_configuration!["OpenSearchEnabled"], out bool OpenSearchEnabled);
-        if (useTestContainers)
-            if (OpenSearchEnabled)
+        bool.TryParse(_configuration!["useTestContainers"], out _useTestContainers);
+        bool.TryParse(_configuration!["OpenSearchEnabled"], out _openSearchEnabled);
+
+        if (_useTestContainers)
+            if (_openSearchEnabled)
             {
-                await OpenSearchContainerSetup.CreateContainers();
+                _containerSetup = new OpenSearchContainerSetup();
             }
             else
             {
-                await ContainerSetup.CreateContainers();
+                _containerSetup = new ContainerSetup();
             }
+
+        await _containerSetup!.StartContainers();
     }
 
     [BeforeFeature]
@@ -37,20 +44,10 @@ public class SetupHooks
     {
         try
         {
-            bool.TryParse(_configuration!["useTestContainers"], out bool useTestContainers);
-            bool.TryParse(_configuration!["OpenSearchEnabled"], out bool OpenSearchEnabled);
-
-            if (useTestContainers)
+            if (_useTestContainers)
             {
                 logger.log.Debug("Using TestContainers to set environment");
-                if (OpenSearchEnabled)
-                {
-                    context.ApiUrl = await OpenSearchContainerSetup.StartContainers(context, logger);
-                }
-                else
-                {
-                    context.ApiUrl = await ContainerSetup.StartContainers(context, logger);
-                }
+                context.ApiUrl = await _containerSetup!.ApiUrl();
             }
             else
             {
@@ -66,22 +63,14 @@ public class SetupHooks
     }
 
     [AfterFeature]
-    public static async Task AfterFeature(PlaywrightContext context, TestLogger logger)
+    public static async Task AfterFeature(TestLogger logger)
     {
-        bool.TryParse(_configuration!["OpenSearchEnabled"], out bool OpenSearchEnabled);
-
-        if (OpenSearchEnabled)
-        {
-            await OpenSearchContainerSetup.ResetContainers(context, logger);
-        }
-        else
-        {
-            await ContainerSetup.ResetContainers(context, logger);
-        }
+        await _containerSetup!.ApiLogs(logger);
+        await _containerSetup!.ResetData();
     }
 
     [AfterTestRun]
-    public static void AfterTestRun(PlaywrightContext context, TestLogger logger)
+    public static void AfterTestRun(PlaywrightContext context)
     {
         context.Dispose();
     }
