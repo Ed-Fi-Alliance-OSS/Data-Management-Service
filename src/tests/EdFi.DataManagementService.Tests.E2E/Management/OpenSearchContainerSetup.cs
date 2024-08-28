@@ -11,7 +11,11 @@ using System.Text.Json;
 using Docker.DotNet.Models;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
+using DotNet.Testcontainers.Networks;
 using Microsoft.Extensions.Logging;
+using Npgsql;
+using OpenSearch.Client;
+using LogLevel = Microsoft.Extensions.Logging.LogLevel;
 
 namespace EdFi.DataManagementService.Tests.E2E.Management;
 
@@ -24,16 +28,14 @@ public class OpenSearchContainerSetup
     public static IContainer? KafkaSourceContainer;
     public static IContainer? KafkaSinkContainer;
     public static IContainer? OpenSearchContainer;
+    public static INetwork? network;
 
-    public static IContainer? OpenSearchDBContainer;
-
-    public static async Task<string> CreateContainers()
+    public static async Task CreateContainers()
     {
-        var network = new NetworkBuilder().Build();
+        network = new NetworkBuilder().Build();
 
         // Images need to be previously built
         string apiImageName = "local/edfi-data-management-service";
-        //string apiImageName = "postgresql-kafka-opensearch-dmsapi";
         string dbImageName = "postgres:16.3-alpine3.20";
 
         var pgAdminUser = "postgres";
@@ -132,18 +134,6 @@ public class OpenSearchContainerSetup
                 .WithEnvironment("DISABLE_SECURITY_PLUGIN", "true")
                 .Build();
 
-            OpenSearchDBContainer = new ContainerBuilder()
-                .WithHostname("dms-opensearch-dashboards")
-                .WithImage("opensearchproject/opensearch-dashboards:latest")
-                .WithNetwork(network)
-                .WithPortBinding(5601, 5601)
-                .WithExposedPort(5601)
-                .WithNetworkAliases("dms-opensearch-dashboards")
-                .WithEnvironment("OPENSEARCH_ADMIN_PASSWORD", "abcdefgh1!")
-                .WithEnvironment("OPENSEARCH_HOSTS", @"http://dms-opensearch:9200")
-                .WithEnvironment("DISABLE_SECURITY_DASHBOARDS_PLUGIN", "true")
-                .Build();
-
             ApiContainer = new ContainerBuilder()
                 .WithImage(apiImageName)
                 .WithPortBinding(8080)
@@ -153,7 +143,6 @@ public class OpenSearchContainerSetup
                     "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;"
                 )
                 .DependsOn(DbContainer)
-                .DependsOn(OpenSearchContainer)
                 .WithEnvironment("POSTGRES_ADMIN_USER", pgAdminUser)
                 .WithEnvironment("POSTGRES_ADMIN_PASSWORD", pgAdminPassword)
                 .WithEnvironment("POSTGRES_PORT", "5432")
@@ -181,7 +170,8 @@ public class OpenSearchContainerSetup
                     KafkaSourceContainer.StartAsync(),
                     KafkaSinkContainer.StartAsync(),
                     DbContainer.StartAsync(),
-                    OpenSearchContainer.StartAsync()
+                    OpenSearchContainer.StartAsync(),
+                    ApiContainer.StartAsync()
                 )
                 .ConfigureAwait(false);
 
@@ -189,8 +179,8 @@ public class OpenSearchContainerSetup
             {
                 await Task.Delay(1000);
             }
-            await OpenSearchDBContainer.StartAsync();
-            await ApiContainer.StartAsync();
+
+            await Task.Delay(5000);
 
             var sourceConfigPath = "OpenSearchFiles/postgresql_connector.json";
             await InjectConnectorConfiguration("http://localhost:8083/", sourceConfigPath);
@@ -205,12 +195,6 @@ public class OpenSearchContainerSetup
 
         await Task.Delay(5000);
 
-        return new UriBuilder(
-            Uri.UriSchemeHttp,
-            ApiContainer?.Hostname,
-            ApiContainer!.GetMappedPublicPort(8080)
-        ).ToString();
-
         async Task InjectConnectorConfiguration(string url, string configFilePath)
         {
             var _client = new HttpClient();
@@ -223,18 +207,21 @@ public class OpenSearchContainerSetup
         }
     }
 
-    public static async Task ClearContainers(PlaywrightContext context, TestLogger logger)
+    public static async Task<string> StartContainers(PlaywrightContext context, TestLogger logger)
     {
-        if (ApiContainer == null || DbContainer == null)
+        while (ApiContainer!.State != TestcontainersStates.Running)
         {
-            return;
+            await Task.Delay(1000);
         }
+        return new UriBuilder(
+            Uri.UriSchemeHttp,
+            ApiContainer?.Hostname,
+            ApiContainer!.GetMappedPublicPort(8080)
+        ).ToString();
+    }
 
-        var opensearchDBLogs = await OpenSearchDBContainer!.GetLogsAsync();
-        logger.log.Information(
-            $"{Environment.NewLine}Open Dash board Search stdout logs:{Environment.NewLine}{opensearchDBLogs.Stdout}"
-        );
-
+    public static async Task ResetContainers(PlaywrightContext context, TestLogger logger)
+    {
         var logs = await ApiContainer!.GetLogsAsync();
         logger.log.Information($"{Environment.NewLine}API stdout logs:{Environment.NewLine}{logs.Stdout}");
 
@@ -243,12 +230,26 @@ public class OpenSearchContainerSetup
             logger.log.Error($"{Environment.NewLine}API stderr logs:{Environment.NewLine}{logs.Stderr}");
         }
 
-        await ApiContainer!.DisposeAsync();
-        await OpenSearchContainer!.DisposeAsync();
-        await KafkaSinkContainer!.DisposeAsync();
-        await KafkaSourceContainer!.DisposeAsync();
-        await DbContainer!.DisposeAsync();
-        await ZooKeeperContainer!.DisposeAsync();
-        await OpenSearchDBContainer!.DisposeAsync();
+        OpenSearchClient openSearchClient = new();
+        var indices = openSearchClient.Cat.Indices();
+
+        foreach (var index in indices.Records.Where(x => x.Index.Contains("ed-fi")))
+        {
+            await openSearchClient.Indices.DeleteAsync(index.Index);
+        }
+
+        var connString =
+            "host=localhost;port=5435;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;";
+        using var conn = new NpgsqlConnection(connString);
+        await conn.OpenAsync();
+
+        var deleteRefCmd = new NpgsqlCommand($"DELETE FROM dms.Reference;", conn);
+        await deleteRefCmd.ExecuteNonQueryAsync();
+
+        var deleteAliCmd = new NpgsqlCommand($"DELETE FROM dms.Alias;", conn);
+        await deleteAliCmd.ExecuteNonQueryAsync();
+
+        var deleteDocCmd = new NpgsqlCommand($"DELETE FROM dms.Document;", conn);
+        await deleteDocCmd.ExecuteNonQueryAsync();
     }
 }

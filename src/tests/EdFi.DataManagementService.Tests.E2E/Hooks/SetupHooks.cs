@@ -16,6 +16,22 @@ public class SetupHooks
         .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
         .Build();
 
+    [BeforeTestRun]
+    public static async Task BeforeTestRun(PlaywrightContext context, TestLogger logger)
+    {
+        bool.TryParse(_configuration!["useTestContainers"], out bool useTestContainers);
+        bool.TryParse(_configuration!["OpenSearchEnabled"], out bool OpenSearchEnabled);
+        if (useTestContainers)
+            if (OpenSearchEnabled)
+            {
+                await OpenSearchContainerSetup.CreateContainers();
+            }
+            else
+            {
+                await ContainerSetup.CreateContainers();
+            }
+    }
+
     [BeforeFeature]
     public static async Task BeforeFeature(PlaywrightContext context, TestLogger logger)
     {
@@ -29,11 +45,11 @@ public class SetupHooks
                 logger.log.Debug("Using TestContainers to set environment");
                 if (OpenSearchEnabled)
                 {
-                    context.ApiUrl = await OpenSearchContainerSetup.CreateContainers();
+                    context.ApiUrl = await OpenSearchContainerSetup.StartContainers(context, logger);
                 }
                 else
                 {
-                    context.ApiUrl = await ContainerSetup.SetupDataManagement();
+                    context.ApiUrl = await ContainerSetup.StartContainers(context, logger);
                 }
             }
             else
@@ -56,11 +72,11 @@ public class SetupHooks
 
         if (OpenSearchEnabled)
         {
-            await OpenSearchContainerSetup.ClearContainers(context, logger);
+            await OpenSearchContainerSetup.ResetContainers(context, logger);
         }
         else
         {
-            await ContainerSetup.ClearContainers(context, logger);
+            await ContainerSetup.ResetContainers(context, logger);
         }
     }
 

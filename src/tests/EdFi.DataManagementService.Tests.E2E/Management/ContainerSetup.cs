@@ -6,6 +6,8 @@
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using Microsoft.Extensions.Logging;
+using Npgsql;
+using OpenSearch.Client;
 
 namespace EdFi.DataManagementService.Tests.E2E.Management;
 
@@ -14,7 +16,7 @@ public class ContainerSetup
     public static IContainer? DbContainer;
     public static IContainer? ApiContainer;
 
-    public static async Task<string> SetupDataManagement()
+    public static async Task CreateContainers()
     {
         var network = new NetworkBuilder().Build();
 
@@ -28,12 +30,12 @@ public class ContainerSetup
 
         var loggerFactory = LoggerFactory.Create(builder =>
         {
-            builder.SetMinimumLevel(LogLevel.Trace).AddDebug().AddConsole();
+            builder.SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Trace).AddDebug().AddConsole();
         });
 
         DbContainer = new ContainerBuilder()
             .WithImage(dbImageName)
-            .WithPortBinding(5404, 5432)
+            .WithPortBinding(5435, 5432)
             .WithNetwork(network)
             .WithNetworkAliases(dbContainerName)
             .WithEnvironment("POSTGRES_PASSWORD", pgAdminPassword)
@@ -70,30 +72,56 @@ public class ContainerSetup
 
         await network.CreateAsync().ConfigureAwait(false);
         await Task.WhenAll(DbContainer.StartAsync(), ApiContainer.StartAsync()).ConfigureAwait(false);
+    }
 
+    public static async Task<string> StartContainers(PlaywrightContext context, TestLogger logger)
+    {
+        while (ApiContainer!.State != TestcontainersStates.Running)
+        {
+            await Task.Delay(1000);
+        }
         return new UriBuilder(
             Uri.UriSchemeHttp,
-            ApiContainer.Hostname,
-            ApiContainer.GetMappedPublicPort(8080)
+            ApiContainer?.Hostname,
+            ApiContainer!.GetMappedPublicPort(8080)
         ).ToString();
     }
 
-    public static async Task ClearContainers(PlaywrightContext context, TestLogger logger)
+    public static async Task ResetContainers(PlaywrightContext context, TestLogger logger)
     {
-        if (ApiContainer == null || DbContainer == null)
-        {
-            return;
-        }
+        var connString =
+            "host=localhost;port=5435;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;";
+        using var conn = new NpgsqlConnection(connString);
+        await conn.OpenAsync();
 
-        var logs = await ApiContainer!.GetLogsAsync();
-        logger.log.Information($"{Environment.NewLine}API stdout logs:{Environment.NewLine}{logs.Stdout}");
+        var deleteRefCmd = new NpgsqlCommand($"DELETE FROM dms.Reference;", conn);
+        await deleteRefCmd.ExecuteNonQueryAsync();
 
-        if (!string.IsNullOrEmpty(logs.Stderr))
-        {
-            logger.log.Error($"{Environment.NewLine}API stderr logs:{Environment.NewLine}{logs.Stderr}");
-        }
+        var deleteAliCmd = new NpgsqlCommand($"DELETE FROM dms.Alias;", conn);
+        await deleteAliCmd.ExecuteNonQueryAsync();
 
-        await DbContainer!.DisposeAsync();
-        await ApiContainer!.DisposeAsync();
+        var deleteDocCmd = new NpgsqlCommand($"DELETE FROM dms.Document;", conn);
+        await deleteDocCmd.ExecuteNonQueryAsync();
+
+        await Task.Delay(5000);
     }
+
+    //public static async Task ClearContainers(PlaywrightContext context, TestLogger logger)
+    //{
+    //    if (ApiContainer == null || DbContainer == null)
+    //    {
+    //        return;
+    //    }
+
+    //    var logs = await ApiContainer!.GetLogsAsync();
+    //    logger.log.Information($"{Environment.NewLine}API stdout logs:{Environment.NewLine}{logs.Stdout}");
+
+    //    if (!string.IsNullOrEmpty(logs.Stderr))
+    //    {
+    //        logger.log.Error($"{Environment.NewLine}API stderr logs:{Environment.NewLine}{logs.Stderr}");
+    //    }
+
+    //    await DbContainer!.DisposeAsync();
+    //    await ApiContainer!.DisposeAsync();
+    //}
 }
