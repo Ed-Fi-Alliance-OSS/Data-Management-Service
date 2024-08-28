@@ -12,7 +12,7 @@ tab](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/security), cl
 vulnerability" to open the advisory form.
 
 If you have any further concerns that are not addressed by this process, please
-submit a case through the [Ed-Fi Community Hub](https://success.ed-fi.org)
+submit a case through the [Ed-Fi Community Hub](https://community.ed-fi.org)
 
 ## Security Automation
 
