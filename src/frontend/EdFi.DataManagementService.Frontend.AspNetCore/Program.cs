@@ -34,6 +34,8 @@ if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
 
 app.MapRouteEndpoints();
 
+app.UseHealthChecks("/health");
+
 await app.RunAsync();
 
 /// <summary>

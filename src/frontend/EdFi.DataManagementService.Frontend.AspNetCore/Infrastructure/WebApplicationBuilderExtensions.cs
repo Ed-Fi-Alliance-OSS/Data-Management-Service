@@ -45,6 +45,9 @@ public static class WebApplicationBuilderExtensions
         ConfigureDatastore(webAppBuilder, logger);
         ConfigureQueryHandler(webAppBuilder, logger);
 
+        webAppBuilder.Services.AddHealthCheck(webAppBuilder);
+
+
         Serilog.ILogger ConfigureLogging()
         {
             var logger = new LoggerConfiguration()

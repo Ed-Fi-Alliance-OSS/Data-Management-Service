@@ -9,6 +9,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Content Include="EdFi.DataManagementService.Frontend.AspNetCore.nuspec" CopyToPublishDirectory="Always" CopyToOutputDirectory="Never" />
+    <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
+    <PackageReference Include="AspNetCore.HealthChecks.SqlServer" />
     <PackageReference Include="EdFi.DataStandard51.ApiSchema" />
     <PackageReference Include="Microsoft.CodeAnalysis" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle">
