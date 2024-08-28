@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -177,7 +178,8 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly PipelineContext context = No.PipelineContext();
+        private static readonly string _traceId = "xyz";
+        private readonly PipelineContext context = No.PipelineContext(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -190,11 +192,25 @@ public class UpsertHandlerTests
         public void It_has_the_correct_response()
         {
             context.FrontendResponse.StatusCode.Should().Be(500);
-            context
-                .FrontendResponse.Body?.AsValue().ToString().Should()
-                .Be($"{{\"error\":\"{Repository.ResponseBody}\",\"correlationId\":{{\"Value\":\"\"}}}}");
-            context.FrontendResponse.Headers.Should().BeEmpty();
-            context.FrontendResponse.LocationHeaderPath.Should().BeNull();
+
+            var expected = $$"""
+{
+  "error": "FailureMessage",
+  "correlationId": "{{_traceId}}"
+}
+""";
+
+            context.FrontendResponse.Body.Should().NotBeNull();
+            JsonNode
+                .DeepEquals(context.FrontendResponse.Body, JsonNode.Parse(expected))
+                .Should()
+                .BeTrue(
+                    $"""
+expected: {expected}
+
+actual: {context.FrontendResponse.Body}
+"""
+                );
         }
     }
 }

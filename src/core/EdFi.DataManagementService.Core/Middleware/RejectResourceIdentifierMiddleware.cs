@@ -3,31 +3,27 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
-using static EdFi.DataManagementService.Core.UtilityService;
 
 namespace EdFi.DataManagementService.Core.Middleware
 {
     internal class RejectResourceIdentifierMiddleware(ILogger _logger) : IPipelineStep
     {
-        public static string GenerateFrontendErrorResponse(string errorDetail, TraceId traceId)
+        public static JsonNode GenerateFrontendErrorResponse(string errorDetail, TraceId traceId)
         {
             var errors = new List<string> { errorDetail };
 
-            var response = ForDataValidation(
+            return ForDataValidation(
                 "The request data was constructed incorrectly.",
                 traceId,
                 [],
-                errors.ToArray()
+                [.. errors]
             );
-
-            return JsonSerializer.Serialize(response, SerializerOptions);
         }
 
         public async Task Execute(PipelineContext context, Func<Task> next)
