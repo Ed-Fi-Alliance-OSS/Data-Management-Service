@@ -27,10 +27,6 @@ public static class HealthCheckServiceExtensions
         {
             hcBuilder.AddNpgSql(connectionString);
         }
-        else
-        {
-            hcBuilder.AddSqlServer(connectionString);
-        }
 
         return services;
     }
