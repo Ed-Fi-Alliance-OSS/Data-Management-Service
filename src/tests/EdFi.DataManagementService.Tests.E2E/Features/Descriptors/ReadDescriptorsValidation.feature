@@ -3,7 +3,9 @@ Feature: Read a Descriptor
         Background:
             Given the Data Management Service must receive a token issued by "http://localhost"
               And user is already authorized
-              And a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+
+         Scenario: 01 Background
+             Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with wait
                   """
                     {
                         "codeValue": "Sick Leave",
@@ -15,9 +17,8 @@ Feature: Read a Descriptor
                     }
                   """
              Then it should respond with 201 or 200
-             Then it should wait for 10 seconds
 
-        Scenario: 01 Verify existing descriptors can be retrieved successfully
+        Scenario: 02 Verify existing descriptors can be retrieved successfully
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors"
              Then it should respond with 200
               And the response body is
@@ -35,7 +36,7 @@ Feature: Read a Descriptor
                     ]
                   """
 
-        Scenario: 02 Verify retrieving a single descriptor by ID
+        Scenario: 03 Verify retrieving a single descriptor by ID
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 200
               And the response body is
@@ -51,11 +52,11 @@ Feature: Read a Descriptor
                     }
                   """
 
-        Scenario: 03 Verify response code 404 when ID does not exist
+        Scenario: 04 Verify response code 404 when ID does not exist
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/124c8513-fade-4ce2-ab71-0e40e148de5b"
              Then it should respond with 404
 
-        Scenario: 04 Read a descriptor that only contains required attributes
+        Scenario: 05 Read a descriptor that only contains required attributes
             Given a POST request is made to "/ed-fi/disabilityDescriptors" with
                   """
                     {
@@ -76,7 +77,7 @@ Feature: Read a Descriptor
                   }
                   """
 
-        Scenario: 05 Ensure clients can retrieve a descriptor by requesting through a valid codeValue
+        Scenario: 06 Ensure clients can retrieve a descriptor by requesting through a valid codeValue
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/?codeValue=Sick+Leave"
              Then it should respond with 200
               And the response body is
@@ -94,7 +95,7 @@ Feature: Read a Descriptor
                   ]
                   """
 
-        Scenario: 06 Ensure clients cannot retrieve a descriptor by requesting through a non existing codeValue
+        Scenario: 07 Ensure clients cannot retrieve a descriptor by requesting through a non existing codeValue
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors?codeValue=Test"
              Then it should respond with 200
               And the response body is
@@ -102,7 +103,7 @@ Feature: Read a Descriptor
                   []
                   """
 
-        Scenario: 07 Ensure clients can retrieve a descriptor by requesting through a valid namespace
+        Scenario: 08 Ensure clients can retrieve a descriptor by requesting through a valid namespace
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors?namespace=uri://ed-fi.org/AbsenceEventCategoryDescriptor"
              Then it should respond with 200
               And the response body is
@@ -120,7 +121,7 @@ Feature: Read a Descriptor
                   ]
                   """
 
-        Scenario: 08 Ensure clients cannot retrieve a descriptor by requesting through a non existing namespace
+        Scenario: 09 Ensure clients cannot retrieve a descriptor by requesting through a non existing namespace
              When a GET request is made to "/ed-fi/disabilityDescriptors?namespace=uri://ed-fi.org/DisabilityDescriptorFake"
              Then it should respond with 200
               And the response body is

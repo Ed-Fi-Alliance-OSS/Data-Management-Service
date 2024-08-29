@@ -53,6 +53,22 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             }
         }
 
+        [Given("a POST request is made to {string} with wait")]
+        public async Task GivenAPOSTRequestIsMadeToWithWait(string url, string body)
+        {
+            url = addDataPrefixIfNecessary(url);
+
+            _logger.log.Information(url);
+            _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
+            if (_apiResponse.Headers.ContainsKey("location"))
+            {
+                _location = _apiResponse.Headers["location"];
+                _id = _apiResponse.Headers["location"].Split('/').Last();
+            }
+
+            Thread.Sleep(5000);
+        }
+
         [Given("there are no schools")]
         public void GivenThereAreNoSchools()
         {
@@ -134,6 +150,22 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 string body = response.TextAsync().Result;
                 _logger.log.Information(body);
             }
+        }
+
+        [Given("the system has these {string} with wait")]
+        public async Task GivenTheSystemHasTheseWithWait(string entityType, DataTable dataTable)
+        {
+            var _apiResponses = await ProcessDataTable(entityType, dataTable);
+
+            _logger.log.Information($"Responses for Given(the system has these {entityType})");
+
+            foreach (var response in _apiResponses)
+            {
+                string body = response.TextAsync().Result;
+                _logger.log.Information(body);
+            }
+
+            Thread.Sleep(8000);
         }
 
         [Given("the system has these descriptors")]
@@ -329,6 +361,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             string body = _apiResponse.TextAsync().Result;
             _logger.log.Information(body);
             _apiResponse.Status.Should().Be(statusCode);
+        }
+
+        [Then("it should wait for {int} seconds")]
+        public void ThenItShouldWait(int seconds)
+        {
+            Thread.Sleep(seconds * 1000);
         }
 
         [Then("it should respond with {int} or {int}")]
