@@ -27,7 +27,7 @@ public class EndpointsTests
         var expectedDate = DateTime.Now.ToString("yyyy-MM-dd");
 
         // Act
-        var response = await client.GetAsync("/ping");
+        var response = await client.GetAsync("/health");
         var content = await response.Content.ReadAsStringAsync();
 
         // Assert
