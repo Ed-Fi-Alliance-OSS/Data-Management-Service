@@ -40,8 +40,11 @@ namespace EdFi.DataManagementService.Backend.OpenSearch;
 ///  }
 ///
 /// </summary>
-public static class QueryOpenSearch
+public static partial class QueryOpenSearch
 {
+    [GeneratedRegex(@"^\$\.")]
+    public static partial Regex JsonPathPrefixRegex();
+
     // Imposes a consistent sort order across queries without specifying a sort field
     private static JsonArray SortDirective()
     {
@@ -61,7 +64,7 @@ public static class QueryOpenSearch
 
     private static string QueryFieldFrom(JsonPath documentPath)
     {
-        return Regex.Replace(documentPath.Value, @"^\$\.", "");
+        return JsonPathPrefixRegex().Replace(documentPath.Value, "");
     }
 
     public static async Task<QueryResult> QueryDocuments(

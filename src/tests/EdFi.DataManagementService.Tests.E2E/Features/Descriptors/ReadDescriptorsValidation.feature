@@ -104,7 +104,7 @@ Feature: Read a Descriptor
                   """
 
         Scenario: 07 Ensure clients can retrieve a descriptor by requesting through a valid namespace
-             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors?namespace=uri://ed-fi.org/AbsenceEventCategoryDescriptor#Sick Leave"
+             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors?namespace=uri%3A%2F%2Fed-fi.org%AbsenceEventCategoryDescriptor%23Sick Leave"
              Then it should respond with 200
               And the response body is
                   """
