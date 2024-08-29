@@ -160,6 +160,10 @@ GET http://localhost:{{port}}/data/ed-fi/sessions?schoolId=123
 GET http://localhost:{{port}}/data/ed-fi/sessions?schoolId=999
 
 
+### Compound query Sessions with schoolYear and totalInstructionalDays (should be 1)
+GET http://localhost:{{port}}/data/ed-fi/sessions?schoolYear=2024&totalInstructionalDays=361
+
+
 ### Query Sessions with totalInstructionalDays 365 (should be 2)
 GET http://localhost:{{port}}/data/ed-fi/sessions?totalInstructionalDays=365
 
