@@ -104,7 +104,7 @@ Feature: Read a Descriptor
                   """
 
         Scenario: 07 Ensure clients can retrieve a descriptor by requesting through a valid namespace
-             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors?namespace%3Duri%3A%2F%2Fed-fi.org%AbsenceEventCategoryDescriptor"
+             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors?namespace=uri://ed-fi.org/AbsenceEventCategoryDescriptor#Sick Leave"
              Then it should respond with 200
               And the response body is
                   """
@@ -124,7 +124,7 @@ Feature: Read a Descriptor
         # DMS-89
         @ignore
         Scenario: 08 Ensure clients cannot retrieve a descriptor by requesting through a non existing namespace
-             When a GET request is made to "/ed-fi/disabilityDescriptors?namespace%3Duri%3A%2F%2Fed-fi.org%2FDisabilityDescriptorFake"
+             When a GET request is made to "/ed-fi/disabilityDescriptors?namespace=uri://ed-fi.org/DisabilityDescriptor#Fake"
              Then it should respond with 200
               And the response body is
                   """
