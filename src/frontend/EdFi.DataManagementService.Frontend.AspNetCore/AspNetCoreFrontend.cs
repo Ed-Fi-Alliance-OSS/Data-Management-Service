@@ -91,12 +91,14 @@ public static class AspNetCoreFrontend
             httpContext.Response.Headers.Append(header.Key, header.Value);
         }
 
-        return Results.Content(
+        IResult result = Results.Content(
             statusCode: frontendResponse.StatusCode,
             content: frontendResponse.Body == null ? null : JsonSerializer.Serialize(frontendResponse.Body),
             contentType: "application/json",
             contentEncoding: System.Text.Encoding.UTF8
         );
+
+        return result;
     }
 
     /// <summary>

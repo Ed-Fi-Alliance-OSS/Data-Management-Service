@@ -19,9 +19,9 @@ internal record QueryRequest(
     ResourceInfo ResourceInfo,
 
     /// <summary>
-    /// The term fields and values for this query. This must not include pagination parameters.
+    /// The elements of this query. This must not include pagination parameters.
     /// </summary>
-    TermQuery[] TermQueries,
+    QueryElement[] QueryElements,
 
     /// <summary>
     /// The pagination parameters for this query

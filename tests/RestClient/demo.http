@@ -30,8 +30,11 @@ POST http://localhost:{{port}}/data/ed-fi/schoolYearTypes
 
 ### Test GET of school years
 
-GET http://localhost:{{port}}/data/ed-fi/schools?nameOfInstitution=School2000&educationOrganizationCategories.educationOrganizationCategoryDescriptor=string#string
+GET http://localhost:{{port}}/data/ed-fi/schools?nameOfInstitution=School2000
 
+
+###
+GET http://localhost:5198/data/ed-fi/schools/7a8129e1-8b36-4b28-a624-0d448108bc83
 
 ### Setup - POST School1
 POST http://localhost:{{port}}/data/ed-fi/schools

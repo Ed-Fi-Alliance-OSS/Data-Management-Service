@@ -81,7 +81,7 @@ internal class PipelineContext(FrontendRequest _frontendRequest, RequestMethod _
     public PaginationParameters PaginationParameters { get; set; } = No.PaginationParameters;
 
     /// <summary>
-    /// Term queries for GET by query
+    /// Query elements for GET by query
     /// </summary>
-    public TermQuery[] TermQueries { get; set; } = [];
+    public QueryElement[] QueryElements { get; set; } = [];
 }

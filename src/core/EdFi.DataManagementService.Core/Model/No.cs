@@ -90,7 +90,7 @@ internal static class No
     /// </summary>
     public static readonly IFrontendResponse FrontendResponse = new FrontendResponse(
         StatusCode: 503,
-        Body: "",
+        Body: null,
         Headers: []
     );
 
