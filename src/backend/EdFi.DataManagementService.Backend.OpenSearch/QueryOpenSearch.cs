@@ -5,7 +5,9 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Backend.Model;
 using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
 using OpenSearch.Client;
@@ -38,8 +40,11 @@ namespace EdFi.DataManagementService.Backend.OpenSearch;
 ///  }
 ///
 /// </summary>
-public static class QueryOpenSearch
+public static partial class QueryOpenSearch
 {
+    [GeneratedRegex(@"^\$\.")]
+    public static partial Regex JsonPathPrefixRegex();
+
     // Imposes a consistent sort order across queries without specifying a sort field
     private static JsonArray SortDirective()
     {
@@ -57,6 +62,11 @@ public static class QueryOpenSearch
             .Replace(".", "-");
     }
 
+    private static string QueryFieldFrom(JsonPath documentPath)
+    {
+        return JsonPathPrefixRegex().Replace(documentPath.Value, "");
+    }
+
     public static async Task<QueryResult> QueryDocuments(
         IOpenSearchClient client,
         IQueryRequest queryRequest,
@@ -71,17 +81,40 @@ public static class QueryOpenSearch
 
             // Build API client requested filters
             JsonArray terms = [];
-            foreach (var termQuery in queryRequest.TermQueries)
+            foreach (QueryElement queryElement in queryRequest.QueryElements)
             {
-                terms.Add(
-                    new JsonObject
-                    {
-                        ["match_phrase"] = new JsonObject
+                // If just one document path, it's a pure AND
+                if (queryElement.DocumentPaths.Length == 1)
+                {
+                    terms.Add(
+                        new JsonObject
                         {
-                            [$@"edfidoc.{termQuery.Field}"] = termQuery.Value
+                            ["match_phrase"] = new JsonObject
+                            {
+                                [$@"edfidoc.{QueryFieldFrom(queryElement.DocumentPaths[0])}"] =
+                                    queryElement.Value
+                            }
                         }
-                    }
-                );
+                    );
+                }
+                else
+                {
+                    // If more than one document path, it's an OR
+                    JsonObject[] possibleTerms = queryElement.DocumentPaths.Select(
+                        documentPath => new JsonObject
+                        {
+                            ["match_phrase"] = new JsonObject
+                            {
+                                [$@"edfidoc.{QueryFieldFrom(documentPath)}"] = queryElement.Value
+                            }
+                        }
+                    ).ToArray();
+
+                    terms.Add(new JsonObject
+                    {
+                        ["bool"] = new JsonObject { ["should"] = new JsonArray(possibleTerms) }
+                    });
+                }
             }
 
             JsonObject query =
@@ -90,6 +123,8 @@ public static class QueryOpenSearch
                     ["query"] = new JsonObject { ["bool"] = new JsonObject { ["must"] = terms } },
                     ["sort"] = SortDirective()
                 };
+
+            // Add in PaginationParameters if any
 
             if (queryRequest.PaginationParameters.Limit != null)
             {

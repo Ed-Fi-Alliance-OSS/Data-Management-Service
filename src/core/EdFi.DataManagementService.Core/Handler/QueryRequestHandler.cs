@@ -23,7 +23,7 @@ internal class QueryRequestHandler(IQueryHandler _queryHandler, ILogger _logger,
         var queryResult = await _resiliencePipeline.ExecuteAsync(async t => await _queryHandler.QueryDocuments(
             new QueryRequest(
                 ResourceInfo: context.ResourceInfo,
-                TermQueries: context.TermQueries,
+                QueryElements: context.QueryElements,
                 PaginationParameters: context.PaginationParameters,
                 TraceId: context.FrontendRequest.TraceId
             )

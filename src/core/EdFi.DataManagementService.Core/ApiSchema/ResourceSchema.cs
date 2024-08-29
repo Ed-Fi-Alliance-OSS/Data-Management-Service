@@ -181,12 +181,12 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
         new(() =>
         {
             return _resourceSchemaNode["numericJsonPaths"]
-                       ?.AsArray()
-                       .GetValues<string>()
-                       .Select(x => new JsonPath(x))
-                   ?? throw new InvalidOperationException(
-                       "Expected numericJsonPaths to be on ResourceSchema, invalid ApiSchema"
-                   );
+                    ?.AsArray()
+                    .GetValues<string>()
+                    .Select(x => new JsonPath(x))
+                ?? throw new InvalidOperationException(
+                    "Expected numericJsonPaths to be on ResourceSchema, invalid ApiSchema"
+                );
         });
 
     /// <summary>
@@ -244,8 +244,33 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
     /// The list of DocumentPaths would be the object values of the keys "EndTime", "GradeLevelDescriptor"
     /// and "School".
     /// </summary>
-
     public IEnumerable<DocumentPath> DocumentPaths => _documentPaths.Value;
+
+    public readonly Lazy<IEnumerable<QueryField>> _queryFields =
+        new(() =>
+        {
+            JsonNode queryFieldMapping =
+                _resourceSchemaNode["queryFieldMapping"]
+                ?? throw new InvalidOperationException(
+                    "Expected queryFieldMapping to be on ResourceSchema, invalid ApiSchema"
+                );
+            return queryFieldMapping
+                .AsObject()
+                .AsEnumerable()
+                .Select(queryField => new QueryField(
+                    queryField.Key,
+                    queryField.Value?.AsArray().GetValues<string>().Select(x => new JsonPath(x)).ToArray()
+                        ?? throw new InvalidOperationException(
+                            "Expected queryField to be on queryFieldMapping, invalid ApiSchema"
+                        )
+                ));
+        });
+
+    /// <summary>
+    /// The list of QueryFields for this resource. A QueryField is a mapping of a valid query field
+    /// along with a list of document paths that query field should be applied to by a query handler.
+    /// </summary>
+    public IEnumerable<QueryField> QueryFields => _queryFields.Value;
 
     private readonly Lazy<bool> _isSubclass =
         new(() =>

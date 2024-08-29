@@ -17,7 +17,7 @@ public record FrontendRequest(
     /// </summary>
     string Path,
     /// <summary>
-    /// Request body provided by the frontend service as a JsonNode, or null if there is no body
+    /// Request body provided by the frontend service as a raw string, or null if there is no body
     /// </summary>
     string? Body,
     /// <summary>

@@ -110,5 +110,6 @@
         "superclassprojectname",
         "superclassresourcename",
         "TPDM"
-    ]
+    ],
+    "dotnet.defaultSolution": "src/EdFi.DataManagementService.sln"
 }
