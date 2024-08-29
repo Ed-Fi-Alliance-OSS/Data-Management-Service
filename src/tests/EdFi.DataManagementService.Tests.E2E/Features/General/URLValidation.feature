@@ -1,5 +1,6 @@
 Feature: Validation of the structure of the URLs
 
+        ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-352
         @ignore
         Scenario: 01 - Ensure clients cannot retrieve information if part of the endpoint is missing
              When a GET request is made to "/schools"
@@ -21,6 +22,7 @@ Feature: Validation of the structure of the URLs
                   Content-Type: application/problem+json
                   """
 
+        ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-352
         @ignore
         Scenario: 02 - Ensure clients cannot create a resource if part of the endpoint is missing
              When a POST request is made to "/schools" with
@@ -56,9 +58,10 @@ Feature: Validation of the structure of the URLs
                   Content-Type: application/problem+json
                   """
 
+        ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-352
         @ignore
         Scenario: 03 - Ensure clients cannot update a resource if part of the endpoint is missing
-            Given the system has the following "schools"
+            Given the system has these "schools"
                   | schoolId  | nameOfInstitution        | gradeLevelDescriptor                             | educationOrganizationCategoryDescriptor                        |
                   | 255901044 | Grand Bend Middle School | uri://ed-fi.org/GradeLevelDescriptor#Sixth grade | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
              When a PUT request is made to "/schools/{id}" with
@@ -94,9 +97,10 @@ Feature: Validation of the structure of the URLs
                   Content-Type: application/problem+json
                   """
 
+        ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-352
         @ignore
         Scenario: 04 - Ensure clients cannot delete a resource if part of the endpoint is missing
-            Given the system has the following "schools"
+            Given the system has these "schools"
                   | schoolId  | nameOfInstitution        | gradeLevelDescriptor                             | educationOrganizationCategoryDescriptor                        |
                   | 255901044 | Grand Bend Middle School | uri://ed-fi.org/GradeLevelDescriptor#Sixth grade | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
              When a DELETE request is made to "/schools/{id}"
@@ -116,6 +120,7 @@ Feature: Validation of the structure of the URLs
                   Content-Type: application/problem+json
                   """
 
+        ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-351
         @ignore
         Scenario: 05 - Ensure clients cannot retrieve a resource when endpoint does not end in plural
              When a GET request is made to "/ed-fi/school"
@@ -137,6 +142,7 @@ Feature: Validation of the structure of the URLs
                   Content-Type: application/problem+json
                   """
 
+        ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-351
         @ignore
         Scenario: 06 - Ensure clients cannot create a resource when endpoint does not end in plural
              When a POST request is made to "/ed-fi/school" with
@@ -172,9 +178,10 @@ Feature: Validation of the structure of the URLs
                   Content-Type: application/problem+json
                   """
 
+        ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-351
         @ignore
         Scenario: 07 - Ensure clients cannot update a resource when endpoint does not end in plural
-            Given the system has the following "schools"
+            Given the system has these "schools"
                   | schoolId  | nameOfInstitution        | gradeLevelDescriptor                             | educationOrganizationCategoryDescriptor                        |
                   | 255901044 | Grand Bend Middle School | uri://ed-fi.org/GradeLevelDescriptor#Sixth grade | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
              When a PUT request is made to "/ed-fi/school/{id}" with
@@ -210,9 +217,10 @@ Feature: Validation of the structure of the URLs
                   Content-Type: application/problem+json
                   """
 
+        ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-351
         @ignore
         Scenario: 08 - Ensure clients cannot delete a resource when endpoint does not end in plural
-            Given the system has the following "schools"
+            Given the system has these "schools"
                   | schoolId  | nameOfInstitution        | gradeLevelDescriptor                             | educationOrganizationCategoryDescriptor                        |
                   | 255901044 | Grand Bend Middle School | uri://ed-fi.org/GradeLevelDescriptor#Sixth grade | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
              When a DELETE request is made to "/ed-fi/school/{id}"
@@ -232,9 +240,10 @@ Feature: Validation of the structure of the URLs
                   Content-Type: application/problem+json
                   """
 
+        ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-353
         @ignore
         Scenario: 09 - Ensure clients cannot create a resource adding an ID as a path variable
-             When a POST request is made to "/ed-fi/schools/{id}" with
+             When a POST request is made to "/ed-fi/schools/0123456789" with
                   """
                   {
                       "educationOrganizationCategories": [
@@ -270,9 +279,10 @@ Feature: Validation of the structure of the URLs
                   Content-Type: application/json; charset=utf-8
                   """
 
+        ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-353
         @ignore
         Scenario: 10 - Ensure clients validate required identifier on POST requests
-            Given the system has the following "schools"
+            Given the system has these "schools"
                   | schoolId  | nameOfInstitution        | gradeLevelDescriptor                             | educationOrganizationCategoryDescriptor                        |
                   | 255901044 | Grand Bend Middle School | uri://ed-fi.org/GradeLevelDescriptor#Sixth grade | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
              When a PUT request is made to "/ed-fi/schools/" with
@@ -311,6 +321,7 @@ Feature: Validation of the structure of the URLs
                   Content-Type: application/json; charset=utf-8
                   """
 
+        ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-353
         @ignore
         Scenario: 11 - Ensure clients validate required identifier on PUT requests
              When a DELETE request is made to "/ed-fi/schools/"
@@ -333,6 +344,7 @@ Feature: Validation of the structure of the URLs
                   Content-Type: application/json; charset=utf-8
                   """
 
+        ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-354
         @ignore
         Scenario: 12 - Ensure clients validate required identifier on DELETE requests
              When a GET request is made to "/ed-fi/SCHOOLS?OfFSeT=1&LImiT=2&totalCount=TRue"
