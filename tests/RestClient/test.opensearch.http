@@ -1,0 +1,194 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * Licensed to the Ed-Fi Alliance under one or more agreements.
+ * The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+ * See the LICENSE and NOTICES files in the project root for more information.
+ */
+
+@port = 5198
+
+
+### Setup - POST TermDescriptor
+POST http://localhost:{{port}}/data/ed-fi/termDescriptors
+
+{
+    "namespace": "uri://ed-fi.org/TermDescriptor",
+    "codeValue": "Quarter",
+    "shortDescription": "Quarter"
+}
+
+### Setup - POST EducationOrganizationCategoryDescriptor
+POST http://localhost:{{port}}/data/ed-fi/educationOrganizationCategoryDescriptors
+
+{
+    "namespace": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
+    "codeValue": "Other",
+    "shortDescription": "Other"
+}
+
+### Setup - POST GradeLevelDescriptor
+POST http://localhost:{{port}}/data/ed-fi/gradeLevelDescriptors
+
+{
+    "namespace": "uri://ed-fi.org/GradeLevelDescriptor",
+    "codeValue": "Kindergarten",
+    "shortDescription": "Kindergarten"
+}
+
+### Setup - POST School Year 2024
+POST http://localhost:{{port}}/data/ed-fi/schoolYearTypes
+
+{
+    "schoolYear": 2024,
+    "currentSchoolYear": false,
+    "schoolYearDescription": "Year 2024"
+}
+
+### Setup - POST School Year 2025
+POST http://localhost:{{port}}/data/ed-fi/schoolYearTypes
+
+{
+    "schoolYear": 2025,
+    "currentSchoolYear": false,
+    "schoolYearDescription": "Year 2025"
+}
+
+### Setup - POST School 123
+POST http://localhost:{{port}}/data/ed-fi/schools
+
+{
+    "schoolId": 123,
+    "nameOfInstitution": "School 123",
+    "educationOrganizationCategories": [
+        {
+            "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Other"
+        }
+    ],
+    "gradeLevels": [
+        {
+            "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Kindergarten"
+        }
+    ]
+}
+
+### Sessions for query testing
+POST http://localhost:{{port}}/data/ed-fi/sessions
+
+{
+    "sessionName": "Session1",
+    "schoolYearTypeReference": {
+        "schoolYear": 2024
+    },
+    "beginDate": "2024-01-01",
+    "endDate": "2024-12-31",
+    "termDescriptor": "uri://ed-fi.org/TermDescriptor#Quarter",
+    "totalInstructionalDays": 361,
+    "schoolReference": {
+        "schoolId": 123
+    }
+}
+
+###
+POST http://localhost:{{port}}/data/ed-fi/sessions
+
+{
+    "sessionName": "Session2",
+    "schoolYearTypeReference": {
+        "schoolYear": 2025
+    },
+    "beginDate": "2024-01-01",
+    "endDate": "2024-12-31",
+    "termDescriptor": "uri://ed-fi.org/TermDescriptor#Quarter",
+    "totalInstructionalDays": 361,
+    "schoolReference": {
+        "schoolId": 123
+    }
+}
+
+###
+POST http://localhost:{{port}}/data/ed-fi/sessions
+
+{
+    "sessionName": "Session3",
+    "schoolYearTypeReference": {
+        "schoolYear": 2025
+    },
+    "beginDate": "2024-01-01",
+    "endDate": "2024-12-31",
+    "termDescriptor": "uri://ed-fi.org/TermDescriptor#Quarter",
+    "totalInstructionalDays": 365,
+    "schoolReference": {
+        "schoolId": 123
+    }
+}
+
+###
+POST http://localhost:{{port}}/data/ed-fi/sessions
+
+{
+    "sessionName": "Session4",
+    "schoolYearTypeReference": {
+        "schoolYear": 2025
+    },
+    "beginDate": "2024-01-01",
+    "endDate": "2024-12-31",
+    "termDescriptor": "uri://ed-fi.org/TermDescriptor#Quarter",
+    "totalInstructionalDays": 365,
+    "schoolReference": {
+        "schoolId": 123
+    }
+}
+
+
+### Query all Sessions (should be 4)
+GET http://localhost:{{port}}/data/ed-fi/sessions
+
+
+### Query Sessions with schoolYear 2024 (should be 1)
+GET http://localhost:{{port}}/data/ed-fi/sessions?schoolYear=2024
+
+
+### Query Sessions with schoolYear 2025 (should be 3)
+GET http://localhost:{{port}}/data/ed-fi/sessions?schoolYear=2025
+
+
+### Query Sessions with schoolId 123 (should be 4)
+GET http://localhost:{{port}}/data/ed-fi/sessions?schoolId=123
+
+
+### Query Sessions with schoolId 999 (should be 0)
+GET http://localhost:{{port}}/data/ed-fi/sessions?schoolId=999
+
+
+### Query Sessions with totalInstructionalDays 365 (should be 2)
+GET http://localhost:{{port}}/data/ed-fi/sessions?totalInstructionalDays=365
+
+
+### Change Session1 to totalInstructionalDays 365
+POST http://localhost:{{port}}/data/ed-fi/sessions
+
+{
+    "sessionName": "Session1",
+    "schoolYearTypeReference": {
+        "schoolYear": 2024
+    },
+    "beginDate": "2024-01-01",
+    "endDate": "2024-12-31",
+    "termDescriptor": "uri://ed-fi.org/TermDescriptor#Quarter",
+    "totalInstructionalDays": 365,
+    "schoolReference": {
+        "schoolId": 123
+    }
+}
+
+
+### Re-Query totalInstructionalDays 365 (should now be 3)
+GET http://localhost:{{port}}/data/ed-fi/sessions?totalInstructionalDays=365
+
+
+### Use invalid query parameter for Sessions
+GET http://localhost:{{port}}/data/ed-fi/sessions?invalid=123
+
+
+### Use invalid but accurate deep query parameter for Sessions
+GET http://localhost:{{port}}/data/ed-fi/sessions?schoolReference.schoolId=123
