@@ -4,7 +4,6 @@
 	</PropertyGroup>
 	<ItemGroup>
     <PackageVersion Include="AspNetCore.HealthChecks.NpgSql" Version="8.0.1" />
-    <PackageVersion Include="AspNetCore.HealthChecks.SqlServer" Version="8.0.2" />
 		<PackageVersion Include="Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic" Version="4.0.0" />
 		<PackageVersion Include="CommandLineParser" Version="2.9.1" />
 		<PackageVersion Include="dbup-core" Version="5.0.87" />
