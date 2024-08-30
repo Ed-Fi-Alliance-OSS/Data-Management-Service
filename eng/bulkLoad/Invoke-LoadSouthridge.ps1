@@ -11,7 +11,7 @@ param(
     [string]
     $Secret = "minimalSecret",
 
-    # 8080 is the default k8s port
+    # 8080 is the default docker port
     # 5198 is the default when running F5
     [string]
     $BaseUrl = "http://localhost:8080",
@@ -38,8 +38,15 @@ $parameters = @{
     Paths   = $paths
 }
 
-Write-Descriptors @parameters
+Write-Bootstrap @parameters
 
 if ($FullDataSet) {
-    Write-PartialGrandBend  @parameters
+    $parameters = @{
+        BaseUrl             = $BaseUrl
+        Key                 = $Key
+        Secret              = $Secret
+        SampleDataDirectory = $Paths.SampleDataDirectory
+        Paths               = $Paths
+    }
+    Write-XmlFiles @parameters
 }
