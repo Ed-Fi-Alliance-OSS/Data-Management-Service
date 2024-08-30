@@ -34,12 +34,14 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Debug" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Microsoft.Playwright.NUnit" />
+    <PackageReference Include="Npgsql" />
     <PackageReference Include="NUnit" />
     <PackageReference Include="NUnit.Analyzers">
         <PrivateAssets>all</PrivateAssets>
         <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="NUnit3TestAdapter" />
+    <PackageReference Include="OpenSearch.Client" />
     <PackageReference Include="Reqnroll" />
     <PackageReference Include="Reqnroll.NUnit" />
     <PackageReference Include="Serilog" />
@@ -52,4 +54,13 @@
   <ItemGroup>
     <Using Include="NUnit.Framework" />
   </ItemGroup>
+
+    <Target Name="CopyFilesToOutputFolder" AfterTargets="Build">
+        <ItemGroup>
+            <OpenSearchFiles Include="..\..\..\eng\docker-compose\*_connector.json" />
+            <OpenSearchFiles Include="..\..\..\eng\docker-compose\postgresql-init.sh" />
+        </ItemGroup>
+        <Copy SourceFiles="@(OpenSearchFiles)"
+              DestinationFolder="$(OutputPath)OpenSearchFiles\%(RecursiveDir)" />
+    </Target>
 </Project>
