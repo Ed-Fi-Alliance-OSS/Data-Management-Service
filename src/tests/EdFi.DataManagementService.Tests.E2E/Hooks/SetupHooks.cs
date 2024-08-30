@@ -12,23 +12,42 @@ namespace EdFi.DataManagementService.Tests.E2E.Hooks;
 [Binding]
 public class SetupHooks
 {
-    private static IConfiguration? _configuration;
+    private static IConfiguration? _configuration = new ConfigurationBuilder()
+        .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+        .Build();
+    private static ContainerSetupBase? _containerSetup;
+
+    private static bool _useTestContainers = false;
+    private static bool _openSearchEnabled = false;
+
+    [BeforeTestRun]
+    public static async Task BeforeTestRun()
+    {
+        bool.TryParse(_configuration!["useTestContainers"], out _useTestContainers);
+        bool.TryParse(_configuration!["OpenSearchEnabled"], out _openSearchEnabled);
+
+        if (_useTestContainers)
+            if (_openSearchEnabled)
+            {
+                _containerSetup = new OpenSearchContainerSetup();
+            }
+            else
+            {
+                _containerSetup = new ContainerSetup();
+            }
+
+        await _containerSetup!.StartContainers();
+    }
 
     [BeforeFeature]
     public static async Task BeforeFeature(PlaywrightContext context, TestLogger logger)
     {
         try
         {
-            _configuration ??= new ConfigurationBuilder()
-                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-                .Build();
-
-            bool.TryParse(_configuration["useTestContainers"], out bool useTestContainers);
-
-            if (useTestContainers)
+            if (_useTestContainers)
             {
                 logger.log.Debug("Using TestContainers to set environment");
-                context.ApiUrl = await ContainerSetup.SetupDataManagement();
+                context.ApiUrl = await _containerSetup!.ApiUrl();
             }
             else
             {
@@ -44,23 +63,10 @@ public class SetupHooks
     }
 
     [AfterFeature]
-    public static async Task AfterFeature(PlaywrightContext context, TestLogger logger)
+    public static async Task AfterFeature(TestLogger logger)
     {
-        if (ContainerSetup.ApiContainer == null || ContainerSetup.DbContainer == null)
-        {
-            return;
-        }
-
-        var logs = await ContainerSetup.ApiContainer!.GetLogsAsync();
-        logger.log.Information($"{Environment.NewLine}API stdout logs:{Environment.NewLine}{logs.Stdout}");
-
-        if (!string.IsNullOrEmpty(logs.Stderr))
-        {
-            logger.log.Error($"{Environment.NewLine}API stderr logs:{Environment.NewLine}{logs.Stderr}");
-        }
-
-        await ContainerSetup.DbContainer!.DisposeAsync();
-        await ContainerSetup.ApiContainer!.DisposeAsync();
+        await _containerSetup!.ApiLogs(logger);
+        await _containerSetup!.ResetData();
     }
 
     [AfterTestRun]
