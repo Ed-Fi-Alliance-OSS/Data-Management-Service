@@ -12,18 +12,20 @@ param(
     [string]
     $Secret = "minimalSecret",
 
-    # 8080 is the default k8s port
+    # 8080 is the default docker port
     # 5198 is the default when running F5
     [string]
     $BaseUrl = "http://localhost:8080",
 
-    # Use 5.0.0 even if we're using 5.1.0 Data Standard, because there is no 5.1.0 file yet.
     [string]
     $SampleDataVersion = "5.1.0-dev.3",
 
     # When false (default), only loads descriptors
     [switch]
-    $FullDataSet
+    $FullDataSet,
+
+    [switch]
+    $LoadSchoolYear
 )
 
 #Requires -Version 7
@@ -41,10 +43,22 @@ $parameters = @{
     Key     = $Key
     Secret  = $Secret
     Paths   = $paths
+    LoadSchoolYear = $LoadSchoolYear
 }
 
-Write-Descriptors @parameters
+$stopwatch =  [system.diagnostics.stopwatch]::StartNew()
+Write-Bootstrap @parameters
 
 if ($FullDataSet) {
-    Write-GrandBend  @parameters
+    $parameters = @{
+        BaseUrl             = $BaseUrl
+        Key                 = $Key
+        Secret              = $Secret
+        SampleDataDirectory = $Paths.SampleDataDirectory
+        Paths               = $Paths
+    }
+    Write-XmlFiles @parameters
 }
+
+$stopwatch.Stop()
+$stopwatch.Elapsed | Out-Host

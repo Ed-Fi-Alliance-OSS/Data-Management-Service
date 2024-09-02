@@ -18,7 +18,10 @@ param(
 
     # When false (default), only loads descriptors
     [switch]
-    $FullDataSet
+    $FullDataSet,
+
+    [switch]
+    $LoadSchoolYear
 )
 
 #Requires -Version 7
@@ -36,8 +39,10 @@ $parameters = @{
     Key     = $Key
     Secret  = $Secret
     Paths   = $paths
+    LoadSchoolYear = $LoadSchoolYear
 }
 
+$stopwatch =  [system.diagnostics.stopwatch]::StartNew()
 Write-Bootstrap @parameters
 
 if ($FullDataSet) {
@@ -50,3 +55,6 @@ if ($FullDataSet) {
     }
     Write-XmlFiles @parameters
 }
+
+$stopwatch.Stop()
+$stopwatch.Elapsed | Out-Host

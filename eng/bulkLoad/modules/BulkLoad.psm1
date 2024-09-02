@@ -101,7 +101,7 @@ function Write-XmlFiles {
     &dotnet $Paths.BulkLoaderExe $options
 }
 
-function Write-Descriptors {
+function Write-Bootstrap {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Overly aggressive rule.')]
 
     [CmdletBinding()]
@@ -120,44 +120,41 @@ function Write-Descriptors {
 
         [hashtable]
         [Parameter(Mandatory = $True)]
-        $Paths
+        $Paths,
+
+        [switch]
+        $LoadSchoolYear
     )
+
+    if ($LoadSchoolYear) {
+        $discoveryApi = Invoke-RestMethod -Uri $BaseUrl
+        $tokenUrl = $discoveryApi.urls.oauth
+
+        $tokenResponse = Invoke-RestMethod -Method Post -Body (@{
+            grant_type = "client_credentials"
+            client_id = $Key
+            client_secret = $Secret
+        } | ConvertTo-Json) -Uri $tokenUrl -ContentType "application/json"
+
+        $token = $tokenResponse.access_token
+
+        $dataPath = $discoveryApi.urls.dataManagementApi
+        $dataPath = $dataPath.TrimEnd("/")
+
+        Invoke-RestMethod -Method Post -Body (@{
+            schoolYear = 2024
+            currentSchoolYear = $true
+            schoolYearDescription = "2024-2025"
+        } | ConvertTo-Json) -Uri $dataPath/ed-fi/schoolYearTypes -Headers @{
+            Authorization = "bearer $token"
+        } -ContentType "application/json"
+    }
 
     $parameters = @{
         BaseUrl             = $BaseUrl
         Key                 = $Key
         Secret              = $Secret
         SampleDataDirectory = Join-Path -Path $Paths.SampleDataDirectory -ChildPath "Bootstrap"
-        Paths               = $Paths
-    }
-    Write-XmlFiles @parameters
-}
-
-function Write-GrandBend {
-    [CmdletBinding()]
-    param (
-        [string]
-        [Parameter(Mandatory = $True)]
-        $BaseUrl,
-
-        [string]
-        [Parameter(Mandatory = $True)]
-        $Key,
-
-        [string]
-        [Parameter(Mandatory = $True)]
-        $Secret,
-
-        [hashtable]
-        [Parameter(Mandatory = $True)]
-        $Paths
-    )
-
-    $parameters = @{
-        BaseUrl             = $BaseUrl
-        Key                 = $Key
-        Secret              = $Secret
-        SampleDataDirectory = Join-Path -Path $Paths.SampleDataDirectory -ChildPath "Sample XML"
         Paths               = $Paths
     }
     Write-XmlFiles @parameters
@@ -184,48 +181,17 @@ function Write-PartialGrandBend {
     )
 
     $fullDir = Join-Path -Path $Paths.SampleDataDirectory -ChildPath "Sample XML"
-    $partialDir = Join-Path -Path $Paths.SampleDataDirectory -ChildPath "Partial"
+    $partialDir = Join-Path -Path $Paths.SampleDataDirectory -ChildPath "Bootstrap"
 
     New-Item -ItemType Directory $partialDir -Force | Out-Null
     Copy-Item -Path $fullDir/Standards.xml -Destination $partialDir -Force | Out-Null
     Copy-Item -Path $fullDir/EducationOrganization.xml -Destination $partialDir -Force | Out-Null
-    Copy-Item -Path $fullDir/EducationOrgCalendar.xml -Destination $partialDir -Force | Out-Null
 
     $parameters = @{
         BaseUrl             = $BaseUrl
         Key                 = $Key
         Secret              = $Secret
         SampleDataDirectory = $partialDir
-        Paths               = $Paths
-    }
-    Write-XmlFiles @parameters
-}
-
-function Write-Southridge {
-    [CmdletBinding()]
-    param (
-        [string]
-        [Parameter(Mandatory = $True)]
-        $BaseUrl,
-
-        [string]
-        [Parameter(Mandatory = $True)]
-        $Key,
-
-        [string]
-        [Parameter(Mandatory = $True)]
-        $Secret,
-
-        [hashtable]
-        [Parameter(Mandatory = $True)]
-        $Paths
-    )
-
-    $parameters = @{
-        BaseUrl             = $BaseUrl
-        Key                 = $Key
-        Secret              = $Secret
-        SampleDataDirectory = $Paths.SampleDataDirectory
         Paths               = $Paths
     }
     Write-XmlFiles @parameters
