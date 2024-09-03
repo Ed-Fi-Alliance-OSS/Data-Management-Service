@@ -22,19 +22,10 @@ public class PlaywrightContext
 
     public async Task CreateApiContext()
     {
-        try
-        {
-            var playwright = await Playwright.CreateAsync();
+        var playwright = await Playwright.CreateAsync();
 
-            _requestContext = playwright.APIRequest.NewContextAsync(
-                new APIRequestNewContextOptions { BaseURL = ApiUrl, IgnoreHTTPSErrors = true }
-            );
-
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine(e);
-            throw;
-        }
+        _requestContext = playwright.APIRequest.NewContextAsync(
+            new APIRequestNewContextOptions { BaseURL = ApiUrl, IgnoreHTTPSErrors = true }
+        );
     }
 }
