@@ -29,7 +29,7 @@ Feature: Query String handling for GET requests for Resource Queries
         @ignore
         Scenario: 02 Ensure clients can't GET information when querying by invalid date
              When a GET request is made to "/ed-fi/academicWeeks?beginDate=024-04-09"
-             Then it should respond with 200
+             Then it should respond with 400
               And the response body is
                   """
                    {
