@@ -1,21 +1,21 @@
 Feature: Query String handling for GET requests for Resource Queries
 
-        Background:
+        @addwait
+        Scenario: 00 Background
             Given the system has these "schools"
-                  | schoolId | nameOfInstitution | gradeLevels       | educationOrganizationCategories |
-                  | 2        | School 2          | [ "Tenth grade" ] | [ "School" ]                    |
-              And there is a valid AcademicWeek
-                  | weekIdentifier | beginDate  | endDate    | totalInstructionalDays | schoolId |
-                  | Week One       | 2024-05-15 | 2024-05-22 | 2                      | 2        |
+                  | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories |
+                  | 2        | School 2          | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ]                    |
+              And the system has these "academicweeks"
+                  | weekIdentifier | beginDate  | endDate    | totalInstructionalDays | schoolReference |
+                  | Week One       | 2024-05-15 | 2024-05-22 | 2                      | {"schoolId": 2} |
 
-        @ignore
         Scenario: 01 Ensure clients can GET information when querying by valid date
              When a GET request is made to "/ed-fi/academicWeeks?beginDate=2024-05-15"
              Then it should respond with 200
               And the response body is
                   """
-                  {
-                    "id": "placeholder",
+                  [{
+                    "id": "{id}",
                     "schoolReference": {
                         "schoolId": 2
                     },
@@ -23,25 +23,25 @@ Feature: Query String handling for GET requests for Resource Queries
                     "beginDate": "2024-05-15",
                     "endDate": "2024-05-22",
                     "totalInstructionalDays": 2
-                  }
+                  }]
                   """
 
         @ignore
         Scenario: 02 Ensure clients can't GET information when querying by invalid date
              When a GET request is made to "/ed-fi/academicWeeks?beginDate=024-04-09"
-             Then it should respond with 400
+             Then it should respond with 200
               And the response body is
                   """
-                  {
-                    "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
-                    "title": "Data Validation Failed",
-                    "status": 400,
-                    "correlationId": null,
-                    "validationErrors": {
-                        "$.beginDate": ["The value '024-04-09' is not valid for BeginDate."]
-                    }
-                  }
+                   {
+                       "detail": "Data validation failed. See 'validationErrors' for details.",
+                       "type": "urn:ed-fi:api:bad-request:data",
+                       "title": "Data Validation Failed",
+                       "status": 400,
+                       "correlationId": null,
+                       "validationErrors": {
+                           "$.beginDate": ["The value '024-04-09' is not valid for BeginDate."]
+                       }
+                   }
                   """
 
         @ignore
@@ -61,7 +61,7 @@ Feature: Query String handling for GET requests for Resource Queries
                     }
                   }
                   """
-
+        # DMS-89
         @ignore
         Scenario: 04 Ensure clients can't GET information when querying by wrong begin date
              When a GET request is made to "/ed-fi/academicWeeks?beginDate=1970-04-09"
@@ -70,7 +70,7 @@ Feature: Query String handling for GET requests for Resource Queries
                   """
                   []
                   """
-
+        # DMS-89
         @ignore
         Scenario: 05 Ensure clients can't GET information when querying by correct begin date and wrong end date
              When a GET request is made to "/ed-fi/academicWeeks?beginDate=2024-05-15&endDate=2025-06-23"
@@ -80,14 +80,13 @@ Feature: Query String handling for GET requests for Resource Queries
                   []
                   """
 
-        @ignore
         Scenario: 06 Ensure clients can GET information when querying by string parameter
              When a GET request is made to "/ed-fi/academicWeeks?weekIdentifier=Week+One"
              Then it should respond with 200
               And the response body is
                   """
-                  {
-                      "id": "placeholder",
+                  [{
+                      "id": "{id}",
                       "schoolReference": {
                           "schoolId": 2
                       },
@@ -95,17 +94,16 @@ Feature: Query String handling for GET requests for Resource Queries
                       "beginDate": "2024-05-15",
                       "endDate": "2024-05-22",
                       "totalInstructionalDays": 2
-                  }
+                  }]
                   """
 
-        @ignore
         Scenario: 07 Ensure clients can GET information when querying by integer parameter
              When a GET request is made to "/ed-fi/academicWeeks?totalInstructionalDays=2"
              Then it should respond with 200
               And the response body is
                   """
-                  {
-                      "id": "placeholder",
+                  [{
+                      "id": "{id}",
                       "schoolReference": {
                           "schoolId": 2
                       },
@@ -113,5 +111,5 @@ Feature: Query String handling for GET requests for Resource Queries
                       "beginDate": "2024-05-15",
                       "endDate": "2024-05-22",
                       "totalInstructionalDays": 2
-                  }
+                  }]
                   """
