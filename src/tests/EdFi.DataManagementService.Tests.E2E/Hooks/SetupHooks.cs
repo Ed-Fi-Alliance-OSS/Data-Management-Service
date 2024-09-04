@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Tests.E2E.Management;
-using Microsoft.Extensions.Configuration;
 using Reqnroll;
 
 namespace EdFi.DataManagementService.Tests.E2E.Hooks;
