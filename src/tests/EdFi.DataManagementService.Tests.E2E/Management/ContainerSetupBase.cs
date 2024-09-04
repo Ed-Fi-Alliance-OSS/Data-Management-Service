@@ -50,19 +50,15 @@ public abstract class ContainerSetupBase
             .WithEnvironment("MINIMUM_THROUGHPUT", "2")
             .WithEnvironment("BREAK_DURATION_SECONDS", "30")
             .WithEnvironment("OPENSEARCH_URL", openSearchURl)
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort((ushort)httpPort)))
+            .WithWaitStrategy(
+                Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort((ushort)httpPort))
+            )
             .WithNetwork(network)
             .WithLogger(loggerFactory!.CreateLogger("apiContainer"))
             .Build();
 
-    public IContainer DatabaseContainer(
-        ILoggerFactory? loggerFactory,
-        INetwork network
-    )
+    public IContainer DatabaseContainer(ILoggerFactory? loggerFactory, INetwork network)
     {
-        var assemblyLocation = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-        string filePath = Path.Combine(assemblyLocation!, "OpenSearchFiles/postgresql-init.sh");
-
         var containerBuilder = new ContainerBuilder()
             .WithImage(dbImageName)
             .WithHostname(dbContainerName)
@@ -72,24 +68,10 @@ public abstract class ContainerSetupBase
             .WithEnvironment("POSTGRES_USER", pgAdminUser)
             .WithEnvironment("POSTGRES_PASSWORD", pgAdminPassword)
             .WithEnvironment("POSTGRES_DB_NAME", databaseName)
-            .WithBindMount(filePath, "/docker-entrypoint-initdb.d/postgresql-init.sh")
             .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(5432))
             .WithLogger(loggerFactory!.CreateLogger("dbContainer"));
 
         return containerBuilder.Build();
-    }
-
-    public async Task<string> ValidateApiContainer(IContainer apiContainer)
-    {
-        while (apiContainer!.State != TestcontainersStates.Running)
-        {
-            await Task.Delay(1000);
-        }
-        return new UriBuilder(
-            Uri.UriSchemeHttp,
-            apiContainer?.Hostname,
-            apiContainer!.GetMappedPublicPort(httpPort)
-        ).ToString();
     }
 
     public abstract Task StartContainers();
@@ -98,7 +80,7 @@ public abstract class ContainerSetupBase
 
     public abstract Task ApiLogs(TestLogger logger);
 
-    public abstract Task<string> ApiUrl();
+    public abstract string ApiUrl();
 
     public async Task ResetDatabase()
     {

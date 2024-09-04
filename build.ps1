@@ -243,7 +243,21 @@ function RunE2E {
 }
 
 function E2ETests {
-    Invoke-Step { DockerBuild }
+    if($EnableOpenSearch)
+    {
+        try
+        {
+            Push-Location eng/docker-compose/
+            ./start-local-dms.ps1 -p "./.env.e2e"
+        }
+        finally {
+            Pop-Location
+        }
+    }
+    else
+    {
+      Invoke-Step { DockerBuild }
+    }
     Invoke-Step { RunE2E }
 }
 
