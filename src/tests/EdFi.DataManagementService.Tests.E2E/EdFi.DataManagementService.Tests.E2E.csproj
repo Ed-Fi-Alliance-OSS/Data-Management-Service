@@ -60,7 +60,6 @@
             <OpenSearchFiles Include="..\..\..\eng\docker-compose\*_connector.json" />
             <OpenSearchFiles Include="..\..\..\eng\docker-compose\postgresql-init.sh" />
         </ItemGroup>
-        <Copy SourceFiles="@(OpenSearchFiles)"
-              DestinationFolder="$(OutputPath)OpenSearchFiles\%(RecursiveDir)" />
+        <Copy SourceFiles="@(OpenSearchFiles)" DestinationFolder="$(OutputPath)OpenSearchFiles\%(RecursiveDir)" />
     </Target>
 </Project>

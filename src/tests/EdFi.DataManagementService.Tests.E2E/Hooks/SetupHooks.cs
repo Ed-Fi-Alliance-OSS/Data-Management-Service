@@ -12,9 +12,6 @@ namespace EdFi.DataManagementService.Tests.E2E.Hooks;
 [Binding]
 public class SetupHooks
 {
-    private static IConfiguration? _configuration = new ConfigurationBuilder()
-        .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-        .Build();
     private static ContainerSetupBase? _containerSetup;
 
     private static bool _useTestContainers = false;
@@ -23,8 +20,8 @@ public class SetupHooks
     [BeforeTestRun]
     public static async Task BeforeTestRun()
     {
-        bool.TryParse(_configuration!["useTestContainers"], out _useTestContainers);
-        bool.TryParse(_configuration!["OpenSearchEnabled"], out _openSearchEnabled);
+        _useTestContainers = AppSettings.UseTestContainers;
+        _openSearchEnabled = AppSettings.OpenSearchEnabled;
 
         if (_useTestContainers)
             if (_openSearchEnabled)

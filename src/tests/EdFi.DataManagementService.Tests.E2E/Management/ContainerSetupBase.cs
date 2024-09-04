@@ -107,13 +107,14 @@ public abstract class ContainerSetupBase
         using var conn = new NpgsqlConnection(hostConnectionString);
         await conn.OpenAsync();
 
-        var deleteRefCmd = new NpgsqlCommand($"DELETE FROM dms.Reference;", conn);
-        await deleteRefCmd.ExecuteNonQueryAsync();
+        await DeleteData("dms.Reference");
+        await DeleteData("dms.Alias");
+        await DeleteData("dms.Document");
 
-        var deleteAliCmd = new NpgsqlCommand($"DELETE FROM dms.Alias;", conn);
-        await deleteAliCmd.ExecuteNonQueryAsync();
-
-        var deleteDocCmd = new NpgsqlCommand($"DELETE FROM dms.Document;", conn);
-        await deleteDocCmd.ExecuteNonQueryAsync();
+        async Task DeleteData(string tableName)
+        {
+            var deleteRefCmd = new NpgsqlCommand($"DELETE FROM {tableName};", conn);
+            await deleteRefCmd.ExecuteNonQueryAsync();
+        }
     }
 }
