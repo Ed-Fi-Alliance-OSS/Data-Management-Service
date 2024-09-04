@@ -54,12 +54,4 @@
   <ItemGroup>
     <Using Include="NUnit.Framework" />
   </ItemGroup>
-
-    <Target Name="CopyFilesToOutputFolder" AfterTargets="Build">
-        <ItemGroup>
-            <OpenSearchFiles Include="..\..\..\eng\docker-compose\*_connector.json" />
-            <OpenSearchFiles Include="..\..\..\eng\docker-compose\postgresql-init.sh" />
-        </ItemGroup>
-        <Copy SourceFiles="@(OpenSearchFiles)" DestinationFolder="$(OutputPath)OpenSearchFiles\%(RecursiveDir)" />
-    </Target>
 </Project>

@@ -19,7 +19,12 @@ param (
 
     # Force re-pull of all Docker hub images
     [Switch]
-    $p
+    $p,
+
+    # Environment file
+    [string]
+    $EnvironmentFile = "./.env"
+
 )
 
 if ($d) {
@@ -43,8 +48,9 @@ else {
     }
 
     Write-Output "Starting services"
-    docker compose -f docker-compose.yml -f dms-local.yml up --pull $pull -d
+    docker compose -f docker-compose.yml -f dms-local.yml --env-file $EnvironmentFile up --pull $pull -d
 
-    Start-Sleep -Seconds 15
-    ./setup-connectors.ps1
+    Start-Sleep 25
+
+    ./setup-connectors.ps1 $EnvironmentFile
 }

@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+services:
+
+  db:
+    hostname: dms-postgresql
+    container_name: dms-postgresql
+    image: postgres:16.3-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-abcdefgh1!}
+      POSTGRES_DB_NAME: ${POSTGRES_DB_NAME:-edfi_datamanagementservice}
+    ports:
+      - ${POSTGRES_PORT:-5432}:5432
+    volumes:
+      - dms-postgresql:/var/lib/postgresql/data
+      - ./postgresql-init.sh:/docker-entrypoint-initdb.d/postgresql-init.sh
+
+  dms:
+    build: ../../src/
+    hostname: dms
+    ports:
+      - 8080:8080
+    restart: unless-stopped
+    depends_on:
+      - db
+    healthcheck:
+      test: curl -s http://localhost:8080/ping >/dev/null || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 50
+    environment:
+      ASPNETCORE_HTTP_PORTS: ${ASPNETCORE_HTTP_PORTS:-8080}
+      OAUTH_TOKEN_ENDPOINT: ${OAUTH_TOKEN_ENDPOINT:-http://host.docker.internal:8080/oauth/token}
+      NEED_DATABASE_SETUP: ${NEED_DATABASE_SETUP:-true}
+      BYPASS_STRING_COERCION: ${BYPASS_STRING_COERCION:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
+      # The default correlation id header is deliberately blank on the following line
+      CORRELATION_ID_HEADER: ${CORRELATION_ID_HEADER:-}
+      DMS_DATASTORE: ${DMS_DATASTORE:-postgresql}
+      DMS_QUERYHANDLER: ${DMS_QUERYHANDLER:-opensearch}
+      DATABASE_CONNECTION_STRING: ${DATABASE_CONNECTION_STRING:-host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};}
+      DATABASE_ISOLATION_LEVEL: ${DATABASE_ISOLATION_LEVEL:-RepeatableRead}
+      # "DATABASE_CONNECTION_STRING_ADMIN_ADMIN" can have alternate credentials with elevated permissions for creating database objects
+      DATABASE_CONNECTION_STRING_ADMIN: ${DATABASE_CONNECTION_STRING_ADMIN:-host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};}
+      FAILURE_RATIO: ${FAILURE_RATIO:-0.01}
+      SAMPLING_DURATION_SECONDS: ${SAMPLING_DURATION_SECONDS:-10}
+      MINIMUM_THROUGHPUT: ${MINIMUM_THROUGHPUT:-2}
+      BREAK_DURATION_SECONDS: ${BREAK_DURATION_SECONDS:-30}
+      OPENSEARCH_URL: ${OPENSEARCH_URL:-http://dms-opensearch:9200}
+
+volumes:
+  dms-postgresql:

@@ -13,10 +13,20 @@ public class ContainerSetup : ContainerSetupBase
 {
     public IContainer? DbContainer;
     public IContainer? DmsApiContainer;
+    private readonly ushort httpPort = 8987;
 
-    public override async Task<string> ApiUrl()
+    public override string ApiUrl()
     {
-        return await ValidateApiContainer(DmsApiContainer!);
+        while (DmsApiContainer!.State != TestcontainersStates.Running)
+        {
+            Thread.Sleep(1000);
+        }
+
+        return new UriBuilder(
+            Uri.UriSchemeHttp,
+            DmsApiContainer?.Hostname,
+            DmsApiContainer!.GetMappedPublicPort(httpPort)
+        ).ToString();
     }
 
     public override async Task ApiLogs(TestLogger logger)

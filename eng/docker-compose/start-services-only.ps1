@@ -15,7 +15,11 @@ param (
 
     # Force re-pull of all Docker hub images
     [Switch]
-    $p
+    $p,
+
+    # Environment file
+    [string]
+    $EnvironmentFile = "./.env"
 )
 
 if ($d) {
@@ -31,8 +35,7 @@ else {
     if ($p) {
         $pull = "--pull"
     }
-    docker compose -f docker-compose.yml up --pull $pull -d
+    docker compose -f docker-compose.yml --env-file $EnvironmentFile up --pull $pull -d
 
-    Start-Sleep -Seconds 15
-    ./setup-connectors.ps1
+    ./setup-connectors.ps1 $EnvironmentFile
 }
