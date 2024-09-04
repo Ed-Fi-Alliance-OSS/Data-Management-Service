@@ -20,10 +20,11 @@
 
     "compact.map.entries": "true",
 
-    "transforms": "removeId, toOpenSearchIndex",
+    "transforms": "removeId, toOpenSearchIndex, deletedToTombstone",
     "transforms.removeId.type": "org.apache.kafka.connect.transforms.ReplaceField$Value",
     "transforms.removeId.exclude": "id",
     "transforms.toOpenSearchIndex.type":"org.edfi.kafka.connect.transforms.RenameDmsTopicToOpenSearchIndex",
+    "transforms.deletedToTombstone.type": "org.edfi.kafka.connect.transforms.DebeziumDeletedToTombstone",
 
     "behavior.on.version.conflict": "ignore",
     "behavior.on.null.values": "delete",

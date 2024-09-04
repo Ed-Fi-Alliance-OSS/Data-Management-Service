@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Npgsql;
 using NUnit.Framework;
@@ -14,6 +15,8 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
 public class DeleteTests : DatabaseTest
 {
     private static readonly string _defaultResourceName = "DefaultResourceName";
+
+    private static TraceId traceId = new("");
 
     [TestFixture]
     public class Given_a_delete_of_a_non_existing_document : DeleteTests
@@ -55,7 +58,7 @@ public class DeleteTests : DatabaseTest
                 _referentialIdGuid,
                 _edFiDocString
             );
-            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
 
             IDeleteRequest deleteRequest = CreateDeleteRequest(_defaultResourceName, _documentUuidGuid);
             _deleteResult = await CreateDeleteById().DeleteById(deleteRequest, Connection!, Transaction!);
@@ -91,7 +94,7 @@ public class DeleteTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString
                     );
-                    await CreateUpsert().Upsert(upsertRequest, connection, transaction);
+                    await CreateUpsert().Upsert(upsertRequest, connection, transaction, traceId);
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
@@ -151,7 +154,7 @@ public class DeleteTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString1
                     );
-                    await CreateUpsert().Upsert(upsertRequest, connection, transaction);
+                    await CreateUpsert().Upsert(upsertRequest, connection, transaction, traceId);
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
@@ -170,7 +173,7 @@ public class DeleteTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString2
                     );
-                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction);
+                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction, traceId);
                 }
             );
         }
@@ -212,7 +215,7 @@ public class DeleteTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString1
                     );
-                    await CreateUpsert().Upsert(upsertRequest, connection, transaction);
+                    await CreateUpsert().Upsert(upsertRequest, connection, transaction, traceId);
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
@@ -222,7 +225,7 @@ public class DeleteTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString2
                     );
-                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction);
+                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction, traceId);
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
@@ -273,7 +276,7 @@ public class DeleteTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString1
                     );
-                    await CreateUpsert().Upsert(upsertRequest, connection, transaction);
+                    await CreateUpsert().Upsert(upsertRequest, connection, transaction, traceId);
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
@@ -292,7 +295,7 @@ public class DeleteTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString2
                     );
-                    return await CreateUpsert().Upsert(upsertRequest, connection, transaction);
+                    return await CreateUpsert().Upsert(upsertRequest, connection, transaction, traceId);
                 }
             );
         }
@@ -334,7 +337,7 @@ public class DeleteTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString1
                     );
-                    await CreateUpsert().Upsert(upsertRequest, connection, transaction);
+                    await CreateUpsert().Upsert(upsertRequest, connection, transaction, traceId);
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
@@ -344,7 +347,7 @@ public class DeleteTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString2
                     );
-                    return await CreateUpsert().Upsert(upsertRequest, connection, transaction);
+                    return await CreateUpsert().Upsert(upsertRequest, connection, transaction, traceId);
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
@@ -397,7 +400,9 @@ public class DeleteTests : DatabaseTest
                 _referencedRefIdGuid,
                 _referencedDocString
             );
-            _upsertResults.Add(await CreateUpsert().Upsert(refUpsertRequest, Connection!, Transaction!));
+            _upsertResults.Add(
+                await CreateUpsert().Upsert(refUpsertRequest, Connection!, Transaction!, traceId)
+            );
 
             // Add references
             Reference[] references = [new(_referencingResourceName, _referencedRefIdGuid)];
@@ -410,7 +415,9 @@ public class DeleteTests : DatabaseTest
                 CreateDocumentReferences(references)
             );
 
-            _upsertResults.Add(await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!));
+            _upsertResults.Add(
+                await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId)
+            );
 
             await Transaction!.CommitAsync();
             Transaction = await Connection!.BeginTransactionAsync(ConfiguredIsolationLevel);
@@ -472,7 +479,9 @@ public class DeleteTests : DatabaseTest
                 _referencedRefIdGuid,
                 _referencedDocString
             );
-            _upsertResults.Add(await CreateUpsert().Upsert(refUpsertRequest, Connection!, Transaction!));
+            _upsertResults.Add(
+                await CreateUpsert().Upsert(refUpsertRequest, Connection!, Transaction!, traceId)
+            );
 
             // Add references
             Reference[] references = [new(_referencingResourceName, _referencedRefIdGuid)];
@@ -485,7 +494,9 @@ public class DeleteTests : DatabaseTest
                 CreateDocumentReferences(references)
             );
 
-            _upsertResults.Add(await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!));
+            _upsertResults.Add(
+                await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId)
+            );
 
             await Transaction!.CommitAsync();
             Transaction = await Connection!.BeginTransactionAsync(ConfiguredIsolationLevel);
@@ -545,7 +556,9 @@ public class DeleteTests : DatabaseTest
                 null,
                 CreateSuperclassIdentity(_superClassName, _superClassReferentialIdGuid)
             );
-            _upsertResults.Add(await CreateUpsert().Upsert(subClassUpsertRequest, Connection!, Transaction!));
+            _upsertResults.Add(
+                await CreateUpsert().Upsert(subClassUpsertRequest, Connection!, Transaction!, traceId)
+            );
 
             // Add references
             Reference[] references = [new(_referencingClassName, _superClassReferentialIdGuid)];
@@ -558,7 +571,9 @@ public class DeleteTests : DatabaseTest
                 CreateDocumentReferences(references)
             );
 
-            _upsertResults.Add(await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!));
+            _upsertResults.Add(
+                await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId)
+            );
 
             await Transaction!.CommitAsync();
 

@@ -34,29 +34,34 @@ public abstract class DatabaseTest : DatabaseTestBase
         Connection?.Dispose();
     }
 
+    protected static SqlAction CreateSqlAction()
+    {
+        return new SqlAction(NullLogger<SqlAction>.Instance);
+    }
+
     protected static UpsertDocument CreateUpsert()
     {
-        return new UpsertDocument(NullLogger<UpsertDocument>.Instance);
+        return new UpsertDocument(CreateSqlAction(), NullLogger<UpsertDocument>.Instance);
     }
 
     protected static UpdateDocumentById CreateUpdate()
     {
-        return new UpdateDocumentById(NullLogger<UpdateDocumentById>.Instance);
+        return new UpdateDocumentById(CreateSqlAction(), NullLogger<UpdateDocumentById>.Instance);
     }
 
     protected static GetDocumentById CreateGetById()
     {
-        return new GetDocumentById(NullLogger<GetDocumentById>.Instance);
+        return new GetDocumentById(CreateSqlAction(), NullLogger<GetDocumentById>.Instance);
     }
 
     protected static QueryDocument CreateQueryDocument()
     {
-        return new QueryDocument(NullLogger<QueryDocument>.Instance);
+        return new QueryDocument(CreateSqlAction(), NullLogger<QueryDocument>.Instance);
     }
 
     protected static DeleteDocumentById CreateDeleteById()
     {
-        return new DeleteDocumentById(NullLogger<DeleteDocumentById>.Instance);
+        return new DeleteDocumentById(CreateSqlAction(), NullLogger<DeleteDocumentById>.Instance);
     }
 
     protected static T AsValueType<T, TU>(TU value)

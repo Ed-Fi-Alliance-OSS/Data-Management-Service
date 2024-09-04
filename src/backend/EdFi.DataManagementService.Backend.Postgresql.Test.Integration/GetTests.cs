@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Npgsql;
 using NUnit.Framework;
@@ -14,6 +15,8 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
 public class GetTests : DatabaseTest
 {
     private static readonly string _defaultResourceName = "DefaultResourceName";
+
+    private static TraceId traceId = new("");
 
     [TestFixture]
     public class Given_an_nonexistent_document : GetTests
@@ -51,7 +54,7 @@ public class GetTests : DatabaseTest
                 Guid.NewGuid(),
                 _edFiDocString
             );
-            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
 
             _getResult = await CreateGetById()
                 .GetById(
@@ -90,7 +93,7 @@ public class GetTests : DatabaseTest
                 Guid.NewGuid(),
                 _edFiDocString
             );
-            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
 
             _getResult = await CreateGetById()
                 .GetById(CreateGetRequest(_resourceName2, _documentUuidGuid), Connection!, Transaction!);
@@ -128,7 +131,7 @@ public class GetTests : DatabaseTest
                         Guid.NewGuid(),
                         _edFiDocString
                     );
-                    return await CreateUpsert().Upsert(upsertRequest, connection, transaction);
+                    return await CreateUpsert().Upsert(upsertRequest, connection, transaction, traceId);
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
@@ -188,7 +191,7 @@ public class GetTests : DatabaseTest
                         Guid.NewGuid(),
                         _edFiDocString
                     );
-                    return await CreateUpsert().Upsert(upsertRequest, connection, transaction);
+                    return await CreateUpsert().Upsert(upsertRequest, connection, transaction, traceId);
                 }
             );
         }

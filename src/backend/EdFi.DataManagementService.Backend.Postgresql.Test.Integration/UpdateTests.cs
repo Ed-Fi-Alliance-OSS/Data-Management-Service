@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Npgsql;
 using NUnit.Framework;
@@ -14,6 +15,8 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
 public class UpdateTests : DatabaseTest
 {
     private static readonly string _defaultResourceName = "DefaultResourceName";
+
+    private static TraceId traceId = new("");
 
     [TestFixture]
     public class Given_an_update_of_a_nonexistent_document : UpdateTests
@@ -31,7 +34,8 @@ public class UpdateTests : DatabaseTest
                 Guid.NewGuid(),
                 _edFiDocString
             );
-            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
+            _updateResult = await CreateUpdate()
+                .UpdateById(updateRequest, Connection!, Transaction!, traceId);
         }
 
         [Test]
@@ -74,7 +78,7 @@ public class UpdateTests : DatabaseTest
                 _referentialIdGuid,
                 _edFiDocString1
             );
-            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
 
             // Update
             IUpdateRequest updateRequest = CreateUpdateRequest(
@@ -83,7 +87,8 @@ public class UpdateTests : DatabaseTest
                 _referentialIdGuid,
                 _edFiDocString2
             );
-            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
+            _updateResult = await CreateUpdate()
+                .UpdateById(updateRequest, Connection!, Transaction!, traceId);
 
             // Confirm change was made
             IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
@@ -126,7 +131,7 @@ public class UpdateTests : DatabaseTest
                 _referentialIdGuid1,
                 _edFiDocString1
             );
-            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
 
             // Update
             IUpdateRequest updateRequest = CreateUpdateRequest(
@@ -135,7 +140,8 @@ public class UpdateTests : DatabaseTest
                 _referentialIdGuid2,
                 _edFiDocString2
             );
-            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
+            _updateResult = await CreateUpdate()
+                .UpdateById(updateRequest, Connection!, Transaction!, traceId);
         }
 
         [Test]
@@ -158,7 +164,8 @@ public class UpdateTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_update_of_an_existing_document_with_different_referentialId_Allow_Identity_Update : UpdateTests
+    public class Given_an_update_of_an_existing_document_with_different_referentialId_Allow_Identity_Update
+        : UpdateTests
     {
         private UpdateResult? _updateResult;
 
@@ -181,7 +188,7 @@ public class UpdateTests : DatabaseTest
                 _edFiDocString1,
                 allowIdentityUpdates: true
             );
-            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
 
             // Create referencing document referencing the first
             IUpsertRequest upsertReferencingRequest = CreateUpsertRequest(
@@ -200,7 +207,8 @@ public class UpdateTests : DatabaseTest
                 _edFiDocString2,
                 allowIdentityUpdates: true
             );
-            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
+            _updateResult = await CreateUpdate()
+                .UpdateById(updateRequest, Connection!, Transaction!, traceId);
         }
 
         [Test]
@@ -250,7 +258,8 @@ public class UpdateTests : DatabaseTest
                                 _edFiDocString1
                             ),
                             connection,
-                            transaction
+                            transaction,
+                            traceId
                         );
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
@@ -261,7 +270,7 @@ public class UpdateTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString2
                     );
-                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction);
+                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction, traceId);
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
@@ -271,7 +280,7 @@ public class UpdateTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString3
                     );
-                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction);
+                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction, traceId);
                 }
             );
         }
@@ -321,7 +330,7 @@ public class UpdateTests : DatabaseTest
                 _referencedReferentialIdGuid,
                 """{"abc":1}"""
             );
-            await CreateUpsert().Upsert(refUpsertRequest, Connection!, Transaction!);
+            await CreateUpsert().Upsert(refUpsertRequest, Connection!, Transaction!, traceId);
 
             // Document with valid reference
             IUpsertRequest upsertRequest = CreateUpsertRequest(
@@ -332,7 +341,7 @@ public class UpdateTests : DatabaseTest
                 CreateDocumentReferences([new(_referencingResourceName, _referencedReferentialIdGuid)])
             );
 
-            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
 
             // Update with invalid reference
             string updatedReferencedDocString = """{"abc":3}""";
@@ -343,7 +352,8 @@ public class UpdateTests : DatabaseTest
                 updatedReferencedDocString,
                 CreateDocumentReferences([new(_referencingResourceName, _invalidReferentialIdGuid)])
             );
-            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
+            _updateResult = await CreateUpdate()
+                .UpdateById(updateRequest, Connection!, Transaction!, traceId);
         }
 
         [Test]
@@ -385,7 +395,8 @@ public class UpdateTests : DatabaseTest
                 _referencedRefIdGuid,
                 _referencedDocString
             );
-            var upsertResult1 = await CreateUpsert().Upsert(refUpsertRequest, Connection!, Transaction!);
+            var upsertResult1 = await CreateUpsert()
+                .Upsert(refUpsertRequest, Connection!, Transaction!, traceId);
             upsertResult1.Should().BeOfType<UpsertResult.InsertSuccess>();
 
             // Then, insert the referencing document without a reference
@@ -396,7 +407,8 @@ public class UpdateTests : DatabaseTest
                 _edFiDocString
             );
 
-            var upsertResult2 = await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+            var upsertResult2 = await CreateUpsert()
+                .Upsert(upsertRequest, Connection!, Transaction!, traceId);
             upsertResult2.Should().BeOfType<UpsertResult.InsertSuccess>();
 
             // Update the referencing document, adding the reference
@@ -408,7 +420,8 @@ public class UpdateTests : DatabaseTest
                 updatedReferencingDocString,
                 CreateDocumentReferences([new(_referencingResourceName, _referencedRefIdGuid)])
             );
-            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
+            _updateResult = await CreateUpdate()
+                .UpdateById(updateRequest, Connection!, Transaction!, traceId);
         }
 
         [Test]
@@ -444,7 +457,7 @@ public class UpdateTests : DatabaseTest
                 _existingReferencedDocString
             );
             var upsertResult1 = await CreateUpsert()
-                .Upsert(existingRefUpsertRequest, Connection!, Transaction!);
+                .Upsert(existingRefUpsertRequest, Connection!, Transaction!, traceId);
             upsertResult1.Should().BeOfType<UpsertResult.InsertSuccess>();
 
             // Then, insert the referencing document with no references yet
@@ -455,14 +468,15 @@ public class UpdateTests : DatabaseTest
                 _edFiDocString
             );
 
-            var upsertResult2 = await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+            var upsertResult2 = await CreateUpsert()
+                .Upsert(upsertRequest, Connection!, Transaction!, traceId);
             upsertResult2.Should().BeOfType<UpsertResult.InsertSuccess>();
 
             // One existing and one non-existent reference
             Reference[] references =
             [
                 new(_existingReferencedResourceName, _existingReferencedRefIdGuid),
-                new("Nonexistent", Guid.NewGuid())
+                new("Nonexistent", Guid.NewGuid()),
             ];
 
             // Update the referencing document to refer to both existing and non-existent documents
@@ -473,7 +487,8 @@ public class UpdateTests : DatabaseTest
                 """{"abc":3}""",
                 CreateDocumentReferences(references)
             );
-            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
+            _updateResult = await CreateUpdate()
+                .UpdateById(updateRequest, Connection!, Transaction!, traceId);
         }
 
         [Test]
@@ -498,13 +513,15 @@ public class UpdateTests : DatabaseTest
         private static readonly string _superclassResourceName = "EducationOrganization";
         private static readonly Guid _superclassDocUuidGuid = Guid.NewGuid();
         private static readonly Guid _superclassRefIdGuid = Guid.NewGuid();
-        private static readonly string _superclassDocString = """{"schoolId": 123, "nameOfInstitution" : "Test" }""";
+        private static readonly string _superclassDocString =
+            """{"schoolId": 123, "nameOfInstitution" : "Test" }""";
 
         private static readonly string _subclassResourceName = "AcademicWeek";
         private static readonly Guid _subclassDocUuidGuid = Guid.NewGuid();
         private static readonly Guid _subclassRefIdGuid = Guid.NewGuid();
         private static readonly string _subclassDocString = """{"weekIdentifier": "One"}""";
-        private static readonly string _subclassDocStringUpdate = """{"weekIdentifier": "One", "schoolReference":[{"schoolId": 123}]}""";
+        private static readonly string _subclassDocStringUpdate =
+            """{"weekIdentifier": "One", "schoolReference":[{"schoolId": 123}]}""";
 
         [SetUp]
         public async Task Setup()
@@ -516,7 +533,8 @@ public class UpdateTests : DatabaseTest
                 _superclassRefIdGuid,
                 _superclassDocString
             );
-            var upsertResult1 = await CreateUpsert().Upsert(superclassUpsertRequest, Connection!, Transaction!);
+            var upsertResult1 = await CreateUpsert()
+                .Upsert(superclassUpsertRequest, Connection!, Transaction!, traceId);
             upsertResult1.Should().BeOfType<UpsertResult.InsertSuccess>();
 
             // The original document with no reference (AcademicWeek)
@@ -527,7 +545,8 @@ public class UpdateTests : DatabaseTest
                 _subclassDocString
             );
 
-            var upsertResult2 = await CreateUpsert().Upsert(referencingUpsertRequest, Connection!, Transaction!);
+            var upsertResult2 = await CreateUpsert()
+                .Upsert(referencingUpsertRequest, Connection!, Transaction!, traceId);
             upsertResult2.Should().BeOfType<UpsertResult.InsertSuccess>();
 
             // The updated document with reference as superclass (an AcademicWeek reference an EducationOrgazation)
@@ -539,7 +558,8 @@ public class UpdateTests : DatabaseTest
                 CreateDocumentReferences([new(_subclassResourceName, _superclassRefIdGuid)])
             );
 
-            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
+            _updateResult = await CreateUpdate()
+                .UpdateById(updateRequest, Connection!, Transaction!, traceId);
         }
 
         [Test]
@@ -584,7 +604,8 @@ public class UpdateTests : DatabaseTest
                                 _edFiDocString1
                             ),
                             connection,
-                            transaction
+                            transaction,
+                            traceId
                         );
 
                     // Add references: one existing and one non-existent
@@ -598,7 +619,7 @@ public class UpdateTests : DatabaseTest
                         CreateDocumentReferences(references)
                     );
 
-                    await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+                    await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
@@ -608,7 +629,7 @@ public class UpdateTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString2
                     );
-                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction);
+                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction, traceId);
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
@@ -618,7 +639,7 @@ public class UpdateTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString3
                     );
-                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction);
+                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction, traceId);
                 }
             );
         }

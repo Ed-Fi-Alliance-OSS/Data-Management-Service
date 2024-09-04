@@ -53,6 +53,10 @@ POST http://localhost:{{port}}/data/ed-fi/schoolYearTypes
     "schoolYearDescription": "Year 2025"
 }
 
+###
+
+DELETE http://localhost:5198/data/ed-fi/schoolYearTypes/c1d3aabe-69e1-4629-bf03-669bd102c177
+
 ### Setup - POST School 123
 POST http://localhost:{{port}}/data/ed-fi/schools
 

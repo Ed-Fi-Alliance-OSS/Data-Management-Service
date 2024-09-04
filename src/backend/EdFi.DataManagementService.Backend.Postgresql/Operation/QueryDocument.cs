@@ -6,7 +6,6 @@
 using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
 using Npgsql;
-using static EdFi.DataManagementService.Backend.Postgresql.Operation.SqlAction;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
 
@@ -19,7 +18,7 @@ public interface IQueryDocument
     );
 }
 
-public class QueryDocument(ILogger<QueryDocument> _logger) : IQueryDocument
+public class QueryDocument(ISqlAction _sqlAction, ILogger<QueryDocument> _logger) : IQueryDocument
 {
     public async Task<QueryResult> QueryDocuments(
         IQueryRequest queryRequest,
@@ -33,13 +32,21 @@ public class QueryDocument(ILogger<QueryDocument> _logger) : IQueryDocument
             string resourceName = queryRequest.ResourceInfo.ResourceName.Value;
 
             return new QueryResult.QuerySuccess(
-                await GetAllDocumentsByResourceName(
+                await _sqlAction.GetAllDocumentsByResourceName(
                     resourceName,
                     queryRequest.PaginationParameters,
                     connection,
-                    transaction
+                    transaction,
+                    queryRequest.TraceId
                 ),
-                queryRequest.PaginationParameters.TotalCount ? await GetTotalDocumentsForResourceName(resourceName, connection, transaction) : null
+                queryRequest.PaginationParameters.TotalCount
+                    ? await _sqlAction.GetTotalDocumentsForResourceName(
+                        resourceName,
+                        connection,
+                        transaction,
+                        queryRequest.TraceId
+                    )
+                    : null
             );
         }
         catch (Exception ex)
