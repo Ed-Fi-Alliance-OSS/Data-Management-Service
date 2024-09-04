@@ -154,7 +154,7 @@ function PublishBackendInstaller {
     }
 }
 
-function Set-QueryHandler {
+function SetQueryHandler {
     param (
         # E2E test directory
         [string]
@@ -217,7 +217,7 @@ function RunTests {
             if($Filter -like "*E2E*")
             {
                 $dirPath = Split-Path -parent $($_)
-                Set-QueryHandler($dirPath)
+                SetQueryHandler($dirPath)
             }
 
             Invoke-Execute {
