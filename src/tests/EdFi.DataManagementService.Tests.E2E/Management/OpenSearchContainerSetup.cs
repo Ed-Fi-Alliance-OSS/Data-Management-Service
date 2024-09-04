@@ -133,17 +133,30 @@ public class OpenSearchContainerSetup : ContainerSetupBase
             await Task.Delay(5000);
 
             var sourceConfigPath = "OpenSearchFiles/postgresql_connector.json";
-            await InjectConnectorConfiguration("http://localhost:8083/", sourceConfigPath);
+            await InjectConnectorConfiguration(
+                "http://localhost:8083/",
+                sourceConfigPath,
+                "postgresql-source"
+            );
 
             var sinkConfigPath = "OpenSearchFiles/opensearch_connector.json";
-            await InjectConnectorConfiguration("http://localhost:8084/", sinkConfigPath);
+            await InjectConnectorConfiguration("http://localhost:8084/", sinkConfigPath, "opensearch-sink");
+
+            await Task.Delay(5000);
         }
         catch (Exception ex)
         {
-            var a = ex.Message;
+            var logger = loggerFactory.CreateLogger("OpenSearchContainers");
+            logger.LogError(ex.Message);
         }
-        async Task InjectConnectorConfiguration(string url, string configFilePath)
+
+        async Task InjectConnectorConfiguration(string url, string configFilePath, string connectorName)
         {
+            while (!await IsKafkaRunning(url))
+            {
+                await Task.Delay(1000);
+            }
+
             var assemblyLocation = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             var _client = new HttpClient();
             _client.BaseAddress = new Uri(url);
@@ -151,6 +164,18 @@ public class OpenSearchContainerSetup : ContainerSetupBase
             string content = await File.ReadAllTextAsync(connectorConfig);
             var stringContent = new StringContent(content, Encoding.UTF8, "application/json");
             var response = await _client.PostAsync("connectors", stringContent);
+
+            while (!await IsKafkaRunning($"{url}connectors/{connectorName}"))
+            {
+                await Task.Delay(1000);
+            }
+        }
+
+        async Task<bool> IsKafkaRunning(string url)
+        {
+            var _client = new HttpClient();
+            var response = await _client.GetAsync(url);
+            return ((int)response.StatusCode >= 200) && ((int)response.StatusCode <= 299);
         }
     }
 

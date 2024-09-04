@@ -17,13 +17,18 @@ using static EdFi.DataManagementService.Tests.E2E.Management.JsonComparer;
 namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 {
     [Binding]
-    public class StepDefinitions(PlaywrightContext _playwrightContext, TestLogger _logger)
+    public class StepDefinitions(
+        PlaywrightContext _playwrightContext,
+        TestLogger _logger,
+        ScenarioContext _scenarioContext
+    )
     {
         private IAPIResponse _apiResponse = null!;
         private string _id = string.Empty;
         private string _dependentId = string.Empty;
         private string _location = string.Empty;
         private string _referencedResourceId = string.Empty;
+        private readonly bool _openSearchEnabled = AppSettings.OpenSearchEnabled;
 
         #region Given
 
@@ -78,7 +83,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     { "codeValue", codeValue },
                     { "description", codeValue },
                     { "namespace", namespaceName },
-                    { "shortDescription", codeValue }
+                    { "shortDescription", codeValue },
                 }
             );
         }
@@ -134,6 +139,15 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 string body = response.TextAsync().Result;
                 _logger.log.Information(body);
             }
+
+            var waitTags = _scenarioContext.ScenarioInfo.Tags;
+            if (waitTags != null && waitTags.Contains("addwait"))
+            {
+                if (_openSearchEnabled)
+                {
+                    await Task.Delay(6000);
+                }
+            }
         }
 
         [Given("the system has these descriptors")]
@@ -157,6 +171,14 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 _logger.log.Information(body);
 
                 apiResponse.Status.Should().BeOneOf([201, 200]);
+            }
+            var waitTags = _scenarioContext.ScenarioInfo.Tags;
+            if (waitTags != null && waitTags.Contains("addwait"))
+            {
+                if (_openSearchEnabled)
+                {
+                    await Task.Delay(6000);
+                }
             }
         }
 
@@ -301,7 +323,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         public async Task WhenAGETRequestIsMadeTo(string url)
         {
             url = addDataPrefixIfNecessary(url).Replace("{id}", _id);
-
             _logger.log.Information(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(url)!;
         }
