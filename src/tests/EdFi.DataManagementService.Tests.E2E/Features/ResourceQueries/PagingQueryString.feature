@@ -1,6 +1,7 @@
 Feature: Paging Support for GET requests for Ed-Fi Resources
 
-        Background:
+        @addwait
+        Scenario: 00 Background
             Given the system has these "schools"
                 | schoolId | nameOfInstitution | gradeLevels                                                                        | educationOrganizationCategories                                                                                                               |
                 | 1        | School 1          | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"} ] |
