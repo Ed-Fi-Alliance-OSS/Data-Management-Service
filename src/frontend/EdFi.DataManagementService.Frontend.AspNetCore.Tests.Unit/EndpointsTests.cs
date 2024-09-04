@@ -24,7 +24,6 @@ public class EndpointsTests
             builder.UseEnvironment("Test");
         });
         using var client = factory.CreateClient();
-        var expectedDate = DateTime.Now.ToString("yyyy-MM-dd");
 
         // Act
         var response = await client.GetAsync("/health");
@@ -32,6 +31,7 @@ public class EndpointsTests
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        content.Should().Contain(expectedDate);
+        content.Should().Contain("\"Description\": \"Application is up and running\"");
+        content.Should().Contain("\"Description\": \"Database connection is healthy.\"");
     }
 }

@@ -3,31 +3,79 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Npgsql;
+
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 
-public static class HealthCheckServiceExtensions
+public class ApplicationHealthCheck : IHealthCheck
 {
-    public static IServiceCollection AddHealthCheck(
-        this IServiceCollection services,
-        WebApplicationBuilder webAppBuilder
+    private readonly ILogger<ApplicationHealthCheck> _logger;
+
+    public ApplicationHealthCheck(ILogger<ApplicationHealthCheck> logger)
+    {
+        _logger = logger;
+    }
+
+    public Task<HealthCheckResult> CheckHealthAsync(
+        HealthCheckContext context,
+        CancellationToken cancellationToken = default
     )
     {
-        var hcBuilder = services.AddHealthChecks();
-        string connectionString =
-            webAppBuilder.Configuration.GetSection("ConnectionStrings:DatabaseConnection").Value
-            ?? string.Empty;
-
-        if (
-            string.Equals(
-                webAppBuilder.Configuration.GetSection("AppSettings:Datastore").Value,
-                "postgresql",
-                StringComparison.OrdinalIgnoreCase
-            )
-        )
+        try
         {
-            hcBuilder.AddNpgSql(connectionString);
+            return Task.FromResult(HealthCheckResult.Healthy("Application is up and running"));
         }
+        catch (Exception e)
+        {
+            _logger.LogError(e, e.Message);
+            return Task.FromResult(HealthCheckResult.Unhealthy(description: e.Message));
+        }
+    }
+}
 
-        return services;
+public class DbHealthCheck : IHealthCheck
+{
+    private readonly ILogger<DbHealthCheck> _logger;
+    private readonly string _connectionString;
+    private readonly string _providerName;
+
+    public DbHealthCheck(string connectionString, string providerName, ILogger<DbHealthCheck> logger)
+    {
+        _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
+        _providerName = providerName ?? throw new ArgumentNullException(nameof(providerName));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    public async Task<HealthCheckResult> CheckHealthAsync(
+        HealthCheckContext context,
+        CancellationToken cancellationToken = default
+    )
+    {
+        try
+        {
+            await using var connection = CreateConnection(_providerName, _connectionString);
+            _logger.LogInformation("Attempting to open a connection to the database.");
+
+            await connection.OpenAsync(cancellationToken);
+
+            _logger.LogInformation("Database connection established successfully.");
+
+            return HealthCheckResult.Healthy("Database connection is healthy.");
+        }
+        catch (Exception ex)
+        {
+            return HealthCheckResult.Unhealthy("Database connection is unhealthy.", ex);
+        }
+    }
+
+    private static DbConnection CreateConnection(string providerName, string connectionString)
+    {
+        return providerName.ToLower() switch
+        {
+            "postgresql" => new NpgsqlConnection(connectionString),
+            _ => throw new ArgumentException($"Unsupported provider: {providerName}"),
+        };
     }
 }

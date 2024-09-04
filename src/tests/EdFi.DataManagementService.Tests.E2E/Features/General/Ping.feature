@@ -3,4 +3,4 @@ Feature: Ping
 
         Scenario: 01 Ping
             Given a ping to the server
-             Then it returns the dateTime
+             Then it returns healthy checks

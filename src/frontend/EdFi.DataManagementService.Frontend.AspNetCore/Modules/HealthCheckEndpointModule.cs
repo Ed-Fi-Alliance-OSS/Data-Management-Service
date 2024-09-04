@@ -4,19 +4,32 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
-
 
 public class HealthCheckEndpointModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/health", GetDateTime);
+        endpoints.MapGet("/health", GetHealthStatus);
     }
 
-    internal static async Task GetDateTime(HttpContext httpContext)
+    internal static async Task GetHealthStatus(HttpContext httpContext, HealthCheckService healthCheckService)
     {
-        await httpContext.Response.WriteAsSerializedJsonAsync(DateTime.Now);
+        var healthReport = await healthCheckService.CheckHealthAsync();
+
+        var healthResponse = new
+        {
+            Status = healthReport.Status.ToString(),
+            Results = healthReport.Entries.Select(entry => new
+            {
+                Name = entry.Key,
+                Status = entry.Value.Status.ToString(),
+                Description = entry.Value.Description
+            })
+        };
+
+        await httpContext.Response.WriteAsSerializedJsonAsync(healthResponse);
     }
 }

@@ -29,13 +29,13 @@ public sealed class PingStepDefinitions
         _APIResponse = await _playwrightContext.ApiRequestContext?.GetAsync("health")!;
     }
 
-    [Then("it returns the dateTime")]
-    public async Task Then_it_returns_the_dateTime()
+    [Then("it returns healthy checks")]
+    public async Task Then_it_returns_healthy_checks()
     {
         string content = await _APIResponse.TextAsync();
-        string expectedDate = DateTime.Now.ToUniversalTime().ToString("yyyy-");
 
         _APIResponse.Status.Should().Be((int)HttpStatusCode.OK);
-        content.Should().Contain(expectedDate);
+        content.Should().Contain("\"Description\": \"Application is up and running\"");
+        content.Should().Contain("\"Description\": \"Database connection is healthy.\"");
     }
 }
