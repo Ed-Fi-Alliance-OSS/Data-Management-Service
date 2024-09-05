@@ -12,11 +12,11 @@
     <PackageReference Include="dbup-core" />
     <PackageReference Include="dbup-sqlserver" />
     <PackageReference Include="Microsoft.CodeAnalysis" />
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle" >
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle">
         <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="SonarAnalyzer.CSharp" >
+    <PackageReference Include="SonarAnalyzer.CSharp">
         <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         <PrivateAssets>all</PrivateAssets>
     </PackageReference>

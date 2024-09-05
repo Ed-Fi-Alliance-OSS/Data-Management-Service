@@ -1,57 +1,58 @@
 <Project>
-    <PropertyGroup>
-      <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-    </PropertyGroup>
-    <ItemGroup>
-      <PackageVersion Include="Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic" Version="4.0.0" />
-      <PackageVersion Include="CommandLineParser" Version="2.9.1" />
-      <PackageVersion Include="dbup-core" Version="5.0.87" />
-      <PackageVersion Include="dbup-postgresql" Version="5.0.40" />
-      <PackageVersion Include="dbup-sqlserver" Version="5.0.41" />
-      <PackageVersion Include="Microsoft.CodeAnalysis" Version="4.11.0" />
-      <PackageVersion Include="EdFi.DataStandard51.ApiSchema" Version="1.0.27" />
-      <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.CodeStyle" Version="4.11.0" />
-      <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.1" />
-      <PackageVersion Include="Microsoft.Extensions.Logging" Version="8.0.0" />
-      <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.1" />
-      <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="8.0.0" />
-      <PackageVersion Include="Microsoft.Extensions.Logging.Debug" Version="8.0.0" />
-      <PackageVersion Include="Microsoft.Extensions.Options" Version="8.0.2" />
-      <PackageVersion Include="Npgsql" Version="8.0.3" />
-      <PackageVersion Include="Npgsql.DependencyInjection" Version="8.0.3" />
-      <PackageVersion Include="OpenSearch.Client" Version="1.7.1" />
-      <PackageVersion Include="Polly.Core" Version="8.4.1" />
-      <PackageVersion Include="Polly.Extensions" Version="8.4.1" />
-      <PackageVersion Include="Respawn" Version="6.2.1" />
-      <PackageVersion Include="Serilog" Version="4.0.1" />
-      <PackageVersion Include="Serilog.Extensions.Logging" Version="8.0.0" />
-      <PackageVersion Include="Serilog.Settings.Configuration" Version="8.0.2" />
-      <PackageVersion Include="Serilog.Sinks.Console" Version="6.0.0" />
-      <PackageVersion Include="Serilog.Sinks.File" Version="6.0.0" />
-      <PackageVersion Include="SonarAnalyzer.CSharp" Version="9.32.0.97167" />
-      <PackageVersion Include="JsonSchema.Net" Version="7.2.2" />
-      <PackageVersion Include="JsonPath.Net" Version="1.1.4" />
-    </ItemGroup>
-    <!-- Testing Packages -->
-    <ItemGroup>
-      <PackageVersion Include="Autofac" Version="8.0.0" />
-      <PackageVersion Include="Autofac.Extras.FakeItEasy" Version="7.0.0" />
-      <PackageVersion Include="coverlet.collector" Version="6.0.2" />
-      <PackageVersion Include="coverlet.msbuild" Version="6.0.2" />
-      <PackageVersion Include="FakeItEasy" Version="8.3.0" />
-      <PackageVersion Include="FluentAssertions" Version="6.12.0" />
-      <PackageVersion Include="ImpromptuInterface" Version="8.0.4" />
-      <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.8" />
-      <PackageVersion Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
-      <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="8.0.0" />
-      <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="8.0.0" />
-      <PackageVersion Include="Microsoft.Playwright.NUnit" Version="1.46.0" />
-      <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.11.0" />
-      <PackageVersion Include="NUnit" Version="4.2.1" />
-      <PackageVersion Include="NUnit3TestAdapter" Version="4.6.0" />
-      <PackageVersion Include="NUnit.Analyzers" Version="4.3.0" />
-      <PackageVersion Include="Reqnroll" Version="2.0.3" />
-      <PackageVersion Include="Reqnroll.NUnit" Version="2.0.3" />
-      <PackageVersion Include="Testcontainers" Version="3.9.0" />
-    </ItemGroup>
-  </Project>
+	<PropertyGroup>
+		<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+	</PropertyGroup>
+	<ItemGroup>
+    <PackageVersion Include="AspNetCore.HealthChecks.NpgSql" Version="8.0.1" />
+		<PackageVersion Include="Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic" Version="4.0.0" />
+		<PackageVersion Include="CommandLineParser" Version="2.9.1" />
+		<PackageVersion Include="dbup-core" Version="5.0.87" />
+		<PackageVersion Include="dbup-postgresql" Version="5.0.40" />
+		<PackageVersion Include="dbup-sqlserver" Version="5.0.41" />
+		<PackageVersion Include="Microsoft.CodeAnalysis" Version="4.11.0" />
+		<PackageVersion Include="EdFi.DataStandard51.ApiSchema" Version="1.0.27" />
+		<PackageVersion Include="Microsoft.CodeAnalysis.CSharp.CodeStyle" Version="4.11.0" />
+		<PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.1" />
+		<PackageVersion Include="Microsoft.Extensions.Logging" Version="8.0.0" />
+		<PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.1" />
+		<PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="8.0.0" />
+		<PackageVersion Include="Microsoft.Extensions.Logging.Debug" Version="8.0.0" />
+		<PackageVersion Include="Microsoft.Extensions.Options" Version="8.0.2" />
+		<PackageVersion Include="Npgsql" Version="8.0.3" />
+		<PackageVersion Include="Npgsql.DependencyInjection" Version="8.0.3" />
+		<PackageVersion Include="OpenSearch.Client" Version="1.7.1" />
+		<PackageVersion Include="Polly.Core" Version="8.4.1" />
+		<PackageVersion Include="Polly.Extensions" Version="8.4.1" />
+		<PackageVersion Include="Respawn" Version="6.2.1" />
+		<PackageVersion Include="Serilog" Version="4.0.1" />
+		<PackageVersion Include="Serilog.Extensions.Logging" Version="8.0.0" />
+		<PackageVersion Include="Serilog.Settings.Configuration" Version="8.0.2" />
+		<PackageVersion Include="Serilog.Sinks.Console" Version="6.0.0" />
+		<PackageVersion Include="Serilog.Sinks.File" Version="6.0.0" />
+		<PackageVersion Include="SonarAnalyzer.CSharp" Version="9.32.0.97167" />
+		<PackageVersion Include="JsonSchema.Net" Version="7.2.2" />
+		<PackageVersion Include="JsonPath.Net" Version="1.1.4" />
+	</ItemGroup>
+	<!-- Testing Packages -->
+	<ItemGroup>
+		<PackageVersion Include="Autofac" Version="8.0.0" />
+		<PackageVersion Include="Autofac.Extras.FakeItEasy" Version="7.0.0" />
+		<PackageVersion Include="coverlet.collector" Version="6.0.2" />
+		<PackageVersion Include="coverlet.msbuild" Version="6.0.2" />
+		<PackageVersion Include="FakeItEasy" Version="8.3.0" />
+		<PackageVersion Include="FluentAssertions" Version="6.12.0" />
+		<PackageVersion Include="ImpromptuInterface" Version="8.0.4" />
+		<PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.8" />
+		<PackageVersion Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
+		<PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="8.0.0" />
+		<PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="8.0.0" />
+		<PackageVersion Include="Microsoft.Playwright.NUnit" Version="1.46.0" />
+		<PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.11.0" />
+		<PackageVersion Include="NUnit" Version="4.2.1" />
+		<PackageVersion Include="NUnit3TestAdapter" Version="4.6.0" />
+		<PackageVersion Include="NUnit.Analyzers" Version="4.3.0" />
+		<PackageVersion Include="Reqnroll" Version="2.0.3" />
+		<PackageVersion Include="Reqnroll.NUnit" Version="2.0.3" />
+		<PackageVersion Include="Testcontainers" Version="3.9.0" />
+	</ItemGroup>
+</Project>

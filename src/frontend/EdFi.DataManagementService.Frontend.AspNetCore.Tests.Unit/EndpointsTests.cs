@@ -15,7 +15,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 public class EndpointsTests
 {
     [Test]
-    public async Task TestPingEndpoint()
+    public async Task TestHealthEndpoint()
     {
         // Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -24,14 +24,13 @@ public class EndpointsTests
             builder.UseEnvironment("Test");
         });
         using var client = factory.CreateClient();
-        var expectedDate = DateTime.Now.ToString("yyyy-MM-dd");
 
         // Act
-        var response = await client.GetAsync("/ping");
+        var response = await client.GetAsync("/health");
         var content = await response.Content.ReadAsStringAsync();
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        content.Should().Contain(expectedDate);
+        content.Should().Contain("\"Description\": \"Application is up and running\"");
     }
 }
