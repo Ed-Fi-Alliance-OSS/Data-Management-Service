@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+services:
+
+  db:
+    hostname: dms-postgresql
+    container_name: dms-postgresql
+    image: postgres:16.3-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-abcdefgh1!}
+      POSTGRES_DB_NAME: ${POSTGRES_DB_NAME:-edfi_datamanagementservice}
+    ports:
+      - ${POSTGRES_PORT:-5432}:5432
+    volumes:
+      - dms-postgresql:/var/lib/postgresql/data
+      - ./postgresql-init.sh:/docker-entrypoint-initdb.d/postgresql-init.sh
+
+volumes:
+  dms-postgresql:
