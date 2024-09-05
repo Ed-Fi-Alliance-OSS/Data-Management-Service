@@ -25,7 +25,10 @@ public static class WebApplicationBuilderExtensions
         var logger = ConfigureLogging();
 
         webAppBuilder
-            .Services.AddDmsDefaultConfiguration(logger, webAppBuilder.Configuration.GetSection("CircuitBreaker"))
+            .Services.AddDmsDefaultConfiguration(
+                logger,
+                webAppBuilder.Configuration.GetSection("CircuitBreaker")
+            )
             .AddTransient<IContentProvider, ContentProvider>()
             .AddTransient<IVersionProvider, VersionProvider>()
             .AddTransient<IAssemblyProvider, AssemblyProvider>()
@@ -44,6 +47,20 @@ public static class WebApplicationBuilderExtensions
 
         ConfigureDatastore(webAppBuilder, logger);
         ConfigureQueryHandler(webAppBuilder, logger);
+
+        webAppBuilder.Services.AddSingleton(
+            new DbHealthCheck(
+                webAppBuilder.Configuration.GetSection("ConnectionStrings:DatabaseConnection").Value
+                    ?? string.Empty,
+                webAppBuilder.Configuration.GetSection("AppSettings:Datastore").Value ?? string.Empty,
+                webAppBuilder.Services.BuildServiceProvider().GetRequiredService<ILogger<DbHealthCheck>>()
+            )
+        );
+
+        webAppBuilder
+            .Services.AddHealthChecks()
+            .AddCheck<ApplicationHealthCheck>("ApplicationHealthCheck")
+            .AddCheck<DbHealthCheck>("DbHealthCheck");
 
         Serilog.ILogger ConfigureLogging()
         {
@@ -123,7 +140,7 @@ public static class WebApplicationBuilderExtensions
                     {
                         PermitLimit = rateLimitOptions.PermitLimit,
                         QueueLimit = rateLimitOptions.QueueLimit,
-                        Window = TimeSpan.FromSeconds(rateLimitOptions.Window)
+                        Window = TimeSpan.FromSeconds(rateLimitOptions.Window),
                     }
                 )
             );
