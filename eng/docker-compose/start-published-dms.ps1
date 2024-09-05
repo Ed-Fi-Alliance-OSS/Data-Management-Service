@@ -37,5 +37,6 @@ else {
     }
     docker compose -f docker-compose.yml -f dms-local.yml --env-file $EnvironmentFile up --pull $pull -d
 
+    Start-Sleep 20
     ./setup-connectors.ps1 $EnvironmentFile
 }

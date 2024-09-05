@@ -3,8 +3,8 @@ Feature: Query String handling for GET requests for Resource Queries
         @addwait
         Scenario: 00 Background
             Given the system has these "schools"
-                  | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories |
-                  | 2        | School 2          | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ]                    |
+                  | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
+                  | 2        | School 2          | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
               And the system has these "academicweeks"
                   | weekIdentifier | beginDate  | endDate    | totalInstructionalDays | schoolReference |
                   | Week One       | 2024-05-15 | 2024-05-22 | 2                      | {"schoolId": 2} |
@@ -26,6 +26,7 @@ Feature: Query String handling for GET requests for Resource Queries
                   }]
                   """
 
+        # DMS-364
         @ignore
         Scenario: 02 Ensure clients can't GET information when querying by invalid date
              When a GET request is made to "/ed-fi/academicWeeks?beginDate=024-04-09"
@@ -44,6 +45,7 @@ Feature: Query String handling for GET requests for Resource Queries
                    }
                   """
 
+        # DMS-364
         @ignore
         Scenario: 03 Ensure clients can't GET information when querying by a word
              When a GET request is made to "/ed-fi/academicWeeks?beginDate=word"
@@ -61,8 +63,6 @@ Feature: Query String handling for GET requests for Resource Queries
                     }
                   }
                   """
-        # DMS-89
-        @ignore
         Scenario: 04 Ensure clients can't GET information when querying by wrong begin date
              When a GET request is made to "/ed-fi/academicWeeks?beginDate=1970-04-09"
              Then it should respond with 200
@@ -70,8 +70,6 @@ Feature: Query String handling for GET requests for Resource Queries
                   """
                   []
                   """
-        # DMS-89
-        @ignore
         Scenario: 05 Ensure clients can't GET information when querying by correct begin date and wrong end date
              When a GET request is made to "/ed-fi/academicWeeks?beginDate=2024-05-15&endDate=2025-06-23"
              Then it should respond with 200
