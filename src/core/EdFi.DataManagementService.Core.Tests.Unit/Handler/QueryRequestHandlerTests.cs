@@ -73,20 +73,20 @@ public class QueryRequestHandlerTests
             }
         }
 
-        private readonly PipelineContext context = No.PipelineContext();
+        private readonly PipelineContext _context = No.PipelineContext();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep queryHandler = Handler(new Repository());
-            await queryHandler.Execute(context, NullNext);
+            await queryHandler.Execute(_context, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(404);
-            context.FrontendResponse.Body.Should().BeNull();
+            _context.FrontendResponse.StatusCode.Should().Be(404);
+            _context.FrontendResponse.Body.Should().BeNull();
         }
     }
 
@@ -104,31 +104,31 @@ public class QueryRequestHandlerTests
         }
 
         private static readonly string _traceId = "xyz";
-        private readonly PipelineContext context = No.PipelineContext(_traceId);
+        private readonly PipelineContext _context = No.PipelineContext(_traceId);
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep queryHandler = Handler(new Repository());
-            await queryHandler.Execute(context, NullNext);
+            await queryHandler.Execute(_context, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(500);
+            _context.FrontendResponse.StatusCode.Should().Be(500);
 
             var expected = ToJsonError("FailureMessage", new TraceId(_traceId));
 
-            context.FrontendResponse.Body.Should().NotBeNull();
+            _context.FrontendResponse.Body.Should().NotBeNull();
             JsonNode
-                .DeepEquals(context.FrontendResponse.Body, expected)
+                .DeepEquals(_context.FrontendResponse.Body, expected)
                 .Should()
                 .BeTrue(
                     $"""
                     expected: {expected}
 
-                    actual: {context.FrontendResponse.Body}
+                    actual: {_context.FrontendResponse.Body}
                     """
                 );
         }

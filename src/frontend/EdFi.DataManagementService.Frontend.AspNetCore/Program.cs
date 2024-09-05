@@ -36,7 +36,6 @@ if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
 app.MapRouteEndpoints();
 
 app.MapHealthChecks("/health");
-app.UseHealthChecks("/health", new HealthCheckOptions { Predicate = _ => true });
 
 await app.RunAsync();
 

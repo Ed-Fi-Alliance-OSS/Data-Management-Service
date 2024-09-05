@@ -12,19 +12,19 @@ using Reqnroll;
 namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions;
 
 [Binding]
-public sealed class PingStepDefinitions
+public sealed class HealthStepDefinitions
 {
 
     private PlaywrightContext _playwrightContext = null!;
     private IAPIResponse _APIResponse = null!;
 
-    public PingStepDefinitions(PlaywrightContext context)
+    public HealthStepDefinitions(PlaywrightContext context)
     {
         _playwrightContext = context;
     }
 
-    [Given("a ping to the server")]
-    public async Task Given_a_ping_to_the_server()
+    [Given("a request health is made to the server")]
+    public async Task Given_a_request_health_to_the_server()
     {
         _APIResponse = await _playwrightContext.ApiRequestContext?.GetAsync("health")!;
     }

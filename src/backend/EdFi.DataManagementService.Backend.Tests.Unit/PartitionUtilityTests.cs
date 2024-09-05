@@ -62,7 +62,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit
             [TestCase('D', ExpectedResult = 13)]
             [TestCase('E', ExpectedResult = 14)]
             [TestCase('F', ExpectedResult = 15)]
-            public int All_possible_last_bytes_return_correct_partition_for_ReferentialId(char lastByte)
+            public int All_possible_last_bytes_return_correct_partition_for_referential_id(char lastByte)
             {
                 Guid referentialGuid = new Guid(_randomReferentialId[..35] + lastByte);
 

@@ -11,9 +11,9 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Content;
 
+[TestFixture]
 public class AssemblyProviderTests
 {
-
     [Test]
     public void Given_ValidType_When_GetAssemblyByType_Then_ReturnsAssembly()
     {
@@ -27,10 +27,7 @@ public class AssemblyProviderTests
         var result = assemblyProvider.GetAssemblyByType(type);
 
         // Assert
-        if (expected != null)
-        {
-            Assert.That(result, Is.EqualTo(expected));
-        }
+        Assert.That(result, Is.EqualTo(expected));
     }
 }
 

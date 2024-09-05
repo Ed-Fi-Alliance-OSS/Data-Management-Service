@@ -8,6 +8,7 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Content;
 
+[TestFixture]
 public class VersionProviderTests
 {
     [Test]
@@ -20,7 +21,7 @@ public class VersionProviderTests
         string version = versionProvider.Version;
 
         // Assert
-        Assert.That(version, Is.Not.EqualTo("1.0.0")); 
+        Assert.That(version, Is.Not.EqualTo("0.0.0")); 
     }
 }
 

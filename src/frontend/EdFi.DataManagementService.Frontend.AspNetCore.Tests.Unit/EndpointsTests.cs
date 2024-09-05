@@ -15,7 +15,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 public class EndpointsTests
 {
     [Test]
-    public async Task TestPingEndpoint()
+    public async Task TestHealthEndpoint()
     {
         // Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>

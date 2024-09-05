@@ -9,15 +9,8 @@ using Npgsql;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 
-public class ApplicationHealthCheck : IHealthCheck
+public class ApplicationHealthCheck(ILogger<ApplicationHealthCheck> logger) : IHealthCheck
 {
-    private readonly ILogger<ApplicationHealthCheck> _logger;
-
-    public ApplicationHealthCheck(ILogger<ApplicationHealthCheck> logger)
-    {
-        _logger = logger;
-    }
-
     public Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default
@@ -29,24 +22,18 @@ public class ApplicationHealthCheck : IHealthCheck
         }
         catch (Exception e)
         {
-            _logger.LogError(e, e.Message);
+            logger.LogError(e, e.Message);
             return Task.FromResult(HealthCheckResult.Unhealthy(description: e.Message));
         }
     }
 }
 
-public class DbHealthCheck : IHealthCheck
+public class DbHealthCheck(string connectionString, string providerName, ILogger<DbHealthCheck> logger)
+    : IHealthCheck
 {
-    private readonly ILogger<DbHealthCheck> _logger;
-    private readonly string _connectionString;
-    private readonly string _providerName;
-
-    public DbHealthCheck(string connectionString, string providerName, ILogger<DbHealthCheck> logger)
-    {
-        _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
-        _providerName = providerName ?? throw new ArgumentNullException(nameof(providerName));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    }
+    private readonly ILogger<DbHealthCheck> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly string _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
+    private readonly string _providerName = providerName ?? throw new ArgumentNullException(nameof(providerName));
 
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
