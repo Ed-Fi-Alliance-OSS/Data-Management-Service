@@ -15,7 +15,11 @@ param (
 
     # Environment file
     [string]
-    $EnvironmentFile = "./.env"
+    $EnvironmentFile = "./.env",
+
+    # Enable KafkaUI and OpenSearch Dashboard
+    [Switch]
+    $EnableOpenSearchUI
 )
 
 $files = @(
@@ -26,6 +30,11 @@ $files = @(
     "-f",
     "published-dms.yml"
 )
+
+if($EnableOpenSearchUI)
+{
+    $files += @("-f", "kafka-opensearch-ui.yml")
+}
 
 if ($d) {
     if ($v) {
