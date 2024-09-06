@@ -51,8 +51,8 @@
 		<PackageVersion Include="NUnit" Version="4.2.2" />
 		<PackageVersion Include="NUnit3TestAdapter" Version="4.6.0" />
 		<PackageVersion Include="NUnit.Analyzers" Version="4.3.0" />
-		<PackageVersion Include="Reqnroll" Version="2.0.3" />
-		<PackageVersion Include="Reqnroll.NUnit" Version="2.0.3" />
+		<PackageVersion Include="Reqnroll" Version="2.1.0" />
+		<PackageVersion Include="Reqnroll.NUnit" Version="2.1.0" />
 		<PackageVersion Include="Testcontainers" Version="3.9.0" />
 	</ItemGroup>
 </Project>
