@@ -16,6 +16,8 @@ public class QueryTests : DatabaseTest
 {
     private static readonly string _defaultResourceName = "DefaultResourceName";
 
+    private static TraceId traceId = new("");
+
     [TestFixture]
     public class Given_an_upsert_of_a_new_document : QueryTests
     {
@@ -35,7 +37,7 @@ public class QueryTests : DatabaseTest
                 Guid.NewGuid(),
                 _edFiDocString
             );
-            _upsertResult = await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
 
             // Confirm it's there
             IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
@@ -101,7 +103,7 @@ public class QueryTests : DatabaseTest
 
             foreach (var request in requests)
             {
-                await CreateUpsert().Upsert(request, Connection!, Transaction!);
+                await CreateUpsert().Upsert(request, Connection!, Transaction!, traceId);
             }
 
             Dictionary<string, string>? searchParameters = [];
@@ -146,7 +148,7 @@ public class QueryTests : DatabaseTest
         [
             _edFiDocString1,
             _edFiDocString2,
-            _edFiDocString3
+            _edFiDocString3,
         ];
 
         [SetUp]
@@ -156,14 +158,15 @@ public class QueryTests : DatabaseTest
 
             foreach (var request in requests)
             {
-                await CreateUpsert().Upsert(request, Connection!, Transaction!);
+                await CreateUpsert().Upsert(request, Connection!, Transaction!, traceId);
             }
 
             await CreateUpsert()
                 .Upsert(
                     CreateUpsertRequest("ResourceName2", Guid.NewGuid(), Guid.NewGuid(), _edFiDocString4),
                     Connection!,
-                    Transaction!
+                    Transaction!,
+                    traceId
                 );
 
             Dictionary<string, string>? searchParameters = [];

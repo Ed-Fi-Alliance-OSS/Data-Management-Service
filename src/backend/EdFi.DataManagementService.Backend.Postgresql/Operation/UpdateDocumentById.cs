@@ -10,7 +10,6 @@ using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
-using static EdFi.DataManagementService.Backend.Postgresql.Operation.SqlAction;
 using static EdFi.DataManagementService.Backend.Postgresql.ReferenceHelper;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
@@ -20,11 +19,13 @@ public interface IUpdateDocumentById
     public Task<UpdateResult> UpdateById(
         IUpdateRequest updateRequest,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction transaction,
+        TraceId traceId
     );
 }
 
-public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDocumentById
+public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentById> _logger)
+    : IUpdateDocumentById
 {
     /// <summary>
     /// Determine whether invalid referentialIds were descriptors or references, and returns the
@@ -35,8 +36,10 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
         Guid[] invalidReferentialIds
     )
     {
-        List<DescriptorReference> invalidDescriptorReferences = DescriptorReferencesWithReferentialIds(documentInfo
-            .DescriptorReferences, invalidReferentialIds);
+        List<DescriptorReference> invalidDescriptorReferences = DescriptorReferencesWithReferentialIds(
+            documentInfo.DescriptorReferences,
+            invalidReferentialIds
+        );
 
         if (invalidDescriptorReferences.Count != 0)
         {
@@ -59,7 +62,8 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
     public async Task<UpdateResult> UpdateById(
         IUpdateRequest updateRequest,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction transaction,
+        TraceId traceId
     )
     {
         _logger.LogDebug("Entering UpdateDocumentById.UpdateById - {TraceId}", updateRequest.TraceId);
@@ -75,14 +79,15 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
 
         try
         {
-            var validationResult = await UpdateDocumentValidation(
+            var validationResult = await _sqlAction.UpdateDocumentValidation(
                 updateRequest.DocumentUuid,
                 documentPartitionKey,
                 updateRequest.DocumentInfo.ReferentialId,
                 PartitionKeyFor(updateRequest.DocumentInfo.ReferentialId),
                 connection,
                 transaction,
-                LockOption.BlockAll
+                LockOption.BlockAll,
+                traceId
             );
 
             if (!validationResult.DocumentExists)
@@ -97,17 +102,16 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
                 if (updateRequest.ResourceInfo.AllowIdentityUpdates)
                 {
                     // Identity update is allowed
-                    _logger.LogInformation(
-                        "Updating Identity - {TraceId}",
-                        updateRequest.TraceId
-                    );
+                    _logger.LogInformation("Updating Identity - {TraceId}", updateRequest.TraceId);
 
-                    int aliasRowsAffected = await UpdateAliasReferentialIdByDocumentUuid(
+                    int aliasRowsAffected = await _sqlAction.UpdateAliasReferentialIdByDocumentUuid(
                         PartitionKeyFor(updateRequest.DocumentInfo.ReferentialId).Value,
                         updateRequest.DocumentInfo.ReferentialId.Value,
                         PartitionKeyFor(updateRequest.DocumentUuid).Value,
                         updateRequest.DocumentUuid.Value,
-                        connection, transaction
+                        connection,
+                        transaction,
+                        traceId
                     );
 
                     if (aliasRowsAffected == 0)
@@ -132,30 +136,34 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
                 }
             }
 
-            int rowsAffected = await UpdateDocumentEdfiDoc(
+            int rowsAffected = await _sqlAction.UpdateDocumentEdfiDoc(
                 PartitionKeyFor(updateRequest.DocumentUuid).Value,
                 updateRequest.DocumentUuid.Value,
                 JsonSerializer.Deserialize<JsonElement>(updateRequest.EdfiDoc),
                 connection,
-                transaction
+                transaction,
+                traceId
             );
 
             switch (rowsAffected)
             {
                 case 1:
-                    if (documentReferenceIds.ReferentialIds.Length > 0 ||
-                        descriptorReferenceIds.ReferentialIds.Length > 0)
+                    if (
+                        documentReferenceIds.ReferentialIds.Length > 0
+                        || descriptorReferenceIds.ReferentialIds.Length > 0
+                    )
                     {
                         Document? documentFromDb;
                         try
                         {
                             // Attempt to get the document, to get the ID for references
-                            documentFromDb = await FindDocumentByReferentialId(
+                            documentFromDb = await _sqlAction.FindDocumentByReferentialId(
                                 updateRequest.DocumentInfo.ReferentialId,
                                 PartitionKeyFor(updateRequest.DocumentInfo.ReferentialId),
                                 connection,
                                 transaction,
-                                LockOption.BlockUpdateDelete
+                                LockOption.BlockUpdateDelete,
+                                traceId
                             );
                         }
                         catch (PostgresException pe)
@@ -179,29 +187,38 @@ public class UpdateDocumentById(ILogger<UpdateDocumentById> _logger) : IUpdateDo
                                 );
                         }
 
-                        await DeleteReferencesByDocumentUuid(
+                        await _sqlAction.DeleteReferencesByDocumentUuid(
                             documentPartitionKey.Value,
                             updateRequest.DocumentUuid.Value,
                             connection,
-                            transaction
+                            transaction,
+                            traceId
                         );
 
-                        Guid[] invalidReferentialIds = await InsertReferences(
+                        Guid[] invalidReferentialIds = await _sqlAction.InsertReferences(
                             new(
                                 ParentDocumentPartitionKey: documentPartitionKey.Value,
                                 ParentDocumentId: documentId,
-                                ReferentialIds: documentReferenceIds.ReferentialIds
-                                    .Concat(descriptorReferenceIds.ReferentialIds).ToArray(),
-                                ReferentialPartitionKeys: documentReferenceIds.ReferentialPartitionKeys
-                                    .Concat(descriptorReferenceIds.ReferentialPartitionKeys).ToArray()
+                                ReferentialIds: documentReferenceIds
+                                    .ReferentialIds.Concat(descriptorReferenceIds.ReferentialIds)
+                                    .ToArray(),
+                                ReferentialPartitionKeys: documentReferenceIds
+                                    .ReferentialPartitionKeys.Concat(
+                                        descriptorReferenceIds.ReferentialPartitionKeys
+                                    )
+                                    .ToArray()
                             ),
                             connection,
-                            transaction
+                            transaction,
+                            traceId
                         );
 
                         if (invalidReferentialIds.Length > 0)
                         {
-                            _logger.LogDebug("Foreign key violation on Update - {TraceId}", updateRequest.TraceId);
+                            _logger.LogDebug(
+                                "Foreign key violation on Update - {TraceId}",
+                                updateRequest.TraceId
+                            );
                             return ReportReferenceFailure(updateRequest.DocumentInfo, invalidReferentialIds);
                         }
                     }

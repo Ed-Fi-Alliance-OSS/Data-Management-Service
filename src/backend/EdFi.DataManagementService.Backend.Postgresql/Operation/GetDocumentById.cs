@@ -8,7 +8,6 @@ using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
-using static EdFi.DataManagementService.Backend.Postgresql.Operation.SqlAction;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
 
@@ -21,7 +20,7 @@ public interface IGetDocumentById
     );
 }
 
-public class GetDocumentById(ILogger<GetDocumentById> _logger) : IGetDocumentById
+public class GetDocumentById(ISqlAction _sqlAction, ILogger<GetDocumentById> _logger) : IGetDocumentById
 {
     /// <summary>
     /// Takes a GetRequest and connection + transaction and returns the result of a get by id query.
@@ -38,13 +37,14 @@ public class GetDocumentById(ILogger<GetDocumentById> _logger) : IGetDocumentByI
 
         try
         {
-            JsonNode? edfiDoc = await FindDocumentEdfiDocByDocumentUuid(
+            JsonNode? edfiDoc = await _sqlAction.FindDocumentEdfiDocByDocumentUuid(
                 getRequest.DocumentUuid,
                 getRequest.ResourceInfo.ResourceName.Value,
                 PartitionKeyFor(getRequest.DocumentUuid),
                 connection,
                 transaction,
-                LockOption.None
+                LockOption.None,
+                getRequest.TraceId
             );
 
             if (edfiDoc == null)

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Npgsql;
 using NUnit.Framework;
@@ -15,6 +16,8 @@ public class UpsertTests : DatabaseTest
 {
     private static readonly string _defaultResourceName = "DefaultResourceName";
     private static readonly string _defaultDescriptorName = "DefaultDescriptorName";
+
+    private static TraceId traceId = new("");
 
     [TestFixture]
     public class Given_an_upsert_of_a_new_document : UpsertTests
@@ -36,7 +39,7 @@ public class UpsertTests : DatabaseTest
                 _referentialIdGuid,
                 _edFiDocString
             );
-            _upsertResult = await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
 
             // Confirm it's there
             IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
@@ -80,7 +83,7 @@ public class UpsertTests : DatabaseTest
                 _referentialIdGuid,
                 _edFiDocString2
             );
-            _upsertResult1 = await CreateUpsert().Upsert(upsertRequest1, Connection!, Transaction!);
+            _upsertResult1 = await CreateUpsert().Upsert(upsertRequest1, Connection!, Transaction!, traceId);
 
             // Update
             IUpsertRequest upsertRequest2 = CreateUpsertRequest(
@@ -89,7 +92,7 @@ public class UpsertTests : DatabaseTest
                 _referentialIdGuid,
                 _edFiDocString3
             );
-            _upsertResult2 = await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
+            _upsertResult2 = await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!, traceId);
 
             // Confirm change was made
             IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
@@ -145,7 +148,7 @@ public class UpsertTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString4
                     );
-                    return await CreateUpsert().Upsert(upsertRequest1, connection, transaction);
+                    return await CreateUpsert().Upsert(upsertRequest1, connection, transaction, traceId);
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
@@ -155,7 +158,7 @@ public class UpsertTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString5
                     );
-                    return await CreateUpsert().Upsert(upsertRequest2, connection, transaction);
+                    return await CreateUpsert().Upsert(upsertRequest2, connection, transaction, traceId);
                 }
             );
         }
@@ -213,7 +216,7 @@ public class UpsertTests : DatabaseTest
                         _edFiDocString1
                     );
 
-                    return await CreateUpsert().Upsert(upsertRequest1, connection, transaction);
+                    return await CreateUpsert().Upsert(upsertRequest1, connection, transaction, traceId);
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
@@ -223,7 +226,7 @@ public class UpsertTests : DatabaseTest
                         _referentialIdGuid2,
                         _edFiDocString2
                     );
-                    return await CreateUpsert().Upsert(upsertRequest2, connection, transaction);
+                    return await CreateUpsert().Upsert(upsertRequest2, connection, transaction, traceId);
                 }
             );
         }
@@ -285,7 +288,7 @@ public class UpsertTests : DatabaseTest
                                 _edFiDocString6
                             ),
                             connection,
-                            transaction
+                            transaction, traceId
                         );
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
@@ -296,7 +299,7 @@ public class UpsertTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString7
                     );
-                    return await CreateUpsert().Upsert(upsertRequest1, connection, transaction);
+                    return await CreateUpsert().Upsert(upsertRequest1, connection, transaction, traceId);
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
@@ -306,7 +309,7 @@ public class UpsertTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString8
                     );
-                    return await CreateUpsert().Upsert(upsertRequest2, connection, transaction);
+                    return await CreateUpsert().Upsert(upsertRequest2, connection, transaction, traceId);
                 }
             );
         }
@@ -356,7 +359,7 @@ public class UpsertTests : DatabaseTest
                 _edFiDocString,
                 CreateDocumentReferences(references)
             );
-            _upsertResult = await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
         }
 
         [Test]
@@ -389,7 +392,7 @@ public class UpsertTests : DatabaseTest
                 _referentialId1Guid,
                 _edFiDocString1
             );
-            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
 
             // Insert 2nd document that references 1st
             Reference[] references = [new(_defaultResourceName, _referentialId1Guid)];
@@ -400,7 +403,7 @@ public class UpsertTests : DatabaseTest
                 _edFiDocString2,
                 CreateDocumentReferences(references)
             );
-            _upsertResult = await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!, traceId);
 
             // Confirm 2nd document is there
             IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuid2Guid);
@@ -442,13 +445,13 @@ public class UpsertTests : DatabaseTest
                 _referentialId1Guid,
                 """{"abc":1}"""
             );
-            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
 
             // Insert 2nd document that references 1st + a nonexistent reference
             Reference[] references =
             [
                 new(_defaultResourceName, _referentialId1Guid),
-                new(_defaultResourceName, _nonExistentReferentialIdGuid)
+                new(_defaultResourceName, _nonExistentReferentialIdGuid),
             ];
             IUpsertRequest upsertRequest2 = CreateUpsertRequest(
                 _defaultResourceName,
@@ -457,7 +460,7 @@ public class UpsertTests : DatabaseTest
                 """{"abc":2}""",
                 CreateDocumentReferences(references)
             );
-            _upsertResult = await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!, traceId);
         }
 
         [Test]
@@ -497,7 +500,7 @@ public class UpsertTests : DatabaseTest
                 null,
                 CreateSuperclassIdentity(_superclassResourceName, _superclassId1Guid)
             );
-            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
 
             // Insert 2nd document that references 1st as superclass
             Reference[] references = [new(_superclassResourceName, _superclassId1Guid)];
@@ -508,7 +511,7 @@ public class UpsertTests : DatabaseTest
                 _edFiDocString2,
                 CreateDocumentReferences(references)
             );
-            _upsertResult = await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!, traceId);
 
             // Confirm 2nd document is there
             IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuid2Guid);
@@ -560,7 +563,7 @@ public class UpsertTests : DatabaseTest
                 CreateSuperclassIdentity(_superclassResourceName, _superclassReferentialIdGuid)
             );
             _subclass1UpsertResult = await CreateUpsert()
-                .Upsert(subclass1UpsertRequest, Connection!, Transaction!);
+                .Upsert(subclass1UpsertRequest, Connection!, Transaction!, traceId);
 
             // Try upsert a different subclass with same superclass identity
             IUpsertRequest subclass2UpsertRequest = CreateUpsertRequest(
@@ -573,7 +576,7 @@ public class UpsertTests : DatabaseTest
                 CreateSuperclassIdentity(_superclassResourceName, _superclassReferentialIdGuid)
             );
             _subclass2UpsertResult = await CreateUpsert()
-                .Upsert(subclass2UpsertRequest, Connection!, Transaction!);
+                .Upsert(subclass2UpsertRequest, Connection!, Transaction!, traceId);
         }
 
         [Test]
@@ -604,7 +607,7 @@ public class UpsertTests : DatabaseTest
                 _referentialIdGuid,
                 _edFiDocString
             );
-            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
 
             // Update document with nonexistent reference
             Reference[] references = [new(_defaultResourceName, _nonExistentReferentialIdGuid)];
@@ -615,7 +618,7 @@ public class UpsertTests : DatabaseTest
                 _edFiDocString,
                 CreateDocumentReferences(references)
             );
-            _upsertResult = await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!, traceId);
         }
 
         [Test]
@@ -649,7 +652,7 @@ public class UpsertTests : DatabaseTest
                 _referentialId1Guid,
                 _edFiDocString1
             );
-            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
 
             // Insert document to reference
             IUpsertRequest upsertRequest2 = CreateUpsertRequest(
@@ -658,7 +661,7 @@ public class UpsertTests : DatabaseTest
                 _referentialId2Guid,
                 _edFiDocString2
             );
-            await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
+            await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!, traceId);
 
             // Update 2nd document to reference other document
             Reference[] references = [new(_defaultResourceName, _referentialId2Guid)];
@@ -669,7 +672,7 @@ public class UpsertTests : DatabaseTest
                 _edFiDocString3,
                 CreateDocumentReferences(references)
             );
-            _upsertResult = await CreateUpsert().Upsert(upsertRequest3, Connection!, Transaction!);
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest3, Connection!, Transaction!, traceId);
 
             // Confirm document is updated
             IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuid1Guid);
@@ -709,7 +712,7 @@ public class UpsertTests : DatabaseTest
                 _referentialId1Guid,
                 """{"abc":1}"""
             );
-            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
 
             // Insert document to reference
             IUpsertRequest upsertRequest2 = CreateUpsertRequest(
@@ -718,13 +721,13 @@ public class UpsertTests : DatabaseTest
                 _referentialId2Guid,
                 """{"abc":2}"""
             );
-            await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
+            await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!, traceId);
 
             // Update 1st document to reference 2nd + a nonexistent reference
             Reference[] references =
             [
                 new(_defaultResourceName, _referentialId2Guid),
-                new(_defaultResourceName, _nonExistentReferentialIdGuid)
+                new(_defaultResourceName, _nonExistentReferentialIdGuid),
             ];
             IUpsertRequest upsertRequest3 = CreateUpsertRequest(
                 _defaultResourceName,
@@ -733,7 +736,7 @@ public class UpsertTests : DatabaseTest
                 """{"abc":3}""",
                 CreateDocumentReferences(references)
             );
-            _upsertResult = await CreateUpsert().Upsert(upsertRequest3, Connection!, Transaction!);
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest3, Connection!, Transaction!, traceId);
         }
 
         [Test]
@@ -771,7 +774,7 @@ public class UpsertTests : DatabaseTest
                 null,
                 CreateSuperclassIdentity(_superclassResourceName, _superclassId1Guid)
             );
-            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
 
             // Insert 2nd document referencing 1st as subclass
             Reference[] subclassReferences = [new(_defaultResourceName, _referentialId1Guid)];
@@ -782,7 +785,7 @@ public class UpsertTests : DatabaseTest
                 _edFiDocString2,
                 CreateDocumentReferences(subclassReferences)
             );
-            await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
+            await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!, traceId);
 
             // Update 2nd document to reference 1st as superclass
             Reference[] superclassReferences = [new(_superclassResourceName, _superclassId1Guid)];
@@ -793,7 +796,7 @@ public class UpsertTests : DatabaseTest
                 _edFiDocString2,
                 CreateDocumentReferences(superclassReferences)
             );
-            _upsertResult = await CreateUpsert().Upsert(upsertRequest3, Connection!, Transaction!);
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest3, Connection!, Transaction!, traceId);
         }
 
         [Test]
@@ -826,7 +829,7 @@ public class UpsertTests : DatabaseTest
                 _referentialIdDescriptorGuid,
                 _edFiDocStringDescriptor
             );
-            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
 
             // Insert 2nd document that references 1st
             Reference[] references = [new(_defaultResourceName, _referentialIdDescriptorGuid)];
@@ -838,7 +841,7 @@ public class UpsertTests : DatabaseTest
                 null,
                 CreateDescriptorReferences(references)
             );
-            _upsertResult = await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!, traceId);
 
             // Confirm 2nd document is there
             IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
@@ -874,7 +877,10 @@ public class UpsertTests : DatabaseTest
         public async Task Setup()
         {
             // Insert document with nonexistent descriptor reference
-            Reference[] descriptorReferences = [new(_defaultDescriptorName, _nonExistentDescriptorReferentialIdGuid)];
+            Reference[] descriptorReferences =
+            [
+                new(_defaultDescriptorName, _nonExistentDescriptorReferentialIdGuid),
+            ];
             IUpsertRequest upsertRequest = CreateUpsertRequest(
                 _defaultResourceName,
                 _documentUuidGuid,
@@ -883,7 +889,7 @@ public class UpsertTests : DatabaseTest
                 null,
                 CreateDescriptorReferences(descriptorReferences)
             );
-            _upsertResult = await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
         }
 
         [Test]
@@ -917,7 +923,7 @@ public class UpsertTests : DatabaseTest
                 _referentialId1Guid,
                 _edFiDocString1
             );
-            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
 
             // Insert descriptor
             IUpsertRequest upsertRequest2 = CreateUpsertRequest(
@@ -926,7 +932,7 @@ public class UpsertTests : DatabaseTest
                 _referentialIdDescriptorGuid,
                 _edFiDocString2
             );
-            await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
+            await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!, traceId);
 
             // Update document to reference descriptor
             Reference[] references = [new(_defaultResourceName, _referentialIdDescriptorGuid)];
@@ -938,7 +944,7 @@ public class UpsertTests : DatabaseTest
                 null,
                 CreateDescriptorReferences(references)
             );
-            _upsertResult = await CreateUpsert().Upsert(upsertRequest3, Connection!, Transaction!);
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest3, Connection!, Transaction!, traceId);
 
             // Confirm document is updated
             IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuid1Guid);
@@ -958,7 +964,6 @@ public class UpsertTests : DatabaseTest
             (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":3");
         }
     }
-
 
     [TestFixture]
     public class Given_an_update_of_a_document_to_reference_a_nonexisting_descriptor : UpsertTests
@@ -980,7 +985,7 @@ public class UpsertTests : DatabaseTest
                 _referentialIdGuid,
                 _edFiDocString
             );
-            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
 
             // Update document with nonexistent reference
             Reference[] references = [new(_defaultResourceName, _nonExistentDescriptorReferentialIdGuid)];
@@ -992,7 +997,7 @@ public class UpsertTests : DatabaseTest
                 null,
                 CreateDescriptorReferences(references)
             );
-            _upsertResult = await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!, traceId);
         }
 
         [Test]

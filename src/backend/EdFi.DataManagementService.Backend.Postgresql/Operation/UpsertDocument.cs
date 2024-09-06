@@ -10,7 +10,6 @@ using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
-using static EdFi.DataManagementService.Backend.Postgresql.Operation.SqlAction;
 using static EdFi.DataManagementService.Backend.Postgresql.ReferenceHelper;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
@@ -20,11 +19,12 @@ public interface IUpsertDocument
     public Task<UpsertResult> Upsert(
         IUpsertRequest upsertRequest,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction transaction,
+        TraceId traceId
     );
 }
 
-public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
+public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logger) : IUpsertDocument
 {
     /// <summary>
     /// Determine whether invalid referentialIds were descriptors or references, and returns the
@@ -35,8 +35,10 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
         Guid[] invalidReferentialIds
     )
     {
-        List<DescriptorReference> invalidDescriptorReferences = DescriptorReferencesWithReferentialIds(documentInfo
-            .DescriptorReferences, invalidReferentialIds);
+        List<DescriptorReference> invalidDescriptorReferences = DescriptorReferencesWithReferentialIds(
+            documentInfo.DescriptorReferences,
+            invalidReferentialIds
+        );
 
         if (invalidDescriptorReferences.Count != 0)
         {
@@ -56,7 +58,8 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
         DocumentReferenceIds documentReferenceIds,
         DocumentReferenceIds descriptorReferenceIds,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction transaction,
+        TraceId traceId
     )
     {
         short documentPartitionKey = PartitionKeyFor(upsertRequest.DocumentUuid).Value;
@@ -64,7 +67,7 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
 
         // First insert into Documents
         upsertRequest.EdfiDoc["id"] = upsertRequest.DocumentUuid.Value;
-        newDocumentId = await InsertDocument(
+        newDocumentId = await _sqlAction.InsertDocument(
             new(
                 DocumentPartitionKey: documentPartitionKey,
                 DocumentUuid: upsertRequest.DocumentUuid.Value,
@@ -74,11 +77,12 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
                 EdfiDoc: JsonSerializer.Deserialize<JsonElement>(upsertRequest.EdfiDoc)
             ),
             connection,
-            transaction
+            transaction,
+            traceId
         );
 
         // Next insert into Aliases
-        await InsertAlias(
+        await _sqlAction.InsertAlias(
             new(
                 DocumentPartitionKey: documentPartitionKey,
                 DocumentId: newDocumentId,
@@ -86,7 +90,8 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
                 ReferentialPartitionKey: PartitionKeyFor(upsertRequest.DocumentInfo.ReferentialId).Value
             ),
             connection,
-            transaction
+            transaction,
+            traceId
         );
 
         SuperclassIdentity? superclassIdentity = upsertRequest.DocumentInfo.SuperclassIdentity;
@@ -96,7 +101,7 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
             // If subclass, also insert superclass version of identity into Aliases
             if (superclassIdentity != null)
             {
-                await InsertAlias(
+                await _sqlAction.InsertAlias(
                     new(
                         DocumentPartitionKey: documentPartitionKey,
                         DocumentId: newDocumentId,
@@ -104,7 +109,8 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
                         ReferentialPartitionKey: PartitionKeyFor(superclassIdentity.ReferentialId).Value
                     ),
                     connection,
-                    transaction
+                    transaction,
+                    traceId
                 );
             }
         }
@@ -132,7 +138,7 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
             || descriptorReferenceIds.ReferentialIds.Length > 0
         )
         {
-            Guid[] invalidReferentialIds = await InsertReferences(
+            Guid[] invalidReferentialIds = await _sqlAction.InsertReferences(
                 new(
                     ParentDocumentPartitionKey: documentPartitionKey,
                     ParentDocumentId: newDocumentId,
@@ -144,12 +150,16 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
                         .ToArray()
                 ),
                 connection,
-                transaction
+                transaction,
+                traceId
             );
 
             if (invalidReferentialIds.Length > 0)
             {
-                _logger.LogDebug("Foreign key violation on Upsert as Insert - {TraceId}", upsertRequest.TraceId);
+                _logger.LogDebug(
+                    "Foreign key violation on Upsert as Insert - {TraceId}",
+                    upsertRequest.TraceId
+                );
                 return ReportReferenceFailure(upsertRequest.DocumentInfo, invalidReferentialIds);
             }
         }
@@ -166,17 +176,19 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
         DocumentReferenceIds documentReferenceIds,
         DocumentReferenceIds descriptorReferenceIds,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction transaction,
+        TraceId traceId
     )
     {
         // Update the EdfiDoc of the Document
         upsertRequest.EdfiDoc["id"] = documentUuid;
-        await UpdateDocumentEdfiDoc(
+        await _sqlAction.UpdateDocumentEdfiDoc(
             documentPartitionKey,
             documentUuid,
             JsonSerializer.Deserialize<JsonElement>(upsertRequest.EdfiDoc),
             connection,
-            transaction
+            transaction,
+            traceId
         );
 
         if (
@@ -185,9 +197,15 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
         )
         {
             // First clear out all the existing references, as they may have changed
-            await DeleteReferencesByDocumentUuid(documentPartitionKey, documentUuid, connection, transaction);
+            await _sqlAction.DeleteReferencesByDocumentUuid(
+                documentPartitionKey,
+                documentUuid,
+                connection,
+                transaction,
+                traceId
+            );
 
-            Guid[] invalidReferentialIds = await InsertReferences(
+            Guid[] invalidReferentialIds = await _sqlAction.InsertReferences(
                 new(
                     ParentDocumentPartitionKey: documentPartitionKey,
                     ParentDocumentId: documentId,
@@ -199,12 +217,16 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
                         .ToArray()
                 ),
                 connection,
-                transaction
+                transaction,
+                traceId
             );
 
             if (invalidReferentialIds.Length > 0)
             {
-                _logger.LogDebug("Foreign key violation on Upsert as Update - {TraceId}", upsertRequest.TraceId);
+                _logger.LogDebug(
+                    "Foreign key violation on Upsert as Update - {TraceId}",
+                    upsertRequest.TraceId
+                );
                 return ReportReferenceFailure(upsertRequest.DocumentInfo, invalidReferentialIds);
             }
         }
@@ -221,7 +243,8 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
     public async Task<UpsertResult> Upsert(
         IUpsertRequest upsertRequest,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction transaction,
+        TraceId traceId
     )
     {
         _logger.LogDebug("Entering UpsertDocument.Upsert - {TraceId}", upsertRequest.TraceId);
@@ -240,12 +263,13 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
             try
             {
                 // Attempt to get the document, to see whether this is an insert or update
-                documentFromDb = await FindDocumentByReferentialId(
+                documentFromDb = await _sqlAction.FindDocumentByReferentialId(
                     upsertRequest.DocumentInfo.ReferentialId,
                     PartitionKeyFor(upsertRequest.DocumentInfo.ReferentialId),
                     connection,
                     transaction,
-                    LockOption.BlockUpdateDelete
+                    LockOption.BlockUpdateDelete,
+                    traceId
                 );
             }
             catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.SerializationFailure)
@@ -266,7 +290,8 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
                     documentReferenceIds,
                     descriptorReferenceIds,
                     connection,
-                    transaction
+                    transaction,
+                    traceId
                 );
             }
 
@@ -282,7 +307,8 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
                 documentReferenceIds,
                 descriptorReferenceIds,
                 connection,
-                transaction
+                transaction,
+                traceId
             );
         }
         catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.SerializationFailure)
@@ -292,9 +318,7 @@ public class UpsertDocument(ILogger<UpsertDocument> _logger) : IUpsertDocument
         }
         catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.UniqueViolation)
         {
-            _logger.LogInformation(pe, "Failure: identity already exists - {TraceId}",
-                upsertRequest.TraceId
-            );
+            _logger.LogInformation(pe, "Failure: identity already exists - {TraceId}", upsertRequest.TraceId);
             return new UpsertResult.UpsertFailureIdentityConflict(
                 upsertRequest.ResourceInfo.ResourceName,
                 upsertRequest.DocumentInfo.DocumentIdentity.DocumentIdentityElements.Select(

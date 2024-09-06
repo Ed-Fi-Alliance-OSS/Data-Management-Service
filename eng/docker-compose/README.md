@@ -27,7 +27,7 @@ DMS in debug mode in Visual Studio or VS Code - then just startup the
 `docker-compose.yml` file. The `docker compose` command accepts multiple `-f
 [filename]` flags, which allows you to combine multiple compose files into the
 same network segment. Thus you can run `docker-compose.yml` _and_ one of the
-`dms-*.yml` files at the same time to get a full-fledge testing and
+`dms-*.yml` files at the same time to get a full-fledged testing and
 demonstration environment.
 
 Before running these, create a `.env` file. The `.env.example` is a good

@@ -31,6 +31,7 @@ public static class PostgresqlServiceExtensions
         services.AddSingleton<IUpdateDocumentById, UpdateDocumentById>();
         services.AddSingleton<IUpsertDocument, UpsertDocument>();
         services.AddSingleton<IDeleteDocumentById, DeleteDocumentById>();
+        services.AddSingleton<ISqlAction, SqlAction>();
         return services;
     }
 

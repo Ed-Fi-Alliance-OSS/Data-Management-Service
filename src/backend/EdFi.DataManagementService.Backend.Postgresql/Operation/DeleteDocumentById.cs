@@ -7,7 +7,6 @@ using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
-using static EdFi.DataManagementService.Backend.Postgresql.Operation.SqlAction;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
 
@@ -20,7 +19,7 @@ public interface IDeleteDocumentById
     );
 }
 
-public class DeleteDocumentById(ILogger<DeleteDocumentById> _logger)
+public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentById> _logger)
     : IDeleteDocumentById
 {
     public async Task<DeleteResult> DeleteById(
@@ -37,11 +36,12 @@ public class DeleteDocumentById(ILogger<DeleteDocumentById> _logger)
             // Create a transaction save point
             await transaction.SaveAsync("beforeDelete");
 
-            int rowsAffectedOnDocumentDelete = await DeleteDocumentByDocumentUuid(
+            int rowsAffectedOnDocumentDelete = await _sqlAction.DeleteDocumentByDocumentUuid(
                 documentPartitionKey,
                 deleteRequest.DocumentUuid,
                 connection,
-                transaction
+                transaction,
+                deleteRequest.TraceId
             );
 
             switch (rowsAffectedOnDocumentDelete)
@@ -74,12 +74,13 @@ public class DeleteDocumentById(ILogger<DeleteDocumentById> _logger)
             // Restore transaction save point to continue using transaction
             await transaction.RollbackAsync("beforeDelete");
 
-            var referencingDocumentNames = await FindReferencingResourceNamesByDocumentUuid(
+            var referencingDocumentNames = await _sqlAction.FindReferencingResourceNamesByDocumentUuid(
                 deleteRequest.DocumentUuid,
                 documentPartitionKey,
                 connection,
                 transaction,
-                LockOption.BlockUpdateDelete
+                LockOption.BlockUpdateDelete,
+                deleteRequest.TraceId
             );
             _logger.LogDebug(pe, "Foreign key violation on Delete - {TraceId}", deleteRequest.TraceId);
             return new DeleteResult.DeleteFailureReference(referencingDocumentNames.ToArray());
