@@ -85,7 +85,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                 }
                 catch (PostgresException pe)
                 {
-                    _logger.LogError(pe, "DB failure, will retry - {TraceId}", traceId);
+                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
 
                     // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
                     // Must roll back the transaction before retry.
