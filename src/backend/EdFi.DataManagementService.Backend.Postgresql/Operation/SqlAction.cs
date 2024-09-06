@@ -52,7 +52,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
     )
     {
         var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async _ =>
+            .ExecuteAsync(async cancellationToken =>
             {
                 try
                 {
@@ -71,8 +71,8 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                             },
                         };
 
-                    await command.PrepareAsync();
-                    await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+                    await command.PrepareAsync(cancellationToken);
+                    await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
 
                     if (!reader.HasRows)
                     {
@@ -80,7 +80,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                     }
 
                     // Assumes only one row returned
-                    await reader.ReadAsync();
+                    await reader.ReadAsync(cancellationToken);
                     return (await reader.GetFieldValueAsync<JsonElement>(0)).Deserialize<JsonNode>();
                 }
                 catch (PostgresException pe)
@@ -89,7 +89,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
 
                     // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
                     // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync();
+                    await transaction.RollbackAsync(cancellationToken);
                     throw;
                 }
             });
@@ -110,7 +110,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
     )
     {
         var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async _ =>
+            .ExecuteAsync(async cancellationToken =>
             {
                 try
                 {
@@ -130,8 +130,8 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                             },
                         };
 
-                    await command.PrepareAsync();
-                    await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+                    await command.PrepareAsync(cancellationToken);
+                    await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
 
                     if (!reader.HasRows)
                     {
@@ -139,7 +139,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                     }
 
                     // Assumes only one row returned (should never be more due to DB unique constraint)
-                    await reader.ReadAsync();
+                    await reader.ReadAsync(cancellationToken);
 
                     return new Document(
                         Id: reader.GetInt64(reader.GetOrdinal("Id")),
@@ -155,11 +155,11 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                 }
                 catch (PostgresException pe)
                 {
-                    _logger.LogError(pe, "DB failure, will retry - {TraceId}", traceId);
+                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
 
                     // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
                     // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync();
+                    await transaction.RollbackAsync(cancellationToken);
                     throw;
                 }
             });
@@ -178,7 +178,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
     )
     {
         var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async _ =>
+            .ExecuteAsync(async cancellationToken =>
             {
                 try
                 {
@@ -197,12 +197,12 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                             },
                         };
 
-                    await command.PrepareAsync();
-                    await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+                    await command.PrepareAsync(cancellationToken);
+                    await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
 
                     var documents = new List<JsonNode>();
 
-                    while (await reader.ReadAsync())
+                    while (await reader.ReadAsync(cancellationToken))
                     {
                         JsonNode? edfiDoc = (
                             await reader.GetFieldValueAsync<JsonElement>(0)
@@ -218,11 +218,11 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                 }
                 catch (PostgresException pe)
                 {
-                    _logger.LogError(pe, "DB failure, will retry - {TraceId}", traceId);
+                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
 
                     // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
                     // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync();
+                    await transaction.RollbackAsync(cancellationToken);
                     throw;
                 }
             });
@@ -241,7 +241,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
     )
     {
         var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async _ =>
+            .ExecuteAsync(async cancellationToken =>
             {
                 try
                 {
@@ -255,24 +255,24 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                             Parameters = { new() { Value = resourceName } },
                         };
 
-                    await command.PrepareAsync();
-                    await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+                    await command.PrepareAsync(cancellationToken);
+                    await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
 
                     if (!reader.HasRows)
                     {
                         return 0;
                     }
 
-                    await reader.ReadAsync();
+                    await reader.ReadAsync(cancellationToken);
                     return reader.GetInt16(reader.GetOrdinal("Total"));
                 }
                 catch (PostgresException pe)
                 {
-                    _logger.LogError(pe, "DB failure, will retry - {TraceId}", traceId);
+                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
 
                     // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
                     // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync();
+                    await transaction.RollbackAsync(cancellationToken);
                     throw;
                 }
             });
@@ -290,7 +290,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
     )
     {
         var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async _ =>
+            .ExecuteAsync(async cancellationToken =>
             {
                 try
                 {
@@ -313,19 +313,19 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                         },
                     };
 
-                    await command.PrepareAsync();
-                    return Convert.ToInt64(await command.ExecuteScalarAsync());
+                    await command.PrepareAsync(cancellationToken);
+                    return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
                 }
                 catch (PostgresException pe)
                     when (pe.SqlState != PostgresErrorCodes.ForeignKeyViolation
                         && pe.SqlState != PostgresErrorCodes.UniqueViolation
                     )
                 {
-                    _logger.LogError(pe, "DB failure, will retry - {TraceId}", traceId);
+                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
 
                     // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
                     // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync();
+                    await transaction.RollbackAsync(cancellationToken);
                     throw;
                 }
             });
@@ -345,7 +345,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
     )
     {
         var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async _ =>
+            .ExecuteAsync(async cancellationToken =>
             {
                 try
                 {
@@ -366,19 +366,19 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                         },
                     };
 
-                    await command.PrepareAsync();
-                    return await command.ExecuteNonQueryAsync();
+                    await command.PrepareAsync(cancellationToken);
+                    return await command.ExecuteNonQueryAsync(cancellationToken);
                 }
                 catch (PostgresException pe)
                     when (pe.SqlState != PostgresErrorCodes.ForeignKeyViolation
                         && pe.SqlState != PostgresErrorCodes.UniqueViolation
                     )
                 {
-                    _logger.LogError(pe, "DB failure, will retry - {TraceId}", traceId);
+                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
 
                     // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
                     // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync();
+                    await transaction.RollbackAsync(cancellationToken);
                     throw;
                 }
             });
@@ -397,7 +397,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
     )
     {
         var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async _ =>
+            .ExecuteAsync(async cancellationToken =>
             {
                 try
                 {
@@ -430,8 +430,8 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                             },
                         };
 
-                    await command.PrepareAsync();
-                    await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+                    await command.PrepareAsync(cancellationToken);
+                    await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
 
                     if (!reader.HasRows)
                     {
@@ -443,9 +443,9 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                     }
 
                     // Assumes only one row returned (should never be more due to DB unique constraint)
-                    await reader.ReadAsync();
+                    await reader.ReadAsync(cancellationToken);
 
-                    if (await reader.IsDBNullAsync(reader.GetOrdinal("ReferentialId")))
+                    if (await reader.IsDBNullAsync(reader.GetOrdinal("ReferentialId"), cancellationToken))
                     {
                         // Extracted referential id does not match stored. Must be attempting to change natural key.
                         return new UpdateDocumentValidationResult(
@@ -461,11 +461,11 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                 }
                 catch (PostgresException pe)
                 {
-                    _logger.LogError(pe, "DB failure, will retry - {TraceId}", traceId);
+                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
 
                     // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
                     // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync();
+                    await transaction.RollbackAsync(cancellationToken);
                     throw;
                 }
             });
@@ -483,7 +483,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
     )
     {
         var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async _ =>
+            .ExecuteAsync(async cancellationToken =>
             {
                 try
                 {
@@ -504,19 +504,19 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                         },
                     };
 
-                    await command.PrepareAsync();
-                    return Convert.ToInt64(await command.ExecuteScalarAsync());
+                    await command.PrepareAsync(cancellationToken);
+                    return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
                 }
                 catch (PostgresException pe)
                     when (pe.SqlState != PostgresErrorCodes.ForeignKeyViolation
                         && pe.SqlState != PostgresErrorCodes.UniqueViolation
                     )
                 {
-                    _logger.LogError(pe, "DB failure, will retry - {TraceId}", traceId);
+                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
 
                     // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
                     // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync();
+                    await transaction.RollbackAsync(cancellationToken);
                     throw;
                 }
             });
@@ -538,7 +538,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
     )
     {
         var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async _ =>
+            .ExecuteAsync(async cancellationToken =>
             {
                 try
                 {
@@ -561,16 +561,16 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                         },
                     };
 
-                    await command.PrepareAsync();
-                    return await command.ExecuteNonQueryAsync();
+                    await command.PrepareAsync(cancellationToken);
+                    return await command.ExecuteNonQueryAsync(cancellationToken);
                 }
                 catch (PostgresException pe)
                 {
-                    _logger.LogError(pe, "DB failure, will retry - {TraceId}", traceId);
+                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
 
                     // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
                     // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync();
+                    await transaction.RollbackAsync(cancellationToken);
                     throw;
                 }
             });
@@ -589,7 +589,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
     )
     {
         var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async _ =>
+            .ExecuteAsync(async cancellationToken =>
             {
                 try
                 {
@@ -619,11 +619,11 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                             new() { Value = bulkReferences.ReferentialPartitionKeys },
                         },
                     };
-                    await command.PrepareAsync();
-                    await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+                    await command.PrepareAsync(cancellationToken);
+                    await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
 
                     List<Guid> result = [];
-                    while (await reader.ReadAsync())
+                    while (await reader.ReadAsync(cancellationToken))
                     {
                         result.Add(reader.GetGuid(0));
                     }
@@ -635,11 +635,11 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                         && pe.SqlState != PostgresErrorCodes.UniqueViolation
                     )
                 {
-                    _logger.LogError(pe, "DB failure, will retry - {TraceId}", traceId);
+                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
 
                     // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
                     // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync();
+                    await transaction.RollbackAsync(cancellationToken);
                     throw;
                 }
             });
@@ -658,7 +658,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
     )
     {
         var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async _ =>
+            .ExecuteAsync(async cancellationToken =>
             {
                 try
                 {
@@ -678,16 +678,16 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                                 new() { Value = parentDocumentUuidGuid },
                             },
                         };
-                    await command.PrepareAsync();
-                    return await command.ExecuteNonQueryAsync();
+                    await command.PrepareAsync(cancellationToken);
+                    return await command.ExecuteNonQueryAsync(cancellationToken);
                 }
                 catch (PostgresException pe) when (pe.SqlState != PostgresErrorCodes.ForeignKeyViolation)
                 {
-                    _logger.LogError(pe, "DB failure, will retry - {TraceId}", traceId);
+                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
 
                     // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
                     // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync();
+                    await transaction.RollbackAsync(cancellationToken);
                     throw;
                 }
             });
@@ -707,7 +707,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
     )
     {
         var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async _ =>
+            .ExecuteAsync(async cancellationToken =>
             {
                 try
                 {
@@ -725,16 +725,16 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                             },
                         };
 
-                    await command.PrepareAsync();
-                    return await command.ExecuteNonQueryAsync();
+                    await command.PrepareAsync(cancellationToken);
+                    return await command.ExecuteNonQueryAsync(cancellationToken);
                 }
                 catch (PostgresException pe) when (pe.SqlState != PostgresErrorCodes.ForeignKeyViolation)
                 {
-                    _logger.LogError(pe, "DB failure, will retry - {TraceId}", traceId);
+                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
 
                     // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
                     // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync();
+                    await transaction.RollbackAsync(cancellationToken);
                     throw;
                 }
             });
@@ -751,7 +751,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
     )
     {
         var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async _ =>
+            .ExecuteAsync(async cancellationToken =>
             {
                 try
                 {
@@ -777,12 +777,12 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                             },
                         };
 
-                    await command.PrepareAsync();
-                    await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+                    await command.PrepareAsync(cancellationToken);
+                    await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
 
                     var resourceNames = new List<string>();
 
-                    while (await reader.ReadAsync())
+                    while (await reader.ReadAsync(cancellationToken))
                     {
                         resourceNames.Add(reader.GetString(reader.GetOrdinal("ResourceName")));
                     }
@@ -791,11 +791,11 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                 }
                 catch (PostgresException pe)
                 {
-                    _logger.LogError(pe, "DB failure, will retry - {TraceId}", traceId);
+                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
 
                     // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
                     // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync();
+                    await transaction.RollbackAsync(cancellationToken);
                     throw;
                 }
             });
