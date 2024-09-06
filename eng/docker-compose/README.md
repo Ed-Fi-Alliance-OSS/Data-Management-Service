@@ -17,10 +17,11 @@
 This directory contains several Docker Compose files, which can be combined to
 start up different configurations:
 
-1. `kafka-opensearch.yml` covers Kafka, Kafka UI, Zookeeper, OpenSearch, and OpenSearch Dashboard
-2. `postgresql.yml` starts only PostgreSQL
-3. `local-dms.yml` runs the DMS from local source code.
-4. `published-dms.yml` runs the latest DMS `pre` tag as published to Docker Hub.
+1. `kafka-opensearch.yml` covers Kafka, Zookeeper, OpenSearch
+2. `kafka-opensearch-ui.yml` covers KafkaUI, OpenSearch Dashboard
+3. `postgresql.yml` starts only PostgreSQL
+4. `local-dms.yml` runs the DMS from local source code.
+5. `published-dms.yml` runs the latest DMS `pre` tag as published to Docker Hub.
 
 Before running these, create a `.env` file. The `.env.example` is a good
 starting point.
@@ -61,6 +62,13 @@ also append `-v`. Examples:
 
 # Stop the services and delete volumes
 ./start-local-dms.ps1 -d -v
+```
+
+You can set up the Kafka UI and OpenSearch Dashboard containers for testing by passing the -EnableOpenSearchUI option.
+
+```pwsh
+# Start everything with Kafka UI and OpenSearch Dashboard
+./start-local-dms.ps1 -EnableOpenSearchUI
 ```
 
 ## Default URLs

@@ -19,7 +19,11 @@ param (
 
     # Force a rebuild
     [Switch]
-    $r
+    $r,
+
+    # Enable KafkaUI and OpenSearch Dashboard
+    [Switch]
+    $EnableOpenSearchUI
 )
 
 $files = @(
@@ -30,6 +34,11 @@ $files = @(
     "-f",
     "local-dms.yml"
 )
+
+if($EnableOpenSearchUI)
+{
+    $files += @("-f", "kafka-opensearch-ui.yml")
+}
 
 if ($d) {
     if ($v) {
