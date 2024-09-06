@@ -111,3 +111,87 @@ Feature: Query String handling for GET requests for Resource Queries
                       "totalInstructionalDays": 2
                   }]
                   """
+
+        Scenario: 08 Ensure clients can GET information when querying with mixed case parameter name
+             When a GET request is made to "/ed-fi/academicWeeks?WEEKIdentifier=Week+One"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [{
+                      "id": "{id}",
+                      "schoolReference": {
+                          "schoolId": 2
+                      },
+                      "weekIdentifier": "Week One",
+                      "beginDate": "2024-05-15",
+                      "endDate": "2024-05-22",
+                      "totalInstructionalDays": 2
+                  }]
+                  """
+
+        Scenario: 09 Ensure clients can GET information when querying with lower case parameter name
+             When a GET request is made to "/ed-fi/academicWeeks?weekidentifier=Week+One"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [{
+                      "id": "{id}",
+                      "schoolReference": {
+                          "schoolId": 2
+                      },
+                      "weekIdentifier": "Week One",
+                      "beginDate": "2024-05-15",
+                      "endDate": "2024-05-22",
+                      "totalInstructionalDays": 2
+                  }]
+                  """
+
+        Scenario: 10 Ensure clients can GET information when querying with upper case parameter name
+             When a GET request is made to "/ed-fi/academicWeeks?WEEKIDENTIFIER=Week+One"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [{
+                      "id": "{id}",
+                      "schoolReference": {
+                          "schoolId": 2
+                      },
+                      "weekIdentifier": "Week One",
+                      "beginDate": "2024-05-15",
+                      "endDate": "2024-05-22",
+                      "totalInstructionalDays": 2
+                  }]
+                  """
+
+         Scenario: 11 Ensure clients can GET information when querying with mixed case parameter name and value
+             When a GET request is made to "/ed-fi/academicWeeks?WEEKIDENTIFier=week+ONE"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [{
+                      "id": "{id}",
+                      "schoolReference": {
+                          "schoolId": 2
+                      },
+                      "weekIdentifier": "Week One",
+                      "beginDate": "2024-05-15",
+                      "endDate": "2024-05-22",
+                      "totalInstructionalDays": 2
+                  }]
+                  """
+         Scenario: 12 Ensure clients can GET information when querying with mixed case parameter name and upper case value
+             When a GET request is made to "/ed-fi/academicWeeks?WEEKIDENTIFier=WEEK+ONE"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [{
+                      "id": "{id}",
+                      "schoolReference": {
+                          "schoolId": 2
+                      },
+                      "weekIdentifier": "Week One",
+                      "beginDate": "2024-05-15",
+                      "endDate": "2024-05-22",
+                      "totalInstructionalDays": 2
+                  }]
+                  """
