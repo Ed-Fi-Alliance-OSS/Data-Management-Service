@@ -22,9 +22,7 @@ $files = @(
     "-f",
     "postgresql.yml",
     "-f",
-    "kafka-opensearch.yml",
-    "-f",
-    "published-dms.yml"
+    "kafka-opensearch.yml"
 )
 
 if ($d) {
@@ -38,7 +36,7 @@ if ($d) {
     }
 }
 else {
-    Write-Host "Starting published DMS"
+    Write-Host "Starting all services, without the DMS"
     docker compose $files --env-file $EnvironmentFile up -d
 
     Start-Sleep 20

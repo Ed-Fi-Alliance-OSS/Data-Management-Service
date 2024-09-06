@@ -9,14 +9,14 @@ namespace EdFi.DataManagementService.Tests.E2E
 {
     public class AppSettings
     {
-        private static IConfiguration? _configuration = new ConfigurationBuilder()
+        private static readonly IConfiguration _configuration = new ConfigurationBuilder()
             .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-            .Build();
+            .Build() ?? throw new InvalidOperationException("Unable to read appsettings.json");
 
-        public static bool UseTestContainers => bool.TryParse(_configuration!["useTestContainers"], out _);
+        public static bool UseTestContainers => bool.TryParse(_configuration["useTestContainers"], out _);
 
         public static bool OpenSearchEnabled =>
-            !string.IsNullOrEmpty(_configuration!["QueryHandler"])
+            !string.IsNullOrEmpty(_configuration["QueryHandler"])
             && _configuration["QueryHandler"]!.Equals(
                 "opensearch",
                 StringComparison.InvariantCultureIgnoreCase

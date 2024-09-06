@@ -84,21 +84,6 @@ services:
       - kafka-opensearch-sink-logs:/kafka/logs
       - kafka-opensearch-sink-config:/kafka/config
 
-  db:
-    hostname: dms-postgresql
-    container_name: dms-postgresql
-    image: postgres:16.3-alpine
-    restart: always
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-abcdefgh1!}
-      POSTGRES_DB_NAME: ${POSTGRES_DB_NAME:-edfi_datamanagementservice}
-    ports:
-      - ${POSTGRES_PORT:-5432}:5432
-    volumes:
-      - dms-postgresql:/var/lib/postgresql/data
-      - ./postgresql-init.sh:/docker-entrypoint-initdb.d/postgresql-init.sh
-
   opensearch:
     image: opensearchproject/opensearch:2.15.0@sha256:1963b3ece46dfe1a17cd633fb2e9cea22bd20753a295f39c2f513ce0070cad42
     container_name: dms-opensearch
@@ -161,5 +146,4 @@ volumes:
   kafka-postgresql-source-config:
   kafka-opensearch-sink-logs:
   kafka-opensearch-sink-config:
-  dms-postgresql:
   opensearch-data1:
