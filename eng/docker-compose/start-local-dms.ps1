@@ -15,7 +15,11 @@ param (
 
     # Environment file
     [string]
-    $EnvironmentFile = "./.env"
+    $EnvironmentFile = "./.env",
+
+    # Force a rebuild
+    [Switch]
+    $r
 )
 
 $files = @(
@@ -38,8 +42,11 @@ if ($d) {
     }
 }
 else {
+    $upArgs = @()
+    if ($r) { $upArgs.Add("--build") }
+
     Write-Host "Starting locally-built DMS"
-    docker compose $files --env-file $EnvironmentFile up -d
+    docker compose $files --env-file $EnvironmentFile up -d $upArgs
 
     Start-Sleep 20
     ./setup-connectors.ps1 $EnvironmentFile
