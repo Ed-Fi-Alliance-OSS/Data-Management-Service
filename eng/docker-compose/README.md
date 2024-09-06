@@ -64,7 +64,8 @@ also append `-v`. Examples:
 ./start-local-dms.ps1 -d -v
 ```
 
-You can set up the Kafka UI and OpenSearch Dashboard containers for testing by passing the -EnableOpenSearchUI option.
+You can set up the Kafka UI and OpenSearch Dashboard containers for testing by
+passing the -EnableOpenSearchUI option.
 
 ```pwsh
 # Start everything with Kafka UI and OpenSearch Dashboard
