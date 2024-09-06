@@ -97,7 +97,7 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
     )
     {
         QueryField? matchingQueryField = possibleQueryFields.FirstOrDefault(
-            queryField => queryField?.QueryFieldName == clientQueryTerm.Key,
+            queryField => queryField?.QueryFieldName.ToLower() == clientQueryTerm.Key.ToLower(),
             null
         );
 
