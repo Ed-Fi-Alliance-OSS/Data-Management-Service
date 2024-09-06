@@ -29,16 +29,16 @@ $files = @(
 
 if ($d) {
     if ($v) {
-        Write-Host "Shutting down with volume delete"
+        Write-Output "Shutting down with volume delete"
         docker compose $files down -v
     }
     else {
-        Write-Host "Shutting down"
+        Write-Output "Shutting down"
         docker compose $files down
     }
 }
 else {
-    Write-Host "Starting published DMS"
+    Write-Output "Starting published DMS"
     docker compose $files --env-file $EnvironmentFile up -d
 
     Start-Sleep 20
