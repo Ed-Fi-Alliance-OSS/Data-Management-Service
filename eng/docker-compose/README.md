@@ -14,21 +14,14 @@
 
 ## Starting Services with Docker Compose
 
-This directory contains three Docker Compose files:
+This directory contains several Docker Compose files, which can be combined to
+start up different configurations:
 
-1. `docker-compose.yml` starts up services used by the Data Management Service
-   (DMS) _without_ starting the DMS itself.
-2. `dms-local.yml` start the DMS, built locally from current source code.
-3. `dms-published.yml` starts the DMS using the
-   `edfialliance/data-management-service` image on Docker Hub.
-
-When you only need to run the associated services - for instance, while running
-DMS in debug mode in Visual Studio or VS Code - then just startup the
-`docker-compose.yml` file. The `docker compose` command accepts multiple `-f
-[filename]` flags, which allows you to combine multiple compose files into the
-same network segment. Thus you can run `docker-compose.yml` _and_ one of the
-`dms-*.yml` files at the same time to get a full-fledged testing and
-demonstration environment.
+1. `kafka-opensearch.yml` covers Kafka, Zookeeper, OpenSearch
+2. `kafka-opensearch-ui.yml` covers KafkaUI, OpenSearch Dashboard
+3. `postgresql.yml` starts only PostgreSQL
+4. `local-dms.yml` runs the DMS from local source code.
+5. `published-dms.yml` runs the latest DMS `pre` tag as published to Docker Hub.
 
 Before running these, create a `.env` file. The `.env.example` is a good
 starting point.
@@ -44,26 +37,39 @@ configurations.
 > already installed. On first execution, this results in a 404 error. _This is
 > normal_. Ignore that initial 404 error message.
 
-Convenience PowerShell scripts have been included in the directory:
+Convenience PowerShell scripts have been included in the directory, which
+startup the appropriate services and inject the Kafka connectors (where
+relevant).
+
+* `start-all-services.ps1` launches both `postgresql.yml` and
+  `kafka-opensearch.yml`, without starting the DMS. Useful for running DMS in a
+  local debugger.
+* `start-local-dms.ps1` launches the DMS local build along with all necessary
+  services.
+* `start-published-dms.ps1` launches the DMS published build along with all
+  necessary services.
+* `start-postgresql.ps1` only starts PostgreSQL.
+
+You can pass `-d` to each of these scripts to shut them down. To delete volumes,
+also append `-v`. Examples:
 
 ```pwsh
-# Three options for starting services
-./start-services-only.ps1
+# Start everything
 ./start-local-dms.ps1
-./start-published-dms.ps1
-
-# With the local image, you can optionally force rebuilding the image
-./start-local-dms.ps1 -b
 
 # Stop the services, keeping volumes
-./start-services-only.ps1 -d
 ./start-local-dms.ps1 -d
-./start-published-dms.ps1 -d
 
 # Stop the services and delete volumes
-./start-services-only.ps1 -d -v
 ./start-local-dms.ps1 -d -v
-./start-published-dms.ps1 -d -v
+```
+
+You can set up the Kafka UI and OpenSearch Dashboard containers for testing by
+passing the -EnableOpenSearchUI option.
+
+```pwsh
+# Start everything with Kafka UI and OpenSearch Dashboard
+./start-local-dms.ps1 -EnableOpenSearchUI
 ```
 
 ## Default URLs
@@ -77,11 +83,6 @@ Convenience PowerShell scripts have been included in the directory:
 * DELETE is not having any impact on OpenSearch.
 
 ## Tips
-
-### Load Sample Data
-
-See the [../bulkLoad](../bulkLoad/README.MD) directory for scripts that will
-bulk load XML files into the API.
 
 ### Clearing Out All Data in OpenSearch
 

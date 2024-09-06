@@ -15,26 +15,15 @@ param (
 
     # Environment file
     [string]
-    $EnvironmentFile = "./.env",
-
-    # Enable KafkaUI and OpenSearch Dashboard
-    [Switch]
-    $EnableOpenSearchUI
+    $EnvironmentFile = "./.env"
 )
 
 $files = @(
     "-f",
     "postgresql.yml",
     "-f",
-    "kafka-opensearch.yml",
-    "-f",
-    "published-dms.yml"
+    "kafka-opensearch.yml"
 )
-
-if($EnableOpenSearchUI)
-{
-    $files += @("-f", "kafka-opensearch-ui.yml")
-}
 
 if ($d) {
     if ($v) {
@@ -47,7 +36,7 @@ if ($d) {
     }
 }
 else {
-    Write-Output "Starting published DMS"
+    Write-Output "Starting all services, without the DMS"
     docker compose $files --env-file $EnvironmentFile up -d
 
     Start-Sleep 20

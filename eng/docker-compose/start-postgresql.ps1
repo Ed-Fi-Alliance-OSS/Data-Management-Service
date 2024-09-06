@@ -13,26 +13,27 @@ param (
     [Switch]
     $v,
 
-    # Force re-pull of all Docker hub images
-    [Switch]
-    $p
+    # Environment file
+    [string]
+    $EnvironmentFile = "./.env"
+)
+
+$files = @(
+    "-f",
+    "postgresql.yml"
 )
 
 if ($d) {
     if ($v) {
-        docker compose down -v
+        Write-Output "Shutting down with volume delete"
+        docker compose $files down -v
     }
     else {
-        docker compose down
+        Write-Output "Shutting down"
+        docker compose $files down
     }
 }
 else {
-    $pull = "never"
-    if ($p) {
-        $pull = "--pull"
-    }
-    docker compose -f docker-compose.yml up --pull $pull -d
-
-    Start-Sleep -Seconds 15
-    ./setup-connectors.ps1
+    Write-Output "Starting PostgreSQL"
+    docker compose $files --env-file $EnvironmentFile up -d
 }

@@ -182,9 +182,9 @@ jobs:
       - name: Build
         run: ./build.ps1 Build -Configuration Debug
 
-      - name: Run End to End Tests
+      - name: Run OpenSearch End to End Tests
         if: success()
-        run: ./build.ps1 E2ETest
+        run: ./build.ps1 E2ETest -EnableOpenSearch
 
       - name: Upload Logs
         if: failure()

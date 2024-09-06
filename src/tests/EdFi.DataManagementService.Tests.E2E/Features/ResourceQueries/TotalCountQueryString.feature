@@ -20,7 +20,8 @@ Feature: Query Strings handling for GET requests
               And the response headers does not include total-count
 
     Rule: Testing with data upload
-        Background:
+        @addwait
+        Scenario: 04 Background
             Given the system has these "schools"
                   | schoolId  | nameOfInstitution                             | gradeLevels                                                                         | educationOrganizationCategories                                                                                        |
                   | 5         | School with max edorgId value                 | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"} ]    | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
@@ -29,27 +30,27 @@ Feature: Query Strings handling for GET requests
                   | 255901044 | Grand Bend Middle School                      | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"} ]    | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
                   | 255901045 | UT Austin Extended Campus                     | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Twelfth grade"} ]  | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
 
-        Scenario: 04 Ensure that schools return the total count
+        Scenario: 05 Ensure that schools return the total count
              When a GET request is made to "/ed-fi/schools?totalCount=true"
              Then it should respond with 200
               And the response headers includes total-count 5
 
-        Scenario: 05 Validate totalCount Header is not included when equals to false
+        Scenario: 06 Validate totalCount Header is not included when equals to false
              When a GET request is made to "/ed-fi/schools?totalCount=false"
              Then it should respond with 200
               And the response headers does not include total-count
 
-        Scenario: 06 Validate totalCount is not included when it is not present in the URL
+        Scenario: 07 Validate totalCount is not included when it is not present in the URL
              When a GET request is made to "/ed-fi/schools"
              Then it should respond with 200
               And the response headers does not include total-count
 
-        Scenario: 07 Ensure results can be limited and totalCount matches the actual number of existing records
+        Scenario: 08 Ensure results can be limited and totalCount matches the actual number of existing records
              When a GET request is made to "/ed-fi/schools?totalCount=true&limit=2"
              Then getting less schools than the total-count
               And the response headers includes total-count 5
 
-        Scenario: 08 Ensure clients can get information when filtering by limit and and a valid offset
+        Scenario: 09 Ensure clients can get information when filtering by limit and and a valid offset
              When a GET request is made to "/ed-fi/schools?totalCount=true&offset=3&limit=5"
              Then it should respond with 200
              And the response headers includes total-count 5
@@ -89,14 +90,14 @@ Feature: Query Strings handling for GET requests
                  ]
                  """
 
-        Scenario: 09 Ensure clients can get information when filtering by limit and offset greater than the total
+        Scenario: 10 Ensure clients can get information when filtering by limit and offset greater than the total
              When a GET request is made to "/ed-fi/schools?offset=6&limit=5"
              Then it should respond with 200
               And the response body is
                   """
                   []
                   """
-        Scenario: 10 Ensure clients can't GET information when filtering using invalid values
+        Scenario: 11 Ensure clients can't GET information when filtering using invalid values
              When a GET request is made to "/ed-fi/schools?limit=-1" using values as
                   | Values                   |
                   | -1                       |
@@ -120,7 +121,7 @@ Feature: Query Strings handling for GET requests
                     }
                   """
 
-        Scenario: 11 Ensure clients can not GET information when filtering by limit and offset using invalid values
+        Scenario: 12 Ensure clients can not GET information when filtering by limit and offset using invalid values
              When a GET request is made to "/ed-fi/schools?offset=-1" using values as
                   | Values                   |
                   | -1                       |

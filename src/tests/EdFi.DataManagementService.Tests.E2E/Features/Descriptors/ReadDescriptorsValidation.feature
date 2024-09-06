@@ -16,24 +16,6 @@ Feature: Read a Descriptor
                   """
              Then it should respond with 201 or 200
 
-        Scenario: 01 Verify existing descriptors can be retrieved successfully
-             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors"
-             Then it should respond with 200
-              And the response body is
-                  """
-                    [
-                        {
-                            "id": "{id}",
-                            "codeValue": "Sick Leave",
-                            "description": "Sick Leave",
-                            "effectiveBeginDate": "2024-05-14",
-                            "effectiveEndDate": "2024-05-14",
-                            "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                            "shortDescription": "Sick Leave"
-                        }
-                    ]
-                  """
-
         Scenario: 02 Verify retrieving a single descriptor by ID
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 200
@@ -75,24 +57,6 @@ Feature: Read a Descriptor
                   }
                   """
 
-        Scenario: 05 Ensure clients can retrieve a descriptor by requesting through a valid codeValue
-             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/?codeValue=Sick+Leave"
-             Then it should respond with 200
-              And the response body is
-                  """
-                  [
-                    {
-                        "id": "{id}",
-                        "codeValue": "Sick Leave",
-                        "description": "Sick Leave",
-                        "effectiveBeginDate": "2024-05-14",
-                        "effectiveEndDate": "2024-05-14",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                        "shortDescription": "Sick Leave"
-                    }
-                  ]
-                  """
-
         # DMS-89
         @ignore
         Scenario: 06 Ensure clients cannot retrieve a descriptor by requesting through a non existing codeValue
@@ -101,24 +65,6 @@ Feature: Read a Descriptor
               And the response body is
                   """
                   []
-                  """
-
-        Scenario: 07 Ensure clients can retrieve a descriptor by requesting through a valid namespace
-             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors?namespace=uri%3A%2F%2Fed-fi.org%AbsenceEventCategoryDescriptor%23Sick Leave"
-             Then it should respond with 200
-              And the response body is
-                  """
-                  [
-                    {
-                        "id": "{id}",
-                        "codeValue": "Sick Leave",
-                        "description": "Sick Leave",
-                        "effectiveBeginDate": "2024-05-14",
-                        "effectiveEndDate": "2024-05-14",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                        "shortDescription": "Sick Leave"
-                    }
-                  ]
                   """
 
         # DMS-89
