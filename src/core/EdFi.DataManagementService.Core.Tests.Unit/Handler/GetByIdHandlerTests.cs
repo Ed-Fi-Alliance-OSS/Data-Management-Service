@@ -32,7 +32,7 @@ public class GetByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public static readonly string ResponseBody = "{}";
+            public static readonly JsonObject ResponseBody = new();
 
             public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
             {
@@ -55,7 +55,7 @@ public class GetByIdHandlerTests
         public void It_has_the_correct_response()
         {
             context.FrontendResponse.StatusCode.Should().Be(200);
-            context.FrontendResponse.Body?.AsValue().ToString().Should().Be(Repository.ResponseBody);
+            context.FrontendResponse.Body?.Should().BeEquivalentTo(Repository.ResponseBody);
         }
     }
 
