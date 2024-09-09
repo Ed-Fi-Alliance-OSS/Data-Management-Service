@@ -41,7 +41,7 @@ internal class GetByIdHandler(IDocumentStoreRepository _documentStoreRepository,
         context.FrontendResponse = getResult switch
         {
             GetSuccess success
-                => new FrontendResponse(StatusCode: 200, Body: success.EdfiDoc.ToJsonString(), Headers: []),
+                => new FrontendResponse(StatusCode: 200, Body: success.EdfiDoc, Headers: []),
             GetFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
             UnknownFailure failure
                 => new FrontendResponse(
