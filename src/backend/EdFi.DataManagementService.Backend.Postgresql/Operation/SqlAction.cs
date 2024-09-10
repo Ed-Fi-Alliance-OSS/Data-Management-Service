@@ -147,6 +147,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                         DocumentUuid: reader.GetGuid(reader.GetOrdinal("DocumentUuid")),
                         ResourceName: reader.GetString(reader.GetOrdinal("ResourceName")),
                         ResourceVersion: reader.GetString(reader.GetOrdinal("ResourceVersion")),
+                        IsDescriptor: reader.GetBoolean(reader.GetOrdinal("IsDescriptor")),
                         ProjectName: reader.GetString(reader.GetOrdinal("ProjectName")),
                         EdfiDoc: await reader.GetFieldValueAsync<JsonElement>(reader.GetOrdinal("EdfiDoc")),
                         CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
@@ -295,8 +296,8 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                 try
                 {
                     await using var command = new NpgsqlCommand(
-                        @"INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, ProjectName, EdfiDoc)
-                    VALUES ($1, $2, $3, $4, $5, $6)
+                        @"INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, IsDescriptor, ProjectName, EdfiDoc)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
                   RETURNING Id;",
                         connection,
                         transaction
@@ -308,6 +309,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                             new() { Value = document.DocumentUuid },
                             new() { Value = document.ResourceName },
                             new() { Value = document.ResourceVersion },
+                            new() { Value = document.IsDescriptor },
                             new() { Value = document.ProjectName },
                             new() { Value = document.EdfiDoc },
                         },
