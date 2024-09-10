@@ -4,33 +4,38 @@ This is a suite of end to end tests that will cover different scenarios. They
 are run against a local DMS container that must be rebuilt to stay in sync with
 the codebase.
 
-## Building the DMS container
+## Testing Process
 
-From the `src` directory, and run:
-`docker build -t local/data-management-service . -f Dockerfile`
-This will copy the current DMS solution into the container, build it and start
-it.
+You may either run the E2E tests locally from docker containers as is done in
+the github actions, or you may run them against your locally debugged API
+instance. See the steps below. 
+
+### Testing locally with docker compose
+
+From the `eng` directory:
+
+- If you have stale volumes with old data run `./start-local-dms.ps1 -d -v` to
+  stop services and delete volumes
+- Run `./start-local-dms.ps1 -EnvironmentFile ./.env.e2e`
+
+### Testing locally with API in debug mode
+
+To debug the API while running the tests, change `ApiUrl` in
+`OpenSearchContainerSetup.cs` to `http://localhost:5198/` and run
+`EdFi.DataManagementService.Frontend.AspNetCore` in debug mode as usual.
+
+> [!WARNING] Database Warning
+> Your database tables will be truncated after each
+> feature file runs. Double check your `DatabaseConnection` in
+> `appSettings.json` and be aware of this before you run the tests.
 
 ## Running The Tests
 
-- Run from the Visual Studio Test Explorer.
-- cd into `/src/tests` and run:
-  `dotnet test EdFi.DataManagementService.Tests.E2E`.
+Run the tests how you run any other test suite. For example:
 
-## Test Environments
-
-The tests can be executed against an isolated environment or your current
-running environment.
-
-By default, the tests run against an isolated
-[TestContainers](https://dotnet.testcontainers.org/) environment. This will
-setup the Docker containers for the API and the Backend, see
-[ContainerSetup.cs](./Management/ContainerSetup.cs) for more information.
-
-You can also run the tests against your current running environment, by setting
-UseTestContainers to false in the [appsettings](./appsettings.json)
-
-## Adding new Tests
+- Visual Studio Test Explorer
+- from `/src/tests` run: `dotnet test
+  EdFi.DataManagementService.Tests.E2E`.
 
 ### Setup
 
