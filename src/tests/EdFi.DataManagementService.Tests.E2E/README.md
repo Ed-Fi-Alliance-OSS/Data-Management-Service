@@ -24,15 +24,17 @@ To debug the API while running the tests, change `ApiUrl` in
 `OpenSearchContainerSetup.cs` to `http://localhost:5198/` and run
 `EdFi.DataManagementService.Frontend.AspNetCore` in debug mode as usual.
 
-> [!WARNING] Database Warning 
+> [!WARNING] Database Warning
 > Your database tables will be truncated after each
 > feature file runs. Double check your `DatabaseConnection` in
 > `appSettings.json` and be aware of this before you run the tests.
 
 ## Running The Tests
 
-- Run from the Visual Studio Test Explorer.
-- cd into `/src/tests` and run: `dotnet test
+Run the tests how you run any other test suite. For example:
+
+- Visual Studio Test Explorer
+- from `/src/tests` run: `dotnet test
   EdFi.DataManagementService.Tests.E2E`.
 
 ### Setup
