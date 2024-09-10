@@ -57,6 +57,9 @@ also append `-v`. Examples:
 # Start everything
 ./start-local-dms.ps1
 
+# Start everything for E2E testing
+./start-local-dms.ps1 -EnvironmentFile ./.env.e2e
+
 # Stop the services, keeping volumes
 ./start-local-dms.ps1 -d
 

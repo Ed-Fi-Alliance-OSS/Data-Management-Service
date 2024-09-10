@@ -4,33 +4,24 @@ This is a suite of end to end tests that will cover different scenarios. They
 are run against a local DMS container that must be rebuilt to stay in sync with
 the codebase.
 
-## Building the DMS container
+## Testing On Containers Locally
 
-From the `src` directory, and run:
-`docker build -t local/data-management-service . -f Dockerfile`
-This will copy the current DMS solution into the container, build it and start
-it.
+### Compose the docker environment
+
+From the `eng` directory:
+
+- If you have stale volumes with old data run `./start-local-dms.ps1 -d -v` to stop services and delete volumes
+- Run `./start-local-dms.ps1 -EnvironmentFile ./.env.e2e`
+
+## Debugging API Locally
+
+To debug the API while running the tests, change `ApiUrl` in `OpenSearchContainerSetup.cs` to `http://localhost:5198/`. 
 
 ## Running The Tests
 
 - Run from the Visual Studio Test Explorer.
 - cd into `/src/tests` and run:
   `dotnet test EdFi.DataManagementService.Tests.E2E`.
-
-## Test Environments
-
-The tests can be executed against an isolated environment or your current
-running environment.
-
-By default, the tests run against an isolated
-[TestContainers](https://dotnet.testcontainers.org/) environment. This will
-setup the Docker containers for the API and the Backend, see
-[ContainerSetup.cs](./Management/ContainerSetup.cs) for more information.
-
-You can also run the tests against your current running environment, by setting
-UseTestContainers to false in the [appsettings](./appsettings.json)
-
-## Adding new Tests
 
 ### Setup
 
