@@ -73,6 +73,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 DocumentUuid: upsertRequest.DocumentUuid.Value,
                 ResourceName: upsertRequest.ResourceInfo.ResourceName.Value,
                 ResourceVersion: upsertRequest.ResourceInfo.ResourceVersion.Value,
+                IsDescriptor: upsertRequest.ResourceInfo.IsDescriptor,
                 ProjectName: upsertRequest.ResourceInfo.ProjectName.Value,
                 EdfiDoc: JsonSerializer.Deserialize<JsonElement>(upsertRequest.EdfiDoc)
             ),

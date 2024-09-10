@@ -28,6 +28,10 @@ public record Document(
     /// </summary>
     string ResourceVersion,
     /// <summary>
+    /// Whether this resource is a descriptor
+    /// </summary>
+    bool IsDescriptor,
+    /// <summary>
     /// The ProjectName for this document
     /// </summary>
     string ProjectName,

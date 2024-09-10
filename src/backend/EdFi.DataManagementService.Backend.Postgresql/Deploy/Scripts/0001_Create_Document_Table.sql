@@ -9,6 +9,7 @@ CREATE TABLE dms.Document (
   DocumentUuid UUID NOT NULL,
   ResourceName VARCHAR(256) NOT NULL,
   ResourceVersion VARCHAR(64) NOT NULL,
+  IsDescriptor BOOLEAN NOT NULL,
   ProjectName VARCHAR(256) NOT NULL,
   EdfiDoc JSONB NOT NULL,
   CreatedAt TIMESTAMP NOT NULL DEFAULT NOW(),
