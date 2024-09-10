@@ -426,3 +426,7 @@ sdk/
 
 
 .env
+
+# Keycloak
+*.mv.db
+*.trace.db
