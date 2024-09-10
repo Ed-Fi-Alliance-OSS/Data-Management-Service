@@ -4,24 +4,36 @@ This is a suite of end to end tests that will cover different scenarios. They
 are run against a local DMS container that must be rebuilt to stay in sync with
 the codebase.
 
-## Testing On Containers Locally
+## Testing Process
 
-### Compose the docker environment
+You may either run the E2E tests locally from docker containers as is done in
+the github actions, or you may run them against your locally debugged API
+instance. See the steps below. 
+
+### Testing locally with docker compose
 
 From the `eng` directory:
 
-- If you have stale volumes with old data run `./start-local-dms.ps1 -d -v` to stop services and delete volumes
+- If you have stale volumes with old data run `./start-local-dms.ps1 -d -v` to
+  stop services and delete volumes
 - Run `./start-local-dms.ps1 -EnvironmentFile ./.env.e2e`
 
-## Debugging API Locally
+### Testing locally with API in debug mode
 
-To debug the API while running the tests, change `ApiUrl` in `OpenSearchContainerSetup.cs` to `http://localhost:5198/`. 
+To debug the API while running the tests, change `ApiUrl` in
+`OpenSearchContainerSetup.cs` to `http://localhost:5198/` and run
+`EdFi.DataManagementService.Frontend.AspNetCore` in debug mode as usual.
+
+> [!WARNING] Database Warning 
+> Your database tables will be truncated after each
+> feature file runs. Double check your `DatabaseConnection` in
+> `appSettings.json` and be aware of this before you run the tests.
 
 ## Running The Tests
 
 - Run from the Visual Studio Test Explorer.
-- cd into `/src/tests` and run:
-  `dotnet test EdFi.DataManagementService.Tests.E2E`.
+- cd into `/src/tests` and run: `dotnet test
+  EdFi.DataManagementService.Tests.E2E`.
 
 ### Setup
 
