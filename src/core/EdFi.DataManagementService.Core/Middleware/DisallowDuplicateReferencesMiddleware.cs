@@ -13,7 +13,7 @@ using static EdFi.DataManagementService.Core.Response.FailureResponse;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
-internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipelineStep
+internal partial class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
@@ -62,7 +62,8 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
                     context.DocumentInfo.DescriptorReferences,
                     item => item.ReferentialId.Value,
                     item => item.Path.Value,
-                    validationErrors
+                    validationErrors,
+                    true
                 );
         }
 
@@ -90,7 +91,8 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         IEnumerable<T> items,
         Func<T, Guid> getReferentialId,
         Func<T, string> getPath,
-        Dictionary<string, string[]> validationErrors
+        Dictionary<string, string[]> validationErrors,
+        bool IsDescriptor = false
     )
     {
         var seenItems = new HashSet<Guid>();
@@ -100,6 +102,11 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         {
             Guid referentialId = getReferentialId(item);
             string path = getPath(item);
+
+            if (IsDescriptor)
+            {
+                path = NumericIndexRegex().Replace(path, "[*]");
+            }
 
             // the propertyName varies according to the origin (DescriptorReference or DocumentReferences)
             string propertyName = path.StartsWith("$", StringComparison.InvariantCultureIgnoreCase)
@@ -117,11 +124,11 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
                 string errorMessage =
                     $"The {GetOrdinal(positions[propertyName])} item of the {path} has the same identifying values as another item earlier in the list.";
 
-                if (validationErrors.ContainsKey(propertyName))
+                if (validationErrors.TryGetValue(propertyName, out string[]? value))
                 {
-                    var existingMessages = validationErrors[propertyName].ToList();
+                    var existingMessages = value.ToList();
                     existingMessages.Add(errorMessage);
-                    validationErrors[propertyName] = existingMessages.ToArray();
+                    validationErrors[propertyName] = [.. existingMessages];
                 }
                 else
                 {
@@ -152,12 +159,11 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         return parts.Length > 1 ? parts[1].Trim('[', ']', '*') : string.Empty;
     }
 
-    public static Dictionary<string, Dictionary<int, List<DescriptorReference>>> GroupByArrayNameAndIndex(
+    private static Dictionary<string, Dictionary<int, List<DescriptorReference>>> GroupByArrayNameAndIndex(
         IList<DescriptorReference> jsonNodes
     )
     {
-        var regex = new Regex(@"\$\.(\w+)\[(\d+)\]");
-
+        var regex = ArrayNameRegex();
         var groupedByKey = jsonNodes
             .Select(node => new { Node = node, Match = regex.Match(node.Path.Value) })
             .Where(x => x.Match.Success)
@@ -172,4 +178,10 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
 
         return groupedByKey;
     }
+
+    [GeneratedRegex(@"\[\d+\]")]
+    private static partial Regex NumericIndexRegex();
+
+    [GeneratedRegex(@"\$\.(\w+)\[(\d+)\]")]
+    private static partial Regex ArrayNameRegex();
 }
