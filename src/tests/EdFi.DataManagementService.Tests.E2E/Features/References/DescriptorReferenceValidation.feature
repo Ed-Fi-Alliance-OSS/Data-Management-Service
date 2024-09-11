@@ -34,7 +34,7 @@ Feature: Validate the reference of descriptors when creating resources
                   """
                   {
                     "validationErrors": {
-                    "$.categories[*].educationOrganizationCategoryDescriptor": [
+                    "$.categories[0].educationOrganizationCategoryDescriptor": [
                         "EducationOrganizationCategoryDescriptor value 'uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Fake' does not exist."
                     ],
                     "$.localEducationAgencyCategoryDescriptor": [
@@ -112,7 +112,7 @@ Feature: Validate the reference of descriptors when creating resources
                   """
                   {
                     "validationErrors": {
-                    "$.categories[*].educationOrganizationCategoryDescriptor": [
+                    "$.categories[0].educationOrganizationCategoryDescriptor": [
                         "EducationOrganizationCategoryDescriptor value 'uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Fake' does not exist."
                     ],
                     "$.localEducationAgencyCategoryDescriptor": [
@@ -204,7 +204,7 @@ Feature: Validate the reference of descriptors when creating resources
                   """
                   {
                       "validationErrors": {
-                          "$.programParticipationStatuses[*].participationStatusDescriptor": [
+                          "$.programParticipationStatuses[0].participationStatusDescriptor": [
                               "ParticipationStatusDescriptor value 'uri://ed-fi.org/participationStatusDescriptor#Fake' does not exist."
                           ]
                       },
