@@ -3,6 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text;
+using System.Text.RegularExpressions;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
@@ -36,13 +39,31 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         // Find duplicates in descriptor references
         if (context.DocumentInfo.DescriptorReferences.GroupBy(d => d.ReferentialId).Any(g => g.Count() > 1))
         {
-            // if duplicates are found, they should be reported
-            ValidateDuplicates(
-                context.DocumentInfo.DescriptorReferences,
-                item => item.ReferentialId.Value,
-                item => item.Path.Value,
-                validationErrors
+            var groupedReferences = GroupByArrayNameAndIndex(
+                context.DocumentInfo.DescriptorReferences.Select(x => x).ToList()
             );
+
+            var combinedIds = new List<string>();
+            foreach (var descriptorReferences in groupedReferences.Where(x => x.Value.Count > 1))
+            {
+                foreach (var references in descriptorReferences.Value)
+                {
+                    var combinedId = new StringBuilder();
+                    foreach (var reference in references.Value)
+                    {
+                        combinedId.Append(reference.ReferentialId.Value);
+                    }
+                    combinedIds.Add(combinedId.ToString());
+                }
+            }
+            if (combinedIds.GroupBy(d => d).Any(g => g.Count() > 1))
+                // if duplicates are found, they should be reported
+                ValidateDuplicates(
+                    context.DocumentInfo.DescriptorReferences,
+                    item => item.ReferentialId.Value,
+                    item => item.Path.Value,
+                    validationErrors
+                );
         }
 
         if (validationErrors.Any())
@@ -129,5 +150,26 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         // Logic to extract the array name from the JSON path, e.g., "gradeLevels".
         string[] parts = path.Split('.');
         return parts.Length > 1 ? parts[1].Trim('[', ']', '*') : string.Empty;
+    }
+
+    public static Dictionary<string, Dictionary<int, List<DescriptorReference>>> GroupByArrayNameAndIndex(
+        IList<DescriptorReference> jsonNodes
+    )
+    {
+        var regex = new Regex(@"\$\.(\w+)\[(\d+)\]");
+
+        var groupedByKey = jsonNodes
+            .Select(node => new { Node = node, Match = regex.Match(node.Path.Value) })
+            .Where(x => x.Match.Success)
+            .GroupBy(
+                x => x.Match.Groups[1].Value,
+                x => new { Index = int.Parse(x.Match.Groups[2].Value), x.Node }
+            )
+            .ToDictionary(
+                g => g.Key,
+                g => g.GroupBy(x => x.Index).ToDictionary(ig => ig.Key, ig => ig.Select(x => x.Node).ToList())
+            );
+
+        return groupedByKey;
     }
 }
