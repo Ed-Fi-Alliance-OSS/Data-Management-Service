@@ -37,6 +37,12 @@ Run the tests how you run any other test suite. For example:
 - from `/src/tests` run: `dotnet test
   EdFi.DataManagementService.Tests.E2E`.
 
+> [!TIP]
+> In case you need to run specific tests you can tag your
+> scenarios using the character @ `@smokeTest`,
+> in order to run the desired tests you can use the command  
+> `dotnet test --filter "Category=@smokeTest" EdFi.DataManagementService.Tests.E2E`
+
 ### Setup
 
 This project uses an Open Source fork of SpecFlow called
