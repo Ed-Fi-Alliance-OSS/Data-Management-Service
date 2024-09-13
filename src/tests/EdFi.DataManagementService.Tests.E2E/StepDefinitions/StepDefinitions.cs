@@ -398,10 +398,18 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Then("the response body is")]
         public async Task ThenTheResponseBodyIs(string expectedBody)
         {
+            await ResponseBodyIs(expectedBody);
+        }
+
+        private async Task ResponseBodyIs(string expectedBody, bool IsDiscoveryEndpoint = false)
+        {
             // Parse the API response to JsonNode
             string responseJsonString = await _apiResponse.TextAsync();
             JsonDocument responseJsonDoc = JsonDocument.Parse(responseJsonString);
             JsonNode responseJson = JsonNode.Parse(responseJsonDoc.RootElement.ToString())!;
+
+            if (!IsDiscoveryEndpoint && (_apiResponse.Status == 200 || _apiResponse.Status == 201))
+                CheckAndRemoveModifiedDate(responseJson);
 
             expectedBody = ReplacePlaceholders(expectedBody, responseJson);
             JsonNode expectedBodyJson = JsonNode.Parse(expectedBody)!;
@@ -414,6 +422,34 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             AreEqual(expectedBodyJson, responseJson).Should().BeTrue();
         }
 
+        [Then("the general response body is")]
+        public async Task ThenTheGeneralResponseBodyIs(string expectedBody)
+        {
+            await ResponseBodyIs(expectedBody, true);
+        }
+
+        private void CheckAndRemoveModifiedDate(JsonNode responseJson)
+        {
+            if (responseJson is JsonArray jsonArray && jsonArray.Count > 0)
+            {
+                foreach (JsonObject? item in jsonArray.Cast<JsonObject?>())
+                {
+                    if (item != null)
+                    {
+                        var lastModifiedDate = LastModifiedDate(item);
+                        lastModifiedDate.Should().NotBeNull();
+                        item.Remove("_lastModifiedDate");
+                    }
+                }
+            }
+            else if (responseJson is JsonObject jsonObject && jsonObject.Count > 0)
+            {
+                var lastModifiedDate = LastModifiedDate(responseJson);
+                lastModifiedDate.Should().NotBeNull();
+                (responseJson as JsonObject)?.Remove("_lastModifiedDate");
+            }
+        }
+
         private string? CorrelationIdValue(JsonNode response)
         {
             if (response is JsonObject jsonObject)
@@ -424,6 +460,21 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 )
                 {
                     return correlationId.GetValue<string?>();
+                }
+            }
+            return null;
+        }
+
+        private string? LastModifiedDate(JsonNode response)
+        {
+            if (response is JsonObject jsonObject)
+            {
+                if (
+                    jsonObject.TryGetPropertyValue("_lastModifiedDate", out JsonNode? lastModifiedDate)
+                    && lastModifiedDate != null
+                )
+                {
+                    return lastModifiedDate.GetValue<string?>();
                 }
             }
             return null;
@@ -520,6 +571,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             string responseJsonString = await _apiResponse.TextAsync();
             JsonDocument responseJsonDoc = JsonDocument.Parse(responseJsonString);
             JsonNode responseJson = JsonNode.Parse(responseJsonDoc.RootElement.ToString())!;
+
+            CheckAndRemoveModifiedDate(responseJson);
 
             _logger.log.Information(responseJson.ToString());
 
