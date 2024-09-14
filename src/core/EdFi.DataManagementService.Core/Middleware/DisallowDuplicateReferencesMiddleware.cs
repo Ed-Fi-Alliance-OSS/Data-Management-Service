@@ -13,8 +13,14 @@ using static EdFi.DataManagementService.Core.Response.FailureResponse;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
-internal partial class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipelineStep
+internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipelineStep
 {
+    private static readonly Regex _numericIndexRegex =
+        new(pattern: @"\[\d+\]", options: RegexOptions.Compiled);
+
+    private static readonly Regex _arrayNameRegex =
+        new(pattern: @"\$\.(\w+)\[(\d+)\]", options: RegexOptions.Compiled);
+
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         logger.LogDebug(
@@ -103,9 +109,11 @@ internal partial class DisallowDuplicateReferencesMiddleware(ILogger logger) : I
             Guid referentialId = getReferentialId(item);
             string path = getPath(item);
 
+            // The descriptor reference path includes index values, which group error messages by index.
+            // To prevent this, convert the index to *
             if (IsDescriptor)
             {
-                path = NumericIndexRegex().Replace(path, "[*]");
+                path = _numericIndexRegex.Replace(path, "[*]");
             }
 
             // the propertyName varies according to the origin (DescriptorReference or DocumentReferences)
@@ -148,7 +156,7 @@ internal partial class DisallowDuplicateReferencesMiddleware(ILogger logger) : I
         {
             2 => $"{number}nd",
             3 => $"{number}rd",
-            _ => $"{number}th"
+            _ => $"{number}th",
         };
     }
 
@@ -163,25 +171,44 @@ internal partial class DisallowDuplicateReferencesMiddleware(ILogger logger) : I
         IList<DescriptorReference> jsonNodes
     )
     {
-        var regex = ArrayNameRegex();
-        var groupedByKey = jsonNodes
-            .Select(node => new { Node = node, Match = regex.Match(node.Path.Value) })
-            .Where(x => x.Match.Success)
-            .GroupBy(
-                x => x.Match.Groups[1].Value,
-                x => new { Index = int.Parse(x.Match.Groups[2].Value), x.Node }
-            )
-            .ToDictionary(
-                g => g.Key,
-                g => g.GroupBy(x => x.Index).ToDictionary(ig => ig.Key, ig => ig.Select(x => x.Node).ToList())
-            );
+        // Select reference node and match ( e.g., match = $.performanceLevels[1])
+        var descriptorReferenceMatchs = jsonNodes
+            .Select(reference => new
+            {
+                Node = reference,
+                Match = _arrayNameRegex.Match(reference.Path.Value),
+            })
+            .Where(x => x.Match.Success);
 
-        return groupedByKey;
+        // Group by reference array name (e.g., Key = "performanceLevels", Value = {Index = 0, Node = DescriptorReference})
+        // Selects DescriptorReference with index value
+        var groupedByReferenceArrayName = descriptorReferenceMatchs.GroupBy(
+            reference => reference.Match.Groups[1].Value,
+            reference => new { Index = int.Parse(reference.Match.Groups[2].Value), reference.Node }
+        );
+
+        // Inner group by index
+        // e.g., Key : performanceLevels
+        //           Key: 0
+        //           Value:[
+        //                  PerformanceLevelDescriptor reference
+        //                  AssessmentReportingMethodDescriptor reference
+        //                 ]
+        //           Key: 1
+        //           Value:[
+        //                  PerformanceLevelDescriptor reference
+        //                  AssessmentReportingMethodDescriptor reference
+        //                 ]
+        var groupedByIndex = groupedByReferenceArrayName.ToDictionary(
+            g => g.Key,
+            g =>
+                g.GroupBy(x => x.Index)
+                    .ToDictionary(
+                        indexGroup => indexGroup.Key,
+                        indexGroup => indexGroup.Select(x => x.Node).ToList()
+                    )
+        );
+
+        return groupedByIndex;
     }
-
-    [GeneratedRegex(@"\[\d+\]")]
-    private static partial Regex NumericIndexRegex();
-
-    [GeneratedRegex(@"\$\.(\w+)\[(\d+)\]")]
-    private static partial Regex ArrayNameRegex();
 }

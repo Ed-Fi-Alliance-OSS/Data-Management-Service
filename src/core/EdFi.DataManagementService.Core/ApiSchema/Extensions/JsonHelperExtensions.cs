@@ -11,8 +11,15 @@ using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.ApiSchema.Extensions;
 
-internal static partial class JsonHelperExtensions
+internal static class JsonHelperExtensions
 {
+    // Capture the content inside the brackets
+    private static readonly Regex _contentRegex =
+        new(pattern: @"\['([^']*)'\]", options: RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    // Matches any dot followed by digits
+    private static readonly Regex _indexRegex = new(pattern: @"\.(\d+)", options: RegexOptions.Compiled);
+
     /// <summary>
     /// Helper to go from a scalar JSONPath selection directly to the selected JsonNode,
     /// or null if the node does not exist
@@ -132,13 +139,13 @@ internal static partial class JsonHelperExtensions
     /// Helper to go from an array JSONPath selection directly to a collection of string value and path regardless of the JSON type
     /// Returns empty dictionary if the values do not exist.
     /// </summary>
-    public static IDictionary<string, string> SelectNodesAndLocationFromArrayPathCoerceToStrings(
+    public static IEnumerable<JsonPathAndValue> SelectNodesAndLocationFromArrayPathCoerceToStrings(
         this JsonNode jsonNode,
         string jsonPathString,
         ILogger logger
     )
     {
-        var nodeValueWithPath = new Dictionary<string, string>();
+        var nodeValueWithPath = new List<JsonPathAndValue>();
         var result = SelectPathResult(jsonNode, jsonPathString, logger);
         IEnumerable<Node?> jsonNodes = result.Matches.Select(x => x);
         foreach (Node? node in jsonNodes)
@@ -149,15 +156,15 @@ internal static partial class JsonHelperExtensions
                 var value =
                     node.Value?.AsValue()
                     ?? throw new InvalidOperationException("Unexpected JSONPath value error");
-                nodeValueWithPath.Add(path, value.ToString());
+                nodeValueWithPath.Add(new JsonPathAndValue(path, value.ToString()));
             }
         }
 
         // Converts $['eduCategories'][0]['eduCategoryDescriptor'] to $.eduCategories[0].eduCategoryDescriptor
         static string ConvertPath(string path)
         {
-            string result = ContentRegex().Replace(path.ToString(), @".$1");
-            result = IndexRegex().Replace(result, @"[$1]");
+            string result = _contentRegex.Replace(path.ToString(), @".$1");
+            result = _indexRegex.Replace(result, @"[$1]");
             if (!result.StartsWith('$'))
             {
                 result = "$" + result;
@@ -294,12 +301,9 @@ internal static partial class JsonHelperExtensions
 
         return nodeKeys.Where(x => x.Value != null).Select(x => x.Value ?? new JsonObject()).ToList();
     }
-
-    // Capture the content inside the brackets
-    [GeneratedRegex(@"\['([^']*)'\]")]
-    private static partial Regex ContentRegex();
-
-    // Matches any dot followed by digits
-    [GeneratedRegex(@"\.(\d+)")]
-    private static partial Regex IndexRegex();
 }
+
+/// <summary>
+/// Contains Json path and Json node value
+/// </summary>
+public record JsonPathAndValue(string jsonPath, string value);
