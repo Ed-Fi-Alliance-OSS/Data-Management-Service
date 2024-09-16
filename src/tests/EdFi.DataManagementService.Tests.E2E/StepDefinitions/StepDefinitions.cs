@@ -56,6 +56,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 _location = _apiResponse.Headers["location"];
                 _id = _apiResponse.Headers["location"].Split('/').Last();
             }
+
+            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [Given("there are no schools")]
@@ -140,14 +142,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 _logger.log.Information(body);
             }
 
-            var waitTags = _scenarioContext.ScenarioInfo.Tags;
-            if (waitTags != null && waitTags.Contains("addwait"))
-            {
-                if (_openSearchEnabled)
-                {
-                    await Task.Delay(6000);
-                }
-            }
+            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [Given("the system has these descriptors")]
@@ -172,14 +167,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
                 apiResponse.Status.Should().BeOneOf([201, 200]);
             }
-            var waitTags = _scenarioContext.ScenarioInfo.Tags;
-            if (waitTags != null && waitTags.Contains("addwait"))
-            {
-                if (_openSearchEnabled)
-                {
-                    await Task.Delay(6000);
-                }
-            }
+
+            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [Given("the system has these {string} references")]
@@ -309,6 +298,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         {
             url = addDataPrefixIfNecessary(url).Replace("{id}", _id);
             _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(url)!;
+
+            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [When("a DELETE request is made to referenced resource {string}")]
@@ -596,6 +587,17 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             input = input.StartsWith("ed-fi") ? $"data/{input}" : input;
 
             return input;
+        }
+
+        private void WaitForOpenSearch(string[]? waitTags)
+        {
+            if (waitTags != null && waitTags.Contains("addwait"))
+            {
+                if (_openSearchEnabled)
+                {
+                    Thread.Sleep(6000);
+                }
+            }
         }
     }
 }
