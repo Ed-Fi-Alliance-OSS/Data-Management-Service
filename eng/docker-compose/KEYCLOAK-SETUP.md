@@ -38,7 +38,7 @@ The purpose of this document is to provide the basic steps for configuring Keycl
 ## 8.	The home screen will change this way
 ![alt text](./images/image-6.png)
 
-<<<<<<< HEAD
+
 ### 9.	We will proceed to the configuration of the client by clicking Clients, which is located in the left panel (Note: make sure you are in edfi and not in Master).
 ![alt text](./images/image-7.png)
 
@@ -46,25 +46,14 @@ The purpose of this document is to provide the basic steps for configuring Keycl
 ![alt text](./images/image-8.png)
 
 ### 11.	In Capability config, we will enable 
-=======
-### 9.	We will proceed to the configuration of the client by clicking Clients, which is located in the left panel (Note: make sure you are in edit and not in Master).
-![alt text](./images/image-7.png)
 
-## #10.	In General settings, we will assign a Client ID
-![alt text](./images/image-8.png)
-
-### 11.	En Capability config, we will enable 
->>>>>>> 193f7f47eca61200364064e3b8b4b4f5d91b6a96
 a.	Client authentication
 b.	Authorization
 c.	Authentication Flow, check-in Standard flow
 ![alt text](./images/image-9.png)
 
-<<<<<<< HEAD
+
 ### 12.	In Login settings, we will indicate the Root URL (http://localhost:5126)
-=======
-### 12.	In Login settings, we will indicate the Root URL
->>>>>>> 193f7f47eca61200364064e3b8b4b4f5d91b6a96
 ![alt text](./images/image-10.png)
 
 ### 13.	Click Save
