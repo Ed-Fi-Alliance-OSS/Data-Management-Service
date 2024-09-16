@@ -127,6 +127,69 @@ public class DescriptorExtractorTests
     }
 
     [TestFixture]
+    public class Given_Extracting_Descriptor_References_As_Collection_With_Index : DescriptorExtractorTests
+    {
+        internal DescriptorReference[] descriptorReferences = [];
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocument apiSchemaDocument = BuildApiSchemaDocument();
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "slimCourses");
+
+            descriptorReferences = resourceSchema.ExtractDescriptors(
+                JsonNode.Parse(
+                    """
+                    {
+                        "courseTitle": "Math",
+                        "careerPathwayDescriptor": "uri://ed-fi.org/CareerPathwayDescriptor#Other",
+                        "competencyLevels": [
+                            {
+                                "competencyLevelDescriptor": "uri://ed-fi.org/CompetencyLevelDescriptor#Basic"
+                            },
+                            {
+                                "competencyLevelDescriptor": "uri://ed-fi.org/CompetencyLevelDescriptor#Advanced"
+                            }
+                        ]
+                    }
+"""
+                )!,
+                NullLogger.Instance
+            );
+        }
+
+        [Test]
+        public void It_has_extracted_three_references()
+        {
+            descriptorReferences.Should().HaveCount(3);
+        }
+
+        [Test]
+        public void It_has_extracted_the_career_pathway()
+        {
+            var documentReference = descriptorReferences[0];
+            documentReference.ResourceInfo.ResourceName.Value.Should().Be("CareerPathwayDescriptor");
+            documentReference.Path.Value.Should().Be("$.careerPathwayDescriptor");
+        }
+
+        [Test]
+        public void It_has_extracted_the_first_competency_Level_Path_With_Index()
+        {
+            var documentReference = descriptorReferences[1];
+            documentReference.ResourceInfo.ResourceName.Value.Should().Be("CompetencyLevelDescriptor");
+            documentReference.Path.Value.Should().Be("$.competencyLevels[0].competencyLevelDescriptor");
+        }
+
+        [Test]
+        public void It_has_extracted_the_second_competency_Level_Path_With_Index()
+        {
+            var documentReference = descriptorReferences[2];
+            documentReference.ResourceInfo.ResourceName.Value.Should().Be("CompetencyLevelDescriptor");
+            documentReference.Path.Value.Should().Be("$.competencyLevels[1].competencyLevelDescriptor");
+        }
+    }
+
+    [TestFixture]
     public class Given_Extracting_Descriptor_References_With_Missing_Optional_Scalar_Descriptor_In_Body
         : DescriptorExtractorTests
     {

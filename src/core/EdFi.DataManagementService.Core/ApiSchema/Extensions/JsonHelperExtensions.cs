@@ -3,9 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using Json.Path;
 using Microsoft.Extensions.Logging;
 
@@ -13,13 +13,6 @@ namespace EdFi.DataManagementService.Core.ApiSchema.Extensions;
 
 internal static class JsonHelperExtensions
 {
-    // Capture the content inside the brackets
-    private static readonly Regex _contentRegex =
-        new(pattern: @"\['([^']*)'\]", options: RegexOptions.Compiled | RegexOptions.IgnoreCase);
-
-    // Matches any dot followed by digits
-    private static readonly Regex _indexRegex = new(pattern: @"\.(\d+)", options: RegexOptions.Compiled);
-
     /// <summary>
     /// Helper to go from a scalar JSONPath selection directly to the selected JsonNode,
     /// or null if the node does not exist
@@ -152,7 +145,7 @@ internal static class JsonHelperExtensions
         {
             if (node != null && node.Location != null)
             {
-                var path = ConvertPath(node.Location.ToString());
+                var path = ConvertPath(node.Location.Segments);
                 var value =
                     node.Value?.AsValue()
                     ?? throw new InvalidOperationException("Unexpected JSONPath value error");
@@ -161,15 +154,29 @@ internal static class JsonHelperExtensions
         }
 
         // Converts $['eduCategories'][0]['eduCategoryDescriptor'] to $.eduCategories[0].eduCategoryDescriptor
-        static string ConvertPath(string path)
+        static string ConvertPath(PathSegment[] pathSegments)
         {
-            string result = _contentRegex.Replace(path.ToString(), @".$1");
-            result = _indexRegex.Replace(result, @"[$1]");
-            if (!result.StartsWith('$'))
+            StringBuilder path = new("$");
+            foreach (PathSegment pathSegment in pathSegments)
             {
-                result = "$" + result;
+                var name = string.Join(
+                    ".",
+                    pathSegment.Selectors.Select(x => x != null ? ToJsonPathString(x) : string.Empty)
+                );
+                path.Append(name);
             }
-            return result;
+            var parsedPath = JsonPath.Parse(path.ToString());
+            return parsedPath.ToString();
+
+            static string? ToJsonPathString(ISelector input)
+            {
+                var trimmedValue = $".{input.ToString()?.Trim('\'')}";
+                if (int.TryParse(trimmedValue.TrimStart('.'), out var parsedValue))
+                {
+                    trimmedValue = $"[{parsedValue}]";
+                }
+                return trimmedValue;
+            }
         }
 
         return nodeValueWithPath;
