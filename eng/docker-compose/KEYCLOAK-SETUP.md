@@ -38,19 +38,19 @@ The purpose of this document is to provide the basic steps for configuring Keycl
 ## 8.	The home screen will change this way
 ![alt text](./images/image-6.png)
 
-### 9.	We will proceed to the configuration of the client by clicking Clients, which is located in the left panel (Note: make sure you are in edit and not in Master).
+### 9.	We will proceed to the configuration of the client by clicking Clients, which is located in the left panel (Note: make sure you are in edfi and not in Master).
 ![alt text](./images/image-7.png)
 
-## #10.	In General settings, we will assign a Client ID
+## #10.	In General settings, we will assign a Client ID (DmsConfigurationService)
 ![alt text](./images/image-8.png)
 
-### 11.	En Capability config, we will enable 
+### 11.	In Capability config, we will enable 
 a.	Client authentication
 b.	Authorization
 c.	Authentication Flow, check-in Standard flow
 ![alt text](./images/image-9.png)
 
-### 12.	In Login settings, we will indicate the Root URL
+### 12.	In Login settings, we will indicate the Root URL (http://localhost:5126)
 ![alt text](./images/image-10.png)
 
 ### 13.	Click Save
