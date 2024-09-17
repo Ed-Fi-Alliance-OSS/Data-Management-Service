@@ -52,7 +52,7 @@ if ($d) {
 }
 else {
     $upArgs = @()
-    if ($r) { $upArgs.Add("--build") }
+    if ($r) { $upArgs += "--build" }
 
     Write-Output "Starting locally-built DMS"
     docker compose $files --env-file $EnvironmentFile up -d $upArgs
