@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+services:
+  keycloak:
+    hostname: dms-keycloak
+    container_name: dms-keycloak
+    image: quay.io/keycloak/keycloak:25.0@sha256:410fce4b9b40e1f4e7f90b44acedbaa6d935bacea432a6884769067b253d46fb
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+    command:
+      - start-dev
+    ports:
+      - ${KEYCLOAK_PORT:-8045}:8080
+    volumes:
+      - dms-keycloak:/var/lib/keycloak/data
+
+volumes:
+  dms-keycloak:
