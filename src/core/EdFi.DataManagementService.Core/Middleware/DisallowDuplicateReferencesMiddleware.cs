@@ -50,12 +50,12 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
             );
 
             var combinedIds = new List<string>();
-            foreach (var descriptorReferences in groupedReferences.Where(x => x.Value.Count > 1))
+            foreach (var descriptorReferences in groupedReferences.Where(x => x.indexGroups.Count > 1))
             {
-                foreach (var references in descriptorReferences.Value)
+                foreach (var indexGroup in descriptorReferences.indexGroups)
                 {
                     var combinedId = new StringBuilder();
-                    foreach (var reference in references.Value)
+                    foreach (var reference in indexGroup.references)
                     {
                         combinedId.Append(reference.ReferentialId.Value);
                     }
@@ -109,8 +109,8 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
             Guid referentialId = getReferentialId(item);
             string path = getPath(item);
 
-            // The descriptor reference path includes index values, which group error messages by index.
-            // To prevent this, convert the index to *
+            // The descriptor reference path includes index value, which groups error messages by index.
+            // To prevent this, converting the index to *
             if (IsDescriptor)
             {
                 path = _numericIndexRegex.Replace(path, "[*]");
@@ -167,12 +167,10 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         return parts.Length > 1 ? parts[1].Trim('[', ']', '*') : string.Empty;
     }
 
-    private static Dictionary<string, Dictionary<int, List<DescriptorReference>>> GroupByArrayNameAndIndex(
-        IList<DescriptorReference> jsonNodes
-    )
+    private static List<KeyReferenceGroup> GroupByArrayNameAndIndex(IList<DescriptorReference> jsonNodes)
     {
         // Select reference node and match ( e.g., match = $.performanceLevels[1])
-        var descriptorReferenceMatchs = jsonNodes
+        var descriptorReferenceMatches = jsonNodes
             .Select(reference => new
             {
                 Node = reference,
@@ -182,7 +180,7 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
 
         // Group by reference array name (e.g., Key = "performanceLevels", Value = {Index = 0, Node = DescriptorReference})
         // Selects DescriptorReference with index value
-        var groupedByReferenceArrayName = descriptorReferenceMatchs.GroupBy(
+        var groupedByReferenceArrayName = descriptorReferenceMatches.GroupBy(
             reference => reference.Match.Groups[1].Value,
             reference => new { Index = int.Parse(reference.Match.Groups[2].Value), reference.Node }
         );
@@ -199,16 +197,23 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         //                  PerformanceLevelDescriptor reference
         //                  AssessmentReportingMethodDescriptor reference
         //                 ]
-        var groupedByIndex = groupedByReferenceArrayName.ToDictionary(
-            g => g.Key,
-            g =>
-                g.GroupBy(x => x.Index)
-                    .ToDictionary(
-                        indexGroup => indexGroup.Key,
-                        indexGroup => indexGroup.Select(x => x.Node).ToList()
-                    )
-        );
+        var groupedByIndex = groupedByReferenceArrayName
+            .Select(group => new KeyReferenceGroup(
+                group.Key,
+                group
+                    .GroupBy(reference => reference.Index)
+                    .Select(indexGroup => new IndexedReferenceGroup(
+                        indexGroup.Key,
+                        indexGroup.Select(x => x.Node).ToList()
+                    ))
+                    .ToList()
+            ))
+            .ToList();
 
         return groupedByIndex;
     }
 }
+
+internal record IndexedReferenceGroup(int index, List<DescriptorReference> references);
+
+internal record KeyReferenceGroup(string key, List<IndexedReferenceGroup> indexGroups);
