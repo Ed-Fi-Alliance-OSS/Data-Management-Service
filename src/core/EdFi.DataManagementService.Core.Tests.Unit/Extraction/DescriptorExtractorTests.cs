@@ -26,7 +26,7 @@ public class DescriptorExtractorTests
                 ["$.courseTitle", "$.careerPathwayDescriptor", "$.gradingPeriodDescriptor"]
             )
             .WithStartDocumentPathsMapping()
-            .WithDocumentPathScalar("CourseTitle", "$.courseTitle")
+            .WithDocumentPathScalar("CourseTitle", new JsonPath("$.courseTitle", "string"))
             .WithDocumentPathDescriptor("CareerPathwayDescriptor", "$.careerPathwayDescriptor")
             .WithDocumentPathDescriptor(
                 "CompetencyLevelDescriptor",

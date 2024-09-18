@@ -38,7 +38,7 @@ public class ExtractDocumentIdentityTests
                     ]
                 )
                 .WithStartDocumentPathsMapping()
-                .WithDocumentPathScalar("SectionIdentifier", "$.sectionIdentifier")
+                .WithDocumentPathScalar("SectionIdentifier", new JsonPath("$.sectionIdentifier","string"))
                 .WithDocumentPathReference(
                     "CourseOffering",
                     [
@@ -120,7 +120,7 @@ public class ExtractDocumentIdentityTests
                 .WithIdentityJsonPaths(["$.staffClassificationDescriptor"])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathDescriptor("StaffClassification", "$.staffClassificationDescriptor")
-                .WithDocumentPathScalar("EndDate", "$.endDate")
+                .WithDocumentPathScalar("EndDate",  new JsonPath("$.endDate", "date"))
                 .WithEndDocumentPathsMapping()
                 .WithEndResource()
                 .WithEndProject()
@@ -173,8 +173,8 @@ public class ExtractDocumentIdentityTests
                 .WithStartResource("GradingPeriod")
                 .WithIdentityJsonPaths(["$.schoolYearTypeReference.schoolYear"])
                 .WithStartDocumentPathsMapping()
-                .WithDocumentPathScalar("SchoolYear", "$.schoolYearTypeReference.schoolYear")
-                .WithDocumentPathScalar("EndDate", "$.endDate")
+                .WithDocumentPathScalar("SchoolYear", new JsonPath("$.schoolYearTypeReference.schoolYear", "string"))
+                .WithDocumentPathScalar("EndDate", new JsonPath("$.endDate", "date"))
                 .WithEndDocumentPathsMapping()
                 .WithEndResource()
                 .WithEndProject()

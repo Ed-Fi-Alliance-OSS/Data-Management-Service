@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.External.Model;
 using Json.Schema;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -272,7 +273,7 @@ public class ApiSchemaBuilder
     ///   "path": "$.officialAttendancePeriod"
     /// },
     /// </summary>
-    public ApiSchemaBuilder WithDocumentPathScalar(string pathFullName, string jsonPath)
+    public ApiSchemaBuilder WithDocumentPathScalar(string pathFullName, JsonPath jsonPath)
     {
         if (_currentProjectNode == null)
         {
@@ -290,7 +291,8 @@ public class ApiSchemaBuilder
         _currentDocumentPathsMappingNode[pathFullName] = new JsonObject
         {
             ["isReference"] = false,
-            ["path"] = jsonPath
+            ["path"] = jsonPath.Value,
+            ["type"] = jsonPath.Type
         };
 
         return this;

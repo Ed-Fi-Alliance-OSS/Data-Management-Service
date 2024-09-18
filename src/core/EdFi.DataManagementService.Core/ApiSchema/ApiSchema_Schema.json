@@ -182,6 +182,9 @@
                         "path": {
                             "$ref": "#/definitions/JsonPath"
                         },
+                        "type": {
+                            "type": "string"
+                        },
                         "referenceJsonPaths": {
                             "type": "array",
                             "items": {
@@ -192,6 +195,9 @@
                                     },
                                     "referenceJsonPath": {
                                         "$ref": "#/definitions/JsonPath"
+                                    },
+                                    "type": {
+                                        "type": "string"
                                     }
                                 },
                                 "additionalProperties": false

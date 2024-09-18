@@ -33,7 +33,7 @@ public class ExtractDocumentReferencesTests
                 ]
             )
             .WithStartDocumentPathsMapping()
-            .WithDocumentPathScalar("SectionIdentifier", "$.sectionIdentifier")
+            .WithDocumentPathScalar("SectionIdentifier", new JsonPath("$.sectionIdentifier","string"))
             .WithDocumentPathReference(
                 "CourseOffering",
                 [

@@ -31,7 +31,7 @@ public class DeriveSuperclassIdentityFromTests
                 .WithStartResource("School")
                 .WithIdentityJsonPaths(["$.schoolId"])
                 .WithStartDocumentPathsMapping()
-                .WithDocumentPathScalar("SchoolId", "$.schoolId")
+                .WithDocumentPathScalar("SchoolId", new JsonPath("$.schoolId", "number"))
                 .WithEndDocumentPathsMapping()
                 .WithSuperclassInformation(
                     subclassType: "domainEntity",
@@ -86,7 +86,7 @@ public class DeriveSuperclassIdentityFromTests
                 .WithStartResource("Section")
                 .WithIdentityJsonPaths(["$.schoolId"])
                 .WithStartDocumentPathsMapping()
-                .WithDocumentPathScalar("SchoolId", "$.schoolId")
+                .WithDocumentPathScalar("SchoolId", new JsonPath("$.schoolId", "number"))
                 .WithEndDocumentPathsMapping()
                 .WithEndResource()
                 .WithEndProject()

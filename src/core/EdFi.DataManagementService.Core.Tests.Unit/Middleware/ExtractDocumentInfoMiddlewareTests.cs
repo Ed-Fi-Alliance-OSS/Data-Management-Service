@@ -38,7 +38,7 @@ public class ExtractDocumentInfoMiddlewareTests
                 .WithStartResource("School")
                 .WithIdentityJsonPaths(["$.schoolId"])
                 .WithStartDocumentPathsMapping()
-                .WithDocumentPathScalar("SchoolId", "$.schoolId")
+                .WithDocumentPathScalar("SchoolId", new JsonPath("$.schoolId", "number"))
                 .WithEndDocumentPathsMapping()
                 .WithSuperclassInformation(
                     subclassType: "domainEntity",
@@ -54,17 +54,12 @@ public class ExtractDocumentInfoMiddlewareTests
             string body = """{"schoolId": "123"}""";
 
             context = new(
-                new(
-                    Body: body,
-                    QueryParameters: [],
-                    Path: "/ed-fi/schools",
-                    TraceId: new TraceId("123")
-                ),
+                new(Body: body, QueryParameters: [], Path: "/ed-fi/schools", TraceId: new TraceId("123")),
                 RequestMethod.POST
             )
             {
                 ResourceSchema = resourceSchema,
-                ParsedBody = JsonNode.Parse(body)!
+                ParsedBody = JsonNode.Parse(body)!,
             };
 
             await BuildMiddleware().Execute(context, NullNext);

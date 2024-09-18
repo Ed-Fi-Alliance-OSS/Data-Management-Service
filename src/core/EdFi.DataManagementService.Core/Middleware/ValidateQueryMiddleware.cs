@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using Microsoft.Extensions.Logging;
+using static EdFi.DataManagementService.Core.Response.FailureResponse;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
@@ -146,6 +147,8 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
 
         List<QueryElement> queryElements = [];
 
+        var validationErrors = new Dictionary<string, string[]>();
+
         foreach (KeyValuePair<string, string> clientQueryTerm in nonPaginationQueryTerms)
         {
             QueryElement? queryElement = queryElementFrom(clientQueryTerm, possibleQueryFields);
@@ -163,11 +166,115 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
                 return;
             }
 
+            string type = queryElement.DocumentPaths[0].Type;
+            string path = queryElement.DocumentPaths[0].Value;
+            string fieldName = queryElement.QueryFieldName;
+            object value = queryElement.Value;
+
+            switch (type)
+            {
+                case "boolean":
+                    if (!(value is bool))
+                    {
+                        AddValidationError(validationErrors, path, value, fieldName);
+                    }
+                    break;
+                case "date":
+                    if (
+                        !DateTime.TryParseExact(
+                            value?.ToString(),
+                            "yyyy-MM-dd",
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            System.Globalization.DateTimeStyles.None,
+                            out _
+                        )
+                    )
+                    {
+                        AddValidationError(validationErrors, path, value!, fieldName);
+                    }
+                    break;
+                case "date-time":
+                    if (
+                        !DateTime.TryParse(
+                            value?.ToString(),
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            out _
+                        )
+                    )
+                    {
+                        AddValidationError(validationErrors, path, value!, fieldName);
+                    }
+                    break;
+
+                case "number":
+                    if (!decimal.TryParse(value?.ToString(), out _))
+                    {
+                        AddValidationError(validationErrors, path, value!, fieldName);
+                    }
+                    break;
+
+                case "string":
+                    if (!(value is string))
+                    {
+                        AddValidationError(validationErrors, path, value!, fieldName);
+                    }
+                    break;
+
+                case "time":
+                    if (
+                        !DateTime.TryParseExact(
+                            value?.ToString(),
+                            "HH:mm:ss",
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            System.Globalization.DateTimeStyles.None,
+                            out _
+                        )
+                    )
+                    {
+                        AddValidationError(validationErrors, path, value!, fieldName);
+                    }
+                    break;
+            }
+
             queryElements.Add(queryElement);
         }
 
-        context.QueryElements = queryElements.ToArray();
+        if (validationErrors.Any())
+        {
+            _logger.LogDebug("Query parameter format error - {TraceId}", context.FrontendRequest.TraceId);
 
-        await next();
+            context.FrontendResponse = new FrontendResponse(
+                StatusCode: 400,
+                Body: ForDataValidation(
+                    "Data validation failed. See 'validationErrors' for details.",
+                    traceId: context.FrontendRequest.TraceId,
+                    validationErrors,
+                    []
+                ),
+                Headers: []
+            );
+            return;
+        }
+        else
+        {
+            context.QueryElements = queryElements.ToArray();
+
+            await next();
+        }
+    }
+
+    private static void AddValidationError(Dictionary<string, string[]> errors, string path, object value, string fieldName)
+    {
+        if (!errors.ContainsKey(path))
+        {
+            errors[path] = Array.Empty<string>();
+        }
+
+        string errorMessage = $"The value '{value}' is not valid for {fieldName}.";
+        string[] updatedErrors = new string[errors[path].Length + 1];
+        errors[path].CopyTo(updatedErrors, 0);
+        updatedErrors[^1] = errorMessage;
+
+        errors[path] = updatedErrors;
     }
 }

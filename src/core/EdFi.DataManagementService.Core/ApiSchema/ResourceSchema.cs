@@ -134,12 +134,12 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
             {
                 JsonPath sourceJsonPath =
                     new(
-                        x!["sourceJsonPath"]!["value"]!.GetValue<string>(),
+                        x!["sourceJsonPath"]!["path"]!.GetValue<string>(),
                         x!["sourceJsonPath"]!["type"]!.GetValue<string>()
                     );
                 JsonPath targetJsonPath =
                     new(
-                        x!["targetJsonPath"]!["value"]!.GetValue<string>(),
+                        x!["targetJsonPath"]!["path"]!.GetValue<string>(),
                         x!["targetJsonPath"]!["type"]!.GetValue<string>()
                     );
 
@@ -157,7 +157,7 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
         {
             return _resourceSchemaNode["identityJsonPaths"]
                     ?.AsArray()
-                    .Select(x => new JsonPath(x!["value"]!.GetValue<string>(), x["type"]!.GetValue<string>()))
+                    .Select(x => new JsonPath(x!["path"]!.GetValue<string>(), x["type"]!.GetValue<string>()))
                 ?? throw new InvalidOperationException(
                     "Expected identityJsonPaths to be on ResourceSchema, invalid ApiSchema"
                 );
@@ -173,7 +173,7 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
         {
             return _resourceSchemaNode["booleanJsonPaths"]
                     ?.AsArray()
-                    .Select(x => new JsonPath(x!["value"]!.GetValue<string>(), x["type"]!.GetValue<string>()))
+                    .Select(x => new JsonPath(x!["path"]!.GetValue<string>(), x["type"]!.GetValue<string>()))
                 ?? throw new InvalidOperationException(
                     "Expected booleanJsonPaths to be on ResourceSchema, invalid ApiSchema"
                 );
@@ -189,7 +189,7 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
         {
             return _resourceSchemaNode["numericJsonPaths"]
                     ?.AsArray()
-                    .Select(x => new JsonPath(x!["value"]!.GetValue<string>(), x["type"]!.GetValue<string>()))
+                    .Select(x => new JsonPath(x!["path"]!.GetValue<string>(), x["type"]!.GetValue<string>()))
                 ?? throw new InvalidOperationException(
                     "Expected numericJsonPaths to be on ResourceSchema, invalid ApiSchema"
                 );
@@ -268,7 +268,7 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
                     queryField
                         .Value?.AsArray()
                         .Select(x => new JsonPath(
-                            x!["value"]!.GetValue<string>(),
+                            x!["path"]!.GetValue<string>(),
                             x["type"]!.GetValue<string>()
                         ))
                         .ToArray()
