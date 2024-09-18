@@ -16,5 +16,5 @@ namespace EdFi.DataManagementService.Core.External.Model;
 public record DocumentIdentity(DocumentIdentityElement[] DocumentIdentityElements)
 {
     // Use this synthetic, hardcoded identity JsonPath for all descriptors
-    public static readonly JsonPath DescriptorIdentityJsonPath = new("$.descriptor");
+    public static readonly JsonPath DescriptorIdentityJsonPath = new("$.descriptor", "string");
 }

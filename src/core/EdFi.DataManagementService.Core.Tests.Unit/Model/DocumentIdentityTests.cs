@@ -24,10 +24,10 @@ public class DocumentIdentityTests
         [SetUp]
         public void Setup()
         {
-            DocumentIdentityElement documentIdentityElement = new DocumentIdentityElement(new JsonPath("$.schoolId"), "123");
+            DocumentIdentityElement documentIdentityElement = new DocumentIdentityElement(new JsonPath("$.schoolId", "number"), "123");
             DocumentIdentity documentIdentity =
                 new([documentIdentityElement]);
-            superclassIdentity = IdentityRename(new("$.educationOrganizationId"), documentIdentityElement);
+            superclassIdentity = IdentityRename(new("$.educationOrganizationId", "number"), documentIdentityElement);
         }
 
         [Test]
@@ -48,7 +48,7 @@ public class DocumentIdentityTests
         [SetUp]
         public void Setup()
         {
-            DocumentIdentity documentIdentity = new([new DocumentIdentityElement(new JsonPath("$.schoolId"), "123")]);
+            DocumentIdentity documentIdentity = new([new DocumentIdentityElement(new JsonPath("$.schoolId", "number"), "123")]);
             BaseResourceInfo resourceInfo = new(new ProjectName("Ed-Fi"), new ResourceName("School"), false);
             referentialId = ReferentialIdFrom(resourceInfo, documentIdentity);
         }
@@ -71,11 +71,11 @@ public class DocumentIdentityTests
             DocumentIdentity documentIdentity =
                 new(
                     [
-                        new DocumentIdentityElement(new JsonPath("$.localCourseCode"), "abc"),
-                        new DocumentIdentityElement(new JsonPath("$.schoolReference.schoolId"), "123"),
-                        new DocumentIdentityElement(new JsonPath("$.sessionReference.schoolYear"), "2030"),
-                        new DocumentIdentityElement(new JsonPath("$.sectionIdentifier"), "sectionId"),
-                        new DocumentIdentityElement(new JsonPath("$.sessionReference.sessionName"), "d")
+                        new DocumentIdentityElement(new JsonPath("$.localCourseCode", "string"), "abc"),
+                        new DocumentIdentityElement(new JsonPath("$.schoolReference.schoolId", "number"), "123"),
+                        new DocumentIdentityElement(new JsonPath("$.sessionReference.schoolYear", "string"), "2030"),
+                        new DocumentIdentityElement(new JsonPath("$.sectionIdentifier", "string"), "sectionId"),
+                        new DocumentIdentityElement(new JsonPath("$.sessionReference.sessionName", "string"), "d")
                     ]
                 );
             BaseResourceInfo resourceInfo = new(new ProjectName("Ed-Fi"), new ResourceName("Section"), false);

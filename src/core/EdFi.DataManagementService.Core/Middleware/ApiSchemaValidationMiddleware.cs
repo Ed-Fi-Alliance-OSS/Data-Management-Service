@@ -24,9 +24,13 @@ internal class ApiSchemaValidationMiddleware(
             if (validationErrors.Any())
             {
                 _logger.LogCritical("Api schema validation failed.");
+                _logger.LogCritical(validationErrors.Count.ToString());
                 foreach (var error in validationErrors)
                 {
-                    _logger.LogCritical(error.FailurePath.Value, error.FailureMessages);
+                    _logger.LogCritical("Value: {Value}, Type: {Type}, Errors: {Errors} ",
+                        error.FailurePath.Value,
+                        error.FailurePath.Type,
+                        error.FailureMessages);
                 }
             }
             return validationErrors;

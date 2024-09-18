@@ -89,7 +89,7 @@ public abstract class DatabaseTest : DatabaseTestBase
     )
     {
         return new(
-            DocumentIdentity: new([new(IdentityValue: "", IdentityJsonPath: new("$"))]),
+            DocumentIdentity: new([new(IdentityValue: "", IdentityJsonPath: new("$", ""))]),
             ReferentialId: new ReferentialId(referentialId),
             DocumentReferences: documentReferences ?? [],
             DescriptorReferences: descriptorReferences ?? [],

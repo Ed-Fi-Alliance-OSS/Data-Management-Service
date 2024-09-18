@@ -58,7 +58,7 @@ internal class ApiSchemaValidator(IApiSchemaSchemaProvider _apiSchemaSchemaProvi
                     {
                         errors.Add(error.Value);
                     }
-                    validationErrors.Add(new(new(propertyPathAndName), errors));
+                    validationErrors.Add(new(new(propertyPathAndName, "string"), errors));
                 }
             }
         }

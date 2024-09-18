@@ -66,11 +66,16 @@ internal class DocumentPath(JsonNode _documentPathsNode)
         new(() =>
         {
             string jsonPathString =
-                (_documentPathsNode["path"]?.GetValue<string>())
+                (_documentPathsNode["value"]?.GetValue<string>())
                 ?? throw new InvalidOperationException(
                     "Expected path to be on DocumentPath, this is a non-descriptor reference, or invalid ApiSchema"
                 );
-            return new(jsonPathString);
+            string jsonTypeString =
+                _documentPathsNode["type"]?.GetValue<string>()
+                ?? throw new InvalidOperationException(
+                    "Expected type to be on DocumentPath, this is a non-descriptor reference, or invalid ApiSchema"
+                );
+            return new(jsonPathString, jsonTypeString);
         });
 
     /// <summary>
@@ -130,15 +135,23 @@ internal class DocumentPath(JsonNode _documentPathsNode)
                 result.Add(
                     new ReferenceJsonPathsElement(
                         new(
-                            referenceJsonPathsElement["identityJsonPath"]?.GetValue<string>()
+                            referenceJsonPathsElement["identityJsonPath"]?["value"]?.GetValue<string>()
                                 ?? throw new InvalidOperationException(
-                                    "Expected identityJsonPath to be on referenceJsonPaths element, invalid ApiSchema"
+                                    "Expected 'path' in identityJsonPath element, invalid ApiSchema"
+                                ),
+                            referenceJsonPathsElement["identityJsonPath"]?["type"]?.GetValue<string>()
+                                ?? throw new InvalidOperationException(
+                                    "Expected 'type' in identityJsonPath element, invalid ApiSchema"
                                 )
                         ),
                         new(
-                            referenceJsonPathsElement["referenceJsonPath"]?.GetValue<string>()
+                            referenceJsonPathsElement["referenceJsonPath"]?["value"]?.GetValue<string>()
                                 ?? throw new InvalidOperationException(
-                                    "Expected referenceJsonPath to be on referenceJsonPaths element, invalid ApiSchema"
+                                    "Expected 'path' in referenceJsonPath element, invalid ApiSchema"
+                                ),
+                            referenceJsonPathsElement["referenceJsonPath"]?["type"]?.GetValue<string>()
+                                ?? throw new InvalidOperationException(
+                                    "Expected 'type' in referenceJsonPath element, invalid ApiSchema"
                                 )
                         )
                     )

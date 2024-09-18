@@ -15,7 +15,7 @@ namespace EdFi.DataManagementService.Core.Model;
 /// </summary>
 internal record SchoolYearEnumerationDocument(JsonNode _document)
 {
-    private static readonly JsonPath _identityJsonPath = new("$.schoolYear");
+    private static readonly JsonPath _identityJsonPath = new("$.schoolYear", "string");
 
     /// <summary>
     /// Creates a new DocumentIdentity from the SchoolYearEnumerationDocument

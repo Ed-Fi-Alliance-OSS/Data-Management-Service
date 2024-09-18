@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Linq;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema.Extensions;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
@@ -95,7 +96,7 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
             jsonSchemaForUpdate["properties"]!["id"] = new JsonObject
             {
                 { "type", "string" },
-                { "description", "The item id" }
+                { "description", "The item id" },
             };
             jsonSchemaForUpdate["required"]!.AsArray().Add("id");
             return jsonSchemaForUpdate;
@@ -131,8 +132,16 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
 
             return equalityConstraintsJsonArray.Select(x =>
             {
-                JsonPath sourceJsonPath = new(x!["sourceJsonPath"]!.GetValue<string>());
-                JsonPath targetJsonPath = new(x!["targetJsonPath"]!.GetValue<string>());
+                JsonPath sourceJsonPath =
+                    new(
+                        x!["sourceJsonPath"]!["value"]!.GetValue<string>(),
+                        x!["sourceJsonPath"]!["type"]!.GetValue<string>()
+                    );
+                JsonPath targetJsonPath =
+                    new(
+                        x!["targetJsonPath"]!["value"]!.GetValue<string>(),
+                        x!["targetJsonPath"]!["type"]!.GetValue<string>()
+                    );
 
                 return new EqualityConstraint(sourceJsonPath, targetJsonPath);
             });
@@ -148,8 +157,7 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
         {
             return _resourceSchemaNode["identityJsonPaths"]
                     ?.AsArray()
-                    .GetValues<string>()
-                    .Select(x => new JsonPath(x))
+                    .Select(x => new JsonPath(x!["value"]!.GetValue<string>(), x["type"]!.GetValue<string>()))
                 ?? throw new InvalidOperationException(
                     "Expected identityJsonPaths to be on ResourceSchema, invalid ApiSchema"
                 );
@@ -165,8 +173,7 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
         {
             return _resourceSchemaNode["booleanJsonPaths"]
                     ?.AsArray()
-                    .GetValues<string>()
-                    .Select(x => new JsonPath(x))
+                    .Select(x => new JsonPath(x!["value"]!.GetValue<string>(), x["type"]!.GetValue<string>()))
                 ?? throw new InvalidOperationException(
                     "Expected booleanJsonPaths to be on ResourceSchema, invalid ApiSchema"
                 );
@@ -182,8 +189,7 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
         {
             return _resourceSchemaNode["numericJsonPaths"]
                     ?.AsArray()
-                    .GetValues<string>()
-                    .Select(x => new JsonPath(x))
+                    .Select(x => new JsonPath(x!["value"]!.GetValue<string>(), x["type"]!.GetValue<string>()))
                 ?? throw new InvalidOperationException(
                     "Expected numericJsonPaths to be on ResourceSchema, invalid ApiSchema"
                 );
@@ -259,7 +265,13 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
                 .AsEnumerable()
                 .Select(queryField => new QueryField(
                     queryField.Key,
-                    queryField.Value?.AsArray().GetValues<string>().Select(x => new JsonPath(x)).ToArray()
+                    queryField
+                        .Value?.AsArray()
+                        .Select(x => new JsonPath(
+                            x!["value"]!.GetValue<string>(),
+                            x["type"]!.GetValue<string>()
+                        ))
+                        .ToArray()
                         ?? throw new InvalidOperationException(
                             "Expected queryField to be on queryFieldMapping, invalid ApiSchema"
                         )
@@ -310,5 +322,5 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
     /// taken from superclassIdentityJsonPath
     /// </summary>
     public JsonPath SuperclassIdentityJsonPath =>
-        new(_resourceSchemaNode.SelectNodeValue<string>("superclassIdentityJsonPath"));
+        new(_resourceSchemaNode.SelectNodeValue<string>("superclassIdentityJsonPath"), "");
 }

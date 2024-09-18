@@ -32,7 +32,11 @@ internal abstract record DocumentPaths(
     /// <summary>
     /// Discriminator between reference and scalar path types
     /// </summary>
-    bool isReference
+    bool isReference,
+    /// <summary>
+    /// Type of the field
+    /// </summary>
+    string type
 );
 
 /// <summary>
@@ -42,6 +46,7 @@ internal record ReferencePaths(
     Dictionary<string, string> paths,
     string[] pathOrder,
     bool isReference,
+    string type,
     /// <summary>
     /// The project name the API document resource is defined in e.g. "EdFi" for a data standard entity
     /// </summary>
@@ -55,7 +60,7 @@ internal record ReferencePaths(
     /// Whether this resource is a descriptor. Descriptors are treated differently from other documents
     /// </summary>
     bool isDescriptor
-) : DocumentPaths(paths, pathOrder, isReference);
+) : DocumentPaths(paths, pathOrder, isReference, type);
 
 /// <summary>
 /// A JsonPath for a scalar MetaEd property
@@ -63,5 +68,6 @@ internal record ReferencePaths(
 internal record ScalarPaths(
     Dictionary<string, string> paths,
     string[] pathOrder,
-    bool isReference
-) : DocumentPaths(paths, pathOrder, isReference);
+    bool isReference,
+    string type
+) : DocumentPaths(paths, pathOrder, isReference, type);

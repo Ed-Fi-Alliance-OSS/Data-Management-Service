@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Frontend;
@@ -13,7 +14,6 @@ using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Validation;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
-using System.Text.Json;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.UtilityService;
 
@@ -31,9 +31,9 @@ public class ValidateEqualityConstraintMiddlewareTests
         var equalityConstraints = new EqualityConstraint[]
         {
             new(
-                new JsonPath("$.classPeriods[*].classPeriodReference.schoolId"),
-                new JsonPath("$.schoolReference.schoolId")
-            )
+                new JsonPath("$.classPeriods[*].classPeriodReference.schoolId", "number"),
+                new JsonPath("$.schoolReference.schoolId", "number")
+            ),
         };
 
         return new ApiSchemaBuilder()
@@ -61,7 +61,7 @@ public class ValidateEqualityConstraintMiddlewareTests
                     ProjectNamespace: new("ed-fi"),
                     EndpointName: new("bellSchedules"),
                     DocumentUuid: No.DocumentUuid
-                )
+                ),
             };
         _context.ProjectSchema = new ProjectSchema(
             _context.ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
@@ -190,10 +190,11 @@ public class ValidateEqualityConstraintMiddlewareTests
         public void It_returns_message_body_with_failures()
         {
             _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Data Validation Failed");
-            
+
             string response = JsonSerializer.Serialize(_context.FrontendResponse.Body, SerializerOptions);
 
-            response.Should()
+            response
+                .Should()
                 .Contain(
                     "\"validationErrors\":{\"$.classPeriods[*].classPeriodReference.schoolId\":[\"All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '2', '1'\"],\"$.schoolReference.schoolId\":[\"All values supplied for 'schoolId' must match. Review all references (including those higher up in the resource's data) and align the following conflicting values: '2', '1'\"]}"
                 );
