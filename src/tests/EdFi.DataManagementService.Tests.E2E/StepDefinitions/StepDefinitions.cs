@@ -428,6 +428,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             await ResponseBodyIs(expectedBody, true);
         }
 
+        /// <summary>
+        /// LastModifiedDate will be added to the EdFi document programmatically, so the retrieved value cannot be verified.
+        /// This method ensures the property exists in the response and then removes it.
+        /// </summary>
         private void CheckAndRemoveModifiedDate(JsonNode responseJson)
         {
             if (responseJson is JsonArray jsonArray && jsonArray.Count > 0)
