@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
@@ -649,7 +648,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
         return result;
     }
 
-    public async Task<int> CascadeUpdates(
+    public async Task<CascadingUpdateResult?> CascadeUpdates(
         string resourceName,
         long documentId,
         short documentPartitionKey,
@@ -664,6 +663,63 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
             {
                 try
                 {
+                    foreach (var id in documentInfo.DocumentIdentity.DocumentIdentityElements)
+                    {
+                        _logger.LogInformation(id.IdentityValue);
+                    }
+
+                    var updateStatement = BuildUpdateStatement(
+                            documentInfo.DocumentIdentity.DocumentIdentityElements.Length - 1
+                        )
+                        .TrimEnd(',');
+
+                    await using var command = new NpgsqlCommand(
+                        @$"update dms.document
+                            set
+                              lastmodifiedat = NOW()
+                              , edfidoc =
+                                {updateStatement}
+                            from (
+                              select parentdocumentid, parentdocumentpartitionkey
+                              from dms.reference
+                              where referenceddocumentid = $1
+                              and referenceddocumentpartitionkey = $2
+                            ) as sub
+                            where document.id = sub.parentdocumentid
+                            and document.documentpartitionkey = sub.parentdocumentpartitionkey
+                            returning document.id as ModifiedDocumentId,
+                                document.documentpartitionkey as ModifiedDocumentPartitionKey,
+                                document.resourcename as ModifiedResourceName;",
+                        connection,
+                        transaction
+                    )
+                    {
+                        Parameters =
+                        {
+                            new() { Value = documentId },
+                            new() { Value = documentPartitionKey },
+                        },
+                    };
+
+                    await command.PrepareAsync(cancellationToken);
+                    await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+
+                    if (!reader.HasRows)
+                    {
+                        return null;
+                    }
+
+                    // Assumes only one row returned (should never be more due to DB unique constraint)
+                    await reader.ReadAsync(cancellationToken);
+
+                    return new CascadingUpdateResult(
+                        ModifiedDocumentId: reader.GetInt64(reader.GetOrdinal("ModifiedDocumentId")),
+                        ModifiedDocumentPartitionKey: reader.GetInt16(
+                            reader.GetOrdinal("ModifiedDocumentPartitionKey")
+                        ),
+                        ModifiedResourceName: reader.GetString(reader.GetOrdinal("ModifiedResourceName"))
+                    );
+
                     string BuildUpdateStatement(int n)
                     {
                         string retStr = $"jsonb_set(";
@@ -694,49 +750,8 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                                 + $" '{{{resourceReference}, {propertyName}}}', '\"{newValue}\"'),";
                         }
                     }
-
-                    foreach (var id in documentInfo.DocumentIdentity.DocumentIdentityElements)
-                    {
-                        _logger.LogInformation(id.IdentityValue);
-                    }
-
-                    var updateStatement = BuildUpdateStatement(
-                            documentInfo.DocumentIdentity.DocumentIdentityElements.Length - 1
-                        )
-                        .TrimEnd(',');
-
-                    await using var command = new NpgsqlCommand(
-                        @$"update dms.document
-                            set
-                              lastmodifiedat = NOW()
-                              , edfidoc =
-                                {updateStatement}
-                            from (
-                              select parentdocumentid, parentdocumentpartitionkey
-                              from dms.reference
-                              where referenceddocumentid = $1
-                              and referenceddocumentpartitionkey = $2
-                            ) as sub
-                            where document.id = sub.parentdocumentid
-                            and document.documentpartitionkey = sub.parentdocumentpartitionkey;",
-                        connection,
-                        transaction
-                    )
-                    {
-                        Parameters =
-                        {
-                            new() { Value = documentId },
-                            new() { Value = documentPartitionKey },
-                        },
-                    };
-
-                    await command.PrepareAsync(cancellationToken);
-                    return await command.ExecuteNonQueryAsync(cancellationToken);
                 }
                 catch (PostgresException pe)
-                    when (pe.SqlState != PostgresErrorCodes.ForeignKeyViolation
-                        && pe.SqlState != PostgresErrorCodes.UniqueViolation
-                    )
                 {
                     _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
 

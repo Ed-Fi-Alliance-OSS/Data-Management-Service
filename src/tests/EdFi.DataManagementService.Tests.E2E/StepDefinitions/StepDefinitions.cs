@@ -256,12 +256,16 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a PUT request is made to {string} with")]
         public async Task WhenAPUTRequestIsMadeToWith(string url, string body)
         {
-            url = addDataPrefixIfNecessary(url).Replace("{id}", _id);
+            url = addDataPrefixIfNecessary(url).Replace("{id}", _id).Replace("{dependentId}", _dependentId);
 
-            body = body.Replace("{id}", _id);
+            body = body.Replace("{id}", _id).Replace("{dependentId}", _dependentId);
             _logger.log.Information($"PUT url: {url}");
             _logger.log.Information($"PUT body: {body}");
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(url, new() { Data = body })!;
+            if (_apiResponse.Headers.ContainsKey("location"))
+            {
+                _location = _apiResponse.Headers["location"];
+            }
         }
 
         [When("a PUT request is made to referenced resource {string} with")]
@@ -568,7 +572,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Then("the record can be retrieved with a GET request")]
         public async Task ThenTheRecordCanBeRetrievedWithAGETRequest(string body)
         {
-            body = body.Replace("{id}", _id);
+            body = body.Replace("{id}", _id).Replace("{dependentId}", _dependentId);
             JsonNode bodyJson = JsonNode.Parse(body)!;
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(_location)!;
 

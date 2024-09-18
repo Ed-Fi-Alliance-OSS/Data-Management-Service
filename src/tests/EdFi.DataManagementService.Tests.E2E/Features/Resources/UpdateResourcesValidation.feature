@@ -540,15 +540,27 @@ Feature: Resources "Update" Operation validations
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
                   | 4003     | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
 
-            Given the system has these "classPeriods"
-                  | schoolReference    | classPeriodName |
-                  | {"schoolId": 4003} | "first period"  |
-
-            Given the system has these "bellSchedules"
-                  | schoolReference    | classPeriods                                                                         | bellScheduleName    |
-                  | {"schoolId": 4003} | [ { "classPeriodReference": {"classPeriodName": "first period", "schoolId": 155} } ] | "Saved By The Bell" |
-
-             # classPeriodName is part of the identity of a classPeriod
+             When a POST request is made to "/ed-fi/classPeriods/" with
+                  """
+                    {
+                        "classPeriodName": "first period",
+                        "schoolReference": {
+                            "schoolId": 4003
+                        }
+                    }
+                  """
+             Then it should respond with 201
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": "{id}",
+                    "classPeriodName": "first period",
+                    "schoolReference": {
+                        "schoolId": 4003
+                    }
+                  }
+                  """
+            # classPeriodName is part of the identity of a classPeriod
              When a PUT request is made to "/ed-fi/classPeriods/{id}" with
                   """
                      {
@@ -570,3 +582,192 @@ Feature: Resources "Update" Operation validations
                       }
                   }
                   """
+
+        Scenario: 19 Verify cascading updates on non reference values
+            Given the system has these "schools"
+                  | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
+                  | 4003     | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+            Given the system has these "schoolYearTypes"
+                  | schoolYear | schoolYearDescription | currentSchoolYear |
+                  | 2025       | "2025"                | false             |
+            Given the system has these descriptors
+                  | descriptorValue                                          |
+                  | uri://ed-fi.org/CourseIdentificationSystemDescriptor#LEA |
+                  | uri://ed-fi.org/TermDescriptor#Quarter                   |
+            Given the system has these "courses"
+                  | educationOrganizationReference    | courseCode | courseTitle    | numberOfParts | identificationCodes                                                                                                                       |
+                  | {"educationOrganizationId": 4003} | "ART-01"   | "Art, Grade 1" | 1             | [ {"courseIdentificationSystemDescriptor": "uri://ed-fi.org/CourseIdentificationSystemDescriptor#LEA", "identificationCode": "ART-01" } ] |
+             When a POST request is made for dependent resource "/ed-fi/sessions/" with
+                  """
+                  {
+                    "endDate": "2025-03-31",
+                    "beginDate": "2025-01-01",
+                    "sessionName": "Third Quarter",
+                    "termDescriptor": "uri://ed-fi.org/TermDescriptor#Quarter",
+                    "schoolReference": {
+                        "schoolId": 4003
+                    },
+                    "totalInstructionalDays": 45,
+                    "schoolYearTypeReference": {
+                        "schoolYear": 2025
+                    }
+                  }
+                  """
+             Then it should respond with 201
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": "{dependentId}",
+                    "endDate": "2025-03-31",
+                    "beginDate": "2025-01-01",
+                    "sessionName": "Third Quarter",
+                    "termDescriptor": "uri://ed-fi.org/TermDescriptor#Quarter",
+                    "schoolReference": {
+                        "schoolId": 4003
+                    },
+                    "totalInstructionalDays": 45,
+                    "schoolYearTypeReference": {
+                        "schoolYear": 2025
+                    }
+                  }
+                  """
+             When a POST request is made to "/ed-fi/courseOfferings/" with
+                  """
+                  {
+                    "localCourseCode": "abc",
+                    "schoolReference": {
+                        "schoolId": 4003
+                    },
+                    "sessionReference": {
+                        "schoolYear": 2025,
+                        "sessionName": "Third Quarter",
+                        "schoolId": 4003
+                    },
+                    "courseReference": {
+                        "courseCode": "ART-01",
+                        "educationOrganizationId": 4003
+                    }
+                  }
+                  """
+             Then it should respond with 201
+             # Change the sessionName
+             When a PUT request is made to "/ed-fi/sessions/{dependentId}" with
+                  """
+                  {
+                    "id": "{dependentId}",
+                    "endDate": "2025-03-31",
+                    "beginDate": "2025-01-01",
+                    "sessionName": "Fourth Quarter",
+                    "termDescriptor": "uri://ed-fi.org/TermDescriptor#Quarter",
+                    "schoolReference": {
+                        "schoolId": 4003
+                    },
+                    "totalInstructionalDays": 45,
+                    "schoolYearTypeReference": {
+                        "schoolYear": 2025
+                    }
+                  }
+                  """
+             Then it should respond with 204
+             When a GET request is made to "/ed-fi/courseOfferings/{id}"
+             Then it should respond with 200
+             # The new sessionName should cascade to this entity
+              And the response body is
+                  """
+                  {
+                    "id": "{id}",
+                    "courseReference": {
+                        "courseCode": "ART-01",
+                        "educationOrganizationId": 4003
+                    },
+                    "localCourseCode": "abc",
+                    "schoolReference": {
+                        "schoolId": 4003
+                    },
+                    "sessionReference": {
+                        "schoolId": "4003",
+                        "schoolYear": "2025",
+                        "sessionName": "Fourth Quarter"
+                    }
+                  }
+                  """
+        @ignore
+        Scenario: 20 Verify cascading updates on dependent resources in arrays
+            Given the system has these "schools"
+                  | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
+                  | 4003     | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+             When a POST request is made for dependent resource "/ed-fi/classPeriods/" with
+                  """
+                  {
+                     "classPeriodName": "Third Period",
+                     "schoolReference": {
+                         "schoolId": 4003
+                     }
+                  }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/ed-fi/bellSchedules/" with
+                  """
+                  {
+                    "bellScheduleName": "Schedule 1",
+                    "classPeriods": [
+                        {
+                            "classPeriodReference": {
+                                "classPeriodName": "Third Period",
+                                "schoolId": 4003
+                            }
+                        }
+                    ],
+                    "schoolReference": {
+                        "schoolId": 4003
+                    }
+                  }
+                  """
+             Then it should respond with 201
+             # Change classPeriodName
+             When a PUT request is made to "/ed-fi/classPeriods/{dependentId}" with
+                  """
+                  {
+                    "id": "{dependentId}",
+                     "classPeriodName": "Fourth Period",
+                     "schoolReference": {
+                         "schoolId": 4003
+                     }
+                  }
+                  """
+             Then it should respond with 204
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                      "id": "{dependentId}",
+                      "classPeriodName": "Fourth Period",
+                      "schoolReference": {
+                          "schoolId": 4003
+                      }
+                  }
+                  """
+             When a GET request is made to "/ed-fi/bellSchedules/{id}"
+             Then it should respond with 200
+             # The new classPeriodName should cascade to the array element
+              And the response body is
+                  """
+                  {
+                    "id": "{id}",
+                    "bellScheduleName": "Schedule 1",
+                    "classPeriods": [
+                        {
+                            "classPeriodReference": {
+                                "classPeriodName": "Fourth Period",
+                                "schoolId": 4003
+                            }
+                        }
+                    ],
+                    "schoolReference": {
+                        "schoolId": 4003
+                    }
+                  }
+                  """
+
+
+
+
