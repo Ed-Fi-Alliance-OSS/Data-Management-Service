@@ -221,6 +221,16 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                             );
                             return ReportReferenceFailure(updateRequest.DocumentInfo, invalidReferentialIds);
                         }
+
+                        await _sqlAction.CascadeUpdates(
+                            updateRequest.ResourceInfo.ResourceName.Value,
+                            documentId,
+                            documentPartitionKey.Value,
+                            updateRequest.DocumentInfo,
+                            connection,
+                            transaction,
+                            traceId
+                        );
                     }
 
                     return new UpdateResult.UpdateSuccess(updateRequest.DocumentUuid);

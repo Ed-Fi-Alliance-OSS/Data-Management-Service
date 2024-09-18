@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
@@ -631,6 +632,106 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                     }
 
                     return result.ToArray();
+                }
+                catch (PostgresException pe)
+                    when (pe.SqlState != PostgresErrorCodes.ForeignKeyViolation
+                        && pe.SqlState != PostgresErrorCodes.UniqueViolation
+                    )
+                {
+                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
+
+                    // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
+                    // Must roll back the transaction before retry.
+                    await transaction.RollbackAsync(cancellationToken);
+                    throw;
+                }
+            });
+        return result;
+    }
+
+    public async Task<int> CascadeUpdates(
+        string resourceName,
+        long documentId,
+        short documentPartitionKey,
+        DocumentInfo documentInfo,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        TraceId traceId
+    )
+    {
+        var result = await GetPostgresExceptionRetryPipeline()
+            .ExecuteAsync(async cancellationToken =>
+            {
+                try
+                {
+                    string BuildUpdateStatement(int n)
+                    {
+                        string retStr = $"jsonb_set(";
+                        string resourceReference =
+                            $"{char.ToLowerInvariant(resourceName[0]) + resourceName[1..]}Reference";
+                        int idx = documentInfo
+                            .DocumentIdentity.DocumentIdentityElements[n]
+                            .IdentityJsonPath.Value.LastIndexOf('.');
+                        string propertyName = documentInfo
+                            .DocumentIdentity
+                            .DocumentIdentityElements[n]
+                            .IdentityJsonPath
+                            .Value[(idx + 1)..];
+                        string newValue = documentInfo
+                            .DocumentIdentity
+                            .DocumentIdentityElements[n]
+                            .IdentityValue;
+
+                        if (n == 0)
+                        {
+                            return retStr
+                                + $"edfidoc, '{{{resourceReference}, {propertyName}}}', '\"{newValue}\"'),";
+                        }
+                        else
+                        {
+                            return retStr
+                                + BuildUpdateStatement(n - 1)
+                                + $" '{{{resourceReference}, {propertyName}}}', '\"{newValue}\"'),";
+                        }
+                    }
+
+                    foreach (var id in documentInfo.DocumentIdentity.DocumentIdentityElements)
+                    {
+                        _logger.LogInformation(id.IdentityValue);
+                    }
+
+                    var updateStatement = BuildUpdateStatement(
+                            documentInfo.DocumentIdentity.DocumentIdentityElements.Length - 1
+                        )
+                        .TrimEnd(',');
+
+                    await using var command = new NpgsqlCommand(
+                        @$"update dms.document
+                            set
+                              lastmodifiedat = NOW()
+                              , edfidoc =
+                                {updateStatement}
+                            from (
+                              select parentdocumentid, parentdocumentpartitionkey
+                              from dms.reference
+                              where referenceddocumentid = $1
+                              and referenceddocumentpartitionkey = $2
+                            ) as sub
+                            where document.id = sub.parentdocumentid
+                            and document.documentpartitionkey = sub.parentdocumentpartitionkey;",
+                        connection,
+                        transaction
+                    )
+                    {
+                        Parameters =
+                        {
+                            new() { Value = documentId },
+                            new() { Value = documentPartitionKey },
+                        },
+                    };
+
+                    await command.PrepareAsync(cancellationToken);
+                    return await command.ExecuteNonQueryAsync(cancellationToken);
                 }
                 catch (PostgresException pe)
                     when (pe.SqlState != PostgresErrorCodes.ForeignKeyViolation
