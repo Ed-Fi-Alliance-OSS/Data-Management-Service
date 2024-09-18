@@ -42,7 +42,6 @@ internal record ReferencePaths(
     Dictionary<string, string> paths,
     string[] pathOrder,
     bool isReference,
-    string type,
     /// <summary>
     /// The project name the API document resource is defined in e.g. "EdFi" for a data standard entity
     /// </summary>
