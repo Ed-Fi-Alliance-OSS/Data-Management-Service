@@ -37,25 +37,32 @@ internal static class DescriptorExtractor
             if (!documentPath.IsDescriptor)
                 continue;
 
-            // Extract the descriptor URIs from the document
-            string[] descriptorUris = documentBody
-                .SelectNodesFromArrayPathCoerceToStrings(documentPath.Path.Value, logger)
+            // Extract the descriptor URIs with path from the document
+            JsonPathAndValue[] descriptorUrisWithPath = documentBody
+                .SelectNodesAndLocationFromArrayPathCoerceToStrings(documentPath.Path.Value, logger)
                 .ToArray();
 
             // Path can be empty if descriptor reference is optional
-            if (descriptorUris.Length == 0)
+            if (descriptorUrisWithPath.Length == 0)
                 continue;
 
             BaseResourceInfo resourceInfo =
                 new(documentPath.ProjectName, documentPath.ResourceName, documentPath.IsDescriptor);
 
-            foreach (string descriptorUri in descriptorUris)
+            foreach (JsonPathAndValue descriptorUri in descriptorUrisWithPath)
             {
                 // One descriptor reference per Uri
                 DocumentIdentityElement documentIdentityElement =
-                    new(DocumentIdentity.DescriptorIdentityJsonPath, descriptorUri);
+                    new(DocumentIdentity.DescriptorIdentityJsonPath, descriptorUri.value);
                 DocumentIdentity documentIdentity = new([documentIdentityElement]);
-                result.Add(new(resourceInfo, documentIdentity, ReferentialIdFrom(resourceInfo, documentIdentity), documentPath.Path));
+                result.Add(
+                    new(
+                        resourceInfo,
+                        documentIdentity,
+                        ReferentialIdFrom(resourceInfo, documentIdentity),
+                        new JsonPath(descriptorUri.jsonPath)
+                    )
+                );
             }
         }
 

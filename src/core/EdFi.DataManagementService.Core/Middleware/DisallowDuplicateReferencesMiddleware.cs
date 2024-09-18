@@ -3,6 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text;
+using System.Text.RegularExpressions;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
@@ -12,6 +15,12 @@ namespace EdFi.DataManagementService.Core.Middleware;
 
 internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipelineStep
 {
+    private static readonly Regex _numericIndexRegex =
+        new(pattern: @"\[\d+\]", options: RegexOptions.Compiled);
+
+    private static readonly Regex _arrayNameRegex =
+        new(pattern: @"\$\.(\w+)\[(\d+)\]", options: RegexOptions.Compiled);
+
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         logger.LogDebug(
@@ -36,13 +45,32 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         // Find duplicates in descriptor references
         if (context.DocumentInfo.DescriptorReferences.GroupBy(d => d.ReferentialId).Any(g => g.Count() > 1))
         {
-            // if duplicates are found, they should be reported
-            ValidateDuplicates(
-                context.DocumentInfo.DescriptorReferences,
-                item => item.ReferentialId.Value,
-                item => item.Path.Value,
-                validationErrors
+            var groupedReferences = GroupByArrayNameAndIndex(
+                context.DocumentInfo.DescriptorReferences.Select(x => x).ToList()
             );
+
+            var combinedIds = new List<string>();
+            foreach (var descriptorReferences in groupedReferences.Where(x => x.indexGroups.Count > 1))
+            {
+                foreach (var indexGroup in descriptorReferences.indexGroups)
+                {
+                    var combinedId = new StringBuilder();
+                    foreach (var reference in indexGroup.references)
+                    {
+                        combinedId.Append(reference.ReferentialId.Value);
+                    }
+                    combinedIds.Add(combinedId.ToString());
+                }
+            }
+            if (combinedIds.GroupBy(d => d).Any(g => g.Count() > 1))
+                // if duplicates are found, they should be reported
+                ValidateDuplicates(
+                    context.DocumentInfo.DescriptorReferences,
+                    item => item.ReferentialId.Value,
+                    item => item.Path.Value,
+                    validationErrors,
+                    true
+                );
         }
 
         if (validationErrors.Any())
@@ -69,7 +97,8 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         IEnumerable<T> items,
         Func<T, Guid> getReferentialId,
         Func<T, string> getPath,
-        Dictionary<string, string[]> validationErrors
+        Dictionary<string, string[]> validationErrors,
+        bool IsDescriptor = false
     )
     {
         var seenItems = new HashSet<Guid>();
@@ -79,6 +108,13 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         {
             Guid referentialId = getReferentialId(item);
             string path = getPath(item);
+
+            // The descriptor reference path includes index value, which groups error messages by index.
+            // To prevent this, converting the index to *
+            if (IsDescriptor)
+            {
+                path = _numericIndexRegex.Replace(path, "[*]");
+            }
 
             // the propertyName varies according to the origin (DescriptorReference or DocumentReferences)
             string propertyName = path.StartsWith("$", StringComparison.InvariantCultureIgnoreCase)
@@ -96,11 +132,11 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
                 string errorMessage =
                     $"The {GetOrdinal(positions[propertyName])} item of the {path} has the same identifying values as another item earlier in the list.";
 
-                if (validationErrors.ContainsKey(propertyName))
+                if (validationErrors.TryGetValue(propertyName, out string[]? value))
                 {
-                    var existingMessages = validationErrors[propertyName].ToList();
+                    var existingMessages = value.ToList();
                     existingMessages.Add(errorMessage);
-                    validationErrors[propertyName] = existingMessages.ToArray();
+                    validationErrors[propertyName] = [.. existingMessages];
                 }
                 else
                 {
@@ -120,7 +156,7 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         {
             2 => $"{number}nd",
             3 => $"{number}rd",
-            _ => $"{number}th"
+            _ => $"{number}th",
         };
     }
 
@@ -130,4 +166,54 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         string[] parts = path.Split('.');
         return parts.Length > 1 ? parts[1].Trim('[', ']', '*') : string.Empty;
     }
+
+    private static List<KeyReferenceGroup> GroupByArrayNameAndIndex(IList<DescriptorReference> jsonNodes)
+    {
+        // Select reference node and match ( e.g., match = $.performanceLevels[1])
+        var descriptorReferenceMatches = jsonNodes
+            .Select(reference => new
+            {
+                Node = reference,
+                Match = _arrayNameRegex.Match(reference.Path.Value),
+            })
+            .Where(x => x.Match.Success);
+
+        // Group by reference array name (e.g., Key = "performanceLevels", Value = {Index = 0, Node = DescriptorReference})
+        // Selects DescriptorReference with index value
+        var groupedByReferenceArrayName = descriptorReferenceMatches.GroupBy(
+            reference => reference.Match.Groups[1].Value,
+            reference => new { Index = int.Parse(reference.Match.Groups[2].Value), reference.Node }
+        );
+
+        // Inner group by index
+        // e.g., Key : performanceLevels
+        //           Key: 0
+        //           Value:[
+        //                  PerformanceLevelDescriptor reference
+        //                  AssessmentReportingMethodDescriptor reference
+        //                 ]
+        //           Key: 1
+        //           Value:[
+        //                  PerformanceLevelDescriptor reference
+        //                  AssessmentReportingMethodDescriptor reference
+        //                 ]
+        var groupedByIndex = groupedByReferenceArrayName
+            .Select(group => new KeyReferenceGroup(
+                group.Key,
+                group
+                    .GroupBy(reference => reference.Index)
+                    .Select(indexGroup => new IndexedReferenceGroup(
+                        indexGroup.Key,
+                        indexGroup.Select(x => x.Node).ToList()
+                    ))
+                    .ToList()
+            ))
+            .ToList();
+
+        return groupedByIndex;
+    }
 }
+
+internal record IndexedReferenceGroup(int index, List<DescriptorReference> references);
+
+internal record KeyReferenceGroup(string key, List<IndexedReferenceGroup> indexGroups);
