@@ -8,7 +8,6 @@ using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Extensions;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
-using Json.More;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
 
@@ -44,7 +43,7 @@ internal static class IdentityExtractor
         IEnumerable<DocumentIdentityElement> documentIdentityElements =
             resourceSchema.IdentityJsonPaths.Select(identityJsonPath => new DocumentIdentityElement(
                 identityJsonPath,
-                IdentityValue: documentBody.SelectRequiredNodeFromPathCoerceToString(identityJsonPath.Value, logger)
+                documentBody.SelectRequiredNodeFromPathCoerceToString(identityJsonPath.Value, logger)
             ));
 
         return new DocumentIdentity(documentIdentityElements.ToArray());

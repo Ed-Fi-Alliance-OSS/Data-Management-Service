@@ -60,7 +60,7 @@ internal static class DescriptorExtractor
                         resourceInfo,
                         documentIdentity,
                         ReferentialIdFrom(resourceInfo, documentIdentity),
-                        new JsonPath(descriptorUri.jsonPath)
+                        new JsonPath(descriptorUri.jsonPath, "string")
                     )
                 );
             }
