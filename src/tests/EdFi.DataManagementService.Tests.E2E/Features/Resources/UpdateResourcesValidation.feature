@@ -357,8 +357,7 @@ Feature: Resources "Update" Operation validations
                     "correlationId": null
                   }
                   """
-
-        @ignore
+        
         Scenario: 14 Update a document with a value that is too short (Resource)
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
                   """
@@ -377,13 +376,16 @@ Feature: Resources "Update" Operation validations
                   """
                   {
                       "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                       "title": "Data Validation Failed",
                       "status": 400,
                       "correlationId": null,
                       "validationErrors": {
                         "$.learningResourceMetadataURI": [
                           "learningResourceMetadataURI Value should be at least 5 characters"
+                        ],
+                        "$.publisher": [
+                          "publisher Value should be at most 50 characters"
                         ]
                       },
                       "errors": []

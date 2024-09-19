@@ -149,9 +149,7 @@ Feature: Create a Descriptor
                       "errors": []
                     }
                   """
-
-        # Descriptors are not validating properly. DMS-295
-        @ignore
+        
         Scenario: 06 Ensure clients cannot create a descriptor only using spaces for the required attributes
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """

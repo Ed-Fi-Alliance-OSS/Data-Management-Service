@@ -26,8 +26,6 @@ Feature: Query String handling for GET requests for Resource Queries
                   }]
                   """
 
-        # DMS-364
-        @ignore
         Scenario: 02 Ensure clients can't GET information when querying by invalid date
              When a GET request is made to "/ed-fi/academicWeeks?beginDate=024-04-09"
              Then it should respond with 400
@@ -35,18 +33,17 @@ Feature: Query String handling for GET requests for Resource Queries
                   """
                    {
                        "detail": "Data validation failed. See 'validationErrors' for details.",
-                       "type": "urn:ed-fi:api:bad-request:data",
+                       "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                        "title": "Data Validation Failed",
                        "status": 400,
                        "correlationId": null,
                        "validationErrors": {
-                           "$.beginDate": ["The value '024-04-09' is not valid for BeginDate."]
-                       }
+                           "$.beginDate": ["The value '024-04-09' is not valid for beginDate."]
+                       },
+                       "errors": []
                    }
                   """
 
-        # DMS-364
-        @ignore
         Scenario: 03 Ensure clients can't GET information when querying by a word
              When a GET request is made to "/ed-fi/academicWeeks?beginDate=word"
              Then it should respond with 400
@@ -54,15 +51,17 @@ Feature: Query String handling for GET requests for Resource Queries
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null,
                     "validationErrors": {
-                        "$.beginDate": ["The value 'word' is not valid for BeginDate."]
-                    }
+                        "$.beginDate": ["The value 'word' is not valid for beginDate."]
+                    },
+                    "errors": []
                   }
                   """
+
         Scenario: 04 Ensure clients can't GET information when querying by wrong begin date
              When a GET request is made to "/ed-fi/academicWeeks?beginDate=1970-04-09"
              Then it should respond with 200
@@ -70,6 +69,7 @@ Feature: Query String handling for GET requests for Resource Queries
                   """
                   []
                   """
+
         Scenario: 05 Ensure clients can't GET information when querying by correct begin date and wrong end date
              When a GET request is made to "/ed-fi/academicWeeks?beginDate=2024-05-15&endDate=2025-06-23"
              Then it should respond with 200

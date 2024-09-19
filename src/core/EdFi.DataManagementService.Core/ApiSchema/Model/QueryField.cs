@@ -18,5 +18,5 @@ internal record QueryField(
     /// <summary>
     /// The document paths the query field applies to
     /// </summary>
-    JsonPath[] DocumentPaths
+    QueryJsonPath[] DocumentPaths
 );

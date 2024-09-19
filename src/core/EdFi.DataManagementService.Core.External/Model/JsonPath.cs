@@ -7,3 +7,7 @@ namespace EdFi.DataManagementService.Core.External.Model;
 
 // A string type branded as a JsonPath, which is a standard JSONPath expression.
 public record struct JsonPath(string Value);
+
+
+// Handling of possible values and types for query fields.
+public record struct QueryJsonPath(string Value, string Type);

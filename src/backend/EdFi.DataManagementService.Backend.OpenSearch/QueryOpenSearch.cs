@@ -62,7 +62,7 @@ public static partial class QueryOpenSearch
             .Replace(".", "-");
     }
 
-    private static string QueryFieldFrom(JsonPath documentPath)
+    private static string QueryFieldFrom(QueryJsonPath documentPath)
     {
         return JsonPathPrefixRegex().Replace(documentPath.Value, "");
     }

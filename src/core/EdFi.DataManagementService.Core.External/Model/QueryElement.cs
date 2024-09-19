@@ -20,7 +20,7 @@ public record QueryElement(
     /// <summary>
     /// The document paths the query field applies to
     /// </summary>
-    JsonPath[] DocumentPaths,
+    QueryJsonPath[] DocumentPaths,
     /// <summary>
     /// The value being searched for
     /// </summary>
