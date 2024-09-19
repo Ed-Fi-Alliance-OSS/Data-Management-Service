@@ -648,7 +648,10 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
         return result;
     }
 
-    public async Task<CascadingUpdateResult?> CascadeUpdates(
+    /// <summary>
+    ///
+    /// </summary>
+    public async Task<List<CascadingUpdateResult>> CascadeUpdates(
         string resourceName,
         long documentId,
         short documentPartitionKey,
@@ -704,21 +707,28 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                     await command.PrepareAsync(cancellationToken);
                     await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
 
+                    var results = new List<CascadingUpdateResult>();
                     if (!reader.HasRows)
                     {
-                        return null;
+                        return results;
                     }
 
-                    // Assumes only one row returned (should never be more due to DB unique constraint)
-                    await reader.ReadAsync(cancellationToken);
+                    while (await reader.ReadAsync(cancellationToken))
+                    {
+                        results.Add(
+                            new CascadingUpdateResult(
+                                ModifiedDocumentId: reader.GetInt64(reader.GetOrdinal("ModifiedDocumentId")),
+                                ModifiedDocumentPartitionKey: reader.GetInt16(
+                                    reader.GetOrdinal("ModifiedDocumentPartitionKey")
+                                ),
+                                ModifiedResourceName: reader.GetString(
+                                    reader.GetOrdinal("ModifiedResourceName")
+                                )
+                            )
+                        );
+                    }
 
-                    return new CascadingUpdateResult(
-                        ModifiedDocumentId: reader.GetInt64(reader.GetOrdinal("ModifiedDocumentId")),
-                        ModifiedDocumentPartitionKey: reader.GetInt16(
-                            reader.GetOrdinal("ModifiedDocumentPartitionKey")
-                        ),
-                        ModifiedResourceName: reader.GetString(reader.GetOrdinal("ModifiedResourceName"))
-                    );
+                    return results;
 
                     string BuildUpdateStatement(int n)
                     {

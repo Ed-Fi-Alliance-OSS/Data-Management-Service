@@ -103,7 +103,7 @@ public interface ISqlAction
         TraceId traceId
     );
 
-    public Task<CascadingUpdateResult?> CascadeUpdates(
+    public Task<List<CascadingUpdateResult>> CascadeUpdates(
         string resourceName,
         long documentId,
         short documentPartitionKey,

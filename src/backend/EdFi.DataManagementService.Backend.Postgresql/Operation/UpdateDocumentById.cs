@@ -222,7 +222,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                             return ReportReferenceFailure(updateRequest.DocumentInfo, invalidReferentialIds);
                         }
 
-                        var cascadingUpdateResult = await _sqlAction.CascadeUpdates(
+                        var cascadingUpdateResults = await _sqlAction.CascadeUpdates(
                             updateRequest.ResourceInfo.ResourceName.Value,
                             documentId,
                             documentPartitionKey.Value,
@@ -232,21 +232,30 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                             traceId
                         );
 
-                        while (cascadingUpdateResult != null)
+                        await cascadeUpdates(cascadingUpdateResults);
+                    }
+                    return new UpdateResult.UpdateSuccess(updateRequest.DocumentUuid);
+
+                    async Task cascadeUpdates(List<CascadingUpdateResult> results)
+                    {
+                        if (!results.Any())
+                            return;
+
+                        foreach (var result in results)
                         {
-                            cascadingUpdateResult = await _sqlAction.CascadeUpdates(
-                                cascadingUpdateResult.ModifiedResourceName,
-                                cascadingUpdateResult.ModifiedDocumentId,
-                                cascadingUpdateResult.ModifiedDocumentPartitionKey,
+                            var cascadingUpdateResult = await _sqlAction.CascadeUpdates(
+                                result.ModifiedResourceName,
+                                result.ModifiedDocumentId,
+                                result.ModifiedDocumentPartitionKey,
                                 updateRequest.DocumentInfo,
                                 connection,
                                 transaction,
                                 traceId
                             );
+
+                            await cascadeUpdates(cascadingUpdateResult);
                         }
                     }
-
-                    return new UpdateResult.UpdateSuccess(updateRequest.DocumentUuid);
 
                 case 0:
                     _logger.LogInformation(
