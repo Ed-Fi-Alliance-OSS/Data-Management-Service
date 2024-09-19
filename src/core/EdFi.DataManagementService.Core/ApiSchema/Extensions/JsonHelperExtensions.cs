@@ -3,10 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using Microsoft.Extensions.Logging;
+using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Json.Path;
-using System.Text.Json;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.ApiSchema.Extensions;
 
@@ -79,29 +80,33 @@ internal static class JsonHelperExtensions
     {
         try
         {
-            JsonPath? jsonPath = JsonPath.Parse(jsonPathString);
-            if (jsonPath == null)
-            {
-                logger.LogError("Malformed JSONPath string '{JsonPathString}'", jsonPathString);
-                throw new InvalidOperationException($"Malformed JSONPath string '{jsonPathString}'");
-            }
-
-            PathResult? result = jsonPath.Evaluate(jsonNode);
-
-            if (result.Matches == null)
-            {
-                logger.LogError("Malformed JSONPath string '{JsonPathString}'", jsonPathString);
-                throw new InvalidOperationException($"Unexpected Json.Path error for '{jsonPathString}'");
-            }
-
-            return result.Matches.Select(x =>
-                x.Value
-            );
+            var result = SelectPathResult(jsonNode, jsonPathString, logger);
+            return result.Matches.Select(x => x.Value);
         }
         catch (PathParseException)
         {
             throw new InvalidOperationException($"Unexpected Json.Path error for '{jsonPathString}'");
         }
+    }
+
+    private static PathResult SelectPathResult(JsonNode jsonNode, string jsonPathString, ILogger logger)
+    {
+        JsonPath? jsonPath = JsonPath.Parse(jsonPathString);
+        if (jsonPath == null)
+        {
+            logger.LogError("Malformed JSONPath string '{JsonPathString}'", jsonPathString);
+            throw new InvalidOperationException($"Malformed JSONPath string '{jsonPathString}'");
+        }
+
+        PathResult? result = jsonPath.Evaluate(jsonNode);
+
+        if (result.Matches == null)
+        {
+            logger.LogError("Malformed JSONPath string '{JsonPathString}'", jsonPathString);
+            throw new InvalidOperationException($"Unexpected Json.Path error for '{jsonPathString}'");
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -121,6 +126,60 @@ internal static class JsonHelperExtensions
                 jsonNode?.AsValue() ?? throw new InvalidOperationException("Unexpected JSONPath value error");
             return result.ToString();
         });
+    }
+
+    /// <summary>
+    /// Helper to go from an array JSONPath selection directly to a collection of string value and path regardless of the JSON type
+    /// Returns empty dictionary if the values do not exist.
+    /// </summary>
+    public static IEnumerable<JsonPathAndValue> SelectNodesAndLocationFromArrayPathCoerceToStrings(
+        this JsonNode jsonNode,
+        string jsonPathString,
+        ILogger logger
+    )
+    {
+        var nodeValueWithPath = new List<JsonPathAndValue>();
+        var result = SelectPathResult(jsonNode, jsonPathString, logger);
+        IEnumerable<Node?> jsonNodes = result.Matches.Select(x => x);
+        foreach (Node? node in jsonNodes)
+        {
+            if (node != null && node.Location != null)
+            {
+                var path = ConvertPath(node.Location.Segments);
+                var value =
+                    node.Value?.AsValue()
+                    ?? throw new InvalidOperationException("Unexpected JSONPath value error");
+                nodeValueWithPath.Add(new JsonPathAndValue(path, value.ToString()));
+            }
+        }
+
+        // Converts $['eduCategories'][0]['eduCategoryDescriptor'] to $.eduCategories[0].eduCategoryDescriptor
+        static string ConvertPath(PathSegment[] pathSegments)
+        {
+            StringBuilder path = new("$");
+            foreach (PathSegment pathSegment in pathSegments)
+            {
+                var name = string.Join(
+                    ".",
+                    pathSegment.Selectors.Select(x => x != null ? ToJsonPathString(x) : string.Empty)
+                );
+                path.Append(name);
+            }
+            var parsedPath = JsonPath.Parse(path.ToString());
+            return parsedPath.ToString();
+
+            static string? ToJsonPathString(ISelector input)
+            {
+                var trimmedValue = $".{input.ToString()?.Trim('\'')}";
+                if (int.TryParse(trimmedValue.TrimStart('.'), out var parsedValue))
+                {
+                    trimmedValue = $"[{parsedValue}]";
+                }
+                return trimmedValue;
+            }
+        }
+
+        return nodeValueWithPath;
     }
 
     /// <summary>
@@ -247,9 +306,11 @@ internal static class JsonHelperExtensions
             throw new InvalidOperationException("Unexpected null");
         }
 
-        return nodeKeys
-            .Where(x => x.Value != null)
-            .Select(x => x.Value ?? new JsonObject())
-            .ToList();
+        return nodeKeys.Where(x => x.Value != null).Select(x => x.Value ?? new JsonObject()).ToList();
     }
 }
+
+/// <summary>
+/// Contains Json path and Json node value
+/// </summary>
+public record JsonPathAndValue(string jsonPath, string value);

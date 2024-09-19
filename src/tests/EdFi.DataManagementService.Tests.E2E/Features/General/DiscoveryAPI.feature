@@ -3,7 +3,7 @@ Feature: The Discovery API provides information about the application version, s
         Scenario: 01 GET / returns the root Discovery API document
              When a GET request is made to "/"
              Then it should respond with 200
-              And the response body is
+              And the general response body is
                   """
                   {
                       "version": "1.0.0",
@@ -28,7 +28,7 @@ Feature: The Discovery API provides information about the application version, s
         Scenario: 02 GET /metadata returns the metadata URL list
              When a GET request is made to "/metadata"
              Then it should respond with 200
-              And the response body is
+              And the general response body is
                   """
                   {
                       "dependencies": "{BASE_URL}/metadata/dependencies",
@@ -40,7 +40,7 @@ Feature: The Discovery API provides information about the application version, s
         Scenario: 03 GET /metadata/specifications returns the list of supported API specifications
              When a GET request is made to "/metadata/specifications"
              Then it should respond with 200
-              And the response body is
+              And the general response body is
                   """
                   [
                       {
