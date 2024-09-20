@@ -1,115 +1,129 @@
 {
-    "files.associations": {
-        "*.metaed": "csharp"
+  "files.associations": {
+    "*.metaed": "csharp"
+  },
+  "psi-header.config": {
+    "forceToTop": true,
+    "blankLinesAfter": 1,
+    "license": "Custom"
+  },
+  "psi-header.templates": [
+    {
+      "language": "*",
+      "template": [
+        "SPDX-License-Identifier: Apache-2.0",
+        "Licensed to the Ed-Fi Alliance under one or more agreements.",
+        "The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.",
+        "See the LICENSE and NOTICES files in the project root for more information."
+      ]
+    }
+  ],
+  "psi-header.lang-config": [
+    {
+      "_": "Apply double slash-based comments",
+      "language": "csharp",
+      "begin": "",
+      "end": "",
+      "prefix": "// "
     },
-    "psi-header.config": {
-        "forceToTop": true,
-        "blankLinesAfter": 1,
-        "license": "Custom"
+    {
+      "language": "javascript",
+      "mapTo": "csharp"
     },
-    "psi-header.templates": [
-        {
-            "language": "*",
-            "template": [
-                "SPDX-License-Identifier: Apache-2.0",
-                "Licensed to the Ed-Fi Alliance under one or more agreements.",
-                "The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.",
-                "See the LICENSE and NOTICES files in the project root for more information."
-            ]
-        }
-    ],
-    "psi-header.lang-config":[
-        {
-            "_": "Apply double slash-based comments",
-            "language": "csharp",
-            "begin": "",
-            "end": "",
-            "prefix": "// "
-        },
-        {
-            "language": "javascript",
-            "mapTo": "csharp"
-        },
-        {
-            "language": "typescript",
-            "mapTo": "csharp"
-        },
-        {
-            "language": "metaed",
-            "mapTo": "csharp"
-        },
-        {
-            "_": "Apply hash-based comments",
-            "language": "python",
-            "begin": "",
-            "end": "",
-            "prefix": "# "
-        },
-        {
-            "language": "powershell",
-            "mapTo": "python"
-        },
-        {
-            "language": "dockerfile",
-            "mapTo": "python"
-        },
-        {
-            "_": "Apply double dash-based comments",
-            "language": "sql",
-            "begin": "",
-            "end": "",
-            "prefix": "-- "
-        },
-        {
-            "language": "yaml",
-            "mapTo": "python"
-        }
-    ],
-    "psi-header.changes-tracking": {
-        "autoHeader": "autoSave",
-        "exclude": [
-            "css", "json", "xml", "config", "plaintext", "markdown", "batch"
-        ]
+    {
+      "language": "typescript",
+      "mapTo": "csharp"
     },
-    "cSpell.words": [
-        "abstractresource",
-        "allowidentityupdates",
-        "begindate",
-        "decapitalizer",
-        "documentpathsmapping",
-        "Edfi",
-        "equalityconstraints",
-        "identityjsonpaths",
-        "isdescriptor",
-        "isshoolyearenumeration",
-        "issubclass",
-        "jsonschemaforinsert",
-        "noallowidentityupdates",
-        "nodocumentpathsmappings",
-        "noequalityconstraints",
-        "noidentityjsonpaths",
-        "noisdescriptors",
-        "noisschoolyearenumerations",
-        "noissubclasses",
-        "nojsonschemaforinserts",
-        "noresourcenames",
-        "nosubclassidentitydocumentkeys",
-        "nosubclasstypes",
-        "nosuperclassidentitydocumentkeys",
-        "nosuperclassprojectnames",
-        "nosuperclassresourcenames",
-        "openapi",
-        "pluralizer",
-        "resourcename",
-        "resourceschema",
-        "resourceschemas",
-        "Shoolyear",
-        "subclassidentitydocumentkey",
-        "subclasstype",
-        "superclassidentitydocumentkey",
-        "superclassprojectname",
-        "superclassresourcename",
-        "TPDM"
-    ],
-    "dotnet.defaultSolution": "src/EdFi.DataManagementService.sln"
+    {
+      "language": "metaed",
+      "mapTo": "csharp"
+    },
+    {
+      "_": "Apply hash-based comments",
+      "language": "python",
+      "begin": "",
+      "end": "",
+      "prefix": "# "
+    },
+    {
+      "language": "powershell",
+      "mapTo": "python"
+    },
+    {
+      "language": "dockerfile",
+      "mapTo": "python"
+    },
+    {
+      "_": "Apply double dash-based comments",
+      "language": "sql",
+      "begin": "",
+      "end": "",
+      "prefix": "-- "
+    },
+    {
+      "language": "yaml",
+      "mapTo": "python"
+    }
+  ],
+  "psi-header.changes-tracking": {
+    "autoHeader": "autoSave",
+    "exclude": ["css", "json", "xml", "config", "plaintext", "markdown", "batch"]
+  },
+  "cSpell.words": [
+    "abstractresource",
+    "allowidentityupdates",
+    "begindate",
+    "decapitalizer",
+    "documentpathsmapping",
+    "Edfi",
+    "equalityconstraints",
+    "identityjsonpaths",
+    "isdescriptor",
+    "isshoolyearenumeration",
+    "issubclass",
+    "jsonschemaforinsert",
+    "noallowidentityupdates",
+    "nodocumentpathsmappings",
+    "noequalityconstraints",
+    "noidentityjsonpaths",
+    "noisdescriptors",
+    "noisschoolyearenumerations",
+    "noissubclasses",
+    "nojsonschemaforinserts",
+    "noresourcenames",
+    "nosubclassidentitydocumentkeys",
+    "nosubclasstypes",
+    "nosuperclassidentitydocumentkeys",
+    "nosuperclassprojectnames",
+    "nosuperclassresourcenames",
+    "openapi",
+    "pluralizer",
+    "resourcename",
+    "resourceschema",
+    "resourceschemas",
+    "Shoolyear",
+    "subclassidentitydocumentkey",
+    "subclasstype",
+    "superclassidentitydocumentkey",
+    "superclassprojectname",
+    "superclassresourcename",
+    "TPDM"
+  ],
+  "dotnet.defaultSolution": "src/EdFi.DataManagementService.sln",
+  "markdownlint.config": {
+    "default": true,
+    "line-length": {
+      "code_block_line_length": 110,
+      "code_blocks": true,
+      "tables": false
+    }
+  },
+  "[markdown]": {
+    "editor.formatOnSave": true,
+    "editor.formatOnPaste": true,
+    "editor.defaultFormatter": "DavidAnson.vscode-markdownlint"
+  },
+  "editor.codeActionsOnSave": {
+    "source.fixAll.markdownlint": "explicit"
+  }
 }
