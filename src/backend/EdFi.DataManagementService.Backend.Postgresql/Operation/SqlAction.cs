@@ -649,7 +649,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
     }
 
     /// <summary>
-    ///
+    /// Update the edfidoc of related resources when a child identity is updated
     /// </summary>
     public async Task<List<CascadingUpdateResult>> CascadeUpdates(
         string resourceName,

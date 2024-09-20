@@ -233,6 +233,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
 
                     return new UpdateResult.UpdateSuccess(updateRequest.DocumentUuid);
 
+                    // Recursively call CascadeUpdates until the results are exhausted
                     async Task cascadeUpdates(List<CascadingUpdateResult> results)
                     {
                         if (!results.Any())

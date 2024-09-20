@@ -5,8 +5,22 @@
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Model;
 
+/// <summary>
+/// The result from the NpgSqlCommand that cascades updates via
+/// the returning statement.
+/// </summary>
 public record CascadingUpdateResult(
+    /// <summary>
+    /// Id of the down stream document that was modified
+    /// </summary>
     long ModifiedDocumentId,
+    /// <summary>
+    /// The partition key of the down stream document that was modified
+    /// </summary>
     short ModifiedDocumentPartitionKey,
+    /// <summary>
+    /// The resource name of the down stream document that was modified
+    /// for use in recursive cascading updates
+    /// </summary>
     string ModifiedResourceName
 );
