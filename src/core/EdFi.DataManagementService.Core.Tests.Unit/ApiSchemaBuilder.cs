@@ -120,7 +120,8 @@ public class ApiSchemaBuilder
             ["isSchoolYearEnumeration"] = isSchoolYearEnumeration,
             ["isSubclass"] = isSubclass,
             ["jsonSchemaForInsert"] = new JsonObject(),
-            ["resourceName"] = resourceName
+            ["resourceName"] = resourceName,
+            ["queryFieldMapping"] = new JsonObject()
         };
 
         string endpointName = ToEndpointName(resourceName);
@@ -261,6 +262,26 @@ public class ApiSchemaBuilder
         _currentDocumentPathsMappingNode = _currentResourceNode["documentPathsMapping"];
         return this;
     }
+
+    /// <summary>
+    /// Start a query field mapping definition. Can only be done inside a resource definition.
+    /// Always end when finished.
+    /// </summary>
+    public ApiSchemaBuilder WithStartQueryFieldMapping()
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentDocumentPathsMappingNode = _currentResourceNode["queryFieldMapping"];
+        return this;
+    }
+
 
     /// <summary>
     /// Adds a DocumentPath to a DocumentPathsMapping for a scalar path
@@ -463,6 +484,33 @@ public class ApiSchemaBuilder
         }
 
         _currentDocumentPathsMappingNode = null;
+        return this;
+    }
+
+    public ApiSchemaBuilder WithQueryParamPathMapping(string pathFullName, string jsonPath, string type)
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentDocumentPathsMappingNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentDocumentPathsMappingNode[pathFullName] = new JsonArray
+        {
+            new JsonObject
+            {
+                ["path"] = jsonPath,
+                ["type"] = type
+            }
+        };
+
         return this;
     }
 
