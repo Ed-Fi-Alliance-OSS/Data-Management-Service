@@ -1,16 +1,25 @@
 # API Schema Documentation
 
-The `ApiSchema.json` file represents the API schema for the Ed-Fi DMS. The file
-contains two main sections:
+The `ApiSchema.json` file represents the API schema for the Ed-Fi DMS. It is an
+interpretation of the Ed-Fi Data Standard, providing options and rules that help
+in building a REST API definition consistent with the API definition generated
+out of the original Ed-FI ODS/API. Embedded within this file, each domain entity
+has a [JSON Schema](https://json-schema.org/) definition that can be used for
+level 1 validation of incoming `POST` and `PUT` requests.
+
+The file contains two main sections:
 
 1. `projectSchemas`
 2. `projectNameMapping`
 
+This file is embedded in the DLL provided by NuGet package
+`EdFi.DataStandard51.ApiSchema`.
+
 ## projectSchemas
 
 This section is a collection of ProjectNamespaces mapped to ProjectSchema
-objects. It contains the detailed schema information for each project in the
-API.
+objects. It contains the detailed schema information for each
+project in the API.
 
 ```json
 {
@@ -35,6 +44,10 @@ project namespaces in the API.
   }
 }
 ```
+
+For example, the core Ed-Fi Data Standard project maps `"Ed-Fi": "ed-fi"`. Thus
+all domain entities in the core Data Standard map to REST API endpoints at
+`/ed-fi/[entityName]`.
 
 ## ProjectSchema Object
 
