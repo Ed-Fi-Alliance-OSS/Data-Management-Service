@@ -146,7 +146,7 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
 
         List<QueryElement> queryElements = [];
 
-        var validationErrors = new Dictionary<string, string[]>();
+        Dictionary<string, string[]> validationErrors = [];
 
         foreach (KeyValuePair<string, string> clientQueryTerm in nonPaginationQueryTerms)
         {
