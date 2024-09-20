@@ -5,7 +5,6 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
-using EdFi.DataManagementService.Core.External.Backend.Model;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -92,7 +91,7 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
     /// Returns a QueryElement for the given client query term using the list of possible query fields,
     /// or null if there is not a match with a valid query field name.
     /// </summary>
-    private static QueryElement? queryElementFrom(
+    private static QueryElementAndType? queryElementFrom(
         KeyValuePair<string, string> clientQueryTerm,
         QueryField[] possibleQueryFields
     )
@@ -107,10 +106,10 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
             return null;
         }
 
-        return new QueryElement(
+        return new QueryElementAndType(
             QueryFieldName: clientQueryTerm.Key,
-            DocumentPaths: matchingQueryField.DocumentPaths,
-            clientQueryTerm.Value
+            DocumentPathsAndTypes: matchingQueryField.DocumentPathsWithType,
+            Value: clientQueryTerm.Value
         );
     }
 
@@ -151,9 +150,9 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
 
         foreach (KeyValuePair<string, string> clientQueryTerm in nonPaginationQueryTerms)
         {
-            QueryElement? queryElement = queryElementFrom(clientQueryTerm, possibleQueryFields);
+            QueryElementAndType? queryElementAndType = queryElementFrom(clientQueryTerm, possibleQueryFields);
 
-            if (queryElement == null)
+            if (queryElementAndType == null)
             {
                 JsonNode failureResponse = FailureResponse.ForBadRequest(
                     "The request could not be processed. See 'errors' for details.",
@@ -166,10 +165,10 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
                 return;
             }
 
-            string type = queryElement.DocumentPaths[0].Type;
-            string path = queryElement.DocumentPaths[0].Value;
-            string fieldName = queryElement.QueryFieldName;
-            object value = queryElement.Value;
+            string type = queryElementAndType.DocumentPathsAndTypes[0].Type;
+            string path = queryElementAndType.DocumentPathsAndTypes[0].JsonPathString;
+            string fieldName = queryElementAndType.QueryFieldName;
+            object value = queryElementAndType.Value;
 
             switch (type)
             {
@@ -236,7 +235,16 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
                     break;
             }
 
-            queryElements.Add(queryElement);
+            // Convert QueryElementAndType to QueryElement
+            queryElements.Add(
+                new(
+                    queryElementAndType.QueryFieldName,
+                    queryElementAndType
+                        .DocumentPathsAndTypes.Select(x => new JsonPath(x.JsonPathString))
+                        .ToArray(),
+                    queryElementAndType.Value
+                )
+            );
         }
 
         if (validationErrors.Any())
@@ -263,7 +271,12 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
         }
     }
 
-    private static void AddValidationError(Dictionary<string, string[]> errors, string path, object value, string fieldName)
+    private static void AddValidationError(
+        Dictionary<string, string[]> errors,
+        string path,
+        object value,
+        string fieldName
+    )
     {
         if (!errors.ContainsKey(path))
         {
