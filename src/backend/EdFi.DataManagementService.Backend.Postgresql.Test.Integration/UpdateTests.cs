@@ -3,8 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Security.Policy;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using FakeItEasy.Sdk;
 using FluentAssertions;
 using Npgsql;
 using NUnit.Framework;
@@ -657,6 +659,94 @@ public class UpdateTests : DatabaseTest
         }
     }
 
+    [TestFixture]
+    public class Given_an_update_of_a_document_cascade_to_parents : UpdateTests
+    {
+        private static readonly Guid _sessionDocumentUuid = Guid.NewGuid();
+        private static readonly Guid _sessionReferentialIdUuid = Guid.NewGuid();
+
+        private static readonly Guid _courseOfferingDocumentUuid = Guid.NewGuid();
+        private static readonly Guid _courseOfferingReferentialIdUuid = Guid.NewGuid();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            //The document that will be referenced "Session"
+            IUpsertRequest sessionUpsertRequest = CreateUpsertRequest(
+                "Session",
+                _sessionDocumentUuid,
+                _sessionReferentialIdUuid,
+                """
+                {
+                    "sessionName": "Third Quarter"
+                }
+                """,
+                allowIdentityUpdates: true
+            );
+            var sessionUpsertResult = await CreateUpsert()
+                .Upsert(sessionUpsertRequest, Connection!, Transaction!, traceId);
+            sessionUpsertResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+
+            IUpsertRequest courseOfferingUpsertRequest = CreateUpsertRequest(
+                "CourseOffering",
+                _courseOfferingDocumentUuid,
+                _courseOfferingReferentialIdUuid,
+                """
+                {
+                    "localCourseCode": "ABC",
+                    "sessionReference": {
+                        "sessionName": "Third Quarter"
+                    }
+                }
+                """,
+                CreateDocumentReferences(
+                    [new("CourseOffering", sessionUpsertRequest.DocumentInfo.ReferentialId.Value)]
+                )
+            );
+
+            var courseOfferingUpsertResult = await CreateUpsert()
+                .Upsert(courseOfferingUpsertRequest, Connection!, Transaction!, traceId);
+            courseOfferingUpsertResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+        }
+
+        [Test]
+        public async Task Update_session()
+        {
+            var documentIdentityElement = new DocumentIdentityElement(
+                new JsonPath("$.sessionName"),
+                "Fourth Quarter"
+            );
+            IUpdateRequest sessionUpdateRequest = CreateUpdateRequest(
+                "Session",
+                _sessionDocumentUuid,
+                _sessionReferentialIdUuid,
+                """
+                {
+                    "sessionName": "Fourth Quarter"
+                }
+                """,
+                documentIdentityElements: [documentIdentityElement]
+            );
+
+            var sessionUpdateResult = await CreateUpdate()
+                .UpdateById(sessionUpdateRequest, Connection!, Transaction!, traceId);
+
+            sessionUpdateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
+
+            var getResult = await CreateGetById()
+                .GetById(
+                    CreateGetRequest("CourseOffering", _courseOfferingDocumentUuid),
+                    Connection!,
+                    Transaction!
+                );
+
+            getResult!.Should().BeOfType<GetResult.GetSuccess>();
+            (getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_courseOfferingDocumentUuid);
+            (getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("Fourth Quarter");
+
+            true.Should().BeTrue();
+        }
+    }
     // Future tests - from Meadowlark
 
     // given an update of a document that tries to reference an existing descriptor
