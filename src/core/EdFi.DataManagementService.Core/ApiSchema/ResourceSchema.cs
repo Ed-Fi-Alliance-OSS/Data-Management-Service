@@ -261,7 +261,7 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
                     queryField.Key,
                     queryField
                         .Value?.AsArray()
-                        .Select(x => new QueryJsonPath(
+                        .Select(x => new JsonPathAndType(
                             x!["path"]!.GetValue<string>(),
                             x["type"]!.GetValue<string>()
                         ))
