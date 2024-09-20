@@ -91,7 +91,7 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
     /// Returns a QueryElement for the given client query term using the list of possible query fields,
     /// or null if there is not a match with a valid query field name.
     /// </summary>
-    private static QueryElementAndType? queryElementFrom(
+    private static QueryElementAndType? QueryElementFrom(
         KeyValuePair<string, string> clientQueryTerm,
         QueryField[] possibleQueryFields
     )
@@ -150,7 +150,7 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
 
         foreach (KeyValuePair<string, string> clientQueryTerm in nonPaginationQueryTerms)
         {
-            QueryElementAndType? queryElementAndType = queryElementFrom(clientQueryTerm, possibleQueryFields);
+            QueryElementAndType? queryElementAndType = QueryElementFrom(clientQueryTerm, possibleQueryFields);
 
             if (queryElementAndType == null)
             {
@@ -181,7 +181,7 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
                 case "date":
                     if (
                         !DateTime.TryParseExact(
-                            value?.ToString(),
+                            value.ToString(),
                             "yyyy-MM-dd",
                             System.Globalization.CultureInfo.InvariantCulture,
                             System.Globalization.DateTimeStyles.None,
@@ -189,40 +189,40 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
                         )
                     )
                     {
-                        AddValidationError(validationErrors, path, value!, fieldName);
+                        AddValidationError(validationErrors, path, value, fieldName);
                     }
                     break;
                 case "date-time":
                     if (
                         !DateTime.TryParse(
-                            value?.ToString(),
+                            value.ToString(),
                             System.Globalization.CultureInfo.InvariantCulture,
                             out _
                         )
                     )
                     {
-                        AddValidationError(validationErrors, path, value!, fieldName);
+                        AddValidationError(validationErrors, path, value, fieldName);
                     }
                     break;
 
                 case "number":
-                    if (!decimal.TryParse(value?.ToString(), out _))
+                    if (!decimal.TryParse(value.ToString(), out _))
                     {
-                        AddValidationError(validationErrors, path, value!, fieldName);
+                        AddValidationError(validationErrors, path, value, fieldName);
                     }
                     break;
 
                 case "string":
                     if (!(value is string))
                     {
-                        AddValidationError(validationErrors, path, value!, fieldName);
+                        AddValidationError(validationErrors, path, value, fieldName);
                     }
                     break;
 
                 case "time":
                     if (
                         !DateTime.TryParseExact(
-                            value?.ToString(),
+                            value.ToString(),
                             "HH:mm:ss",
                             System.Globalization.CultureInfo.InvariantCulture,
                             System.Globalization.DateTimeStyles.None,
@@ -230,7 +230,7 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
                         )
                     )
                     {
-                        AddValidationError(validationErrors, path, value!, fieldName);
+                        AddValidationError(validationErrors, path, value, fieldName);
                     }
                     break;
             }
