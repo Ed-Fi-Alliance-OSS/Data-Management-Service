@@ -707,7 +707,8 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                     await command.PrepareAsync(cancellationToken);
                     await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
 
-                    var results = new List<CascadingUpdateResult>();
+                    List<CascadingUpdateResult> results = [];
+
                     if (!reader.HasRows)
                     {
                         return results;

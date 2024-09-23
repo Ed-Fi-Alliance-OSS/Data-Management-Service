@@ -707,11 +707,7 @@ public class UpdateTests : DatabaseTest
             var courseOfferingUpsertResult = await CreateUpsert()
                 .Upsert(courseOfferingUpsertRequest, Connection!, Transaction!, traceId);
             courseOfferingUpsertResult.Should().BeOfType<UpsertResult.InsertSuccess>();
-        }
 
-        [Test]
-        public async Task Update_session()
-        {
             var documentIdentityElement = new DocumentIdentityElement(
                 new JsonPath("$.sessionName"),
                 "Fourth Quarter"
@@ -732,7 +728,11 @@ public class UpdateTests : DatabaseTest
                 .UpdateById(sessionUpdateRequest, Connection!, Transaction!, traceId);
 
             sessionUpdateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
+        }
 
+        [Test]
+        public async Task It_should_update_the_body_of_the_referencing_document()
+        {
             var getResult = await CreateGetById()
                 .GetById(
                     CreateGetRequest("CourseOffering", _courseOfferingDocumentUuid),
@@ -743,8 +743,6 @@ public class UpdateTests : DatabaseTest
             getResult!.Should().BeOfType<GetResult.GetSuccess>();
             (getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_courseOfferingDocumentUuid);
             (getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("Fourth Quarter");
-
-            true.Should().BeTrue();
         }
     }
     // Future tests - from Meadowlark
