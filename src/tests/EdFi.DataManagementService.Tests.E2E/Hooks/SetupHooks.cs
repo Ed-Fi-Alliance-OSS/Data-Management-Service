@@ -9,7 +9,7 @@ using Reqnroll;
 namespace EdFi.DataManagementService.Tests.E2E.Hooks;
 
 [Binding]
-public class SetupHooks
+public static class SetupHooks
 {
     private static ContainerSetupBase? _containerSetup;
 
@@ -23,6 +23,7 @@ public class SetupHooks
         _openSearchEnabled = AppSettings.OpenSearchEnabled;
 
         if (_useTestContainers)
+        {
             if (_openSearchEnabled)
             {
                 _containerSetup = new OpenSearchContainerSetup();
@@ -31,6 +32,7 @@ public class SetupHooks
             {
                 _containerSetup = new ContainerSetup();
             }
+        }
 
         await _containerSetup!.StartContainers();
     }
@@ -50,7 +52,7 @@ public class SetupHooks
                 logger.log.Debug("Using local environment, verify that it's correctly set.");
             }
 
-            await context.CreateApiContext();
+            await context.InitializeApiContext();
         }
         catch (Exception exception)
         {
@@ -66,8 +68,8 @@ public class SetupHooks
     }
 
     [AfterTestRun]
-    public static void AfterTestRun()
+    public static void AfterTestRun(PlaywrightContext context)
     {
-        PlaywrightContext.Dispose();
+        context.Dispose();
     }
 }

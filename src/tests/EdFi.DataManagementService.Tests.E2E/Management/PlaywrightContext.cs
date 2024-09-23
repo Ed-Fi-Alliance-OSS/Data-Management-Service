@@ -9,18 +9,18 @@ namespace EdFi.DataManagementService.Tests.E2E.Management;
 
 public class PlaywrightContext
 {
-    private static Task<IAPIRequestContext>? _requestContext;
+    private Task<IAPIRequestContext>? _requestContext;
 
     public string ApiUrl { get; set; } = "http://localhost:8987";
 
     public IAPIRequestContext? ApiRequestContext => _requestContext?.GetAwaiter().GetResult();
 
-    public static void Dispose()
+    public void Dispose()
     {
         _requestContext?.Dispose();
     }
 
-    public async Task CreateApiContext()
+    public async Task InitializeApiContext()
     {
         var playwright = await Playwright.CreateAsync();
 

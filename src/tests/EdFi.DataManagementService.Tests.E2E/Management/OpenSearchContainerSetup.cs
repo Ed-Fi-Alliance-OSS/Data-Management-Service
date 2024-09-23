@@ -30,10 +30,10 @@ public class OpenSearchContainerSetup : ContainerSetupBase
         await ResetDatabase();
     }
 
-    private async Task ResetOpenSearch()
+    private static async Task ResetOpenSearch()
     {
         OpenSearchClient openSearchClient = new();
-        var indices = openSearchClient.Cat.Indices();
+        var indices = await openSearchClient.Cat.IndicesAsync();
 
         foreach (var index in indices.Records.Where(x => x.Index.Contains("ed-fi")))
         {

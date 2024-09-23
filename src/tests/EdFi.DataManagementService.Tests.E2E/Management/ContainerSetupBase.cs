@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Reflection;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Networks;
@@ -51,7 +50,7 @@ public abstract class ContainerSetupBase
             .WithEnvironment("BREAK_DURATION_SECONDS", "30")
             .WithEnvironment("OPENSEARCH_URL", openSearchURl)
             .WithWaitStrategy(
-                Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort((ushort)httpPort))
+                Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(httpPort))
             )
             .WithNetwork(network)
             .WithLogger(loggerFactory!.CreateLogger("apiContainer"))
