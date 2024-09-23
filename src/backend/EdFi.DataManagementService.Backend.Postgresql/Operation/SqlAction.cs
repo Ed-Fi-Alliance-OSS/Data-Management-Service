@@ -648,6 +648,8 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
         return result;
     }
 
+    // Disabled remove commented code to show example
+#pragma warning disable S125
     /// <summary>
     /// Update the edfidoc of related resources when a child identity is updated.
     /// For example:
@@ -678,6 +680,8 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
     //  document.documentpartitionkey as ModifiedDocumentPartitionKey,
     //  document.resourcename as ModifiedResourceName;
     /// </summary>
+
+#pragma warning restore S125 // Code comments should be removed
     public async Task<List<CascadingUpdateResult>> CascadeUpdates(
         string resourceName,
         long documentId,

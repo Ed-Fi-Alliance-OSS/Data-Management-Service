@@ -713,13 +713,14 @@ public class UpdateTests : DatabaseTest
             IUpdateRequest sessionUpdateRequest = CreateUpdateRequest(
                 "Session",
                 _sessionDocumentUuid,
-                _sessionReferentialIdUuid,
+                Guid.NewGuid(),
                 """
                 {
                     "sessionName": "Fourth Quarter"
                 }
                 """,
-                documentIdentityElements: [documentIdentityElement]
+                documentIdentityElements: [documentIdentityElement],
+                allowIdentityUpdates: true
             );
 
             var sessionUpdateResult = await CreateUpdate()
@@ -740,6 +741,116 @@ public class UpdateTests : DatabaseTest
 
             getResult!.Should().BeOfType<GetResult.GetSuccess>();
             (getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_courseOfferingDocumentUuid);
+            (getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("Fourth Quarter");
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_update_of_a_document_cascade_to_parents_with_recursion : UpdateTests
+    {
+        private static readonly Guid _sessionDocumentUuid = Guid.NewGuid();
+        private static readonly Guid _sessionReferentialIdUuid = Guid.NewGuid();
+
+        private static readonly Guid _courseOfferingDocumentUuid = Guid.NewGuid();
+        private static readonly Guid _courseOfferingReferentialIdUuid = Guid.NewGuid();
+
+        private static readonly Guid _fooDocumentUuid = Guid.NewGuid();
+        private static readonly Guid _fooReferentialIdUuid = Guid.NewGuid();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            //The document that will be referenced "Session"
+            IUpsertRequest sessionUpsertRequest = CreateUpsertRequest(
+                "Session",
+                _sessionDocumentUuid,
+                _sessionReferentialIdUuid,
+                """
+                {
+                    "sessionName": "Third Quarter"
+                }
+                """,
+                allowIdentityUpdates: true
+            );
+            var sessionUpsertResult = await CreateUpsert()
+                .Upsert(sessionUpsertRequest, Connection!, Transaction!, traceId);
+            sessionUpsertResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+
+            IUpsertRequest courseOfferingUpsertRequest = CreateUpsertRequest(
+                "CourseOffering",
+                _courseOfferingDocumentUuid,
+                _courseOfferingReferentialIdUuid,
+                """
+                {
+                    "localCourseCode": "ABC",
+                    "sessionReference": {
+                        "sessionName": "Third Quarter"
+                    }
+                }
+                """,
+                CreateDocumentReferences(
+                    [new("CourseOffering", sessionUpsertRequest.DocumentInfo.ReferentialId.Value)]
+                )
+            );
+
+            var courseOfferingUpsertResult = await CreateUpsert()
+                .Upsert(courseOfferingUpsertRequest, Connection!, Transaction!, traceId);
+            courseOfferingUpsertResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+
+            // creating a contrived resource that has courseOffering as part of its identity
+            IUpsertRequest fooUpsertRequest = CreateUpsertRequest(
+                "Foo",
+                _fooDocumentUuid,
+                _fooReferentialIdUuid,
+                """
+                {
+                    "fooName": "XYZ",
+                    "courseOfferingReference": {
+                        "localCourseCode": "ABC",
+                        "sessionName": "Third Quarter"
+                    }
+                }
+                """,
+                CreateDocumentReferences(
+                    [new("Foo", courseOfferingUpsertRequest.DocumentInfo.ReferentialId.Value)]
+                )
+            );
+
+            var fooUpsertResult = await CreateUpsert()
+                .Upsert(fooUpsertRequest, Connection!, Transaction!, traceId);
+            fooUpsertResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+
+            var documentIdentityElement = new DocumentIdentityElement(
+                new JsonPath("$.sessionName"),
+                "Fourth Quarter"
+            );
+            IUpdateRequest sessionUpdateRequest = CreateUpdateRequest(
+                "Session",
+                _sessionDocumentUuid,
+                Guid.NewGuid(),
+                """
+                {
+                    "sessionName": "Fourth Quarter"
+                }
+                """,
+                documentIdentityElements: [documentIdentityElement],
+                allowIdentityUpdates: true
+            );
+
+            var sessionUpdateResult = await CreateUpdate()
+                .UpdateById(sessionUpdateRequest, Connection!, Transaction!, traceId);
+
+            sessionUpdateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
+        }
+
+        [Test]
+        public async Task It_should_update_the_body_of_the_referencing_document()
+        {
+            var getResult = await CreateGetById()
+                .GetById(CreateGetRequest("Foo", _fooDocumentUuid), Connection!, Transaction!);
+
+            getResult!.Should().BeOfType<GetResult.GetSuccess>();
+            (getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_fooDocumentUuid);
             (getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("Fourth Quarter");
         }
     }
