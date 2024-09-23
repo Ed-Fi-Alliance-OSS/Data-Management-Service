@@ -196,6 +196,7 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
                         !DateTime.TryParse(
                             queryFieldValue.ToString(),
                             System.Globalization.CultureInfo.InvariantCulture,
+                            System.Globalization.DateTimeStyles.None,
                             out _
                         )
                     )
