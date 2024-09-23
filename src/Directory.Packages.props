@@ -35,7 +35,7 @@
 	</ItemGroup>
 	<!-- Testing Packages -->
 	<ItemGroup>
-		<PackageVersion Include="Autofac" Version="8.0.0" />
+		<PackageVersion Include="Autofac" Version="8.1.0" />
 		<PackageVersion Include="Autofac.Extras.FakeItEasy" Version="7.0.0" />
 		<PackageVersion Include="coverlet.collector" Version="6.0.2" />
 		<PackageVersion Include="coverlet.msbuild" Version="6.0.2" />
