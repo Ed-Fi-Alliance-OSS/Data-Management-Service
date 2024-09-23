@@ -4,8 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.ApiSchema.Model;
+using EdFi.DataManagementService.Core.Model;
 using Json.Schema;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -26,6 +27,8 @@ public class ApiSchemaBuilder
 
     private JsonNode? _currentDocumentPathsMappingNode = null;
 
+    private JsonNode? _currentQueryFieldMappingNode = null;
+
     public ApiSchemaBuilder()
     {
         _apiSchemaRootNode = new JsonObject
@@ -44,7 +47,7 @@ public class ApiSchemaBuilder
         {
             0 => resourceName,
             1 => resourceName.ToLower(),
-            _ => char.ToLower(resourceName[0]) + resourceName[1..]
+            _ => char.ToLower(resourceName[0]) + resourceName[1..],
         };
         return decapitalized + "s";
     }
@@ -120,7 +123,8 @@ public class ApiSchemaBuilder
             ["isSchoolYearEnumeration"] = isSchoolYearEnumeration,
             ["isSubclass"] = isSubclass,
             ["jsonSchemaForInsert"] = new JsonObject(),
-            ["resourceName"] = resourceName
+            ["resourceName"] = resourceName,
+            ["queryFieldMapping"] = new JsonObject(),
         };
 
         string endpointName = ToEndpointName(resourceName);
@@ -263,6 +267,25 @@ public class ApiSchemaBuilder
     }
 
     /// <summary>
+    /// Start a query field mapping definition. Can only be done inside a resource definition.
+    /// Always end when finished.
+    /// </summary>
+    public ApiSchemaBuilder WithStartQueryFieldMapping()
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentQueryFieldMappingNode = _currentResourceNode["queryFieldMapping"];
+        return this;
+    }
+
+    /// <summary>
     /// Adds a DocumentPath to a DocumentPathsMapping for a scalar path
     ///
     /// Example for parameters ("OfficialAttendancePeriod", "$.officialAttendancePeriod")
@@ -290,7 +313,7 @@ public class ApiSchemaBuilder
         _currentDocumentPathsMappingNode[pathFullName] = new JsonObject
         {
             ["isReference"] = false,
-            ["path"] = jsonPath
+            ["path"] = jsonPath,
         };
 
         return this;
@@ -367,10 +390,10 @@ public class ApiSchemaBuilder
                     .Select(x => new JsonObject
                     {
                         ["identityJsonPath"] = x.Key,
-                        ["referenceJsonPath"] = x.Value
+                        ["referenceJsonPath"] = x.Value,
                     })
                     .ToArray()
-            )
+            ),
         };
 
         return this;
@@ -414,7 +437,7 @@ public class ApiSchemaBuilder
             ["isDescriptor"] = true,
             ["projectName"] = referenceProjectName,
             ["resourceName"] = pathFullName,
-            ["path"] = jsonPath
+            ["path"] = jsonPath,
         };
 
         return this;
@@ -436,8 +459,44 @@ public class ApiSchemaBuilder
                 .Select(x => new JsonObject
                 {
                     ["sourceJsonPath"] = x.SourceJsonPath.Value,
-                    ["targetJsonPath"] = x.TargetJsonPath.Value
+                    ["targetJsonPath"] = x.TargetJsonPath.Value,
                 })
+                .ToArray()
+        );
+
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a query field to a query field mapping with the given query field name
+    /// and array of JsonPaths and types
+    ///
+    /// Example for parameters "studentUniqueId", [(JsonPathString: "$.studentReference.studentUniqueId", Type: "string")]
+    ///
+    /// "studentUniqueId": [
+    ///   "path": "$.studentReference.studentUniqueId",
+    ///   "type": "string"
+    /// ],
+    ///
+    /// </summary>
+    public ApiSchemaBuilder WithQueryField(string fieldName, JsonPathAndType[] jsonPathAndTypes)
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentQueryFieldMappingNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentQueryFieldMappingNode[fieldName] = new JsonArray(
+            jsonPathAndTypes
+                .Select(x => new JsonObject { ["path"] = x.JsonPathString, ["type"] = x.Type })
                 .ToArray()
         );
 
@@ -463,6 +522,28 @@ public class ApiSchemaBuilder
         }
 
         _currentDocumentPathsMappingNode = null;
+        return this;
+    }
+
+    /// <summary>
+    /// End a query field mapping definition.
+    /// </summary>
+    public ApiSchemaBuilder WithEndQueryFieldMapping()
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentQueryFieldMappingNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentQueryFieldMappingNode = null;
         return this;
     }
 

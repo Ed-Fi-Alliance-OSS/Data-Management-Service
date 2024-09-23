@@ -57,8 +57,6 @@ Feature: Read a Descriptor
                   }
                   """
 
-        # DMS-89
-        @ignore
         Scenario: 06 Ensure clients cannot retrieve a descriptor by requesting through a non existing codeValue
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors?codeValue=Test"
              Then it should respond with 200
@@ -67,8 +65,6 @@ Feature: Read a Descriptor
                   []
                   """
 
-        # DMS-89
-        @ignore
         Scenario: 08 Ensure clients cannot retrieve a descriptor by requesting through a non existing namespace
              When a GET request is made to "/ed-fi/disabilityDescriptors?namespace=uri://ed-fi.org/DisabilityDescriptor#Fake"
              Then it should respond with 200
@@ -77,23 +73,22 @@ Feature: Read a Descriptor
                   []
                   """
 
-        # DMS-309
-        @ignore
         Scenario: 03 Verify response code 404 when ID is not valid
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/00112233445566"
-             Then it should respond with 404
+             Then it should respond with 400
               And the response body is
                   """
                   {
                       "detail": "Data validation failed. See 'validationErrors' for details.",
                       "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                       "title": "Data Validation Failed",
-                      "status": 404,
+                      "status": 400,
                       "correlationId": null,
                       "validationErrors": {
                           "$.id": [
                               "The value '00112233445566' is not valid."
                           ]
-                      }
+                      },
+                      "errors": []
                   }
                   """

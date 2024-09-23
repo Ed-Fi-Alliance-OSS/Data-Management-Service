@@ -166,7 +166,7 @@ Feature: Query Strings handling for GET requests
              Then it should respond with 200
               And the response body includes "nameOfInstitution: UT Austin College of Education Under Graduate"
 
-        @ignore
+        
         Scenario: 14 Ensure empty array is returned if school name does not match
             Given the system has these "schools"
                   | schoolId | nameOfInstitution                             | gradeLevels         | educationOrganizationCategories     |

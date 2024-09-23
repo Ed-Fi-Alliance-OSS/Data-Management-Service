@@ -3,22 +3,25 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-namespace EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.ApiSchema.Model;
+
+namespace EdFi.DataManagementService.Core.Model;
 
 /// <summary>
 /// A single element of a query. A single API client query term can
 /// map to multiple paths of a document. If that is the case,
 /// a query handler should "OR" those paths together.
+/// This object includes type information on the paths.
 /// </summary>
-public record QueryElement(
+public record QueryElementAndType(
     /// <summary>
     /// The query field name provide by the API client
     /// </summary>
     string QueryFieldName,
     /// <summary>
-    /// The document paths the query field applies to
+    /// The document paths and types the query field applies to
     /// </summary>
-    JsonPath[] DocumentPaths,
+    JsonPathAndType[] DocumentPathsAndTypes,
     /// <summary>
     /// The value being searched for
     /// </summary>

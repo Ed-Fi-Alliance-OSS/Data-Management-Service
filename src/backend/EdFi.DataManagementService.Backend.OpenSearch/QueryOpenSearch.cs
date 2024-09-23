@@ -7,7 +7,6 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.External.Backend;
-using EdFi.DataManagementService.Core.External.Backend.Model;
 using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
 using OpenSearch.Client;

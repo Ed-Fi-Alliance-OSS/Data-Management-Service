@@ -5,12 +5,12 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
-using EdFi.DataManagementService.Core.External.Backend.Model;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using Microsoft.Extensions.Logging;
+using static EdFi.DataManagementService.Core.Response.FailureResponse;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
@@ -91,7 +91,7 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
     /// Returns a QueryElement for the given client query term using the list of possible query fields,
     /// or null if there is not a match with a valid query field name.
     /// </summary>
-    private static QueryElement? queryElementFrom(
+    private static QueryElementAndType? QueryElementFrom(
         KeyValuePair<string, string> clientQueryTerm,
         QueryField[] possibleQueryFields
     )
@@ -106,10 +106,10 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
             return null;
         }
 
-        return new QueryElement(
+        return new QueryElementAndType(
             QueryFieldName: clientQueryTerm.Key,
-            DocumentPaths: matchingQueryField.DocumentPaths,
-            clientQueryTerm.Value
+            DocumentPathsAndTypes: matchingQueryField.DocumentPathsWithType,
+            Value: clientQueryTerm.Value
         );
     }
 
@@ -146,11 +146,13 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
 
         List<QueryElement> queryElements = [];
 
+        Dictionary<string, string[]> validationErrors = [];
+
         foreach (KeyValuePair<string, string> clientQueryTerm in nonPaginationQueryTerms)
         {
-            QueryElement? queryElement = queryElementFrom(clientQueryTerm, possibleQueryFields);
+            QueryElementAndType? queryElementAndType = QueryElementFrom(clientQueryTerm, possibleQueryFields);
 
-            if (queryElement == null)
+            if (queryElementAndType == null)
             {
                 JsonNode failureResponse = FailureResponse.ForBadRequest(
                     "The request could not be processed. See 'errors' for details.",
@@ -163,11 +165,133 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
                 return;
             }
 
-            queryElements.Add(queryElement);
+            string jsonPathString = queryElementAndType.DocumentPathsAndTypes[0].JsonPathString;
+            string queryFieldName = queryElementAndType.QueryFieldName;
+            object queryFieldValue = queryElementAndType.Value;
+
+            switch (queryElementAndType.DocumentPathsAndTypes[0].Type)
+            {
+                case "boolean":
+                    if (!bool.TryParse(queryFieldValue?.ToString(), out _))
+                    {
+                        AddValidationError(validationErrors, jsonPathString, queryFieldValue!, queryFieldName);
+                    }
+                    break;
+                case "date":
+                    if (
+                        !DateTime.TryParseExact(
+                            queryFieldValue.ToString(),
+                            "yyyy-MM-dd",
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            System.Globalization.DateTimeStyles.None,
+                            out _
+                        )
+                    )
+                    {
+                        AddValidationError(validationErrors, jsonPathString, queryFieldValue, queryFieldName);
+                    }
+                    break;
+                case "date-time":
+                    if (
+                        !DateTime.TryParse(
+                            queryFieldValue.ToString(),
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            System.Globalization.DateTimeStyles.None,
+                            out _
+                        )
+                    )
+                    {
+                        AddValidationError(validationErrors, jsonPathString, queryFieldValue, queryFieldName);
+                    }
+                    break;
+
+                case "number":
+                    if (!decimal.TryParse(queryFieldValue.ToString(), out _))
+                    {
+                        AddValidationError(validationErrors, jsonPathString, queryFieldValue, queryFieldName);
+                    }
+                    break;
+
+                case "string":
+                    if (queryFieldValue is not string)
+                    {
+                        AddValidationError(validationErrors, jsonPathString, queryFieldValue, queryFieldName);
+                    }
+                    break;
+
+                case "time":
+                    if (
+                        !DateTime.TryParseExact(
+                            queryFieldValue.ToString(),
+                            "HH:mm:ss",
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            System.Globalization.DateTimeStyles.None,
+                            out _
+                        )
+                    )
+                    {
+                        AddValidationError(validationErrors, jsonPathString, queryFieldValue, queryFieldName);
+                    }
+                    break;
+                default:
+                    throw new InvalidOperationException(
+                        $"ValidateQueryMiddleware found an unsupported type {queryElementAndType.DocumentPathsAndTypes[0].Type}"
+                    );
+            }
+
+            // Convert QueryElementAndType to QueryElement
+            queryElements.Add(
+                new(
+                    queryElementAndType.QueryFieldName,
+                    queryElementAndType
+                        .DocumentPathsAndTypes.Select(x => new JsonPath(x.JsonPathString))
+                        .ToArray(),
+                    queryElementAndType.Value
+                )
+            );
         }
 
-        context.QueryElements = queryElements.ToArray();
+        if (validationErrors.Count != 0)
+        {
+            _logger.LogDebug("Query parameter format error - {TraceId}", context.FrontendRequest.TraceId);
 
-        await next();
+            context.FrontendResponse = new FrontendResponse(
+                StatusCode: 400,
+                Body: ForDataValidation(
+                    "Data validation failed. See 'validationErrors' for details.",
+                    traceId: context.FrontendRequest.TraceId,
+                    validationErrors,
+                    []
+                ),
+                Headers: []
+            );
+            return;
+        }
+        else
+        {
+            context.QueryElements = queryElements.ToArray();
+
+            await next();
+        }
+    }
+
+    private static void AddValidationError(
+        Dictionary<string, string[]> errors,
+        string jsonPathString,
+        object queryValue,
+        string queryFieldName
+    )
+    {
+        if (!errors.ContainsKey(jsonPathString))
+        {
+            errors[jsonPathString] = [];
+        }
+
+        string errorMessage = $"The value '{queryValue}' is not valid for {queryFieldName}.";
+        string[] updatedErrors = new string[errors[jsonPathString].Length + 1];
+        errors[jsonPathString].CopyTo(updatedErrors, 0);
+        updatedErrors[^1] = errorMessage;
+
+        errors[jsonPathString] = updatedErrors;
     }
 }

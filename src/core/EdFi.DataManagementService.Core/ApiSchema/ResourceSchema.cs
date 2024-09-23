@@ -95,7 +95,7 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
             jsonSchemaForUpdate["properties"]!["id"] = new JsonObject
             {
                 { "type", "string" },
-                { "description", "The item id" }
+                { "description", "The item id" },
             };
             jsonSchemaForUpdate["required"]!.AsArray().Add("id");
             return jsonSchemaForUpdate;
@@ -259,10 +259,16 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
                 .AsEnumerable()
                 .Select(queryField => new QueryField(
                     queryField.Key,
-                    queryField.Value?.AsArray().GetValues<string>().Select(x => new JsonPath(x)).ToArray()
-                        ?? throw new InvalidOperationException(
-                            "Expected queryField to be on queryFieldMapping, invalid ApiSchema"
-                        )
+                    queryField
+                        .Value?.AsArray()
+                        .Select(x => new JsonPathAndType(
+                            x!["path"]!.GetValue<string>(),
+                            x["type"]!.GetValue<string>()
+                        ))
+                        .ToArray()
+                    ?? throw new InvalidOperationException(
+                        "Expected queryField to be on queryFieldMapping, invalid ApiSchema"
+                    )
                 ));
         });
 
@@ -270,7 +276,11 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
     /// The list of QueryFields for this resource. A QueryField is a mapping of a valid query field
     /// along with a list of document paths that query field should be applied to by a query handler.
     /// </summary>
-    public IEnumerable<QueryField> QueryFields => _queryFields.Value;
+    public IEnumerable<QueryField> QueryFields
+    {
+        get => _queryFields.Value;
+        set => throw new NotImplementedException();
+    }
 
     private readonly Lazy<bool> _isSubclass =
         new(() =>
