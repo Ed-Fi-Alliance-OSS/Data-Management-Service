@@ -148,45 +148,41 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
             switch (rowsAffected)
             {
                 case 1:
+                    Document? documentFromDb;
+                    try
+                    {
+                        // Attempt to get the document, to get the ID for references
+                        documentFromDb = await _sqlAction.FindDocumentByReferentialId(
+                            updateRequest.DocumentInfo.ReferentialId,
+                            PartitionKeyFor(updateRequest.DocumentInfo.ReferentialId),
+                            connection,
+                            transaction,
+                            LockOption.BlockUpdateDelete,
+                            traceId
+                        );
+                    }
+                    catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.SerializationFailure)
+                    {
+                        _logger.LogDebug(
+                            pe,
+                            "Transaction conflict on Documents table read - {TraceId}",
+                            updateRequest.TraceId
+                        );
+                        return new UpdateResult.UpdateFailureWriteConflict();
+                    }
+
+                    long documentId = 0;
+                    if (documentFromDb != null)
+                    {
+                        documentId =
+                            documentFromDb.Id
+                            ?? throw new InvalidOperationException("documentFromDb.Id should never be null");
+                    }
                     if (
                         documentReferenceIds.ReferentialIds.Length > 0
                         || descriptorReferenceIds.ReferentialIds.Length > 0
                     )
                     {
-                        Document? documentFromDb;
-                        try
-                        {
-                            // Attempt to get the document, to get the ID for references
-                            documentFromDb = await _sqlAction.FindDocumentByReferentialId(
-                                updateRequest.DocumentInfo.ReferentialId,
-                                PartitionKeyFor(updateRequest.DocumentInfo.ReferentialId),
-                                connection,
-                                transaction,
-                                LockOption.BlockUpdateDelete,
-                                traceId
-                            );
-                        }
-                        catch (PostgresException pe)
-                            when (pe.SqlState == PostgresErrorCodes.SerializationFailure)
-                        {
-                            _logger.LogDebug(
-                                pe,
-                                "Transaction conflict on Documents table read - {TraceId}",
-                                updateRequest.TraceId
-                            );
-                            return new UpdateResult.UpdateFailureWriteConflict();
-                        }
-
-                        long documentId = 0;
-                        if (documentFromDb != null)
-                        {
-                            documentId =
-                                documentFromDb.Id
-                                ?? throw new InvalidOperationException(
-                                    "documentFromDb.Id should never be null"
-                                );
-                        }
-
                         await _sqlAction.DeleteReferencesByDocumentUuid(
                             documentPartitionKey.Value,
                             updateRequest.DocumentUuid.Value,
@@ -223,7 +219,46 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                         }
                     }
 
+                    if (
+                        updateRequest.ResourceInfo.AllowIdentityUpdates
+                        && !validationResult.ReferentialIdUnchanged
+                    )
+                    {
+                        var cascadingUpdateResults = await _sqlAction.CascadeUpdates(
+                            updateRequest.ResourceInfo.ResourceName.Value,
+                            documentId,
+                            documentPartitionKey.Value,
+                            updateRequest.DocumentInfo,
+                            connection,
+                            transaction,
+                            traceId
+                        );
+                        await recursivelyCascadeUpdates(cascadingUpdateResults);
+                    }
+
                     return new UpdateResult.UpdateSuccess(updateRequest.DocumentUuid);
+
+                    // Recursively call CascadeUpdates until the results are exhausted
+                    async Task recursivelyCascadeUpdates(List<CascadingUpdateResult> results)
+                    {
+                        if (!results.Any())
+                            return;
+
+                        foreach (var result in results)
+                        {
+                            var cascadingUpdateResult = await _sqlAction.CascadeUpdates(
+                                result.ModifiedResourceName,
+                                result.ModifiedDocumentId,
+                                result.ModifiedDocumentPartitionKey,
+                                updateRequest.DocumentInfo,
+                                connection,
+                                transaction,
+                                traceId
+                            );
+
+                            await recursivelyCascadeUpdates(cascadingUpdateResult);
+                        }
+                    }
 
                 case 0:
                     _logger.LogInformation(

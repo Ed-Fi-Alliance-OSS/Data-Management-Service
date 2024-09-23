@@ -85,11 +85,14 @@ public abstract class DatabaseTest : DatabaseTestBase
         Guid referentialId,
         DocumentReference[]? documentReferences = null,
         DescriptorReference[]? descriptorReferences = null,
-        SuperclassIdentity? superclassIdentity = null
+        SuperclassIdentity? superclassIdentity = null,
+        DocumentIdentityElement[]? documentIdentityElements = null
     )
     {
         return new(
-            DocumentIdentity: new([new(IdentityValue: "", IdentityJsonPath: new("$"))]),
+            DocumentIdentity: new(
+                documentIdentityElements ?? [new(IdentityValue: "", IdentityJsonPath: new("$"))]
+            ),
             ReferentialId: new ReferentialId(referentialId),
             DocumentReferences: documentReferences ?? [],
             DescriptorReferences: descriptorReferences ?? [],
@@ -145,17 +148,24 @@ public abstract class DatabaseTest : DatabaseTestBase
         DocumentReference[]? documentReferences = null,
         DescriptorReference[]? descriptorReferences = null,
         SuperclassIdentity? superclassIdentity = null,
-        bool allowIdentityUpdates = false
+        bool allowIdentityUpdates = false,
+        DocumentIdentityElement[]? documentIdentityElements = null
     )
     {
         return (
             new
             {
                 ResourceInfo = CreateResourceInfo(resourceName, allowIdentityUpdates),
-                DocumentInfo = CreateDocumentInfo(referentialIdGuid, documentReferences, descriptorReferences, superclassIdentity),
+                DocumentInfo = CreateDocumentInfo(
+                    referentialIdGuid,
+                    documentReferences,
+                    descriptorReferences,
+                    superclassIdentity,
+                    documentIdentityElements
+                ),
                 EdfiDoc = JsonNode.Parse(edfiDocString),
                 TraceId = new TraceId("123"),
-                DocumentUuid = new DocumentUuid(documentUuidGuid)
+                DocumentUuid = new DocumentUuid(documentUuidGuid),
             }
         ).ActLike<IUpsertRequest>();
     }
@@ -178,17 +188,24 @@ public abstract class DatabaseTest : DatabaseTestBase
         DocumentReference[]? documentReferences = null,
         DescriptorReference[]? descriptorReferences = null,
         SuperclassIdentity? superclassIdentity = null,
-        bool allowIdentityUpdates = false
+        bool allowIdentityUpdates = false,
+        DocumentIdentityElement[]? documentIdentityElements = null
     )
     {
         return (
             new
             {
                 ResourceInfo = CreateResourceInfo(resourceName, allowIdentityUpdates),
-                DocumentInfo = CreateDocumentInfo(referentialIdGuid, documentReferences, descriptorReferences, superclassIdentity),
+                DocumentInfo = CreateDocumentInfo(
+                    referentialIdGuid,
+                    documentReferences,
+                    descriptorReferences,
+                    superclassIdentity,
+                    documentIdentityElements
+                ),
                 EdfiDoc = JsonNode.Parse(edFiDocString),
                 TraceId = new TraceId("123"),
-                DocumentUuid = new DocumentUuid(documentUuidGuid)
+                DocumentUuid = new DocumentUuid(documentUuidGuid),
             }
         ).ActLike<IUpdateRequest>();
     }
@@ -200,7 +217,7 @@ public abstract class DatabaseTest : DatabaseTestBase
             {
                 ResourceInfo = CreateResourceInfo(resourceName),
                 TraceId = new TraceId("123"),
-                DocumentUuid = new DocumentUuid(documentUuidGuid)
+                DocumentUuid = new DocumentUuid(documentUuidGuid),
             }
         ).ActLike<IGetRequest>();
     }
@@ -217,7 +234,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                 ResourceInfo = CreateResourceInfo(resourceName),
                 SearchParameters = searchParameters,
                 PaginationParameters = paginationParameters,
-                TraceId = new TraceId("123")
+                TraceId = new TraceId("123"),
             }
         ).ActLike<IQueryRequest>();
     }
@@ -229,7 +246,7 @@ public abstract class DatabaseTest : DatabaseTestBase
             {
                 ResourceInfo = CreateResourceInfo(resourceName),
                 TraceId = new TraceId("123"),
-                DocumentUuid = new DocumentUuid(documentUuidGuid)
+                DocumentUuid = new DocumentUuid(documentUuidGuid),
             }
         ).ActLike<IDeleteRequest>();
     }
