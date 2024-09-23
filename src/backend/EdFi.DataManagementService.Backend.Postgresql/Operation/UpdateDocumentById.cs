@@ -219,17 +219,22 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                         }
                     }
 
-                    var cascadingUpdateResults = await _sqlAction.CascadeUpdates(
-                        updateRequest.ResourceInfo.ResourceName.Value,
-                        documentId,
-                        documentPartitionKey.Value,
-                        updateRequest.DocumentInfo,
-                        connection,
-                        transaction,
-                        traceId
-                    );
-
-                    await recursivelyCascadeUpdates(cascadingUpdateResults);
+                    if (
+                        updateRequest.ResourceInfo.AllowIdentityUpdates
+                        && !validationResult.ReferentialIdUnchanged
+                    )
+                    {
+                        var cascadingUpdateResults = await _sqlAction.CascadeUpdates(
+                            updateRequest.ResourceInfo.ResourceName.Value,
+                            documentId,
+                            documentPartitionKey.Value,
+                            updateRequest.DocumentInfo,
+                            connection,
+                            transaction,
+                            traceId
+                        );
+                        await recursivelyCascadeUpdates(cascadingUpdateResults);
+                    }
 
                     return new UpdateResult.UpdateSuccess(updateRequest.DocumentUuid);
 
