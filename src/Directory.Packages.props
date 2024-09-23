@@ -53,6 +53,6 @@
 		<PackageVersion Include="NUnit.Analyzers" Version="4.3.0" />
 		<PackageVersion Include="Reqnroll" Version="2.1.0" />
 		<PackageVersion Include="Reqnroll.NUnit" Version="2.1.0" />
-		<PackageVersion Include="Testcontainers" Version="3.9.0" />
+		<PackageVersion Include="Testcontainers" Version="3.10.0" />
 	</ItemGroup>
 </Project>
