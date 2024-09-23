@@ -649,7 +649,34 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
     }
 
     /// <summary>
-    /// Update the edfidoc of related resources when a child identity is updated
+    /// Update the edfidoc of related resources when a child identity is updated.
+    /// For example:
+    /// If an EdFi "Session" resource has its identity modified by changing its sessionName
+    /// that update would need to cascade to all edfidoc bodies of resources that reference
+    /// that session. Below is an example sql statement for that scenario
+    ///
+    /// update dms.document
+    //  set
+    //      lastmodifiedat = NOW()
+    //      , edfidoc =
+    //          jsonb_set(
+    //              jsonb_set(
+    //                  jsonb_set(
+    //                      edfidoc, '{sessionReference, schoolId}', '"123"'
+    //                  ), '{sessionReference, schoolYear}', '"2025"'
+    //              ), '{sessionReference, sessionName}', '"I have been edited"'
+    //          )
+    //  from(
+    //      select parentdocumentid, parentdocumentpartitionkey
+    //          from dms.reference
+    //      where referenceddocumentid = $1
+    //  and referenceddocumentpartitionkey = $2
+    //      ) as sub
+    //      where document.id = sub.parentdocumentid
+    //      and document.documentpartitionkey = sub.parentdocumentpartitionkey
+    //      returning document.id as ModifiedDocumentId,
+    //  document.documentpartitionkey as ModifiedDocumentPartitionKey,
+    //  document.resourcename as ModifiedResourceName;
     /// </summary>
     public async Task<List<CascadingUpdateResult>> CascadeUpdates(
         string resourceName,
