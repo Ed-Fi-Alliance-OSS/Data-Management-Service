@@ -103,6 +103,16 @@ public interface ISqlAction
         TraceId traceId
     );
 
+    public Task<List<CascadingUpdateResult>> CascadeUpdates(
+        string resourceName,
+        long documentId,
+        short documentPartitionKey,
+        DocumentInfo documentInfo,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        TraceId traceId
+    );
+
     public Task<int> DeleteReferencesByDocumentUuid(
         int parentDocumentPartitionKey,
         Guid parentDocumentUuidGuid,
