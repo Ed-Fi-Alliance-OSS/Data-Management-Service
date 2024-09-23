@@ -666,8 +666,11 @@ public class UpdateTests : DatabaseTest
         private static readonly Guid _courseOfferingDocumentUuid = Guid.NewGuid();
         private static readonly Guid _courseOfferingReferentialIdUuid = Guid.NewGuid();
 
-        private static readonly Guid _sectionDocumentUuid = Guid.NewGuid();
-        private static readonly Guid _sectionReferentialIdUuid = Guid.NewGuid();
+        private static readonly Guid _section1DocumentUuid = Guid.NewGuid();
+        private static readonly Guid _section1ReferentialIdUuid = Guid.NewGuid();
+
+        private static readonly Guid _section2DocumentUuid = Guid.NewGuid();
+        private static readonly Guid _section2ReferentialIdUuid = Guid.NewGuid();
 
         [SetUp]
         public async Task Setup()
@@ -709,13 +712,13 @@ public class UpdateTests : DatabaseTest
                 .Upsert(courseOfferingUpsertRequest, Connection!, Transaction!, traceId);
             courseOfferingUpsertResult.Should().BeOfType<UpsertResult.InsertSuccess>();
 
-            IUpsertRequest sectionUpsertRequest = CreateUpsertRequest(
+            IUpsertRequest section1UpsertRequest = CreateUpsertRequest(
                 "Section",
-                _sectionDocumentUuid,
-                _sectionReferentialIdUuid,
+                _section1DocumentUuid,
+                _section1ReferentialIdUuid,
                 """
                 {
-                    "sectionName": "XYZ",
+                    "sectionName": "SECTION 1",
                     "courseOfferingReference": {
                         "localCourseCode": "ABC",
                         "sessionName": "Third Quarter"
@@ -727,9 +730,31 @@ public class UpdateTests : DatabaseTest
                 )
             );
 
-            var sectionUpsertResult = await CreateUpsert()
-                .Upsert(sectionUpsertRequest, Connection!, Transaction!, traceId);
-            sectionUpsertResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+            var section1UpsertResult = await CreateUpsert()
+                .Upsert(section1UpsertRequest, Connection!, Transaction!, traceId);
+            section1UpsertResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+
+            IUpsertRequest section2UpsertRequest = CreateUpsertRequest(
+                "Section",
+                _section2DocumentUuid,
+                _section2ReferentialIdUuid,
+                """
+                {
+                    "sectionName": "SECTION 2",
+                    "courseOfferingReference": {
+                        "localCourseCode": "ABC",
+                        "sessionName": "Third Quarter"
+                    }
+                }
+                """,
+                CreateDocumentReferences(
+                    [new("Section", courseOfferingUpsertRequest.DocumentInfo.ReferentialId.Value)]
+                )
+            );
+
+            var section2UpsertResult = await CreateUpsert()
+                .Upsert(section2UpsertRequest, Connection!, Transaction!, traceId);
+            section2UpsertResult.Should().BeOfType<UpsertResult.InsertSuccess>();
 
             var documentIdentityElement = new DocumentIdentityElement(
                 new JsonPath("$.sessionName"),
@@ -772,12 +797,37 @@ public class UpdateTests : DatabaseTest
         [Test]
         public async Task It_should_update_the_body_of_the_second_level_referencing_document()
         {
-            var getResult = await CreateGetById()
-                .GetById(CreateGetRequest("Section", _sectionDocumentUuid), Connection!, Transaction!);
+            var section1GetResult = await CreateGetById()
+                .GetById(CreateGetRequest("Section", _section1DocumentUuid), Connection!, Transaction!);
 
-            getResult!.Should().BeOfType<GetResult.GetSuccess>();
-            (getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_sectionDocumentUuid);
-            (getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("Fourth Quarter");
+            section1GetResult!.Should().BeOfType<GetResult.GetSuccess>();
+            (section1GetResult! as GetResult.GetSuccess)!
+                .DocumentUuid.Value.Should()
+                .Be(_section1DocumentUuid);
+            (section1GetResult! as GetResult.GetSuccess)!
+                .EdfiDoc.ToJsonString()
+                .Should()
+                .Contain("SECTION 1");
+            (section1GetResult! as GetResult.GetSuccess)!
+                .EdfiDoc.ToJsonString()
+                .Should()
+                .Contain("Fourth Quarter");
+
+            var section2GetResult = await CreateGetById()
+                .GetById(CreateGetRequest("Section", _section2DocumentUuid), Connection!, Transaction!);
+
+            section1GetResult!.Should().BeOfType<GetResult.GetSuccess>();
+            (section2GetResult! as GetResult.GetSuccess)!
+                .DocumentUuid.Value.Should()
+                .Be(_section2DocumentUuid);
+            (section2GetResult! as GetResult.GetSuccess)!
+                .EdfiDoc.ToJsonString()
+                .Should()
+                .Contain("SECTION 2");
+            (section2GetResult! as GetResult.GetSuccess)!
+                .EdfiDoc.ToJsonString()
+                .Should()
+                .Contain("Fourth Quarter");
         }
     }
     // Future tests - from Meadowlark
