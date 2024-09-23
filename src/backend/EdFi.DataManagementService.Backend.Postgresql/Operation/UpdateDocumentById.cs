@@ -229,12 +229,12 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                         traceId
                     );
 
-                    await cascadeUpdates(cascadingUpdateResults);
+                    await recursivelyCascadeUpdates(cascadingUpdateResults);
 
                     return new UpdateResult.UpdateSuccess(updateRequest.DocumentUuid);
 
                     // Recursively call CascadeUpdates until the results are exhausted
-                    async Task cascadeUpdates(List<CascadingUpdateResult> results)
+                    async Task recursivelyCascadeUpdates(List<CascadingUpdateResult> results)
                     {
                         if (!results.Any())
                             return;
@@ -251,7 +251,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                                 traceId
                             );
 
-                            await cascadeUpdates(cascadingUpdateResult);
+                            await recursivelyCascadeUpdates(cascadingUpdateResult);
                         }
                     }
 
