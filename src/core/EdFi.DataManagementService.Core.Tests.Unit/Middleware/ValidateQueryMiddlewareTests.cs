@@ -99,7 +99,7 @@ public class ValidateQueryMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
-        internal static ApiSchemaDocument NewApiSchemaDocument()
+        private static ApiSchemaDocument NewApiSchemaDocument()
         {
             var result = new ApiSchemaBuilder()
                 .WithStartProject()
@@ -119,7 +119,7 @@ public class ValidateQueryMiddlewareTests
             return result;
         }
 
-        internal static PipelineContext NewPipelineContext(
+        private static PipelineContext NewPipelineContext(
             FrontendRequest frontendRequest,
             RequestMethod method
         )
@@ -246,7 +246,7 @@ public class ValidateQueryMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
-        internal static ApiSchemaDocument NewApiSchemaDocument()
+        private static ApiSchemaDocument NewApiSchemaDocument()
         {
             var result = new ApiSchemaBuilder()
                 .WithStartProject()
@@ -266,7 +266,7 @@ public class ValidateQueryMiddlewareTests
             return result;
         }
 
-        internal static PipelineContext NewPipelineContext(
+        private static PipelineContext NewPipelineContext(
             FrontendRequest frontendRequest,
             RequestMethod method
         )

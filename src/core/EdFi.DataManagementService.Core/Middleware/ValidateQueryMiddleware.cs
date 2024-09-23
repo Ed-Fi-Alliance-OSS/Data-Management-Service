@@ -172,9 +172,9 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
             switch (queryElementAndType.DocumentPathsAndTypes[0].Type)
             {
                 case "boolean":
-                    if (queryFieldValue is not bool)
+                    if (!bool.TryParse(queryFieldValue?.ToString(), out _))
                     {
-                        AddValidationError(validationErrors, jsonPathString, queryFieldValue, queryFieldName);
+                        AddValidationError(validationErrors, jsonPathString, queryFieldValue!, queryFieldName);
                     }
                     break;
                 case "date":
