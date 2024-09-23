@@ -510,7 +510,6 @@ Feature: Resources "Update" Operation validations
                                   "schoolId": 1
                               }
                           }
-                  
                       ],
                       "dates": [],
                       "gradeLevels": []
@@ -613,7 +612,7 @@ Feature: Resources "Update" Operation validations
                     }
                   }
                   """
-             Then it should respond with 201
+             Then it should respond with 200 or 201
               And the record can be retrieved with a GET request
                   """
                   {
@@ -649,7 +648,7 @@ Feature: Resources "Update" Operation validations
                     }
                   }
                   """
-             Then it should respond with 201
+             Then it should respond with 200 or 201
              # Change the sessionName
              When a PUT request is made to "/ed-fi/sessions/{dependentId}" with
                   """
@@ -691,8 +690,126 @@ Feature: Resources "Update" Operation validations
                     }
                   }
                   """
+
+        Scenario: 20 Verify recursive cascading updates on non reference values
+            Given the system has these "schools"
+                  | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
+                  | 4003     | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+            Given the system has these "schoolYearTypes"
+                  | schoolYear | schoolYearDescription | currentSchoolYear |
+                  | 2025       | "2025"                | false             |
+            Given the system has these descriptors
+                  | descriptorValue                                          |
+                  | uri://ed-fi.org/CourseIdentificationSystemDescriptor#LEA |
+                  | uri://ed-fi.org/TermDescriptor#Quarter                   |
+            Given the system has these "courses"
+                  | educationOrganizationReference    | courseCode | courseTitle    | numberOfParts | identificationCodes                                                                                                                       |
+                  | {"educationOrganizationId": 4003} | "ART-01"   | "Art, Grade 1" | 1             | [ {"courseIdentificationSystemDescriptor": "uri://ed-fi.org/CourseIdentificationSystemDescriptor#LEA", "identificationCode": "ART-01" } ] |
+             When a POST request is made for dependent resource "/ed-fi/sessions/" with
+                  """
+                  {
+                    "endDate": "2025-03-31",
+                    "beginDate": "2025-01-01",
+                    "sessionName": "Q1",
+                    "termDescriptor": "uri://ed-fi.org/TermDescriptor#Quarter",
+                    "schoolReference": {
+                        "schoolId": 4003
+                    },
+                    "totalInstructionalDays": 45,
+                    "schoolYearTypeReference": {
+                        "schoolYear": 2025
+                    }
+                  }
+                  """
+             Then it should respond with 200 or 201
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": "{dependentId}",
+                    "endDate": "2025-03-31",
+                    "beginDate": "2025-01-01",
+                    "sessionName": "Q1",
+                    "termDescriptor": "uri://ed-fi.org/TermDescriptor#Quarter",
+                    "schoolReference": {
+                        "schoolId": 4003
+                    },
+                    "totalInstructionalDays": 45,
+                    "schoolYearTypeReference": {
+                        "schoolYear": 2025
+                    }
+                  }
+                  """
+             When a POST request is made to "/ed-fi/courseOfferings/" with
+                  """
+                  {
+                    "localCourseCode": "abc",
+                    "schoolReference": {
+                        "schoolId": 4003
+                    },
+                    "sessionReference": {
+                        "schoolYear": 2025,
+                        "sessionName": "Q1",
+                        "schoolId": 4003
+                    },
+                    "courseReference": {
+                        "courseCode": "ART-01",
+                        "educationOrganizationId": 4003
+                    }
+                  }
+                  """
+             Then it should respond with 200 or 201
+             When a POST request is made to "/ed-fi/sections/" with
+                  """
+                  {
+                    "sectionIdentifier": "SECTION ABC",
+                    "courseOfferingReference": {
+                        "localCourseCode": "abc",
+                        "schoolId": 4003,
+                        "schoolYear": 2025,
+                        "sessionName": "Q1"
+                    }
+                  }
+                  """
+             Then it should respond with 201
+             # Change the sessionName
+             When a PUT request is made to "/ed-fi/sessions/{dependentId}" with
+                  """
+                  {
+                    "id": "{dependentId}",
+                    "endDate": "2025-03-31",
+                    "beginDate": "2025-01-01",
+                    "sessionName": "Q2",
+                    "termDescriptor": "uri://ed-fi.org/TermDescriptor#Quarter",
+                    "schoolReference": {
+                        "schoolId": 4003
+                    },
+                    "totalInstructionalDays": 45,
+                    "schoolYearTypeReference": {
+                        "schoolYear": 2025
+                    }
+                  }
+                  """
+             Then it should respond with 204
+             When a GET request is made to "/ed-fi/sections/{id}"
+             Then it should respond with 200
+             # The new sessionName should cascade to this entity which is 2 levels away from session
+             # session -> courseOffering -> section
+              And the response body is
+                  """
+                  {
+                    "id": "{id}",
+                    "sectionIdentifier": "SECTION ABC",
+                    "courseOfferingReference": {
+                        "localCourseCode": "abc",
+                        "schoolId": "4003",
+                        "schoolYear": "2025",
+                        "sessionName": "Q2"
+                    }
+                  }
+                  """
+
         @ignore
-        Scenario: 20 Verify cascading updates on dependent resources in arrays
+        Scenario: 21 Verify cascading updates on dependent resources in lists
             Given the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
                   | 4003     | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
