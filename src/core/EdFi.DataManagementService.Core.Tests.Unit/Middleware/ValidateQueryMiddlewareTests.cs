@@ -99,20 +99,19 @@ public class ValidateQueryMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
-        internal static ApiSchemaDocument DocRefSchemaDocument()
+        internal static ApiSchemaDocument NewApiSchemaDocument()
         {
             var result = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("AcademicWeek")
-                .WithStartDocumentPathsMapping()
                 .WithStartQueryFieldMapping()
-                .WithQueryParamPathMapping("beginDate", "$.beginDate", "date")
-                .WithQueryParamPathMapping("schoolId", "$.schoolId", "number")
-                .WithQueryParamPathMapping("totalInstructionalDays", "$.totalInstructionalDays", "number")
-                .WithQueryParamPathMapping("isRequired", "$.isRequired", "boolean")
-                .WithQueryParamPathMapping("endDate", "$.endDate", "date-time")
-                .WithQueryParamPathMapping("classStartTime", "$.classStartTime", "time")
-                .WithEndDocumentPathsMapping()
+                .WithQueryField("beginDate", [new("$.beginDate", "date")])
+                .WithQueryField("schoolId", [new("$.schoolId", "number")])
+                .WithQueryField("totalInstructionalDays", [new("$.totalInstructionalDays", "number")])
+                .WithQueryField("isRequired", [new("$.isRequired", "boolean")])
+                .WithQueryField("endDate", [new("$.endDate", "date-time")])
+                .WithQueryField("classStartTime", [new("$.classStartTime", "time")])
+                .WithEndQueryFieldMapping()
                 .WithEndResource()
                 .WithEndProject()
                 .ToApiSchemaDocument();
@@ -120,12 +119,15 @@ public class ValidateQueryMiddlewareTests
             return result;
         }
 
-        internal PipelineContext DocRefContext(FrontendRequest frontendRequest, RequestMethod method)
+        internal static PipelineContext NewPipelineContext(
+            FrontendRequest frontendRequest,
+            RequestMethod method
+        )
         {
             PipelineContext docRefContext =
                 new(frontendRequest, method)
                 {
-                    ApiSchemaDocument = DocRefSchemaDocument(),
+                    ApiSchemaDocument = NewApiSchemaDocument(),
                     PathComponents = new(
                         ProjectNamespace: new("ed-fi"),
                         EndpointName: new("academicWeeks"),
@@ -160,9 +162,9 @@ public class ValidateQueryMiddlewareTests
                 { "beginDate", "Word" },
                 { "totalInstructionalDays", "Total" },
                 { "schoolId", "School" },
-                { "isRequired", "123"},
-                { "endDate", "DateTime"},
-                { "classStartTime", "Time"}
+                { "isRequired", "123" },
+                { "endDate", "DateTime" },
+                { "classStartTime", "Time" },
             };
 
             FrontendRequest frontendRequest =
@@ -173,7 +175,7 @@ public class ValidateQueryMiddlewareTests
                     TraceId: new TraceId("")
                 );
 
-            _context = DocRefContext(frontendRequest, RequestMethod.GET);
+            _context = NewPipelineContext(frontendRequest, RequestMethod.GET);
 
             await Middleware().Execute(_context, NullNext);
         }
@@ -187,24 +189,15 @@ public class ValidateQueryMiddlewareTests
         [Test]
         public void It_should_be_beginDate_error()
         {
-            _context
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain("$.beginDate");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("$.beginDate");
 
-            _context
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain("is not valid for beginDate.");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("is not valid for beginDate.");
         }
 
         [Test]
         public void It_should_be_totalInstructionalDays_error()
         {
-            _context
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain("$.totalInstructionalDays");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("$.totalInstructionalDays");
 
             _context
                 .FrontendResponse.Body?.ToJsonString()
@@ -215,57 +208,129 @@ public class ValidateQueryMiddlewareTests
         [Test]
         public void It_should_be_SchoolId_error()
         {
-            _context
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain("$.schoolId");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("$.schoolId");
 
-            _context
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain("is not valid for schoolId.");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("is not valid for schoolId.");
         }
 
         [Test]
         public void It_should_validate_boolean()
         {
-            _context
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain("$.isRequired");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("$.isRequired");
 
-            _context
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain("is not valid for isRequired.");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("is not valid for isRequired.");
         }
 
         [Test]
         public void It_should_be_endDate_error()
         {
-            _context
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain("$.endDate");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("$.endDate");
 
-            _context
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain("is not valid for endDate.");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("is not valid for endDate.");
         }
 
         [Test]
         public void It_should_be_time_error()
         {
-            _context
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain("$.classStartTime");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("$.classStartTime");
 
             _context
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
                 .Contain("is not valid for classStartTime.");
+        }
+    }
+
+    [TestFixture]
+    public class Given_Pipeline_Context_With_Valid_Type_Query_Parameters : ValidateQueryMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+
+        internal static ApiSchemaDocument NewApiSchemaDocument()
+        {
+            var result = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("AcademicWeek")
+                .WithStartQueryFieldMapping()
+                .WithQueryField("beginDate", [new("$.beginDate", "date")])
+                .WithQueryField("schoolId", [new("$.schoolId", "number")])
+                .WithQueryField("totalInstructionalDays", [new("$.totalInstructionalDays", "number")])
+                .WithQueryField("isRequired", [new("$.isRequired", "boolean")])
+                .WithQueryField("endDate", [new("$.endDate", "date-time")])
+                .WithQueryField("classStartTime", [new("$.classStartTime", "time")])
+                .WithEndQueryFieldMapping()
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocument();
+
+            return result;
+        }
+
+        internal static PipelineContext NewPipelineContext(
+            FrontendRequest frontendRequest,
+            RequestMethod method
+        )
+        {
+            PipelineContext docRefContext =
+                new(frontendRequest, method)
+                {
+                    ApiSchemaDocument = NewApiSchemaDocument(),
+                    PathComponents = new(
+                        ProjectNamespace: new("ed-fi"),
+                        EndpointName: new("academicWeeks"),
+                        DocumentUuid: No.DocumentUuid
+                    ),
+                };
+            docRefContext.ProjectSchema = new ProjectSchema(
+                docRefContext.ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
+                NullLogger.Instance
+            );
+            docRefContext.ResourceSchema = new ResourceSchema(
+                docRefContext.ProjectSchema.FindResourceSchemaNode(new("academicWeeks")) ?? new JsonObject()
+            );
+
+            if (docRefContext.FrontendRequest.Body != null)
+            {
+                var body = JsonNode.Parse(docRefContext.FrontendRequest.Body);
+                if (body != null)
+                {
+                    docRefContext.ParsedBody = body;
+                }
+            }
+
+            return docRefContext;
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var queryParameters = new Dictionary<string, string>
+            {
+                { "beginDate", "2025-01-01" },
+                { "totalInstructionalDays", "123" },
+                { "schoolId", "456" },
+                { "isRequired", "true" },
+                { "endDate", "2025-12-31" },
+                { "classStartTime", "10:30:00" },
+            };
+
+            FrontendRequest frontendRequest =
+                new(
+                    Path: "/ed-fi/academicWeeks",
+                    Body: null,
+                    QueryParameters: queryParameters,
+                    TraceId: new TraceId("")
+                );
+
+            _context = NewPipelineContext(frontendRequest, RequestMethod.GET);
+
+            await Middleware().Execute(_context, NullNext);
+        }
+
+        [Test]
+        public void It_provides_no_response()
+        {
+            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 }

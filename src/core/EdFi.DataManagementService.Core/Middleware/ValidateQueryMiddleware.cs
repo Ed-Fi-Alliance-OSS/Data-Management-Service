@@ -165,23 +165,22 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
                 return;
             }
 
-            string type = queryElementAndType.DocumentPathsAndTypes[0].Type;
-            string path = queryElementAndType.DocumentPathsAndTypes[0].JsonPathString;
-            string fieldName = queryElementAndType.QueryFieldName;
-            object value = queryElementAndType.Value;
+            string jsonPathString = queryElementAndType.DocumentPathsAndTypes[0].JsonPathString;
+            string queryFieldName = queryElementAndType.QueryFieldName;
+            object queryFieldValue = queryElementAndType.Value;
 
-            switch (type)
+            switch (queryElementAndType.DocumentPathsAndTypes[0].Type)
             {
                 case "boolean":
-                    if (!(value is bool))
+                    if (queryFieldValue is not bool)
                     {
-                        AddValidationError(validationErrors, path, value, fieldName);
+                        AddValidationError(validationErrors, jsonPathString, queryFieldValue, queryFieldName);
                     }
                     break;
                 case "date":
                     if (
                         !DateTime.TryParseExact(
-                            value.ToString(),
+                            queryFieldValue.ToString(),
                             "yyyy-MM-dd",
                             System.Globalization.CultureInfo.InvariantCulture,
                             System.Globalization.DateTimeStyles.None,
@@ -189,40 +188,40 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
                         )
                     )
                     {
-                        AddValidationError(validationErrors, path, value, fieldName);
+                        AddValidationError(validationErrors, jsonPathString, queryFieldValue, queryFieldName);
                     }
                     break;
                 case "date-time":
                     if (
                         !DateTime.TryParse(
-                            value.ToString(),
+                            queryFieldValue.ToString(),
                             System.Globalization.CultureInfo.InvariantCulture,
                             out _
                         )
                     )
                     {
-                        AddValidationError(validationErrors, path, value, fieldName);
+                        AddValidationError(validationErrors, jsonPathString, queryFieldValue, queryFieldName);
                     }
                     break;
 
                 case "number":
-                    if (!decimal.TryParse(value.ToString(), out _))
+                    if (!decimal.TryParse(queryFieldValue.ToString(), out _))
                     {
-                        AddValidationError(validationErrors, path, value, fieldName);
+                        AddValidationError(validationErrors, jsonPathString, queryFieldValue, queryFieldName);
                     }
                     break;
 
                 case "string":
-                    if (!(value is string))
+                    if (queryFieldValue is not string)
                     {
-                        AddValidationError(validationErrors, path, value, fieldName);
+                        AddValidationError(validationErrors, jsonPathString, queryFieldValue, queryFieldName);
                     }
                     break;
 
                 case "time":
                     if (
                         !DateTime.TryParseExact(
-                            value.ToString(),
+                            queryFieldValue.ToString(),
                             "HH:mm:ss",
                             System.Globalization.CultureInfo.InvariantCulture,
                             System.Globalization.DateTimeStyles.None,
@@ -230,9 +229,13 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
                         )
                     )
                     {
-                        AddValidationError(validationErrors, path, value, fieldName);
+                        AddValidationError(validationErrors, jsonPathString, queryFieldValue, queryFieldName);
                     }
                     break;
+                default:
+                    throw new InvalidOperationException(
+                        $"ValidateQueryMiddleware found an unsupported type {queryElementAndType.DocumentPathsAndTypes[0].Type}"
+                    );
             }
 
             // Convert QueryElementAndType to QueryElement
@@ -247,7 +250,7 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
             );
         }
 
-        if (validationErrors.Any())
+        if (validationErrors.Count != 0)
         {
             _logger.LogDebug("Query parameter format error - {TraceId}", context.FrontendRequest.TraceId);
 
@@ -273,21 +276,21 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
 
     private static void AddValidationError(
         Dictionary<string, string[]> errors,
-        string path,
-        object value,
-        string fieldName
+        string jsonPathString,
+        object queryValue,
+        string queryFieldName
     )
     {
-        if (!errors.ContainsKey(path))
+        if (!errors.ContainsKey(jsonPathString))
         {
-            errors[path] = Array.Empty<string>();
+            errors[jsonPathString] = [];
         }
 
-        string errorMessage = $"The value '{value}' is not valid for {fieldName}.";
-        string[] updatedErrors = new string[errors[path].Length + 1];
-        errors[path].CopyTo(updatedErrors, 0);
+        string errorMessage = $"The value '{queryValue}' is not valid for {queryFieldName}.";
+        string[] updatedErrors = new string[errors[jsonPathString].Length + 1];
+        errors[jsonPathString].CopyTo(updatedErrors, 0);
         updatedErrors[^1] = errorMessage;
 
-        errors[path] = updatedErrors;
+        errors[jsonPathString] = updatedErrors;
     }
 }
