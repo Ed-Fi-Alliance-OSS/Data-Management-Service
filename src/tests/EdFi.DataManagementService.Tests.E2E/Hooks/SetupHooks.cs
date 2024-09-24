@@ -13,18 +13,12 @@ public static class SetupHooks
 {
     private static ContainerSetupBase? _containerSetup;
 
-    private static bool _useTestContainers = false;
-    private static bool _openSearchEnabled = false;
-
     [BeforeTestRun]
     public static async Task BeforeTestRun()
     {
-        _useTestContainers = AppSettings.UseTestContainers;
-        _openSearchEnabled = AppSettings.OpenSearchEnabled;
-
-        if (_useTestContainers)
+        if (AppSettings.UseTestContainers)
         {
-            if (_openSearchEnabled)
+            if (AppSettings.OpenSearchEnabled)
             {
                 _containerSetup = new OpenSearchContainerSetup();
             }
@@ -32,9 +26,9 @@ public static class SetupHooks
             {
                 _containerSetup = new ContainerSetup();
             }
-        }
 
-        await _containerSetup!.StartContainers();
+            await _containerSetup.StartContainers();
+        }
     }
 
     [BeforeFeature]
@@ -42,7 +36,7 @@ public static class SetupHooks
     {
         try
         {
-            if (_useTestContainers)
+            if (AppSettings.UseTestContainers)
             {
                 logger.log.Debug("Using TestContainers to set environment");
                 context.ApiUrl = _containerSetup!.ApiUrl();
@@ -63,8 +57,11 @@ public static class SetupHooks
     [AfterFeature]
     public static async Task AfterFeature(TestLogger logger)
     {
-        await _containerSetup!.ApiLogs(logger);
-        await _containerSetup!.ResetData();
+        if (AppSettings.UseTestContainers)
+        {
+            await _containerSetup!.ApiLogs(logger);
+            await _containerSetup!.ResetData();
+        }
     }
 
     [AfterTestRun]

@@ -114,7 +114,8 @@
     "superclassidentitydocumentkey",
     "superclassprojectname",
     "superclassresourcename",
-    "TPDM",
+    "Testcontainers",
+    "TPDM"
   ],
   "dotnet.defaultSolution": "src/EdFi.DataManagementService.sln",
   "markdownlint.config": {

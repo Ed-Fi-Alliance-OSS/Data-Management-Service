@@ -13,35 +13,43 @@ namespace EdFi.DataManagementService.Tests.E2E.Management;
 
 public abstract class ContainerSetupBase
 {
-    private readonly string apiImageName = "local/data-management-service";
-    private readonly string dbImageName = "postgres:16.3-alpine3.20";
+    private const string ApiImageName = "local/data-management-service";
+    private const string DbImageName = "postgres:16.3-alpine3.20";
 
-    private readonly string pgAdminUser = "postgres";
-    private readonly string pgAdminPassword = "abcdefgh1!";
-    private readonly string dbContainerName = "dms-postgresql";
-    private readonly string connectionString =
-        "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;";
-    private readonly ushort httpPort = 8987;
-    private readonly string databaseName = "edfi_datamanagementservice";
+    private const string PgAdminUser = "postgres";
+    private const string PgAdminPassword = "abcdefgh1!";
+    private const string DbContainerName = "dms-postgresql";
 
-    public IContainer ApiContainer(
+    private const ushort HttpPort = 8987;
+    private const ushort DbPortExternal = 5435;
+    private const string DatabaseName = "edfi_datamanagementservice";
+
+    protected static string InternalConnectionString
+    {
+        get
+        {
+            return $"host={DbContainerName};port=5432;username={PgAdminUser};password={PgAdminPassword};database={DatabaseName};";
+        }
+    }
+
+    public static IContainer ApiContainer(
         string queryHandler,
         ILoggerFactory? loggerFactory,
         INetwork network,
         string? openSearchURl = ""
     ) =>
         new ContainerBuilder()
-            .WithImage(apiImageName)
-            .WithPortBinding(httpPort)
-            .WithEnvironment("ASPNETCORE_HTTP_PORTS", httpPort.ToString())
-            .WithEnvironment("OAUTH_TOKEN_ENDPOINT", $"http://127.0.0.1:{httpPort}/oauth/token")
+            .WithImage(ApiImageName)
+            .WithPortBinding(HttpPort)
+            .WithEnvironment("ASPNETCORE_HTTP_PORTS", HttpPort.ToString())
+            .WithEnvironment("OAUTH_TOKEN_ENDPOINT", $"http://127.0.0.1:{HttpPort}/oauth/token")
             .WithEnvironment("NEED_DATABASE_SETUP", "true")
             .WithEnvironment("BYPASS_STRING_COERCION", "false")
             .WithEnvironment("LOG_LEVEL", "Debug")
             .WithEnvironment("DMS_DATASTORE", "postgresql")
             .WithEnvironment("DMS_QUERYHANDLER", queryHandler)
-            .WithEnvironment("DATABASE_CONNECTION_STRING", connectionString)
-            .WithEnvironment("DATABASE_CONNECTION_STRING_ADMIN", connectionString)
+            .WithEnvironment("DATABASE_CONNECTION_STRING", InternalConnectionString)
+            .WithEnvironment("DATABASE_CONNECTION_STRING_ADMIN", InternalConnectionString)
             .WithEnvironment("DATABASE_ISOLATION_LEVEL", "RepeatableRead")
             .WithEnvironment("CORRELATION_ID_HEADER", "correlationid")
             .WithEnvironment("FAILURE_RATIO", "0.1")
@@ -50,23 +58,23 @@ public abstract class ContainerSetupBase
             .WithEnvironment("BREAK_DURATION_SECONDS", "30")
             .WithEnvironment("OPENSEARCH_URL", openSearchURl)
             .WithWaitStrategy(
-                Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(httpPort))
+                Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(HttpPort))
             )
             .WithNetwork(network)
             .WithLogger(loggerFactory!.CreateLogger("apiContainer"))
             .Build();
 
-    public IContainer DatabaseContainer(ILoggerFactory? loggerFactory, INetwork network)
+    public static IContainer DatabaseContainer(ILoggerFactory? loggerFactory, INetwork network)
     {
         var containerBuilder = new ContainerBuilder()
-            .WithImage(dbImageName)
-            .WithHostname(dbContainerName)
-            .WithPortBinding(5435, 5432)
+            .WithImage(DbImageName)
+            .WithHostname(DbContainerName)
+            .WithPortBinding(DbPortExternal, 5432)
             .WithNetwork(network)
-            .WithNetworkAliases(dbContainerName)
-            .WithEnvironment("POSTGRES_USER", pgAdminUser)
-            .WithEnvironment("POSTGRES_PASSWORD", pgAdminPassword)
-            .WithEnvironment("POSTGRES_DB_NAME", databaseName)
+            .WithNetworkAliases(DbContainerName)
+            .WithEnvironment("POSTGRES_USER", PgAdminUser)
+            .WithEnvironment("POSTGRES_PASSWORD", PgAdminPassword)
+            .WithEnvironment("POSTGRES_DB_NAME", DatabaseName)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(5432))
             .WithLogger(loggerFactory!.CreateLogger("dbContainer"));
 
@@ -81,10 +89,10 @@ public abstract class ContainerSetupBase
 
     public abstract string ApiUrl();
 
-    public async Task ResetDatabase()
+    public static async Task ResetDatabase()
     {
         var hostConnectionString =
-            "host=localhost;port=5435;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;";
+            $"host=localhost;port={DbPortExternal};username={PgAdminUser};password={PgAdminPassword};database={DatabaseName};";
         using var conn = new NpgsqlConnection(hostConnectionString);
         await conn.OpenAsync();
 
