@@ -12,14 +12,10 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 
 [TestFixture]
-#pragma warning disable S2187 // Test classes should contain at least one test case
 public class ConfigurationTests
-#pragma warning restore S2187 // Test classes should contain at least one test case
 {
     [TestFixture]
-#pragma warning disable S2187 // Test classes should contain at least one test case
     public class Given_A_Configuration_With_Invalid_App_Settings
-#pragma warning restore S2187 // Test classes should contain at least one test case
     {
         private WebApplicationFactory<Program>? _factory;
 
@@ -67,9 +63,7 @@ public class ConfigurationTests
     }
 
     [TestFixture]
-#pragma warning disable S2187 // Test classes should contain at least one test case
     public class Given_A_Configuration_With_Invalid_Connection_Strings
-#pragma warning restore S2187 // Test classes should contain at least one test case
     {
         private WebApplicationFactory<Program>? _factory;
 

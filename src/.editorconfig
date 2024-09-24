@@ -132,7 +132,10 @@ dotnet_diagnostic.S3247.severity=suggestion # Remove redundant cast - getting fa
 # Allow empty records for discriminated union types
 dotnet_diagnostic.S2094.severity=none # S2094: Classes should not be empty
 
-[**/*Tests*/**/*.cs]
+# S2187: Test classes should contain at least one test case
+dotnet_diagnostic.S2187.severity = none
+
+[**/*Tests.cs]
 # S2187: Test classes should contain at least one test case
 dotnet_diagnostic.S2187.severity = none
 
