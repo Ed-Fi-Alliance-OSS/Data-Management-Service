@@ -296,8 +296,8 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                 try
                 {
                     await using var command = new NpgsqlCommand(
-                        @"INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, IsDescriptor, ProjectName, EdfiDoc)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        @"INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, IsDescriptor, ProjectName, EdfiDoc, LastModifiedTraceId)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                   RETURNING Id;",
                         connection,
                         transaction
@@ -312,6 +312,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                             new() { Value = document.IsDescriptor },
                             new() { Value = document.ProjectName },
                             new() { Value = document.EdfiDoc },
+                            new () { Value = traceId.Value}
                         },
                     };
 
@@ -353,7 +354,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                 {
                     await using var command = new NpgsqlCommand(
                         @"UPDATE dms.Document
-                  SET EdfiDoc = $1
+                  SET EdfiDoc = $1, LastModifiedTraceId = $4
                   WHERE DocumentPartitionKey = $2 AND DocumentUuid = $3
                   RETURNING Id;",
                         connection,
@@ -365,6 +366,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                             new() { Value = edfiDoc },
                             new() { Value = documentPartitionKey },
                             new() { Value = documentUuid },
+                            new () { Value = traceId.Value}
                         },
                     };
 
@@ -711,8 +713,9 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                         @$"update dms.document
                             set
                               lastmodifiedat = NOW()
+                              , lastModifiedTraceId = $3
                               , edfidoc =
-                                {updateStatement}
+                                {updateStatement}                               
                             from (
                               select parentdocumentid, parentdocumentpartitionkey
                               from dms.reference
@@ -732,6 +735,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                         {
                             new() { Value = documentId },
                             new() { Value = documentPartitionKey },
+                            new() { Value = traceId.Value }
                         },
                     };
 
