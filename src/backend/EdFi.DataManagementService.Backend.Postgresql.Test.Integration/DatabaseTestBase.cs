@@ -30,7 +30,7 @@ public abstract class DatabaseTestBase
     public async Task SetupDatabase()
     {
         DataSource = NpgsqlDataSource.Create(_connectionString);
-        _respawnerConnection = DataSource.OpenConnectionAsync().Result;
+        _respawnerConnection = await DataSource.OpenConnectionAsync();
 
         _respawner = await Respawner.CreateAsync(
             _respawnerConnection,
@@ -45,8 +45,14 @@ public abstract class DatabaseTestBase
     [TearDown]
     public async Task TeardownDatabase()
     {
-        await _respawner!.ResetAsync(_respawnerConnection!);
-        _respawnerConnection?.Dispose();
-        DataSource?.Dispose();
+        if (_respawnerConnection is not null)
+        {
+            await _respawner!.ResetAsync(_respawnerConnection);
+            await _respawnerConnection.DisposeAsync();
+        }
+        if (DataSource is not null)
+        {
+            await DataSource.DisposeAsync();
+        }
     }
 }

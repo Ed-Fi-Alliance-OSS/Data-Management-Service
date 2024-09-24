@@ -72,11 +72,13 @@
   "cSpell.words": [
     "abstractresource",
     "allowidentityupdates",
+    "appsettings",
     "begindate",
     "decapitalizer",
     "documentpathsmapping",
     "Edfi",
     "equalityconstraints",
+    "IAPI",
     "identityjsonpaths",
     "isdescriptor",
     "isshoolyearenumeration",
@@ -96,6 +98,7 @@
     "nosuperclassidentitydocumentkeys",
     "nosuperclassprojectnames",
     "nosuperclassresourcenames",
+    "Npgsql",
     "openapi",
     "opensearch",
     "Overpost",
@@ -111,7 +114,7 @@
     "superclassidentitydocumentkey",
     "superclassprojectname",
     "superclassresourcename",
-    "TPDM"
+    "TPDM",
   ],
   "dotnet.defaultSolution": "src/EdFi.DataManagementService.sln",
   "markdownlint.config": {
