@@ -26,6 +26,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private IAPIResponse _apiResponse = null!;
         private string _id = string.Empty;
         private string _location = string.Empty;
+        private string _dependentId = string.Empty;
         private string _referencedResourceId = string.Empty;
         private readonly bool _openSearchEnabled = AppSettings.OpenSearchEnabled;
 
@@ -55,7 +56,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
 
-            setLocationAndId();
+            _id = setLocationAndGetId();
 
             WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
@@ -189,15 +190,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 _logger.log.Information(body);
                 response.Status.Should().BeOneOf(201, 200);
 
-                if (
-                    response.Headers.ContainsKey("location")
-                    && response.Url.Contains(entityType, StringComparison.InvariantCultureIgnoreCase)
+                if (response.Url.Contains(entityType, StringComparison.InvariantCultureIgnoreCase)
                 )
                 {
-                    _location = response.Headers["location"];
-#pragma warning disable S6608 // Prefer indexing instead of "Enumerable" methods on types implementing "IList"
-                    _referencedResourceId = response.Headers["location"].Split('/').Last();
-#pragma warning restore S6608 // Prefer indexing instead of "Enumerable" methods on types implementing "IList"
+                    _referencedResourceId = setLocationAndGetId();
                 }
             }
         }
@@ -215,18 +211,20 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
             _logger.log.Information(_apiResponse.TextAsync().Result);
 
-            setLocationAndId();
+            _id = setLocationAndGetId();
         }
 
-        private void setLocationAndId()
+        private string setLocationAndGetId()
         {
             if (_apiResponse.Headers.TryGetValue("location", out string? value))
             {
                 _location = value;
 #pragma warning disable S6608 // Prefer indexing instead of "Enumerable" methods on types implementing "IList"
-                _id = value.Split('/').Last();
+                return value.Split('/').Last();
 #pragma warning restore S6608 // Prefer indexing instead of "Enumerable" methods on types implementing "IList"
             }
+
+            return string.Empty;
         }
 
         [When("a POST request is made to {string} with header {string} value {string}")]
@@ -250,7 +248,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             )!;
             _logger.log.Information(_apiResponse.TextAsync().Result);
 
-            setLocationAndId();
+            _id = setLocationAndGetId();
         }
 
         [When("a POST request is made for dependent resource {string} with")]
@@ -259,7 +257,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             url = addDataPrefixIfNecessary(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
 
-            setLocationAndId();
+            _dependentId = setLocationAndGetId();
         }
 
         [When("a PUT request is made to {string} with")]
@@ -271,10 +269,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information($"PUT url: {url}");
             _logger.log.Information($"PUT body: {body}");
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(url, new() { Data = body })!;
-            if (_apiResponse.Headers.ContainsKey("location"))
-            {
-                _location = _apiResponse.Headers["location"];
-            }
+
+            setLocationAndGetId();
         }
 
         [When("a PUT request is made to referenced resource {string} with")]
