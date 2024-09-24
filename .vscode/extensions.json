@@ -8,6 +8,10 @@
       "ms-dotnettools.csdevkit",
       "humao.rest-client",
       "blodwynn.featurehighlight",
-      "siarheikuchuk.gherkin-beautifier-vs-code-plugin"
+      "siarheikuchuk.gherkin-beautifier-vs-code-plugin",
+      "csharpier.csharpier-vscode",
+      "ms-azuretools.vscode-docker",
+      "bierner.markdown-mermaid",
+      "stkb.rewrap"
     ]
 }
