@@ -143,7 +143,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 foreach (string path in _context.ResourceSchema.BooleanJsonPaths.Select(s => s.Value))
                 {
                     _context.ParsedBody.SelectNodeFromPath(path, NullLogger.Instance)!.AsValue().GetValueKind().Should()
-                        .BeOneOf([JsonValueKind.True, JsonValueKind.False]);
+                        .BeOneOf(JsonValueKind.True, JsonValueKind.False);
                 }
             }
         }

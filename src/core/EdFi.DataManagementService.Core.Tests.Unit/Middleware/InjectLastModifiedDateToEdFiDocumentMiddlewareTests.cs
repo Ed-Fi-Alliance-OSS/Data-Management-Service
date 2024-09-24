@@ -27,7 +27,7 @@ public class InjectLastModifiedDateToEdFiDocumentMiddlewareTests
     [TestFixture]
     public class Given_Valid_Request_Body : InjectLastModifiedDateToEdFiDocumentMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private readonly PipelineContext _context = No.PipelineContext();
         private readonly string _pattern = @"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$";
         private readonly string _propertyName = "_lastModifiedDate";
 

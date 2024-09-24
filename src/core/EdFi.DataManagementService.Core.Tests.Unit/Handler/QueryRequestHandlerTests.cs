@@ -36,9 +36,9 @@ public class QueryRequestHandlerTests
         {
             public static readonly JsonArray ResponseBody = [];
 
-            public override Task<QueryResult> QueryDocuments(IQueryRequest request)
+            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
             {
-                return Task.FromResult<QueryResult>(new QueryResult.QuerySuccess(new JsonArray(), 0));
+                return Task.FromResult<QueryResult>(new QueryResult.QuerySuccess([], 0));
             }
         }
 
@@ -67,7 +67,7 @@ public class QueryRequestHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public override Task<QueryResult> QueryDocuments(IQueryRequest request)
+            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
             {
                 return Task.FromResult<QueryResult>(new QueryResult.QueryFailureInvalidQuery("Error"));
             }
@@ -97,7 +97,7 @@ public class QueryRequestHandlerTests
         {
             public static readonly string ResponseBody = "FailureMessage";
 
-            public override Task<QueryResult> QueryDocuments(IQueryRequest request)
+            public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
             {
                 return Task.FromResult<QueryResult>(new QueryResult.UnknownFailure(ResponseBody));
             }
