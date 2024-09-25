@@ -25,8 +25,7 @@ public class DocumentIdentityTests
         public void Setup()
         {
             DocumentIdentityElement documentIdentityElement = new DocumentIdentityElement(new JsonPath("$.schoolId"), "123");
-            DocumentIdentity documentIdentity =
-                new([documentIdentityElement]);
+
             superclassIdentity = IdentityRename(new("$.educationOrganizationId"), documentIdentityElement);
         }
 

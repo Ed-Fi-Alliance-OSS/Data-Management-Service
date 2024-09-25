@@ -301,8 +301,6 @@ public abstract class DatabaseTest : DatabaseTestBase
         // Connection and transaction managed in this method for DB transaction 2
         NpgsqlConnection? connection2 = null;
         NpgsqlTransaction? transaction2 = null;
-
-        T? result1 = default;
         U? result2 = default;
 
         // DB Transaction 2's thread
@@ -337,7 +335,7 @@ public abstract class DatabaseTest : DatabaseTestBase
         });
 
         // Step #1: Execute DB operation 1 without committing
-        result1 = await dbOperation1(connection1, transaction1);
+        T? result1 = await dbOperation1(connection1, transaction1);
 
         // Step #2: Yield to transaction 2 thread
         Transaction2Go?.Set();
@@ -353,8 +351,14 @@ public abstract class DatabaseTest : DatabaseTestBase
         Transaction1Go?.WaitOne();
 
         // Step #11: Cleanup and return
-        transaction2?.Dispose();
-        connection2?.Dispose();
+        if (transaction2 is not null)
+        {
+            await transaction2.DisposeAsync();
+        }
+        if (connection2 is not null)
+        {
+            await connection2.DisposeAsync();
+        }
 
         return (result1, result2);
     }

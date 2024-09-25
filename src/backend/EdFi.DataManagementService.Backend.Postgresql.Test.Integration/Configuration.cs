@@ -11,21 +11,28 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration
 {
     public static class Configuration
     {
-        private static ConfigurationBuilder? _configurationBuilder;
+        private static IConfiguration? _configuration;
 
         public static IConfiguration Config()
         {
-            var testAppSettingsFileName = "appsettings.Test.json";
-
-            _configurationBuilder = new ConfigurationBuilder();
-            _configurationBuilder.AddJsonFile("appsettings.json");
-
-            if (_configurationBuilder != null && File.Exists(testAppSettingsFileName))
+            if (_configuration is not null)
             {
-                _configurationBuilder.AddJsonFile(testAppSettingsFileName);
+                return _configuration;
             }
 
-            return _configurationBuilder!.Build();
+            var testAppSettingsFileName = "appsettings.Test.json";
+
+            ConfigurationBuilder configurationBuilder = new();
+            configurationBuilder.AddJsonFile("appsettings.json");
+
+            if (File.Exists(testAppSettingsFileName))
+            {
+                configurationBuilder.AddJsonFile(testAppSettingsFileName);
+            }
+
+            _configuration = configurationBuilder!.Build();
+
+            return _configuration;
         }
 
         public static string? DatabaseConnectionString => Config().GetConnectionString("DatabaseConnection");

@@ -14,7 +14,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions;
 [Binding]
 public class InformationStepDefinitions
 {
-    private PlaywrightContext _PlaywrightContext = null!;
+    private readonly PlaywrightContext _PlaywrightContext;
     private IAPIResponse _APIResponse = null!;
 
     public InformationStepDefinitions(PlaywrightContext context)

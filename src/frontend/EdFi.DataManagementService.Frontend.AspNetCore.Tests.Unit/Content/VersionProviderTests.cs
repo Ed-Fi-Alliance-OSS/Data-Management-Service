@@ -21,7 +21,7 @@ public class VersionProviderTests
         string version = versionProvider.Version;
 
         // Assert
-        Assert.That(version, Is.Not.EqualTo("0.0.0")); 
+        Assert.That(version, Is.Not.EqualTo("0.0.0"));
     }
 }
 

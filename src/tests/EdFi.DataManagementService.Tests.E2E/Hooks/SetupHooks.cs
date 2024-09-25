@@ -9,21 +9,16 @@ using Reqnroll;
 namespace EdFi.DataManagementService.Tests.E2E.Hooks;
 
 [Binding]
-public class SetupHooks
+public static class SetupHooks
 {
     private static ContainerSetupBase? _containerSetup;
-
-    private static bool _useTestContainers = false;
-    private static bool _openSearchEnabled = false;
 
     [BeforeTestRun]
     public static async Task BeforeTestRun()
     {
-        _useTestContainers = AppSettings.UseTestContainers;
-        _openSearchEnabled = AppSettings.OpenSearchEnabled;
-
-        if (_useTestContainers)
-            if (_openSearchEnabled)
+        if (AppSettings.UseTestContainers)
+        {
+            if (AppSettings.OpenSearchEnabled)
             {
                 _containerSetup = new OpenSearchContainerSetup();
             }
@@ -32,7 +27,8 @@ public class SetupHooks
                 _containerSetup = new ContainerSetup();
             }
 
-        await _containerSetup!.StartContainers();
+            await _containerSetup.StartContainers();
+        }
     }
 
     [BeforeFeature]
@@ -40,7 +36,7 @@ public class SetupHooks
     {
         try
         {
-            if (_useTestContainers)
+            if (AppSettings.UseTestContainers)
             {
                 logger.log.Debug("Using TestContainers to set environment");
                 context.ApiUrl = _containerSetup!.ApiUrl();
@@ -50,7 +46,7 @@ public class SetupHooks
                 logger.log.Debug("Using local environment, verify that it's correctly set.");
             }
 
-            await context.CreateApiContext();
+            await context.InitializeApiContext();
         }
         catch (Exception exception)
         {
@@ -61,13 +57,16 @@ public class SetupHooks
     [AfterFeature]
     public static async Task AfterFeature(TestLogger logger)
     {
-        await _containerSetup!.ApiLogs(logger);
-        await _containerSetup!.ResetData();
+        if (AppSettings.UseTestContainers)
+        {
+            await _containerSetup!.ApiLogs(logger);
+            await _containerSetup!.ResetData();
+        }
     }
 
     [AfterTestRun]
-    public static void AfterTestRun()
+    public static void AfterTestRun(PlaywrightContext context)
     {
-        PlaywrightContext.Dispose();
+        context.Dispose();
     }
 }

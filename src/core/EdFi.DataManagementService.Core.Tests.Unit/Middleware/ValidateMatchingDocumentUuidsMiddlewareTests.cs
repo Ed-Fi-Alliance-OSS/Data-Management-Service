@@ -69,7 +69,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         public class Given_A_Matching_Id_In_Body_And_Url : ValidateMatchingDocumentUuidsMiddlewareTests
         {
             private PipelineContext _context = No.PipelineContext();
-            private string id = Guid.NewGuid().ToString();
+            private readonly string id = Guid.NewGuid().ToString();
 
             [SetUp]
             public async Task Setup()
@@ -117,8 +117,8 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         public class Given_A_Different_Id_In_Body_And_Url : ValidateMatchingDocumentUuidsMiddlewareTests
         {
             private PipelineContext _context = No.PipelineContext();
-            private string id = Guid.NewGuid().ToString();
-            private string differentId = Guid.NewGuid().ToString();
+            private readonly string id = Guid.NewGuid().ToString();
+            private readonly string differentId = Guid.NewGuid().ToString();
 
             [SetUp]
             public async Task Setup()
@@ -175,7 +175,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         public class Given_A_Invalid_Guid_In_Body : ValidateMatchingDocumentUuidsMiddlewareTests
         {
             private PipelineContext _context = No.PipelineContext();
-            private string id = Guid.NewGuid().ToString();
+            private readonly string id = Guid.NewGuid().ToString();
 
             [SetUp]
             public async Task Setup()
@@ -232,7 +232,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         public class Given_An_Empty_Id_In_Body : ValidateMatchingDocumentUuidsMiddlewareTests
         {
             private PipelineContext _context = No.PipelineContext();
-            private string id = Guid.NewGuid().ToString();
+            private readonly string id = Guid.NewGuid().ToString();
 
             [SetUp]
             public async Task Setup()
