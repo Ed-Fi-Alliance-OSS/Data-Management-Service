@@ -151,7 +151,8 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                         ProjectName: reader.GetString(reader.GetOrdinal("ProjectName")),
                         EdfiDoc: await reader.GetFieldValueAsync<JsonElement>(reader.GetOrdinal("EdfiDoc")),
                         CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
-                        LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt"))
+                        LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt")),
+                        LastModifiedTraceId: reader.GetString(reader.GetOrdinal("LastModifiedTraceId"))
                     );
                 }
                 catch (PostgresException pe)
