@@ -38,7 +38,9 @@ namespace EdFi.DataManagementService.Tests.E2E.Extensions
             }
 
             if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var intValue))
+            {
                 return intValue;
+            }
 
             if (
                 decimal.TryParse(
@@ -48,7 +50,9 @@ namespace EdFi.DataManagementService.Tests.E2E.Extensions
                     out var decimalValue
                 )
             )
+            {
                 return decimalValue;
+            }
 
             if (
                 DateTime.TryParse(
@@ -58,15 +62,19 @@ namespace EdFi.DataManagementService.Tests.E2E.Extensions
                     out var dateTimeValue
                 )
             )
+            {
                 return dateTimeValue.Date.ToString("yyyy-MM-dd");
+            }
 
             if (bool.TryParse(value, out var boolValue))
+            {
                 return boolValue;
+            }
 
-            if (value.StartsWith("[") && value.EndsWith("]") || value.StartsWith("{") && value.EndsWith("}"))
+            if (value.StartsWith('[') && value.EndsWith(']') || value.StartsWith('{') && value.EndsWith('}'))
             {
                 using var document =
-                    JsonDocument.Parse(value) ?? throw new Exception($"Error while parsing {value}");
+                    JsonDocument.Parse(value) ?? throw new InvalidOperationException($"Error while parsing {value}");
 
                 return document.RootElement.Clone();
             }

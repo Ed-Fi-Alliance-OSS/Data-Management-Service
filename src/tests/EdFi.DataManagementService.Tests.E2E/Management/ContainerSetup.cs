@@ -17,26 +17,36 @@ public class ContainerSetup : ContainerSetupBase
 
     public override string ApiUrl()
     {
-        while (DmsApiContainer!.State != TestcontainersStates.Running)
+        if (DmsApiContainer is null)
+        {
+            throw new InvalidOperationException($"{nameof(DmsApiContainer)} has not been initialized.");
+        }
+
+        while (DmsApiContainer.State != TestcontainersStates.Running)
         {
             Thread.Sleep(1000);
         }
 
         return new UriBuilder(
             Uri.UriSchemeHttp,
-            DmsApiContainer?.Hostname,
+            DmsApiContainer.Hostname,
             DmsApiContainer!.GetMappedPublicPort(httpPort)
         ).ToString();
     }
 
     public override async Task ApiLogs(TestLogger logger)
     {
-        var logs = await DmsApiContainer!.GetLogsAsync();
-        logger.log.Information($"{Environment.NewLine}API stdout logs:{Environment.NewLine}{logs.Stdout}");
-
-        if (!string.IsNullOrEmpty(logs.Stderr))
+        if (DmsApiContainer is null)
         {
-            logger.log.Error($"{Environment.NewLine}API stderr logs:{Environment.NewLine}{logs.Stderr}");
+            throw new InvalidOperationException($"{nameof(DmsApiContainer)} has not been initialized.");
+        }
+
+        var (stdout, stderr) = await DmsApiContainer.GetLogsAsync();
+        logger.log.Information($"{Environment.NewLine}API stdout logs:{Environment.NewLine}{stdout}");
+
+        if (!string.IsNullOrEmpty(stderr))
+        {
+            logger.log.Error($"{Environment.NewLine}API stderr logs:{Environment.NewLine}{stderr}");
         }
     }
 

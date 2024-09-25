@@ -68,10 +68,7 @@ public class DuplicatePropertiesMiddlewareTest
         [Test]
         public void It_returns_message_body_with_failure_duplicated_property()
         {
-            _context
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain("Data Validation Failed");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Data Validation Failed");
 
             _context
                 .FrontendResponse.Body?.ToJsonString()
@@ -197,10 +194,7 @@ public class DuplicatePropertiesMiddlewareTest
         [Test]
         public void It_returns_message_body_with_failure_duplicated_property()
         {
-            _context
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain("Data Validation Failed");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Data Validation Failed");
 
             _context
                 .FrontendResponse.Body?.ToJsonString()
@@ -265,12 +259,8 @@ public class DuplicatePropertiesMiddlewareTest
             _context
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
-                .Contain("Data Validation Failed");
-
-            _context
-                ?.FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain(
+                .ContainAll(
+                    "Data Validation Failed",
                     """
                     "validationErrors":{"$.gradeLevels":["An item with the same key has already been added."]}
                     """
@@ -328,10 +318,7 @@ public class DuplicatePropertiesMiddlewareTest
         [Test]
         public void It_returns_message_body_with_failure_duplicated_property()
         {
-            _context
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain("Data Validation Failed");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Data Validation Failed");
 
             _context
                 .FrontendResponse.Body?.ToJsonString()
@@ -345,11 +332,11 @@ public class DuplicatePropertiesMiddlewareTest
     }
 
     [TestFixture]
-    public class Given_Pipeline_Context_With_Duplicate_Property_On_First_Level_using_PUT
+    public class Given_Pipeline_Context_With_Duplicate_Property_On_First_Level_Using_Put
         : DuplicatePropertiesMiddlewareTest
     {
         private PipelineContext _context = No.PipelineContext();
-        private string id = Guid.NewGuid().ToString();
+        private readonly string id = Guid.NewGuid().ToString();
 
         [SetUp]
         public async Task Setup()
@@ -383,10 +370,7 @@ public class DuplicatePropertiesMiddlewareTest
         [Test]
         public void It_returns_message_body_with_failure_duplicated_property()
         {
-            _context
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain("Data Validation Failed");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Data Validation Failed");
 
             _context
                 .FrontendResponse.Body?.ToJsonString()
@@ -400,11 +384,11 @@ public class DuplicatePropertiesMiddlewareTest
     }
 
     [TestFixture]
-    public class Given_Pipeline_Context_With_Duplicate_Property_And_Same_Value_Inside_An_Array_Of_Properties_Using_PUT
+    public class Given_Pipeline_Context_With_Duplicate_Property_And_Same_Value_Inside_An_Array_Of_Properties_Using_Put
         : DuplicatePropertiesMiddlewareTest
     {
         private PipelineContext _context = No.PipelineContext();
-        private string id = Guid.NewGuid().ToString();
+        private readonly string id = Guid.NewGuid().ToString();
 
         [SetUp]
         public async Task Setup()
@@ -451,10 +435,7 @@ public class DuplicatePropertiesMiddlewareTest
         [Test]
         public void It_returns_message_body_with_failure_duplicated_property()
         {
-            _context
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain("Data Validation Failed");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Data Validation Failed");
 
             _context
                 .FrontendResponse.Body?.ToJsonString()

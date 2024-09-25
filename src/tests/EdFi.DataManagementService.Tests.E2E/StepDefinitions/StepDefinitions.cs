@@ -17,7 +17,7 @@ using static EdFi.DataManagementService.Tests.E2E.Management.JsonComparer;
 namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 {
     [Binding]
-    public class StepDefinitions(
+    public partial class StepDefinitions(
         PlaywrightContext _playwrightContext,
         TestLogger _logger,
         ScenarioContext _scenarioContext
@@ -25,23 +25,27 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
     {
         private IAPIResponse _apiResponse = null!;
         private string _id = string.Empty;
-        private string _dependentId = string.Empty;
         private string _location = string.Empty;
+        private string _dependentId = string.Empty;
         private string _referencedResourceId = string.Empty;
         private readonly bool _openSearchEnabled = AppSettings.OpenSearchEnabled;
 
         #region Given
 
         [Given("the Data Management Service must receive a token issued by {string}")]
+#pragma warning disable CA1822 // Mark members as static
         public void GivenTheDataManagementServiceMustReceiveATokenIssuedBy(string p0)
+#pragma warning restore CA1822 // Mark members as static
         {
-            //throw new PendingStepException();
+            // There is no action to take yet - we haven't developed this functionality
         }
 
         [Given("user is already authorized")]
+#pragma warning disable CA1822 // Mark members as static
         public void GivenUserIsAlreadyAuthorized()
+#pragma warning restore CA1822 // Mark members as static
         {
-            //throw new PendingStepException();
+            // There is no action to take yet - we haven't developed this functionality
         }
 
         [Given("a POST request is made to {string} with")]
@@ -51,19 +55,21 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             _logger.log.Information(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
-            if (_apiResponse.Headers.ContainsKey("location"))
-            {
-                _location = _apiResponse.Headers["location"];
-                _id = _apiResponse.Headers["location"].Split('/').Last();
-            }
+
+            _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
 
             WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [Given("there are no schools")]
+#pragma warning disable CA1822 // Mark members as static
         public void GivenThereAreNoSchools()
+#pragma warning restore CA1822 // Mark members as static
         {
-            //throw new PendingStepException();
+            // There is no action to take - this statement is just a reminder to
+            // the reader. Hopefully the statement is really true! We don't have
+            // a backend database update mechanism to confirm that there are, in
+            // fact, no schools.
         }
 
         private static (string, Dictionary<string, object>) ExtractDescriptorBody(string descriptorValue)
@@ -165,7 +171,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 string body = apiResponse.TextAsync().Result;
                 _logger.log.Information(body);
 
-                apiResponse.Status.Should().BeOneOf([201, 200]);
+                apiResponse.Status.Should().BeOneOf(201, 200);
             }
 
             WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
@@ -182,15 +188,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             {
                 string body = response.TextAsync().Result;
                 _logger.log.Information(body);
-                response.Status.Should().BeOneOf([201, 200]);
+                response.Status.Should().BeOneOf(201, 200);
 
-                if (
-                    response.Headers.ContainsKey("location")
-                    && response.Url.Contains(entityType, StringComparison.InvariantCultureIgnoreCase)
+                if (response.Url.Contains(entityType, StringComparison.InvariantCultureIgnoreCase)
                 )
                 {
-                    _location = response.Headers["location"];
-                    _referencedResourceId = response.Headers["location"].Split('/').Last();
+                    _referencedResourceId = extractDataFromResponseAndReturnIdIfAvailable(response);
                 }
             }
         }
@@ -207,11 +210,30 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information($"POST body: {body}");
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
             _logger.log.Information(_apiResponse.TextAsync().Result);
-            if (_apiResponse.Headers.ContainsKey("location"))
+
+            _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
+        }
+
+        private string extractDataFromResponseAndReturnIdIfAvailable(IAPIResponse apiResponse)
+        {
+            if (apiResponse.Headers.TryGetValue("location", out string? value))
             {
-                _location = _apiResponse.Headers["location"];
-                _id = _apiResponse.Headers["location"].Split('/').Last();
+                _location = value;
+#pragma warning disable S6608 // Prefer indexing instead of "Enumerable" methods on types implementing "IList"
+                return _location.Split('/').Last();
+#pragma warning restore S6608 // Prefer indexing instead of "Enumerable" methods on types implementing "IList"
             }
+            if (apiResponse.Status == 400)
+            {
+                // This is here to help step through debugging when there is an
+                // unexpected error while doing background setup, in which case
+                // it is difficult to ever see the error details.
+#pragma warning disable S1481 // Unused local variables should be removed
+                var errorOnPostOrPutRequest = _apiResponse.TextAsync().Result;
+#pragma warning restore S1481 // Unused local variables should be removed
+            }
+
+            return string.Empty;
         }
 
         [When("a POST request is made to {string} with header {string} value {string}")]
@@ -234,11 +256,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 new() { Data = body, Headers = httpHeaders }
             )!;
             _logger.log.Information(_apiResponse.TextAsync().Result);
-            if (_apiResponse.Headers.ContainsKey("location"))
-            {
-                _location = _apiResponse.Headers["location"];
-                _id = _apiResponse.Headers["location"].Split('/').Last();
-            }
+
+            _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
 
         [When("a POST request is made for dependent resource {string} with")]
@@ -246,11 +265,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         {
             url = addDataPrefixIfNecessary(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
-            if (_apiResponse.Headers.ContainsKey("location"))
-            {
-                _location = _apiResponse.Headers["location"];
-                _dependentId = _apiResponse.Headers["location"].Split('/').Last();
-            }
+
+            _dependentId = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
 
         [When("a PUT request is made to {string} with")]
@@ -262,10 +278,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information($"PUT url: {url}");
             _logger.log.Information($"PUT body: {body}");
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(url, new() { Data = body })!;
-            if (_apiResponse.Headers.ContainsKey("location"))
-            {
-                _location = _apiResponse.Headers["location"];
-            }
+
+            extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
 
         [When("a PUT request is made to referenced resource {string} with")]
@@ -284,7 +298,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
                 try
                 {
-                    JsonNode responseJson = JsonNode.Parse(result)!;
+                    // Implicitly confirming that we can parse the response as JSON
+                    _ = JsonNode.Parse(result)!;
                 }
                 catch (Exception e)
                 {
@@ -326,12 +341,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         public async Task WhenAGETRequestIsMadeToUsingValuesAs(string url, Table table)
         {
             url = addDataPrefixIfNecessary(url);
-            foreach (var row in table.Rows)
-            {
-                var value = row["Values"];
-                var requestUrl = $"{url}{value}";
-                _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(url)!;
-            }
+            _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(url)!;
         }
 
         #endregion
@@ -351,7 +361,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         {
             string body = _apiResponse.TextAsync().Result;
             _logger.log.Information(body);
-            _apiResponse.Status.Should().BeOneOf([statusCode1, statusCode2]);
+            _apiResponse.Status.Should().BeOneOf(statusCode1, statusCode2);
         }
 
         [Then("there is a JSON file in the response body with a list of dependencies")]
@@ -413,7 +423,9 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             JsonNode responseJson = JsonNode.Parse(responseJsonDoc.RootElement.ToString())!;
 
             if (!IsDiscoveryEndpoint && (_apiResponse.Status == 200 || _apiResponse.Status == 201))
+            {
                 CheckAndRemoveModifiedDate(responseJson);
+            }
 
             expectedBody = ReplacePlaceholders(expectedBody, responseJson);
             JsonNode expectedBodyJson = JsonNode.Parse(expectedBody)!;
@@ -436,7 +448,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         /// LastModifiedDate will be added to the EdFi document programmatically, so the retrieved value cannot be verified.
         /// This method ensures the property exists in the response and then removes it.
         /// </summary>
-        private void CheckAndRemoveModifiedDate(JsonNode responseJson)
+        private static void CheckAndRemoveModifiedDate(JsonNode responseJson)
         {
             if (responseJson is JsonArray jsonArray && jsonArray.Count > 0)
             {
@@ -458,37 +470,29 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             }
         }
 
-        private string? CorrelationIdValue(JsonNode response)
+        private static string? CorrelationIdValue(JsonNode response)
         {
-            if (response is JsonObject jsonObject)
-            {
-                if (
-                    jsonObject.TryGetPropertyValue("correlationId", out JsonNode? correlationId)
+            if (response is JsonObject jsonObject && jsonObject.TryGetPropertyValue("correlationId", out JsonNode? correlationId)
                     && correlationId != null
-                )
-                {
-                    return correlationId.GetValue<string?>();
-                }
-            }
-            return null;
-        }
-
-        private string? LastModifiedDate(JsonNode response)
-        {
-            if (response is JsonObject jsonObject)
+)
             {
-                if (
-                    jsonObject.TryGetPropertyValue("_lastModifiedDate", out JsonNode? lastModifiedDate)
-                    && lastModifiedDate != null
-                )
-                {
-                    return lastModifiedDate.GetValue<string?>();
-                }
+                return correlationId.GetValue<string?>();
             }
             return null;
         }
 
-        private bool AreEqual(JsonNode expectedBodyJson, JsonNode responseJson)
+        private static string? LastModifiedDate(JsonNode response)
+        {
+            if (response is JsonObject jsonObject && jsonObject.TryGetPropertyValue("_lastModifiedDate", out JsonNode? lastModifiedDate)
+                    && lastModifiedDate != null
+)
+            {
+                return lastModifiedDate.GetValue<string?>();
+            }
+            return null;
+        }
+
+        private static bool AreEqual(JsonNode expectedBodyJson, JsonNode responseJson)
         {
             responseJson = OrderJsonProperties(responseJson);
             expectedBodyJson = OrderJsonProperties(expectedBodyJson);
@@ -520,13 +524,19 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         }
 
         // Use Regex to find all occurrences of {id} in the body
-        private static readonly Regex _findIds = new Regex(@"\{id\}", RegexOptions.Compiled);
+        private static readonly Regex _findIds = IdRegex();
 
         private string ReplacePlaceholders(string body, JsonNode responseJson)
         {
             string replacedBody = "";
-            if (body.TrimStart().StartsWith("["))
+            if (body.TrimStart().StartsWith('['))
             {
+                var responseAsArray = responseJson.AsArray() ?? throw new AssertionException("Expected a JSON array response, but it was not an array.");
+                if (responseAsArray.Count == 0)
+                {
+                    return body;
+                }
+
                 int index = 0;
 
                 replacedBody = _findIds.Replace(
@@ -562,10 +572,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             foreach (var header in value.AsObject())
             {
                 if (header.Value != null)
+                {
                     _apiResponse
                         .Headers[header.Key]
                         .Should()
                         .EndWith(header.Value.ToString().Replace("{id}", _id));
+                }
             }
         }
 
@@ -601,7 +613,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             JsonNode responseJson = JsonNode.Parse(_apiResponse.TextAsync().Result)!;
             _logger.log.Information(responseJson.ToString());
 
-            int count = responseJson.AsArray().Count();
+            int count = responseJson.AsArray().Count;
             count.Should().Be(totalRecords);
         }
 
@@ -630,7 +642,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             _logger.log.Information(responseJson.ToString());
 
-            int count = responseJson.AsArray().Count();
+            int count = responseJson.AsArray().Count;
 
             headers.GetValueOrDefault("total-count").Should().NotBe(count.ToString());
         }
@@ -652,13 +664,13 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
         private void WaitForOpenSearch(string[]? waitTags)
         {
-            if (waitTags != null && waitTags.Contains("addwait"))
+            if (waitTags != null && waitTags.Contains("addwait") && _openSearchEnabled)
             {
-                if (_openSearchEnabled)
-                {
-                    Thread.Sleep(6000);
-                }
+                Thread.Sleep(6000);
             }
         }
+
+        [GeneratedRegex(@"\{id\}", RegexOptions.Compiled)]
+        private static partial Regex IdRegex();
     }
 }

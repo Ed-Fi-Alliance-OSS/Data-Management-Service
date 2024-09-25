@@ -191,7 +191,7 @@ public class UpdateTests : DatabaseTest
             await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
 
             // Create referencing document referencing the first
-            IUpsertRequest upsertReferencingRequest = CreateUpsertRequest(
+            _ = CreateUpsertRequest(
                 _referencingResourceName,
                 Guid.NewGuid(),
                 Guid.NewGuid(),
@@ -549,7 +549,7 @@ public class UpdateTests : DatabaseTest
                 .Upsert(referencingUpsertRequest, Connection!, Transaction!, traceId);
             upsertResult2.Should().BeOfType<UpsertResult.InsertSuccess>();
 
-            // The updated document with reference as superclass (an AcademicWeek reference an EducationOrgazation)
+            // The updated document with reference as superclass (an AcademicWeek reference an EducationOrganization)
             IUpdateRequest updateRequest = CreateUpdateRequest(
                 _subclassResourceName,
                 _subclassDocUuidGuid,
@@ -584,8 +584,6 @@ public class UpdateTests : DatabaseTest
         private static readonly string _edFiDocString3 = """{"abc":3}""";
 
         private static readonly string _referencingResourceName = "ReferencingResource";
-        private static readonly Guid _refDocumentUuidGuid = Guid.NewGuid();
-        private static readonly Guid _refReferentialIdGuid = Guid.NewGuid();
         private static readonly string _refEdFiDocString = """{"abc":2}""";
 
         [SetUp]

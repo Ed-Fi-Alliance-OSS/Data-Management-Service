@@ -3,22 +3,19 @@ Feature: Resources "Read" Operation validations
         Background:
             Given the Data Management Service must receive a token issued by "http://localhost"
               And user is already authorized
-              And a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+              And a POST request is made to "/ed-fi/courseIdentificationSystemDescriptors" with
                   """
                     {
-                        "codeValue": "Sick Leave",
-                        "description": "Sick Leave",
-                        "effectiveBeginDate": "2024-05-14",
-                        "effectiveEndDate": "2024-05-14",
-                        "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                        "shortDescription": "Sick Leave"
+                        "codeValue": "LEA course code",
+                        "namespace": "uri://ed-fi.org/CourseIdentificationSystemDescriptor",
+                        "shortDescription": "LEA course code"
                     }
                   """
 
         Scenario: 01 Verify response code 404 when trying to get a school with an ID that corresponds to Course
             Given the system has these "Schools"
-                  | schoolId | nameOfInstitution | educationOrganizationCategories                                                                                       | gradeLevels                                                                     |
-                  | 100      | School Test       | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"}] | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"}] |
+                  | schoolId | nameOfInstitution | educationOrganizationCategories                                                                                  | gradeLevels                                                                     |
+                  | 100      | School Test       | [{ "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"}] | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"}] |
               And a POST request is made to "/ed-fi/courses" with
                   """
                   {

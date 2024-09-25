@@ -7,7 +7,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace EdFi.DataManagementService.Tests.E2E
 {
-    public class AppSettings
+    public static class AppSettings
     {
         private static readonly IConfiguration _configuration = new ConfigurationBuilder()
             .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)

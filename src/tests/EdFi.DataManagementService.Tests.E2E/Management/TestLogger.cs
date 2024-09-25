@@ -22,6 +22,15 @@ public class TestLogger : IDisposable
 
     public void Dispose()
     {
-        log.Dispose();
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            log.Dispose();
+        }
     }
 }

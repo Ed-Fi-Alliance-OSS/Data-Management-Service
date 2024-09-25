@@ -150,7 +150,7 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_should_not_have_response()
         {
-            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+            _context.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 
@@ -178,7 +178,7 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_should_not_have_response()
         {
-            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+            _context.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 
@@ -206,20 +206,20 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_should_not_have_response()
         {
-            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+            _context.FrontendResponse.Should().Be(No.FrontendResponse);
         }
 
         [Test]
         public void It_should_not_be_equal_than_parsed_body()
         {
-            _context?.FrontendRequest.Body.Should().NotBe(_context?.ParsedBody.ToJsonString());
+            _context.FrontendRequest.Body.Should().NotBe(_context.ParsedBody.ToJsonString());
         }
 
         [Test]
         public void It_should_not_contain_objectOverpost()
         {
             _context
-                ?.ParsedBody.ToJsonString()
+                .ParsedBody.ToJsonString()
                 .Should()
                 .NotContain("\"objectOverpost\": { \"x\": \"overPostedValue\"}");
         }
@@ -228,7 +228,7 @@ public class ValidateDocumentMiddlewareTests
         public void It_should_contain_objectOverpost()
         {
             _context
-                ?.FrontendRequest.Body.Should()
+                .FrontendRequest.Body.Should()
                 .Contain(""""objectOverpost": { "x": "overPostedValue"}"""");
         }
 
@@ -236,7 +236,7 @@ public class ValidateDocumentMiddlewareTests
         public void It_should_be_correct_parsed_body()
         {
             _context
-                ?.ParsedBody.ToJsonString()
+                .ParsedBody.ToJsonString()
                 .Should()
                 .Be(
                     """{"schoolId":989,"gradeLevels":{"gradeLevelDescriptor":"grade1"},"nameOfInstitution":"school12","educationOrganizationCategories":[{"educationOrganizationCategoryDescriptor":"School"}]}"""
@@ -247,7 +247,7 @@ public class ValidateDocumentMiddlewareTests
         public void It_should_not_contain_newOverposted_in_educationOrganizationCategories()
         {
             _context
-                ?.ParsedBody.ToJsonString()
+                .ParsedBody.ToJsonString()
                 .Should()
                 .Contain(
                     """educationOrganizationCategories":[{"educationOrganizationCategoryDescriptor":"School"}]"""
@@ -279,7 +279,7 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_should_not_have_response()
         {
-            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+            _context.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 
@@ -307,7 +307,7 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_should_not_have_response()
         {
-            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+            _context.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 
@@ -335,20 +335,19 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _context.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(400);
+            _context.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_message_body_with_required_validation_error()
         {
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("is required");
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("schoolId");
+            _context.FrontendResponse.Body?.ToJsonString().Should().ContainAll("is required", "schoolId");
         }
     }
 
@@ -361,7 +360,7 @@ public class ValidateDocumentMiddlewareTests
         public async Task Setup()
         {
             string jsonData =
-                """{"schoolId": "wrongvalue","gradeLevels":{"gradeLevelDescriptor": "grade1"},"nameOfInstitution":"school12"}""";
+                """{"schoolId": "wrong value","gradeLevels":{"gradeLevelDescriptor": "grade1"},"nameOfInstitution":"school12"}""";
 
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
@@ -376,20 +375,19 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _context.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(400);
+            _context.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_message_body_with_wrong_data_type_validation_error()
         {
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("schoolId Value is");
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("integer");
+            _context.FrontendResponse.Body?.ToJsonString().Should().ContainAll("schoolId Value is", "integer");
         }
     }
 
@@ -417,20 +415,19 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _context.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(400);
+            _context.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_message_body_with_required_validation_error()
         {
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("is required");
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("id");
+            _context.FrontendResponse.Body?.ToJsonString().Should().ContainAll("is required", "id");
         }
     }
 
@@ -459,23 +456,19 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _context.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(400);
+            _context.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_message_body_with_required_validation_error()
         {
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("nameOfInstitution");
-            _context
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain("cannot contain leading or trailing spaces");
+            _context.FrontendResponse.Body?.ToJsonString().Should().ContainAll("nameOfInstitution", "cannot contain leading or trailing spaces");
         }
     }
 
@@ -504,23 +497,19 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _context.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(400);
+            _context.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_message_body_with_required_validation_error()
         {
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("nameOfInstitution");
-            _context
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain("nameOfInstitution is required");
+            _context.FrontendResponse.Body?.ToJsonString().Should().ContainAll("nameOfInstitution", "nameOfInstitution is required");
         }
     }
 
@@ -549,7 +538,7 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_should_not_have_response()
         {
-            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+            _context.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 
@@ -578,23 +567,19 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _context.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(400);
+            _context.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_message_body_with_required_validation_error()
         {
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("identityProperty");
-            _context
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain("cannot contain leading or trailing spaces");
+            _context.FrontendResponse.Body?.ToJsonString().Should().ContainAll("identityProperty", "cannot contain leading or trailing spaces");
         }
     }
 
@@ -623,24 +608,19 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _context.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(400);
+            _context.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_message_body_with_required_validation_error()
         {
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("identityProperty");
-            _context
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain("cannot contain leading or trailing spaces");
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("traceId");
+            _context.FrontendResponse.Body?.ToJsonString().Should().ContainAll("identityProperty", "cannot contain leading or trailing spaces", "traceId");
         }
     }
 
@@ -668,24 +648,19 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _context.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(400);
+            _context.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_message_body_with_required_validation_error()
         {
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("identityProperty");
-            _context
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain("is required and should not be left empty.");
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("traceId");
+            _context.FrontendResponse.Body?.ToJsonString().Should().ContainAll("identityProperty", "is required and should not be left empty.", "traceId");
         }
     }
 
@@ -714,7 +689,7 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_should_not_have_response()
         {
-            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+            _context.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 }
