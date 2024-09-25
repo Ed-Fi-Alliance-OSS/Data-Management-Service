@@ -14,7 +14,7 @@ Feature: Resources "Create" Operation validations
 
     Rule: Resources
 
-        @POST
+        @DMS-152 @POST
         Scenario: 01 Post an empty request object (Resource)
              When a POST request is made to "/ed-fi/schools" with
                   """
@@ -33,7 +33,7 @@ Feature: Resources "Create" Operation validations
                   }
                   """
 
-        @POST
+        @DMS-153 @POST
         Scenario: 02 Post using an empty JSON body (Resource)
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
@@ -70,7 +70,7 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
-        @POST
+        @DMS-154 @POST
         Scenario: 03 Create a document with spaces in identity fields (Resource)
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
@@ -102,7 +102,7 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
-        @POST
+        @DMS-155 @POST
         Scenario: 04 Create a document with leading spaces in identity fields (Resource)
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
@@ -134,7 +134,7 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
-        @POST
+        @DMS-156 @POST
         Scenario: 05 Create a document with trailing spaces in identity fields (Resource)
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
@@ -166,7 +166,7 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
-        @POST
+        @DMS-157 @POST
         Scenario: 07 Create a document with a required, non-identity, property's value containing leading and trailing white spaces (Resource)
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -179,7 +179,7 @@ Feature: Resources "Create" Operation validations
                   """
              Then it should respond with 201
 
-        @POST
+        @DMS-158 @POST
         Scenario: 08 Create a document with optional property's value containing only white spaces (Resource)
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -194,7 +194,7 @@ Feature: Resources "Create" Operation validations
              # 200 because this is updating the document stored with the scenario above.
              Then it should respond with 200
 
-        @POST
+        @DMS-159 @POST
         Scenario: 09 Create a document with id property (Resource)
             # The ID used does not need to exist: any ID is invalid here
              When a POST request is made to "/ed-fi/academicWeeks" with
@@ -226,7 +226,7 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
-        @POST
+        @DMS-160 @POST
         Scenario: 10 Create a document with an extra property (overpost) (Resource)
              When a POST request is made to "/ed-fi/educationContents" with
                   """
@@ -254,7 +254,7 @@ Feature: Resources "Create" Operation validations
                   }
                   """
 
-        @POST
+        @DMS-161 @POST
         Scenario: 11 Create a document with an null optional property (Resource)
              When a POST request is made to "/ed-fi/educationContents" with
                   """
@@ -280,7 +280,7 @@ Feature: Resources "Create" Operation validations
                   }
                   """
 
-        @POST
+        @DMS-162 @POST
         Scenario: 12 Post an numeric and boolean fields as strings are coerced (Resource)
                   # In this example schoolId is numeric and doNotPublishIndicator are boolean, yet posted in quotes as strings
                   # In the GET request you can see they are coerced to their proper types
@@ -351,7 +351,7 @@ Feature: Resources "Create" Operation validations
                   }
                   """
 
-        @POST
+        @DMS-163 @POST
         Scenario: 13 Post a request with a value that is too short (Resource)
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
@@ -383,7 +383,7 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
-        @POST
+        @DMS-164 @POST
         Scenario: 14 Post a request with a value that is too long (Resource)
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
@@ -415,7 +415,7 @@ Feature: Resources "Create" Operation validations
                   }
                   """
 
-        @POST
+        @DMS-165 @POST
         Scenario: 15 Create a document that is missing multiple required properties (Resource)
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
@@ -450,7 +450,7 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
-        @POST
+        @DMS-166 @POST
         Scenario: 16 Post a new document (Resource)
               And a POST request is made to "/ed-fi/educationContents" with
                   """
@@ -465,7 +465,7 @@ Feature: Resources "Create" Operation validations
              # Was already created somewhere above
              Then it should respond with 200
 
-        @POST
+        @DMS-167 @POST
         Scenario: 17 Post a request with a duplicated value (Resource)
              When a POST request is made to "/ed-fi/educationContents" with
                   """
@@ -497,7 +497,7 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
-        @POST
+        @DMS-168 @POST
         Scenario: 18 Create a document with empty value in identity fields (Resource)
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -526,7 +526,7 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
-        @POST
+        @DMS-169 @POST
         Scenario: 19 Create a document with leading and trailing spaces in required fields (Resource)
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -539,7 +539,7 @@ Feature: Resources "Create" Operation validations
                   """
              Then it should respond with 201 or 200
 
-        @POST
+        @DMS-170 @POST
         Scenario: 20 Create a document with just spaces in required fields (Resource)
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -568,7 +568,7 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
-        @POST
+        @DMS-171 @POST
         Scenario: 21 Create a document with empty required fields (Resource)
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -597,7 +597,7 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
-        @APIConventions @POST
+        @DMS-172 @APIConventions @POST
         Scenario: 24 Verify user can send a POST using extra fields
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -618,7 +618,7 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
-        @ignore @APIConventions @POST
+        @DMS-173 @ignore @APIConventions @POST
         Scenario: 25 Verify clients cannot POST a resource without permissions
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -677,7 +677,7 @@ Feature: Resources "Create" Operation validations
                   content-type: application/problem+json
                   """
 
-        @APIConventions @POST
+        @DMS-174 @APIConventions @POST
         Scenario: 26 Validate special characters values during POST action
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -696,7 +696,7 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
-        @POST
+        @DMS-175 @POST
         Scenario: 06 Post an invalid document missing a comma (Resource)
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """

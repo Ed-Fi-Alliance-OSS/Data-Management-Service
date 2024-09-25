@@ -17,6 +17,7 @@ Feature: Update a Descriptor
                   }
                   """
 
+        @DMS-033
         Scenario: 01 Put an existing descriptor
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -45,6 +46,7 @@ Feature: Update a Descriptor
                   }
                   """
 
+        @DMS-034
         Scenario: 02 Put an existing descriptor with optional properties removed
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -67,6 +69,7 @@ Feature: Update a Descriptor
                   }
                   """
 
+        @DMS-035
         Scenario: 03 Update a descriptor with a string that is too long
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -100,7 +103,7 @@ Feature: Update a Descriptor
 
 
         # Ignored because we do not have namespace security for descriptors yet. DMS-81
-        @ignore
+        @DMS-036 @ignore
         Scenario: 04 Put a descriptor using an invalid namespace
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -124,6 +127,7 @@ Feature: Update a Descriptor
                     }
                   """
 
+        @DMS-037
         Scenario: 05 Update a descriptor with spaces in required fields
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -159,6 +163,7 @@ Feature: Update a Descriptor
                   }
                   """
 
+        @DMS-038
         Scenario: 06 Update a descriptor with leading spaces in required fields
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -194,6 +199,7 @@ Feature: Update a Descriptor
                   }
                   """
 
+        @DMS-039
         Scenario: 07 Update a descriptor with trailing spaces in required fields
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -229,6 +235,7 @@ Feature: Update a Descriptor
                   }
                   """
 
+        @DMS-040
         Scenario: 08 Put an existing descriptor with an extra property (overpost)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -254,6 +261,7 @@ Feature: Update a Descriptor
                   }
                   """
 
+        @DMS-041
         Scenario: 09 Update a descriptor that does not exist
              # The id value should be replaced with a non existing resource
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/00000000-0000-4000-a000-000000000000" with
@@ -280,6 +288,7 @@ Feature: Update a Descriptor
                   }
                   """
 
+        @DMS-042
         Scenario: 10 Update a descriptor with modification of an identity field
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -306,6 +315,7 @@ Feature: Update a Descriptor
                     }
                   """
 
+        @DMS-043
         Scenario: 11  Put an empty request descriptor
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -327,6 +337,7 @@ Feature: Update a Descriptor
                   }
                   """
 
+        @DMS-044
         Scenario: 12 Put an empty JSON body
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -361,6 +372,7 @@ Feature: Update a Descriptor
                   }
                   """
 
+        @DMS-045
         Scenario: 13 Update a descriptor with mismatch between URL and id
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -389,6 +401,7 @@ Feature: Update a Descriptor
                   }
                   """
 
+        @DMS-046
         Scenario: 14 Update a descriptor with a blank id
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -417,6 +430,7 @@ Feature: Update a Descriptor
                    }
                   """
 
+        @DMS-047
         Scenario: 15 Update a descriptor with an invalid id format in the body
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -445,6 +459,7 @@ Feature: Update a Descriptor
                   }
                   """
 
+        @DMS-048
         Scenario: 16 Update a descriptor with duplicate properties
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -475,6 +490,7 @@ Feature: Update a Descriptor
                   }
                   """
 
+        @DMS-049
         Scenario: 17 Ensure clients cannot update a descriptor omitting any of the required values
              When a PUT request is made to "/ed-fi/disabilityDescriptors" with
                   """
@@ -503,6 +519,7 @@ Feature: Update a Descriptor
                   }
                   """
 
+        @DMS-050
         Scenario: 18 Ensure clients cannot update a codeValue
             Given a POST request is made to "/ed-fi/disabilityDescriptors" with
                   """
@@ -536,6 +553,7 @@ Feature: Update a Descriptor
                   }
                   """
 
+        @DMS-051
         Scenario: 19 Ensure clients cannot update a namespace
             Given a POST request is made to "/ed-fi/disabilityDescriptors" with
                   """
@@ -568,6 +586,7 @@ Feature: Update a Descriptor
                   }
                   """
 
+        @DMS-052
         Scenario: 20 Verify response code 400 when ID is not valid
              When a PUT request is made to "/ed-fi/disabilityDescriptors/00112233445566" with
                   """
