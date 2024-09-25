@@ -15,7 +15,7 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
                   | 100      | School Test       | {"localEducationAgencyId":101} | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"}] | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"}] |
 
 
-        @DMS-104
+        @API-104
         Scenario: 01 Ensure clients can create a Program that references an existing School
              When a POST request is made to "/ed-fi/programs" with
                   """
@@ -30,7 +30,7 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
              Then it should respond with 201 or 200
 
 
-        @DMS-105
+        @API-105
         Scenario: 02 Ensure clients can create a Program that references an existing Local Education Agency
              When a POST request is made to "/ed-fi/programs" with
                   """
@@ -44,7 +44,7 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
                   """
              Then it should respond with 201 or 200
 
-        @DMS-106
+        @API-106
         Scenario: 03 Ensure clients cannot create a Program that references a non-existing Education Organization
              When a POST request is made to "/ed-fi/programs" with
                   """
@@ -70,7 +70,7 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
                   }
                   """
 
-        @DMS-107
+        @API-107
         Scenario: 04 Ensure clients can update a school that references to an existing local education agency
             Given the system has these "Schools" references
                   | schoolId | nameOfInstitution | educationOrganizationCategories                                                                                       | gradeLevels                                                                     |
@@ -102,7 +102,7 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
              Then it should respond with 204
 
 
-        @DMS-108
+        @API-108
         Scenario: 05 Ensure clients cannot update a school that references to an existing Local Agency so it references now a Non Existing Education Organization
             Given the system has these "schools" references
                   | schoolId | nameOfInstitution | localEducationAgencyReference  | educationOrganizationCategories                                                                                       | gradeLevels                                                                     |
@@ -142,7 +142,7 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
                   }
                   """
 
-        @DMS-109
+        @API-109
         Scenario: 06 Ensure clients cannot delete and existing Education Organization that is referenced to a Program
             Given the system has these "localEducationAgencies" references
                   | localEducationAgencyId | nameOfInstitution           | localEducationAgencyCategoryDescriptor                                              | categories                                                                                                                            |

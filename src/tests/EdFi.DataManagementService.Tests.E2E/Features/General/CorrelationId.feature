@@ -1,7 +1,7 @@
 Feature: CorrleationId
     Validate the Correlation Id
 
-        @DMS-061
+        @API-061
         Scenario: 01 Ensure the response will contain provided correlation id
              When a POST request is made to "/ed-fi/academicWeeks" with header "correlationid" value "test-correlationId"
                   """

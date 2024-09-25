@@ -1,6 +1,6 @@
 Feature: Validate the duplicate references
 
-        @DMS-095
+        @API-095
         Scenario: 01 Verify clients can create a studentEducationOrganizationAssociation resource with combined unique descriptors
             Given the system has these descriptors
                   | descriptorValue                                                |
@@ -59,7 +59,7 @@ Feature: Validate the duplicate references
                   | uri://ed-fi.org/AssessmentReportingMethodDescriptor#Raw score   |
                   | uri://ed-fi.org/ResultDatatypeTypeDescriptor#Integer            |
 
-        @DMS-096
+        @API-096
         Scenario: 02 Verify clients can create a assessment resource with combined unique descriptors
 
              When a POST request is made to "/ed-fi/assessments" with
@@ -99,7 +99,7 @@ Feature: Validate the duplicate references
                   """
              Then it should respond with 201 or 200
 
-        @DMS-097
+        @API-097
         Scenario: 03 Verify clients can not create a assessment resource with combined duplicate descriptors
 
              When a POST request is made to "/ed-fi/assessments" with
@@ -159,7 +159,7 @@ Feature: Validate the duplicate references
                   """
 
     Rule: Duplicate References
-        @DMS-098
+        @API-098
         Scenario: 04 Verify clients cannot create a resource with a duplicate resource reference
              When a POST request is made to "/ed-fi/bellschedules" with
                   """
@@ -225,7 +225,7 @@ Feature: Validate the duplicate references
                   }
                   """
 
-        @DMS-099
+        @API-099
         Scenario: 05 Verify clients cannot create a resource with a duplicate descriptor
              When a POST request is made to "/ed-fi/schools" with
                   """

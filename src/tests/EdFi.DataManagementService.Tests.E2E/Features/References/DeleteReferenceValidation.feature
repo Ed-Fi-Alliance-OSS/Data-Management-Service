@@ -10,7 +10,7 @@ Feature: Delete reference validation
                   | educationOrganizationCategories                                                                                   | gradeLevels                                                                      | schoolId  | nameOfInstitution            |
                   | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#First grade"} ] | 255901107 | Grand Bend Elementary School |
 
-        @DMS-084
+        @API-084
         Scenario: 01 Ensure clients cannot delete a year that is used by another item
             Given the system has these "schoolYearTypes" references
                   | schoolYear | currentSchoolYear | schoolYearDescription |
@@ -33,7 +33,7 @@ Feature: Delete reference validation
                   }
                   """
 
-        @DMS-085
+        @API-085
         Scenario: 02 Ensure clients cannot delete a descriptor that is used by another item
             Given a POST request is made to "ed-fi/educationOrganizationCategoryDescriptors/" with
                   """
@@ -58,7 +58,7 @@ Feature: Delete reference validation
                   }
                   """
 
-        @DMS-086
+        @API-086
         Scenario: 03 Ensure clients cannot delete a dependent element for an item
             Given the system has these "students" references
                   | studentUniqueId | birthDate    | firstName | lastSurname |
@@ -81,7 +81,7 @@ Feature: Delete reference validation
                   }
                   """
 
-        @DMS-087
+        @API-087
         Scenario: 04 Ensure clients cannot delete an element that is reference to an Education Organization that is used by another items
             Given the system has these "localEducationAgencies" references
                   | localEducationAgencyCategoryDescriptor                        | localEducationAgencyId | categories                                                                                                                  | nameOfInstitution |
@@ -104,7 +104,7 @@ Feature: Delete reference validation
                   }
                   """
 
-        @DMS-088
+        @API-088
         Scenario: 05 Ensure clients cannot delete a resource that is used by another items
             Given the system has these "programs" references
                   | programName                    | programTypeDescriptor                                                | educationOrganizationReference        |

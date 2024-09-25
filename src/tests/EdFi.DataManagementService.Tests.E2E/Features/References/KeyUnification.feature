@@ -20,7 +20,7 @@ Feature: Validation of Natural Key Unification
                   | courseCode | numberOfParts | identificationCode | schoolId | courseTitle  | educationOrganizationReference   | identificationCodes                                                                                                                                                                                                                                            |
                   | Course1    | 1             | ALG-1              | 123      | Course1Title | {"educationOrganizationId": 123} | [{"courseIdentificationSystemDescriptor": "uri://ed-fi.org/courseIdentificationSystemDescriptor#LEA course code", "assigningOrganizationIdentificationCode": "IdentificationCode1", "courseCatalogURL": "URL12", "identificationCode": "IdentificationCode1"}] |
 
-        @DMS-100
+        @API-100
         Scenario: 01 Verify clients can create a resource that contains multiple references with an overlapping natural key field
              When a POST request is made to "/ed-fi/courseOfferings" with
                   """
@@ -45,7 +45,7 @@ Feature: Validation of Natural Key Unification
                   """
              Then it should respond with 201 or 200
 
-        @DMS-101
+        @API-101
         Scenario: 02 Verify clients cannot create a resource that contains mismatched values on an overlapping natural key field
              When a POST request is made to "/ed-fi/courseOfferings" with
                   """
@@ -89,7 +89,7 @@ Feature: Validation of Natural Key Unification
                   """
               And it should respond with 400
 
-        @DMS-102
+        @API-102
         Scenario: 03 Verify clients cannot update a resource that contains mismatched values on an overlapping natural key field
             Given the system has these "courseOfferings" references
                   | localCourseCode | courseReference                                         | schoolReference  | sessionReference                                                |
@@ -134,7 +134,7 @@ Feature: Validation of Natural Key Unification
                   }
                   """
 
-        @DMS-103
+        @API-103
         Scenario: 04 Verify clients can create a resource with a reference to a resource with a complex identity (CourseOffering)
              When a POST request is made to "/ed-fi/sections" with
                   """

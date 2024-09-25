@@ -23,7 +23,7 @@ Feature: School Year Reference Validation
                   | calendarCode | schoolReference     | schoolYearTypeReference | calendarTypeDescriptor                                  | gradeLevels |
                   | "451"        | { "schoolId": 535 } | { "schoolYear": 2029 }  | uri://ed-fi.org/CalendarTypeDescriptor#Student Specific | []          |
 
-        @DMS-057
+        @API-057
         Scenario: 01 Try creating a resource using a valid school year
              When a POST request is made to "/ed-fi/calendars" with
                   """
@@ -41,7 +41,7 @@ Feature: School Year Reference Validation
                   """
              Then it should respond with 200 or 201
 
-        @DMS-058
+        @API-058
         Scenario: 02 Try creating a resource using an invalid school year
              When a POST request is made to "/ed-fi/calendars" with
                   """
@@ -71,7 +71,7 @@ Feature: School Year Reference Validation
                      }
                   """
 
-        @DMS-059
+        @API-059
         Scenario: 03 Try creating a CalendarDate using a valid Calendar reference
              When a POST request is made to "/ed-fi/calendarDates" with
                   """
@@ -91,7 +91,7 @@ Feature: School Year Reference Validation
                   """
              Then it should respond with 201
 
-        @DMS-060
+        @API-060
         Scenario: 04 Try creating a CalendarDate using an invalid Calendar reference with an invalid School year
              When a POST request is made to "/ed-fi/calendarDates" with
                   """

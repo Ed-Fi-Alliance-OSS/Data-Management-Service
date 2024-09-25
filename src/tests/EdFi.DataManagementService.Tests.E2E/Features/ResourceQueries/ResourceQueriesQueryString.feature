@@ -9,7 +9,7 @@ Feature: Query String handling for GET requests for Resource Queries
                   | weekIdentifier | beginDate  | endDate    | totalInstructionalDays | schoolReference |
                   | Week One       | 2024-05-15 | 2024-05-22 | 2                      | {"schoolId": 2} |
 
-        @DMS-124
+        @API-124
         Scenario: 01 Ensure clients can GET information when querying by valid date
              When a GET request is made to "/ed-fi/academicWeeks?beginDate=2024-05-15"
              Then it should respond with 200
@@ -27,7 +27,7 @@ Feature: Query String handling for GET requests for Resource Queries
                   }]
                   """
 
-        @DMS-125
+        @API-125
         Scenario: 02 Ensure clients can't GET information when querying by invalid date
              When a GET request is made to "/ed-fi/academicWeeks?beginDate=024-04-09"
              Then it should respond with 400
@@ -46,7 +46,7 @@ Feature: Query String handling for GET requests for Resource Queries
                    }
                   """
 
-        @DMS-126
+        @API-126
         Scenario: 03 Ensure clients can't GET information when querying by a word
              When a GET request is made to "/ed-fi/academicWeeks?beginDate=word"
              Then it should respond with 400
@@ -65,7 +65,7 @@ Feature: Query String handling for GET requests for Resource Queries
                   }
                   """
 
-        @DMS-127
+        @API-127
         Scenario: 04 Ensure clients can't GET information when querying by wrong begin date
              When a GET request is made to "/ed-fi/academicWeeks?beginDate=1970-04-09"
              Then it should respond with 200
@@ -74,7 +74,7 @@ Feature: Query String handling for GET requests for Resource Queries
                   []
                   """
 
-        @DMS-128
+        @API-128
         Scenario: 05 Ensure clients can't GET information when querying by correct begin date and wrong end date
              When a GET request is made to "/ed-fi/academicWeeks?beginDate=2024-05-15&endDate=2025-06-23"
              Then it should respond with 200
@@ -83,7 +83,7 @@ Feature: Query String handling for GET requests for Resource Queries
                   []
                   """
 
-        @DMS-129
+        @API-129
         Scenario: 06 Ensure clients can GET information when querying by string parameter
              When a GET request is made to "/ed-fi/academicWeeks?weekIdentifier=Week+One"
              Then it should respond with 200
@@ -101,7 +101,7 @@ Feature: Query String handling for GET requests for Resource Queries
                   }]
                   """
 
-        @DMS-130
+        @API-130
         Scenario: 07 Ensure clients can GET information when querying by integer parameter
              When a GET request is made to "/ed-fi/academicWeeks?totalInstructionalDays=2"
              Then it should respond with 200
@@ -119,7 +119,7 @@ Feature: Query String handling for GET requests for Resource Queries
                   }]
                   """
 
-        @DMS-131
+        @API-131
         Scenario: 08 Ensure clients can GET information when querying with mixed case parameter name
              When a GET request is made to "/ed-fi/academicWeeks?WEEKIdentifier=Week+One"
              Then it should respond with 200
@@ -137,7 +137,7 @@ Feature: Query String handling for GET requests for Resource Queries
                   }]
                   """
 
-        @DMS-132
+        @API-132
         Scenario: 09 Ensure clients can GET information when querying with lower case parameter name
              When a GET request is made to "/ed-fi/academicWeeks?weekidentifier=Week+One"
              Then it should respond with 200
@@ -155,7 +155,7 @@ Feature: Query String handling for GET requests for Resource Queries
                   }]
                   """
 
-        @DMS-133
+        @API-133
         Scenario: 10 Ensure clients can GET information when querying with upper case parameter name
              When a GET request is made to "/ed-fi/academicWeeks?WEEKIDENTIFIER=Week+One"
              Then it should respond with 200
@@ -173,7 +173,7 @@ Feature: Query String handling for GET requests for Resource Queries
                   }]
                   """
 
-        @DMS-134
+        @API-134
         Scenario: 11 Ensure clients can GET information when querying with mixed case parameter name and value
              When a GET request is made to "/ed-fi/academicWeeks?WEEKIDENTIFier=week+ONE"
              Then it should respond with 200
@@ -191,7 +191,7 @@ Feature: Query String handling for GET requests for Resource Queries
                   }]
                   """
 
-        @DMS-135
+        @API-135
         Scenario: 12 Ensure clients can GET information when querying with mixed case parameter name and upper case value
              When a GET request is made to "/ed-fi/academicWeeks?WEEKIDENTIFier=WEEK+ONE"
              Then it should respond with 200

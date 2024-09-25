@@ -12,7 +12,7 @@ Feature: Resources "Read" Operation validations
                     }
                   """
 
-            @DMS-181 Scenario: 01 Verify response code 404 when trying to get a school with an ID that corresponds to Course
+            @API-181 Scenario: 01 Verify response code 404 when trying to get a school with an ID that corresponds to Course
             Given the system has these "Schools"
                   | schoolId | nameOfInstitution | educationOrganizationCategories                                                                                  | gradeLevels                                                                     |
                   | 100      | School Test       | [{ "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"}] | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"}] |
@@ -36,7 +36,7 @@ Feature: Resources "Read" Operation validations
              When a GET request is made to "/ed-fi/schools/{id}"
              Then it should respond with 404
 
-        @DMS-182
+        @API-182
         Scenario: 02 Verify response code 200 when trying to get a student with a correct ID
             Given a POST request is made to "/ed-fi/students" with
                   """

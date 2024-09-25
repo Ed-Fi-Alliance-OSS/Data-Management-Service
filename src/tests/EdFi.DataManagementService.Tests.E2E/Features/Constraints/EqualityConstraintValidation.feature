@@ -6,7 +6,7 @@ Feature: Equality Constraint Validation
     "targetJsonPath": "$.schoolReference.schoolId"
     }
     ]
-        @DMS-001
+        @API-001
         Scenario: 01 Post a valid bell schedule no equality constraint violations.
             Given the system has these "schools"
                   | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
@@ -43,7 +43,7 @@ Feature: Equality Constraint Validation
                   """
              Then it should respond with 201 or 200
 
-        @DMS-002
+        @API-002
         Scenario: 02 Post an invalid bell schedule with equality constraint violations.
              When a POST request is made to "/ed-fi/bellschedules" with
                   """
@@ -92,7 +92,7 @@ Feature: Equality Constraint Validation
                   }
                   """
 
-        @DMS-003
+        @API-003
         Scenario: 03 Making a Post request when value does not match the same value in an array
              When a POST request is made to "/ed-fi/sections" with
                   """
@@ -135,7 +135,7 @@ Feature: Equality Constraint Validation
                   }
                   """
 
-        @DMS-004
+        @API-004
         Scenario: 04 Making a Post request when a value matches the first scenario in an array but not the second
              When a POST request is made to "/ed-fi/sections" with
                   """
@@ -184,7 +184,7 @@ Feature: Equality Constraint Validation
                   }
                   """
 
-        @DMS-005
+        @API-005
         Scenario: 05 Making a Post request when value does not match the same value in a single other reference
              When a POST request is made to "/ed-fi/sections" with
                   """
