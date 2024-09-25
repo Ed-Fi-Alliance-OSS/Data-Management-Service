@@ -56,7 +56,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
 
-            _id = setLocationAndGetId();
+            _id = setLocationAndGetId(_apiResponse);
 
             WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
@@ -193,7 +193,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 if (response.Url.Contains(entityType, StringComparison.InvariantCultureIgnoreCase)
                 )
                 {
-                    _referencedResourceId = setLocationAndGetId();
+                    _referencedResourceId = setLocationAndGetId(response);
                 }
             }
         }
@@ -211,16 +211,16 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
             _logger.log.Information(_apiResponse.TextAsync().Result);
 
-            _id = setLocationAndGetId();
+            _id = setLocationAndGetId(_apiResponse);
         }
 
-        private string setLocationAndGetId()
+        private string setLocationAndGetId(IAPIResponse apiResponse)
         {
-            if (_apiResponse.Headers.TryGetValue("location", out string? value))
+            if (apiResponse.Headers.TryGetValue("location", out string? value))
             {
                 _location = value;
 #pragma warning disable S6608 // Prefer indexing instead of "Enumerable" methods on types implementing "IList"
-                return value.Split('/').Last();
+                return _location.Split('/').Last();
 #pragma warning restore S6608 // Prefer indexing instead of "Enumerable" methods on types implementing "IList"
             }
 
@@ -248,7 +248,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             )!;
             _logger.log.Information(_apiResponse.TextAsync().Result);
 
-            _id = setLocationAndGetId();
+            _id = setLocationAndGetId(_apiResponse);
         }
 
         [When("a POST request is made for dependent resource {string} with")]
@@ -257,7 +257,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             url = addDataPrefixIfNecessary(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
 
-            _dependentId = setLocationAndGetId();
+            _dependentId = setLocationAndGetId(_apiResponse);
         }
 
         [When("a PUT request is made to {string} with")]
@@ -270,7 +270,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information($"PUT body: {body}");
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(url, new() { Data = body })!;
 
-            setLocationAndGetId();
+            setLocationAndGetId(_apiResponse);
         }
 
         [When("a PUT request is made to referenced resource {string} with")]
@@ -332,10 +332,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         public async Task WhenAGETRequestIsMadeToUsingValuesAs(string url, Table table)
         {
             url = addDataPrefixIfNecessary(url);
-            foreach (var row in table.Rows)
-            {
-                _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(url)!;
-            }
+            _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(url)!;
         }
 
         #endregion
@@ -525,6 +522,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             string replacedBody = "";
             if (body.TrimStart().StartsWith('['))
             {
+                var responseAsArray = responseJson.AsArray() ?? throw new AssertionException("Expected a JSON array response, but it was not an array.");
+                if (responseAsArray.Count == 0)
+                {
+                    return body;
+                }
+
                 int index = 0;
 
                 replacedBody = _findIds.Replace(
