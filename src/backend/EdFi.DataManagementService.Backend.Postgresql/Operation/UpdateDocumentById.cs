@@ -7,6 +7,7 @@ using System.Text.Json;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using Json.More;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
@@ -77,6 +78,8 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
             updateRequest.DocumentInfo.DescriptorReferences
         );
 
+        Document? documentFromDb;
+
         try
         {
             var validationResult = await _sqlAction.UpdateDocumentValidation(
@@ -136,6 +139,17 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 }
             }
 
+            // Attempt to get the document before update, to get the ID for references
+            // and to use during cascading updates
+            documentFromDb = await _sqlAction.FindDocumentByReferentialId(
+                updateRequest.DocumentInfo.ReferentialId,
+                PartitionKeyFor(updateRequest.DocumentInfo.ReferentialId),
+                connection,
+                transaction,
+                LockOption.BlockUpdateDelete,
+                traceId
+            );
+
             int rowsAffected = await _sqlAction.UpdateDocumentEdfiDoc(
                 PartitionKeyFor(updateRequest.DocumentUuid).Value,
                 updateRequest.DocumentUuid.Value,
@@ -148,36 +162,13 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
             switch (rowsAffected)
             {
                 case 1:
-                    Document? documentFromDb;
-                    try
+                    if (documentFromDb == null)
                     {
-                        // Attempt to get the document, to get the ID for references
-                        documentFromDb = await _sqlAction.FindDocumentByReferentialId(
-                            updateRequest.DocumentInfo.ReferentialId,
-                            PartitionKeyFor(updateRequest.DocumentInfo.ReferentialId),
-                            connection,
-                            transaction,
-                            LockOption.BlockUpdateDelete,
-                            traceId
-                        );
-                    }
-                    catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.SerializationFailure)
-                    {
-                        _logger.LogDebug(
-                            pe,
-                            "Transaction conflict on Documents table read - {TraceId}",
-                            updateRequest.TraceId
-                        );
-                        return new UpdateResult.UpdateFailureWriteConflict();
+                        throw new InvalidOperationException("documentFromDb.Id should never be null");
                     }
 
-                    long documentId = 0;
-                    if (documentFromDb != null)
-                    {
-                        documentId =
-                            documentFromDb.Id
-                            ?? throw new InvalidOperationException("documentFromDb.Id should never be null");
-                    }
+                    long documentId = documentFromDb.Id.GetValueOrDefault();
+
                     if (
                         documentReferenceIds.ReferentialIds.Length > 0
                         || descriptorReferenceIds.ReferentialIds.Length > 0
@@ -224,41 +215,72 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                         && !validationResult.ReferentialIdUnchanged
                     )
                     {
-                        var cascadingUpdateResults = await _sqlAction.CascadeUpdates(
-                            updateRequest.ResourceInfo.ResourceName.Value,
-                            documentId,
-                            documentPartitionKey.Value,
-                            updateRequest.DocumentInfo,
+                        var parentDocuments = await _sqlAction.FindParentDocumentsByDocumentId(
+                            documentFromDb.Id.GetValueOrDefault(),
+                            documentFromDb.DocumentPartitionKey,
                             connection,
                             transaction,
+                            LockOption.BlockUpdateDelete,
                             traceId
                         );
-                        await recursivelyCascadeUpdates(cascadingUpdateResults);
+
+                        await recursivelyCascadeUpdates(parentDocuments);
                     }
 
                     return new UpdateResult.UpdateSuccess(updateRequest.DocumentUuid);
 
                     // Recursively call CascadeUpdates until the results are exhausted
-                    async Task recursivelyCascadeUpdates(List<CascadingUpdateResult> results)
+                    async Task recursivelyCascadeUpdates(Document[] parentDocuments)
                     {
-                        if (!results.Any())
+                        if (!parentDocuments.Any())
                         {
                             return;
                         }
 
-                        foreach (var result in results)
+                        foreach (
+                            var referencingDocument in parentDocuments.Select(p => new ReferencingDocument(
+                                p.EdfiDoc.AsNode()!,
+                                p.Id.GetValueOrDefault(),
+                                p.DocumentPartitionKey,
+                                p.DocumentUuid,
+                                p.ProjectName,
+                                p.ResourceName
+                            ))
+                        )
                         {
-                            var cascadingUpdateResult = await _sqlAction.CascadeUpdates(
-                                result.ModifiedResourceName,
-                                result.ModifiedDocumentId,
-                                result.ModifiedDocumentPartitionKey,
-                                updateRequest.DocumentInfo,
+                            var updateResult = updateRequest.UpdateCascadeHandler.Cascade(
+                                documentFromDb.EdfiDoc,
+                                documentFromDb.ProjectName,
+                                documentFromDb.ResourceName,
+                                updateRequest.EdfiDoc,
+                                referencingDocument
+                            );
+
+                            if (updateResult.isIdentityUpdate)
+                            {
+                                var grandparentDocuments = await _sqlAction.FindParentDocumentsByDocumentId(
+                                    updateResult.referencingDocument.Id,
+                                    updateResult.referencingDocument.DocumentPartitionKey,
+                                    connection,
+                                    transaction,
+                                    LockOption.BlockUpdateDelete,
+                                    traceId
+                                );
+                                await recursivelyCascadeUpdates(grandparentDocuments);
+                            }
+
+                            await _sqlAction.UpdateDocumentEdfiDoc(
+                                updateResult.referencingDocument.DocumentPartitionKey,
+                                updateResult.referencingDocument.DocumentUuid,
+                                JsonSerializer.Deserialize<JsonElement>(
+                                    updateResult.referencingDocument.EdFiDoc
+                                ),
                                 connection,
                                 transaction,
                                 traceId
                             );
 
-                            await recursivelyCascadeUpdates(cascadingUpdateResult);
+                            _logger.LogInformation(updateResult.isIdentityUpdate.ToString());
                         }
                     }
 

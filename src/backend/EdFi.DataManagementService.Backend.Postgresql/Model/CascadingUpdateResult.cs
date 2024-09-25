@@ -24,3 +24,5 @@ public record CascadingUpdateResult(
     /// </summary>
     string ModifiedResourceName
 );
+
+public record ResourceIdentification(long DocumentId, short DocumentPartitionKey, string ResourceName);

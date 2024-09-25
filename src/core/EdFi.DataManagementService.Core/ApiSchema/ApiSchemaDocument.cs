@@ -4,9 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-using Microsoft.Extensions.Logging;
 using EdFi.DataManagementService.Core.ApiSchema.Extensions;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.ApiSchema;
 
@@ -15,6 +15,16 @@ namespace EdFi.DataManagementService.Core.ApiSchema;
 /// </summary>
 internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
 {
+    public ProjectNamespace GetMappedProjectName(string projectName)
+    {
+        return new ProjectNamespace(
+            _apiSchemaRootNode.SelectNodeFromPathAs<string>(
+                $"$.projectNameMapping[\"{projectName}\"]",
+                _logger
+            ) ?? string.Empty
+        );
+    }
+
     /// <summary>
     /// Finds the ProjectSchema that represents the given ProjectNamespace. Returns null if not found.
     /// </summary>
@@ -27,7 +37,7 @@ internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
     }
 
     /// <summary>
-    /// Gets all ProjectSchema nodes in the document. 
+    /// Gets all ProjectSchema nodes in the document.
     /// </summary>
     public List<JsonNode> GetAllProjectSchemaNodes()
     {

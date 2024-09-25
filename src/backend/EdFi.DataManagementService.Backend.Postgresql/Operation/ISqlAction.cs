@@ -129,9 +129,18 @@ public interface ISqlAction
         TraceId traceId
     );
 
-    public Task<string[]> FindReferencingResourceNamesByDocumentUuid(
+    public Task<ResourceIdentification[]> FindReferencingResourceIdentificationByDocumentUuid(
         DocumentUuid documentUuid,
         PartitionKey documentPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        LockOption lockOption,
+        TraceId traceId
+    );
+
+    public Task<Document[]> FindParentDocumentsByDocumentId(
+        long documentId,
+        short documentPartitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         LockOption lockOption,

@@ -911,7 +911,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
         return result;
     }
 
-    public async Task<string[]> FindReferencingResourceNamesByDocumentUuid(
+    public async Task<ResourceIdentification[]> FindReferencingResourceIdentificationByDocumentUuid(
         DocumentUuid documentUuid,
         PartitionKey documentPartitionKey,
         NpgsqlConnection connection,
@@ -927,7 +927,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                 {
                     await using NpgsqlCommand command =
                         new(
-                            $@"SELECT d.ResourceName FROM dms.Document d
+                            $@"SELECT d.DocumentId, d.DocumentPartitionKey, d.ResourceName FROM dms.Document d
                    INNER JOIN (
                      SELECT ParentDocumentId, ParentDocumentPartitionKey
                      FROM dms.Reference r
@@ -950,14 +950,93 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                     await command.PrepareAsync(cancellationToken);
                     await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
 
-                    var resourceNames = new List<string>();
+                    List<ResourceIdentification> resourceIdentifications = [];
 
                     while (await reader.ReadAsync(cancellationToken))
                     {
-                        resourceNames.Add(reader.GetString(reader.GetOrdinal("ResourceName")));
+                        resourceIdentifications.Add(
+                            new ResourceIdentification(
+                                reader.GetInt64(reader.GetOrdinal("DocumentId")),
+                                reader.GetInt16(reader.GetOrdinal("DocumentPartitionKey")),
+                                reader.GetString(reader.GetOrdinal("ResourceName"))
+                            )
+                        );
                     }
 
-                    return resourceNames.Distinct().ToArray();
+                    return resourceIdentifications.Distinct().ToArray();
+                }
+                catch (PostgresException pe)
+                {
+                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
+
+                    // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
+                    // Must roll back the transaction before retry.
+                    await transaction.RollbackAsync(cancellationToken);
+                    throw;
+                }
+            });
+        return result;
+    }
+
+    public async Task<Document[]> FindParentDocumentsByDocumentId(
+        long documentId,
+        short documentPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        LockOption lockOption,
+        TraceId traceId
+    )
+    {
+        var result = await GetPostgresExceptionRetryPipeline()
+            .ExecuteAsync(async cancellationToken =>
+            {
+                try
+                {
+                    await using NpgsqlCommand command =
+                        new(
+                            $@"SELECT * FROM dms.Document d
+                                INNER JOIN dms.Reference r ON d.Id = r.ParentDocumentId And d.DocumentPartitionKey = r.ParentDocumentPartitionKey
+                                WHERE r.ReferencedDocumentId = $1 AND r.ReferencedDocumentPartitionKey = $2
+                                ORDER BY d.ResourceName {SqlFor(lockOption)};",
+                            connection,
+                            transaction
+                        )
+                        {
+                            Parameters =
+                            {
+                                new() { Value = documentId },
+                                new() { Value = documentPartitionKey },
+                            },
+                        };
+
+                    await command.PrepareAsync(cancellationToken);
+                    await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+
+                    List<Document> documents = [];
+
+                    while (await reader.ReadAsync(cancellationToken))
+                    {
+                        documents.Add(
+                            new Document(
+                                Id: reader.GetInt64(reader.GetOrdinal("Id")),
+                                DocumentPartitionKey: reader.GetInt16(
+                                    reader.GetOrdinal("DocumentPartitionKey")
+                                ),
+                                DocumentUuid: reader.GetGuid(reader.GetOrdinal("DocumentUuid")),
+                                ResourceName: reader.GetString(reader.GetOrdinal("ResourceName")),
+                                ResourceVersion: reader.GetString(reader.GetOrdinal("ResourceVersion")),
+                                IsDescriptor: reader.GetBoolean(reader.GetOrdinal("IsDescriptor")),
+                                ProjectName: reader.GetString(reader.GetOrdinal("ProjectName")),
+                                EdfiDoc: await reader.GetFieldValueAsync<JsonElement>(
+                                    reader.GetOrdinal("EdfiDoc")
+                                ),
+                                CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
+                                LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt"))
+                            )
+                        );
+                    }
+
+                    return documents.Distinct().ToArray();
                 }
                 catch (PostgresException pe)
                 {
