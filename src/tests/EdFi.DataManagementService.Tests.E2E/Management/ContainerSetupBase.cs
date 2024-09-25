@@ -22,13 +22,14 @@ public abstract class ContainerSetupBase
 
     private const ushort HttpPort = 8987;
     private const ushort DbPortExternal = 5435;
+    private const ushort DbPortInternal = 5432;
     private const string DatabaseName = "edfi_datamanagementservice";
 
     protected static string InternalConnectionString
     {
         get
         {
-            return $"host={DbContainerName};port=5432;username={PgAdminUser};password={PgAdminPassword};database={DatabaseName};";
+            return $"host={DbContainerName};port={DbPortInternal};username={PgAdminUser};password={PgAdminPassword};database={DatabaseName};";
         }
     }
 
@@ -69,13 +70,13 @@ public abstract class ContainerSetupBase
         var containerBuilder = new ContainerBuilder()
             .WithImage(DbImageName)
             .WithHostname(DbContainerName)
-            .WithPortBinding(DbPortExternal, 5432)
+            .WithPortBinding(DbPortExternal, DbPortInternal)
             .WithNetwork(network)
             .WithNetworkAliases(DbContainerName)
             .WithEnvironment("POSTGRES_USER", PgAdminUser)
             .WithEnvironment("POSTGRES_PASSWORD", PgAdminPassword)
             .WithEnvironment("POSTGRES_DB_NAME", DatabaseName)
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(5432))
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(DbPortInternal))
             .WithLogger(loggerFactory!.CreateLogger("dbContainer"));
 
         return containerBuilder.Build();
