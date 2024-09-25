@@ -355,7 +355,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                 {
                     await using var command = new NpgsqlCommand(
                         @"UPDATE dms.Document
-                  SET EdfiDoc = $1, LastModifiedTraceId = $4
+                  SET EdfiDoc = $1, LastModifiedTraceId = $4, LastModifiedAt = NOW()
                   WHERE DocumentPartitionKey = $2 AND DocumentUuid = $3
                   RETURNING Id;",
                         connection,
@@ -716,7 +716,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                               lastmodifiedat = NOW()
                               , lastModifiedTraceId = $3
                               , edfidoc =
-                                {updateStatement}                               
+                                {updateStatement}
                             from (
                               select parentdocumentid, parentdocumentpartitionkey
                               from dms.reference
