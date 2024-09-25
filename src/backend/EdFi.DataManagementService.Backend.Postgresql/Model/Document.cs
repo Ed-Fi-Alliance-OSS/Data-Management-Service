@@ -52,7 +52,7 @@ public record Document(
     /// </summary>
     long? Id = null,
     /// <summary>
-    /// The correlation id of the last event
+    /// The correlation id of the last insert or update
     /// </summary>
     string? LastModifiedTraceId = null
 );
