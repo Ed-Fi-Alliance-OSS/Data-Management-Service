@@ -56,7 +56,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
 
-            _id = setLocationAndGetId(_apiResponse);
+            _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
 
             WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
@@ -193,7 +193,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 if (response.Url.Contains(entityType, StringComparison.InvariantCultureIgnoreCase)
                 )
                 {
-                    _referencedResourceId = setLocationAndGetId(response);
+                    _referencedResourceId = extractDataFromResponseAndReturnIdIfAvailable(response);
                 }
             }
         }
@@ -211,10 +211,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
             _logger.log.Information(_apiResponse.TextAsync().Result);
 
-            _id = setLocationAndGetId(_apiResponse);
+            _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
 
-        private string setLocationAndGetId(IAPIResponse apiResponse)
+        private string extractDataFromResponseAndReturnIdIfAvailable(IAPIResponse apiResponse)
         {
             if (apiResponse.Headers.TryGetValue("location", out string? value))
             {
@@ -222,6 +222,15 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 #pragma warning disable S6608 // Prefer indexing instead of "Enumerable" methods on types implementing "IList"
                 return _location.Split('/').Last();
 #pragma warning restore S6608 // Prefer indexing instead of "Enumerable" methods on types implementing "IList"
+            }
+            if (apiResponse.Status == 400)
+            {
+                // This is here to help step through debugging when there is an
+                // unexpected error while doing background setup, in which case
+                // it is difficult to ever see the error details.
+#pragma warning disable S1481 // Unused local variables should be removed
+                var errorOnPostOrPutRequest = _apiResponse.TextAsync().Result;
+#pragma warning restore S1481 // Unused local variables should be removed
             }
 
             return string.Empty;
@@ -248,7 +257,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             )!;
             _logger.log.Information(_apiResponse.TextAsync().Result);
 
-            _id = setLocationAndGetId(_apiResponse);
+            _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
 
         [When("a POST request is made for dependent resource {string} with")]
@@ -257,7 +266,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             url = addDataPrefixIfNecessary(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
 
-            _dependentId = setLocationAndGetId(_apiResponse);
+            _dependentId = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
 
         [When("a PUT request is made to {string} with")]
@@ -270,7 +279,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information($"PUT body: {body}");
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(url, new() { Data = body })!;
 
-            setLocationAndGetId(_apiResponse);
+            extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
 
         [When("a PUT request is made to referenced resource {string} with")]
