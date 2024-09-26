@@ -242,7 +242,9 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                     async Task recursivelyCascadeUpdates(List<CascadingUpdateResult> results)
                     {
                         if (!results.Any())
+                        {
                             return;
+                        }
 
                         foreach (var result in results)
                         {
