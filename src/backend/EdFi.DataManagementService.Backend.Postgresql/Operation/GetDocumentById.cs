@@ -3,8 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Backend;
+using Microsoft.CodeAnalysis;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
@@ -37,7 +39,7 @@ public class GetDocumentById(ISqlAction _sqlAction, ILogger<GetDocumentById> _lo
 
         try
         {
-            JsonNode? edfiDoc = await _sqlAction.FindDocumentEdfiDocByDocumentUuid(
+            var document = await _sqlAction.FindDocumentEdfiDocByDocumentUuid(
                 getRequest.DocumentUuid,
                 getRequest.ResourceInfo.ResourceName.Value,
                 PartitionKeyFor(getRequest.DocumentUuid),
@@ -47,13 +49,17 @@ public class GetDocumentById(ISqlAction _sqlAction, ILogger<GetDocumentById> _lo
                 getRequest.TraceId
             );
 
-            if (edfiDoc == null)
+            if (document == null)
             {
                 return new GetResult.GetFailureNotExists();
             }
 
-            // TODO: Documents table needs a last modified datetime
-            return new GetResult.GetSuccess(getRequest.DocumentUuid, edfiDoc, DateTime.Now);
+            return new GetResult.GetSuccess(
+                getRequest.DocumentUuid,
+                document.EdfiDoc.Deserialize<JsonNode>()!,
+                document.LastModifiedAt!.Value,
+                document.LastModifiedTraceId!
+            );
         }
         catch (Exception ex)
         {

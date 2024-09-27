@@ -107,6 +107,7 @@ public class UpdateTests : DatabaseTest
             _getResult!.Should().BeOfType<GetResult.GetSuccess>();
             (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
             (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Be(_edFiDocString2);
+            (_getResult! as GetResult.GetSuccess)!.LastModifiedTraceId.Should().Be(traceId.Value);
         }
     }
 
