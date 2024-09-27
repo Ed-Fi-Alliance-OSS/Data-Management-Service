@@ -5,8 +5,8 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
-using Microsoft.CodeAnalysis;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
@@ -39,7 +39,7 @@ public class GetDocumentById(ISqlAction _sqlAction, ILogger<GetDocumentById> _lo
 
         try
         {
-            var document = await _sqlAction.FindDocumentEdfiDocByDocumentUuid(
+            DocumentSummary? document = await _sqlAction.FindDocumentEdfiDocByDocumentUuid(
                 getRequest.DocumentUuid,
                 getRequest.ResourceInfo.ResourceName.Value,
                 PartitionKeyFor(getRequest.DocumentUuid),
@@ -57,8 +57,8 @@ public class GetDocumentById(ISqlAction _sqlAction, ILogger<GetDocumentById> _lo
             return new GetResult.GetSuccess(
                 getRequest.DocumentUuid,
                 document.EdfiDoc.Deserialize<JsonNode>()!,
-                document.LastModifiedAt!.Value,
-                document.LastModifiedTraceId!
+                document.LastModifiedAt,
+                document.LastModifiedTraceId
             );
         }
         catch (Exception ex)

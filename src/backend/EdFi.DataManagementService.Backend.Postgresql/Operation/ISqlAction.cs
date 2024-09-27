@@ -18,7 +18,7 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
 /// </summary>
 public interface ISqlAction
 {
-    public Task<Document?> FindDocumentEdfiDocByDocumentUuid(
+    public Task<DocumentSummary?> FindDocumentEdfiDocByDocumentUuid(
         DocumentUuid documentUuid,
         string resourceName,
         PartitionKey partitionKey,

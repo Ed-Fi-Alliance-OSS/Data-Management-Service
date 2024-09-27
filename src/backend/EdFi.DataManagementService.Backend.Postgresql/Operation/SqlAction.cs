@@ -41,7 +41,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
     /// Returns the EdfiDoc of single Document from the database corresponding to the given DocumentUuid,
     /// or null if no matching Document was found.
     /// </summary>
-    public async Task<Document?> FindDocumentEdfiDocByDocumentUuid(
+    public async Task<DocumentSummary?> FindDocumentEdfiDocByDocumentUuid(
         DocumentUuid documentUuid,
         string resourceName,
         PartitionKey partitionKey,
@@ -58,7 +58,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                 {
                     await using NpgsqlCommand command =
                         new(
-                            $@"SELECT * FROM dms.Document WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 AND ResourceName = $3 {SqlFor(lockOption)};",
+                            $@"SELECT EdfiDoc, LastModifiedAt, LastModifiedTraceId  FROM dms.Document WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 AND ResourceName = $3 {SqlFor(lockOption)};",
                             connection,
                             transaction
                         )
@@ -82,16 +82,8 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                     // Assumes only one row returned
                     await reader.ReadAsync(cancellationToken);
 
-                    return new Document(
-                        Id: reader.GetInt64(reader.GetOrdinal("Id")),
-                        DocumentPartitionKey: reader.GetInt16(reader.GetOrdinal("DocumentPartitionKey")),
-                        DocumentUuid: reader.GetGuid(reader.GetOrdinal("DocumentUuid")),
-                        ResourceName: reader.GetString(reader.GetOrdinal("ResourceName")),
-                        ResourceVersion: reader.GetString(reader.GetOrdinal("ResourceVersion")),
-                        IsDescriptor: reader.GetBoolean(reader.GetOrdinal("IsDescriptor")),
-                        ProjectName: reader.GetString(reader.GetOrdinal("ProjectName")),
+                    return new DocumentSummary(
                         EdfiDoc: await reader.GetFieldValueAsync<JsonElement>(reader.GetOrdinal("EdfiDoc")),
-                        CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
                         LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt")),
                         LastModifiedTraceId: reader.GetString(reader.GetOrdinal("LastModifiedTraceId"))
                     );
