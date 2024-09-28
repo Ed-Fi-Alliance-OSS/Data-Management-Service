@@ -237,30 +237,26 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                             return;
                         }
 
-                        foreach (
-                            var referencingDocument in parentDocuments.Select(p => new ReferencingDocument(
-                                p.EdfiDoc.AsNode()!,
-                                p.Id.GetValueOrDefault(),
-                                p.DocumentPartitionKey,
-                                p.DocumentUuid,
-                                p.ProjectName,
-                                p.ResourceName
-                            ))
-                        )
+                        foreach (var referencingDocument in parentDocuments)
                         {
-                            var updateResult = updateRequest.UpdateCascadeHandler.Cascade(
+                            var cascadeResult = updateRequest.UpdateCascadeHandler.Cascade(
                                 documentFromDb.EdfiDoc,
                                 documentFromDb.ProjectName,
                                 documentFromDb.ResourceName,
                                 updateRequest.EdfiDoc,
-                                referencingDocument
+                                referencingDocument.EdfiDoc.AsNode()!,
+                                referencingDocument.Id.GetValueOrDefault(),
+                                referencingDocument.DocumentPartitionKey,
+                                referencingDocument.DocumentUuid,
+                                referencingDocument.ProjectName,
+                                referencingDocument.ResourceName
                             );
 
-                            if (updateResult.isIdentityUpdate)
+                            if (cascadeResult.isIdentityUpdate)
                             {
                                 var grandparentDocuments = await _sqlAction.FindParentDocumentsByDocumentId(
-                                    updateResult.referencingDocument.Id,
-                                    updateResult.referencingDocument.DocumentPartitionKey,
+                                    cascadeResult.Id,
+                                    cascadeResult.DocumentPartitionKey,
                                     connection,
                                     transaction,
                                     LockOption.BlockUpdateDelete,
@@ -270,17 +266,15 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                             }
 
                             await _sqlAction.UpdateDocumentEdfiDoc(
-                                updateResult.referencingDocument.DocumentPartitionKey,
-                                updateResult.referencingDocument.DocumentUuid,
-                                JsonSerializer.Deserialize<JsonElement>(
-                                    updateResult.referencingDocument.EdFiDoc
-                                ),
+                                cascadeResult.DocumentPartitionKey,
+                                cascadeResult.DocumentUuid,
+                                JsonSerializer.Deserialize<JsonElement>(cascadeResult.EdFiDoc),
                                 connection,
                                 transaction,
                                 traceId
                             );
 
-                            _logger.LogInformation(updateResult.isIdentityUpdate.ToString());
+                            _logger.LogInformation(cascadeResult.isIdentityUpdate.ToString());
                         }
                     }
 
