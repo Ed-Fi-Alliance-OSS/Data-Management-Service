@@ -59,27 +59,11 @@ public class UpdateCascadeHandler(IApiSchemaProvider _apiSchemaProvider, ILogger
 
         var apiSchemaDocument = new ApiSchemaDocument(_apiSchemaProvider.ApiSchemaRootNode, _logger);
 
-        var originalProjectSchemaNode =
-            apiSchemaDocument.FindProjectSchemaNode(
-                apiSchemaDocument.GetMappedProjectName(originalDocumentProjectName)
-            )
-            ?? throw new InvalidOperationException($"projectSchema {originalDocumentProjectName} not found");
-
-        var originalMappedResourceName =
-            originalProjectSchemaNode.SelectNodeFromPathAs<string>(
-                $"$.resourceNameMapping[\"{originalDocumentResourceName}\"]",
-                _logger
-            )
-            ?? throw new InvalidOperationException(
-                $"resourceNameMapping {originalDocumentResourceName} not found"
-            );
-
         var originalResourceNode =
-            originalProjectSchemaNode.SelectNodeFromPath(
-                $"$.resourceSchemas[\"{originalMappedResourceName}\"]",
-                _logger
-            )
-            ?? throw new InvalidOperationException($"resourceSchema {originalMappedResourceName} not found");
+            apiSchemaDocument.FindResourceNode(originalDocumentProjectName, originalDocumentResourceName)
+            ?? throw new InvalidOperationException(
+                $"ResourceSchema not found for {originalDocumentProjectName}.{originalDocumentResourceName}"
+            );
 
         var originalIdentityJsonPaths = (
             originalResourceNode.SelectNodeFromPath("$.identityJsonPaths", _logger)
@@ -88,30 +72,13 @@ public class UpdateCascadeHandler(IApiSchemaProvider _apiSchemaProvider, ILogger
             )
         ).AsArray();
 
-        var referencingProjectSchemaNode =
-            apiSchemaDocument.FindProjectSchemaNode(
-                apiSchemaDocument.GetMappedProjectName(referencingDocument.ProjectName)
-            )
-            ?? throw new InvalidOperationException(
-                $"projectSchema {referencingDocument.ProjectName} not found"
-            );
-
-        var referencingMappedResourceName =
-            referencingProjectSchemaNode.SelectNodeFromPathAs<string>(
-                $"$.resourceNameMapping[\"{referencingDocument.ResourceName}\"]",
-                _logger
-            )
-            ?? throw new InvalidOperationException(
-                $"resourceNameMapping {referencingDocument.ResourceName} not found"
-            );
-
         var referencingResourceNode =
-            referencingProjectSchemaNode.SelectNodeFromPath(
-                $"$.resourceSchemas[\"{referencingMappedResourceName}\"]",
-                _logger
+            apiSchemaDocument.FindResourceNode(
+                referencingDocument.ProjectName,
+                referencingDocument.ResourceName
             )
             ?? throw new InvalidOperationException(
-                $"resourceSchema {referencingMappedResourceName} not found"
+                $"ResourceSchema not found for {referencingDocument.ProjectName}.{referencingDocument.ResourceName}"
             );
 
         var referencingIdentityJsonPaths = (

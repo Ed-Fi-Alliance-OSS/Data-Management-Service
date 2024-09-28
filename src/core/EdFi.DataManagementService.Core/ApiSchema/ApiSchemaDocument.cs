@@ -37,6 +37,35 @@ internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
     }
 
     /// <summary>
+    /// Finds the resourceSchema for a given projectName and resourceName looking up their mapped value.
+    /// Returns null if not found.
+    /// </summary>
+    public JsonNode? FindResourceNode(string projectName, string resourceName)
+    {
+        var projectSchemaNode = FindProjectSchemaNode(GetMappedProjectName(projectName));
+
+        if (projectSchemaNode != null)
+        {
+            var mappedResourceName = projectSchemaNode.SelectNodeFromPathAs<string>(
+                $"$.resourceNameMapping[\"{resourceName}\"]",
+                _logger
+            );
+
+            if (mappedResourceName != null)
+            {
+                var resourceNode = projectSchemaNode.SelectNodeFromPath(
+                    $"$.resourceSchemas[\"{mappedResourceName}\"]",
+                    _logger
+                );
+
+                return resourceNode;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Gets all ProjectSchema nodes in the document.
     /// </summary>
     public List<JsonNode> GetAllProjectSchemaNodes()
