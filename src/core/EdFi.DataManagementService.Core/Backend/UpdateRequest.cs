@@ -40,6 +40,11 @@ internal record UpdateRequest(
     /// The DocumentUuid of the document to update
     /// </summary>
     DocumentUuid DocumentUuid,
+    /// <summary>
+    /// This class will modify the EdFiDoc of a referencing
+    /// resource when the referenced resource's identifying
+    /// values are modified
+    /// </summary>
     IUpdateCascadeHandler UpdateCascadeHandler
 ) : IUpdateRequest;
 

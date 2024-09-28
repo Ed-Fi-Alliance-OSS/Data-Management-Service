@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -20,7 +21,6 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 
-[TestFixture]
 public class UpsertHandlerTests
 {
     internal static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)

@@ -41,6 +41,11 @@ public interface IUpdateRequest
     /// </summary>
     DocumentUuid DocumentUuid { get; }
 
+    /// <summary>
+    /// This class will modify the EdFiDoc of a referencing
+    /// resource when the referenced resource's identifying
+    /// values are modified
+    /// </summary>
     IUpdateCascadeHandler UpdateCascadeHandler { get; }
 }
 

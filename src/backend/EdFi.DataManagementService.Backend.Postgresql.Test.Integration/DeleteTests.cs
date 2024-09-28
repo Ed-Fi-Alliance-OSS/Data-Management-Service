@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
@@ -11,7 +13,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
 
-[TestFixture]
 public class DeleteTests : DatabaseTest
 {
     private static readonly string _defaultResourceName = "DefaultResourceName";
@@ -19,7 +20,7 @@ public class DeleteTests : DatabaseTest
     private static TraceId traceId = new("");
 
     [TestFixture]
-    public class Given_a_delete_of_a_non_existing_document : DeleteTests
+    public class Given_A_Delete_Of_A_Non_Existing_Document : DeleteTests
     {
         private DeleteResult? _deleteResult;
 
@@ -40,7 +41,7 @@ public class DeleteTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_a_delete_of_a_document : DeleteTests
+    public class Given_A_Delete_Of_A_Document : DeleteTests
     {
         private DeleteResult? _deleteResult;
 
@@ -72,7 +73,7 @@ public class DeleteTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_a_delete_of_the_same_document_with_two_overlapping_requests : DeleteTests
+    public class Given_A_Delete_Of_The_Same_Document_With_Two_Overlapping_Requests : DeleteTests
     {
         private DeleteResult? _deleteResult1;
         private DeleteResult? _deleteResult2;
@@ -131,7 +132,7 @@ public class DeleteTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_overlapping_delete_and_update_of_the_same_document_with_delete_committed_first
+    public class Given_An_Overlapping_Delete_And_Update_Of_The_Same_Document_With_Delete_Committed_First
         : DeleteTests
     {
         private DeleteResult? _deleteResult;
@@ -192,7 +193,7 @@ public class DeleteTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_overlapping_delete_and_update_of_the_same_document_with_update_committed_first
+    public class Given_An_Overlapping_Delete_And_Update_Of_The_Same_Document_With_Update_Committed_First
         : DeleteTests
     {
         private DeleteResult? _deleteResult;
@@ -253,7 +254,7 @@ public class DeleteTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_overlapping_delete_and_upsert_as_update_of_the_same_document_with_delete_committed_first
+    public class Given_An_Overlapping_Delete_And_Upsert_As_Update_Of_The_Same_Document_With_Delete_Committed_First
         : DeleteTests
     {
         private DeleteResult? _deleteResult;
@@ -314,7 +315,7 @@ public class DeleteTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_overlapping_delete_and_upsert_as_update_of_the_same_document_with_upsert_committed_first
+    public class Given_An_Overlapping_Delete_And_Upsert_As_Update_Of_The_Same_Document_With_Upsert_Committed_First
         : DeleteTests
     {
         private DeleteResult? _deleteResult;
@@ -375,7 +376,7 @@ public class DeleteTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_the_delete_of_a_document_referenced_by_another_document : DeleteTests
+    public class Given_The_Delete_Of_A_Document_Referenced_By_Another_Document : DeleteTests
     {
         private DeleteResult? _deleteResult;
         private List<UpsertResult> _upsertResults;
@@ -454,7 +455,7 @@ public class DeleteTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_the_delete_of_a_document_with_outbound_reference_only : DeleteTests
+    public class Given_The_Delete_Of_A_Document_With_Outbound_Reference_Only : DeleteTests
     {
         private DeleteResult? _deleteResult;
         private List<UpsertResult> _upsertResults;
@@ -524,7 +525,7 @@ public class DeleteTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_delete_of_a_subclass_document_referenced_by_another_document_as_a_superclass
+    public class Given_Delete_Of_A_Subclass_Document_Referenced_By_Another_Document_As_A_Superclass
         : DeleteTests
     {
         private DeleteResult? _deleteResult;
