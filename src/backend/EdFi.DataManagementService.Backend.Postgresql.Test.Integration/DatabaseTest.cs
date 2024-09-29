@@ -26,13 +26,81 @@ public abstract class DatabaseTest : DatabaseTestBase
         JsonNode.Parse(
             """
             {
-                "projectNameMapping": {
-                  "Ed-Fi": "ed-fi"
-                },
-                "projectSchemas": {
-                  "ed-fi": {
+              "projectNameMapping": {
+                "ProjectName": "project-name"
+              },
+              "projectSchemas": {
+                "project-name": {
+                  "resourceNameMapping": {
+                    "CourseOffering": "courseOfferings",
+                    "Section": "sections",
+                    "Session": "sessions"
+                  },
+                  "resourceSchemas": {
+                    "courseOfferings": {
+                      "documentPathsMapping": {
+                        "LocalCourseCode": {
+                          "isReference": false,
+                          "path": "$.localCourseCode"
+                        },
+                        "Session": {
+                            "isDescriptor": false,
+                            "isReference": true,
+                            "projectName": "ProjectName",
+                            "referenceJsonPaths": [
+                              {
+                                "identityJsonPath": "$.sessionName",
+                                "referenceJsonPath": "$.sessionReference.sessionName"
+                              }
+                            ],
+                            "resourceName": "Session"
+                          }
+                      },
+                      "identityJsonPaths": [
+                        "$.localCourseCode",
+                        "$.sessionReference.sessionName"
+                      ]
+                    },
+                    "sections": {
+                      "documentPathsMapping": {
+                        "CourseOffering": {
+                          "isReference": true,
+                          "projectName": "ProjectName",
+                          "referenceJsonPaths": [
+                            {
+                              "identityJsonPath": "$.localCourseCode",
+                              "referenceJsonPath": "$.courseOfferingReference.localCourseCode"
+                            },
+                            {
+                              "identityJsonPath": "$.sessionReference.sessionName",
+                              "referenceJsonPath": "$.courseOfferingReference.sessionName"
+                            }
+                          ],
+                          "resourceName": "CourseOffering"
+                        },
+                        "SectionName": {
+                          "isReference": false,
+                          "path": "$.sectionName"
+                        }
+                      },
+                      "identityJsonPaths": [
+                        "$.courseOfferingReference.sessionName"
+                      ]
+                    },
+                    "sessions": {
+                      "documentPathsMapping": {
+                        "SessionName": {
+                          "isReference": false,
+                          "path": "$.sessionName"
+                        }
+                      },
+                      "identityJsonPaths": [
+                        "$.sessionName"
+                      ]
+                    }
                   }
-               }
+                }
+              }
             }
             """
         ) ?? new JsonObject();

@@ -31,7 +31,7 @@ public class UpdateCascadeHandler(IApiSchemaProvider _apiSchemaProvider, ILogger
     )
     {
         var isIdentityUpdate = false;
-        JsonNode returnEdFiDoc = referencingEdFiDoc;
+        JsonNode returnEdFiDoc = referencingEdFiDoc.DeepClone();
 
         var apiSchemaDocument = new ApiSchemaDocument(_apiSchemaProvider.ApiSchemaRootNode, _logger);
 
@@ -75,7 +75,7 @@ public class UpdateCascadeHandler(IApiSchemaProvider _apiSchemaProvider, ILogger
             )
         ).AsArray();
 
-        isIdentityUpdate = originalIdentityJsonPaths
+        isIdentityUpdate = referencingIdentityJsonPaths
             .Select(o => o?.GetValue<string>())
             .Any(o => referencingIdentityJsonPaths.Select(a => a?.GetValue<string>()).Contains(o));
 
@@ -253,6 +253,7 @@ public class UpdateCascadeHandler(IApiSchemaProvider _apiSchemaProvider, ILogger
         }
         return new UpdateCascadeResult(
             referencingEdFiDoc,
+            returnEdFiDoc,
             referencingDocumentId,
             referencingDocumentPartitionKey,
             referencingDocumentUuid,

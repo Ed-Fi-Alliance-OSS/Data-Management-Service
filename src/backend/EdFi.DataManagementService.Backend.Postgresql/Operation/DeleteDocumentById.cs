@@ -84,9 +84,7 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
                     deleteRequest.TraceId
                 );
             _logger.LogDebug(pe, "Foreign key violation on Delete - {TraceId}", deleteRequest.TraceId);
-            return new DeleteResult.DeleteFailureReference(
-                referencingDocumentNames.Select(r => r.ResourceName).ToArray()
-            );
+            return new DeleteResult.DeleteFailureReference(referencingDocumentNames.ToArray());
         }
         catch (Exception ex)
         {

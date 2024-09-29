@@ -12,9 +12,13 @@ namespace EdFi.DataManagementService.Core.External.Backend;
 /// </summary>
 public record UpdateCascadeResult(
     /// <summary>
+    /// The EdFiDoc without updates applied for use in lookups
+    /// </summary>
+    JsonNode OriginalEdFiDoc,
+    /// <summary>
     /// The EdFiDoc with updates applied
     /// </summary>
-    JsonNode EdFiDoc,
+    JsonNode ModifiedEdFiDoc,
     /// <summary>
     /// The Id of the referencing resource
     /// </summary>

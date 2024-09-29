@@ -751,7 +751,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
         return result;
     }
 
-    public async Task<ResourceIdentification[]> FindReferencingResourceIdentificationByDocumentUuid(
+    public async Task<string[]> FindReferencingResourceIdentificationByDocumentUuid(
         DocumentUuid documentUuid,
         PartitionKey documentPartitionKey,
         NpgsqlConnection connection,
@@ -767,7 +767,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                 {
                     await using NpgsqlCommand command =
                         new(
-                            $@"SELECT d.DocumentId, d.DocumentPartitionKey, d.ResourceName FROM dms.Document d
+                            $@"SELECT d.ResourceName FROM dms.Document d
                    INNER JOIN (
                      SELECT ParentDocumentId, ParentDocumentPartitionKey
                      FROM dms.Reference r
@@ -790,20 +790,14 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                     await command.PrepareAsync(cancellationToken);
                     await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
 
-                    List<ResourceIdentification> resourceIdentifications = [];
+                    var resourceNames = new List<string>();
 
                     while (await reader.ReadAsync(cancellationToken))
                     {
-                        resourceIdentifications.Add(
-                            new ResourceIdentification(
-                                reader.GetInt64(reader.GetOrdinal("DocumentId")),
-                                reader.GetInt16(reader.GetOrdinal("DocumentPartitionKey")),
-                                reader.GetString(reader.GetOrdinal("ResourceName"))
-                            )
-                        );
+                        resourceNames.Add(reader.GetString(reader.GetOrdinal("ResourceName")));
                     }
 
-                    return resourceIdentifications.Distinct().ToArray();
+                    return resourceNames.Distinct().ToArray();
                 }
                 catch (PostgresException pe)
                 {

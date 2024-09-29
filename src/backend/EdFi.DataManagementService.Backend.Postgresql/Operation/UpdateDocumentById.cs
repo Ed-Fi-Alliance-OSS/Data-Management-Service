@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -224,32 +225,40 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                             traceId
                         );
 
-                        await recursivelyCascadeUpdates(parentDocuments);
+                        await recursivelyCascadeUpdates(
+                            documentFromDb,
+                            updateRequest.EdfiDoc,
+                            parentDocuments
+                        );
                     }
 
                     return new UpdateResult.UpdateSuccess(updateRequest.DocumentUuid);
 
                     // Recursively call CascadeUpdates until the results are exhausted
-                    async Task recursivelyCascadeUpdates(Document[] parentDocuments)
+                    async Task recursivelyCascadeUpdates(
+                        Document originalChildDocument,
+                        JsonNode modifiedChildEdFiDoc,
+                        Document[] parentDocuments
+                    )
                     {
                         if (!parentDocuments.Any())
                         {
                             return;
                         }
 
-                        foreach (var referencingDocument in parentDocuments)
+                        foreach (var parentDocument in parentDocuments)
                         {
                             var cascadeResult = updateRequest.UpdateCascadeHandler.Cascade(
-                                documentFromDb.EdfiDoc,
-                                documentFromDb.ProjectName,
-                                documentFromDb.ResourceName,
-                                updateRequest.EdfiDoc,
-                                referencingDocument.EdfiDoc.AsNode()!,
-                                referencingDocument.Id.GetValueOrDefault(),
-                                referencingDocument.DocumentPartitionKey,
-                                referencingDocument.DocumentUuid,
-                                referencingDocument.ProjectName,
-                                referencingDocument.ResourceName
+                                originalChildDocument.EdfiDoc,
+                                originalChildDocument.ProjectName,
+                                originalChildDocument.ResourceName,
+                                modifiedChildEdFiDoc,
+                                parentDocument.EdfiDoc.AsNode()!,
+                                parentDocument.Id.GetValueOrDefault(),
+                                parentDocument.DocumentPartitionKey,
+                                parentDocument.DocumentUuid,
+                                parentDocument.ProjectName,
+                                parentDocument.ResourceName
                             );
 
                             if (cascadeResult.isIdentityUpdate)
@@ -262,13 +271,17 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                                     LockOption.BlockUpdateDelete,
                                     traceId
                                 );
-                                await recursivelyCascadeUpdates(grandparentDocuments);
+                                await recursivelyCascadeUpdates(
+                                    parentDocument,
+                                    cascadeResult.ModifiedEdFiDoc,
+                                    grandparentDocuments
+                                );
                             }
 
                             await _sqlAction.UpdateDocumentEdfiDoc(
                                 cascadeResult.DocumentPartitionKey,
                                 cascadeResult.DocumentUuid,
-                                JsonSerializer.Deserialize<JsonElement>(cascadeResult.EdFiDoc),
+                                JsonSerializer.Deserialize<JsonElement>(cascadeResult.ModifiedEdFiDoc),
                                 connection,
                                 transaction,
                                 traceId
