@@ -686,8 +686,8 @@ Feature: Resources "Update" Operation validations
                         "schoolId": 4003
                     },
                     "sessionReference": {
-                        "schoolId": "4003",
-                        "schoolYear": "2025",
+                        "schoolId": 4003,
+                        "schoolYear": 2025,
                         "sessionName": "Fourth Quarter"
                     }
                   }
@@ -803,8 +803,8 @@ Feature: Resources "Update" Operation validations
                     "sectionIdentifier": "SECTION ABC",
                     "courseOfferingReference": {
                         "localCourseCode": "abc",
-                        "schoolId": "4003",
-                        "schoolYear": "2025",
+                        "schoolId": 4003,
+                        "schoolYear": 2025,
                         "sessionName": "Q2"
                     }
                   }
