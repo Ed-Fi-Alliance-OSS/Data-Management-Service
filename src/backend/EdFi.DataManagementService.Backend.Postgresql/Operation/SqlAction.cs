@@ -41,7 +41,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
     /// Returns the EdfiDoc of single Document from the database corresponding to the given DocumentUuid,
     /// or null if no matching Document was found.
     /// </summary>
-    public async Task<JsonNode?> FindDocumentEdfiDocByDocumentUuid(
+    public async Task<DocumentSummary?> FindDocumentEdfiDocByDocumentUuid(
         DocumentUuid documentUuid,
         string resourceName,
         PartitionKey partitionKey,
@@ -58,7 +58,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                 {
                     await using NpgsqlCommand command =
                         new(
-                            $@"SELECT EdfiDoc FROM dms.Document WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 AND ResourceName = $3 {SqlFor(lockOption)};",
+                            $@"SELECT EdfiDoc, LastModifiedAt, LastModifiedTraceId  FROM dms.Document WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 AND ResourceName = $3 {SqlFor(lockOption)};",
                             connection,
                             transaction
                         )
@@ -81,7 +81,12 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
 
                     // Assumes only one row returned
                     await reader.ReadAsync(cancellationToken);
-                    return (await reader.GetFieldValueAsync<JsonElement>(0)).Deserialize<JsonNode>();
+
+                    return new DocumentSummary(
+                        EdfiDoc: await reader.GetFieldValueAsync<JsonElement>(reader.GetOrdinal("EdfiDoc")),
+                        LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt")),
+                        LastModifiedTraceId: reader.GetString(reader.GetOrdinal("LastModifiedTraceId"))
+                    );
                 }
                 catch (PostgresException pe)
                 {
@@ -151,7 +156,8 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                         ProjectName: reader.GetString(reader.GetOrdinal("ProjectName")),
                         EdfiDoc: await reader.GetFieldValueAsync<JsonElement>(reader.GetOrdinal("EdfiDoc")),
                         CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
-                        LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt"))
+                        LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt")),
+                        LastModifiedTraceId: reader.GetString(reader.GetOrdinal("LastModifiedTraceId"))
                     );
                 }
                 catch (PostgresException pe)
@@ -296,8 +302,8 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                 try
                 {
                     await using var command = new NpgsqlCommand(
-                        @"INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, IsDescriptor, ProjectName, EdfiDoc)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        @"INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, IsDescriptor, ProjectName, EdfiDoc, LastModifiedTraceId)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                   RETURNING Id;",
                         connection,
                         transaction
@@ -312,6 +318,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                             new() { Value = document.IsDescriptor },
                             new() { Value = document.ProjectName },
                             new() { Value = document.EdfiDoc },
+                            new () { Value = traceId.Value}
                         },
                     };
 
@@ -353,7 +360,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                 {
                     await using var command = new NpgsqlCommand(
                         @"UPDATE dms.Document
-                  SET EdfiDoc = $1
+                  SET EdfiDoc = $1, LastModifiedTraceId = $4, LastModifiedAt = NOW()
                   WHERE DocumentPartitionKey = $2 AND DocumentUuid = $3
                   RETURNING Id;",
                         connection,
@@ -365,6 +372,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                             new() { Value = edfiDoc },
                             new() { Value = documentPartitionKey },
                             new() { Value = documentUuid },
+                            new () { Value = traceId.Value}
                         },
                     };
 
@@ -711,6 +719,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                         @$"update dms.document
                             set
                               lastmodifiedat = NOW()
+                              , lastModifiedTraceId = $3
                               , edfidoc =
                                 {updateStatement}
                             from (
@@ -732,6 +741,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                         {
                             new() { Value = documentId },
                             new() { Value = documentPartitionKey },
+                            new() { Value = traceId.Value }
                         },
                     };
 

@@ -38,7 +38,8 @@ internal class SuccessDocumentStoreRepository(ILogger<SuccessDocumentStoreReposi
             new GetResult.GetSuccess(
                 DocumentUuid: No.DocumentUuid,
                 EdfiDoc: new JsonObject(),
-                LastModifiedDate: DateTime.Now
+                LastModifiedDate: DateTime.Now,
+                getRequest.TraceId.Value
             )
         );
     }

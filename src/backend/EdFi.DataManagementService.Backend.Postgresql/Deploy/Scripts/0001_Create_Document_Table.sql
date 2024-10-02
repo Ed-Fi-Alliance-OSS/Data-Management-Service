@@ -14,6 +14,7 @@ CREATE TABLE dms.Document (
   EdfiDoc JSONB NOT NULL,
   CreatedAt TIMESTAMP NOT NULL DEFAULT NOW(),
   LastModifiedAt TIMESTAMP NOT NULL DEFAULT NOW(),
+  LastModifiedTraceId VARCHAR(128) NOT NULL,
   PRIMARY KEY (DocumentPartitionKey, Id)
 ) PARTITION BY HASH(DocumentPartitionKey);
 

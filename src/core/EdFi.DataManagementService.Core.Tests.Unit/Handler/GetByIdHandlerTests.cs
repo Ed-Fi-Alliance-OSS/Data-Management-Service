@@ -37,7 +37,7 @@ public class GetByIdHandlerTests
             public override Task<GetResult> GetDocumentById(IGetRequest getRequest)
             {
                 return Task.FromResult<GetResult>(
-                    new GetSuccess(No.DocumentUuid, new JsonObject(), DateTime.Now)
+                    new GetSuccess(No.DocumentUuid, new JsonObject(), DateTime.Now, getRequest.TraceId.Value)
                 );
             }
         }
