@@ -12,7 +12,8 @@ Feature: Resources "Read" Operation validations
                     }
                   """
 
-            @API-181 Scenario: 01 Verify response code 404 when trying to get a school with an ID that corresponds to Course
+        @API-181
+        Scenario: 01 Verify response code 404 when trying to get a school with an ID that corresponds to Course
             Given the system has these "Schools"
                   | schoolId | nameOfInstitution | educationOrganizationCategories                                                                                  | gradeLevels                                                                     |
                   | 100      | School Test       | [{ "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"}] | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"}] |
