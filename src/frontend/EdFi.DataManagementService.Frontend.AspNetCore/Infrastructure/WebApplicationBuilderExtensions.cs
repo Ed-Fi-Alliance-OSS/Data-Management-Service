@@ -37,8 +37,6 @@ public static class WebApplicationBuilderExtensions
             .Configure<DatabaseOptions>(webAppBuilder.Configuration.GetSection("DatabaseOptions"))
             .Configure<AppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"))
             .Configure<CoreAppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"))
-            .Configure<RequestLoggingOptions>(webAppBuilder.Configuration.GetSection("Logging:RequestLoggingOptions"))
-            .Configure<RequestLoggingOptions>(webAppBuilder.Configuration.GetSection("Serilog:MinimumLevel"))
             .AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>()
             .Configure<ConnectionStrings>(webAppBuilder.Configuration.GetSection("ConnectionStrings"))
             .AddSingleton<IValidateOptions<ConnectionStrings>, ConnectionStringsValidator>();

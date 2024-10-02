@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
-internal class RequestDataBodyLoggingMiddleware(ILogger _logger, IOptions<RequestLoggingOptions> options)
+internal class RequestDataBodyLoggingMiddleware(ILogger _logger, IOptions<RequestLoggingOptions> _options)
     : IPipelineStep
 {
     private const string MessageBody = "Incoming {Method} request to {Path} with body structure: {Body}";
@@ -28,7 +28,7 @@ internal class RequestDataBodyLoggingMiddleware(ILogger _logger, IOptions<Reques
         {
             string body = SanitizeInput(context.FrontendRequest.Body);
 
-            if (!options.Value.MaskRequestBody)
+            if (!_options.Value.MaskRequestBody)
             {
                 _logger.LogDebug(MessageBody, context.Method, context.FrontendRequest.Path, body);
             }
@@ -53,11 +53,10 @@ internal class RequestDataBodyLoggingMiddleware(ILogger _logger, IOptions<Reques
     {
         // Deletes new line, line feed, carriage return and tab characters
         return Regex.Replace(
-            input.Replace(Environment.NewLine, "")
-                .Replace("\n", "")
-                .Replace("\r", "")
-                .Replace("\t", ""),
-            @"\s+", " ");
+            input.Replace(Environment.NewLine, "").Replace("\n", "").Replace("\r", "").Replace("\t", ""),
+            @"\s+",
+            " "
+        );
     }
 
     private static string MaskRequestBody(string body, ILogger logger)
