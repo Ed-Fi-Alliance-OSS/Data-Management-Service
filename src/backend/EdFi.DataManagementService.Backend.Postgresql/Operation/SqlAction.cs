@@ -318,7 +318,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                             new() { Value = document.IsDescriptor },
                             new() { Value = document.ProjectName },
                             new() { Value = document.EdfiDoc },
-                            new () { Value = traceId.Value}
+                            new() { Value = traceId.Value },
                         },
                     };
 
@@ -372,7 +372,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                             new() { Value = edfiDoc },
                             new() { Value = documentPartitionKey },
                             new() { Value = documentUuid },
-                            new () { Value = traceId.Value}
+                            new() { Value = traceId.Value },
                         },
                     };
 
@@ -751,7 +751,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
         return result;
     }
 
-    public async Task<string[]> FindReferencingResourceIdentificationByDocumentUuid(
+    public async Task<string[]> FindReferencingResourceNamesByDocumentUuid(
         DocumentUuid documentUuid,
         PartitionKey documentPartitionKey,
         NpgsqlConnection connection,

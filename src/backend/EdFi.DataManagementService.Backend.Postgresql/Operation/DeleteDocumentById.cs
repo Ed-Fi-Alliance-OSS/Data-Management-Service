@@ -74,15 +74,14 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
             // Restore transaction save point to continue using transaction
             await transaction.RollbackAsync("beforeDelete");
 
-            var referencingDocumentNames =
-                await _sqlAction.FindReferencingResourceIdentificationByDocumentUuid(
-                    deleteRequest.DocumentUuid,
-                    documentPartitionKey,
-                    connection,
-                    transaction,
-                    LockOption.BlockUpdateDelete,
-                    deleteRequest.TraceId
-                );
+            var referencingDocumentNames = await _sqlAction.FindReferencingResourceNamesByDocumentUuid(
+                deleteRequest.DocumentUuid,
+                documentPartitionKey,
+                connection,
+                transaction,
+                LockOption.BlockUpdateDelete,
+                deleteRequest.TraceId
+            );
             _logger.LogDebug(pe, "Foreign key violation on Delete - {TraceId}", deleteRequest.TraceId);
             return new DeleteResult.DeleteFailureReference(referencingDocumentNames.ToArray());
         }

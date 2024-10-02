@@ -85,9 +85,10 @@ public class UpdateCascadeHandler(IApiSchemaProvider _apiSchemaProvider, ILogger
 
         if (isList)
         {
-            // todo
-            // need to turn this: "$.classPeriods[*].classPeriodReference.classPeriodName"
-            // into this: $.classPeriods[?(@.classPeriodReference.classPeriodName == "Third period 1" && @.classPeriodReference.schoolId == 123)]
+            // When the referenceJsonPath points to a list, we must construct a filter to
+            // find the specific element(s) in the list that needs to be updated.
+            // For example, we need to turn this: "$.classPeriods[*].classPeriodReference.classPeriodName"
+            // into this: $.classPeriods[?(@.classPeriodReference.classPeriodName == "Third period edited" && @.classPeriodReference.schoolId == 123)]
 
             List<string> filters = [];
             var firstSegment = "";
@@ -112,7 +113,7 @@ public class UpdateCascadeHandler(IApiSchemaProvider _apiSchemaProvider, ILogger
                     referenceJsonPath.SelectNodeFromPathAs<string>("$.referenceJsonPath", _logger)
                     ?? string.Empty;
 
-                //split at the array marker
+                // split at the array marker
                 var split = referenceJsonPathString.Split("[*]");
                 if (firstSegment == string.Empty)
                 {
@@ -135,7 +136,7 @@ public class UpdateCascadeHandler(IApiSchemaProvider _apiSchemaProvider, ILogger
                     case JsonValueKind.Number:
                         filters.Add($"@{referenceJsonPathString} == {originalValue.GetValue<long>()}");
                         break;
-                    case JsonValueKind.String:
+                    default:
                         filters.Add($"@{referenceJsonPathString} == \"{originalValue.GetValue<string>()}\"");
                         break;
                 }
@@ -146,61 +147,30 @@ public class UpdateCascadeHandler(IApiSchemaProvider _apiSchemaProvider, ILogger
             // Evaluate
             var filterPath = JsonPath.Parse(filterExpression);
             var pathResult = filterPath.Evaluate(returnEdFiDoc);
-            // should have one match
-            if (pathResult == null || pathResult.Matches.Count != 1)
+            // should have at least one match
+            if (pathResult == null || pathResult.Matches.Count == 0)
             {
                 throw new InvalidOperationException($"Error evaluating filter expression {filterExpression}");
             }
 
-            var arrayLocation = pathResult.Matches[0].Location!.ToString();
-            _logger.LogInformation(pathResult.Matches[0].Location!.ToString());
-
-            //now do the update
-            foreach (
-                var originalIdentityJsonPath in originalIdentityJsonPaths
-                    .Where(x => x != null)
-                    .Select(x => JsonPath.Parse(x!.GetValue<string>()))
-            )
+            foreach (var match in pathResult.Matches)
             {
-                var referenceJsonPath =
-                    referencingReferenceJsonPaths.Single(a =>
-                        a != null
-                        && a.SelectNodeFromPathAs<string>("$.identityJsonPath", _logger)
-                            == originalIdentityJsonPath.ToString()
-                    )
-                    ?? throw new InvalidOperationException(
-                        $"Unexpected null finding {referencingResourceName}.documentPathsMapping.{originalDocumentResourceName}.identityJsonPath = {originalIdentityJsonPath}"
-                    );
+                var arrayLocation = match.Location?.ToString() ?? string.Empty;
 
-                var referenceJsonPathString =
-                    referenceJsonPath.SelectNodeFromPathAs<string>("$.referenceJsonPath", _logger)
-                    ?? string.Empty;
-
-                originalIdentityJsonPath
-                    .Evaluate(modifiedEdFiDoc)
-                    .Matches.TryGetSingleValue(out JsonNode? modifiedValue);
-                if (modifiedValue == null)
+                // now do the update
+                foreach (
+                    var originalIdentityJsonPath in originalIdentityJsonPaths
+                        .Where(x => x != null)
+                        .Select(x => JsonPath.Parse(x!.GetValue<string>()))
+                )
                 {
-                    throw new InvalidOperationException(
-                        $"Unexpected error finding modified value for {originalIdentityJsonPath}"
+                    Update(
+                        referencingReferenceJsonPaths,
+                        originalIdentityJsonPath,
+                        modifiedEdFiDoc,
+                        returnEdFiDoc,
+                        arrayLocation
                     );
-                }
-
-                var split = referenceJsonPathString.Split("[*]");
-                referenceJsonPathString = $"{arrayLocation}{split[1]}";
-
-                switch (modifiedValue.GetValueKind())
-                {
-                    case JsonValueKind.Number:
-                        returnEdFiDoc
-                            .SelectNodeFromPath(referenceJsonPathString, _logger)!
-                            .ReplaceWith(modifiedValue.GetValue<long>());
-                        break;
-                    default:
-                        returnEdFiDoc
-                            .SelectNodeFromPath(referenceJsonPathString, _logger)!
-                            .ReplaceWith(modifiedValue.GetValue<string>());
-                        break;
                 }
             }
         }
@@ -212,43 +182,12 @@ public class UpdateCascadeHandler(IApiSchemaProvider _apiSchemaProvider, ILogger
                     .Select(x => JsonPath.Parse(x!.GetValue<string>()))
             )
             {
-                var referenceJsonPath =
-                    referencingReferenceJsonPaths.Single(a =>
-                        a != null
-                        && a.SelectNodeFromPathAs<string>("$.identityJsonPath", _logger)
-                            == originalIdentityJsonPath.ToString()
-                    )
-                    ?? throw new InvalidOperationException(
-                        $"Unexpected null finding {referencingResourceName}.documentPathsMapping.{originalDocumentResourceName}.identityJsonPath = {originalIdentityJsonPath}"
-                    );
-
-                var referenceJsonPathString =
-                    referenceJsonPath.SelectNodeFromPathAs<string>("$.referenceJsonPath", _logger)
-                    ?? string.Empty;
-
-                originalIdentityJsonPath
-                    .Evaluate(modifiedEdFiDoc)
-                    .Matches.TryGetSingleValue(out JsonNode? modifiedValue);
-                if (modifiedValue == null)
-                {
-                    throw new InvalidOperationException(
-                        $"Unexpected error finding modified value for {originalIdentityJsonPath}"
-                    );
-                }
-
-                switch (modifiedValue.GetValueKind())
-                {
-                    case JsonValueKind.Number:
-                        returnEdFiDoc
-                            .SelectNodeFromPath(referenceJsonPathString, _logger)!
-                            .ReplaceWith(modifiedValue.GetValue<long>());
-                        break;
-                    default:
-                        returnEdFiDoc
-                            .SelectNodeFromPath(referenceJsonPathString, _logger)!
-                            .ReplaceWith(modifiedValue.GetValue<string>());
-                        break;
-                }
+                Update(
+                    referencingReferenceJsonPaths,
+                    originalIdentityJsonPath,
+                    modifiedEdFiDoc,
+                    returnEdFiDoc
+                );
             }
         }
         return new UpdateCascadeResult(
@@ -261,5 +200,64 @@ public class UpdateCascadeHandler(IApiSchemaProvider _apiSchemaProvider, ILogger
             referencingResourceName,
             isIdentityUpdate
         );
+    }
+
+    private void Update(
+        JsonArray referencingReferenceJsonPaths,
+        JsonPath originalIdentityJsonPath,
+        JsonNode modifiedEdFiDoc,
+        JsonNode returnEdFiDoc,
+        string? listLocation = null
+    )
+    {
+        var referenceJsonPath =
+            referencingReferenceJsonPaths.Single(a =>
+                a != null
+                && a.SelectNodeFromPathAs<string>("$.identityJsonPath", _logger)
+                    == originalIdentityJsonPath.ToString()
+            )
+            ?? throw new InvalidOperationException(
+                $"Unexpected null finding identityJsonPath = {originalIdentityJsonPath}"
+            );
+
+        var referenceJsonPathString =
+            referenceJsonPath.SelectNodeFromPathAs<string>("$.referenceJsonPath", _logger) ?? string.Empty;
+
+        if (!string.IsNullOrEmpty(listLocation))
+        {
+            // list location will be the path to a specific array element. eg $['classPeriods'][2]
+            var split = referenceJsonPathString.Split("[*]");
+            // eg $['classPeriods'][2].classPeriodReference.classPeriodName
+            referenceJsonPathString = $"{listLocation}{split[1]}";
+        }
+
+        originalIdentityJsonPath
+            .Evaluate(modifiedEdFiDoc)
+            .Matches.TryGetSingleValue(out JsonNode? modifiedValue);
+        if (modifiedValue == null)
+        {
+            throw new InvalidOperationException(
+                $"Unexpected error finding modified value for {originalIdentityJsonPath}"
+            );
+        }
+
+        ModifyJsonNodeAtPath(returnEdFiDoc, referenceJsonPathString, modifiedValue);
+    }
+
+    private void ModifyJsonNodeAtPath(JsonNode nodeToModify, string jsonPath, JsonNode modifiedNode)
+    {
+        switch (modifiedNode.GetValueKind())
+        {
+            case JsonValueKind.Number:
+                nodeToModify
+                    .SelectNodeFromPath(jsonPath, _logger)!
+                    .ReplaceWith(modifiedNode.GetValue<long>());
+                break;
+            default:
+                nodeToModify
+                    .SelectNodeFromPath(jsonPath, _logger)!
+                    .ReplaceWith(modifiedNode.GetValue<string>());
+                break;
+        }
     }
 }
