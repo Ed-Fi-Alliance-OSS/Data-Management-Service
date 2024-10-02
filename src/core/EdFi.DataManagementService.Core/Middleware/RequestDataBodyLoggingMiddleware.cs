@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
@@ -16,11 +17,6 @@ internal class RequestDataBodyLoggingMiddleware(ILogger _logger, IOptions<Reques
 {
     private const string MessageBody = "Incoming {Method} request to {Path} with body structure: {Body}";
 
-    private static readonly JsonSerializerOptions _jsonOptions = new()
-    {
-        WriteIndented = true
-    };
-
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         _logger.LogDebug(
@@ -28,29 +24,40 @@ internal class RequestDataBodyLoggingMiddleware(ILogger _logger, IOptions<Reques
             context.FrontendRequest.TraceId
         );
 
-        if (!options.Value.MaskRequestBody)
+        if (context.FrontendRequest.Body != null)
         {
-            _logger.LogDebug(
-                MessageBody,
-                context.Method,
-                context.FrontendRequest.Path,
-                context.FrontendRequest.Body
-            );
-        }
-        else
-        {
-            if (context.FrontendRequest.Body != null)
+            string body = SanitizeInput(context.FrontendRequest.Body);
+
+            if (!options.Value.MaskRequestBody)
             {
-                _logger.LogDebug(
-                    MessageBody,
-                    context.Method,
-                    context.FrontendRequest.Path,
-                    MaskRequestBody(context.FrontendRequest.Body, _logger)
-                );
+                _logger.LogDebug(MessageBody, context.Method, context.FrontendRequest.Path, body);
+            }
+            else
+            {
+                if (context.FrontendRequest.Body != null)
+                {
+                    _logger.LogDebug(
+                        MessageBody,
+                        context.Method,
+                        context.FrontendRequest.Path,
+                        MaskRequestBody(body, _logger)
+                    );
+                }
             }
         }
 
         await next();
+    }
+
+    private static string SanitizeInput(string input)
+    {
+        // Deletes new line, line feed, carriage return and tab characters
+        return Regex.Replace(
+            input.Replace(Environment.NewLine, "")
+                .Replace("\n", "")
+                .Replace("\r", "")
+                .Replace("\t", ""),
+            @"\s+", " ");
     }
 
     private static string MaskRequestBody(string body, ILogger logger)
@@ -60,7 +67,7 @@ internal class RequestDataBodyLoggingMiddleware(ILogger _logger, IOptions<Reques
             // Deserialize the JSON body in a dynamic object
             JsonDocument jsonDoc = JsonDocument.Parse(body);
             JsonElement maskedJson = MaskJsonElement(jsonDoc.RootElement);
-            return JsonSerializer.Serialize(maskedJson, _jsonOptions);
+            return JsonSerializer.Serialize(maskedJson);
         }
         catch (JsonException ex)
         {
@@ -79,12 +86,12 @@ internal class RequestDataBodyLoggingMiddleware(ILogger _logger, IOptions<Reques
                 {
                     dictionary[property.Name] = MaskJsonElement(property.Value);
                 }
-                return JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(dictionary, _jsonOptions));
+                return JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(dictionary));
 
             case JsonValueKind.Array:
                 List<JsonElement> maskedArray = [];
                 maskedArray.AddRange(element.EnumerateArray().Select(MaskJsonElement));
-                return JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(maskedArray, _jsonOptions));
+                return JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(maskedArray));
 
             default:
                 return JsonSerializer.Deserialize<JsonElement>("\"*\"");
