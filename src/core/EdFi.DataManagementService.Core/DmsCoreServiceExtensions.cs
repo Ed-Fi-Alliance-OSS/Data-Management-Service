@@ -26,7 +26,11 @@ public static class DmsCoreServiceExtensions
     /// <summary>
     /// The DMS default service configuration
     /// </summary>
-    public static IServiceCollection AddDmsDefaultConfiguration(this IServiceCollection services, Serilog.ILogger logger, IConfigurationSection circuitBreakerConfiguration)
+    public static IServiceCollection AddDmsDefaultConfiguration(
+        this IServiceCollection services,
+        Serilog.ILogger logger,
+        IConfigurationSection circuitBreakerConfiguration
+    )
     {
         services
             .AddSingleton<IApiSchemaProvider, ApiSchemaFileLoader>()
@@ -36,41 +40,62 @@ public static class DmsCoreServiceExtensions
             .AddTransient<IDocumentValidator, DocumentValidator>()
             .AddTransient<IMatchingDocumentUuidsValidator, MatchingDocumentUuidsValidator>()
             .AddTransient<IEqualityConstraintValidator, EqualityConstraintValidator>()
-            .AddResiliencePipeline("unknownFailureCircuitBreaker", builder =>
-            {
-                var telemetryOptions = new TelemetryOptions
-                {
-                    LoggerFactory = LoggerFactory.Create(builder => builder.AddSerilog(logger))
-                };
+            .AddResiliencePipeline("backendResiliencePipeline", backendResiliencePipeline);
 
-                var breakerSettings = new CircuitBreakerSettings();
-                circuitBreakerConfiguration.Bind(breakerSettings);
+        return services;
 
-                var optionsUnknownFailure = new CircuitBreakerStrategyOptions
+        void backendResiliencePipeline(ResiliencePipelineBuilder builder)
+        {
+            TelemetryOptions telemetryOptions =
+                new() { LoggerFactory = LoggerFactory.Create(builder => builder.AddSerilog(logger)) };
+
+            CircuitBreakerSettings breakerSettings = new();
+            circuitBreakerConfiguration.Bind(breakerSettings);
+
+            CircuitBreakerStrategyOptions optionsUnknownFailure =
+                new()
                 {
                     FailureRatio = breakerSettings.FailureRatio,
                     SamplingDuration = TimeSpan.FromSeconds(breakerSettings.SamplingDurationSeconds),
                     MinimumThroughput = breakerSettings.MinimumThroughput,
                     BreakDuration = TimeSpan.FromSeconds(breakerSettings.BreakDurationSeconds),
-                    ShouldHandle = new PredicateBuilder()
-                        .HandleResult(response =>
+                    ShouldHandle = new PredicateBuilder().HandleResult(result =>
+                    {
+                        return result switch
                         {
-                            return response switch
-                            {
-                                DeleteResult.UnknownFailure => true,
-                                GetResult.UnknownFailure => true,
-                                QueryResult.UnknownFailure => true,
-                                UpdateResult.UnknownFailure => true,
-                                UpsertResult.UnknownFailure => true,
-                                _ => false
-                            };
-                        })
+                            DeleteResult.UnknownFailure => true,
+                            GetResult.UnknownFailure => true,
+                            QueryResult.UnknownFailure => true,
+                            UpdateResult.UnknownFailure => true,
+                            UpsertResult.UnknownFailure => true,
+                            _ => false,
+                        };
+                    }),
                 };
-                builder
-                    .ConfigureTelemetry(telemetryOptions)
-                    .AddCircuitBreaker(optionsUnknownFailure);
-            });
-
-        return services;
+            builder
+                .ConfigureTelemetry(telemetryOptions)
+                .AddCircuitBreaker(optionsUnknownFailure)
+                .AddRetry(
+                    new()
+                    {
+                        BackoffType = DelayBackoffType.Exponential,
+                        MaxRetryAttempts = 4,
+                        Delay = TimeSpan.FromMilliseconds(500),
+                        ShouldHandle = new PredicateBuilder().HandleResult(result =>
+                        {
+                            return result switch
+                            {
+                                DeleteResult.DeleteFailureWriteConflict => true,
+                                GetResult.GetFailureRetryable => true,
+                                QueryResult.QueryFailureRetryable => true,
+                                UpdateResult.UpdateFailureWriteConflict => true,
+                                UpsertResult.UpsertFailureWriteConflict => true,
+                                _ => false,
+                            };
+                        }),
+                    }
+                )
+                .Build();
+        }
     }
 }

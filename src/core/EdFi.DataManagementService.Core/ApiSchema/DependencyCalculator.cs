@@ -108,7 +108,9 @@ internal class DependencyCalculator(JsonNode _apiSchemaRootNode, ILogger _logger
                 {
                     var level = RecursivelyDetermineDependencies(dependency);
                     if (level > maxDepth)
+                    {
                         maxDepth = level;
+                    }
                 }
             }
             orderedNodes[resourceName] = maxDepth + 1;

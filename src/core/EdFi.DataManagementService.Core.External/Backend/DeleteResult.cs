@@ -12,29 +12,29 @@ public abstract record DeleteResult
     /// <summary>
     /// A successful delete request
     /// </summary>
-    public record DeleteSuccess() : DeleteResult;
+    public record DeleteSuccess() : DeleteResult();
 
     /// <summary>
     /// A failure because the document does not exist
     /// </summary>
-    public record DeleteFailureNotExists() : DeleteResult;
+    public record DeleteFailureNotExists() : DeleteResult();
 
     /// <summary>
     /// A failure because of the existence of referencing documents
     /// </summary>
     /// <param name="ReferencingDocumentResourceNames">Resource names of referencing documents</param>
-    public record DeleteFailureReference(string[] ReferencingDocumentResourceNames) : DeleteResult;
+    public record DeleteFailureReference(string[] ReferencingDocumentResourceNames) : DeleteResult();
 
     /// <summary>
-    /// A transient failure due to a transaction write conflict
+    /// A transient failure due to a retryable transaction write conflict, for example a serialization issue
     /// </summary>
-    public record DeleteFailureWriteConflict() : DeleteResult;
+    public record DeleteFailureWriteConflict() : DeleteResult();
 
     /// <summary>
     /// A failure of unknown category
     /// </summary>
     /// <param name="FailureMessage">A message providing failure information</param>
-    public record UnknownFailure(string FailureMessage) : DeleteResult;
+    public record UnknownFailure(string FailureMessage) : DeleteResult();
 
     private DeleteResult() { }
 }

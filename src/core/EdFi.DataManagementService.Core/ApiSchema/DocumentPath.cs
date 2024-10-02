@@ -124,9 +124,12 @@ internal class DocumentPath(JsonNode _documentPathsNode)
             foreach (var referenceJsonPathsElement in referenceJsonPathsArray)
             {
                 if (referenceJsonPathsElement == null)
+                {
                     throw new InvalidOperationException(
                         "Expected referenceJsonPaths to not have null elements, invalid ApiSchema"
                     );
+                }
+
                 result.Add(
                     new ReferenceJsonPathsElement(
                         new(

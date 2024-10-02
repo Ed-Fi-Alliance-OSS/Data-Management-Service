@@ -123,9 +123,9 @@ public class DeleteTests : DatabaseTest
         }
 
         [Test]
-        public void It_should_be_not_exists_for_2nd_transaction_due_to_retry()
+        public void It_should_be_a_write_conflict_for_2nd_transaction()
         {
-            _deleteResult2!.Should().BeOfType<DeleteResult.DeleteFailureNotExists>();
+            _deleteResult2!.Should().BeOfType<DeleteResult.DeleteFailureWriteConflict>();
         }
     }
 
@@ -184,9 +184,9 @@ public class DeleteTests : DatabaseTest
         }
 
         [Test]
-        public void It_should_be_an_update_not_exists_for_2nd_transaction_due_to_retry()
+        public void It_should_be_an_update_write_conflict_for_2nd_transaction()
         {
-            _updateResult.Should().BeOfType<UpdateResult.UpdateFailureNotExists>();
+            _updateResult.Should().BeOfType<UpdateResult.UpdateFailureWriteConflict>();
         }
     }
 
@@ -245,9 +245,9 @@ public class DeleteTests : DatabaseTest
         }
 
         [Test]
-        public void It_should_be_a_successful_delete_for_2nd_transaction_due_to_retry()
+        public void It_should_be_a_delete_write_conflict_for_2nd_transaction()
         {
-            _deleteResult.Should().BeOfType<DeleteResult.DeleteSuccess>();
+            _deleteResult.Should().BeOfType<DeleteResult.DeleteFailureWriteConflict>();
         }
     }
 
@@ -306,9 +306,9 @@ public class DeleteTests : DatabaseTest
         }
 
         [Test]
-        public void It_should_be_a_successful_insert_for_2nd_transaction_due_to_retry()
+        public void It_should_be_an_update_write_conflict_for_2nd_transaction()
         {
-            _upsertResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+            _upsertResult.Should().BeOfType<UpsertResult.UpsertFailureWriteConflict>();
         }
     }
 
@@ -367,9 +367,9 @@ public class DeleteTests : DatabaseTest
         }
 
         [Test]
-        public void It_should_be_a_successful_delete_for_2nd_transaction_due_to_retry()
+        public void It_should_be_a_delete_write_conflict_for_2nd_transaction()
         {
-            _deleteResult.Should().BeOfType<DeleteResult.DeleteSuccess>();
+            _deleteResult.Should().BeOfType<DeleteResult.DeleteFailureWriteConflict>();
         }
     }
 

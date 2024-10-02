@@ -88,7 +88,6 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 PartitionKeyFor(updateRequest.DocumentInfo.ReferentialId),
                 connection,
                 transaction,
-                LockOption.BlockAll,
                 traceId
             );
 
@@ -145,7 +144,6 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 PartitionKeyFor(updateRequest.DocumentInfo.ReferentialId),
                 connection,
                 transaction,
-                LockOption.BlockUpdateDelete,
                 traceId
             );
 
@@ -219,7 +217,6 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                             documentFromDb.DocumentPartitionKey,
                             connection,
                             transaction,
-                            LockOption.BlockUpdateDelete,
                             traceId
                         );
 
@@ -239,7 +236,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                         Document[] referencingDocuments
                     )
                     {
-                        if (!referencingDocuments.Any())
+                        if (referencingDocuments.Length == 0)
                         {
                             return;
                         }
@@ -267,7 +264,6 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                                         cascadeResult.DocumentPartitionKey,
                                         connection,
                                         transaction,
-                                        LockOption.BlockUpdateDelete,
                                         traceId
                                     );
                                 await recursivelyCascadeUpdates(
@@ -309,6 +305,11 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
         catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.SerializationFailure)
         {
             _logger.LogDebug(pe, "Transaction conflict on UpdateById - {TraceId}", updateRequest.TraceId);
+            return new UpdateResult.UpdateFailureWriteConflict();
+        }
+        catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.DeadlockDetected)
+        {
+            _logger.LogDebug(pe, "Transaction deadlock on UpdateById - {TraceId}", updateRequest.TraceId);
             return new UpdateResult.UpdateFailureWriteConflict();
         }
         catch (Exception ex)

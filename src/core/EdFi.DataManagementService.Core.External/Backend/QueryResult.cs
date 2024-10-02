@@ -25,9 +25,9 @@ public record QueryResult
     public record QueryFailureInvalidQuery(string FailureMessage) : QueryResult();
 
     /// <summary>
-    /// A failure because the document type is not in the query store, or not indexed
+    /// A transient failure due to a retryable condition, for example a serialization issue
     /// </summary>
-    public record QueryFailureIndexNotFound(string FailureMessage) : QueryResult();
+    public record QueryFailureRetryable() : QueryResult();
 
     /// <summary>
     /// A failure of unknown category

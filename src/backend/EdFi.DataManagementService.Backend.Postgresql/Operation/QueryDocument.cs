@@ -49,6 +49,15 @@ public class QueryDocument(ISqlAction _sqlAction, ILogger<QueryDocument> _logger
                     : null
             );
         }
+        catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.DeadlockDetected)
+        {
+            _logger.LogDebug(
+                pe,
+                "Transaction deadlock on query - {TraceId}",
+                queryRequest.TraceId
+            );
+            return new QueryResult.QueryFailureRetryable();
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "QueryDocument.QueryDocuments failure - {TraceId}", queryRequest.TraceId);

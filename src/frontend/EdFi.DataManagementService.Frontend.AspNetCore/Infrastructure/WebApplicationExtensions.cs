@@ -23,7 +23,9 @@ public static class WebApplicationExtensions
         foreach (var moduleClass in moduleClasses)
         {
             if (Activator.CreateInstance(moduleClass) is IEndpointModule module)
+            {
                 modules.Add(module);
+            }
         }
         application.UseEndpoints(endpoints =>
         {

@@ -27,6 +27,11 @@ public record GetResult
     public record GetFailureNotExists() : GetResult();
 
     /// <summary>
+    /// A transient failure due to a retryable condition, for example a serialization issue
+    /// </summary>
+    public record GetFailureRetryable() : GetResult();
+
+    /// <summary>
     /// A failure of unknown category
     /// </summary>
     /// <param name="FailureMessage">A message providing failure information</param>

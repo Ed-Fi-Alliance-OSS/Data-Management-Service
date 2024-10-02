@@ -53,7 +53,9 @@ internal class ProjectSchema(JsonNode _projectSchemaNode, ILogger _logger)
         );
 
         if (caseCorrectedEndpointName == null)
+        {
             return null;
+        }
 
         return _projectSchemaNode.SelectNodeFromPath(
             $"$.resourceSchemas[\"{caseCorrectedEndpointName}\"]",
