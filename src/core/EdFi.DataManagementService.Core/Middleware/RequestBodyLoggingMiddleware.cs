@@ -14,6 +14,13 @@ namespace EdFi.DataManagementService.Core.Middleware;
 internal class RequestBodyLoggingMiddleware(ILogger _logger, IOptions<RequestLoggingOptions> options)
     : IPipelineStep
 {
+    private const string MessageBody = "Incoming {Method} request to {Path} with body structure: {Body}";
+
+    private static readonly JsonSerializerOptions _jsonOptions = new()
+    {
+        WriteIndented = true
+    };
+
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         _logger.LogDebug(
@@ -21,32 +28,39 @@ internal class RequestBodyLoggingMiddleware(ILogger _logger, IOptions<RequestLog
             context.FrontendRequest.TraceId
         );
 
-        string endpoint = context.FrontendRequest.Path;
-        
         if (!options.Value.MaskRequestBody)
         {
-            _logger.LogDebug("Incoming request to {endpoint} with body: {Body}", endpoint, context.FrontendRequest.Body);
+            _logger.LogDebug(
+                MessageBody,
+                context.Method,
+                context.FrontendRequest.Path,
+                context.FrontendRequest.Body
+            );
         }
         else
         {
             if (context.FrontendRequest.Body != null)
             {
-                string maskedBody = MaskRequestBody(context.FrontendRequest.Body, _logger);
-                _logger.LogDebug("Incoming request to {endpoint} with body: {Body}", endpoint, maskedBody);
+                _logger.LogDebug(
+                    MessageBody,
+                    context.Method,
+                    context.FrontendRequest.Path,
+                    MaskRequestBody(context.FrontendRequest.Body, _logger)
+                );
             }
         }
 
         await next();
     }
 
-    private string MaskRequestBody(string body, ILogger logger)
+    private static string MaskRequestBody(string body, ILogger logger)
     {
         try
         {
             // Deserialize the JSON body in a dynamic object
-            var jsonDoc = JsonDocument.Parse(body);
-            var maskedJson = MaskJsonElement(jsonDoc.RootElement);
-            return JsonSerializer.Serialize(maskedJson);
+            JsonDocument jsonDoc = JsonDocument.Parse(body);
+            JsonElement maskedJson = MaskJsonElement(jsonDoc.RootElement);
+            return JsonSerializer.Serialize(maskedJson, _jsonOptions);
         }
         catch (JsonException ex)
         {
@@ -55,25 +69,22 @@ internal class RequestBodyLoggingMiddleware(ILogger _logger, IOptions<RequestLog
         }
     }
 
-    private JsonElement MaskJsonElement(JsonElement element)
+    private static JsonElement MaskJsonElement(JsonElement element)
     {
         switch (element.ValueKind)
         {
             case JsonValueKind.Object:
-                var dictionary = new Dictionary<string, JsonElement>();
+                Dictionary<string, JsonElement> dictionary = new();
                 foreach (var property in element.EnumerateObject())
                 {
                     dictionary[property.Name] = MaskJsonElement(property.Value);
                 }
-                return JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(dictionary));
+                return JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(dictionary, _jsonOptions));
 
             case JsonValueKind.Array:
-                var maskedArray = new List<JsonElement>();
-                foreach (var item in element.EnumerateArray())
-                {
-                    maskedArray.Add(MaskJsonElement(item));
-                }
-                return JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(maskedArray));
+                List<JsonElement> maskedArray = [];
+                maskedArray.AddRange(element.EnumerateArray().Select(MaskJsonElement));
+                return JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(maskedArray, _jsonOptions));
 
             default:
                 return JsonSerializer.Deserialize<JsonElement>("\"*\"");
