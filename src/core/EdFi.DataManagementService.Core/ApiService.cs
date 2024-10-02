@@ -71,7 +71,7 @@ internal class ApiService(
 
             if (_requestLoggingOptions.Value.LogLevel.Equals("Debug", StringComparison.OrdinalIgnoreCase))
             {
-                steps.Add(new RequestBodyLoggingMiddleware(_logger, _requestLoggingOptions));
+                steps.Add(new RequestDataBodyLoggingMiddleware(_logger, _requestLoggingOptions));
             }
 
             steps.AddRange(
@@ -164,6 +164,11 @@ internal class ApiService(
             else
             {
                 steps.Add(new CoerceFromStringsMiddleware(_logger));
+            }
+
+            if (_requestLoggingOptions.Value.LogLevel.Equals("Debug", StringComparison.OrdinalIgnoreCase))
+            {
+                steps.Add(new RequestDataBodyLoggingMiddleware(_logger, _requestLoggingOptions));
             }
 
             steps.AddRange(

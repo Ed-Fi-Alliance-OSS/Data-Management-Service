@@ -11,7 +11,7 @@ using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
-internal class RequestBodyLoggingMiddleware(ILogger _logger, IOptions<RequestLoggingOptions> options)
+internal class RequestDataBodyLoggingMiddleware(ILogger _logger, IOptions<RequestLoggingOptions> options)
     : IPipelineStep
 {
     private const string MessageBody = "Incoming {Method} request to {Path} with body structure: {Body}";
@@ -24,7 +24,7 @@ internal class RequestBodyLoggingMiddleware(ILogger _logger, IOptions<RequestLog
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         _logger.LogDebug(
-            "Entering RequestBodyLoggingMiddleware - {TraceId}",
+            "Entering RequestDataBodyLoggingMiddleware - {TraceId}",
             context.FrontendRequest.TraceId
         );
 
