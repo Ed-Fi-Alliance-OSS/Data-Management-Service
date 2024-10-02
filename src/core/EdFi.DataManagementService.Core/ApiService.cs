@@ -35,6 +35,7 @@ internal class ApiService(
     IEqualityConstraintValidator _equalityConstraintValidator,
     ILogger<ApiService> _logger,
     IOptions<AppSettings> _appSettings,
+    IOptions<RequestLoggingOptions> _requestLoggingOptions,
     [FromKeyedServices("unknownFailureCircuitBreaker")] ResiliencePipeline _resiliencePipeline
 ) : IApiService
 {
@@ -68,6 +69,11 @@ internal class ApiService(
                 steps.Add(new CoerceFromStringsMiddleware(_logger));
             }
 
+            if (_requestLoggingOptions.Value.LogLevel.Equals("Debug", StringComparison.OrdinalIgnoreCase))
+            {
+                steps.Add(new RequestBodyLoggingMiddleware(_logger, _requestLoggingOptions));
+            }
+
             steps.AddRange(
                 [
                     new ValidateDocumentMiddleware(_logger, _documentValidator),
@@ -82,6 +88,7 @@ internal class ApiService(
                     new UpsertHandler(_documentStoreRepository, _logger, _resiliencePipeline)
                 ]
             );
+
             return new PipelineProvider(steps);
         });
 

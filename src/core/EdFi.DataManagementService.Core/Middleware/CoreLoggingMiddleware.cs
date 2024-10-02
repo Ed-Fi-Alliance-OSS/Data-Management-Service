@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
+using Serilog.Core;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
@@ -17,12 +18,10 @@ internal class CoreLoggingMiddleware(ILogger _logger) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        _logger.LogDebug("FrontendRequest: {FrontendRequest}", context.FrontendRequest);
-
         try
         {
+            _logger.LogDebug("Entering CoreLoggingMiddleware - {TraceId}", context.FrontendRequest.TraceId);
             await next();
-            _logger.LogDebug("FrontendResponse: {FrontendResponse}", context.FrontendResponse);
         }
         catch (Exception ex)
         {

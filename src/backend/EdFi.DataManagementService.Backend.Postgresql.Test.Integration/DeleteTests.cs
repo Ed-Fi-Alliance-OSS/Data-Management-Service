@@ -378,7 +378,7 @@ public class DeleteTests : DatabaseTest
     public class Given_the_delete_of_a_document_referenced_by_another_document : DeleteTests
     {
         private DeleteResult? _deleteResult;
-        private List<UpsertResult> _upsertResults;
+        private List<UpsertResult>? _upsertResults;
 
         private static readonly string _referencedResourceName = "ReferencedResource";
         private static readonly Guid _resourcedDocUuidGuid = Guid.NewGuid();
@@ -434,7 +434,7 @@ public class DeleteTests : DatabaseTest
         public void It_should_be_a_successful_inserts()
         {
             _upsertResults.Should().HaveCount(2);
-            _upsertResults.ForEach(x => x.Should().BeOfType<UpsertResult.InsertSuccess>());
+            _upsertResults?.ForEach(x => x.Should().BeOfType<UpsertResult.InsertSuccess>());
         }
 
         [Test]
@@ -457,7 +457,7 @@ public class DeleteTests : DatabaseTest
     public class Given_the_delete_of_a_document_with_outbound_reference_only : DeleteTests
     {
         private DeleteResult? _deleteResult;
-        private List<UpsertResult> _upsertResults;
+        private List<UpsertResult>? _upsertResults;
 
         private static readonly string _referencedResourceName = "ReferencedResource";
         private static readonly Guid _resourcedDocUuidGuid = Guid.NewGuid();
@@ -513,7 +513,7 @@ public class DeleteTests : DatabaseTest
         public void It_should_be_a_successful_inserts()
         {
             _upsertResults.Should().HaveCount(2);
-            _upsertResults.ForEach(x => x.Should().BeOfType<UpsertResult.InsertSuccess>());
+            _upsertResults?.ForEach(x => x.Should().BeOfType<UpsertResult.InsertSuccess>());
         }
 
         [Test]
@@ -528,7 +528,7 @@ public class DeleteTests : DatabaseTest
         : DeleteTests
     {
         private DeleteResult? _deleteResult;
-        private List<UpsertResult> _upsertResults;
+        private List<UpsertResult>? _upsertResults;
 
         private static readonly string _subclassName = "SubClass";
         private static readonly Guid _subClassDocumentUuidGuid = Guid.NewGuid();
@@ -590,8 +590,8 @@ public class DeleteTests : DatabaseTest
         [Test]
         public void It_should_be_a_successful_inserts()
         {
-            _upsertResults.Should().HaveCount(2);
-            _upsertResults.ForEach(x => x.Should().BeOfType<UpsertResult.InsertSuccess>());
+            _upsertResults?.Should().HaveCount(2);
+            _upsertResults?.ForEach(x => x.Should().BeOfType<UpsertResult.InsertSuccess>());
         }
 
         [Test]

@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Validation;
 using FakeItEasy;
+using FakeItEasy.Sdk;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -45,10 +46,10 @@ public class APISchemaFileTests
                 new MatchingDocumentUuidsValidator(),
                 new EqualityConstraintValidator(),
                 NullLogger<ApiService>.Instance,
-                Options.Create(new AppSettings
-                {
-                    AllowIdentityUpdateOverrides = ""
-                }),
+                Options.Create(new AppSettings { AllowIdentityUpdateOverrides = "" }),
+                Options.Create(
+                    new RequestLoggingOptions { MaskRequestBody = true, LogLevel = "Information" }
+                ),
                 ResiliencePipeline.Empty
             );
         }
@@ -103,7 +104,8 @@ public class APISchemaFileTests
             {
                 // Arrange
                 ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
-                FrontendRequest request = new(new("/ed-fi/noallowidentityupdates/123"), null, [], new TraceId(""));
+                FrontendRequest request =
+                    new(new("/ed-fi/noallowidentityupdates/123"), null, [], new TraceId(""));
 
                 // Act
                 IFrontendResponse response = await apiService.Get(request);
@@ -139,7 +141,8 @@ public class APISchemaFileTests
             {
                 // Arrange
                 ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
-                FrontendRequest request = new(new("/ed-fi/noJsonSchemaForInserts/123"), null, [], new TraceId(""));
+                FrontendRequest request =
+                    new(new("/ed-fi/noJsonSchemaForInserts/123"), null, [], new TraceId(""));
 
                 // Act
                 IFrontendResponse response = await apiService.Get(request);
@@ -154,7 +157,8 @@ public class APISchemaFileTests
             {
                 // Arrange
                 ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
-                FrontendRequest request = new(new("/ed-fi/noidentityjsonpaths/123"), null, [], new TraceId(""));
+                FrontendRequest request =
+                    new(new("/ed-fi/noidentityjsonpaths/123"), null, [], new TraceId(""));
 
                 // Act
                 IFrontendResponse response = await apiService.Get(request);
@@ -169,7 +173,8 @@ public class APISchemaFileTests
             {
                 // Arrange
                 ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
-                FrontendRequest request = new(new("/ed-fi/noequalityconstraints/123"), null, [], new TraceId(""));
+                FrontendRequest request =
+                    new(new("/ed-fi/noequalityconstraints/123"), null, [], new TraceId(""));
 
                 // Act
                 IFrontendResponse response = await apiService.Get(request);
@@ -214,7 +219,8 @@ public class APISchemaFileTests
             {
                 // Arrange
                 ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
-                FrontendRequest request = new(new("/ed-fi/nosuperclassresourcenames/123"), null, [], new TraceId(""));
+                FrontendRequest request =
+                    new(new("/ed-fi/nosuperclassresourcenames/123"), null, [], new TraceId(""));
 
                 // Act
                 IFrontendResponse response = await apiService.Get(request);
@@ -229,7 +235,8 @@ public class APISchemaFileTests
             {
                 // Arrange
                 ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
-                FrontendRequest request = new(new("/ed-fi/nosuperclassprojectnames/123"), null, [], new TraceId(""));
+                FrontendRequest request =
+                    new(new("/ed-fi/nosuperclassprojectnames/123"), null, [], new TraceId(""));
 
                 // Act
                 IFrontendResponse response = await apiService.Get(request);

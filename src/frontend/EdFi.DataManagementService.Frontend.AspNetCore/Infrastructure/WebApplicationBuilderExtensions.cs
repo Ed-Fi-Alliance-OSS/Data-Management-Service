@@ -9,11 +9,13 @@ using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Deploy;
 using EdFi.DataManagementService.Backend.OpenSearch;
 using EdFi.DataManagementService.Backend.Postgresql;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using Microsoft.Extensions.Options;
 using Serilog;
 using static EdFi.DataManagementService.Core.DmsCoreServiceExtensions;
+using AppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
@@ -35,6 +37,8 @@ public static class WebApplicationBuilderExtensions
             .Configure<DatabaseOptions>(webAppBuilder.Configuration.GetSection("DatabaseOptions"))
             .Configure<AppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"))
             .Configure<CoreAppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"))
+            .Configure<RequestLoggingOptions>(webAppBuilder.Configuration.GetSection("Logging:RequestLoggingOptions"))
+            .Configure<RequestLoggingOptions>(webAppBuilder.Configuration.GetSection("Serilog:MinimumLevel"))
             .AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>()
             .Configure<ConnectionStrings>(webAppBuilder.Configuration.GetSection("ConnectionStrings"))
             .AddSingleton<IValidateOptions<ConnectionStrings>, ConnectionStringsValidator>();
@@ -61,6 +65,15 @@ public static class WebApplicationBuilderExtensions
             .Services.AddHealthChecks()
             .AddCheck<ApplicationHealthCheck>("ApplicationHealthCheck")
             .AddCheck<DbHealthCheck>("DbHealthCheck");
+
+
+        string serilogLogLevel = webAppBuilder.Configuration.GetSection("Serilog:MinimumLevel:Default").Value ?? "Information";
+        webAppBuilder.Services.Configure<RequestLoggingOptions>(options =>
+        {
+            options.LogLevel = serilogLogLevel;
+            options.MaskRequestBody = webAppBuilder.Configuration.GetSection("Logging:RequestLoggingOptions:MaskRequestBody").Get<bool>();
+        });
+
 
         Serilog.ILogger ConfigureLogging()
         {
