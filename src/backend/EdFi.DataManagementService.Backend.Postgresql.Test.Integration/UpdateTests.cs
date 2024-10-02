@@ -107,6 +107,7 @@ public class UpdateTests : DatabaseTest
             _getResult!.Should().BeOfType<GetResult.GetSuccess>();
             (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
             (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Be(_edFiDocString2);
+            (_getResult! as GetResult.GetSuccess)!.LastModifiedTraceId.Should().Be(traceId.Value);
         }
     }
 
@@ -160,6 +161,7 @@ public class UpdateTests : DatabaseTest
                     Transaction!
                 );
             (getResult as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":1");
+            (getResult! as GetResult.GetSuccess)!.LastModifiedTraceId.Should().Be(traceId.Value);
         }
     }
 
@@ -227,6 +229,7 @@ public class UpdateTests : DatabaseTest
                     Transaction!
                 );
             (getResult as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":2");
+            (getResult! as GetResult.GetSuccess)!.LastModifiedTraceId.Should().Be(traceId.Value);
         }
     }
 
@@ -305,6 +308,7 @@ public class UpdateTests : DatabaseTest
 
             (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
             (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Be(_edFiDocString3);
+            (_getResult! as GetResult.GetSuccess)!.LastModifiedTraceId.Should().Be(traceId.Value);
         }
     }
 
@@ -790,6 +794,7 @@ public class UpdateTests : DatabaseTest
             getResult!.Should().BeOfType<GetResult.GetSuccess>();
             (getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_courseOfferingDocumentUuid);
             (getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("Fourth Quarter");
+            (getResult! as GetResult.GetSuccess)!.LastModifiedTraceId.Should().Be(traceId.Value);
         }
 
         [Test]
