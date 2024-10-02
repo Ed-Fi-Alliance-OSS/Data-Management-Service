@@ -128,7 +128,7 @@ public interface ISqlAction
         TraceId traceId
     );
 
-    public Task<Document[]> FindParentDocumentsByDocumentId(
+    public Task<Document[]> FindReferencingDocumentsByDocumentId(
         long documentId,
         short documentPartitionKey,
         NpgsqlConnection connection,

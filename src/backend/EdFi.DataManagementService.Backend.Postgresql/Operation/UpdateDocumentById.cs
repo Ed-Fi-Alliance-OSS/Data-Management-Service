@@ -79,8 +79,6 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
             updateRequest.DocumentInfo.DescriptorReferences
         );
 
-        Document? documentFromDb;
-
         try
         {
             var validationResult = await _sqlAction.UpdateDocumentValidation(
@@ -142,7 +140,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
 
             // Attempt to get the document before update, to get the ID for references
             // and to use during cascading updates
-            documentFromDb = await _sqlAction.FindDocumentByReferentialId(
+            Document? documentFromDb = await _sqlAction.FindDocumentByReferentialId(
                 updateRequest.DocumentInfo.ReferentialId,
                 PartitionKeyFor(updateRequest.DocumentInfo.ReferentialId),
                 connection,
@@ -216,7 +214,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                         && !validationResult.ReferentialIdUnchanged
                     )
                     {
-                        var parentDocuments = await _sqlAction.FindParentDocumentsByDocumentId(
+                        var parentDocuments = await _sqlAction.FindReferencingDocumentsByDocumentId(
                             documentFromDb.Id.GetValueOrDefault(),
                             documentFromDb.DocumentPartitionKey,
                             connection,
@@ -236,23 +234,23 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
 
                     // Recursively call CascadeUpdates until the results are exhausted
                     async Task recursivelyCascadeUpdates(
-                        Document originalChildDocument,
-                        JsonNode modifiedChildEdFiDoc,
-                        Document[] parentDocuments
+                        Document originalReferencedDocument,
+                        JsonNode modifiedReferencedEdFiDoc,
+                        Document[] referencingDocuments
                     )
                     {
-                        if (!parentDocuments.Any())
+                        if (!referencingDocuments.Any())
                         {
                             return;
                         }
 
-                        foreach (var parentDocument in parentDocuments)
+                        foreach (var parentDocument in referencingDocuments)
                         {
                             var cascadeResult = updateRequest.UpdateCascadeHandler.Cascade(
-                                originalChildDocument.EdfiDoc,
-                                originalChildDocument.ProjectName,
-                                originalChildDocument.ResourceName,
-                                modifiedChildEdFiDoc,
+                                originalReferencedDocument.EdfiDoc,
+                                originalReferencedDocument.ProjectName,
+                                originalReferencedDocument.ResourceName,
+                                modifiedReferencedEdFiDoc,
                                 parentDocument.EdfiDoc.AsNode()!,
                                 parentDocument.Id.GetValueOrDefault(),
                                 parentDocument.DocumentPartitionKey,
@@ -263,14 +261,15 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
 
                             if (cascadeResult.isIdentityUpdate)
                             {
-                                var grandparentDocuments = await _sqlAction.FindParentDocumentsByDocumentId(
-                                    cascadeResult.Id,
-                                    cascadeResult.DocumentPartitionKey,
-                                    connection,
-                                    transaction,
-                                    LockOption.BlockUpdateDelete,
-                                    traceId
-                                );
+                                var grandparentDocuments =
+                                    await _sqlAction.FindReferencingDocumentsByDocumentId(
+                                        cascadeResult.Id,
+                                        cascadeResult.DocumentPartitionKey,
+                                        connection,
+                                        transaction,
+                                        LockOption.BlockUpdateDelete,
+                                        traceId
+                                    );
                                 await recursivelyCascadeUpdates(
                                     parentDocument,
                                     cascadeResult.ModifiedEdFiDoc,

@@ -812,7 +812,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
         return result;
     }
 
-    public async Task<Document[]> FindParentDocumentsByDocumentId(
+    public async Task<Document[]> FindReferencingDocumentsByDocumentId(
         long documentId,
         short documentPartitionKey,
         NpgsqlConnection connection,
@@ -870,7 +870,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                         );
                     }
 
-                    return documents.Distinct().ToArray();
+                    return documents.ToArray();
                 }
                 catch (PostgresException pe)
                 {

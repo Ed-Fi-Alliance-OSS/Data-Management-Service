@@ -15,6 +15,9 @@ namespace EdFi.DataManagementService.Core.ApiSchema;
 /// </summary>
 internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
 {
+    /// <summary>
+    /// Returns the mapped projectNamespace from the given project name
+    /// </summary>
     public ProjectNamespace GetMappedProjectName(string projectName)
     {
         return new ProjectNamespace(
