@@ -9,14 +9,11 @@ using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Deploy;
 using EdFi.DataManagementService.Backend.OpenSearch;
 using EdFi.DataManagementService.Backend.Postgresql;
-using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using Microsoft.Extensions.Options;
 using Serilog;
-using Serilog.Events;
 using static EdFi.DataManagementService.Core.DmsCoreServiceExtensions;
-using AppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
