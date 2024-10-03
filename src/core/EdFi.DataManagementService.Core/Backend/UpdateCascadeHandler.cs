@@ -152,6 +152,15 @@ public class UpdateCascadeHandler(IApiSchemaProvider _apiSchemaProvider, ILogger
             {
                 throw new InvalidOperationException($"Error evaluating filter expression {filterExpression}");
             }
+            // more than one match should be logged as a warning
+            if (pathResult.Matches.Count > 1)
+            {
+                _logger.LogWarning(
+                    "More than one matching identity was found in document {DocumentUuid} the list with this filter expression {FilterExpression}",
+                    referencingDocumentUuid,
+                    filterExpression
+                );
+            }
 
             foreach (var match in pathResult.Matches)
             {
