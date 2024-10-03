@@ -165,7 +165,7 @@ internal class ApiService(
             {
                 steps.Add(new CoerceFromStringsMiddleware(_logger));
             }
-
+            //Only if the minimum Serilog level is set to Debug.
             if (_requestLoggingOptions.Value.LogLevel.Equals("Debug", StringComparison.OrdinalIgnoreCase))
             {
                 steps.Add(new RequestDataBodyLoggingMiddleware(_logger, _requestLoggingOptions));
