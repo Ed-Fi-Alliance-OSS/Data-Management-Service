@@ -33,5 +33,13 @@ internal record UpsertRequest(
     /// A candidate DocumentUuid of the document to upsert, used only
     /// if the upsert happens as an insert
     /// </summary>
-    DocumentUuid DocumentUuid
-) : UpdateRequest(ResourceInfo, DocumentInfo, EdfiDoc, TraceId, DocumentUuid), IUpsertRequest;
+    DocumentUuid DocumentUuid,
+    /// <summary>
+    /// This class will modify the EdFiDoc of a referencing
+    /// resource when the referenced resource's identifying
+    /// values are modified
+    /// </summary>
+    IUpdateCascadeHandler UpdateCascadeHandler
+)
+    : UpdateRequest(ResourceInfo, DocumentInfo, EdfiDoc, TraceId, DocumentUuid, UpdateCascadeHandler),
+        IUpsertRequest;

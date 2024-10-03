@@ -9,7 +9,7 @@ namespace EdFi.DataManagementService.Core.ApiSchema;
 /// <summary>
 /// Provides an ApiSchema as parsed JSON
 /// </summary>
-internal interface IApiSchemaProvider
+public interface IApiSchemaProvider
 {
     /// <summary>
     /// ApiSchema as parsed JSON

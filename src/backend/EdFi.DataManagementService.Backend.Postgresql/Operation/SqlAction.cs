@@ -318,7 +318,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                             new() { Value = document.IsDescriptor },
                             new() { Value = document.ProjectName },
                             new() { Value = document.EdfiDoc },
-                            new () { Value = traceId.Value}
+                            new() { Value = traceId.Value },
                         },
                     };
 
@@ -372,7 +372,7 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                             new() { Value = edfiDoc },
                             new() { Value = documentPartitionKey },
                             new() { Value = documentUuid },
-                            new () { Value = traceId.Value}
+                            new() { Value = traceId.Value },
                         },
                     };
 
@@ -656,166 +656,6 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
         return result;
     }
 
-    // Disabled remove commented code to show example
-#pragma warning disable S125
-    /// <summary>
-    /// Update the edfidoc of related resources when a child identity is updated.
-    /// For example:
-    /// If an EdFi "Session" resource has its identity modified by changing its sessionName
-    /// that update would need to cascade to all edfidoc bodies of resources that reference
-    /// that session. Below is an example sql statement for that scenario
-    ///
-    /// update dms.document
-    //  set
-    //      lastmodifiedat = NOW()
-    //      , edfidoc =
-    //          jsonb_set(
-    //              jsonb_set(
-    //                  jsonb_set(
-    //                      edfidoc, '{sessionReference, schoolId}', '"123"'
-    //                  ), '{sessionReference, schoolYear}', '"2025"'
-    //              ), '{sessionReference, sessionName}', '"I have been edited"'
-    //          )
-    //  from(
-    //      select parentdocumentid, parentdocumentpartitionkey
-    //          from dms.reference
-    //      where referenceddocumentid = $1
-    //  and referenceddocumentpartitionkey = $2
-    //      ) as sub
-    //      where document.id = sub.parentdocumentid
-    //      and document.documentpartitionkey = sub.parentdocumentpartitionkey
-    //      returning document.id as ModifiedDocumentId,
-    //  document.documentpartitionkey as ModifiedDocumentPartitionKey,
-    //  document.resourcename as ModifiedResourceName;
-    /// </summary>
-
-#pragma warning restore S125 // Code comments should be removed
-    public async Task<List<CascadingUpdateResult>> CascadeUpdates(
-        string resourceName,
-        long documentId,
-        short documentPartitionKey,
-        DocumentInfo documentInfo,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        TraceId traceId
-    )
-    {
-        var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async cancellationToken =>
-            {
-                try
-                {
-                    foreach (var id in documentInfo.DocumentIdentity.DocumentIdentityElements)
-                    {
-                        _logger.LogInformation(id.IdentityValue);
-                    }
-
-                    var updateStatement = BuildUpdateStatement(
-                            documentInfo.DocumentIdentity.DocumentIdentityElements.Length - 1
-                        )
-                        .TrimEnd(',');
-
-                    await using var command = new NpgsqlCommand(
-                        @$"update dms.document
-                            set
-                              lastmodifiedat = NOW()
-                              , lastModifiedTraceId = $3
-                              , edfidoc =
-                                {updateStatement}
-                            from (
-                              select parentdocumentid, parentdocumentpartitionkey
-                              from dms.reference
-                              where referenceddocumentid = $1
-                              and referenceddocumentpartitionkey = $2
-                            ) as sub
-                            where document.id = sub.parentdocumentid
-                            and document.documentpartitionkey = sub.parentdocumentpartitionkey
-                            returning document.id as ModifiedDocumentId,
-                                document.documentpartitionkey as ModifiedDocumentPartitionKey,
-                                document.resourcename as ModifiedResourceName;",
-                        connection,
-                        transaction
-                    )
-                    {
-                        Parameters =
-                        {
-                            new() { Value = documentId },
-                            new() { Value = documentPartitionKey },
-                            new() { Value = traceId.Value }
-                        },
-                    };
-
-                    await command.PrepareAsync(cancellationToken);
-                    await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
-
-                    List<CascadingUpdateResult> results = [];
-
-                    if (!reader.HasRows)
-                    {
-                        return results;
-                    }
-
-                    while (await reader.ReadAsync(cancellationToken))
-                    {
-                        results.Add(
-                            new CascadingUpdateResult(
-                                ModifiedDocumentId: reader.GetInt64(reader.GetOrdinal("ModifiedDocumentId")),
-                                ModifiedDocumentPartitionKey: reader.GetInt16(
-                                    reader.GetOrdinal("ModifiedDocumentPartitionKey")
-                                ),
-                                ModifiedResourceName: reader.GetString(
-                                    reader.GetOrdinal("ModifiedResourceName")
-                                )
-                            )
-                        );
-                    }
-
-                    return results;
-
-                    string BuildUpdateStatement(int n)
-                    {
-                        string retStr = $"jsonb_set(";
-                        string resourceReference =
-                            $"{char.ToLowerInvariant(resourceName[0]) + resourceName[1..]}Reference";
-                        int idx = documentInfo
-                            .DocumentIdentity.DocumentIdentityElements[n]
-                            .IdentityJsonPath.Value.LastIndexOf('.');
-                        string propertyName = documentInfo
-                            .DocumentIdentity
-                            .DocumentIdentityElements[n]
-                            .IdentityJsonPath
-                            .Value[(idx + 1)..];
-                        string newValue = documentInfo
-                            .DocumentIdentity
-                            .DocumentIdentityElements[n]
-                            .IdentityValue;
-
-                        if (n == 0)
-                        {
-                            return retStr
-                                + $"edfidoc, '{{{resourceReference}, {propertyName}}}', '\"{newValue}\"'),";
-                        }
-                        else
-                        {
-                            return retStr
-                                + BuildUpdateStatement(n - 1)
-                                + $" '{{{resourceReference}, {propertyName}}}', '\"{newValue}\"'),";
-                        }
-                    }
-                }
-                catch (PostgresException pe)
-                {
-                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
-
-                    // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
-                    // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync(cancellationToken);
-                    throw;
-                }
-            });
-        return result;
-    }
-
     /// <summary>
     /// Delete associated Reference records for a given DocumentUuid, returning the number of rows affected
     /// </summary>
@@ -958,6 +798,79 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                     }
 
                     return resourceNames.Distinct().ToArray();
+                }
+                catch (PostgresException pe)
+                {
+                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
+
+                    // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
+                    // Must roll back the transaction before retry.
+                    await transaction.RollbackAsync(cancellationToken);
+                    throw;
+                }
+            });
+        return result;
+    }
+
+    public async Task<Document[]> FindReferencingDocumentsByDocumentId(
+        long documentId,
+        short documentPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        LockOption lockOption,
+        TraceId traceId
+    )
+    {
+        var result = await GetPostgresExceptionRetryPipeline()
+            .ExecuteAsync(async cancellationToken =>
+            {
+                try
+                {
+                    await using NpgsqlCommand command =
+                        new(
+                            $@"SELECT * FROM dms.Document d
+                                INNER JOIN dms.Reference r ON d.Id = r.ParentDocumentId And d.DocumentPartitionKey = r.ParentDocumentPartitionKey
+                                WHERE r.ReferencedDocumentId = $1 AND r.ReferencedDocumentPartitionKey = $2
+                                ORDER BY d.ResourceName {SqlFor(lockOption)};",
+                            connection,
+                            transaction
+                        )
+                        {
+                            Parameters =
+                            {
+                                new() { Value = documentId },
+                                new() { Value = documentPartitionKey },
+                            },
+                        };
+
+                    await command.PrepareAsync(cancellationToken);
+                    await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+
+                    List<Document> documents = [];
+
+                    while (await reader.ReadAsync(cancellationToken))
+                    {
+                        documents.Add(
+                            new Document(
+                                Id: reader.GetInt64(reader.GetOrdinal("Id")),
+                                DocumentPartitionKey: reader.GetInt16(
+                                    reader.GetOrdinal("DocumentPartitionKey")
+                                ),
+                                DocumentUuid: reader.GetGuid(reader.GetOrdinal("DocumentUuid")),
+                                ResourceName: reader.GetString(reader.GetOrdinal("ResourceName")),
+                                ResourceVersion: reader.GetString(reader.GetOrdinal("ResourceVersion")),
+                                IsDescriptor: reader.GetBoolean(reader.GetOrdinal("IsDescriptor")),
+                                ProjectName: reader.GetString(reader.GetOrdinal("ProjectName")),
+                                EdfiDoc: await reader.GetFieldValueAsync<JsonElement>(
+                                    reader.GetOrdinal("EdfiDoc")
+                                ),
+                                CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
+                                LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt"))
+                            )
+                        );
+                    }
+
+                    return documents.ToArray();
                 }
                 catch (PostgresException pe)
                 {
