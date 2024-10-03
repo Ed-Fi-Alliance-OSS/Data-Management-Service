@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
+using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
@@ -22,13 +23,16 @@ namespace EdFi.DataManagementService.Core.Handler;
 internal class UpdateByIdHandler(
     IDocumentStoreRepository _documentStoreRepository,
     ILogger _logger,
-    ResiliencePipeline _resiliencePipeline
+    ResiliencePipeline _resiliencePipeline,
+    IApiSchemaProvider _apiSchemaProvider
 ) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         _logger.LogDebug("Entering UpdateByIdHandler - {TraceId}", context.FrontendRequest.TraceId);
         Trace.Assert(context.ParsedBody != null, "Unexpected null Body on Frontend Request from PUT");
+
+        var updateCascadeHandler = new UpdateCascadeHandler(_apiSchemaProvider, _logger);
 
         var updateResult = await _resiliencePipeline.ExecuteAsync(async t =>
             await _documentStoreRepository.UpdateDocumentById(
@@ -37,7 +41,8 @@ internal class UpdateByIdHandler(
                     ResourceInfo: context.ResourceInfo,
                     DocumentInfo: context.DocumentInfo,
                     EdfiDoc: context.ParsedBody,
-                    TraceId: context.FrontendRequest.TraceId
+                    TraceId: context.FrontendRequest.TraceId,
+                    UpdateCascadeHandler: updateCascadeHandler
                 )
             )
         );
@@ -50,77 +55,73 @@ internal class UpdateByIdHandler(
 
         context.FrontendResponse = updateResult switch
         {
-            UpdateSuccess updateSuccess
-                => new FrontendResponse(
-                    StatusCode: 204,
-                    Body: null,
-                    Headers: [],
-                    LocationHeaderPath: PathComponents.ToResourcePath(
-                        context.PathComponents,
-                        updateSuccess.ExistingDocumentUuid
-                    )
-                ),
-            UpdateFailureNotExists
-                => new FrontendResponse(
-                    StatusCode: 404,
-                    Body: FailureResponse.ForNotFound(
-                        "Resource to update was not found",
-                        traceId: context.FrontendRequest.TraceId
-                    ),
-                    Headers: []
-                ),
-            UpdateFailureDescriptorReference failure
-                => new(
-                    StatusCode: 400,
-                    Body: FailureResponse.ForBadRequest(
-                        "Data validation failed. See 'validationErrors' for details.",
-                        traceId: context.FrontendRequest.TraceId,
-                        failure.InvalidDescriptorReferences.ToDictionary(
-                            d => d.Path.Value,
-                            d =>
-                                d.DocumentIdentity.DocumentIdentityElements.Select(e =>
-                                        $"{d.ResourceInfo.ResourceName.Value} value '{e.IdentityValue}' does not exist."
-                                    )
-                                    .ToArray()
-                        ),
-                        []
-                    ),
-                    Headers: []
-                ),
-            UpdateFailureReference failure
-                => new FrontendResponse(
-                    StatusCode: 409,
-                    Body: FailureResponse.ForInvalidReferences(
-                        failure.ReferencingDocumentInfo,
-                        traceId: context.FrontendRequest.TraceId
-                    ),
-                    Headers: []
-                ),
-            UpdateFailureIdentityConflict failure
-                => new FrontendResponse(StatusCode: 400, Body: failure.ReferencingDocumentInfo, Headers: []),
-            UpdateFailureWriteConflict => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),
-            UpdateFailureImmutableIdentity failure
-                => new FrontendResponse(
-                    StatusCode: 400,
-                    Body: FailureResponse.ForImmutableIdentity(
-                            failure.FailureMessage,
-                            traceId: context.FrontendRequest.TraceId
-                        ),
-                    Headers: []
-                ),
-            UpdateFailureCascadeRequired => new FrontendResponse(StatusCode: 400, Body: null, Headers: []),
-            UnknownFailure failure
-                => new FrontendResponse(
-                    StatusCode: 500,
-                    Body: ToJsonError(failure.FailureMessage, context.FrontendRequest.TraceId),
-                    Headers: []
-                ),
-            _
-                => new FrontendResponse(
-                    StatusCode: 500,
-                    Body: ToJsonError("Unknown UpdateResult", context.FrontendRequest.TraceId),
-                    Headers: []
+            UpdateSuccess updateSuccess => new FrontendResponse(
+                StatusCode: 204,
+                Body: null,
+                Headers: [],
+                LocationHeaderPath: PathComponents.ToResourcePath(
+                    context.PathComponents,
+                    updateSuccess.ExistingDocumentUuid
                 )
+            ),
+            UpdateFailureNotExists => new FrontendResponse(
+                StatusCode: 404,
+                Body: FailureResponse.ForNotFound(
+                    "Resource to update was not found",
+                    traceId: context.FrontendRequest.TraceId
+                ),
+                Headers: []
+            ),
+            UpdateFailureDescriptorReference failure => new(
+                StatusCode: 400,
+                Body: FailureResponse.ForBadRequest(
+                    "Data validation failed. See 'validationErrors' for details.",
+                    traceId: context.FrontendRequest.TraceId,
+                    failure.InvalidDescriptorReferences.ToDictionary(
+                        d => d.Path.Value,
+                        d =>
+                            d.DocumentIdentity.DocumentIdentityElements.Select(e =>
+                                    $"{d.ResourceInfo.ResourceName.Value} value '{e.IdentityValue}' does not exist."
+                                )
+                                .ToArray()
+                    ),
+                    []
+                ),
+                Headers: []
+            ),
+            UpdateFailureReference failure => new FrontendResponse(
+                StatusCode: 409,
+                Body: FailureResponse.ForInvalidReferences(
+                    failure.ReferencingDocumentInfo,
+                    traceId: context.FrontendRequest.TraceId
+                ),
+                Headers: []
+            ),
+            UpdateFailureIdentityConflict failure => new FrontendResponse(
+                StatusCode: 400,
+                Body: failure.ReferencingDocumentInfo,
+                Headers: []
+            ),
+            UpdateFailureWriteConflict => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),
+            UpdateFailureImmutableIdentity failure => new FrontendResponse(
+                StatusCode: 400,
+                Body: FailureResponse.ForImmutableIdentity(
+                    failure.FailureMessage,
+                    traceId: context.FrontendRequest.TraceId
+                ),
+                Headers: []
+            ),
+            UpdateFailureCascadeRequired => new FrontendResponse(StatusCode: 400, Body: null, Headers: []),
+            UnknownFailure failure => new FrontendResponse(
+                StatusCode: 500,
+                Body: ToJsonError(failure.FailureMessage, context.FrontendRequest.TraceId),
+                Headers: []
+            ),
+            _ => new FrontendResponse(
+                StatusCode: 500,
+                Body: ToJsonError("Unknown UpdateResult", context.FrontendRequest.TraceId),
+                Headers: []
+            ),
         };
     }
 }

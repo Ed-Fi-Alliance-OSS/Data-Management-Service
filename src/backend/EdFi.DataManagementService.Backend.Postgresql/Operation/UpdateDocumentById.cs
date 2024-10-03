@@ -4,9 +4,11 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using Json.More;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
@@ -136,6 +138,17 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 }
             }
 
+            // Attempt to get the document before update, to get the ID for references
+            // and to use during cascading updates
+            Document? documentFromDb = await _sqlAction.FindDocumentByReferentialId(
+                updateRequest.DocumentInfo.ReferentialId,
+                PartitionKeyFor(updateRequest.DocumentInfo.ReferentialId),
+                connection,
+                transaction,
+                LockOption.BlockUpdateDelete,
+                traceId
+            );
+
             int rowsAffected = await _sqlAction.UpdateDocumentEdfiDoc(
                 PartitionKeyFor(updateRequest.DocumentUuid).Value,
                 updateRequest.DocumentUuid.Value,
@@ -148,36 +161,13 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
             switch (rowsAffected)
             {
                 case 1:
-                    Document? documentFromDb;
-                    try
+                    if (documentFromDb == null)
                     {
-                        // Attempt to get the document, to get the ID for references
-                        documentFromDb = await _sqlAction.FindDocumentByReferentialId(
-                            updateRequest.DocumentInfo.ReferentialId,
-                            PartitionKeyFor(updateRequest.DocumentInfo.ReferentialId),
-                            connection,
-                            transaction,
-                            LockOption.BlockUpdateDelete,
-                            traceId
-                        );
-                    }
-                    catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.SerializationFailure)
-                    {
-                        _logger.LogDebug(
-                            pe,
-                            "Transaction conflict on Documents table read - {TraceId}",
-                            updateRequest.TraceId
-                        );
-                        return new UpdateResult.UpdateFailureWriteConflict();
+                        throw new InvalidOperationException("documentFromDb.Id should never be null");
                     }
 
-                    long documentId = 0;
-                    if (documentFromDb != null)
-                    {
-                        documentId =
-                            documentFromDb.Id
-                            ?? throw new InvalidOperationException("documentFromDb.Id should never be null");
-                    }
+                    long documentId = documentFromDb.Id.GetValueOrDefault();
+
                     if (
                         documentReferenceIds.ReferentialIds.Length > 0
                         || descriptorReferenceIds.ReferentialIds.Length > 0
@@ -224,41 +214,79 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                         && !validationResult.ReferentialIdUnchanged
                     )
                     {
-                        var cascadingUpdateResults = await _sqlAction.CascadeUpdates(
-                            updateRequest.ResourceInfo.ResourceName.Value,
-                            documentId,
-                            documentPartitionKey.Value,
-                            updateRequest.DocumentInfo,
+                        var parentDocuments = await _sqlAction.FindReferencingDocumentsByDocumentId(
+                            documentFromDb.Id.GetValueOrDefault(),
+                            documentFromDb.DocumentPartitionKey,
                             connection,
                             transaction,
+                            LockOption.BlockUpdateDelete,
                             traceId
                         );
-                        await recursivelyCascadeUpdates(cascadingUpdateResults);
+
+                        await recursivelyCascadeUpdates(
+                            documentFromDb,
+                            updateRequest.EdfiDoc,
+                            parentDocuments
+                        );
                     }
 
                     return new UpdateResult.UpdateSuccess(updateRequest.DocumentUuid);
 
                     // Recursively call CascadeUpdates until the results are exhausted
-                    async Task recursivelyCascadeUpdates(List<CascadingUpdateResult> results)
+                    async Task recursivelyCascadeUpdates(
+                        Document originalReferencedDocument,
+                        JsonNode modifiedReferencedEdFiDoc,
+                        Document[] referencingDocuments
+                    )
                     {
-                        if (!results.Any())
+                        if (!referencingDocuments.Any())
                         {
                             return;
                         }
 
-                        foreach (var result in results)
+                        foreach (var parentDocument in referencingDocuments)
                         {
-                            var cascadingUpdateResult = await _sqlAction.CascadeUpdates(
-                                result.ModifiedResourceName,
-                                result.ModifiedDocumentId,
-                                result.ModifiedDocumentPartitionKey,
-                                updateRequest.DocumentInfo,
+                            var cascadeResult = updateRequest.UpdateCascadeHandler.Cascade(
+                                originalReferencedDocument.EdfiDoc,
+                                originalReferencedDocument.ProjectName,
+                                originalReferencedDocument.ResourceName,
+                                modifiedReferencedEdFiDoc,
+                                parentDocument.EdfiDoc.AsNode()!,
+                                parentDocument.Id.GetValueOrDefault(),
+                                parentDocument.DocumentPartitionKey,
+                                parentDocument.DocumentUuid,
+                                parentDocument.ProjectName,
+                                parentDocument.ResourceName
+                            );
+
+                            if (cascadeResult.isIdentityUpdate)
+                            {
+                                var grandparentDocuments =
+                                    await _sqlAction.FindReferencingDocumentsByDocumentId(
+                                        cascadeResult.Id,
+                                        cascadeResult.DocumentPartitionKey,
+                                        connection,
+                                        transaction,
+                                        LockOption.BlockUpdateDelete,
+                                        traceId
+                                    );
+                                await recursivelyCascadeUpdates(
+                                    parentDocument,
+                                    cascadeResult.ModifiedEdFiDoc,
+                                    grandparentDocuments
+                                );
+                            }
+
+                            await _sqlAction.UpdateDocumentEdfiDoc(
+                                cascadeResult.DocumentPartitionKey,
+                                cascadeResult.DocumentUuid,
+                                JsonSerializer.Deserialize<JsonElement>(cascadeResult.ModifiedEdFiDoc),
                                 connection,
                                 transaction,
                                 traceId
                             );
 
-                            await recursivelyCascadeUpdates(cascadingUpdateResult);
+                            _logger.LogInformation(cascadeResult.isIdentityUpdate.ToString());
                         }
                     }
 

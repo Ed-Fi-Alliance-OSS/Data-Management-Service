@@ -55,7 +55,7 @@ internal class ApiService(
                     new RequestDataBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBody),
                     new DuplicatePropertiesMiddleware(_logger),
                     new ValidateEndpointMiddleware(_logger),
-                    new RejectResourceIdentifierMiddleware(_logger)
+                    new RejectResourceIdentifierMiddleware(_logger),
                 ]
             );
 
@@ -80,7 +80,12 @@ internal class ApiService(
                     new ExtractDocumentInfoMiddleware(_logger),
                     new DisallowDuplicateReferencesMiddleware(_logger),
                     new InjectLastModifiedDateToEdFiDocumentMiddleware(_logger),
-                    new UpsertHandler(_documentStoreRepository, _logger, _resiliencePipeline)
+                    new UpsertHandler(
+                        _documentStoreRepository,
+                        _logger,
+                        _resiliencePipeline,
+                        _apiSchemaProvider
+                    ),
                 ]
             );
 
@@ -104,7 +109,7 @@ internal class ApiService(
                             _logger,
                             _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                         ),
-                        new GetByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline)
+                        new GetByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline),
                     ]
                 )
         );
@@ -127,7 +132,7 @@ internal class ApiService(
                             _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                         ),
                         new ValidateQueryMiddleware(_logger),
-                        new QueryRequestHandler(_queryHandler, _logger, _resiliencePipeline)
+                        new QueryRequestHandler(_queryHandler, _logger, _resiliencePipeline),
                     ]
                 )
         );
@@ -148,7 +153,7 @@ internal class ApiService(
                     new ParseBodyMiddleware(_logger),
                     new RequestDataBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBody),
                     new DuplicatePropertiesMiddleware(_logger),
-                    new ValidateEndpointMiddleware(_logger)
+                    new ValidateEndpointMiddleware(_logger),
                 ]
             );
 
@@ -174,7 +179,12 @@ internal class ApiService(
                     new ExtractDocumentInfoMiddleware(_logger),
                     new DisallowDuplicateReferencesMiddleware(_logger),
                     new InjectLastModifiedDateToEdFiDocumentMiddleware(_logger),
-                    new UpdateByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline)
+                    new UpdateByIdHandler(
+                        _documentStoreRepository,
+                        _logger,
+                        _resiliencePipeline,
+                        _apiSchemaProvider
+                    ),
                 ]
             );
             return new PipelineProvider(steps);
@@ -197,7 +207,7 @@ internal class ApiService(
                             _logger,
                             _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                         ),
-                        new DeleteByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline)
+                        new DeleteByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline),
                     ]
                 )
         );

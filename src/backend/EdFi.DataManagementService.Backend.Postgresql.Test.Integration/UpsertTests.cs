@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
@@ -11,7 +13,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
 
-[TestFixture]
 public class UpsertTests : DatabaseTest
 {
     private static readonly string _defaultResourceName = "DefaultResourceName";
@@ -20,7 +21,7 @@ public class UpsertTests : DatabaseTest
     private static TraceId traceId = new("");
 
     [TestFixture]
-    public class Given_an_upsert_of_a_new_document : UpsertTests
+    public class Given_An_Upsert_Of_A_New_Document : UpsertTests
     {
         private UpsertResult? _upsertResult;
         private GetResult? _getResult;
@@ -62,7 +63,7 @@ public class UpsertTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_upsert_of_an_existing_document_that_changes_the_edfidoc : UpsertTests
+    public class Given_An_Upsert_Of_An_Existing_Document_That_Changes_The_Edfidoc : UpsertTests
     {
         private UpsertResult? _upsertResult1;
         private UpsertResult? _upsertResult2;
@@ -121,7 +122,7 @@ public class UpsertTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_insert_of_the_same_new_document_with_two_overlapping_requests : UpsertTests
+    public class Given_An_Insert_Of_The_Same_New_Document_With_Two_Overlapping_Requests : UpsertTests
     {
         private UpsertResult? _upsertResult1;
         private UpsertResult? _upsertResult2;
@@ -187,7 +188,7 @@ public class UpsertTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_insert_of_different_documents_with_overlapping_requests : UpsertTests
+    public class Given_An_Insert_Of_Different_Documents_With_Overlapping_Requests : UpsertTests
     {
         private UpsertResult? _upsertResult1;
         private UpsertResult? _upsertResult2;
@@ -261,7 +262,7 @@ public class UpsertTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_update_of_the_same_document_with_two_overlapping_requests : UpsertTests
+    public class Given_An_Update_Of_The_Same_Document_With_Two_Overlapping_Requests : UpsertTests
     {
         private UpsertResult? _upsertResult1;
         private UpsertResult? _upsertResult2;
@@ -288,7 +289,8 @@ public class UpsertTests : DatabaseTest
                                 _edFiDocString6
                             ),
                             connection,
-                            transaction, traceId
+                            transaction,
+                            traceId
                         );
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
@@ -338,7 +340,7 @@ public class UpsertTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_insert_of_a_new_document_that_references_a_nonexisting_document : UpsertTests
+    public class Given_An_Insert_Of_A_New_Document_That_References_An_Nonexisting_Document : UpsertTests
     {
         private UpsertResult? _upsertResult;
 
@@ -370,7 +372,7 @@ public class UpsertTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_insert_of_a_new_document_that_references_an_existing_document : UpsertTests
+    public class Given_An_Insert_Of_A_New_Document_That_References_An_Existing_Document : UpsertTests
     {
         private UpsertResult? _upsertResult;
         private GetResult? _getResult;
@@ -426,7 +428,7 @@ public class UpsertTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_insert_of_a_new_document_with_one_existing_and_one_nonexistent_reference
+    public class Given_An_Insert_Of_A_New_Document_With_One_Existing_And_One_Nonexistent_Reference
         : UpsertTests
     {
         private UpsertResult? _upsertResult;
@@ -471,7 +473,7 @@ public class UpsertTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_insert_of_a_new_document_that_references_an_existing_document_as_superclass
+    public class Given_An_Insert_Of_A_New_Document_That_References_An_Existing_Document_As_Superclass
         : UpsertTests
     {
         private UpsertResult? _upsertResult;
@@ -534,7 +536,7 @@ public class UpsertTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_upsert_of_a_subclass_document_when_a_different_subclass_has_the_same_superclass_identity
+    public class Given_An_Upsert_Of_A_Subclass_Document_When_A_Different_Subclass_Has_The_Same_Superclass_Identity
         : UpsertTests
     {
         private UpsertResult? _subclass1UpsertResult;
@@ -588,7 +590,7 @@ public class UpsertTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_update_of_a_document_to_reference_a_nonexisting_document : UpsertTests
+    public class Given_An_Update_of_A_Document_To_Reference_A_Nonexisting_Document : UpsertTests
     {
         private UpsertResult? _upsertResult;
 
@@ -629,7 +631,7 @@ public class UpsertTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_update_of_a_document_to_reference_an_existing_document : UpsertTests
+    public class Given_An_Update_of_A_Document_To_Reference_An_Existing_Document : UpsertTests
     {
         private UpsertResult? _upsertResult;
         private GetResult? _getResult;
@@ -694,7 +696,7 @@ public class UpsertTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_update_of_a_document_with_one_existing_and_one_nonexistent_reference : UpsertTests
+    public class Given_An_Update_Of_A_Document_With_One_Existing_And_One_Nonexistent_Reference : UpsertTests
     {
         private UpsertResult? _upsertResult;
 
@@ -747,7 +749,7 @@ public class UpsertTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_update_of_a_document_to_reference_an_existing_document_as_superclass : UpsertTests
+    public class Given_An_Update_Of_A_Document_To_Reference_An_Existing_Document_As_Superclass : UpsertTests
     {
         private UpsertResult? _upsertResult;
 
@@ -807,7 +809,7 @@ public class UpsertTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_insert_of_a_new_document_that_references_an_existing_descriptor : UpsertTests
+    public class Given_An_Insert_Of_A_New_Document_That_References_An_Existing_Descriptor : UpsertTests
     {
         private UpsertResult? _upsertResult;
         private GetResult? _getResult;
@@ -864,7 +866,7 @@ public class UpsertTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_insert_of_a_new_document_that_references_a_nonexisting_descriptor : UpsertTests
+    public class Given_An_Insert_Of_A_New_Document_That_References_A_Nonexisting_Descriptor : UpsertTests
     {
         private UpsertResult? _upsertResult;
 
@@ -900,7 +902,7 @@ public class UpsertTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_update_of_a_document_to_reference_an_existing_descriptor : UpsertTests
+    public class Given_An_Update_Of_A_Document_To_Reference_An_Existing_Descriptor : UpsertTests
     {
         private UpsertResult? _upsertResult;
         private GetResult? _getResult;
@@ -966,7 +968,7 @@ public class UpsertTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_update_of_a_document_to_reference_a_nonexisting_descriptor : UpsertTests
+    public class Given_An_Update_Of_A_Document_To_Reference_A_Nonexisting_Descriptor : UpsertTests
     {
         private UpsertResult? _upsertResult;
 

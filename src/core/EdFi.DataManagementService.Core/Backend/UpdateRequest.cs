@@ -2,6 +2,7 @@
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
+
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -31,5 +32,11 @@ internal record UpdateRequest(
     /// <summary>
     /// The DocumentUuid of the document to update
     /// </summary>
-    DocumentUuid DocumentUuid
+    DocumentUuid DocumentUuid,
+    /// <summary>
+    /// This class will modify the EdFiDoc of a referencing
+    /// resource when the referenced resource's identifying
+    /// values are modified
+    /// </summary>
+    IUpdateCascadeHandler UpdateCascadeHandler
 ) : IUpdateRequest;
