@@ -24,8 +24,8 @@ public class RequestDataBodyLoggingMiddlewareTests
 {
     private PipelineContext _context = No.PipelineContext();
     private ILogger<RequestDataBodyLoggingMiddleware>? _logger;
-    private const string LogFilePath = "logs/test_logs.txt";
     private string _capturedLogMessage = string.Empty;
+    private const string LogFilePath = "logs/test_logs.txt";
 
     [OneTimeSetUp]
     public void OneTimeSetup()
@@ -41,10 +41,7 @@ public class RequestDataBodyLoggingMiddlewareTests
             File.Delete(LogFilePath);
         }
 
-        Log.Logger = new LoggerConfiguration()
-            .MinimumLevel.Debug()
-            .WriteTo.File(LogFilePath)
-            .CreateLogger();
+        Log.Logger = new LoggerConfiguration().MinimumLevel.Debug().WriteTo.File(LogFilePath).CreateLogger();
     }
 
     internal static IPipelineStep Middleware(
@@ -77,8 +74,7 @@ public class RequestDataBodyLoggingMiddlewareTests
 
             _context = new(frontEndRequest, RequestMethod.POST);
 
-            var middleware = Middleware(_logger!, loggingOptions);
-            await middleware.Execute(_context, NullNext);
+            await Middleware(_logger!, loggingOptions).Execute(_context, NullNext);
 
             await Log.CloseAndFlushAsync();
 
@@ -114,8 +110,7 @@ public class RequestDataBodyLoggingMiddlewareTests
 
             _context = new(frontEndRequest, RequestMethod.POST);
 
-            var middleware = Middleware(_logger!, loggingOptions);
-            await middleware.Execute(_context, NullNext);
+            await Middleware(_logger!, loggingOptions).Execute(_context, NullNext);
 
             await Log.CloseAndFlushAsync();
 
