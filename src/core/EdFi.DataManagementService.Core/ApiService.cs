@@ -35,7 +35,6 @@ internal class ApiService(
     IEqualityConstraintValidator _equalityConstraintValidator,
     ILogger<ApiService> _logger,
     IOptions<AppSettings> _appSettings,
-    IOptions<RequestLoggingOptions> _requestLoggingOptions,
     [FromKeyedServices("unknownFailureCircuitBreaker")] ResiliencePipeline _resiliencePipeline
 ) : IApiService
 {
@@ -53,6 +52,7 @@ internal class ApiService(
                     new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                     new ParsePathMiddleware(_logger),
                     new ParseBodyMiddleware(_logger),
+                    new RequestDataBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBody),
                     new DuplicatePropertiesMiddleware(_logger),
                     new ValidateEndpointMiddleware(_logger),
                     new RejectResourceIdentifierMiddleware(_logger)
@@ -67,11 +67,6 @@ internal class ApiService(
             else
             {
                 steps.Add(new CoerceFromStringsMiddleware(_logger));
-            }
-            //Only if the minimum Serilog level is set to Debug.
-            if (_requestLoggingOptions.Value.LogLevel.Equals("Debug", StringComparison.OrdinalIgnoreCase))
-            {
-                steps.Add(new RequestDataBodyLoggingMiddleware(_logger, _requestLoggingOptions));
             }
 
             steps.AddRange(
@@ -151,6 +146,7 @@ internal class ApiService(
                     new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                     new ParsePathMiddleware(_logger),
                     new ParseBodyMiddleware(_logger),
+                    new RequestDataBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBody),
                     new DuplicatePropertiesMiddleware(_logger),
                     new ValidateEndpointMiddleware(_logger)
                 ]
@@ -164,11 +160,6 @@ internal class ApiService(
             else
             {
                 steps.Add(new CoerceFromStringsMiddleware(_logger));
-            }
-            //Only if the minimum Serilog level is set to Debug.
-            if (_requestLoggingOptions.Value.LogLevel.Equals("Debug", StringComparison.OrdinalIgnoreCase))
-            {
-                steps.Add(new RequestDataBodyLoggingMiddleware(_logger, _requestLoggingOptions));
             }
 
             steps.AddRange(

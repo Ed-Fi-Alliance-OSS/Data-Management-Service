@@ -11,7 +11,6 @@ using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Validation;
 using FakeItEasy;
-using FakeItEasy.Sdk;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -47,9 +46,6 @@ public class APISchemaFileTests
                 new EqualityConstraintValidator(),
                 NullLogger<ApiService>.Instance,
                 Options.Create(new AppSettings { AllowIdentityUpdateOverrides = "" }),
-                Options.Create(
-                    new RequestLoggingOptions { MaskRequestBody = true, LogLevel = "Information" }
-                ),
                 ResiliencePipeline.Empty
             );
         }

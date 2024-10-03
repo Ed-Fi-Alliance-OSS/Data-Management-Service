@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
@@ -11,7 +10,6 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using NUnit.Framework;
 using Serilog;
 using Serilog.Extensions.Logging;
@@ -27,42 +25,37 @@ public class RequestDataBodyLoggingMiddlewareTests
     private string _capturedLogMessage = string.Empty;
     private const string LogFilePath = "logs/test_logs.txt";
 
-    [OneTimeSetUp]
-    public void OneTimeSetup()
-    {
-        string? logDirectory = Path.GetDirectoryName(LogFilePath);
-        if (logDirectory != null)
-        {
-            Directory.CreateDirectory(logDirectory);
-        }
-
-        if (File.Exists(LogFilePath))
-        {
-            File.Delete(LogFilePath);
-        }
-
-        Log.Logger = new LoggerConfiguration().MinimumLevel.Debug().WriteTo.File(LogFilePath).CreateLogger();
-    }
-
     internal static IPipelineStep Middleware(
         ILogger<RequestDataBodyLoggingMiddleware> logger,
-        IOptions<RequestLoggingOptions> options
+        bool maskRequestBody
     )
     {
-        return new RequestDataBodyLoggingMiddleware(logger, options);
+        return new RequestDataBodyLoggingMiddleware(logger, maskRequestBody);
     }
 
     [TestFixture]
-    public class Given_A_LogLevel_Of_Debug_And_MaskRequestBody_True : RequestDataBodyLoggingMiddlewareTests
+    public class Given_A_LogLevel_Debug_And_MaskRequestBody_True : RequestDataBodyLoggingMiddlewareTests
     {
         [SetUp]
         public async Task Setup()
         {
-            _logger = new SerilogLoggerFactory(Log.Logger).CreateLogger<RequestDataBodyLoggingMiddleware>();
+            string? logDirectory = Path.GetDirectoryName(LogFilePath);
+            if (logDirectory != null)
+            {
+                Directory.CreateDirectory(logDirectory);
+            }
 
-            var loggingOptions = new OptionsWrapper<RequestLoggingOptions>(
-                new RequestLoggingOptions { LogLevel = "Debug", MaskRequestBody = true }
-            );
+            if (File.Exists(LogFilePath))
+            {
+                File.Delete(LogFilePath);
+            }
+
+            Log.Logger = new LoggerConfiguration()
+                .MinimumLevel.Debug()
+                .WriteTo.File(LogFilePath)
+                .CreateLogger();
+
+            _logger = new SerilogLoggerFactory(Log.Logger).CreateLogger<RequestDataBodyLoggingMiddleware>();
 
             FrontendRequest frontEndRequest =
                 new(
@@ -74,7 +67,7 @@ public class RequestDataBodyLoggingMiddlewareTests
 
             _context = new(frontEndRequest, RequestMethod.POST);
 
-            await Middleware(_logger!, loggingOptions).Execute(_context, NullNext);
+            await Middleware(_logger!, true).Execute(_context, NullNext);
 
             await Log.CloseAndFlushAsync();
 
@@ -89,16 +82,25 @@ public class RequestDataBodyLoggingMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_A_LogLevel_Of_Debug_And_MaskRequestBody_False : RequestDataBodyLoggingMiddlewareTests
+    public class Given_A_LogLevel_Debug_And_MaskRequestBody_False : RequestDataBodyLoggingMiddlewareTests
     {
         [SetUp]
         public async Task Setup()
         {
-            _logger = new SerilogLoggerFactory(Log.Logger).CreateLogger<RequestDataBodyLoggingMiddleware>();
+            string? logDirectory = Path.GetDirectoryName(LogFilePath);
+            if (logDirectory != null)
+            {
+                Directory.CreateDirectory(logDirectory);
+            }
 
-            var loggingOptions = new OptionsWrapper<RequestLoggingOptions>(
-                new RequestLoggingOptions { LogLevel = "Debug", MaskRequestBody = false }
-            );
+            if (File.Exists(LogFilePath))
+            {
+                File.Delete(LogFilePath);
+            }
+
+            Log.Logger = new LoggerConfiguration().MinimumLevel.Debug().WriteTo.File(LogFilePath).CreateLogger();
+
+            _logger = new SerilogLoggerFactory(Log.Logger).CreateLogger<RequestDataBodyLoggingMiddleware>();
 
             FrontendRequest frontEndRequest =
                 new(
@@ -110,7 +112,7 @@ public class RequestDataBodyLoggingMiddlewareTests
 
             _context = new(frontEndRequest, RequestMethod.POST);
 
-            await Middleware(_logger!, loggingOptions).Execute(_context, NullNext);
+            await Middleware(_logger!, false).Execute(_context, NullNext);
 
             await Log.CloseAndFlushAsync();
 
@@ -123,6 +125,102 @@ public class RequestDataBodyLoggingMiddlewareTests
             _capturedLogMessage
                 .Should()
                 .Contain("{\"schoolId\":\"12345\",\"nameOfInstitution\":\"School Test\"}");
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_LogLevel_Verbose_And_MaskRequestBody_True : RequestDataBodyLoggingMiddlewareTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            string? logDirectory = Path.GetDirectoryName(LogFilePath);
+            if (logDirectory != null)
+            {
+                Directory.CreateDirectory(logDirectory);
+            }
+
+            if (File.Exists(LogFilePath))
+            {
+                File.Delete(LogFilePath);
+            }
+
+            Log.Logger = new LoggerConfiguration()
+                .MinimumLevel.Verbose()
+                .WriteTo.File(LogFilePath)
+                .CreateLogger();
+
+            _logger = new SerilogLoggerFactory(Log.Logger).CreateLogger<RequestDataBodyLoggingMiddleware>();
+
+            FrontendRequest frontEndRequest =
+                new(
+                    Path: "ed-fi/schools",
+                    Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
+                    QueryParameters: [],
+                    TraceId: new TraceId("traceId")
+                );
+
+            _context = new(frontEndRequest, RequestMethod.POST);
+
+            await Middleware(_logger!, true).Execute(_context, NullNext);
+
+            await Log.CloseAndFlushAsync();
+
+            _capturedLogMessage = await File.ReadAllTextAsync("logs/test_logs.txt");
+        }
+
+        [Test]
+        public void It_has_a_body_with_hidden_values()
+        {
+            _capturedLogMessage.Should().Contain("{\"schoolId\":\"*\",\"nameOfInstitution\":\"*\"}");
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_LogLevel_Information_And_MaskRequestBody_True : RequestDataBodyLoggingMiddlewareTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            string? logDirectory = Path.GetDirectoryName(LogFilePath);
+            if (logDirectory != null)
+            {
+                Directory.CreateDirectory(logDirectory);
+            }
+
+            if (File.Exists(LogFilePath))
+            {
+                File.Delete(LogFilePath);
+            }
+
+            Log.Logger = new LoggerConfiguration()
+                .MinimumLevel.Information()
+                .WriteTo.File(LogFilePath)
+                .CreateLogger();
+
+            _logger = new SerilogLoggerFactory(Log.Logger).CreateLogger<RequestDataBodyLoggingMiddleware>();
+
+            FrontendRequest frontEndRequest =
+                new(
+                    Path: "ed-fi/schools",
+                    Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
+                    QueryParameters: [],
+                    TraceId: new TraceId("traceId")
+                );
+
+            _context = new(frontEndRequest, RequestMethod.POST);
+
+            await Middleware(_logger!, true).Execute(_context, NullNext);
+
+            await Log.CloseAndFlushAsync();
+
+            _capturedLogMessage = await File.ReadAllTextAsync("logs/test_logs.txt");
+        }
+
+        [Test]
+        public void It_has_an_empty_log()
+        {
+            _capturedLogMessage.Should().BeEmpty();
         }
     }
 }

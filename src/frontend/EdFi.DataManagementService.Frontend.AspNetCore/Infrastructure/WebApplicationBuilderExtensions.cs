@@ -14,6 +14,7 @@ using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using Microsoft.Extensions.Options;
 using Serilog;
+using Serilog.Events;
 using static EdFi.DataManagementService.Core.DmsCoreServiceExtensions;
 using AppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
@@ -63,15 +64,6 @@ public static class WebApplicationBuilderExtensions
             .Services.AddHealthChecks()
             .AddCheck<ApplicationHealthCheck>("ApplicationHealthCheck")
             .AddCheck<DbHealthCheck>("DbHealthCheck");
-
-
-        string serilogLogLevel = webAppBuilder.Configuration.GetSection("Serilog:MinimumLevel:Default").Value ?? "Information";
-        webAppBuilder.Services.Configure<RequestLoggingOptions>(options =>
-        {
-            options.LogLevel = serilogLogLevel;
-            options.MaskRequestBody = webAppBuilder.Configuration.GetSection("Logging:RequestLoggingOptions:MaskRequestBody").Get<bool>();
-        });
-
 
         Serilog.ILogger ConfigureLogging()
         {
