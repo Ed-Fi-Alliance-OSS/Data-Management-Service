@@ -52,7 +52,7 @@ internal class ApiService(
                     new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                     new ParsePathMiddleware(_logger),
                     new ParseBodyMiddleware(_logger),
-                    new RequestDataBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBody),
+                    new RequestDataBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
                     new DuplicatePropertiesMiddleware(_logger),
                     new ValidateEndpointMiddleware(_logger),
                     new RejectResourceIdentifierMiddleware(_logger),
@@ -151,7 +151,7 @@ internal class ApiService(
                     new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                     new ParsePathMiddleware(_logger),
                     new ParseBodyMiddleware(_logger),
-                    new RequestDataBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBody),
+                    new RequestDataBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
                     new DuplicatePropertiesMiddleware(_logger),
                     new ValidateEndpointMiddleware(_logger),
                 ]

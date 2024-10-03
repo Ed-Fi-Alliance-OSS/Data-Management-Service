@@ -10,39 +10,41 @@ using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
-internal class RequestDataBodyLoggingMiddleware(ILogger _logger, bool _maskRequestBody) : IPipelineStep
+internal class RequestDataBodyLoggingMiddleware(ILogger _logger, bool _maskRequestBodyInLogs) : IPipelineStep
 {
-    private const string MessageBody = "Incoming {Method} request to {Path} with body structure: {Body}";
+    private const string MessageBody =
+        "Incoming {Method} request to {Path} with body structure: {Body} - {TraceId}";
 
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        if (_logger.IsEnabled(LogLevel.Debug))
+        if (_logger.IsEnabled(LogLevel.Debug) && !string.IsNullOrEmpty(context.FrontendRequest.Body))
         {
             _logger.LogDebug(
                 "Entering RequestDataBodyLoggingMiddleware - {TraceId}",
                 context.FrontendRequest.TraceId
             );
 
-            if (context.FrontendRequest.Body != null)
-            {
-                string body = SanitizeInput(context.FrontendRequest.Body);
+            string body = SanitizeInput(context.FrontendRequest.Body);
 
-                if (!_maskRequestBody)
-                {
-                    _logger.LogDebug(MessageBody, context.Method, context.FrontendRequest.Path, body);
-                }
-                else
-                {
-                    if (context.FrontendRequest.Body != null)
-                    {
-                        _logger.LogDebug(
-                            MessageBody,
-                            context.Method,
-                            context.FrontendRequest.Path,
-                            MaskRequestBody(body, _logger)
-                        );
-                    }
-                }
+            if (!_maskRequestBodyInLogs)
+            {
+                _logger.LogDebug(
+                    MessageBody,
+                    context.Method,
+                    context.FrontendRequest.Path,
+                    body,
+                    context.FrontendRequest.TraceId
+                );
+            }
+            else
+            {
+                _logger.LogDebug(
+                    MessageBody,
+                    context.Method,
+                    context.FrontendRequest.Path,
+                    MaskRequestBody(body, _logger),
+                    context.FrontendRequest.TraceId
+                );
             }
         }
         await next();

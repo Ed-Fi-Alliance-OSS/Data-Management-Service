@@ -18,6 +18,6 @@ namespace EdFi.DataManagementService.Core.Configuration
         /// <summary>
         /// Know whether to mask the requested Body
         /// </summary>
-        public bool MaskRequestBody { get; set; }
+        public bool MaskRequestBodyInLogs { get; set; }
     }
 }

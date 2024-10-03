@@ -33,7 +33,7 @@ POSTGRES_ADMIN_PASSWORD=<Admin password to use with database setup>
 POSTGRES_PORT=<Port for postgres server Eg. 5432>
 POSTGRES_HOST=<DNS or IP address of the PostgreSQL Server, i.e. sql.somedns.org Eg. 172.25.32.1>
 LOG_LEVEL=<serilog log level i.e. Information>
-MASK_REQUEST_BODY:<Mask incoming HTTP POST and PUT request body structures in DEBUG logging, default value is true>
+MASK_REQUEST_BODY_IN_LOGS:<Mask incoming HTTP POST and PUT request body structures in DEBUG logging, default value is true>
 OAUTH_TOKEN_ENDPOINT=<Authentication service url>
 BYPASS_STRING_COERCION=<Boolean whether to bypass coercion of boolean and numeric values represented as strings to their natural type. Eg. "true" = true>
 DATABASE_ISOLATION_LEVEL=<The System.Data.IsolationLevel to use for transaction locking. Eg. RepeatableRead>
@@ -55,7 +55,7 @@ POSTGRES_ADMIN_PASSWORD=P@ssw0rd53
 POSTGRES_PORT=5432
 POSTGRES_HOST=localhost
 LOG_LEVEL=Information
-MASK_REQUEST_BODY:true
+MASK_REQUEST_BODY_IN_LOGS:true
 OAUTH_TOKEN_ENDPOINT=http://localhost:8080/oauth/token
 BYPASS_STRING_COERCION=false
 DATABASE_ISOLATION_LEVEL=RepeatableRead
