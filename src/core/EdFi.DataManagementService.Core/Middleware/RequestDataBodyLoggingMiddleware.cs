@@ -10,10 +10,14 @@ using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
-internal class RequestDataBodyLoggingMiddleware(ILogger _logger, bool _maskRequestBodyInLogs) : IPipelineStep
+internal partial class RequestDataBodyLoggingMiddleware(ILogger _logger, bool _maskRequestBodyInLogs)
+    : IPipelineStep
 {
     private const string MessageBody =
         "Incoming {Method} request to {Path} with body structure: {Body} - {TraceId}";
+
+    [GeneratedRegex("(\"(?:[^\"\\\\]|\\\\.)*\")|\\s+")]
+    private static partial Regex MinifyRegex();
 
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
@@ -24,7 +28,7 @@ internal class RequestDataBodyLoggingMiddleware(ILogger _logger, bool _maskReque
                 context.FrontendRequest.TraceId
             );
 
-            string body = SanitizeInput(context.FrontendRequest.Body);
+            string body = MinifyingInput(context.FrontendRequest.Body);
 
             if (!_maskRequestBodyInLogs)
             {
@@ -50,14 +54,9 @@ internal class RequestDataBodyLoggingMiddleware(ILogger _logger, bool _maskReque
         await next();
     }
 
-    private static string SanitizeInput(string input)
+    private static string MinifyingInput(string input)
     {
-        // Deletes new line, line feed, carriage return and tab characters
-        return Regex.Replace(
-            input.Replace(Environment.NewLine, "").Replace("\n", "").Replace("\r", "").Replace("\t", ""),
-            @"\s+",
-            " "
-        );
+        return MinifyRegex().Replace(input, "$1");
     }
 
     private static string MaskRequestBody(string body, ILogger logger)
@@ -72,7 +71,7 @@ internal class RequestDataBodyLoggingMiddleware(ILogger _logger, bool _maskReque
         catch (JsonException ex)
         {
             logger.LogError(ex, "Error while masking request body.");
-            return body; // In case of error, it returns the original body.
+            return string.Empty;
         }
     }
 
