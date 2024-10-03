@@ -357,7 +357,7 @@ Feature: Resources "Update" Operation validations
                     "correlationId": null
                   }
                   """
-        
+
         Scenario: 14 Update a document with a value that is too short (Resource)
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
                   """
@@ -686,8 +686,8 @@ Feature: Resources "Update" Operation validations
                         "schoolId": 4003
                     },
                     "sessionReference": {
-                        "schoolId": "4003",
-                        "schoolYear": "2025",
+                        "schoolId": 4003,
+                        "schoolYear": 2025,
                         "sessionName": "Fourth Quarter"
                     }
                   }
@@ -803,14 +803,13 @@ Feature: Resources "Update" Operation validations
                     "sectionIdentifier": "SECTION ABC",
                     "courseOfferingReference": {
                         "localCourseCode": "abc",
-                        "schoolId": "4003",
-                        "schoolYear": "2025",
+                        "schoolId": 4003,
+                        "schoolYear": 2025,
                         "sessionName": "Q2"
                     }
                   }
                   """
 
-        @ignore
         Scenario: 21 Verify cascading updates on dependent resources in lists
             Given the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |

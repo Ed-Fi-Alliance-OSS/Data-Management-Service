@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -20,12 +21,16 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 
-[TestFixture]
 public class UpsertHandlerTests
 {
     internal static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
     {
-        return new UpsertHandler(documentStoreRepository, NullLogger.Instance, ResiliencePipeline.Empty);
+        return new UpsertHandler(
+            documentStoreRepository,
+            NullLogger.Instance,
+            ResiliencePipeline.Empty,
+            new UpdateByIdHandlerTests.Provider()
+        );
     }
 
     [TestFixture]
@@ -88,7 +93,8 @@ public class UpsertHandlerTests
         {
             context.FrontendResponse.StatusCode.Should().Be(409);
             context
-                .FrontendResponse.Body?.AsJsonString().Should()
+                .FrontendResponse.Body?.AsJsonString()
+                .Should()
                 .Be(
                     """
                     {"detail":"The referenced BadResourceName1, BadResourceName2 item(s) do not exist.","type":"urn:ed-fi:api:data-conflict:unresolved-reference","title":"Unresolved Reference","status":409,"correlationId":"","validationErrors":{},"errors":[]}

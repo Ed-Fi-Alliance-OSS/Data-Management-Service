@@ -6,6 +6,8 @@
 using System.Data;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Operation;
+using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using ImpromptuInterface;
@@ -19,6 +21,94 @@ public abstract class DatabaseTest : DatabaseTestBase
 {
     protected NpgsqlConnection? Connection { get; set; }
     protected NpgsqlTransaction? Transaction { get; set; }
+
+    private static readonly JsonNode _apiSchemaRootNode =
+        JsonNode.Parse(
+            """
+            {
+              "projectNameMapping": {
+                "ProjectName": "project-name"
+              },
+              "projectSchemas": {
+                "project-name": {
+                  "resourceNameMapping": {
+                    "CourseOffering": "courseOfferings",
+                    "Section": "sections",
+                    "Session": "sessions"
+                  },
+                  "resourceSchemas": {
+                    "courseOfferings": {
+                      "documentPathsMapping": {
+                        "LocalCourseCode": {
+                          "isReference": false,
+                          "path": "$.localCourseCode"
+                        },
+                        "Session": {
+                            "isDescriptor": false,
+                            "isReference": true,
+                            "projectName": "ProjectName",
+                            "referenceJsonPaths": [
+                              {
+                                "identityJsonPath": "$.sessionName",
+                                "referenceJsonPath": "$.sessionReference.sessionName"
+                              }
+                            ],
+                            "resourceName": "Session"
+                          }
+                      },
+                      "identityJsonPaths": [
+                        "$.localCourseCode",
+                        "$.sessionReference.sessionName"
+                      ]
+                    },
+                    "sections": {
+                      "documentPathsMapping": {
+                        "CourseOffering": {
+                          "isReference": true,
+                          "projectName": "ProjectName",
+                          "referenceJsonPaths": [
+                            {
+                              "identityJsonPath": "$.localCourseCode",
+                              "referenceJsonPath": "$.courseOfferingReference.localCourseCode"
+                            },
+                            {
+                              "identityJsonPath": "$.sessionReference.sessionName",
+                              "referenceJsonPath": "$.courseOfferingReference.sessionName"
+                            }
+                          ],
+                          "resourceName": "CourseOffering"
+                        },
+                        "SectionName": {
+                          "isReference": false,
+                          "path": "$.sectionName"
+                        }
+                      },
+                      "identityJsonPaths": [
+                        "$.courseOfferingReference.sessionName"
+                      ]
+                    },
+                    "sessions": {
+                      "documentPathsMapping": {
+                        "SessionName": {
+                          "isReference": false,
+                          "path": "$.sessionName"
+                        }
+                      },
+                      "identityJsonPaths": [
+                        "$.sessionName"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+            """
+        ) ?? new JsonObject();
+
+    internal class ApiSchemaProvider : IApiSchemaProvider
+    {
+        public JsonNode ApiSchemaRootNode => _apiSchemaRootNode;
+    }
 
     [SetUp]
     public async Task ConnectionSetup()
@@ -166,6 +256,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                 EdfiDoc = JsonNode.Parse(edfiDocString),
                 TraceId = new TraceId("123"),
                 DocumentUuid = new DocumentUuid(documentUuidGuid),
+                UpdateCascadeHandler = new UpdateCascadeHandler(new ApiSchemaProvider(), NullLogger.Instance),
             }
         ).ActLike<IUpsertRequest>();
     }
@@ -206,6 +297,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                 EdfiDoc = JsonNode.Parse(edFiDocString),
                 TraceId = new TraceId("123"),
                 DocumentUuid = new DocumentUuid(documentUuidGuid),
+                UpdateCascadeHandler = new UpdateCascadeHandler(new ApiSchemaProvider(), NullLogger.Instance),
             }
         ).ActLike<IUpdateRequest>();
     }

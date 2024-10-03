@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -23,9 +24,24 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 [TestFixture]
 public class UpdateByIdHandlerTests
 {
+    private static readonly JsonNode _apiSchemaRootNode =
+        JsonNode.Parse(
+            "{\"projectNameMapping\":{}, \"projectSchemas\": { \"ed-fi\": {\"abstractResources\":{},\"caseInsensitiveEndpointNameMapping\":{},\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{}} } }"
+        ) ?? new JsonObject();
+
+    internal class Provider : IApiSchemaProvider
+    {
+        public JsonNode ApiSchemaRootNode => _apiSchemaRootNode;
+    }
+
     internal static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
     {
-        return new UpdateByIdHandler(documentStoreRepository, NullLogger.Instance, ResiliencePipeline.Empty);
+        return new UpdateByIdHandler(
+            documentStoreRepository,
+            NullLogger.Instance,
+            ResiliencePipeline.Empty,
+            new Provider()
+        );
     }
 
     [TestFixture]

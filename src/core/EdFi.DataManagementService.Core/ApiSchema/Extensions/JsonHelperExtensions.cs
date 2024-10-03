@@ -39,7 +39,9 @@ internal static class JsonHelperExtensions
             try
             {
                 if (result.Matches.Count == 0)
+                {
                     return null;
+                }
             }
             catch (System.ArgumentException ae)
             {
@@ -191,7 +193,9 @@ internal static class JsonHelperExtensions
         JsonNode? selectedNode = SelectNodeFromPath(jsonNode, jsonPathString, logger);
 
         if (selectedNode == null)
+        {
             return default;
+        }
 
         JsonValue? resultNode =
             selectedNode.AsValue() ?? throw new InvalidOperationException("Unexpected JSONPath value error");

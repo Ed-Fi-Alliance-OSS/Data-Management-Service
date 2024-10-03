@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
@@ -11,7 +13,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
 
-[TestFixture]
 public class GetTests : DatabaseTest
 {
     private static readonly string _defaultResourceName = "DefaultResourceName";
@@ -19,7 +20,7 @@ public class GetTests : DatabaseTest
     private static TraceId traceId = new("");
 
     [TestFixture]
-    public class Given_an_nonexistent_document : GetTests
+    public class Given_An_Nonexistent_Document : GetTests
     {
         private GetResult? _getResult;
 
@@ -38,7 +39,7 @@ public class GetTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_existing_document : GetTests
+    public class Given_An_Existing_Document : GetTests
     {
         private GetResult? _getResult;
 
@@ -74,7 +75,7 @@ public class GetTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_existing_document_for_a_different_resource : GetTests
+    public class Given_An_Existing_Document_For_A_Different_Resource : GetTests
     {
         private GetResult? _getResult;
 
@@ -107,7 +108,7 @@ public class GetTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_overlapping_upsert_and_get_of_the_same_document_with_upsert_committed_first
+    public class Given_An_Overlapping_Upsert_And_Get_Of_The_Same_Document_With_Upsert_Committed_First
         : GetTests
     {
         private UpsertResult? _upsertResult;
@@ -159,7 +160,7 @@ public class GetTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_overlapping_upsert_and_get_of_the_same_document_with_get_committed_first : GetTests
+    public class Given_An_Overlapping_Upsert_And_Get_Of_The_Same_Document_With_Get_Committed_First : GetTests
     {
         private UpsertResult? _upsertResult;
         private GetResult? _getResult;

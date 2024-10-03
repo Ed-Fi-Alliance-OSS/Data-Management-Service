@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
@@ -11,7 +13,6 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
 
-[TestFixture]
 public class UpdateTests : DatabaseTest
 {
     private static readonly string _defaultResourceName = "DefaultResourceName";
@@ -19,7 +20,7 @@ public class UpdateTests : DatabaseTest
     private static TraceId traceId = new("");
 
     [TestFixture]
-    public class Given_an_update_of_a_nonexistent_document : UpdateTests
+    public class Given_An_Update_Of_A_Nonexistent_Document : UpdateTests
     {
         private UpdateResult? _updateResult;
         private static readonly Guid _documentUuidGuid = Guid.NewGuid();
@@ -58,7 +59,7 @@ public class UpdateTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_update_of_an_existing_document : UpdateTests
+    public class Given_An_Update_Of_An_Existing_Document : UpdateTests
     {
         private UpdateResult? _updateResult;
         private GetResult? _getResult;
@@ -112,7 +113,7 @@ public class UpdateTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_update_of_an_existing_document_with_different_referentialId : UpdateTests
+    public class Given_An_Update_Of_An_Existing_Document_With_Different_ReferentialId : UpdateTests
     {
         private UpdateResult? _updateResult;
 
@@ -166,7 +167,7 @@ public class UpdateTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_update_of_an_existing_document_with_different_referentialId_Allow_Identity_Update
+    public class Given_An_Update_Of_An_Existing_Document_With_Different_ReferentialId_Allow_Identity_Update
         : UpdateTests
     {
         private UpdateResult? _updateResult;
@@ -234,7 +235,7 @@ public class UpdateTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_update_of_the_same_document_with_two_overlapping_request : UpdateTests
+    public class Given_An_Update_Of_The_Same_Document_With_Two_Overlapping_Request : UpdateTests
     {
         private UpdateResult? _updateResult1;
         private UpdateResult? _updateResult2;
@@ -313,7 +314,7 @@ public class UpdateTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_update_of_a_document_to_reference_a_non_existent_document : UpdateTests
+    public class Given_An_Update_Of_A_Document_To_Reference_A_Non_Existent_Document : UpdateTests
     {
         private UpdateResult? _updateResult;
 
@@ -375,7 +376,7 @@ public class UpdateTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_update_of_a_document_to_reference_an_existing_document : UpdateTests
+    public class Given_An_Update_Of_A_Document_To_Reference_An_Existing_Document : UpdateTests
     {
         private UpdateResult? _updateResult;
 
@@ -436,7 +437,7 @@ public class UpdateTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_update_of_a_document_with_one_existing_and_one_non_existent_reference : UpdateTests
+    public class Given_An_Update_Of_A_Document_With_One_Existing_And_One_Non_Existent_Reference : UpdateTests
     {
         private UpdateResult? _updateResult;
 
@@ -510,7 +511,7 @@ public class UpdateTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_update_of_a_subclass_document_referenced_by_an_existing_document_as_a_superclass
+    public class Given_An_Update_Of_A_Subclass_Document_Referenced_By_An_Existing_Document_As_A_Superclass
         : UpdateTests
     {
         private UpdateResult? _updateResult;
@@ -574,7 +575,7 @@ public class UpdateTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_update_of_the_same_document_with_two_overlapping_request_but_also_with_different_references
+    public class Given_An_Update_Of_The_Same_Document_With_Two_Overlapping_Request_But_Also_With_Different_References
         : UpdateTests
     {
         private UpdateResult? _updateResult1;
@@ -660,7 +661,7 @@ public class UpdateTests : DatabaseTest
     }
 
     [TestFixture]
-    public class Given_an_update_of_a_document_cascade_to_parents_with_recursion : UpdateTests
+    public class Given_An_Update_Of_A_Document_Cascade_To_Parents_With_Recursion : UpdateTests
     {
         private static readonly Guid _sessionDocumentUuid = Guid.NewGuid();
         private static readonly Guid _sessionReferentialIdUuid = Guid.NewGuid();
@@ -689,8 +690,13 @@ public class UpdateTests : DatabaseTest
                 """,
                 allowIdentityUpdates: true
             );
-            var sessionUpsertResult = await CreateUpsert()
-                .Upsert(sessionUpsertRequest, Connection!, Transaction!, traceId);
+            var upsert = CreateUpsert();
+            var sessionUpsertResult = await upsert.Upsert(
+                sessionUpsertRequest,
+                Connection!,
+                Transaction!,
+                traceId
+            );
             sessionUpsertResult.Should().BeOfType<UpsertResult.InsertSuccess>();
 
             IUpsertRequest courseOfferingUpsertRequest = CreateUpsertRequest(
