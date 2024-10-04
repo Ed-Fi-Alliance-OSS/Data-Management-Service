@@ -907,6 +907,118 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
+        Scenario: 22 Verify cascading updates on role named references
+            Given the system has these "schools"
+                  | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
+                  | 4003     | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+              And the system has these descriptors
+                  | descriptorValue                                          |
+                  | uri://ed-fi.org/GradeTypeDescriptor#Grading Period       |
+                  | uri://ed-fi.org/CourseIdentificationSystemDescriptor#LEA |
+              And the system has these "schoolYearTypes"
+                  | schoolYear | schoolYearDescription | currentSchoolYear |
+                  | 2025       | "2025"                | false             |
+                  | 2026       | "2026"                | false             |
+              And the system has these "gradingPeriods"
+                  | gradingPeriodDescriptor                                   | gradingPeriodName      | schoolReference      | schoolYearTypeReference | beginDate    | endDate      | totalInstructionalDays |
+                  | "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks" | "Fall Semester Exam 1" | { "schoolId": 4003 } | { "schoolYear": 2025}   | "2025-01-01" | "2025-03-01" | 31                     |
+              And the system has these "students"
+                  | studentUniqueId | birthDate  | firstName | lastSurname |
+                  | "604824"        | 2010-01-13 | Traci     | Mathews     |
+              And the system has these "courses"
+                  | educationOrganizationReference    | courseCode | courseTitle    | numberOfParts | identificationCodes                                                                                                                       |
+                  | {"educationOrganizationId": 4003} | "ART-01"   | "Art, Grade 1" | 1             | [ {"courseIdentificationSystemDescriptor": "uri://ed-fi.org/CourseIdentificationSystemDescriptor#LEA", "identificationCode": "ART-01" } ] |
+              And the system has these "sessions"
+                  | sessionName     | schoolReference    | schoolYearTypeReference | beginDate  | endDate    | termDescriptor                                   | totalInstructionalDays |
+                  | "Fall Semester" | {"schoolId": 4003} | {"schoolYear": 2025}    | 2025-01-01 | 2025-05-27 | "uri://ed-fi.org/TermDescriptor#Spring Semester" | 88                     |
+              And the system has these "courseOfferings"
+                  | localCourseCode | courseReference                                         | schoolReference   | sessionReference                                                      |
+                  | "ART-01"        | {"courseCode":"ART-01", "educationOrganizationId":4003} | {"schoolId":4003} | {"schoolId":4003, "schoolYear": 2025, "sessionName":"Fall Semester" } |
+              And the system has these "sections"
+                  | sectionIdentifier | courseOfferingReference                                                                         |
+                  | "ABC"             | {"localCourseCode":"ART-01", "schoolId":4003, "schoolYear":2025, "sessionName":"Fall Semester"} |
+              And the system has these "studentSectionAssociations"
+                  | beginDate    | sectionReference                                                                                                              | studentReference             |
+                  | "2025-01-01" | {"localCourseCode":"ART-01", "schoolId":4003, "schoolYear": 2025, "sectionIdentifier":"ABC", "sessionName":"Fall Semester"  } | {"studentUniqueId":"604824"} |
+             When a POST request is made for dependent resource "/ed-fi/grades/" with
+                  """
+                  {
+                     "gradeTypeDescriptor": "uri://ed-fi.org/GradeTypeDescriptor#Grading Period",
+                     "gradingPeriodReference": {
+                        "gradingPeriodDescriptor": "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks",
+                        "gradingPeriodName": "Fall Semester Exam 1",
+                        "schoolId": 4003,
+                        "schoolYear": 2025
+                    },
+                    "studentSectionAssociationReference": {
+                        "beginDate": "2025-01-01",
+                        "localCourseCode": "ART-01",
+                        "schoolId": 4003,
+                        "schoolYear": 2025,
+                        "sectionIdentifier": "ABC",
+                        "sessionName": "Fall Semester",
+                        "studentUniqueId": "604824"
+                    }
+                  }
+                  """
+             Then it should respond with 201
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": "{dependentId}",
+                    "gradeTypeDescriptor": "uri://ed-fi.org/GradeTypeDescriptor#Grading Period",
+                    "gradingPeriodReference": {
+                        "schoolId": 4003,
+                        "schoolYear": 2025,
+                        "gradingPeriodName": "Fall Semester Exam 1",
+                        "gradingPeriodDescriptor": "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks"
+                    },
+                    "studentSectionAssociationReference": {
+                        "schoolId": 4003,
+                        "beginDate": "2025-01-01",
+                        "schoolYear": 2025,
+                        "sessionName": "Fall Semester",
+                        "localCourseCode": "ART-01",
+                        "studentUniqueId": "604824",
+                        "sectionIdentifier": "ABC"
+                    }
+                  }
+                  """
+             When a POST request is made to "/ed-fi/reportCards/" with
+                  """
+                    {
+                        "educationOrganizationReference": {
+                            "educationOrganizationId": 4003
+                        },
+                        "gradingPeriodReference": {
+                            "gradingPeriodDescriptor": "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks",
+                            "gradingPeriodName": "Fall Semester Exam 1",
+                            "schoolId": 4003,
+                            "schoolYear": 2025
+                        },
+                        "studentReference": {
+                            "studentUniqueId": "604824"
+                        },
+                        "grades": [
+                            {
+                                "gradeReference": {
+                                    "beginDate": "2025-01-01",
+                                    "gradeTypeDescriptor": "uri://ed-fi.org/GradeTypeDescriptor#Grading Period",
+                                    "gradingPeriodDescriptor": "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks",
+                                    "gradingPeriodName": "Fall Semester Exam 1",
+                                    "gradingPeriodSchoolYear": 2025,
+                                    "localCourseCode": "ART-01",
+                                    "schoolId": 4003,
+                                    "schoolYear": 2025,
+                                    "sectionIdentifier": "ABC",
+                                    "sessionName": "Fall Semester",
+                                    "studentUniqueId": "604824"
+                                }
+                            }
+                        ]
+                    }
+                  """
+             Then it should respond with 201
 
 
 
