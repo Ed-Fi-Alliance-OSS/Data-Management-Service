@@ -14,5 +14,10 @@ namespace EdFi.DataManagementService.Core.Configuration
         /// overriding the default behavior to reject identity updates.
         /// </summary>
         public required string AllowIdentityUpdateOverrides { get; set; }
+
+        /// <summary>
+        /// Know whether to mask the requested Body
+        /// </summary>
+        public bool MaskRequestBodyInLogs { get; set; }
     }
 }

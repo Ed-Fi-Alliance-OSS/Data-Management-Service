@@ -62,7 +62,9 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
                     combinedIds.Add(combinedId.ToString());
                 }
             }
+
             if (combinedIds.GroupBy(d => d).Any(g => g.Count() > 1))
+            {
                 // if duplicates are found, they should be reported
                 ValidateDuplicates(
                     context.DocumentInfo.DescriptorReferences,
@@ -71,6 +73,7 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
                     validationErrors,
                     true
                 );
+            }
         }
 
         if (validationErrors.Any())
@@ -150,7 +153,9 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
     private static string GetOrdinal(int number)
     {
         if (number % 100 == 11 || number % 100 == 12 || number % 100 == 13)
+        {
             return $"{number}th";
+        }
 
         return (number % 10) switch
         {

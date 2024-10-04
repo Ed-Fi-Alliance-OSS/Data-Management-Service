@@ -47,11 +47,12 @@ internal class ApiService(
             var steps = new List<IPipelineStep>();
             steps.AddRange(
                 [
-                    new CoreLoggingMiddleware(_logger),
+                    new CoreExceptionLoggingMiddleware(_logger),
                     new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
                     new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                     new ParsePathMiddleware(_logger),
                     new ParseBodyMiddleware(_logger),
+                    new RequestDataBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
                     new DuplicatePropertiesMiddleware(_logger),
                     new ValidateEndpointMiddleware(_logger),
                     new RejectResourceIdentifierMiddleware(_logger),
@@ -87,6 +88,7 @@ internal class ApiService(
                     ),
                 ]
             );
+
             return new PipelineProvider(steps);
         });
 
@@ -98,7 +100,7 @@ internal class ApiService(
             () =>
                 new(
                     [
-                        new CoreLoggingMiddleware(_logger),
+                        new CoreExceptionLoggingMiddleware(_logger),
                         new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
                         new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                         new ParsePathMiddleware(_logger),
@@ -120,7 +122,7 @@ internal class ApiService(
             () =>
                 new(
                     [
-                        new CoreLoggingMiddleware(_logger),
+                        new CoreExceptionLoggingMiddleware(_logger),
                         new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
                         new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                         new ParsePathMiddleware(_logger),
@@ -144,11 +146,12 @@ internal class ApiService(
             var steps = new List<IPipelineStep>();
             steps.AddRange(
                 [
-                    new CoreLoggingMiddleware(_logger),
+                    new CoreExceptionLoggingMiddleware(_logger),
                     new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
                     new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                     new ParsePathMiddleware(_logger),
                     new ParseBodyMiddleware(_logger),
+                    new RequestDataBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
                     new DuplicatePropertiesMiddleware(_logger),
                     new ValidateEndpointMiddleware(_logger),
                 ]
@@ -195,7 +198,7 @@ internal class ApiService(
             () =>
                 new(
                     [
-                        new CoreLoggingMiddleware(_logger),
+                        new CoreExceptionLoggingMiddleware(_logger),
                         new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
                         new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                         new ParsePathMiddleware(_logger),
