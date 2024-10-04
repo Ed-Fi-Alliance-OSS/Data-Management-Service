@@ -22,6 +22,10 @@ public static partial class UtilityService
     [GeneratedRegex(@"^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")]
     public static partial Regex Uuid4Regex();
 
+    //Prevent string contain space characters
+    [GeneratedRegex("(\"(?:[^\"\\\\]|\\\\.)*\")|\\s+")]
+    public static partial Regex MinifyRegex();
+
     //Use to avoid HTML escaping in output message that we construct
     public static readonly JsonSerializerOptions SerializerOptions =
         new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };

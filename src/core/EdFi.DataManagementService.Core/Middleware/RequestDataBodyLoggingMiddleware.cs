@@ -4,20 +4,15 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
-internal partial class RequestDataBodyLoggingMiddleware(ILogger _logger, bool _maskRequestBodyInLogs)
-    : IPipelineStep
+internal class RequestDataBodyLoggingMiddleware(ILogger _logger, bool _maskRequestBodyInLogs) : IPipelineStep
 {
     private const string MessageBody =
         "Incoming {Method} request to {Path} with body structure: {Body} - {TraceId}";
-
-    [GeneratedRegex("(\"(?:[^\"\\\\]|\\\\.)*\")|\\s+")]
-    private static partial Regex MinifyRegex();
 
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
@@ -56,7 +51,7 @@ internal partial class RequestDataBodyLoggingMiddleware(ILogger _logger, bool _m
 
     private static string MinifyingInput(string input)
     {
-        return MinifyRegex().Replace(input, "$1");
+        return UtilityService.MinifyRegex().Replace(input, "$1");
     }
 
     private static string MaskRequestBody(string body, ILogger logger)
