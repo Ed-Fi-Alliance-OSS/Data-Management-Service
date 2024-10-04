@@ -4,22 +4,20 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
-using static EdFi.DataManagementService.Core.UtilityService;
 
 namespace EdFi.DataManagementService.Core.Middleware
 {
     internal class ParseBodyMiddleware(ILogger _logger) : IPipelineStep
     {
-        public static string GenerateFrontendErrorResponse(string errorDetail, TraceId traceId)
+        private static JsonNode GenerateFrontendErrorResponse(string errorDetail, TraceId traceId)
         {
-            string[] errors = { errorDetail };
+            string[] errors = [errorDetail];
 
             var response = ForBadRequest(
                 "The request could not be processed. See 'errors' for details.",
@@ -28,14 +26,14 @@ namespace EdFi.DataManagementService.Core.Middleware
                 errors
             );
 
-            return JsonSerializer.Serialize(response, SerializerOptions);
+            return response;
         }
 
-        public static string GenerateFrontendValidationErrorResponse(string errorDetail, TraceId traceId)
+        private static JsonNode GenerateFrontendValidationErrorResponse(string errorDetail, TraceId traceId)
         {
-            var validationErrors = new Dictionary<string, string[]>();
+            Dictionary<string, string[]> validationErrors = new();
 
-            var value = new List<string> { errorDetail };
+            List<string> value = [errorDetail];
             validationErrors.Add("$.", value.ToArray());
 
             var response = ForDataValidation(
@@ -45,7 +43,7 @@ namespace EdFi.DataManagementService.Core.Middleware
                 []
             );
 
-            return JsonSerializer.Serialize(response, SerializerOptions);
+            return response;
         }
 
         public async Task Execute(PipelineContext context, Func<Task> next)
