@@ -47,7 +47,7 @@ internal class ApiService(
             var steps = new List<IPipelineStep>();
             steps.AddRange(
                 [
-                    new CoreLoggingMiddleware(_logger),
+                    new CoreExceptionLoggingMiddleware(_logger),
                     new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
                     new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                     new ParsePathMiddleware(_logger),
@@ -100,7 +100,7 @@ internal class ApiService(
             () =>
                 new(
                     [
-                        new CoreLoggingMiddleware(_logger),
+                        new CoreExceptionLoggingMiddleware(_logger),
                         new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
                         new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                         new ParsePathMiddleware(_logger),
@@ -122,7 +122,7 @@ internal class ApiService(
             () =>
                 new(
                     [
-                        new CoreLoggingMiddleware(_logger),
+                        new CoreExceptionLoggingMiddleware(_logger),
                         new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
                         new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                         new ParsePathMiddleware(_logger),
@@ -146,7 +146,7 @@ internal class ApiService(
             var steps = new List<IPipelineStep>();
             steps.AddRange(
                 [
-                    new CoreLoggingMiddleware(_logger),
+                    new CoreExceptionLoggingMiddleware(_logger),
                     new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
                     new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                     new ParsePathMiddleware(_logger),
@@ -198,7 +198,7 @@ internal class ApiService(
             () =>
                 new(
                     [
-                        new CoreLoggingMiddleware(_logger),
+                        new CoreExceptionLoggingMiddleware(_logger),
                         new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
                         new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                         new ParsePathMiddleware(_logger),

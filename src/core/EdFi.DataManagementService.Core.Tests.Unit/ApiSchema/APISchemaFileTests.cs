@@ -22,8 +22,8 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.ApiSchema;
 /// <summary>
 /// APISchemaFileTests contain tests to cover all errors that may arise from the "ResourceSchema.cs" file due to invalid resource schemas.
 /// Within the "InvalidResourceSchemas.json" file, we have curated a collection of resource schemas representing various invalid use cases.
-/// On the frontend layer, there is no observable difference. The "CoreLoggingMiddleware" is to catch specific errors and consistently throw an
-/// "Internal server error." However, the specific error will be logged.Through these various tests,
+/// On the frontend layer, there is no observable difference. The "CoreExceptionLoggingMiddleware" is to catch specific errors and consistently
+/// throw an "Internal server error." However, the specific error will be logged.Through these various tests,
 /// we are ensuring that invalid resource schemas are appropriately captured and throws error.
 /// </summary>
 [TestFixture]
