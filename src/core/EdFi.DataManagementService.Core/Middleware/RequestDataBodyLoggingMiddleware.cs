@@ -23,7 +23,7 @@ internal class RequestDataBodyLoggingMiddleware(ILogger _logger, bool _maskReque
                 context.FrontendRequest.TraceId
             );
 
-            string body = MinifyingInput(context.FrontendRequest.Body);
+            string body = UtilityService.MinifyRegex().Replace(context.FrontendRequest.Body, "$1");
 
             if (!_maskRequestBodyInLogs)
             {
@@ -47,11 +47,6 @@ internal class RequestDataBodyLoggingMiddleware(ILogger _logger, bool _maskReque
             }
         }
         await next();
-    }
-
-    private static string MinifyingInput(string input)
-    {
-        return UtilityService.MinifyRegex().Replace(input, "$1");
     }
 
     private static string MaskRequestBody(string body, ILogger logger)
