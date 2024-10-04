@@ -4,9 +4,9 @@ The purpose of this document is to provide the basic steps for configuring
 Keycloak locally using docker-compose.
 
 > [!WARNING]
-> **NOT FOR PRODUCTION USE!** This configuration contains default passwords that
-> are exposed within the repository and should never be used in real-world
-> scenarios. Please exercise extreme caution!
+> **NOT FOR PRODUCTION USE!** This configuration contains default
+> passwords that are exposed within the repository and should never be used in
+> real-world scenarios. Please exercise extreme caution!
 
 ## Keycloak setup steps
 
@@ -46,7 +46,8 @@ Keycloak locally using docker-compose.
 
  2. Click "Create Realm" to create a new one.
 
- 3. Enter a unique Realm Name (e.g., ed-fi) and click "Enabled", then click "Create".
+ 3. Enter a unique Realm Name (e.g., ed-fi) and click "Enabled", then click
+    "Create".
 
     ![alt text](./images/image-5.png)
 
@@ -72,8 +73,8 @@ Keycloak locally using docker-compose.
     ![alt text](./images/image-7.png)
 
 3. In General settings, make sure to select OpenID Connect for Client type and
-   enter the Client ID (`DmsConfigurationService`). This will be the identifier for
-   your application.
+   enter the Client ID (`DmsConfigurationService`). This will be the identifier
+   for your application.
 
     ![alt text](./images/image-8.png)
 
@@ -82,13 +83,39 @@ Keycloak locally using docker-compose.
 
     ![alt text](./images/image-9.png)
 
-5. In Login settings, enter the Root URL of your application (e.g., <http://localhost:5126>)
+5. In Login settings, enter the Root URL of your application (e.g.,
+   <http://localhost:5126>)
 
     ![alt text](./images/image-10.png)
 
 6. Click Save
 
     ![alt text](./images/image-11.png)
+
+## Time to update Configuration Service appsettings
+
+1. Copy your client secret
+2. Make sure you're in the edfi realm
+3. Click Clients in the left sidebar
+4. Select `DmsConfigurationService`
+5. Click Credentials
+6. Copy the Client secret
+7. Update Configuration Service IdentitySettings section:
+
+   ```js
+    ServiceRole: "config-service-app" (Service role created earlier)
+    Authority: "http://your-keycloak-url:port/realms/edfi"
+    IdentityServer: "http://your-keycloak-url:port"
+    Realm: "ed-fi"
+    ClientId: "DmsConfigurationService"
+    ClientSecret: <value-you-copied>
+    RoleClaimType: "http://schemas\\.microsoft\\.com/ws/2008/06/identity/claims/role"
+    Leave the rest as-are
+   ```
+
+    After updating the IdentitySettings values, you can use the connect/register
+    endpoint to register the client. To retrieve the access token, use the
+    connect/token endpoint.
 
 ## Shutting down the Keycloak container
 
