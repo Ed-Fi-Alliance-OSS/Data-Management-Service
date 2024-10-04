@@ -46,7 +46,7 @@ Keycloak locally using docker-compose.
 
  2. Click "Create Realm" to create a new one.
 
- 3. Enter a unique Realm Name (e.g., ed-fi) and click "Enabled", then click
+ 3. Enter a unique Realm Name (e.g., edfi) and click "Enabled", then click
     "Create".
 
     ![alt text](./images/image-5.png)
@@ -100,22 +100,41 @@ Keycloak locally using docker-compose.
 4. Select `DmsConfigurationService`
 5. Click Credentials
 6. Copy the Client secret
-7. Update Configuration Service IdentitySettings section:
+7. Update DMS Configuration Service IdentitySettings section on appsettings.json:
 
    ```js
-    ServiceRole: "config-service-app" (Service role created earlier)
-    Authority: "http://your-keycloak-url:port/realms/edfi"
+    ServiceRole: "config-service-app" (Service realm role created earlier)
+    Authority: "http://your-keycloak-url:port/realms/<your-realm>"
     IdentityServer: "http://your-keycloak-url:port"
-    Realm: "ed-fi"
+    Realm: "edfi"(your realm)
     ClientId: "DmsConfigurationService"
     ClientSecret: <value-you-copied>
     RoleClaimType: "http://schemas\\.microsoft\\.com/ws/2008/06/identity/claims/role"
     Leave the rest as-are
    ```
 
+    >[!NOTE]
+    >To test the connect/register endpoint, make sure the AllowRegistration flag
+    >is set to true in the IdentitySettings.
+
     After updating the IdentitySettings values, you can use the connect/register
     endpoint to register the client. To retrieve the access token, use the
     connect/token endpoint.
+
+    ```js
+    // connect/register sample request payload
+    {    
+    "clientId":"CSClientApp",
+    "clientSecret":"test1@Secret",
+    "displayName":"CSClientApp"
+    }
+    
+    // connect/token sample request payload
+    {    
+    "clientId":"CSClientApp",
+    "clientSecret":"test1@Secret"
+    }
+    ```
 
 ## Shutting down the Keycloak container
 
