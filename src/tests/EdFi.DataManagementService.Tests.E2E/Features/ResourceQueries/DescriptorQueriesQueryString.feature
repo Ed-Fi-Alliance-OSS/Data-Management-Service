@@ -10,6 +10,7 @@ Feature: Query String handling for GET requests for Descriptor Queries
                   | descriptorValue                                           |
                   | uri://ed-fi.org/AbsenceEventCategoryDescriptor#Sick Leave |
 
+        @API-115
         Scenario: 01 Verify existing descriptors can be retrieved successfully
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors"
              Then it should respond with 200
@@ -26,6 +27,7 @@ Feature: Query String handling for GET requests for Descriptor Queries
                     ]
                   """
 
+        @API-116
         Scenario: 05 Ensure clients can retrieve a descriptor by requesting through a valid codeValue
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/?codeValue=Sick+Leave"
              Then it should respond with 200
@@ -42,6 +44,7 @@ Feature: Query String handling for GET requests for Descriptor Queries
                   ]
                   """
 
+        @API-117
         Scenario: 06 Ensure clients cannot retrieve a descriptor by requesting through a non existing codeValue
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors?codeValue=Test"
              Then it should respond with 200
@@ -49,6 +52,8 @@ Feature: Query String handling for GET requests for Descriptor Queries
                   """
                   []
                   """
+
+        @API-118
         Scenario: 07 Ensure clients can retrieve a descriptor by requesting through a valid namespace
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors?namespace=uri://ed-fi.org/AbsenceEventCategoryDescriptor#Sick Leave"
              Then it should respond with 200
@@ -65,6 +70,7 @@ Feature: Query String handling for GET requests for Descriptor Queries
                   ]
                   """
 
+        @API-119
         Scenario: 08 Ensure clients cannot retrieve a descriptor by requesting through a non existing namespace
              When a GET request is made to "/ed-fi/disabilityDescriptors?namespace=uri://ed-fi.org/DisabilityDescriptor#Fake"
              Then it should respond with 200

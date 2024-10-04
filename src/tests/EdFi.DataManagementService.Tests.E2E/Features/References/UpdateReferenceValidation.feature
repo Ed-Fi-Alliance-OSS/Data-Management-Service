@@ -15,6 +15,7 @@ Feature: Update Reference Validation
                   | schoolYear | currentSchoolYear | schoolYearDescription |
                   | 2022       | true              | 2021-2022             |
 
+        @API-110
         Scenario: 01 Ensure clients cannot update a resource with a Descriptor that does not exist
             Given the system has these "localEducationAgencies" references
                   | localEducationAgencyId | nameOfInstitution | localEducationAgencyCategoryDescriptor                                           | categories                                                                                                                             |
@@ -47,6 +48,7 @@ Feature: Update Reference Validation
                   }
                   """
 
+        @API-111
         Scenario: 02 Ensure clients cannot update a resource missing a direct reference
             Given the system has these "studentEducationOrganizationAssociations" references
                   | educationOrganizationReference     | studentReference             |
@@ -78,6 +80,7 @@ Feature: Update Reference Validation
                   }
                   """
 
+        @API-112
         Scenario: 03 Ensure clients cannot update a resource using a wrong reference
             Given the system has these "Staffs" references
                   | staffUniqueId | firstName | lastSurname |
@@ -109,6 +112,7 @@ Feature: Update Reference Validation
                   }
                   """
 
+        @API-113
         Scenario: 04 Ensure clients cannot update a resource that uses an invalid school year reference
             Given the system has these "graduationPlans" references
                   | graduationPlanTypeDescriptor                                                | educationOrganizationReference     | graduationSchoolYearTypeReference | totalRequiredCredits |
@@ -143,7 +147,7 @@ Feature: Update Reference Validation
 
         # There is a problem when trying to save a section It appears that the reference to CourseOffering is not being assembled properly.
         #[DMS-80]
-        @ignore
+        @API-114 @ignore
         Scenario: 05 Ensure clients cannot update a resource that is incorrect from a deep reference
             Given the system has these "courses"
                   | courseCode | identificationCodes                                                                                                                                | educationOrganizationReference     | courseTitle | numberOfParts |

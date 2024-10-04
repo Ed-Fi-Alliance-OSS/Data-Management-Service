@@ -4,6 +4,7 @@ Feature: Create a Descriptor
             Given the Data Management Service must receive a token issued by "http://localhost"
               And user is already authorized
 
+        @API-006
         Scenario: 01 Ensure clients can create a descriptor
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -36,6 +37,7 @@ Feature: Create a Descriptor
                   }
                   """
 
+        @API-007
         Scenario: 02 Ensure clients cannot create a descriptor using a value that is too long
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -66,6 +68,7 @@ Feature: Create a Descriptor
                     }
                   """
 
+        @API-008
         Scenario: 03 Ensure clients cannot create a descriptor omitting any of the required values
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -97,7 +100,7 @@ Feature: Create a Descriptor
                   """
 
         # Ignored because we do not have namespace security for descriptors yet. DMS-81
-        @ignore
+        @API-009 @ignore
         Scenario: 04 Post a Descriptor using an invalid namespace
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -120,6 +123,7 @@ Feature: Create a Descriptor
                     }
                   """
 
+        @API-010
         Scenario: 05 Post using an empty JSON body
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -149,7 +153,8 @@ Feature: Create a Descriptor
                       "errors": []
                     }
                   """
-        
+
+        @API-011
         Scenario: 06 Ensure clients cannot create a descriptor only using spaces for the required attributes
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -183,6 +188,7 @@ Feature: Create a Descriptor
                   }
                   """
 
+        @API-012
         Scenario: 07 Ensure clients cannot create a descriptor with leading spaces in required attributes
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -217,6 +223,7 @@ Feature: Create a Descriptor
                   }
                   """
 
+        @API-013
         Scenario: 08 Ensure clients cannot create a descriptor with trailing spaces in required attributes
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -251,6 +258,7 @@ Feature: Create a Descriptor
                   }
                   """
 
+        @API-014
         Scenario: 09 Post a new descriptor with an extra property (overpost)
             Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -278,6 +286,7 @@ Feature: Create a Descriptor
                         }
                   """
 
+        @API-015
         Scenario: 10 Post a new descriptor with invalid JSON (trailing comma)
             Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -307,6 +316,7 @@ Feature: Create a Descriptor
                   }
                   """
 
+        @API-016
         Scenario: 11 Create a descriptor with forbidden id property
             # The ID used does not need to exist: any ID is invalid here
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
@@ -322,7 +332,7 @@ Feature: Create a Descriptor
              Then it should respond with 400
               And the response body is
                   """
-                  { 
+                  {
                     "detail": "The request data was constructed incorrectly.",
                     "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
@@ -334,6 +344,8 @@ Feature: Create a Descriptor
                     ]
                   }
                   """
+
+        @API-017
         Scenario: 12 Post a new descriptor with required attributes only
             Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -354,6 +366,7 @@ Feature: Create a Descriptor
                         }
                   """
 
+        @API-018
         Scenario: 13 Create a descriptor with a required, non-identity, property's value containing leading and trailing white spaces
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -366,6 +379,7 @@ Feature: Create a Descriptor
                   """
              Then it should respond with 201
 
+        @API-019
         Scenario: 14 Create a descriptor with optional property's value containing only white spaces
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -389,6 +403,7 @@ Feature: Create a Descriptor
                     }
                   """
 
+        @API-020
         Scenario: 15 Post an existing descriptor without changes
             Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
@@ -420,6 +435,7 @@ Feature: Create a Descriptor
                         }
                   """
 
+        @API-021
         Scenario: 16 Create a descriptor with duplicate properties
              # The id value should be replaced with the resource created in the Background section
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with

@@ -15,6 +15,7 @@ Feature: Validate the reference of descriptors when creating resources
                   | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
                   | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
 
+        @API-089
         Scenario: 01 User can not create a resource when descriptor doesn't exist
              When a POST request is made to "/ed-fi/localEducationAgencies" with
                   """
@@ -50,6 +51,7 @@ Feature: Validate the reference of descriptors when creating resources
                   }
                   """
 
+        @API-090
         Scenario: 02 User can not upsert a resource using a descriptor that does not exist
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -79,6 +81,7 @@ Feature: Validate the reference of descriptors when creating resources
                   }
                   """
 
+        @API-091
         Scenario: 03 User can not update a resource using a descriptor that does not exist
             Given a POST request is made to "/ed-fi/localEducationAgencies" with
                   """
@@ -128,6 +131,7 @@ Feature: Validate the reference of descriptors when creating resources
                   }
                   """
 
+        @API-092
         Scenario: 04 User can create a resource when descriptor exists
              When a POST request is made to "/ed-fi/localEducationAgencies" with
                   """
@@ -144,6 +148,7 @@ Feature: Validate the reference of descriptors when creating resources
                   """
              Then it should respond with 201 or 200
 
+        @API-093
         Scenario: 05 User can update a resource when descriptor exists
             Given a POST request is made to "/ed-fi/localEducationAgencies" with
                   """
@@ -174,6 +179,7 @@ Feature: Validate the reference of descriptors when creating resources
                   """
              Then it should respond with 204
 
+        @API-094
         Scenario: 06 User receives 400 instead of 409 error when both descriptor and reference are invalid
              When a POST request is made to "/ed-fi/studentProgramAssociations" with
                   """

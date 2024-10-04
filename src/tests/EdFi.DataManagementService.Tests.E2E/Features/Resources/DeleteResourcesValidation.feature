@@ -17,6 +17,7 @@ Feature: Resources "Delete" Operation validations
                     }
                   """
 
+        @API-176
         Scenario: 01 Verify response when deleting a referenced school
             Given the system has these "schools" references
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
@@ -45,6 +46,7 @@ Feature: Resources "Delete" Operation validations
                     }
                   """
 
+        @API-177
         Scenario: 02 Verify response when deleting a referenced schoolyeartype
             Given the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
@@ -73,6 +75,7 @@ Feature: Resources "Delete" Operation validations
                     }
                   """
 
+        @API-178
         Scenario: 03 Verify response when deleting a referenced student
             Given the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
@@ -101,6 +104,7 @@ Feature: Resources "Delete" Operation validations
                     }
                   """
 
+        @API-179
         Scenario: 04 Verify response when deleting a student with more than one reference
             Given the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
@@ -137,7 +141,7 @@ Feature: Resources "Delete" Operation validations
                         "errors": []
                     }
                   """
-        @addwait
+        @API-180 @addwait
         Scenario: 05 Verify response when deleting from opensearch
             Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """

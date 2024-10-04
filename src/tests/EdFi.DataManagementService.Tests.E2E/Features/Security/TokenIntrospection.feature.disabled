@@ -16,22 +16,22 @@ Feature: JWT Token Introspection
             Given the Data Management Service must receive a token issued by "http://localhost"
 
     Rule: Discovery API does not require an authorization token
-        @ignore
+        @API-213 @ignore
         Scenario: Accept root endpoint requests that do not contain a token
              When sending a GET request without headers to "/"
              Then it should respond with 200
 
-        @ignore
+        @API-214 @ignore
         Scenario: Accept dependencies endpoint requests that do not contain a token
              When sending a GET request without headers to "/metadata/dependencies"
              Then it should respond with 200
 
-        @ignore
+        @API-215 @ignore
         Scenario: Accept OpenAPI specifications endpoint requests that do not contain a token
              When sending a GET request without headers to "/metadata/specifications"
              Then it should respond with 200
 
-        @ignore
+        @API-216 @ignore
         Scenario: Accept XSD endpoint requests that do not contain a token
              When sending a GET request without headers to "/metadata/xsd"
              Then it should respond with 200
@@ -39,28 +39,28 @@ Feature: JWT Token Introspection
         # NOTE: deliberately skipping the OpenAPI and XSD files because of their large size
 
     Rule: Resource API does not accept requests without a token
-        @ignore
+        @API-217 @ignore
         Scenario: Reject a Resource endpoint GET request that does not contain a token
              When sending a GET request without headers to "/ed-fi/academicWeeks"
              Then it should respond with 401
 
-        @ignore
+        @API-218 @ignore
         Scenario: Reject a Resource endpoint POST request that does not contain a token
              When sending a POST request without headers to "/ed-fi/academicWeeks"
              Then it should respond with 401
 
-        @ignore
+        @API-219 @ignore
         Scenario: Reject a Resource endpoint PUT request that does not contain a token
              When sending a PUT request without headers to "/ed-fi/academicWeeks/replaceWithAMoreRealisticId"
              Then it should respond with 401
 
-        @ignore
+        @API-220 @ignore
         Scenario: Reject a Resource endpoint DELETE request that does not contain a token
              When sending a DELETE request without headers to "/ed-fi/academicWeeks/replaceWithAMoreRealisticId"
              Then it should respond with 401
 
     Rule: Resource API does not accept requests with an invalid token
-        @ignore
+        @API-221 @ignore
         Scenario: Reject a Resource endpoint GET request where the token is from the wrong issuer
             Given a JSON web token with
                   | issuer              | expiresAt  |
@@ -69,7 +69,7 @@ Feature: JWT Token Introspection
              When sending a GET request with a token to "/ed-fi/academicWeeks"
              Then it should respond with 401
 
-        @ignore
+        @API-222 @ignore
         Scenario: Reject a Resource endpoint POST request where the token is from the wrong issuer
             Given a JSON web token with
                   | issuer              | expiresAt  |
@@ -78,7 +78,7 @@ Feature: JWT Token Introspection
              When sending a POST request with a token to "/ed-fi/academicWeeks"
              Then it should respond with 401
 
-        @ignore
+        @API-223 @ignore
         Scenario: Reject a Resource endpoint PUT request where the token is from the wrong issuer
             Given a JSON web token with
                   | issuer              | expiresAt  |
@@ -87,7 +87,7 @@ Feature: JWT Token Introspection
              When sending a PUT request with a token to "/ed-fi/academicWeeks/replaceWithAMoreRealisticId"
              Then it should respond with 401
 
-        @ignore
+        @API-224 @ignore
         Scenario: Reject a Resource endpoint DELETE request where the token is from the wrong issuer
             Given a JSON web token with
                   | issuer              | expiresAt  |
@@ -96,7 +96,7 @@ Feature: JWT Token Introspection
              When sending a DELETE request with a token to "/ed-fi/academicWeeks/replaceWithAMoreRealisticId"
              Then it should respond with 401
 
-        @ignore
+        @API-225 @ignore
         Scenario: Reject a Resource endpoint GET request where the token is expired
             Given a JSON web token with
                   | issuer           | expiresAt  |
@@ -105,7 +105,7 @@ Feature: JWT Token Introspection
              When sending a GET request with a token to "/ed-fi/academicWeeks"
              Then it should respond with 401
 
-        @ignore
+        @API-226 @ignore
         Scenario: Reject a Resource endpoint POST request where the token is expired
             Given a JSON web token with
                   | issuer           | expiresAt  |
@@ -114,7 +114,7 @@ Feature: JWT Token Introspection
              When sending a POST request with a token to "/ed-fi/academicWeeks"
              Then it should respond with 401
 
-        @ignore
+        @API-227 @ignore
         Scenario: Reject a Resource endpoint PUT request where the token is expired
             Given a JSON web token with
                   | issuer           | expiresAt  |
@@ -123,7 +123,7 @@ Feature: JWT Token Introspection
              When sending a PUT request with a token to "/ed-fi/academicWeeks/replaceWithAMoreRealisticId"
              Then it should respond with 401
 
-        @ignore
+        @API-228 @ignore
         Scenario: Reject a Resource endpoint DELETE request where the token is expired
             Given a JSON web token with
                   | issuer           | expiresAt  |
@@ -133,7 +133,7 @@ Feature: JWT Token Introspection
              Then it should respond with 401
 
     Rule: Resource API accepts a valid token
-        @ignore
+        @API-229 @ignore
         Scenario: Accept a Resource endpoint GET request where the token is valid
             Given a JSON web token with
                   | issuer           | expiresAt  |
@@ -142,7 +142,7 @@ Feature: JWT Token Introspection
              When sending a GET request with a token to "/ed-fi/academicWeeks"
              Then it should respond with 200
 
-        @ignore
+        @API-230 @ignore
         Scenario: Accept a Resource endpoint POST request where the token is valid
             Given a JSON web token with
                   | issuer           | expiresAt  |
@@ -152,7 +152,7 @@ Feature: JWT Token Introspection
              # The request is missing a body; getting a 400 instead of a 401 proves that the token was accepted
              Then it should respond with 400
 
-        @ignore
+        @API-231 @ignore
         Scenario: Accept a Resource endpoint PUT request where the token is valid
             Given a JSON web token with
                   | issuer           | expiresAt  |
@@ -162,7 +162,7 @@ Feature: JWT Token Introspection
              # The URL is invalid; getting a 404 instead of a 401 proves that the token was accepted
              Then it should respond with 404
 
-        @ignore
+        @API-232 @ignore
         Scenario: Accept a Resource endpoint DELETE request where the token is valid
             Given a JSON web token with
                   | issuer           | expiresAt  |

@@ -16,7 +16,8 @@ Feature: Read a Descriptor
                   """
              Then it should respond with 201 or 200
 
-        Scenario: 02 Verify retrieving a single descriptor by ID
+        @API-027
+        Scenario: 01 Verify retrieving a single descriptor by ID
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 200
               And the response body is
@@ -32,11 +33,13 @@ Feature: Read a Descriptor
                     }
                   """
 
-        Scenario: 03 Verify response code 404 when ID does not exist
+        @API-028
+        Scenario: 02 Verify response code 404 when ID does not exist
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/124c8513-fade-4ce2-ab71-0e40e148de5b"
              Then it should respond with 404
 
-        Scenario: 04 Read a descriptor that only contains required attributes
+        @API-029
+        Scenario: 03 Read a descriptor that only contains required attributes
             Given a POST request is made to "/ed-fi/disabilityDescriptors" with
                   """
                     {
@@ -57,7 +60,8 @@ Feature: Read a Descriptor
                   }
                   """
 
-        Scenario: 06 Ensure clients cannot retrieve a descriptor by requesting through a non existing codeValue
+        @API-030
+        Scenario: 04 Ensure clients cannot retrieve a descriptor by requesting through a non existing codeValue
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors?codeValue=Test"
              Then it should respond with 200
               And the response body is
@@ -65,7 +69,8 @@ Feature: Read a Descriptor
                   []
                   """
 
-        Scenario: 08 Ensure clients cannot retrieve a descriptor by requesting through a non existing namespace
+        @API-031
+        Scenario: 05 Ensure clients cannot retrieve a descriptor by requesting through a non existing namespace
              When a GET request is made to "/ed-fi/disabilityDescriptors?namespace=uri://ed-fi.org/DisabilityDescriptor#Fake"
              Then it should respond with 200
               And the response body is
@@ -73,7 +78,8 @@ Feature: Read a Descriptor
                   []
                   """
 
-        Scenario: 03 Verify response code 404 when ID is not valid
+        @API-032
+        Scenario: 06 Verify response code 404 when ID is not valid
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/00112233445566"
              Then it should respond with 400
               And the response body is
