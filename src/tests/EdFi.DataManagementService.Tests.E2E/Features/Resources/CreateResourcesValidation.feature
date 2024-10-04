@@ -539,7 +539,7 @@ Feature: Resources "Create" Operation validations
                   """
              Then it should respond with 201 or 200
 
-        @DMS-170 @POST
+        @API-170 @POST
         Scenario: 20 Create a document with just spaces in required fields (Resource)
              When a POST request is made to "/ed-fi/students" with
                   """
