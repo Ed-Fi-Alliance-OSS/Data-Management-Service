@@ -64,8 +64,8 @@ Keycloak locally using docker-compose.
 
 ## Creating a Configuration Service Client
 
->[!NOTE]
->Make sure you are in edfi realm
+> [!NOTE]
+> Make sure you are in edfi realm
 
 1. From the left menu, select Clients.
 2. Click Create client to add a new client.
@@ -92,6 +92,19 @@ Keycloak locally using docker-compose.
 
     ![alt text](./images/image-11.png)
 
+7. Once the client is created, you will be directed to the `Client details` page,
+   where you can view the client information.
+
+8. Assigning the 'realm admin' role to the created client
+   (`DmsConfigurationService`) is a necessary step. In the `Client details`
+   page, go to the `Service account roles` tab, click Assign role, select 'realm
+   admin', and then click Assign. This will authorize the client to manage the
+   realm.
+
+    ![alt text](./images/image-15.png)
+
+    ![alt text](./images/image-16.png)
+
 ## Time to update Configuration Service appsettings
 
 1. Copy your client secret
@@ -113,9 +126,9 @@ Keycloak locally using docker-compose.
     Leave the rest as-are
    ```
 
-    >[!NOTE]
-    >To test the connect/register endpoint, make sure the AllowRegistration flag
-    >is set to true in the IdentitySettings.
+    > [!NOTE]
+    > To test the connect/register endpoint, make sure the AllowRegistration flag
+    > is set to true in the IdentitySettings.
 
     After updating the IdentitySettings values, you can use the connect/register
     endpoint to register the client. To retrieve the access token, use the
