@@ -33,9 +33,14 @@ internal static class DescriptorExtractor
         foreach (DocumentPath documentPath in resourceSchema.DocumentPaths)
         {
             if (!documentPath.IsReference)
+            {
                 continue;
+            }
+
             if (!documentPath.IsDescriptor)
+            {
                 continue;
+            }
 
             // Extract the descriptor URIs with path from the document
             JsonPathAndValue[] descriptorUrisWithPath = documentBody
@@ -44,7 +49,9 @@ internal static class DescriptorExtractor
 
             // Path can be empty if descriptor reference is optional
             if (descriptorUrisWithPath.Length == 0)
+            {
                 continue;
+            }
 
             BaseResourceInfo resourceInfo =
                 new(documentPath.ProjectName, documentPath.ResourceName, documentPath.IsDescriptor);

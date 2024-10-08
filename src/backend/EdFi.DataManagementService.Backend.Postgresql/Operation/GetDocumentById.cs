@@ -45,7 +45,6 @@ public class GetDocumentById(ISqlAction _sqlAction, ILogger<GetDocumentById> _lo
                 PartitionKeyFor(getRequest.DocumentUuid),
                 connection,
                 transaction,
-                LockOption.None,
                 getRequest.TraceId
             );
 
@@ -60,6 +59,11 @@ public class GetDocumentById(ISqlAction _sqlAction, ILogger<GetDocumentById> _lo
                 document.LastModifiedAt,
                 document.LastModifiedTraceId
             );
+        }
+        catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.DeadlockDetected)
+        {
+            _logger.LogDebug(pe, "Transaction deadlock on query - {TraceId}", getRequest.TraceId);
+            return new GetResult.GetFailureRetryable();
         }
         catch (Exception ex)
         {

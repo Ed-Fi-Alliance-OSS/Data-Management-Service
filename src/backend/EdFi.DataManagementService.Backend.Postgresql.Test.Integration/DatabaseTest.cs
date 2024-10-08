@@ -126,7 +126,7 @@ public abstract class DatabaseTest : DatabaseTestBase
 
     protected static SqlAction CreateSqlAction()
     {
-        return new SqlAction(NullLogger<SqlAction>.Instance);
+        return new SqlAction();
     }
 
     protected static UpsertDocument CreateUpsert()

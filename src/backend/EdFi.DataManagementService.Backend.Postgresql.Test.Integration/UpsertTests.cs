@@ -323,19 +323,19 @@ public class UpsertTests : DatabaseTest
         }
 
         [Test]
-        public void It_should_be_a_successful_update_for_2nd_transaction_due_to_retry()
+        public void It_should_be_a_write_conflict_for_2nd_transaction()
         {
-            _upsertResult2!.Should().BeOfType<UpsertResult.UpdateSuccess>();
+            _upsertResult2!.Should().BeOfType<UpsertResult.UpsertFailureWriteConflict>();
         }
 
         [Test]
-        public async Task It_should_be_the_2nd_updated_document_found_by_get()
+        public async Task It_should_be_the_1st_updated_document_found_by_get()
         {
             IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
             GetResult? getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
 
             (getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
-            (getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":8");
+            (getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":7");
         }
     }
 

@@ -226,34 +226,6 @@ public class UpdateByIdHandlerTests
     }
 
     [TestFixture]
-    public class Given_A_Repository_That_Returns_Failure_Cascade_Required : UpdateByIdHandlerTests
-    {
-        internal class Repository : NotImplementedDocumentStoreRepository
-        {
-            public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
-            {
-                return Task.FromResult<UpdateResult>(new UpdateFailureCascadeRequired());
-            }
-        }
-
-        private readonly PipelineContext context = No.PipelineContext();
-
-        [SetUp]
-        public async Task Setup()
-        {
-            IPipelineStep updateByIdHandler = Handler(new Repository());
-            await updateByIdHandler.Execute(context, NullNext);
-        }
-
-        [Test]
-        public void It_has_the_correct_response()
-        {
-            context.FrontendResponse.StatusCode.Should().Be(400);
-            context.FrontendResponse.Body.Should().BeNull();
-        }
-    }
-
-    [TestFixture]
     public class Given_A_Repository_That_Returns_Unknown_Failure : UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository

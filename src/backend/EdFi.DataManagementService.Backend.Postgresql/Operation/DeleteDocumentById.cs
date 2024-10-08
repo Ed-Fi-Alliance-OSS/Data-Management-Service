@@ -69,6 +69,11 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
             _logger.LogDebug(pe, "Transaction conflict on DeleteById - {TraceId}", deleteRequest.TraceId);
             return new DeleteResult.DeleteFailureWriteConflict();
         }
+        catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.DeadlockDetected)
+        {
+            _logger.LogDebug(pe, "Transaction deadlock on DeleteById - {TraceId}", deleteRequest.TraceId);
+            return new DeleteResult.DeleteFailureWriteConflict();
+        }
         catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.ForeignKeyViolation)
         {
             // Restore transaction save point to continue using transaction
@@ -79,7 +84,6 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
                 documentPartitionKey,
                 connection,
                 transaction,
-                LockOption.BlockUpdateDelete,
                 deleteRequest.TraceId
             );
             _logger.LogDebug(pe, "Foreign key violation on Delete - {TraceId}", deleteRequest.TraceId);

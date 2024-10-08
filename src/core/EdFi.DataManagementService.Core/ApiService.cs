@@ -35,7 +35,7 @@ internal class ApiService(
     IEqualityConstraintValidator _equalityConstraintValidator,
     ILogger<ApiService> _logger,
     IOptions<AppSettings> _appSettings,
-    [FromKeyedServices("unknownFailureCircuitBreaker")] ResiliencePipeline _resiliencePipeline
+    [FromKeyedServices("backendResiliencePipeline")] ResiliencePipeline _resiliencePipeline
 ) : IApiService
 {
     /// <summary>

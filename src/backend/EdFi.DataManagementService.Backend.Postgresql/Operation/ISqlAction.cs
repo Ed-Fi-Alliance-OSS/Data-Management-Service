@@ -24,7 +24,6 @@ public interface ISqlAction
         PartitionKey partitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        LockOption lockOption,
         TraceId traceId
     );
 
@@ -33,7 +32,6 @@ public interface ISqlAction
         PartitionKey partitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        LockOption lockOption,
         TraceId traceId
     );
 
@@ -75,7 +73,6 @@ public interface ISqlAction
         PartitionKey referentialPartitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        LockOption lockOption,
         TraceId traceId
     );
 
@@ -124,7 +121,6 @@ public interface ISqlAction
         PartitionKey documentPartitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        LockOption lockOption,
         TraceId traceId
     );
 
@@ -133,7 +129,6 @@ public interface ISqlAction
         short documentPartitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        LockOption lockOption,
         TraceId traceId
     );
 }

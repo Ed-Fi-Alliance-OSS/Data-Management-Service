@@ -8,31 +8,25 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Model;
-using Microsoft.Extensions.Logging;
 using Npgsql;
-using static EdFi.DataManagementService.Backend.Postgresql.Operation.Resilience;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
 
 public record UpdateDocumentValidationResult(bool DocumentExists, bool ReferentialIdUnchanged);
-
-// Disabled because we need to log and also rethrow exceptions for resiliency library
-#pragma warning disable S2139 // Exceptions should be either logged or rethrown but not both
 
 /// <summary>
 /// A facade of all the DB interactions. Any action requiring SQL statement execution should be here.
 /// Connections and transactions are managed by the caller.
 /// Exceptions are handled by the caller.
 /// </summary>
-public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
+public class SqlAction() : ISqlAction
 {
     private static string SqlFor(LockOption lockOption)
     {
         return lockOption switch
         {
             LockOption.None => "",
-            LockOption.BlockUpdateDelete => "FOR SHARE",
-            LockOption.BlockAll => "FOR UPDATE",
+            LockOption.BlockUpdateDelete => "FOR NO KEY UPDATE",
             _ => throw new InvalidOperationException("Unknown lock option type"),
         };
     }
@@ -47,58 +41,40 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
         PartitionKey partitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        LockOption lockOption,
         TraceId traceId
     )
     {
-        var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async cancellationToken =>
+        await using NpgsqlCommand command =
+            new(
+                $@"SELECT EdfiDoc, LastModifiedAt, LastModifiedTraceId  FROM dms.Document WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 AND ResourceName = $3 {SqlFor(LockOption.BlockUpdateDelete)};",
+                connection,
+                transaction
+            )
             {
-                try
+                Parameters =
                 {
-                    await using NpgsqlCommand command =
-                        new(
-                            $@"SELECT EdfiDoc, LastModifiedAt, LastModifiedTraceId  FROM dms.Document WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 AND ResourceName = $3 {SqlFor(lockOption)};",
-                            connection,
-                            transaction
-                        )
-                        {
-                            Parameters =
-                            {
-                                new() { Value = partitionKey.Value },
-                                new() { Value = documentUuid.Value },
-                                new() { Value = resourceName },
-                            },
-                        };
+                    new() { Value = partitionKey.Value },
+                    new() { Value = documentUuid.Value },
+                    new() { Value = resourceName },
+                },
+            };
 
-                    await command.PrepareAsync(cancellationToken);
-                    await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        await command.PrepareAsync();
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
-                    if (!reader.HasRows)
-                    {
-                        return null;
-                    }
+        if (!reader.HasRows)
+        {
+            return null;
+        }
 
-                    // Assumes only one row returned
-                    await reader.ReadAsync(cancellationToken);
+        // Assumes only one row returned
+        await reader.ReadAsync();
 
-                    return new DocumentSummary(
-                        EdfiDoc: await reader.GetFieldValueAsync<JsonElement>(reader.GetOrdinal("EdfiDoc")),
-                        LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt")),
-                        LastModifiedTraceId: reader.GetString(reader.GetOrdinal("LastModifiedTraceId"))
-                    );
-                }
-                catch (PostgresException pe)
-                {
-                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
-
-                    // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
-                    // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync(cancellationToken);
-                    throw;
-                }
-            });
-        return result;
+        return new DocumentSummary(
+            EdfiDoc: await reader.GetFieldValueAsync<JsonElement>(reader.GetOrdinal("EdfiDoc")),
+            LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt")),
+            LastModifiedTraceId: reader.GetString(reader.GetOrdinal("LastModifiedTraceId"))
+        );
     }
 
     /// <summary>
@@ -110,67 +86,49 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
         PartitionKey partitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        LockOption lockOption,
         TraceId traceId
     )
     {
-        var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async cancellationToken =>
-            {
-                try
-                {
-                    await using NpgsqlCommand command =
-                        new(
-                            $@"SELECT * FROM dms.Document d
+        await using NpgsqlCommand command =
+            new(
+                $@"SELECT * FROM dms.Document d
                 INNER JOIN dms.Alias a ON a.DocumentId = d.Id AND a.DocumentPartitionKey = d.DocumentPartitionKey
-                WHERE a.ReferentialPartitionKey = $1 AND a.ReferentialId = $2 {SqlFor(lockOption)};",
-                            connection,
-                            transaction
-                        )
-                        {
-                            Parameters =
-                            {
-                                new() { Value = partitionKey.Value },
-                                new() { Value = referentialId.Value },
-                            },
-                        };
-
-                    await command.PrepareAsync(cancellationToken);
-                    await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
-
-                    if (!reader.HasRows)
-                    {
-                        return null;
-                    }
-
-                    // Assumes only one row returned (should never be more due to DB unique constraint)
-                    await reader.ReadAsync(cancellationToken);
-
-                    return new Document(
-                        Id: reader.GetInt64(reader.GetOrdinal("Id")),
-                        DocumentPartitionKey: reader.GetInt16(reader.GetOrdinal("DocumentPartitionKey")),
-                        DocumentUuid: reader.GetGuid(reader.GetOrdinal("DocumentUuid")),
-                        ResourceName: reader.GetString(reader.GetOrdinal("ResourceName")),
-                        ResourceVersion: reader.GetString(reader.GetOrdinal("ResourceVersion")),
-                        IsDescriptor: reader.GetBoolean(reader.GetOrdinal("IsDescriptor")),
-                        ProjectName: reader.GetString(reader.GetOrdinal("ProjectName")),
-                        EdfiDoc: await reader.GetFieldValueAsync<JsonElement>(reader.GetOrdinal("EdfiDoc")),
-                        CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
-                        LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt")),
-                        LastModifiedTraceId: reader.GetString(reader.GetOrdinal("LastModifiedTraceId"))
-                    );
-                }
-                catch (PostgresException pe)
+                WHERE a.ReferentialPartitionKey = $1 AND a.ReferentialId = $2 {SqlFor(LockOption.BlockUpdateDelete)};",
+                connection,
+                transaction
+            )
+            {
+                Parameters =
                 {
-                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
+                    new() { Value = partitionKey.Value },
+                    new() { Value = referentialId.Value },
+                },
+            };
 
-                    // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
-                    // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync(cancellationToken);
-                    throw;
-                }
-            });
-        return result;
+        await command.PrepareAsync();
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+
+        if (!reader.HasRows)
+        {
+            return null;
+        }
+
+        // Assumes only one row returned (should never be more due to DB unique constraint)
+        await reader.ReadAsync();
+
+        return new Document(
+            Id: reader.GetInt64(reader.GetOrdinal("Id")),
+            DocumentPartitionKey: reader.GetInt16(reader.GetOrdinal("DocumentPartitionKey")),
+            DocumentUuid: reader.GetGuid(reader.GetOrdinal("DocumentUuid")),
+            ResourceName: reader.GetString(reader.GetOrdinal("ResourceName")),
+            ResourceVersion: reader.GetString(reader.GetOrdinal("ResourceVersion")),
+            IsDescriptor: reader.GetBoolean(reader.GetOrdinal("IsDescriptor")),
+            ProjectName: reader.GetString(reader.GetOrdinal("ProjectName")),
+            EdfiDoc: await reader.GetFieldValueAsync<JsonElement>(reader.GetOrdinal("EdfiDoc")),
+            CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
+            LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt")),
+            LastModifiedTraceId: reader.GetString(reader.GetOrdinal("LastModifiedTraceId"))
+        );
     }
 
     /// <summary>
@@ -184,56 +142,37 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
         TraceId traceId
     )
     {
-        var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async cancellationToken =>
+        await using NpgsqlCommand command =
+            new(
+                @"SELECT EdfiDoc FROM dms.Document WHERE ResourceName = $1 ORDER BY CreatedAt OFFSET $2 ROWS FETCH FIRST $3 ROWS ONLY;",
+                connection,
+                transaction
+            )
             {
-                try
+                Parameters =
                 {
-                    await using NpgsqlCommand command =
-                        new(
-                            @"SELECT EdfiDoc FROM dms.Document WHERE ResourceName = $1 ORDER BY CreatedAt OFFSET $2 ROWS FETCH FIRST $3 ROWS ONLY;",
-                            connection,
-                            transaction
-                        )
-                        {
-                            Parameters =
-                            {
-                                new() { Value = resourceName },
-                                new() { Value = paginationParameters.Offset ?? 0 },
-                                new() { Value = paginationParameters.Limit ?? 25 },
-                            },
-                        };
+                    new() { Value = resourceName },
+                    new() { Value = paginationParameters.Offset ?? 0 },
+                    new() { Value = paginationParameters.Limit ?? 25 },
+                },
+            };
 
-                    await command.PrepareAsync(cancellationToken);
-                    await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        await command.PrepareAsync();
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
-                    var documents = new List<JsonNode>();
+        var documents = new List<JsonNode>();
 
-                    while (await reader.ReadAsync(cancellationToken))
-                    {
-                        JsonNode? edfiDoc = (
-                            await reader.GetFieldValueAsync<JsonElement>(0)
-                        ).Deserialize<JsonNode>();
+        while (await reader.ReadAsync())
+        {
+            JsonNode? edfiDoc = (await reader.GetFieldValueAsync<JsonElement>(0)).Deserialize<JsonNode>();
 
-                        if (edfiDoc != null)
-                        {
-                            documents.Add(edfiDoc);
-                        }
-                    }
+            if (edfiDoc != null)
+            {
+                documents.Add(edfiDoc);
+            }
+        }
 
-                    return documents.ToArray();
-                }
-                catch (PostgresException pe)
-                {
-                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
-
-                    // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
-                    // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync(cancellationToken);
-                    throw;
-                }
-            });
-        return new(result);
+        return new(documents.ToArray());
     }
 
     /// <summary>
@@ -247,43 +186,22 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
         TraceId traceId
     )
     {
-        var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async cancellationToken =>
+        await using NpgsqlCommand command =
+            new(@"SELECT Count(1) Total FROM dms.Document WHERE resourcename = $1;", connection, transaction)
             {
-                try
-                {
-                    await using NpgsqlCommand command =
-                        new(
-                            @"SELECT Count(1) Total FROM dms.Document WHERE resourcename = $1;",
-                            connection,
-                            transaction
-                        )
-                        {
-                            Parameters = { new() { Value = resourceName } },
-                        };
+                Parameters = { new() { Value = resourceName } },
+            };
 
-                    await command.PrepareAsync(cancellationToken);
-                    await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        await command.PrepareAsync();
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
-                    if (!reader.HasRows)
-                    {
-                        return 0;
-                    }
+        if (!reader.HasRows)
+        {
+            return 0;
+        }
 
-                    await reader.ReadAsync(cancellationToken);
-                    return reader.GetInt16(reader.GetOrdinal("Total"));
-                }
-                catch (PostgresException pe)
-                {
-                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
-
-                    // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
-                    // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync(cancellationToken);
-                    throw;
-                }
-            });
-        return result;
+        await reader.ReadAsync();
+        return reader.GetInt16(reader.GetOrdinal("Total"));
     }
 
     /// <summary>
@@ -296,49 +214,29 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
         TraceId traceId
     )
     {
-        var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async cancellationToken =>
+        await using var command = new NpgsqlCommand(
+            @"INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, IsDescriptor, ProjectName, EdfiDoc, LastModifiedTraceId)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+              RETURNING Id;",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
             {
-                try
-                {
-                    await using var command = new NpgsqlCommand(
-                        @"INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, IsDescriptor, ProjectName, EdfiDoc, LastModifiedTraceId)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                  RETURNING Id;",
-                        connection,
-                        transaction
-                    )
-                    {
-                        Parameters =
-                        {
-                            new() { Value = document.DocumentPartitionKey },
-                            new() { Value = document.DocumentUuid },
-                            new() { Value = document.ResourceName },
-                            new() { Value = document.ResourceVersion },
-                            new() { Value = document.IsDescriptor },
-                            new() { Value = document.ProjectName },
-                            new() { Value = document.EdfiDoc },
-                            new() { Value = traceId.Value },
-                        },
-                    };
+                new() { Value = document.DocumentPartitionKey },
+                new() { Value = document.DocumentUuid },
+                new() { Value = document.ResourceName },
+                new() { Value = document.ResourceVersion },
+                new() { Value = document.IsDescriptor },
+                new() { Value = document.ProjectName },
+                new() { Value = document.EdfiDoc },
+                new() { Value = traceId.Value },
+            },
+        };
 
-                    await command.PrepareAsync(cancellationToken);
-                    return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
-                }
-                catch (PostgresException pe)
-                    when (pe.SqlState != PostgresErrorCodes.ForeignKeyViolation
-                        && pe.SqlState != PostgresErrorCodes.UniqueViolation
-                    )
-                {
-                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
-
-                    // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
-                    // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync(cancellationToken);
-                    throw;
-                }
-            });
-        return result;
+        await command.PrepareAsync();
+        return Convert.ToInt64(await command.ExecuteScalarAsync());
     }
 
     /// <summary>
@@ -353,46 +251,26 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
         TraceId traceId
     )
     {
-        var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async cancellationToken =>
+        await using var command = new NpgsqlCommand(
+            @"UPDATE dms.Document
+              SET EdfiDoc = $1
+              WHERE DocumentPartitionKey = $2 AND DocumentUuid = $3
+              RETURNING Id;",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
             {
-                try
-                {
-                    await using var command = new NpgsqlCommand(
-                        @"UPDATE dms.Document
-                  SET EdfiDoc = $1, LastModifiedTraceId = $4, LastModifiedAt = NOW()
-                  WHERE DocumentPartitionKey = $2 AND DocumentUuid = $3
-                  RETURNING Id;",
-                        connection,
-                        transaction
-                    )
-                    {
-                        Parameters =
-                        {
-                            new() { Value = edfiDoc },
-                            new() { Value = documentPartitionKey },
-                            new() { Value = documentUuid },
-                            new() { Value = traceId.Value },
-                        },
-                    };
+                new() { Value = edfiDoc },
+                new() { Value = documentPartitionKey },
+                new() { Value = documentUuid },
+                new() { Value = traceId.Value },
+            },
+        };
 
-                    await command.PrepareAsync(cancellationToken);
-                    return await command.ExecuteNonQueryAsync(cancellationToken);
-                }
-                catch (PostgresException pe)
-                    when (pe.SqlState != PostgresErrorCodes.ForeignKeyViolation
-                        && pe.SqlState != PostgresErrorCodes.UniqueViolation
-                    )
-                {
-                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
-
-                    // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
-                    // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync(cancellationToken);
-                    throw;
-                }
-            });
-        return result;
+        await command.PrepareAsync();
+        return await command.ExecuteNonQueryAsync();
     }
 
     public async Task<UpdateDocumentValidationResult> UpdateDocumentValidation(
@@ -402,84 +280,57 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
         PartitionKey referentialPartitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        LockOption lockOption,
         TraceId traceId
     )
     {
-        var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async cancellationToken =>
+        string sqlForLockOption = SqlFor(LockOption.BlockUpdateDelete);
+        if (sqlForLockOption != "")
+        {
+            // Only lock the Documents table
+            sqlForLockOption += " OF d";
+        }
+
+        await using NpgsqlCommand command =
+            new(
+                $@"SELECT DocumentUuid, ReferentialId
+                   FROM dms.Document d
+                   LEFT JOIN dms.Alias a ON
+                       a.DocumentId = d.Id
+                       AND a.DocumentPartitionKey = d.DocumentPartitionKey
+                       AND a.ReferentialId = $1 and a.ReferentialPartitionKey = $2
+                   WHERE d.DocumentUuid = $3 AND d.DocumentPartitionKey = $4 {sqlForLockOption};",
+                connection,
+                transaction
+            )
             {
-                try
+                Parameters =
                 {
-                    string sqlForLockOption = SqlFor(lockOption);
-                    if (sqlForLockOption != "")
-                    {
-                        // Only lock the Documents table
-                        sqlForLockOption += " OF d";
-                    }
+                    new() { Value = referentialId.Value },
+                    new() { Value = referentialPartitionKey.Value },
+                    new() { Value = documentUuid.Value },
+                    new() { Value = documentPartitionKey.Value },
+                },
+            };
 
-                    await using NpgsqlCommand command =
-                        new(
-                            $@"SELECT DocumentUuid, ReferentialId
-                        FROM dms.Document d
-                        LEFT JOIN dms.Alias a ON
-                            a.DocumentId = d.Id
-                            AND a.DocumentPartitionKey = d.DocumentPartitionKey
-                            AND a.ReferentialId = $1 and a.ReferentialPartitionKey = $2
-                        WHERE d.DocumentUuid = $3 AND d.DocumentPartitionKey = $4 {sqlForLockOption};",
-                            connection,
-                            transaction
-                        )
-                        {
-                            Parameters =
-                            {
-                                new() { Value = referentialId.Value },
-                                new() { Value = referentialPartitionKey.Value },
-                                new() { Value = documentUuid.Value },
-                                new() { Value = documentPartitionKey.Value },
-                            },
-                        };
+        await command.PrepareAsync();
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
-                    await command.PrepareAsync(cancellationToken);
-                    await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!reader.HasRows)
+        {
+            // Document does not exist
+            return new UpdateDocumentValidationResult(DocumentExists: false, ReferentialIdUnchanged: false);
+        }
 
-                    if (!reader.HasRows)
-                    {
-                        // Document does not exist
-                        return new UpdateDocumentValidationResult(
-                            DocumentExists: false,
-                            ReferentialIdUnchanged: false
-                        );
-                    }
+        // Assumes only one row returned (should never be more due to DB unique constraint)
+        await reader.ReadAsync();
 
-                    // Assumes only one row returned (should never be more due to DB unique constraint)
-                    await reader.ReadAsync(cancellationToken);
+        if (await reader.IsDBNullAsync(reader.GetOrdinal("ReferentialId")))
+        {
+            // Extracted referential id does not match stored. Must be attempting to change natural key.
+            return new UpdateDocumentValidationResult(DocumentExists: true, ReferentialIdUnchanged: false);
+        }
 
-                    if (await reader.IsDBNullAsync(reader.GetOrdinal("ReferentialId"), cancellationToken))
-                    {
-                        // Extracted referential id does not match stored. Must be attempting to change natural key.
-                        return new UpdateDocumentValidationResult(
-                            DocumentExists: true,
-                            ReferentialIdUnchanged: false
-                        );
-                    }
-
-                    return new UpdateDocumentValidationResult(
-                        DocumentExists: true,
-                        ReferentialIdUnchanged: true
-                    );
-                }
-                catch (PostgresException pe)
-                {
-                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
-
-                    // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
-                    // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync(cancellationToken);
-                    throw;
-                }
-            });
-        return result;
+        return new UpdateDocumentValidationResult(DocumentExists: true, ReferentialIdUnchanged: true);
     }
 
     /// <summary>
@@ -492,45 +343,25 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
         TraceId traceId
     )
     {
-        var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async cancellationToken =>
+        await using var command = new NpgsqlCommand(
+            @"INSERT INTO dms.Alias (ReferentialPartitionKey, ReferentialId, DocumentId, DocumentPartitionKey)
+              VALUES ($1, $2, $3, $4)
+              RETURNING Id;",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
             {
-                try
-                {
-                    await using var command = new NpgsqlCommand(
-                        @"INSERT INTO dms.Alias (ReferentialPartitionKey, ReferentialId, DocumentId, DocumentPartitionKey)
-                    VALUES ($1, $2, $3, $4)
-                  RETURNING Id;",
-                        connection,
-                        transaction
-                    )
-                    {
-                        Parameters =
-                        {
-                            new() { Value = alias.ReferentialPartitionKey },
-                            new() { Value = alias.ReferentialId },
-                            new() { Value = alias.DocumentId },
-                            new() { Value = alias.DocumentPartitionKey },
-                        },
-                    };
+                new() { Value = alias.ReferentialPartitionKey },
+                new() { Value = alias.ReferentialId },
+                new() { Value = alias.DocumentId },
+                new() { Value = alias.DocumentPartitionKey },
+            },
+        };
 
-                    await command.PrepareAsync(cancellationToken);
-                    return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
-                }
-                catch (PostgresException pe)
-                    when (pe.SqlState != PostgresErrorCodes.ForeignKeyViolation
-                        && pe.SqlState != PostgresErrorCodes.UniqueViolation
-                    )
-                {
-                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
-
-                    // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
-                    // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync(cancellationToken);
-                    throw;
-                }
-            });
-        return result;
+        await command.PrepareAsync();
+        return Convert.ToInt64(await command.ExecuteScalarAsync());
     }
 
     /// <summary>
@@ -547,44 +378,27 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
         TraceId traceId
     )
     {
-        var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async cancellationToken =>
+        await using var command = new NpgsqlCommand(
+            @"UPDATE dms.Alias AS a
+              SET ReferentialPartitionKey = $1, ReferentialId = $2
+              FROM dms.Document AS d
+              WHERE d.Id = a.DocumentId AND d.DocumentPartitionKey = a.DocumentPartitionKey
+              AND d.DocumentPartitionKey = $3 AND d.DocumentUuid = $4;",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
             {
-                try
-                {
-                    await using var command = new NpgsqlCommand(
-                        @"UPDATE dms.Alias AS a
-                        SET ReferentialPartitionKey = $1, ReferentialId = $2
-                        FROM dms.Document AS d
-                        WHERE d.Id = a.DocumentId AND d.DocumentPartitionKey = a.DocumentPartitionKey
-                        AND d.DocumentPartitionKey = $3 AND d.DocumentUuid = $4;",
-                        connection,
-                        transaction
-                    )
-                    {
-                        Parameters =
-                        {
-                            new() { Value = referentialPartitionKey },
-                            new() { Value = referentialId },
-                            new() { Value = documentPartitionKey },
-                            new() { Value = documentUuid },
-                        },
-                    };
+                new() { Value = referentialPartitionKey },
+                new() { Value = referentialId },
+                new() { Value = documentPartitionKey },
+                new() { Value = documentUuid },
+            },
+        };
 
-                    await command.PrepareAsync(cancellationToken);
-                    return await command.ExecuteNonQueryAsync(cancellationToken);
-                }
-                catch (PostgresException pe)
-                {
-                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
-
-                    // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
-                    // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync(cancellationToken);
-                    throw;
-                }
-            });
-        return result;
+        await command.PrepareAsync();
+        return await command.ExecuteNonQueryAsync();
     }
 
     /// <summary>
@@ -598,62 +412,41 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
         TraceId traceId
     )
     {
-        var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async cancellationToken =>
+        Trace.Assert(
+            bulkReferences.ReferentialIds.Length == bulkReferences.ReferentialPartitionKeys.Length,
+            "Arrays of ReferentialIds and ReferentialPartitionKeys must be the same length"
+        );
+
+        long[] parentDocumentIds = new long[bulkReferences.ReferentialIds.Length];
+        Array.Fill(parentDocumentIds, bulkReferences.ParentDocumentId);
+
+        short[] parentDocumentPartitionKeys = new short[bulkReferences.ReferentialIds.Length];
+        Array.Fill(parentDocumentPartitionKeys, bulkReferences.ParentDocumentPartitionKey);
+
+        await using var command = new NpgsqlCommand(
+            @"SELECT dms.InsertReferences($1, $2, $3, $4)",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
             {
-                try
-                {
-                    Trace.Assert(
-                        bulkReferences.ReferentialIds.Length
-                            == bulkReferences.ReferentialPartitionKeys.Length,
-                        "Arrays of ReferentialIds and ReferentialPartitionKeys must be the same length"
-                    );
+                new() { Value = parentDocumentIds },
+                new() { Value = parentDocumentPartitionKeys },
+                new() { Value = bulkReferences.ReferentialIds },
+                new() { Value = bulkReferences.ReferentialPartitionKeys },
+            },
+        };
+        await command.PrepareAsync();
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
-                    long[] parentDocumentIds = new long[bulkReferences.ReferentialIds.Length];
-                    Array.Fill(parentDocumentIds, bulkReferences.ParentDocumentId);
+        List<Guid> result = [];
+        while (await reader.ReadAsync())
+        {
+            result.Add(reader.GetGuid(0));
+        }
 
-                    short[] parentDocumentPartitionKeys = new short[bulkReferences.ReferentialIds.Length];
-                    Array.Fill(parentDocumentPartitionKeys, bulkReferences.ParentDocumentPartitionKey);
-
-                    await using var command = new NpgsqlCommand(
-                        @"SELECT dms.InsertReferences($1, $2, $3, $4)",
-                        connection,
-                        transaction
-                    )
-                    {
-                        Parameters =
-                        {
-                            new() { Value = parentDocumentIds },
-                            new() { Value = parentDocumentPartitionKeys },
-                            new() { Value = bulkReferences.ReferentialIds },
-                            new() { Value = bulkReferences.ReferentialPartitionKeys },
-                        },
-                    };
-                    await command.PrepareAsync(cancellationToken);
-                    await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
-
-                    List<Guid> result = [];
-                    while (await reader.ReadAsync(cancellationToken))
-                    {
-                        result.Add(reader.GetGuid(0));
-                    }
-
-                    return result.ToArray();
-                }
-                catch (PostgresException pe)
-                    when (pe.SqlState != PostgresErrorCodes.ForeignKeyViolation
-                        && pe.SqlState != PostgresErrorCodes.UniqueViolation
-                    )
-                {
-                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
-
-                    // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
-                    // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync(cancellationToken);
-                    throw;
-                }
-            });
-        return result;
+        return result.ToArray();
     }
 
     /// <summary>
@@ -667,41 +460,24 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
         TraceId traceId
     )
     {
-        var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async cancellationToken =>
+        await using NpgsqlCommand command =
+            new(
+                @"DELETE from dms.Reference r
+                  USING dms.Document d
+                  WHERE d.Id = r.ParentDocumentId AND d.DocumentPartitionKey = r.ParentDocumentPartitionKey
+                  AND d.DocumentPartitionKey = $1 AND d.DocumentUuid = $2;",
+                connection,
+                transaction
+            )
             {
-                try
+                Parameters =
                 {
-                    await using NpgsqlCommand command =
-                        new(
-                            @"DELETE from dms.Reference r
-                      USING dms.Document d
-                      WHERE d.Id = r.ParentDocumentId AND d.DocumentPartitionKey = r.ParentDocumentPartitionKey
-                      AND d.DocumentPartitionKey = $1 AND d.DocumentUuid = $2;",
-                            connection,
-                            transaction
-                        )
-                        {
-                            Parameters =
-                            {
-                                new() { Value = parentDocumentPartitionKey },
-                                new() { Value = parentDocumentUuidGuid },
-                            },
-                        };
-                    await command.PrepareAsync(cancellationToken);
-                    return await command.ExecuteNonQueryAsync(cancellationToken);
-                }
-                catch (PostgresException pe) when (pe.SqlState != PostgresErrorCodes.ForeignKeyViolation)
-                {
-                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
-
-                    // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
-                    // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync(cancellationToken);
-                    throw;
-                }
-            });
-        return result;
+                    new() { Value = parentDocumentPartitionKey },
+                    new() { Value = parentDocumentUuidGuid },
+                },
+            };
+        await command.PrepareAsync();
+        return await command.ExecuteNonQueryAsync();
     }
 
     /// <summary>
@@ -716,39 +492,22 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
         TraceId traceId
     )
     {
-        var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async cancellationToken =>
+        await using NpgsqlCommand command =
+            new(
+                @"DELETE from dms.Document WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2;",
+                connection,
+                transaction
+            )
             {
-                try
+                Parameters =
                 {
-                    await using NpgsqlCommand command =
-                        new(
-                            @"DELETE from dms.Document WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2;",
-                            connection,
-                            transaction
-                        )
-                        {
-                            Parameters =
-                            {
-                                new() { Value = documentPartitionKey.Value },
-                                new() { Value = documentUuid.Value },
-                            },
-                        };
+                    new() { Value = documentPartitionKey.Value },
+                    new() { Value = documentUuid.Value },
+                },
+            };
 
-                    await command.PrepareAsync(cancellationToken);
-                    return await command.ExecuteNonQueryAsync(cancellationToken);
-                }
-                catch (PostgresException pe) when (pe.SqlState != PostgresErrorCodes.ForeignKeyViolation)
-                {
-                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
-
-                    // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
-                    // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync(cancellationToken);
-                    throw;
-                }
-            });
-        return result;
+        await command.PrepareAsync();
+        return await command.ExecuteNonQueryAsync();
     }
 
     public async Task<string[]> FindReferencingResourceNamesByDocumentUuid(
@@ -756,18 +515,12 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
         PartitionKey documentPartitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        LockOption lockOption,
         TraceId traceId
     )
     {
-        var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async cancellationToken =>
-            {
-                try
-                {
-                    await using NpgsqlCommand command =
-                        new(
-                            $@"SELECT d.ResourceName FROM dms.Document d
+        await using NpgsqlCommand command =
+            new(
+                $@"SELECT d.ResourceName FROM dms.Document d
                    INNER JOIN (
                      SELECT ParentDocumentId, ParentDocumentPartitionKey
                      FROM dms.Reference r
@@ -775,41 +528,29 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
                        AND d2.DocumentPartitionKey = r.ReferencedDocumentPartitionKey
                        WHERE d2.DocumentUuid = $1 AND d2.DocumentPartitionKey = $2) AS re
                      ON re.ParentDocumentId = d.id AND re.ParentDocumentPartitionKey = d.DocumentPartitionKey
-                   ORDER BY d.ResourceName {SqlFor(lockOption)};",
-                            connection,
-                            transaction
-                        )
-                        {
-                            Parameters =
-                            {
-                                new() { Value = documentUuid.Value },
-                                new() { Value = documentPartitionKey.Value },
-                            },
-                        };
-
-                    await command.PrepareAsync(cancellationToken);
-                    await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
-
-                    var resourceNames = new List<string>();
-
-                    while (await reader.ReadAsync(cancellationToken))
-                    {
-                        resourceNames.Add(reader.GetString(reader.GetOrdinal("ResourceName")));
-                    }
-
-                    return resourceNames.Distinct().ToArray();
-                }
-                catch (PostgresException pe)
+                   ORDER BY d.ResourceName {SqlFor(LockOption.BlockUpdateDelete)};",
+                connection,
+                transaction
+            )
+            {
+                Parameters =
                 {
-                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
+                    new() { Value = documentUuid.Value },
+                    new() { Value = documentPartitionKey.Value },
+                },
+            };
 
-                    // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
-                    // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync(cancellationToken);
-                    throw;
-                }
-            });
-        return result;
+        await command.PrepareAsync();
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+
+        var resourceNames = new List<string>();
+
+        while (await reader.ReadAsync())
+        {
+            resourceNames.Add(reader.GetString(reader.GetOrdinal("ResourceName")));
+        }
+
+        return resourceNames.Distinct().ToArray();
     }
 
     public async Task<Document[]> FindReferencingDocumentsByDocumentId(
@@ -817,73 +558,49 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
         short documentPartitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        LockOption lockOption,
         TraceId traceId
     )
     {
-        var result = await GetPostgresExceptionRetryPipeline()
-            .ExecuteAsync(async cancellationToken =>
-            {
-                try
-                {
-                    await using NpgsqlCommand command =
-                        new(
-                            $@"SELECT * FROM dms.Document d
+        await using NpgsqlCommand command =
+            new(
+                $@"SELECT * FROM dms.Document d
                                 INNER JOIN dms.Reference r ON d.Id = r.ParentDocumentId And d.DocumentPartitionKey = r.ParentDocumentPartitionKey
                                 WHERE r.ReferencedDocumentId = $1 AND r.ReferencedDocumentPartitionKey = $2
-                                ORDER BY d.ResourceName {SqlFor(lockOption)};",
-                            connection,
-                            transaction
-                        )
-                        {
-                            Parameters =
-                            {
-                                new() { Value = documentId },
-                                new() { Value = documentPartitionKey },
-                            },
-                        };
-
-                    await command.PrepareAsync(cancellationToken);
-                    await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
-
-                    List<Document> documents = [];
-
-                    while (await reader.ReadAsync(cancellationToken))
-                    {
-                        documents.Add(
-                            new Document(
-                                Id: reader.GetInt64(reader.GetOrdinal("Id")),
-                                DocumentPartitionKey: reader.GetInt16(
-                                    reader.GetOrdinal("DocumentPartitionKey")
-                                ),
-                                DocumentUuid: reader.GetGuid(reader.GetOrdinal("DocumentUuid")),
-                                ResourceName: reader.GetString(reader.GetOrdinal("ResourceName")),
-                                ResourceVersion: reader.GetString(reader.GetOrdinal("ResourceVersion")),
-                                IsDescriptor: reader.GetBoolean(reader.GetOrdinal("IsDescriptor")),
-                                ProjectName: reader.GetString(reader.GetOrdinal("ProjectName")),
-                                EdfiDoc: await reader.GetFieldValueAsync<JsonElement>(
-                                    reader.GetOrdinal("EdfiDoc")
-                                ),
-                                CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
-                                LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt"))
-                            )
-                        );
-                    }
-
-                    return documents.ToArray();
-                }
-                catch (PostgresException pe)
+                                ORDER BY d.ResourceName {SqlFor(LockOption.BlockUpdateDelete)};",
+                connection,
+                transaction
+            )
+            {
+                Parameters =
                 {
-                    _logger.LogWarning(pe, "DB failure, will retry - {TraceId}", traceId);
+                    new() { Value = documentId },
+                    new() { Value = documentPartitionKey },
+                },
+            };
 
-                    // PostgresExceptions will be re-tried according to the retry strategy for the type of exception thrown.
-                    // Must roll back the transaction before retry.
-                    await transaction.RollbackAsync(cancellationToken);
-                    throw;
-                }
-            });
-        return result;
+        await command.PrepareAsync();
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+
+        List<Document> documents = [];
+
+        while (await reader.ReadAsync())
+        {
+            documents.Add(
+                new Document(
+                    Id: reader.GetInt64(reader.GetOrdinal("Id")),
+                    DocumentPartitionKey: reader.GetInt16(reader.GetOrdinal("DocumentPartitionKey")),
+                    DocumentUuid: reader.GetGuid(reader.GetOrdinal("DocumentUuid")),
+                    ResourceName: reader.GetString(reader.GetOrdinal("ResourceName")),
+                    ResourceVersion: reader.GetString(reader.GetOrdinal("ResourceVersion")),
+                    IsDescriptor: reader.GetBoolean(reader.GetOrdinal("IsDescriptor")),
+                    ProjectName: reader.GetString(reader.GetOrdinal("ProjectName")),
+                    EdfiDoc: await reader.GetFieldValueAsync<JsonElement>(reader.GetOrdinal("EdfiDoc")),
+                    CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
+                    LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt"))
+                )
+            );
+        }
+
+        return documents.ToArray();
     }
 }
-
-#pragma warning restore S2139 // Exceptions should be either logged or rethrown but not both

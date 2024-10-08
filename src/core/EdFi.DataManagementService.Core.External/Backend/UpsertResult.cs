@@ -44,7 +44,7 @@ public record UpsertResult
     public record UpsertFailureIdentityConflict(ResourceName ResourceName, IEnumerable<KeyValuePair<string, string>> DuplicateIdentityValues) : UpsertResult();
 
     /// <summary>
-    /// A transient failure due to a transaction write conflict
+    /// A transient failure due to a retryable transaction write conflict, for example a serialization issue
     /// </summary>
     public record UpsertFailureWriteConflict() : UpsertResult();
 

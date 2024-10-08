@@ -296,20 +296,19 @@ public class UpdateTests : DatabaseTest
         }
 
         [Test]
-        public void It_should_be_a_successful_update_for_2nd_transaction_due_to_retry()
+        public void It_should_be_a_conflict_failure_for_2nd_transaction()
         {
-            _updateResult2!.Should().BeOfType<UpdateResult.UpdateSuccess>();
+            _updateResult2!.Should().BeOfType<UpdateResult.UpdateFailureWriteConflict>();
         }
 
         [Test]
-        public async Task It_should_be_the_2nd_update_found_by_get()
+        public async Task It_should_be_the_1st_update_found_by_get()
         {
             IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
             GetResult? _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
 
             (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
-            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Be(_edFiDocString3);
-            (_getResult! as GetResult.GetSuccess)!.LastModifiedTraceId.Should().Be(traceId.Value);
+            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Be(_edFiDocString2);
         }
     }
 
@@ -654,9 +653,9 @@ public class UpdateTests : DatabaseTest
         }
 
         [Test]
-        public void It_should_be_a_successful_update_for_2nd_transaction_due_to_retry()
+        public void It_should_be_a_conflict_failure_for_2nd_transaction()
         {
-            _updateResult2!.Should().BeOfType<UpdateResult.UpdateSuccess>();
+            _updateResult2!.Should().BeOfType<UpdateResult.UpdateFailureWriteConflict>();
         }
     }
 

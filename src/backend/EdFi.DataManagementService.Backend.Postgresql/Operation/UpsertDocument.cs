@@ -269,7 +269,6 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                     PartitionKeyFor(upsertRequest.DocumentInfo.ReferentialId),
                     connection,
                     transaction,
-                    LockOption.BlockUpdateDelete,
                     traceId
                 );
             }
@@ -278,6 +277,15 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 _logger.LogDebug(
                     pe,
                     "Transaction conflict on Documents table read - {TraceId}",
+                    upsertRequest.TraceId
+                );
+                return new UpsertResult.UpsertFailureWriteConflict();
+            }
+            catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.DeadlockDetected)
+            {
+                _logger.LogDebug(
+                    pe,
+                    "Transaction deadlock on Documents table read - {TraceId}",
                     upsertRequest.TraceId
                 );
                 return new UpsertResult.UpsertFailureWriteConflict();
@@ -315,6 +323,11 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
         catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.SerializationFailure)
         {
             _logger.LogDebug(pe, "Transaction conflict on Upsert - {TraceId}", upsertRequest.TraceId);
+            return new UpsertResult.UpsertFailureWriteConflict();
+        }
+        catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.DeadlockDetected)
+        {
+            _logger.LogDebug(pe, "Transaction deadlock on Upsert - {TraceId}", upsertRequest.TraceId);
             return new UpsertResult.UpsertFailureWriteConflict();
         }
         catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.UniqueViolation)

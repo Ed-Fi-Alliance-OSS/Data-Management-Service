@@ -19,9 +19,4 @@ public enum LockOption
     /// A read lock that blocks update/delete of the result rows but not other reads
     /// </summary>
     BlockUpdateDelete,
-
-    /// <summary>
-    /// A read lock in preparation for an update/delete of the result rows in the same transaction
-    /// </summary>
-    BlockAll
 }

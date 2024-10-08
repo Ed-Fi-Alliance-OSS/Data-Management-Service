@@ -35,9 +35,14 @@ internal static class ReferenceExtractor
         foreach (DocumentPath documentPath in resourceSchema.DocumentPaths)
         {
             if (!documentPath.IsReference)
+            {
                 continue;
+            }
+
             if (documentPath.IsDescriptor)
+            {
                 continue;
+            }
 
             // Extract the reference values from the document
             IntermediateReferenceElement[] intermediateReferenceElements = documentPath
@@ -64,7 +69,9 @@ internal static class ReferenceExtractor
 
             // If a JsonPath selection had no results, we can assume an optional reference wasn't there
             if (valueSliceLength == 0)
+            {
                 continue;
+            }
 
             BaseResourceInfo resourceInfo =
                 new(documentPath.ProjectName, documentPath.ResourceName, documentPath.IsDescriptor);

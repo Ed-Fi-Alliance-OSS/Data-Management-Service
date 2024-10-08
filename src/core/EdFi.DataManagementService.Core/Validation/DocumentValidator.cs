@@ -70,7 +70,9 @@ internal class DocumentValidator() : IDocumentValidator
         PruneResult PruneOverpostedData(JsonNode? documentBody, EvaluationResults evaluationResults)
         {
             if (documentBody == null)
+            {
                 return new PruneResult.NotPruned();
+            }
 
             var additionalProperties = evaluationResults
                 .Details.Where(r =>
@@ -79,7 +81,9 @@ internal class DocumentValidator() : IDocumentValidator
                 .ToList();
 
             if (additionalProperties.Count == 0)
+            {
                 return new PruneResult.NotPruned();
+            }
 
             foreach (var additionalProperty in additionalProperties)
             {
@@ -96,7 +100,9 @@ internal class DocumentValidator() : IDocumentValidator
         PruneResult PruneNullData(JsonNode? documentBody, EvaluationResults evaluationResults)
         {
             if (documentBody == null)
+            {
                 return new PruneResult.NotPruned();
+            }
 
             var nullProperties = evaluationResults
                 .Details.Where(r =>
@@ -105,7 +111,9 @@ internal class DocumentValidator() : IDocumentValidator
                 .ToList();
 
             if (nullProperties.Count == 0)
+            {
                 return new PruneResult.NotPruned();
+            }
 
             foreach (var nullProperty in nullProperties)
             {
@@ -173,7 +181,9 @@ internal class DocumentValidator() : IDocumentValidator
             bool IsEmptyString(JsonPointer? instanceLocation)
             {
                 if (instanceLocation == null)
+                {
                     return false;
+                }
 
                 var jsonObject = context.ParsedBody.AsObject();
                 string propertyName = instanceLocation[^1];
@@ -233,7 +243,10 @@ internal static class JsonObjectExtensions
     internal static JsonObject RemoveProperty(this JsonObject jsonObject, string[] segments)
     {
         if (segments.Length == 0)
+        {
             return jsonObject;
+        }
+
         if (segments.Length == 1)
         {
             jsonObject.Remove(segments[0]);

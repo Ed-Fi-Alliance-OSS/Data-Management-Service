@@ -111,7 +111,6 @@ internal class UpdateByIdHandler(
                 ),
                 Headers: []
             ),
-            UpdateFailureCascadeRequired => new FrontendResponse(StatusCode: 400, Body: null, Headers: []),
             UnknownFailure failure => new FrontendResponse(
                 StatusCode: 500,
                 Body: ToJsonError(failure.FailureMessage, context.FrontendRequest.TraceId),

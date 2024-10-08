@@ -41,7 +41,7 @@ public record UpdateResult
     public record UpdateFailureIdentityConflict(string ReferencingDocumentInfo) : UpdateResult();
 
     /// <summary>
-    /// A transient failure due to a transaction write conflict
+    /// A transient failure due to a retryable transaction write conflict, for example a serialization issue
     /// </summary>
     public record UpdateFailureWriteConflict() : UpdateResult();
 
@@ -50,11 +50,6 @@ public record UpdateResult
     /// </summary>
     /// <param name="FailureMessage">A message providing failure information</param>
     public record UpdateFailureImmutableIdentity(string FailureMessage) : UpdateResult();
-
-    /// <summary>
-    /// A failure because an update cascade is required
-    /// </summary>
-    public record UpdateFailureCascadeRequired() : UpdateResult();
 
     /// <summary>
     /// A failure of unknown category

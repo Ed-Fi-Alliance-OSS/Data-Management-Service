@@ -31,7 +31,9 @@ public class DatabaseDeploy : IDatabaseDeploy
             .Build();
 
         if (!upgrader.TryConnect(out string error))
+        {
             return new DatabaseDeployResult.DatabaseDeployFailure(new Exception(error));
+        }
 
         var result = upgrader.PerformUpgrade();
         return result.Successful

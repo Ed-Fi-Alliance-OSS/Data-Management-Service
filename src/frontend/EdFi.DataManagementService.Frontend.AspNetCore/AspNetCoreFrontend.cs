@@ -28,7 +28,9 @@ public static class AspNetCoreFrontend
         var requestBodyString = await bodyReader.ReadToEndAsync();
 
         if (string.IsNullOrEmpty(requestBodyString))
+        {
             return null;
+        }
 
         return requestBodyString;
     }
