@@ -51,4 +51,10 @@
     </None>
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="ApiSchema\ApiSchema.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>
