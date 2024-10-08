@@ -19,19 +19,9 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger) : IApiS
         {
             _logger.LogDebug("Entering ApiSchemaFileLoader");
 
-            var assembly =
-                Assembly.GetAssembly(typeof(DataStandard51.ApiSchema.Marker))
-                ?? throw new InvalidOperationException("Could not load the ApiSchema library");
-
-            var resourceName = assembly
-                .GetManifestResourceNames()
-                .Single(str => str.EndsWith("ApiSchema.json"));
-
-            using Stream stream =
-                assembly.GetManifestResourceStream(resourceName)
-                ?? throw new InvalidOperationException("Could not load ApiSchema resource");
-            using StreamReader reader = new(stream);
-            var jsonContent = reader.ReadToEnd();
+            string jsonContent = File.ReadAllText(
+                Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? "", "ApiSchema", "ApiSchema.json")
+            );
 
             JsonNode? rootNodeFromFile = JsonNode.Parse(jsonContent);
             if (rootNodeFromFile == null)
