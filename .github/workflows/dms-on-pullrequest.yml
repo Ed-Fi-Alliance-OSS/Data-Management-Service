@@ -82,7 +82,7 @@ jobs:
       # CodeQL initialization causes the resulting build to fail unit tests.
       # Therefore rebuilding here, even though also built above.
       - name: Build
-        run: ./build.ps1 Build -Configuration Debug
+        run: ./build-dms.ps1 Build -Configuration Debug
 
       - name: Perform CodeQL Analysis
         if: success()
@@ -99,7 +99,7 @@ jobs:
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
 
       - name: Build
-        run: ./build.ps1 Build -Configuration Debug
+        run: ./build-dms.ps1 Build -Configuration Debug
 
       - name: Install Coverlet Reference
         if: success()
@@ -108,11 +108,11 @@ jobs:
           dotnet tool install --global dotnet-reportgenerator-globaltool
 
       - name: Run Unit Tests
-        run: ./build.ps1 UnitTest -Configuration Debug
+        run: ./build-dms.ps1 UnitTest -Configuration Debug
 
       - name: Generate Coverage Report
         if: ${{ hashFiles('coverage.cobertura.xml') != '' }}
-        run: ./build.ps1 Coverage
+        run: ./build-dms.ps1 Coverage
 
       - name: Upload Coverage Report
         if: always()
@@ -153,11 +153,11 @@ jobs:
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
 
       - name: Build
-        run: ./build.ps1 Build -Configuration Debug
+        run: ./build-dms.ps1 Build -Configuration Debug
 
       - name: Run Integration Tests
         if: success()
-        run: ./build.ps1 IntegrationTest -Configuration Debug
+        run: ./build-dms.ps1 IntegrationTest -Configuration Debug
 
       - name: Upload Integration Test Results
         if: always()
@@ -180,11 +180,11 @@ jobs:
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
 
       - name: Build
-        run: ./build.ps1 Build -Configuration Debug
+        run: ./build-dms.ps1 Build -Configuration Debug
 
       - name: Run OpenSearch End to End Tests
         if: success()
-        run: ./build.ps1 E2ETest -EnableOpenSearch
+        run: ./build-dms.ps1 E2ETest -EnableOpenSearch
 
       - name: Upload Logs
         if: failure()

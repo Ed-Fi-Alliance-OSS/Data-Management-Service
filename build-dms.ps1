@@ -27,18 +27,18 @@
         * DockerRun: runs the Docker image that was built from source code
         * Run: starts the application
     .EXAMPLE
-        .\build.ps1 build -Configuration Release -Version "2.0" -BuildCounter 45
+        .\build-dms.ps1 build -Configuration Release -Version "2.0" -BuildCounter 45
 
         Overrides the default build configuration (Debug) to build in release
         mode with assembly version 2.0.45.
 
     .EXAMPLE
-        .\build.ps1 unittest
+        .\build-dms.ps1 unittest
 
         Output: test results displayed in the console and saved to XML files.
 
     .EXAMPLE
-        .\build.ps1 push -NuGetApiKey $env:nuget_key
+        .\build-dms.ps1 push -NuGetApiKey $env:nuget_key
 #>
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'False positive')]
 param(
