@@ -8,8 +8,8 @@ on:
     branches:
       - main
     paths:
-      - "**/Dockerfile"
-      - ".github/workflows/on-pullrequest-dockerfile.yml"
+      - "**/src/config/Dockerfile"
+      - ".github/workflows/config-on-pullrequest-dockerfile.yml"
   workflow_dispatch:
 
 concurrency:
@@ -17,10 +17,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  DOCKER_FILE_DIR: src
   DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME }}
   DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
-  IMAGE_NAME: dms
 
 permissions: read-all
 
@@ -34,7 +32,7 @@ jobs:
       matrix:
         dockerfile:
           [
-            { name: "dms", path: "src/Dockerfile" }
+            { name: "dms-config", path: "src/config/Dockerfile" }
           ]
     steps:
       - name: Checkout code
