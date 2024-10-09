@@ -1,0 +1,52 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.10.34928.147
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DmsConfigurationService.Frontend.AspNetCore", "frontend\EdFi.DmsConfigurationService.Frontend.AspNetCore\EdFi.DmsConfigurationService.Frontend.AspNetCore.csproj", "{10D2F79A-E26E-4470-82C9-7A593B63B09C}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "frontend", "frontend", "{68E345E9-E50F-482A-8AFF-9E1156C448C9}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit", "frontend\EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit\EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.csproj", "{A1BEAD7A-70BD-46A9-8660-9ED779C55329}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "backend", "backend", "{82B01A63-4B8A-4965-9806-001128050FB5}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DmsConfigurationService.Backend", "backend\EdFi.DmsConfigurationService.Backend\EdFi.DmsConfigurationService.Backend.csproj", "{534CEEAD-7C32-41F5-B2A2-BFB650D0463B}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DmsConfigurationService.Backend.Keycloak", "backend\EdFi.DmsConfigurationService.Backend.Keycloak\EdFi.DmsConfigurationService.Backend.Keycloak.csproj", "{40174F36-F992-4C1D-AA40-E59442637CF8}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{10D2F79A-E26E-4470-82C9-7A593B63B09C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{10D2F79A-E26E-4470-82C9-7A593B63B09C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{10D2F79A-E26E-4470-82C9-7A593B63B09C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{10D2F79A-E26E-4470-82C9-7A593B63B09C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1BEAD7A-70BD-46A9-8660-9ED779C55329}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1BEAD7A-70BD-46A9-8660-9ED779C55329}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1BEAD7A-70BD-46A9-8660-9ED779C55329}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1BEAD7A-70BD-46A9-8660-9ED779C55329}.Release|Any CPU.Build.0 = Release|Any CPU
+		{534CEEAD-7C32-41F5-B2A2-BFB650D0463B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{534CEEAD-7C32-41F5-B2A2-BFB650D0463B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{534CEEAD-7C32-41F5-B2A2-BFB650D0463B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{534CEEAD-7C32-41F5-B2A2-BFB650D0463B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{40174F36-F992-4C1D-AA40-E59442637CF8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{40174F36-F992-4C1D-AA40-E59442637CF8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{40174F36-F992-4C1D-AA40-E59442637CF8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{40174F36-F992-4C1D-AA40-E59442637CF8}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{10D2F79A-E26E-4470-82C9-7A593B63B09C} = {68E345E9-E50F-482A-8AFF-9E1156C448C9}
+		{A1BEAD7A-70BD-46A9-8660-9ED779C55329} = {68E345E9-E50F-482A-8AFF-9E1156C448C9}
+		{534CEEAD-7C32-41F5-B2A2-BFB650D0463B} = {82B01A63-4B8A-4965-9806-001128050FB5}
+		{40174F36-F992-4C1D-AA40-E59442637CF8} = {82B01A63-4B8A-4965-9806-001128050FB5}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {BB22426B-6AA8-4C58-9557-376F107B547B}
+	EndGlobalSection
+EndGlobal
