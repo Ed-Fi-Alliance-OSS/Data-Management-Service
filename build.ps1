@@ -85,7 +85,7 @@ param(
     $EnableOpenSearch
 )
 
-$solutionRoot = "$PSScriptRoot/src"
+$solutionRoot = "$PSScriptRoot/src/dms"
 $defaultSolution = "$solutionRoot/EdFi.DataManagementService.sln"
 $applicationRoot = "$solutionRoot/frontend"
 $backendRoot = "$solutionRoot/backend"
@@ -365,17 +365,17 @@ $dockerTagBase = "local"
 $dockerTagDMS = "$($dockerTagBase)/data-management-service"
 
 function DockerBuild {
-    Push-Location src/
+    Push-Location src/dms/
     &docker build -t $dockerTagDMS -f Dockerfile .
     Pop-Location
 }
 
 function DockerRun {
-    &docker run --rm -p 8080:8080 --env-file ./src/.env -d $dockerTagDMS
+    &docker run --rm -p 8080:8080 --env-file ./src/dms/.env -d $dockerTagDMS
 }
 
 function Run {
-    Push-Location src
+    Push-Location src/dms
     try {
         dotnet run --no-build --no-restore --project ./frontend/EdFi.DataManagementService.Frontend.AspNetCore
     }
