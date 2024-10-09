@@ -5,33 +5,52 @@
 
 using System.Reflection;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Core.ApiSchema;
 
 /// <summary>
 /// Loads and parses the ApiSchema.json from a file.
 /// </summary>
-internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger) : IApiSchemaProvider
+internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOptions<AppSettings> appSettings)
+    : IApiSchemaProvider
 {
     private readonly Lazy<JsonNode> _apiSchemaRootNode =
         new(() =>
         {
             _logger.LogDebug("Entering ApiSchemaFileLoader");
 
-            var assembly =
-                Assembly.GetAssembly(typeof(DataStandard51.ApiSchema.Marker))
-                ?? throw new InvalidOperationException("Could not load the ApiSchema library");
+            string jsonContent;
 
-            var resourceName = assembly
-                .GetManifestResourceNames()
-                .Single(str => str.EndsWith("ApiSchema.json"));
+            if (appSettings.Value.UseLocalApiSchemaJson)
+            {
+                jsonContent = File.ReadAllText(
+                    Path.Combine(
+                        Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? "",
+                        "ApiSchema",
+                        "ApiSchema.json"
+                    )
+                );
+            }
+            else
+            {
+                var assembly =
+                    Assembly.GetAssembly(typeof(DataStandard51.ApiSchema.Marker))
+                    ?? throw new InvalidOperationException("Could not load the ApiSchema library");
 
-            using Stream stream =
-                assembly.GetManifestResourceStream(resourceName)
-                ?? throw new InvalidOperationException("Could not load ApiSchema resource");
-            using StreamReader reader = new(stream);
-            var jsonContent = reader.ReadToEnd();
+                var resourceName = assembly
+                    .GetManifestResourceNames()
+                    .Single(str => str.EndsWith("ApiSchema.json"));
+
+                using Stream stream =
+                    assembly.GetManifestResourceStream(resourceName)
+                    ?? throw new InvalidOperationException("Could not load ApiSchema resource");
+                using StreamReader reader = new(stream);
+
+                jsonContent = reader.ReadToEnd();
+            }
 
             JsonNode? rootNodeFromFile = JsonNode.Parse(jsonContent);
             if (rootNodeFromFile == null)
