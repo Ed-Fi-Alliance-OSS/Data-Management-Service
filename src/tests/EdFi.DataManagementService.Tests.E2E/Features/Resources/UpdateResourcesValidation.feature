@@ -830,7 +830,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @API-204 @ignore
+        @API-204
         Scenario: 21 Verify cascading updates on dependent resources in lists
             Given the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
@@ -920,8 +920,9 @@ Feature: Resources "Update" Operation validations
                   | 2025       | "2025"                | false             |
                   | 2026       | "2026"                | false             |
               And the system has these "gradingPeriods"
-                  | gradingPeriodDescriptor                                   | gradingPeriodName      | schoolReference      | schoolYearTypeReference | beginDate    | endDate      | totalInstructionalDays |
-                  | "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks" | "Fall Semester Exam 1" | { "schoolId": 4003 } | { "schoolYear": 2025}   | "2025-01-01" | "2025-03-01" | 31                     |
+                  | gradingPeriodDescriptor                                   | gradingPeriodName        | schoolReference      | schoolYearTypeReference | beginDate    | endDate      | totalInstructionalDays |
+                  | "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks" | "Spring Semester Exam 1" | { "schoolId": 4003 } | { "schoolYear": 2025}   | "2025-01-01" | "2025-03-01" | 31                     |
+                  | "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks" | "Fall Semester Exam 1"   | { "schoolId": 4003 } | { "schoolYear": 2025}   | "2025-01-01" | "2025-03-01" | 31                     |
               And the system has these "students"
                   | studentUniqueId | birthDate  | firstName | lastSurname |
                   | "604824"        | 2010-01-13 | Traci     | Mathews     |
@@ -1019,6 +1020,101 @@ Feature: Resources "Update" Operation validations
                     }
                   """
              Then it should respond with 201
-
-
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": "{id}",
+                    "grades": [
+                        {
+                            "gradeReference": {
+                                "schoolId": 4003,
+                                "beginDate": "2025-01-01",
+                                "schoolYear": 2025,
+                                "sessionName": "Fall Semester",
+                                "localCourseCode": "ART-01",
+                                "studentUniqueId": "604824",
+                                "gradingPeriodName": "Fall Semester Exam 1",
+                                "sectionIdentifier": "ABC",
+                                "gradeTypeDescriptor": "uri://ed-fi.org/GradeTypeDescriptor#Grading Period",
+                                "gradingPeriodDescriptor": "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks",
+                                "gradingPeriodSchoolYear": 2025
+                            }
+                        }
+                    ],
+                    "studentReference": {
+                        "studentUniqueId": "604824"
+                    },
+                    "gradingPeriodReference": {
+                        "schoolId": 4003,
+                        "schoolYear": 2025,
+                        "gradingPeriodName": "Fall Semester Exam 1",
+                        "gradingPeriodDescriptor": "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks"
+                    },
+                    "educationOrganizationReference": {
+                        "educationOrganizationId": 4003
+                    }
+                  }
+                  """
+                  # Change gradingPeriodName
+             When a PUT request is made to "/ed-fi/grades/{dependentId}" with
+                  """
+                  {
+                    "id": "{dependentId}",
+                    "gradeTypeDescriptor": "uri://ed-fi.org/GradeTypeDescriptor#Grading Period",
+                    "gradingPeriodReference": {
+                        "schoolId": 4003,
+                        "schoolYear": 2025,
+                        "gradingPeriodName": "Spring Semester Exam 1",
+                        "gradingPeriodDescriptor": "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks"
+                    },
+                    "studentSectionAssociationReference": {
+                        "schoolId": 4003,
+                        "beginDate": "2025-01-01",
+                        "schoolYear": 2025,
+                        "sessionName": "Fall Semester",
+                        "localCourseCode": "ART-01",
+                        "studentUniqueId": "604824",
+                        "sectionIdentifier": "ABC"
+                    }
+                  }
+                  """
+             Then it should respond with 204
+             When a GET request is made to "/ed-fi/reportCards/{id}"
+             Then it should respond with 200
+             # The new gradingPeriodName should cascade to the reportCard
+              And the response body is
+                  """
+                  {
+                    "id": "{id}",
+                    "grades": [
+                        {
+                            "gradeReference": {
+                                "schoolId": 4003,
+                                "beginDate": "2025-01-01",
+                                "schoolYear": 2025,
+                                "sessionName": "Fall Semester",
+                                "localCourseCode": "ART-01",
+                                "studentUniqueId": "604824",
+                                "gradingPeriodName": "Spring Semester Exam 1",
+                                "sectionIdentifier": "ABC",
+                                "gradeTypeDescriptor": "uri://ed-fi.org/GradeTypeDescriptor#Grading Period",
+                                "gradingPeriodDescriptor": "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks",
+                                "gradingPeriodSchoolYear": 2025
+                            }
+                        }
+                    ],
+                    "studentReference": {
+                        "studentUniqueId": "604824"
+                    },
+                    "gradingPeriodReference": {
+                        "schoolId": 4003,
+                        "schoolYear": 2025,
+                        "gradingPeriodName": "Fall Semester Exam 1",
+                        "gradingPeriodDescriptor": "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks"
+                    },
+                    "educationOrganizationReference": {
+                        "educationOrganizationId": 4003
+                    }
+                  }
+                  """
 
