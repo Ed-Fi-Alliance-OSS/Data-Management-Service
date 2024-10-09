@@ -4,13 +4,15 @@ The sections below describe custom configuration options in the `appSettings.jso
 
 ## AppSettings
 
-| Parameter                    | Description                                                                                                                                                                                             |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Datastore                    | The primary datastore used by the DataManagementService. Valid values are `postgresql` and `mssql`                                                                                                      |
-| QueryHandler                 | The query handling datastore used by the DataManagementService. Valid values are `postgresql` and `opensearch`                                                                                          |
-| DeployDatabaseOnStartup      | When `true` the database in `ConnectionStrings:DatabaseConnection` will be created and initialized on startup.                                                                                          |
-| BypassStringTypeCoercion     | String type coercion attempts to coerce boolean and numeric strings to their proper type on `POST` and `PUT` requests. For example `"true"` becomes `true`. This setting bypasses that for performance. |
-| AllowIdentityUpdateOverrides | Comma separated list of resource names that allow identity updates, overriding the default behavior to reject identity updates.                                                                         |
+| Parameter                    | Description                                                                                                                                                                                               |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Datastore                    | The primary datastore used by the DataManagementService. Valid values are `postgresql` and `mssql`                                                                                                        |
+| QueryHandler                 | The query handling datastore used by the DataManagementService. Valid values are `postgresql` and `opensearch`                                                                                            |
+| DeployDatabaseOnStartup      | When `true` the database in `ConnectionStrings:DatabaseConnection` will be created and initialized on startup.                                                                                            |
+| BypassStringTypeCoercion     | String type coercion attempts to coerce boolean and numeric strings to their proper type on `POST` and `PUT` requests. For example `"true"` becomes `true`. This setting bypasses that for performance.   |
+| AllowIdentityUpdateOverrides | Comma separated list of resource names that allow identity updates, overriding the default behavior to reject identity updates.                                                                           |
+| MaskRequestBodyInLogs        | Controls whether to mask HTTP request bodies in log statements to avoid potentially logging PII. This setting only applies to `DEBUG` logging where requests are logged.                                  |
+| UseLocalApiSchemaJson        | When `true` the application will use `src\core\EdFi.DataManagementService.Core\ApiSchema\ApiSchema.json` instead of the published package. This file is gitignored and should be manually added if needed |
 
 ## ConnectionStrings
 

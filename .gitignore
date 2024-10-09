@@ -424,5 +424,8 @@ coveragereport
 # Smoke test related
 sdk/
 
-
+# Docker environemnt secrets
 .env
+
+# Local copies of ApiSchema.json
+**/ApiSchema.json
