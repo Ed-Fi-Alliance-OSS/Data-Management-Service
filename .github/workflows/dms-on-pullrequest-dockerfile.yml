@@ -1,0 +1,98 @@
+name: On Pull Request - Dockerfile
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "**/src/dms/Dockerfile"
+      - ".github/workflows/dms-on-pullrequest-dockerfile.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME }}
+  DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+permissions: read-all
+
+jobs:
+  docker-analysis:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    strategy:
+      fail-fast: false
+      matrix:
+        dockerfile:
+          [
+            { name: "dms", path: "src/dms/Dockerfile" }
+          ]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
+        name: Run Linter on ${{ matrix.dockerfile.name }} Dockerfile
+        with:
+          dockerfile: ${{ matrix.dockerfile.path }}
+          failure-threshold: error
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
+        with:
+          username: ${{ env.DOCKER_USERNAME }}
+          password: ${{ env.DOCKER_HUB_TOKEN }}
+
+      - name: Build
+        run: |
+          path=${{matrix.dockerfile.path}}
+          folder=${path%/*}
+          cd $folder
+          dockerfile=$(echo ${{matrix.dockerfile.path}} | awk -F"/" '{print $NF}')
+
+          docker build -f $dockerfile -t ${{ matrix.dockerfile.name }} .
+
+      - name: Analyze
+        uses: docker/scout-action@67eb1afe777307506aaecb9acd9a0e0389cb99ae # v1.5.0
+        with:
+          command: cves
+          image: local://${{ matrix.dockerfile.name }}
+          sarif-file: sarif-${{ matrix.dockerfile.name }}.output.json
+
+      - name: Results
+        run: |
+          results=$(cat sarif-${{ matrix.dockerfile.name }}.output.json)
+          errors=$(echo $results | jq '[.runs[].results[] | select(.level == "error")] | length')
+          warnings=$(echo $results | jq '[.runs[].results[] | select(.level == "warning")] | length')
+          notes=$(echo $results | jq '[.runs[].results[] | select(.level == "note")] | length')
+
+          if [[ $errors -gt 0 ]]
+          then
+            echo "::warning::There are $errors issues, see sarif file for details"
+          fi
+
+      # - name: Upload SARIF result into Security tab
+      #   if: always()
+      #   id: upload-sarif
+      #   uses: github/codeql-action/upload-sarif@cf7e9f23492505046de9a37830c3711dd0f25bb3 #codeql-bundle-v2.16.2
+      #   with:
+      #     sarif_file: sarif-${{ matrix.dockerfile.name }}.output.json
+
+      # This sarif file sometimes does not upload correctly. Upload directly
+      # into the job output. Mild concern: making security analysis publicly
+      # visible. But, anyone with a Docker Hub account could run this same
+      # analysis, so not doing this would be security through obscurity.
+      - name: Upload Sarif File as Artifact
+        if: always()
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+        with:
+          name: Docker Scout analysis
+          overwrite: true
+          path: sarif-${{ matrix.dockerfile.name }}.output.json

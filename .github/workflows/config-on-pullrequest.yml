@@ -1,0 +1,217 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+name: On Pull Request
+
+on:
+  push:
+    # Running on push to main to support CodeQL on C#
+    branches:
+      - main
+    paths:
+      - "**/src/config/*.cs"
+      - "**/src/config/*.csproj"
+      - "**/src/config/Directory.Packages.props"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "**/*.ps1"
+      - "**/*.psm1"
+      - "**/src/config/*.cs"
+      - "**/src/config/*.csproj"
+      - ".github/**/config*.yml"
+      - "**src/config/Directory.Packages.props"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions: read-all
+
+jobs:
+  run-ps-lint:
+    name: PowerShell Linter
+    uses: Ed-Fi-Alliance-OSS/Ed-Fi-Actions/.github/workflows/powershell-analyzer.yml@main
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+
+  scan-actions-bidi:
+    name: Scan Actions, scan all files for BIDI Trojan Attacks
+    uses: Ed-Fi-Alliance-OSS/Ed-Fi-Actions/.github/workflows/repository-scanner.yml@main
+    with:
+      config-file-path: ./.github/workflows/bidi-config.json
+
+  code-analysis:
+    name: Code Analysis
+    runs-on: ubuntu-latest
+    permissions:
+        security-events: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+
+      - name: Checkout the Repo
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Dependency Review ("Dependabot on PR")
+        if: ${{ github.event_name == 'pull_request' && !github.event.repository.fork }}
+        uses: actions/dependency-review-action@9129d7d40b8c12c1ed0f60400d00c92d437adcce # v4.1.3
+
+      - name: Initialize CodeQL
+        if: success()
+        uses: github/codeql-action/init@cf7e9f23492505046de9a37830c3711dd0f25bb3 # codeql-bundle-v2.16.2
+        with:
+          languages: csharp
+
+      - name: Cache Nuget packages
+        uses: actions/cache@ab5e6d0c87105b4c9c2047343972218f562e4319 #v4.0.1
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      # Must build the software after initialization of CodeQL; something about
+      # CodeQL initialization causes the resulting build to fail unit tests.
+      # Therefore rebuilding here, even though also built above.
+      - name: Build
+        run: ./build.ps1 Build -Configuration Debug
+
+      - name: Perform CodeQL Analysis
+        if: success()
+        uses: github/codeql-action/analyze@cf7e9f23492505046de9a37830c3711dd0f25bb3 # codeql-bundle-v2.16.2
+
+  run-unit-tests:
+    name: Run Unit Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Build
+        run: ./build.ps1 Build -Configuration Debug
+
+      - name: Install Coverlet Reference
+        if: success()
+        run: |
+          dotnet tool install --global coverlet.console
+          dotnet tool install --global dotnet-reportgenerator-globaltool
+
+      - name: Run Unit Tests
+        run: ./build.ps1 UnitTest -Configuration Debug
+
+      - name: Generate Coverage Report
+        if: ${{ hashFiles('coverage.cobertura.xml') != '' }}
+        run: ./build.ps1 Coverage
+
+      - name: Upload Coverage Report
+        if: always()
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+        with:
+          name: Coverage Report
+          path: coveragereport
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+        with:
+          name: Unit Test Results
+          overwrite: true
+          path: |
+            **/*.trx
+
+  run-integration-tests:
+    name: Run Integration Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    services:
+      postgres:
+        image: postgres:16.3-alpine
+        options: >-
+          --health-cmd="pg_isready"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Build
+        run: ./build.ps1 Build -Configuration Debug
+
+      - name: Run Integration Tests
+        if: success()
+        run: ./build.ps1 IntegrationTest -Configuration Debug
+
+      - name: Upload Integration Test Results
+        if: always()
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+        with:
+          name: Integration Test Results
+          overwrite: true
+          path: |
+            **/*.trx
+
+  run-e2e-tests:
+    name: Run E2E Tests
+    needs: run-unit-tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Build
+        run: ./build.ps1 Build -Configuration Debug
+
+      - name: Run End to End Tests
+        if: success()
+        run: ./build.ps1 E2ETest
+
+      - name: Upload Logs
+        if: failure()
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+        with:
+          name: test-logs
+          path: |
+            ./src/services/EdFi.DmsConfigurationService.Api.Tests.E2E/bin/Debug/net8.0/logs
+          retention-days: 10
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+        with:
+          name: E2E Test Results
+          overwrite: true
+          path: |
+            **/*.trx
+
+  event_file:
+    name: Upload Event File
+    runs-on: ubuntu-latest
+    needs: [run-unit-tests, run-e2e-tests, run-integration-tests]
+    if: always()
+    steps:
+    - name: Upload
+      uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+      with:
+        name: Event File
+        path: ${{ github.event_path }}

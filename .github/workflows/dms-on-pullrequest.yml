@@ -11,19 +11,19 @@ on:
     branches:
       - main
     paths:
-      - "**/*.cs"
-      - "**/*.csproj"
-      - "**/Directory.Packages.props"
+      - "**/src/dms/*.cs"
+      - "**/src/dms/*.csproj"
+      - "**/src/dms/Directory.Packages.props"
   pull_request:
     branches:
       - main
     paths:
       - "**/*.ps1"
       - "**/*.psm1"
-      - "**/*.cs"
-      - "**/*.csproj"
-      - ".github/**/*.yml"
-      - "**/Directory.Packages.props"
+      - "**/src/dms/*.cs"
+      - "**/src/dms/*.csproj"
+      - ".github/**/dms*.yml"
+      - "**/src/dms/Directory.Packages.props"
   workflow_dispatch:
 
 concurrency:
