@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<package >
+  <metadata>
+    <id>EdFi.DmsConfigurationService</id>
+    <version>1.0.0.0</version>
+    <title>Ed-Fi DmsConfigurationService</title>
+    <authors>Ed-Fi Alliance</authors>
+    <projectUrl>https://github.com/Ed-Fi-Alliance-OSS/DMS-Configuration-Service</projectUrl>
+    <copyright>Copyright @ $year$ Ed-Fi Alliance, LLC and Contributors</copyright>
+    <summary>Ed-Fi DmsConfigurationService</summary>
+    <description>Ed-Fi DmsConfigurationService</description>
+    <license type="expression">Apache-2.0</license>
+  </metadata>
+</package>
