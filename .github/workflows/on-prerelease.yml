@@ -219,10 +219,10 @@ jobs:
            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
          }
 
-         $artifact | ForEach-Object {
-             $arguments.PackageFile = $_
-             ./build.ps1 Push @arguments
-          }
+        #  $artifact | ForEach-Object {
+        #      $arguments.PackageFile = $_
+        #      ./build.ps1 Push @arguments
+        #   }
 
   docker-publish:
     name: Publish to Docker Hub
@@ -281,4 +281,4 @@ jobs:
           file: Nuget.Dockerfile
           tags: ${{ steps.prepare-tags.outputs.DMSTAGS }}
           labels: ${{ steps.metadatamanagementservice.outputs.labels }}
-          push: true
+          push: false
