@@ -11,7 +11,7 @@ on:
     branches:
       - main
     paths:
-      - "**/src/config/*.cs"
+      - "src/config/**/*.cs"
       - "**/src/config/*.csproj"
       - "**/src/config/Directory.Packages.props"
   pull_request:
@@ -20,7 +20,7 @@ on:
     paths:
       - "**/*.ps1"
       - "**/*.psm1"
-      - "**/src/config/*.cs"
+      - "src/config/**/*.cs"
       - "**/src/config/*.csproj"
       - ".github/**/config/config*.yml"
       - "**src/config/Directory.Packages.props"
