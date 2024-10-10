@@ -5,7 +5,7 @@
 
 services:
   dms:
-    build: ../../src/
+    build: ../../src/dms/
     hostname: dms
     ports:
       - 8080:8080
