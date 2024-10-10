@@ -22,7 +22,7 @@ on:
       - "**/*.psm1"
       - "**/src/config/*.cs"
       - "**/src/config/*.csproj"
-      - ".github/**/config*.yml"
+      - ".github/**/config/config*.yml"
       - "**src/config/Directory.Packages.props"
   workflow_dispatch:
 

@@ -9,7 +9,7 @@ on:
       - main
     paths:
       - "src/config/Dockerfile"
-      - ".github/workflows/config-on-pullrequest-dockerfile.yml"
+      - ".github/workflows/config/on-pullrequest-dockerfile.yml"
   workflow_dispatch:
 
 concurrency:
