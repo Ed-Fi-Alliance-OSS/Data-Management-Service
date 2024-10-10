@@ -10,6 +10,8 @@ on:
       - main
     tags:
       - "v*.*.*"
+    paths:
+      - "src/dms/**"
 
 env:
   API_URL: https://api.github.com/repos/${{ github.repository }}

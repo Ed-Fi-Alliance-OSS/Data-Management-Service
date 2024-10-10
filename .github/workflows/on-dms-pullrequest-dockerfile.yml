@@ -1,4 +1,4 @@
-name: On Pull Request - Dockerfile
+name: On DMS Pull Request - Dockerfile
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
       - main
     paths:
       - "src/dms/Dockerfile"
-      - ".github/workflows/dms-on-pullrequest-dockerfile.yml"
+      - ".github/workflows/on-dms-pullrequest-dockerfile.yml"
   workflow_dispatch:
 
 concurrency:
