@@ -12,8 +12,8 @@ on:
       - main
     paths:
       - "src/config/**/*.cs"
-      - "**/src/config/*.csproj"
-      - "**/src/config/Directory.Packages.props"
+      - "src/config/**/*.csproj"
+      - "src/config/Directory.Packages.props"
   pull_request:
     branches:
       - main
@@ -21,9 +21,9 @@ on:
       - "**/*.ps1"
       - "**/*.psm1"
       - "src/config/**/*.cs"
-      - "**/src/config/*.csproj"
-      - ".github/**/config/config*.yml"
-      - "**src/config/Directory.Packages.props"
+      - "src/config/**/*.csproj"
+      - ".github/**/config*.yml"
+      - "src/config/Directory.Packages.props"
   workflow_dispatch:
 
 concurrency:
