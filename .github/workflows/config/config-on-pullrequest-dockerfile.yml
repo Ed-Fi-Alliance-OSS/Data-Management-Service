@@ -8,7 +8,7 @@ on:
     branches:
       - main
     paths:
-      - "**/src/config/Dockerfile"
+      - "src/config/Dockerfile"
       - ".github/workflows/config-on-pullrequest-dockerfile.yml"
   workflow_dispatch:
 
