@@ -20,5 +20,6 @@
       <ProjectReference Include="..\..\backend\EdFi.DmsConfigurationService.Backend.Keycloak\EdFi.DmsConfigurationService.Backend.Keycloak.csproj" />
       <ProjectReference Include="..\..\backend\EdFi.DmsConfigurationService.Backend.Mssql\EdFi.DmsConfigurationService.Backend.Mssql.csproj" />
       <ProjectReference Include="..\..\backend\EdFi.DmsConfigurationService.Backend.Postgresql\EdFi.DmsConfigurationService.Backend.Postgresql.csproj" />
+      <ProjectReference Include="..\..\datamodel\EdFi.DmsConfigurationService.DataModel\EdFi.DmsConfigurationService.DataModel.csproj" />
     </ItemGroup>
 </Project>

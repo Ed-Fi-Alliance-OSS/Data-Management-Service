@@ -16,9 +16,15 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DmsConfigurationServic
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DmsConfigurationService.Backend.Postgresql", "backend\EdFi.DmsConfigurationService.Backend.Postgresql\EdFi.DmsConfigurationService.Backend.Postgresql.csproj", "{363AD6D0-A6D4-4C5D-AD97-AF6833118F34}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DmsConfigurationService.Backend.Installer", "backend\EdFi.DmsConfigurationService.Backend.Installer\EdFi.DmsConfigurationService.Backend.Installer.csproj", "{B127DAA0-F313-4914-AC43-565444D91C1E}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DmsConfigurationService.Backend.Installer", "backend\EdFi.DmsConfigurationService.Backend.Installer\EdFi.DmsConfigurationService.Backend.Installer.csproj", "{B127DAA0-F313-4914-AC43-565444D91C1E}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DmsConfigurationService.Backend.Mssql", "backend\EdFi.DmsConfigurationService.Backend.Mssql\EdFi.DmsConfigurationService.Backend.Mssql.csproj", "{5F62ACE6-B44A-40AE-B5EC-AF2BBA9FF1E3}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DmsConfigurationService.Backend.Mssql", "backend\EdFi.DmsConfigurationService.Backend.Mssql\EdFi.DmsConfigurationService.Backend.Mssql.csproj", "{5F62ACE6-B44A-40AE-B5EC-AF2BBA9FF1E3}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "datamodel", "datamodel", "{F90FF019-91D3-462E-94A4-96B52681DB16}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DmsConfigurationService.DataModel", "datamodel\EdFi.DmsConfigurationService.DataModel\EdFi.DmsConfigurationService.DataModel.csproj", "{E97DCC9F-C27F-497D-94FE-3DD39038C38B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration", "backend\EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration\EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration.csproj", "{EE23DFFB-C61D-48FE-B821-2442D67D7AF9}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -54,6 +60,14 @@ Global
 		{5F62ACE6-B44A-40AE-B5EC-AF2BBA9FF1E3}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5F62ACE6-B44A-40AE-B5EC-AF2BBA9FF1E3}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{5F62ACE6-B44A-40AE-B5EC-AF2BBA9FF1E3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E97DCC9F-C27F-497D-94FE-3DD39038C38B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E97DCC9F-C27F-497D-94FE-3DD39038C38B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E97DCC9F-C27F-497D-94FE-3DD39038C38B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E97DCC9F-C27F-497D-94FE-3DD39038C38B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EE23DFFB-C61D-48FE-B821-2442D67D7AF9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EE23DFFB-C61D-48FE-B821-2442D67D7AF9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EE23DFFB-C61D-48FE-B821-2442D67D7AF9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EE23DFFB-C61D-48FE-B821-2442D67D7AF9}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -66,6 +80,8 @@ Global
 		{363AD6D0-A6D4-4C5D-AD97-AF6833118F34} = {82B01A63-4B8A-4965-9806-001128050FB5}
 		{B127DAA0-F313-4914-AC43-565444D91C1E} = {82B01A63-4B8A-4965-9806-001128050FB5}
 		{5F62ACE6-B44A-40AE-B5EC-AF2BBA9FF1E3} = {82B01A63-4B8A-4965-9806-001128050FB5}
+		{E97DCC9F-C27F-497D-94FE-3DD39038C38B} = {F90FF019-91D3-462E-94A4-96B52681DB16}
+		{EE23DFFB-C61D-48FE-B821-2442D67D7AF9} = {82B01A63-4B8A-4965-9806-001128050FB5}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {BB22426B-6AA8-4C58-9557-376F107B547B}

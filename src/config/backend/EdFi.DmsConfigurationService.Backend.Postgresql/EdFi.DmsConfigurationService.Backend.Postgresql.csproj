@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+      <PackageReference Include="Dapper" />
       <PackageReference Include="dbup-core" />
       <PackageReference Include="dbup-postgresql" />
       <PackageReference Include="Npgsql" />
@@ -18,6 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\datamodel\EdFi.DmsConfigurationService.DataModel\EdFi.DmsConfigurationService.DataModel.csproj" />
     <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend\EdFi.DmsConfigurationService.Backend.csproj" />
   </ItemGroup>
 

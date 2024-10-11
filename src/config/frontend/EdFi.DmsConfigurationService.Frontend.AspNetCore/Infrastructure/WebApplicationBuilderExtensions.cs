@@ -9,6 +9,7 @@ using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Deploy;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Postgresql;
+using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using FluentValidation;
 using FluentValidation.AspNetCore;
@@ -41,9 +42,9 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder
             .Services.Configure<AppSettings>(webApplicationBuilder.Configuration.GetSection("AppSettings"))
             .AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>()
-            .Configure<ConnectionStrings>(
+            .Configure<DatabaseOptions>(
                 webApplicationBuilder.Configuration.GetSection("ConnectionStrings"))
-            .AddSingleton<IValidateOptions<ConnectionStrings>, ConnectionStringsValidator>();
+            .AddSingleton<IValidateOptions<DatabaseOptions>, DatabaseOptionsValidator>();
         ;
         ConfigureDatastore(webApplicationBuilder);
 
@@ -66,6 +67,7 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder.Services.AddHttpClient();
 
         webApplicationBuilder.Services.AddTransient<IClientRepository, ClientRepository>();
+        webApplicationBuilder.Services.AddTransient<IRepository<Vendor>, VendorRepository>();
         webApplicationBuilder.Services.AddTransient<ITokenManager, TokenManager>();
 
         var metadataAddress = $"{identitySettings.Authority}/.well-known/openid-configuration";
