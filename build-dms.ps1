@@ -27,18 +27,18 @@
         * DockerRun: runs the Docker image that was built from source code
         * Run: starts the application
     .EXAMPLE
-        .\build.ps1 build -Configuration Release -Version "2.0" -BuildCounter 45
+        .\build-dms.ps1 build -Configuration Release -Version "2.0" -BuildCounter 45
 
         Overrides the default build configuration (Debug) to build in release
         mode with assembly version 2.0.45.
 
     .EXAMPLE
-        .\build.ps1 unittest
+        .\build-dms.ps1 unittest
 
         Output: test results displayed in the console and saved to XML files.
 
     .EXAMPLE
-        .\build.ps1 push -NuGetApiKey $env:nuget_key
+        .\build-dms.ps1 push -NuGetApiKey $env:nuget_key
 #>
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'False positive')]
 param(
@@ -85,7 +85,7 @@ param(
     $EnableOpenSearch
 )
 
-$solutionRoot = "$PSScriptRoot/src"
+$solutionRoot = "$PSScriptRoot/src/dms"
 $defaultSolution = "$solutionRoot/EdFi.DataManagementService.sln"
 $applicationRoot = "$solutionRoot/frontend"
 $backendRoot = "$solutionRoot/backend"
@@ -365,17 +365,17 @@ $dockerTagBase = "local"
 $dockerTagDMS = "$($dockerTagBase)/data-management-service"
 
 function DockerBuild {
-    Push-Location src/
+    Push-Location src/dms/
     &docker build -t $dockerTagDMS -f Dockerfile .
     Pop-Location
 }
 
 function DockerRun {
-    &docker run --rm -p 8080:8080 --env-file ./src/.env -d $dockerTagDMS
+    &docker run --rm -p 8080:8080 --env-file ./src/dms/.env -d $dockerTagDMS
 }
 
 function Run {
-    Push-Location src
+    Push-Location src/dms
     try {
         dotnet run --no-build --no-restore --project ./frontend/EdFi.DataManagementService.Frontend.AspNetCore
     }

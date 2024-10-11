@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+      <PackageReference Include="dbup-core" />
+      <PackageReference Include="dbup-postgresql" />
+      <PackageReference Include="Npgsql" />
+      <PackageReference Include="Npgsql.DependencyInjection" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverageAttribute" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend\EdFi.DmsConfigurationService.Backend.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+      <EmbeddedResource Include="Deploy\Scripts\*.sql">
+          <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+      </EmbeddedResource>
+  </ItemGroup>
+
+</Project>
