@@ -5,7 +5,7 @@
 
 FROM mcr.microsoft.com/dotnet/sdk:8.0.401-alpine3.20@sha256:658c93223111638f9bb54746679e554b2cf0453d8fb7b9fed32c3c0726c210fe AS build
 
-WORKDIR /source
+WORKDIR /source-dms
 
 COPY frontend/EdFi.DataManagementService.Frontend.AspNetCore/ ./frontend/EdFi.DataManagementService.Frontend.AspNetCore/
 COPY core/EdFi.DataManagementService.Core/ ./core/EdFi.DataManagementService.Core/
@@ -21,11 +21,11 @@ COPY nuget.config .
 RUN dotnet restore frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj && \
     dotnet restore backend/EdFi.DataManagementService.Backend.Installer/EdFi.DataManagementService.Backend.Installer.csproj
 
-WORKDIR /source/frontend/EdFi.DataManagementService.Frontend.AspNetCore
+WORKDIR /source-dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore
 RUN dotnet build -c Release --no-restore && \
     dotnet publish -c Release --no-build --no-restore -o /app/Frontend
 
-WORKDIR /source/backend/EdFi.DataManagementService.Backend.Installer
+WORKDIR /source-dms/backend/EdFi.DataManagementService.Backend.Installer
 RUN dotnet build -c Release --no-restore && \
     dotnet publish -c Release -o /app/Installer --no-restore --no-build
 
