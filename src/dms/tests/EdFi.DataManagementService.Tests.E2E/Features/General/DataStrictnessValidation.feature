@@ -1,18 +1,41 @@
-/*
-                * SPDX-License-Identifier: Apache-2.0
-                * Licensed to the Ed-Fi Alliance under one or more agreements.
-                * The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
-                * See the LICENSE and NOTICES files in the project root for more information.
-                */
-
 Feature: Check the least amount of friction in the data exchange while still ensuring data are valid
 
         Background:
-            Given the system has these "schools" references
-                  | educationOrganizationCategories | gradeLevels   | nameOfInstitution      | schoolId  |
-                  | School                          | Twelfth grade | Grand Bend High School | 255901001 |
+            Given the system has these descriptors
+                  | descriptorValue                                                                    |
+                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution |
+                  | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade                                   |
+                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School                     |
+                  | uri://ed-fi.org/GradeLevelDescriptor#Twelfth grade                                 |
+              And a POST request is made to "/ed-fi/schools" with
+                  """
+                  {
+                      "educationOrganizationCategories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                          }
+                      ],
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Twelfth grade"
+                          }
+                      ],
+                      "schoolId": 255901001,
+                      "nameOfInstitution": "Grand Bend High School"
+                  }
+                  """
+              And a POST request is made to "/ed-fi/classPeriods" with
+                  """
+                  {
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      },
+                      "classPeriodName": "Class Period Test",
+                      "officialAttendancePeriod": true
+                  }
+                  """
 
-        @API-233 @ignore
+        @API-233
         Scenario: 01 Ensure attributes not defined are not included as part of the creation of a resource
              When a POST request is made to "/ed-fi/schools" with
                   """
@@ -52,12 +75,9 @@ Feature: Check the least amount of friction in the data exchange while still ens
                   }
                   """
 
-        @API-234 @ignore
+        @API-234
         Scenario: 02 Ensure attributes not defined are not included as part of the update of the resource
-            Given the system has these "schools" references
-                  | educationOrganizationCategories | gradeLevels | nameOfInstitution  | schoolId           |
-                  | Post Secondary Institution      | Ninth grade | Middle School Test | 745672453832456000 |
-             When a PUT request is made to "/ed-fi/schools/{id}" with
+            Given a POST request is made to "/ed-fi/schools/" with
                   """
                   {
                       "educationOrganizationCategories": [
@@ -70,8 +90,26 @@ Feature: Check the least amount of friction in the data exchange while still ens
                               "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
                           }
                       ],
-                      "schoolId": 745672453832456,
-                      "nameOfInstitution": "Institution Test",
+                      "schoolId": 745672453832456000,
+                      "nameOfInstitution": "Middle School Test"
+                  }
+                  """
+             When a PUT request is made to "/ed-fi/schools/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "educationOrganizationCategories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution"
+                          }
+                      ],
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                          }
+                      ],
+                      "schoolId": 745672453832456000,
+                      "nameOfInstitution": "Middle School Test",
                       "name": "Test",
                       "lastName": "Last name"
                   }
@@ -91,23 +129,19 @@ Feature: Check the least amount of friction in the data exchange while still ens
                               "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
                           }
                       ],
-                      "schoolId": 745672453832456,
-                      "nameOfInstitution": "Institution Test"
+                      "schoolId": 745672453832456000,
+                      "nameOfInstitution": "Middle School Test"
                   }
                   """
 
-        @API-235 @ignore
+        @API-235
         Scenario: 03 Ensure client can retrieve information through attribute using mixed changes
-            Given the system has these "classPeriods" references
-                  | classPeriodName   | schoolReference | officialAttendancePeriod |
-                  | Class Period Test | 255901001       | 1                        |
              When a GET request is made to "/ed-fi/classPeriods?classPeriodName=CLASS+pERIOD+test"
              Then it should respond with 200
               And the response body is
                   """
                   [
                       {
-                          "id": "bf1b531a8177472698e2c5f1e83ec4f7",
                           "schoolReference": {
                               "schoolId": 255901001
                           },
@@ -117,25 +151,22 @@ Feature: Check the least amount of friction in the data exchange while still ens
                   ]
                   """
 
-        @API-236 @ignore
+        @API-236
         Scenario: 04 Ensure clients can create a resource using numeric values for booleans
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
                   {
-                      "classPeriodName": "Class Period Test 1",
                       "schoolReference": {
                           "schoolId": 255901001
                       },
+                      "classPeriodName": "Class Period 1",
                       "officialAttendancePeriod": 0
                   }
                   """
              Then it should respond with 201
 
-        @API-237 @ignore
+        @API-237
         Scenario: 05 Ensure clients can update a resource using numeric values for booleans
-            Given the system has these "classPeriods" with
-                  | classPeriodName     | schoolReference | officialAttendancePeriod |
-                  | Class Period Test 1 | 255901001       | 0                        |
              When a PUT request is made to "/ed-fi/classPeriods/{id}" with
                   """
                   {
@@ -147,9 +178,8 @@ Feature: Check the least amount of friction in the data exchange while still ens
                   }
                   """
              Then it should respond with 204
-              And the record can be retrieved with a GET request
 
-        @API-238 @ignore
+        @API-238
         Scenario: 06 Ensure clients cannot create a resource using incorrect values for booleans
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
@@ -165,11 +195,8 @@ Feature: Check the least amount of friction in the data exchange while still ens
               And the response body is
               # Pending confirmation
 
-        @API-239 @ignore
+        @API-239
         Scenario: 07 Ensure clients cannot create a resource using incorrect values for booleans
-            Given the system has these "classPeriods" with
-                  | classPeriodName     | schoolReference | officialAttendancePeriod |
-                  | Class Period Test 1 | 255901001       | 0                        |
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
                   {
@@ -184,7 +211,7 @@ Feature: Check the least amount of friction in the data exchange while still ens
              # Pending confirmation
 
 
-        @API-240 @ignore
+        @API-240
         Scenario: 08 Ensure clients can create a resource using expected booleans
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
@@ -198,11 +225,8 @@ Feature: Check the least amount of friction in the data exchange while still ens
                   """
              Then it should respond with 201
 
-        @API-241 @ignore
+        @API-241
         Scenario: 09 Ensure clients can update a resource using expected booleans
-            Given the system has these "classPeriods" with
-                  | classPeriodName     | schoolReference | officialAttendancePeriod |
-                  | Class Period Test 2 | 255901001       | true                     |
              When a PUT request is made to "/ed-fi/classPeriods" with
                   """
                   {
@@ -215,7 +239,7 @@ Feature: Check the least amount of friction in the data exchange while still ens
                   """
              Then it should respond with 204
 
-        @API-242 @ignore
+        @API-242
         Scenario: 10 Ensure clients can create a resource using expected booleans as string
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
@@ -239,11 +263,8 @@ Feature: Check the least amount of friction in the data exchange while still ens
                        }
                   """
 
-        @API-243 @ignore
+        @API-243
         Scenario: 11 Ensure clients can update a resource using expected booleans as strings
-            Given the system has these "classPeriods" with
-                  | classPeriodName     | schoolReference | officialAttendancePeriod |
-                  | Class Period Test 3 | 255901001       | true                     |
              When a PUT request is made to "/ed-fi/classPeriods" with
                   """
                   {
@@ -266,7 +287,7 @@ Feature: Check the least amount of friction in the data exchange while still ens
                        }
                   """
 
-        @API-244 @ignore
+        @API-244
         Scenario: 12 Ensure clients can create a resource using numeric values as strings
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
@@ -290,11 +311,8 @@ Feature: Check the least amount of friction in the data exchange while still ens
                        }
                   """
 
-        @API-245 @ignore
+        @API-245
         Scenario: 13 Ensure clients can update a resource using numeric values as strings
-            Given the system has these "classPeriods" with
-                  | classPeriodName     | schoolReference | officialAttendancePeriod |
-                  | Class Period Test 4 | 255901001       | true                     |
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
                   {
@@ -317,7 +335,7 @@ Feature: Check the least amount of friction in the data exchange while still ens
                        }
                   """
 
-        @API-246 @ignore
+        @API-246
         Scenario: 14 Ensure clients cannot update a resource that is using a different value typa than boolean
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
@@ -330,13 +348,24 @@ Feature: Check the least amount of friction in the data exchange while still ens
                   }
                   """
              Then it should respond with 400
-            #  Pending response body
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                          "$.officialAttendancePeriod": [
+                          "Could not convert string to boolean: 1. Path 'officialAttendancePeriod'"
+                          ]
+                      }
+                  }
+                  """
 
-        @API-247 @ignore
+
+        @API-247
         Scenario: 15 Ensure clients cannot update a resource that is using a different value typa than boolean
-            Given the system has these "classPeriods" with
-                  | classPeriodName     | schoolReference | officialAttendancePeriod |
-                  | Class Period Test 4 | 255901001       | true                     |
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
                   {
@@ -348,5 +377,19 @@ Feature: Check the least amount of friction in the data exchange while still ens
                   }
                   """
              Then it should respond with 400
-             # Pending response
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                          "$.officialAttendancePeriod": [
+                          "Could not convert string to boolean: 1. Path 'officialAttendancePeriod'"
+                          ]
+                      }
+                  }
+                  """
 
