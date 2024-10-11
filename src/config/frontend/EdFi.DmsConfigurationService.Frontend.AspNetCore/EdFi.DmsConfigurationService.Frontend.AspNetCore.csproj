@@ -16,7 +16,9 @@
       <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     </ItemGroup>
     <ItemGroup>
-      <ProjectReference Include="..\..\backend\EdFi.DmsConfigurationService.Backend.Keycloak\EdFi.DmsConfigurationService.Backend.Keycloak.csproj" />
       <ProjectReference Include="..\..\backend\EdFi.DmsConfigurationService.Backend\EdFi.DmsConfigurationService.Backend.csproj" />
+      <ProjectReference Include="..\..\backend\EdFi.DmsConfigurationService.Backend.Keycloak\EdFi.DmsConfigurationService.Backend.Keycloak.csproj" />
+      <ProjectReference Include="..\..\backend\EdFi.DmsConfigurationService.Backend.Mssql\EdFi.DmsConfigurationService.Backend.Mssql.csproj" />
+      <ProjectReference Include="..\..\backend\EdFi.DmsConfigurationService.Backend.Postgresql\EdFi.DmsConfigurationService.Backend.Postgresql.csproj" />
     </ItemGroup>
 </Project>

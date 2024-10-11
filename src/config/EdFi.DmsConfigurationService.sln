@@ -14,6 +14,12 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DmsConfigurationServic
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DmsConfigurationService.Backend.Keycloak", "backend\EdFi.DmsConfigurationService.Backend.Keycloak\EdFi.DmsConfigurationService.Backend.Keycloak.csproj", "{40174F36-F992-4C1D-AA40-E59442637CF8}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DmsConfigurationService.Backend.Postgresql", "backend\EdFi.DmsConfigurationService.Backend.Postgresql\EdFi.DmsConfigurationService.Backend.Postgresql.csproj", "{363AD6D0-A6D4-4C5D-AD97-AF6833118F34}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DmsConfigurationService.Backend.Installer", "backend\EdFi.DmsConfigurationService.Backend.Installer\EdFi.DmsConfigurationService.Backend.Installer.csproj", "{B127DAA0-F313-4914-AC43-565444D91C1E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DmsConfigurationService.Backend.Mssql", "backend\EdFi.DmsConfigurationService.Backend.Mssql\EdFi.DmsConfigurationService.Backend.Mssql.csproj", "{5F62ACE6-B44A-40AE-B5EC-AF2BBA9FF1E3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -36,6 +42,18 @@ Global
 		{40174F36-F992-4C1D-AA40-E59442637CF8}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{40174F36-F992-4C1D-AA40-E59442637CF8}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{40174F36-F992-4C1D-AA40-E59442637CF8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{363AD6D0-A6D4-4C5D-AD97-AF6833118F34}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{363AD6D0-A6D4-4C5D-AD97-AF6833118F34}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{363AD6D0-A6D4-4C5D-AD97-AF6833118F34}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{363AD6D0-A6D4-4C5D-AD97-AF6833118F34}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B127DAA0-F313-4914-AC43-565444D91C1E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B127DAA0-F313-4914-AC43-565444D91C1E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B127DAA0-F313-4914-AC43-565444D91C1E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B127DAA0-F313-4914-AC43-565444D91C1E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5F62ACE6-B44A-40AE-B5EC-AF2BBA9FF1E3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5F62ACE6-B44A-40AE-B5EC-AF2BBA9FF1E3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5F62ACE6-B44A-40AE-B5EC-AF2BBA9FF1E3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5F62ACE6-B44A-40AE-B5EC-AF2BBA9FF1E3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -45,6 +63,9 @@ Global
 		{A1BEAD7A-70BD-46A9-8660-9ED779C55329} = {68E345E9-E50F-482A-8AFF-9E1156C448C9}
 		{534CEEAD-7C32-41F5-B2A2-BFB650D0463B} = {82B01A63-4B8A-4965-9806-001128050FB5}
 		{40174F36-F992-4C1D-AA40-E59442637CF8} = {82B01A63-4B8A-4965-9806-001128050FB5}
+		{363AD6D0-A6D4-4C5D-AD97-AF6833118F34} = {82B01A63-4B8A-4965-9806-001128050FB5}
+		{B127DAA0-F313-4914-AC43-565444D91C1E} = {82B01A63-4B8A-4965-9806-001128050FB5}
+		{5F62ACE6-B44A-40AE-B5EC-AF2BBA9FF1E3} = {82B01A63-4B8A-4965-9806-001128050FB5}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {BB22426B-6AA8-4C58-9557-376F107B547B}
