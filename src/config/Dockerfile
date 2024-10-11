@@ -12,7 +12,6 @@ COPY backend/EdFi.DmsConfigurationService.Backend/ backend/EdFi.DmsConfiguration
 COPY backend/EdFi.DmsConfigurationService.Backend.Keycloak/ backend/EdFi.DmsConfigurationService.Backend.Keycloak/
 COPY backend/EdFi.DmsConfigurationService.Backend.Mssql/ backend/EdFi.DmsConfigurationService.Backend.Mssql/
 COPY backend/EdFi.DmsConfigurationService.Backend.Postgresql/ backend/EdFi.DmsConfigurationService.Backend.Postgresql/
-COPY .editorconfig .
 
 COPY Directory.Packages.props ./
 COPY nuget.config .
