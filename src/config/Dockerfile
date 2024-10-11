@@ -8,6 +8,10 @@ FROM mcr.microsoft.com/dotnet/sdk:8.0.401-alpine3.20@sha256:658c93223111638f9bb5
 WORKDIR /source
 
 COPY frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/ ./frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/
+COPY backend/EdFi.DmsConfigurationService.Backend/ backend/EdFi.DmsConfigurationService.Backend/
+COPY backend/EdFi.DmsConfigurationService.Backend.Keycloak/ backend/EdFi.DmsConfigurationService.Backend.Keycloak/
+COPY backend/EdFi.DmsConfigurationService.Backend.Mssql/ backend/EdFi.DmsConfigurationService.Backend.Mssql/
+COPY backend/EdFi.DmsConfigurationService.Backend.Postgresql/ backend/EdFi.DmsConfigurationService.Backend.Postgresql/
 COPY .editorconfig .
 
 COPY Directory.Packages.props ./
