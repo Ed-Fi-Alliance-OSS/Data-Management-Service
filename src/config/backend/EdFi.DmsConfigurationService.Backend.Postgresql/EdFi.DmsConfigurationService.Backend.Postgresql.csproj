@@ -7,7 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Keycloak.Net.Core" />
+      <PackageReference Include="dbup-core" />
+      <PackageReference Include="dbup-postgresql" />
+      <PackageReference Include="Npgsql" />
+      <PackageReference Include="Npgsql.DependencyInjection" />
   </ItemGroup>
 
   <ItemGroup>
@@ -16,6 +19,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend\EdFi.DmsConfigurationService.Backend.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+      <EmbeddedResource Include="Deploy\Scripts\*.sql">
+          <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+      </EmbeddedResource>
   </ItemGroup>
 
 </Project>

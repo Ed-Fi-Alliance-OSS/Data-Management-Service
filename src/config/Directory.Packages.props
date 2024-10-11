@@ -3,6 +3,12 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
+    <PackageVersion Include="dbup-core" Version="5.0.87" />
+    <PackageVersion Include="dbup-postgresql" Version="5.0.40" />
+    <PackageVersion Include="dbup-sqlserver" Version="5.0.41" />
+    <PackageVersion Include="CommandLineParser" Version="2.9.1" />
+    <PackageVersion Include="Npgsql" Version="8.0.3" />
+    <PackageVersion Include="Npgsql.DependencyInjection" Version="8.0.3" />
   </ItemGroup>
   <!-- Testing Packages -->
   <ItemGroup>
@@ -17,5 +23,6 @@
     <PackageVersion Include="NUnit" Version="4.2.1" />
     <PackageVersion Include="NUnit3TestAdapter" Version="4.6.0" />
     <PackageVersion Include="NUnit.Analyzers" Version="4.3.0" />
+    <PackageVersion Include="System.Text.Json" Version="8.0.5" />
   </ItemGroup>
 </Project>
