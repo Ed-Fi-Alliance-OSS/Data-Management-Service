@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-name: On Pre-Release
+name: On DMS Pre-Release
 on:
   release:
     types:
@@ -48,7 +48,7 @@ jobs:
         run: |
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}"
 
-          ./build.ps1 -Command BuildAndPublish `
+          ./build-dms.ps1 -Command BuildAndPublish `
               -Configuration Release `
               -DMSVersion $packageVersion
 
@@ -56,7 +56,7 @@ jobs:
         run: |
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}"
 
-          ./build.ps1 -Command Package `
+          ./build-dms.ps1 -Command Package `
               -DMSVersion $packageVersion `
               -Configuration Release
 
@@ -219,10 +219,10 @@ jobs:
            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
          }
 
-        #  $artifact | ForEach-Object {
-        #      $arguments.PackageFile = $_
-        #      ./build.ps1 Push @arguments
-        #   }
+         $artifact | ForEach-Object {
+             $arguments.PackageFile = $_
+             ./build-dms.ps1 Push @arguments
+          }
 
   docker-publish:
     name: Publish to Docker Hub
@@ -281,4 +281,4 @@ jobs:
           file: Nuget.Dockerfile
           tags: ${{ steps.prepare-tags.outputs.DMSTAGS }}
           labels: ${{ steps.metadatamanagementservice.outputs.labels }}
-          push: false
+          push: true
