@@ -12,6 +12,7 @@ COPY .editorconfig .
 
 COPY Directory.Packages.props ./
 COPY nuget.config .
+RUN dotnet restore frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/EdFi.DmsConfigurationService.Frontend.AspNetCore.csproj
 
 WORKDIR /source/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore
 RUN dotnet build -c Release --no-restore && \
