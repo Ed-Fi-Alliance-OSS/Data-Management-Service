@@ -15,6 +15,7 @@ COPY backend/EdFi.DataManagementService.Backend/ backend/EdFi.DataManagementServ
 COPY backend/EdFi.DataManagementService.Backend.Mssql/ backend/EdFi.DataManagementService.Backend.Mssql/
 COPY backend/EdFi.DataManagementService.Backend.Postgresql/ backend/EdFi.DataManagementService.Backend.Postgresql/
 COPY backend/EdFi.DataManagementService.Backend.OpenSearch/ backend/EdFi.DataManagementService.Backend.OpenSearch/
+COPY .editorconfig .
 
 COPY Directory.Packages.props ./
 COPY nuget.config .
