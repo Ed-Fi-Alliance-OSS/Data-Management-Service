@@ -14,33 +14,43 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql
     {
         public async Task<IReadOnlyList<Vendor>> GetAllAsync()
         {
-            var sql = "SELECT id, company, contactname, contactemailaddress FROM dmscs.vendor;";
+            var sql = "SELECT Id, Company, ContactName, ContactEmailAddress FROM dmscs.Vendor;";
             await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
             var vendors = await connection.QueryAsync<Vendor>(sql);
             return (IReadOnlyList<Vendor>)vendors;
         }
 
-        public Task<Vendor> GetByIdAsync(long id)
+        public async Task<Vendor?> GetByIdAsync(long id)
         {
-            throw new NotImplementedException();
+            var sql = "SELECT Id, Company, ContactName, ContactEmailAddress  FROM dmscs.Vendor where Id = @Id;";
+            await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+            var vendor = await connection.QuerySingleOrDefaultAsync<Vendor>(sql, new { Id = id });
+            return vendor;
         }
 
-        public async Task<bool> AddAsync(Vendor vendor)
+        public async Task<long> AddAsync(Vendor vendor)
         {
-            var sql = "INSERT INTO dmscs.Vendor (Company, ContactName, ContactEmailAddress) values (@Company, @ContactName, @ContactEmailAddress)";
+            var sql = "INSERT INTO dmscs.Vendor (Company, ContactName, ContactEmailAddress) VALUES (@Company, @ContactName, @ContactEmailAddress) RETURNING Id";
+            await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+            return await connection.ExecuteScalarAsync<long>(sql, vendor);
+        }
+
+        public async Task<bool> UpdateAsync(Vendor vendor)
+        {
+            var sql = @"UPDATE dmscs.vendor
+	                    SET Company=@Company, ContactName=@ContactName, ContactEmailAddress=@ContactEmailAddress
+	                    WHERE Id = @Id;";
             await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
             var affectedRows = await connection.ExecuteAsync(sql, vendor);
             return affectedRows == 1;
         }
 
-        public Task<bool> UpdateAsync(Vendor entity)
+        public async Task<bool> DeleteAsync(long id)
         {
-            throw new NotImplementedException();
-        }
-
-        public Task<bool> DeleteAsync(long id)
-        {
-            throw new NotImplementedException();
+            var sql = "DELETE FROM dmscs.Vendor where Id = @Id;";
+            await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+            var affectedRows = await connection.ExecuteAsync(sql, new { Id = id });
+            return affectedRows == 1;
         }
     }
 }
