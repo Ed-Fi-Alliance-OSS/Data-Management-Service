@@ -12,10 +12,12 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql
 {
     public class VendorRepository(IOptions<DatabaseOptions> databaseOptions) : IRepository<Vendor>
     {
-        public Task<IReadOnlyList<Vendor>> GetAllAsync()
+        public async Task<IReadOnlyList<Vendor>> GetAllAsync()
         {
-
-            throw new NotImplementedException();
+            var sql = "SELECT id, company, contactname, contactemailaddress FROM dmscs.vendor;";
+            await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+            var vendors = await connection.QueryAsync<Vendor>(sql);
+            return (IReadOnlyList<Vendor>)vendors;
         }
 
         public Task<Vendor> GetByIdAsync(long id)
