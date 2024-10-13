@@ -30,14 +30,19 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
                     ContactName = "Fake Name"
                 };
 
-                _id = await _repository.AddAsync(vendor);
+                var result = await _repository.AddAsync(vendor);
+                result.Should().BeOfType<InsertResult.InsertSuccess>();
+                _id = (result as InsertResult.InsertSuccess)!.Id;
                 _id.Should().BeGreaterThan(0);
             }
 
             [Test]
             public async Task Should_get_test_vendor_from_get_all()
             {
-                var vendorFromDb = (await _repository.GetAllAsync()).First();
+                var getResult = await _repository.GetAllAsync();
+                getResult.Should().BeOfType<GetResult<Vendor>.GetSuccess>();
+
+                var vendorFromDb = ((GetResult<Vendor>.GetSuccess)getResult).Results.First();
                 vendorFromDb.Company.Should().Be("Test Company");
                 vendorFromDb.ContactEmailAddress.Should().Be("test@test.com");
                 vendorFromDb.ContactName.Should().Be("Fake Name");
@@ -46,8 +51,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
             [Test]
             public async Task Should_get_test_vendor_from_get_by_id()
             {
-                var vendorFromDb = (await _repository.GetByIdAsync(_id));
-                Debug.Assert(vendorFromDb != null);
+                var getByIdResult = (await _repository.GetByIdAsync(_id));
+                getByIdResult.Should().BeOfType<GetResult<Vendor>.GetByIdSuccess>();
+
+                var vendorFromDb = ((GetResult<Vendor>.GetByIdSuccess)getByIdResult).Result;
                 vendorFromDb.Company.Should().Be("Test Company");
                 vendorFromDb.ContactEmailAddress.Should().Be("test@test.com");
                 vendorFromDb.ContactName.Should().Be("Fake Name");
@@ -69,20 +76,26 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
                     ContactName = "Fake Name"
                 };
 
-                vendor.Id = await _repository.AddAsync(vendor);
+                var insertResult = await _repository.AddAsync(vendor);
+                insertResult.Should().BeOfType<InsertResult.InsertSuccess>();
 
+                vendor.Id = (insertResult as InsertResult.InsertSuccess)!.Id;
                 vendor.Company = "Update Company";
                 vendor.ContactEmailAddress = "update@update.com";
                 vendor.ContactName = "Update Name";
 
-                var success = await _repository.UpdateAsync(vendor);
-                success.Should().BeTrue();
+                var updateResult = await _repository.UpdateAsync(vendor);
+                updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
+                ((UpdateResult.UpdateSuccess) updateResult).RecordsUpdated.Should().Be(1);
             }
 
             [Test]
             public async Task Should_get_update_vendor_from_get_all()
             {
-                var vendorFromDb = (await _repository.GetAllAsync()).First();
+                var getResult = await _repository.GetAllAsync();
+                getResult.Should().BeOfType<GetResult<Vendor>.GetSuccess>();
+
+                var vendorFromDb = ((GetResult<Vendor>.GetSuccess)getResult).Results.First();
                 vendorFromDb.Company.Should().Be("Update Company");
                 vendorFromDb.ContactEmailAddress.Should().Be("update@update.com");
                 vendorFromDb.ContactName.Should().Be("Update Name");
@@ -91,8 +104,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
             [Test]
             public async Task Should_get_update_vendor_from_get_by_id()
             {
-                var vendorFromDb = (await _repository.GetByIdAsync(vendor.Id));
-                Debug.Assert(vendorFromDb != null);
+                var getByIdResult = (await _repository.GetByIdAsync(vendor.Id));
+                getByIdResult.Should().BeOfType<GetResult<Vendor>.GetByIdSuccess>();
+
+                var vendorFromDb = ((GetResult<Vendor>.GetByIdSuccess)getByIdResult).Result;
                 vendorFromDb.Company.Should().Be("Update Company");
                 vendorFromDb.ContactEmailAddress.Should().Be("update@update.com");
                 vendorFromDb.ContactName.Should().Be("Update Name");
@@ -115,7 +130,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
                     ContactName = "Fake Name 1"
                 };
 
-                vendor1.Id = await _repository.AddAsync(vendor1);
+                var insertResult1 = await _repository.AddAsync(vendor1);
+                insertResult1.Should().BeOfType<InsertResult.InsertSuccess>();
+
+                vendor1.Id = ((InsertResult.InsertSuccess)insertResult1).Id;
 
                 vendor2 = new()
                 {
@@ -124,28 +142,36 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
                     ContactName = "Fake Name 2"
                 };
 
-                vendor2.Id = await _repository.AddAsync(vendor2);
+                var insertResult2 = await _repository.AddAsync(vendor2);
+                insertResult2.Should().BeOfType<InsertResult.InsertSuccess>();
 
-                var success = await _repository.DeleteAsync(vendor1.Id);
-                success.Should().BeTrue();
+                vendor2.Id = ((InsertResult.InsertSuccess)insertResult2).Id;
+
+                var deleteResult = await _repository.DeleteAsync(vendor1.Id);
+                deleteResult.Should().BeOfType<DeleteResult.DeleteSuccess>();
             }
 
             [Test]
             public async Task Should_not_get_test_vendor_from_get_all()
             {
-                var vendorsFromDb = (await _repository.GetAllAsync());
-                vendorsFromDb.Count.Should().Be(1);
-                vendorsFromDb.Count(v => v.Id == vendor1.Id).Should().Be(0);
-                vendorsFromDb.Count(v => v.Company == "Test Company 1").Should().Be(0);
-                vendorsFromDb.Count(v => v.Id == vendor2.Id).Should().Be(1);
-                vendorsFromDb.Count(v => v.Company == "Test Company 2").Should().Be(1);
+                var getResult = await _repository.GetAllAsync();
+                getResult.Should().BeOfType<GetResult<Vendor>.GetSuccess>();
+
+                ((GetResult<Vendor>.GetSuccess)getResult).Results.Count.Should().Be(1);
+                ((GetResult<Vendor>.GetSuccess)getResult).Results.Count(v => v.Id == vendor1.Id).Should().Be(0);
+                ((GetResult<Vendor>.GetSuccess)getResult).Results.Count(v => v.Company == "Test Company 1").Should().Be(0);
+                ((GetResult<Vendor>.GetSuccess)getResult).Results.Count(v => v.Id == vendor2.Id).Should().Be(1);
+                ((GetResult<Vendor>.GetSuccess)getResult).Results.Count(v => v.Company == "Test Company 2").Should().Be(1);
             }
 
             [Test]
             public async Task Should_not_get_test_vendor_from_get_by_id()
             {
-                var vendorFromDb = (await _repository.GetByIdAsync(vendor1.Id));
-                vendorFromDb.Should().Be(null);
+                var getByIdResult = (await _repository.GetByIdAsync(vendor1.Id));
+                getByIdResult.Should().BeOfType<GetResult<Vendor>.GetByIdFailureNotExists>();
+
+                getByIdResult = (await _repository.GetByIdAsync(vendor2.Id));
+                getByIdResult.Should().BeOfType<GetResult<Vendor>.GetByIdSuccess>();
             }
         }
     }
