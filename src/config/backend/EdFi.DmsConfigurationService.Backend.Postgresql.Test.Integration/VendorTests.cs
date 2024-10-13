@@ -3,8 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Diagnostics;
-using System.Numerics;
 using EdFi.DmsConfigurationService.DataModel;
 using FluentAssertions;
 
@@ -27,7 +25,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
                 {
                     Company = "Test Company",
                     ContactEmailAddress = "test@test.com",
-                    ContactName = "Fake Name"
+                    ContactName = "Fake Name",
+                    NamespacePrefixes = ["FakePrefix1", "FakePrefix2"]
                 };
 
                 var result = await _repository.AddAsync(vendor);
@@ -46,6 +45,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
                 vendorFromDb.Company.Should().Be("Test Company");
                 vendorFromDb.ContactEmailAddress.Should().Be("test@test.com");
                 vendorFromDb.ContactName.Should().Be("Fake Name");
+                vendorFromDb.NamespacePrefixes.Count.Should().Be(2);
             }
 
             [Test]
@@ -58,6 +58,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
                 vendorFromDb.Company.Should().Be("Test Company");
                 vendorFromDb.ContactEmailAddress.Should().Be("test@test.com");
                 vendorFromDb.ContactName.Should().Be("Fake Name");
+                vendorFromDb.NamespacePrefixes.Count.Should().Be(2);
             }
         }
 
@@ -73,7 +74,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
                 {
                     Company = "Test Company",
                     ContactEmailAddress = "test@test.com",
-                    ContactName = "Fake Name"
+                    ContactName = "Fake Name",
+                    NamespacePrefixes = []
                 };
 
                 var insertResult = await _repository.AddAsync(vendor);
@@ -86,7 +88,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
 
                 var updateResult = await _repository.UpdateAsync(vendor);
                 updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
-                ((UpdateResult.UpdateSuccess) updateResult).RecordsUpdated.Should().Be(1);
+                ((UpdateResult.UpdateSuccess)updateResult).RecordsUpdated.Should().Be(1);
             }
 
             [Test]
@@ -127,7 +129,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
                 {
                     Company = "Test Company 1",
                     ContactEmailAddress = "test1@test.com",
-                    ContactName = "Fake Name 1"
+                    ContactName = "Fake Name 1",
+                    NamespacePrefixes = []
                 };
 
                 var insertResult1 = await _repository.AddAsync(vendor1);
@@ -139,7 +142,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
                 {
                     Company = "Test Company 2",
                     ContactEmailAddress = "test2@test.com",
-                    ContactName = "Fake Name 2"
+                    ContactName = "Fake Name 2",
+                    NamespacePrefixes = []
                 };
 
                 var insertResult2 = await _repository.AddAsync(vendor2);

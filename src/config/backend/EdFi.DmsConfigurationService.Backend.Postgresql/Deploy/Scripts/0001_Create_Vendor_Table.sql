@@ -18,11 +18,11 @@ COMMENT ON COLUMN dmscs.Vendor.ContactEmailAddress IS 'Vendor contact email id';
 
 CREATE TABLE dmscs.VendorNamespacePrefix (
     VendorId BIGINT NOT NULL,
-    NamespacePrefixes VARCHAR(128) NOT NULL,
-    CONSTRAINT pk_VendorNamespacePrefix PRIMARY KEY (VendorId, NamespacePrefixes),
-    CONSTRAINT fk_vendor_NamespacePrefixes FOREIGN KEY (VendorId) REFERENCES dmscs.Vendor(id) ON DELETE CASCADE
+    NamespacePrefix VARCHAR(128) NOT NULL,
+    CONSTRAINT pk_VendorNamespacePrefix PRIMARY KEY (VendorId, NamespacePrefix),
+    CONSTRAINT fk_vendor_NamespacePrefix FOREIGN KEY (VendorId) REFERENCES dmscs.Vendor(id) ON DELETE CASCADE
 );
 
 COMMENT ON TABLE dmscs.VendorNamespacePrefix IS 'Relationship of vendors with Namespace prefix';
 COMMENT ON COLUMN dmscs.VendorNamespacePrefix.VendorId IS 'Vendor or company id';
-COMMENT ON COLUMN dmscs.VendorNamespacePrefix.NamespacePrefixes IS 'Namespace prefix for the vendor';
+COMMENT ON COLUMN dmscs.VendorNamespacePrefix.NamespacePrefix IS 'Namespace prefix for the vendor';
