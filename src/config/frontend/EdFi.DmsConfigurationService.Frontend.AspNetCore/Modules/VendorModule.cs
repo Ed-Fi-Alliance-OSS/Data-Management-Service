@@ -25,7 +25,7 @@ public class VendorModule : IEndpointModule
         var insertResult = await repository.AddAsync(vendor);
         return insertResult switch
         {
-            InsertResult.InsertSuccess => Results.Ok(),
+            InsertResult.InsertSuccess => Results.Created(),
             InsertResult.UnknownFailure => Results.Problem(statusCode: 500),
             _ => Results.Problem(statusCode: 500)
         };
