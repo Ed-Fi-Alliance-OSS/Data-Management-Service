@@ -91,32 +91,43 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql
                 RETURNING Id;
                 """;
             await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
             try
             {
                 var id = await connection.ExecuteScalarAsync<long>(sql, vendor);
 
                 sql =
-                    "INSERT INTO dmscs.VendorNamespacePrefix (VendorId, NamespacePrefix) VALUES (@VendorId, @NamespacePrefix);";
+                    """
+                    INSERT INTO dmscs.VendorNamespacePrefix (VendorId, NamespacePrefix) 
+                    VALUES (@VendorId, @NamespacePrefix);
+                    """;
 
                 var namespacePrefixes =
                     vendor.NamespacePrefixes.Select(p => new { VendorId = id, NamespacePrefix = p });
 
                 await connection.ExecuteAsync(sql, namespacePrefixes);
+                await transaction.CommitAsync();
 
                 return new InsertResult.InsertSuccess(id);
             }
             catch (Exception ex)
             {
+                await transaction.RollbackAsync();
                 return new InsertResult.UnknownFailure(ex.Message);
             }
         }
 
         public async Task<UpdateResult> UpdateAsync(Vendor vendor)
         {
-            var sql = @"UPDATE dmscs.Vendor
-	                    SET Company=@Company, ContactName=@ContactName, ContactEmailAddress=@ContactEmailAddress
-	                    WHERE Id = @Id;";
+            var sql = """
+                      UPDATE dmscs.Vendor
+                      SET Company=@Company, ContactName=@ContactName, ContactEmailAddress=@ContactEmailAddress
+                      WHERE Id = @Id;
+                      """;
             await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
             try
             {
                 var affectedRows = await connection.ExecuteAsync(sql, vendor);
@@ -125,12 +136,16 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql
                 await connection.ExecuteAsync(sql, new { VendorId = vendor.Id });
 
                 sql =
-                    "INSERT INTO dmscs.VendorNamespacePrefix (VendorId, NamespacePrefix) VALUES (@VendorId, @NamespacePrefix);";
+                    """
+                    INSERT INTO dmscs.VendorNamespacePrefix (VendorId, NamespacePrefix) 
+                    VALUES (@VendorId, @NamespacePrefix);
+                    """;
 
                 var namespacePrefixes =
                     vendor.NamespacePrefixes.Select(p => new { VendorId = vendor.Id, NamespacePrefix = p });
 
                 await connection.ExecuteAsync(sql, namespacePrefixes);
+                await transaction.CommitAsync();
 
                 return affectedRows > 0
                     ? new UpdateResult.UpdateSuccess(affectedRows)
@@ -138,13 +153,17 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql
             }
             catch (Exception ex)
             {
+                await transaction.RollbackAsync();
                 return new UpdateResult.UnknownFailure(ex.Message);
             }
         }
 
         public async Task<DeleteResult> DeleteAsync(long id)
         {
-            var sql = "DELETE FROM dmscs.Vendor where Id = @Id; DELETE from dmscs.VendorNamespacePrefix WHERE VendorId = @Id;";
+            var sql = """
+                      DELETE FROM dmscs.Vendor where Id = @Id; 
+                      DELETE from dmscs.VendorNamespacePrefix WHERE VendorId = @Id;
+                      """;
             await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
             try
             {
