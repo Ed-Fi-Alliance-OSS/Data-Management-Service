@@ -67,6 +67,7 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder.Services.AddHttpClient();
 
         webApplicationBuilder.Services.AddTransient<IClientRepository, ClientRepository>();
+        webApplicationBuilder.Services.AddTransient<IRepository<Application>, ApplicationRepository>();
         webApplicationBuilder.Services.AddTransient<IRepository<Vendor>, VendorRepository>();
         webApplicationBuilder.Services.AddTransient<ITokenManager, TokenManager>();
 
