@@ -35,7 +35,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql
                     grouped.NamespacePrefixes = g.Select(p => p.NamespacePrefixes.Single()).ToList();
                     return grouped;
                 }).ToList();
-                return new GetResult<Vendor>.GetSuccess((IReadOnlyList<Vendor>)returnVendors);
+                return new GetResult<Vendor>.GetSuccess(returnVendors);
             }
             catch (Exception ex)
             {
