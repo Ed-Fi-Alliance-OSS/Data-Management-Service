@@ -41,7 +41,6 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql
             {
                 return new GetResult<Vendor>.UnknownFailure(ex.Message);
             }
-            
         }
 
         public async Task<GetResult<Vendor>> GetByIdAsync(long id)
