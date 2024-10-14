@@ -106,7 +106,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
             [Test]
             public async Task Should_get_update_vendor_from_get_by_id()
             {
-                var getByIdResult = (await _repository.GetByIdAsync(vendor.Id));
+                var getByIdResult = (await _repository.GetByIdAsync(vendor.Id.GetValueOrDefault()));
                 getByIdResult.Should().BeOfType<GetResult<Vendor>.GetByIdSuccess>();
 
                 var vendorFromDb = ((GetResult<Vendor>.GetByIdSuccess)getByIdResult).Result;
@@ -151,7 +151,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
 
                 vendor2.Id = ((InsertResult.InsertSuccess)insertResult2).Id;
 
-                var deleteResult = await _repository.DeleteAsync(vendor1.Id);
+                var deleteResult = await _repository.DeleteAsync(vendor1.Id.GetValueOrDefault());
                 deleteResult.Should().BeOfType<DeleteResult.DeleteSuccess>();
             }
 
@@ -162,19 +162,19 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
                 getResult.Should().BeOfType<GetResult<Vendor>.GetSuccess>();
 
                 ((GetResult<Vendor>.GetSuccess)getResult).Results.Count.Should().Be(1);
-                ((GetResult<Vendor>.GetSuccess)getResult).Results.Count(v => v.Id == vendor1.Id).Should().Be(0);
+                ((GetResult<Vendor>.GetSuccess)getResult).Results.Count(v => v.Id == vendor1.Id.GetValueOrDefault()).Should().Be(0);
                 ((GetResult<Vendor>.GetSuccess)getResult).Results.Count(v => v.Company == "Test Company 1").Should().Be(0);
-                ((GetResult<Vendor>.GetSuccess)getResult).Results.Count(v => v.Id == vendor2.Id).Should().Be(1);
+                ((GetResult<Vendor>.GetSuccess)getResult).Results.Count(v => v.Id == vendor2.Id.GetValueOrDefault()).Should().Be(1);
                 ((GetResult<Vendor>.GetSuccess)getResult).Results.Count(v => v.Company == "Test Company 2").Should().Be(1);
             }
 
             [Test]
             public async Task Should_not_get_test_vendor_from_get_by_id()
             {
-                var getByIdResult = (await _repository.GetByIdAsync(vendor1.Id));
+                var getByIdResult = (await _repository.GetByIdAsync(vendor1.Id.GetValueOrDefault()));
                 getByIdResult.Should().BeOfType<GetResult<Vendor>.GetByIdFailureNotExists>();
 
-                getByIdResult = (await _repository.GetByIdAsync(vendor2.Id));
+                getByIdResult = (await _repository.GetByIdAsync(vendor2.Id.GetValueOrDefault()));
                 getByIdResult.Should().BeOfType<GetResult<Vendor>.GetByIdSuccess>();
             }
         }
