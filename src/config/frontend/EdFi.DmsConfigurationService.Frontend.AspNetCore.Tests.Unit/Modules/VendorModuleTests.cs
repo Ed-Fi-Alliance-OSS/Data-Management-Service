@@ -23,6 +23,35 @@ public class VendorModuleTests
 {
     private readonly IRepository<Vendor> _repository = A.Fake<IRepository<Vendor>>();
 
+    protected HttpClient SetUpClient()
+    {
+        var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection
+                        .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
+                        .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                            AuthenticationConstants.AuthenticationSchema,
+                            options => { }
+                        );
+
+                    collection.AddAuthorization(options =>
+                        options.AddPolicy(
+                            SecurityConstants.ServicePolicy,
+                            policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
+                        )
+                    );
+
+                    collection.AddTransient((x) => _repository!);
+                }
+            );
+        });
+        return factory.CreateClient();
+    }
+
     [TestFixture]
     public class SuccessTests : VendorModuleTests
     {
@@ -69,31 +98,7 @@ public class VendorModuleTests
         public async Task Should_return_proper_success_responses()
         {
             // Arrange
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(
-                    (collection) =>
-                    {
-                        collection
-                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                                AuthenticationConstants.AuthenticationSchema,
-                                options => { }
-                            );
-
-                        collection.AddAuthorization(options =>
-                            options.AddPolicy(
-                                SecurityConstants.ServicePolicy,
-                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
-                            )
-                        );
-
-                        collection.AddTransient((x) => _repository!);
-                    }
-                );
-            });
-            using var client = factory.CreateClient();
+            using var client = SetUpClient();
 
             //Act
             var addResponse = await client.PostAsync(
@@ -120,6 +125,7 @@ public class VendorModuleTests
                 new StringContent(
                     """
                     {
+                        "id": 1,
                         "company": "Test 11",
                         "contactName": "Test",
                         "contactEmailAddress": "test@gmail.com",
@@ -136,6 +142,7 @@ public class VendorModuleTests
 
             //Assert
             addResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+            addResponse.Headers.Location!.ToString().Should().EndWith("/v2/vendors/1");
             getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             getByIdResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
@@ -150,33 +157,11 @@ public class VendorModuleTests
         public async Task Should_return_bad_request()
         {
             // Arrange
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(
-                    (collection) =>
-                    {
-                        collection
-                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                                AuthenticationConstants.AuthenticationSchema,
-                                options => { }
-                            );
+            using var client = SetUpClient();
 
-                        collection.AddAuthorization(options =>
-                            options.AddPolicy(
-                                SecurityConstants.ServicePolicy,
-                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
-                            )
-                        );
-
-                        collection.AddTransient((x) => _repository!);
-                    }
-                );
-            });
-            using var client = factory.CreateClient();
             var invalidBody = """
                 {
+                  "id": 1,
                   "company": "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
                   "contactName": "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
                   "contactEmailAddress": "INVALID",
@@ -208,6 +193,38 @@ public class VendorModuleTests
             updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             updateResponseContent.Should().Contain(expectedResponse);
         }
+
+        [Test]
+        public async Task Should_return_bad_request_mismatch_id()
+        {
+            // Arrange
+            using var client = SetUpClient();
+
+            //Act
+            var updateResponse = await client.PutAsync(
+                "/v2/vendors/1",
+                new StringContent(
+                    """
+                    {
+                        "id": 2,
+                        "company": "Test 11",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": [
+                            "Test"
+                        ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            //Assert
+            var updateResponseContent = await updateResponse.Content.ReadAsStringAsync();
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            updateResponseContent.Should().Contain("Request body id must match the id in the url.");
+        }
     }
 
     [TestFixture]
@@ -230,31 +247,7 @@ public class VendorModuleTests
         public async Task Should_return_proper_not_found_responses()
         {
             // Arrange
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(
-                    (collection) =>
-                    {
-                        collection
-                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                                AuthenticationConstants.AuthenticationSchema,
-                                options => { }
-                            );
-
-                        collection.AddAuthorization(options =>
-                            options.AddPolicy(
-                                SecurityConstants.ServicePolicy,
-                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
-                            )
-                        );
-
-                        collection.AddTransient((x) => _repository!);
-                    }
-                );
-            });
-            using var client = factory.CreateClient();
+            using var client = SetUpClient();
 
             //Act
 
@@ -264,6 +257,7 @@ public class VendorModuleTests
                 new StringContent(
                     """
                     {
+                        "id": 1,
                         "company": "Test 11",
                         "contactName": "Test",
                         "contactEmailAddress": "test@gmail.com",
@@ -288,34 +282,9 @@ public class VendorModuleTests
         public async Task Should_return_not_found_when_id_not_number()
         {
             // Arrange
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(
-                    (collection) =>
-                    {
-                        collection
-                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                                AuthenticationConstants.AuthenticationSchema,
-                                options => { }
-                            );
-
-                        collection.AddAuthorization(options =>
-                            options.AddPolicy(
-                                SecurityConstants.ServicePolicy,
-                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
-                            )
-                        );
-
-                        collection.AddTransient((x) => _repository!);
-                    }
-                );
-            });
-            using var client = factory.CreateClient();
+            using var client = SetUpClient();
 
             //Act
-
             var getByIdResponse = await client.GetAsync("/v2/vendors/a");
             var updateResponse = await client.PutAsync(
                 "/v2/vendors/b",
@@ -368,31 +337,7 @@ public class VendorModuleTests
         public async Task Should_return_proper_success_responses()
         {
             // Arrange
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(
-                    (collection) =>
-                    {
-                        collection
-                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                                AuthenticationConstants.AuthenticationSchema,
-                                options => { }
-                            );
-
-                        collection.AddAuthorization(options =>
-                            options.AddPolicy(
-                                SecurityConstants.ServicePolicy,
-                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
-                            )
-                        );
-
-                        collection.AddTransient((x) => _repository!);
-                    }
-                );
-            });
-            using var client = factory.CreateClient();
+            using var client = SetUpClient();
 
             //Act
             var addResponse = await client.PostAsync(
@@ -419,6 +364,7 @@ public class VendorModuleTests
                 new StringContent(
                     """
                     {
+                        "id": 1,
                         "company": "Test 11",
                         "contactName": "Test",
                         "contactEmailAddress": "test@gmail.com",
@@ -463,31 +409,7 @@ public class VendorModuleTests
         public async Task Should_return_proper_success_responses()
         {
             // Arrange
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(
-                    (collection) =>
-                    {
-                        collection
-                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                                AuthenticationConstants.AuthenticationSchema,
-                                options => { }
-                            );
-
-                        collection.AddAuthorization(options =>
-                            options.AddPolicy(
-                                SecurityConstants.ServicePolicy,
-                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
-                            )
-                        );
-
-                        collection.AddTransient((x) => _repository!);
-                    }
-                );
-            });
-            using var client = factory.CreateClient();
+            var client = SetUpClient();
 
             //Act
             var addResponse = await client.PostAsync(
@@ -514,6 +436,7 @@ public class VendorModuleTests
                 new StringContent(
                     """
                     {
+                        "id": 1,
                         "company": "Test 11",
                         "contactName": "Test",
                         "contactEmailAddress": "test@gmail.com",
