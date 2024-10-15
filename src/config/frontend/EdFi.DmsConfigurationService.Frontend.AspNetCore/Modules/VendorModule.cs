@@ -8,6 +8,8 @@ using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model.Validator;
+using FluentValidation;
+using FluentValidation.Results;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -107,6 +109,12 @@ public class VendorModule : IEndpointModule
         string idString = match.Groups["Id"].Value;
         if (long.TryParse(idString, out long id))
         {
+            if (vendor.Id != id)
+            {
+                throw new ValidationException(
+                    [new ValidationFailure("Id", "Request body id must match the id in the url.")]
+                );
+            }
             var updateResult = await repository.UpdateAsync(vendor);
             return updateResult switch
             {

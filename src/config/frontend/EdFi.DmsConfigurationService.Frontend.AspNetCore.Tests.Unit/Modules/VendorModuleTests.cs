@@ -125,6 +125,7 @@ public class VendorModuleTests
                 new StringContent(
                     """
                     {
+                        "id": 1,
                         "company": "Test 11",
                         "contactName": "Test",
                         "contactEmailAddress": "test@gmail.com",
@@ -160,6 +161,7 @@ public class VendorModuleTests
 
             var invalidBody = """
                 {
+                  "id": 1,
                   "company": "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
                   "contactName": "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
                   "contactEmailAddress": "INVALID",
@@ -190,6 +192,38 @@ public class VendorModuleTests
             var updateResponseContent = await updateResponse.Content.ReadAsStringAsync();
             updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             updateResponseContent.Should().Contain(expectedResponse);
+        }
+
+        [Test]
+        public async Task Should_return_bad_request_mismatch_id()
+        {
+            // Arrange
+            using var client = SetUpClient();
+
+            //Act
+            var updateResponse = await client.PutAsync(
+                "/v2/vendors/1",
+                new StringContent(
+                    """
+                    {
+                        "id": 2,
+                        "company": "Test 11",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": [
+                            "Test"
+                        ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            //Assert
+            var updateResponseContent = await updateResponse.Content.ReadAsStringAsync();
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            updateResponseContent.Should().Contain("Request body id must match the id in the url.");
         }
     }
 
@@ -223,6 +257,7 @@ public class VendorModuleTests
                 new StringContent(
                     """
                     {
+                        "id": 1,
                         "company": "Test 11",
                         "contactName": "Test",
                         "contactEmailAddress": "test@gmail.com",
@@ -329,6 +364,7 @@ public class VendorModuleTests
                 new StringContent(
                     """
                     {
+                        "id": 1,
                         "company": "Test 11",
                         "contactName": "Test",
                         "contactEmailAddress": "test@gmail.com",
@@ -400,6 +436,7 @@ public class VendorModuleTests
                 new StringContent(
                     """
                     {
+                        "id": 1,
                         "company": "Test 11",
                         "contactName": "Test",
                         "contactEmailAddress": "test@gmail.com",
