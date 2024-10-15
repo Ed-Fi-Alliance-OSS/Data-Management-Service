@@ -16,11 +16,10 @@ using NUnit.Framework;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 
-[TestFixture]
 public class VendorModuleTests
 {
     private readonly IRepository<Vendor> _repository = A.Fake<IRepository<Vendor>>();
-    
+
     [TestFixture]
     public class SuccessTests : VendorModuleTests
     {
@@ -34,21 +33,21 @@ public class VendorModuleTests
             A.CallTo(() => _repository.GetAllAsync())
                 .Returns(new GetResult<Vendor>.GetSuccess(
                 [new Vendor()
-                    {
-                        Id = 1,
-                        Company = "Test Company",
-                        NamespacePrefixes = ["Test Prefix"]
-                    }
+                {
+                    Id = 1,
+                    Company = "Test Company",
+                    NamespacePrefixes = ["Test Prefix"]
+                }
                 ]));
 
             A.CallTo(() => _repository.GetByIdAsync(A<long>.Ignored))
                 .Returns(new GetResult<Vendor>.GetByIdSuccess(
                 new Vendor()
-                    {
-                        Id = 1,
-                        Company = "Test Company",
-                        NamespacePrefixes = ["Test Prefix"]
-                    }
+                {
+                    Id = 1,
+                    Company = "Test Company",
+                    NamespacePrefixes = ["Test Prefix"]
+                }
                 ));
 
             A.CallTo(() => _repository.UpdateAsync(A<Vendor>.Ignored))
@@ -160,6 +159,43 @@ public class VendorModuleTests
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
+
+        [Test]
+        public async Task Should_return_not_found_when_id_not_number()
+        {
+            // Arrange
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(
+                    (collection) =>
+                    {
+                        collection.AddTransient((x) => _repository!);
+                    }
+                );
+            });
+            using var client = factory.CreateClient();
+
+            //Act
+
+            var getByIdResponse = await client.GetAsync("/v2/vendors/a");
+            var updateResponse = await client.PutAsync("/v2/vendors/b", new StringContent("""
+                {
+                    "company": "Test 11",
+                    "contactName": "Test",
+                    "contactEmailAddress": "Test",
+                    "namespacePrefixes": [
+                        "Test"
+                    ]
+                }
+                """, Encoding.UTF8, "application/json"));
+            var deleteResponse = await client.DeleteAsync("/v2/vendors/c");
+
+            //Assert
+            getByIdResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            deleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
     }
 
     [TestFixture]
@@ -183,6 +219,79 @@ public class VendorModuleTests
 
             A.CallTo(() => _repository.DeleteAsync(A<long>.Ignored))
                 .Returns(new DeleteResult.UnknownFailure(""));
+        }
+
+        [Test]
+        public async Task Should_return_proper_success_responses()
+        {
+            // Arrange
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(
+                    (collection) =>
+                    {
+                        collection.AddTransient((x) => _repository!);
+                    }
+                );
+            });
+            using var client = factory.CreateClient();
+
+            //Act
+            var addResponse = await client.PostAsync("/v2/vendors", new StringContent("""
+                {
+                  "company": "Test 11",
+                  "contactName": "Test",
+                  "contactEmailAddress": "Test",
+                  "namespacePrefixes": [
+                      "Test"
+                  ]
+                }
+                """, Encoding.UTF8, "application/json"));
+            var getResponse = await client.GetAsync("/v2/vendors");
+            var getByIdResponse = await client.GetAsync("/v2/vendors/1");
+            var updateResponse = await client.PutAsync("/v2/vendors/1", new StringContent("""
+                {
+                    "company": "Test 11",
+                    "contactName": "Test",
+                    "contactEmailAddress": "Test",
+                    "namespacePrefixes": [
+                        "Test"
+                    ]
+                }
+                """, Encoding.UTF8, "application/json"));
+            var deleteResponse = await client.DeleteAsync("/v2/vendors/1");
+
+            //Assert
+            addResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            getResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            getByIdResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            deleteResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        }
+    }
+
+    [TestFixture]
+    public class FailureDefaultTests : VendorModuleTests
+    {
+        [SetUp]
+        public void SetUp()
+        {
+
+            A.CallTo(() => _repository.AddAsync(A<Vendor>.Ignored))
+                .Returns(new InsertResult());
+
+            A.CallTo(() => _repository.GetAllAsync())
+                .Returns(new GetResult<Vendor>());
+
+            A.CallTo(() => _repository.GetByIdAsync(A<long>.Ignored))
+                .Returns(new GetResult<Vendor>());
+
+            A.CallTo(() => _repository.UpdateAsync(A<Vendor>.Ignored))
+                .Returns(new UpdateResult());
+
+            A.CallTo(() => _repository.DeleteAsync(A<long>.Ignored))
+                .Returns(new DeleteResult());
         }
 
         [Test]

@@ -16,7 +16,7 @@ public class VendorModule : IEndpointModule
         endpoints.MapPost("/v2/vendors/", async (Vendor vendor, IRepository<Vendor> repository) => await Insert(vendor, repository));
         endpoints.MapGet("/v2/vendors", GetAll);
         endpoints.MapGet("/v2/vendors/{id}", GetById);
-        endpoints.MapPut("/v2/vendors/{id}", async(Vendor vendor, HttpContext httpContext, IRepository < Vendor > repository) => await Update(vendor, httpContext, repository));
+        endpoints.MapPut("/v2/vendors/{id}", async (Vendor vendor, HttpContext httpContext, IRepository<Vendor> repository) => await Update(vendor, httpContext, repository));
         endpoints.MapDelete("/v2/vendors/{id}", Delete);
     }
 
@@ -45,8 +45,6 @@ public class VendorModule : IEndpointModule
     private async Task<IResult> GetById(HttpContext httpContext, IRepository<Vendor> repository)
     {
         Match match = UtilityService.PathExpressionRegex().Match(httpContext.Request.Path);
-        if (!match.Success)
-            return Results.Problem(statusCode: 500);
 
         string idString = match.Groups["Id"].Value;
         if (long.TryParse(idString, out long id))
@@ -67,8 +65,6 @@ public class VendorModule : IEndpointModule
     private async Task<IResult> Update(Vendor vendor, HttpContext httpContext, IRepository<Vendor> repository)
     {
         Match match = UtilityService.PathExpressionRegex().Match(httpContext.Request.Path);
-        if (!match.Success)
-            return Results.Problem(statusCode: 500);
 
         string idString = match.Groups["Id"].Value;
         if (long.TryParse(idString, out long id))
@@ -89,8 +85,6 @@ public class VendorModule : IEndpointModule
     private async Task<IResult> Delete(HttpContext httpContext, IRepository<Vendor> repository)
     {
         Match match = UtilityService.PathExpressionRegex().Match(httpContext.Request.Path);
-        if (!match.Success)
-            return Results.Problem(statusCode: 500);
 
         string idString = match.Groups["Id"].Value;
         if (long.TryParse(idString, out long id))
