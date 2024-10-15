@@ -17,11 +17,10 @@ using NUnit.Framework;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 
-[TestFixture]
 public class RegisterActionEndpointTests
 {
     [TestFixture]
-    public class When_making_action_request
+    public class When_Making_Action_Request
     {
         private AdminAction[] _mockActionResponse;
         private HttpResponseMessage? _response;
@@ -30,10 +29,10 @@ public class RegisterActionEndpointTests
         public void Setup()
         {
             _mockActionResponse = [
-                new AdminAction {Id = 1, Name = "Create", Uri = "uri://ed-fi.org/api/actions/create"},
-                new AdminAction {Id = 2, Name = "Read", Uri = "uri://ed-fi.org/api/actions/read"},
-                new AdminAction {Id = 3, Name = "Update", Uri = "uri://ed-fi.org/api/actions/update"},
-                new AdminAction {Id = 4, Name = "Delete", Uri = "uri://ed-fi.org/api/actions/delete"}
+                new AdminAction { Id = 1, Name = "Create", Uri = "uri://ed-fi.org/api/actions/create" },
+                new AdminAction { Id = 2, Name = "Read", Uri = "uri://ed-fi.org/api/actions/read" },
+                new AdminAction { Id = 3, Name = "Update", Uri = "uri://ed-fi.org/api/actions/update" },
+                new AdminAction { Id = 4, Name = "Delete", Uri = "uri://ed-fi.org/api/actions/delete" }
             ];
         }
 

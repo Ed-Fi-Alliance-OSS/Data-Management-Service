@@ -71,6 +71,7 @@ csharp_space_between_empty_square_brackets = false
 csharp_space_between_square_brackets = false
 csharp_preserve_single_line_blocks = true
 csharp_preserve_single_line_statements = false
+csharp_prefer_braces  = true:error
 
 # Naming rules
 dotnet_naming_rule.local_constants_rule.severity = warning
@@ -131,13 +132,12 @@ dotnet_diagnostic.S3247.severity=suggestion # Remove redundant cast - getting fa
 # Allow empty records for discriminated union types
 dotnet_diagnostic.S2094.severity=none # S2094: Classes should not be empty
 
-[**/tests/**/*.cs]
-# Allow our strange test class naming convention
-dotnet_naming_symbols.amt_tests.applicable_kinds = class,method
-dotnet_naming_symbols.amt_tests.word_separator = "_"
-dotnet_naming_symbols.amt_tests.capitalization = first_word_upper
-dotnet_diagnostic.IDE1006.severity=none
-dotnet_diagnostic.S101.severity=none
+[**/*Tests.cs]
+# S2187: Test classes should contain at least one test case
+dotnet_diagnostic.S2187.severity = none
 
 # SonarLint doesn't understand implied assertions from FakeItEasy
 dotnet_diagnostic.S2699.severity=none # S2699: Tests should include assertions
+
+# S101: Types should be named in PascalCase
+dotnet_diagnostic.S101.severity = none

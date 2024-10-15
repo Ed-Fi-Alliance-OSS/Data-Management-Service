@@ -8,12 +8,15 @@
     <PackageVersion Include="dbup-postgresql" Version="5.0.40" />
     <PackageVersion Include="dbup-sqlserver" Version="5.0.41" />
     <PackageVersion Include="CommandLineParser" Version="2.9.1" />
+    <PackageVersion Include="Microsoft.CodeAnalysis" Version="4.8.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.CodeStyle" Version="4.8.0" />
     <PackageVersion Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="8.0.1" />
     <PackageVersion Include="Microsoft.Extensions.Options" Version="8.0.2" />
     <PackageVersion Include="Npgsql" Version="8.0.4" />
     <PackageVersion Include="Npgsql.DependencyInjection" Version="8.0.3" />
     <PackageVersion Include="Respawn" Version="6.2.1" />
+    <PackageVersion Include="SonarAnalyzer.CSharp" Version="9.32.0.97167" />
   </ItemGroup>
   <!-- Testing Packages -->
   <ItemGroup>
