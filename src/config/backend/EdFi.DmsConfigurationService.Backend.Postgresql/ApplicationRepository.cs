@@ -15,10 +15,10 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
     public async Task<GetResult<Application>> GetAllAsync()
     {
         string sql = """
-                     SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName, e.EducationOrganizationId 
-                     FROM dmscs.Application a
-                     LEFT OUTER JOIN dmscs.ApplicationEducationOrganization e ON a.Id = e.ApplicationId;
-                     """;
+            SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName, e.EducationOrganizationId 
+            FROM dmscs.Application a
+            LEFT OUTER JOIN dmscs.ApplicationEducationOrganization e ON a.Id = e.ApplicationId;
+            """;
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
@@ -29,14 +29,21 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
                     application.ApplicationEducationOrganizations.Add(educationOrganizationId);
                     return application;
                 },
-                splitOn: "EducationOrganizationId");
+                splitOn: "EducationOrganizationId"
+            );
 
-            var returnApplications = applications.GroupBy(a => a.Id).Select(g =>
-            {
-                var grouped = g.First();
-                grouped.ApplicationEducationOrganizations = g.Select(e => e.ApplicationEducationOrganizations.Single()).ToList();
-                return grouped;
-            }).ToList();
+            var returnApplications = applications
+                .GroupBy(a => a.Id)
+                .Select(g =>
+                {
+                    var grouped = g.First();
+                    grouped.ApplicationEducationOrganizations = g.Select(e =>
+                            e.ApplicationEducationOrganizations.Single()
+                        )
+                        .ToList();
+                    return grouped;
+                })
+                .ToList();
             return new GetResult<Application>.GetSuccess(returnApplications);
         }
         catch (Exception ex)
@@ -48,31 +55,36 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
     public async Task<GetResult<Application>> GetByIdAsync(long id)
     {
         string sql = """
-                  SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName, e.EducationOrganizationId
-                  FROM dmscs.Application a
-                  LEFT OUTER JOIN dmscs.ApplicationEducationOrganization e ON a.Id = e.ApplicationId
-                  WHERE a.Id = @Id;
-                  """;
+            SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName, e.EducationOrganizationId
+            FROM dmscs.Application a
+            LEFT OUTER JOIN dmscs.ApplicationEducationOrganization e ON a.Id = e.ApplicationId
+            WHERE a.Id = @Id;
+            """;
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            var applications = await connection.QueryAsync<Application, long, Application>(sql,
-                    (application, educationOrganizationId) =>
-                    {
-                        application.ApplicationEducationOrganizations.Add(educationOrganizationId);
-                        return application;
-                    },
-                    param: new { Id = id },
-                    splitOn: "EducationOrganizationId");
+            var applications = await connection.QueryAsync<Application, long, Application>(
+                sql,
+                (application, educationOrganizationId) =>
+                {
+                    application.ApplicationEducationOrganizations.Add(educationOrganizationId);
+                    return application;
+                },
+                param: new { Id = id },
+                splitOn: "EducationOrganizationId"
+            );
 
-            var returnApplication = applications.GroupBy(a => a.Id).Select(g =>
+            var returnApplication = applications
+                .GroupBy(a => a.Id)
+                .Select(g =>
                 {
                     var grouped = g.First();
-                    grouped.ApplicationEducationOrganizations =
-                        g.Select(e => e.ApplicationEducationOrganizations.Single()).ToList();
+                    grouped.ApplicationEducationOrganizations = g.Select(e =>
+                            e.ApplicationEducationOrganizations.Single()
+                        )
+                        .ToList();
                     return grouped;
-                }
-            );
+                });
 
             return new GetResult<Application>.GetByIdSuccess(returnApplication.Single());
         }
@@ -85,10 +97,10 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
     public async Task<InsertResult> AddAsync(Application application)
     {
         string sql = """
-                  INSERT INTO dmscs.Application (ApplicationName, VendorId, ClaimSetName)
-                  VALUES (@ApplicationName, @VendorId, @ClaimSetName)
-                  RETURNING Id;
-                  """;
+            INSERT INTO dmscs.Application (ApplicationName, VendorId, ClaimSetName)
+            VALUES (@ApplicationName, @VendorId, @ClaimSetName)
+            RETURNING Id;
+            """;
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         await connection.OpenAsync();
         await using var transaction = await connection.BeginTransactionAsync();
@@ -96,14 +108,16 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
         {
             long id = await connection.ExecuteScalarAsync<long>(sql, application);
 
-            sql =
-                """
+            sql = """
                 INSERT INTO dmscs.ApplicationEducationOrganization (ApplicationId, EducationOrganizationId) 
                 VALUES (@ApplicationId, @EducationOrganizationId);
                 """;
 
-            var educationOrganizations = 
-                application.ApplicationEducationOrganizations.Select(e => new { ApplicationId = id, EducationOrganizationId = e });
+            var educationOrganizations = application.ApplicationEducationOrganizations.Select(e => new
+            {
+                ApplicationId = id,
+                EducationOrganizationId = e
+            });
 
             await connection.ExecuteAsync(sql, educationOrganizations);
             await transaction.CommitAsync();
@@ -119,10 +133,10 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
     public async Task<UpdateResult> UpdateAsync(Application application)
     {
         string sql = """
-                  UPDATE dmscs.Application
-                  SET ApplicationName=@ApplicationName, VendorId=@VendorId, ClaimSetName=@ClaimSetName
-                  WHERE Id = @Id;
-                  """;
+            UPDATE dmscs.Application
+            SET ApplicationName=@ApplicationName, VendorId=@VendorId, ClaimSetName=@ClaimSetName
+            WHERE Id = @Id;
+            """;
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         await connection.OpenAsync();
         await using var transaction = await connection.BeginTransactionAsync();
@@ -134,12 +148,15 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
             await connection.ExecuteAsync(sql, new { ApplicationId = application.Id });
 
             sql = """
-                  INSERT INTO dmscs.ApplicationEducationOrganization (ApplicationId, EducationOrganizationId)
-                  VALUES (@ApplicationId, @EducationOrganizationId);
-                  """;
+                INSERT INTO dmscs.ApplicationEducationOrganization (ApplicationId, EducationOrganizationId)
+                VALUES (@ApplicationId, @EducationOrganizationId);
+                """;
 
-            var educationOrganizations =
-                application.ApplicationEducationOrganizations.Select(e => new { ApplicationId = application.Id, EducationOrganizationId = e });
+            var educationOrganizations = application.ApplicationEducationOrganizations.Select(e => new
+            {
+                ApplicationId = application.Id,
+                EducationOrganizationId = e
+            });
 
             await connection.ExecuteAsync(sql, educationOrganizations);
             await transaction.CommitAsync();
@@ -158,9 +175,9 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
     public async Task<DeleteResult> DeleteAsync(long id)
     {
         string sql = """
-                  DELETE FROM dmscs.Application where Id = @Id;
-                  DELETE FROM dmscs.ApplicationEducationOrganization WHERE ApplicationId = @Id;
-                  """;
+            DELETE FROM dmscs.Application where Id = @Id;
+            DELETE FROM dmscs.ApplicationEducationOrganization WHERE ApplicationId = @Id;
+            """;
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
@@ -168,7 +185,6 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
             return affectedRows > 0
                 ? new DeleteResult.DeleteSuccess(affectedRows)
                 : new DeleteResult.DeleteFailureNotExists();
-
         }
         catch (Exception ex)
         {

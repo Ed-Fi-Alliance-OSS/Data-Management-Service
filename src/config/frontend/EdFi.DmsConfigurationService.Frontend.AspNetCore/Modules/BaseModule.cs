@@ -5,34 +5,43 @@
 
 using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Backend;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
+using FluentValidation;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
-public abstract class BaseModule<T> : IEndpointModule
+public abstract class BaseModule<T, TValidator> : IEndpointModule
     where T : class
+    where TValidator : IValidator<T>
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         // The base path must be defined by the derived classes
         string baseRoute = GetBaseRoute();
-        endpoints.MapPost(
-            $"{baseRoute}/",
-            async (T entity, IRepository<T> repository) => await BaseModule<T>.Insert(entity, repository)
-        );
-        endpoints.MapGet(baseRoute, GetAll);
-        endpoints.MapGet($"{baseRoute}/{{id}}", GetById);
-        endpoints.MapPut(
-            $"{baseRoute}/{{id}}",
-            async (T entity, HttpContext httpContext, IRepository<T> repository) =>
-                await Update(entity, httpContext, repository)
-        );
-        endpoints.MapDelete($"{baseRoute}/{{id}}", Delete);
+        endpoints
+            .MapPost(
+                $"{baseRoute}/",
+                async (TValidator validator, T entity, IRepository<T> repository) =>
+                    await Insert(validator, entity, repository)
+            )
+            .RequireAuthorizationWithPolicy();
+        endpoints.MapGet(baseRoute, GetAll).RequireAuthorizationWithPolicy();
+        endpoints.MapGet($"{baseRoute}/{{id}}", GetById).RequireAuthorizationWithPolicy();
+        endpoints
+            .MapPut(
+                $"{baseRoute}/{{id}}",
+                async (TValidator validator, T entity, HttpContext httpContext, IRepository<T> repository) =>
+                    await Update(validator, entity, httpContext, repository)
+            )
+            .RequireAuthorizationWithPolicy();
+        endpoints.MapDelete($"{baseRoute}/{{id}}", Delete).RequireAuthorizationWithPolicy();
     }
 
     protected abstract string GetBaseRoute();
 
-    private static async Task<IResult> Insert(T entity, IRepository<T> repository)
+    private static async Task<IResult> Insert(TValidator validator, T entity, IRepository<T> repository)
     {
+        await validator.GuardAsync(entity);
         InsertResult insertResult = await repository.AddAsync(entity);
         return insertResult switch
         {
@@ -77,8 +86,15 @@ public abstract class BaseModule<T> : IEndpointModule
         };
     }
 
-    private static async Task<IResult> Update(T entity, HttpContext httpContext, IRepository<T> repository)
+    private static async Task<IResult> Update(
+        TValidator validator,
+        T entity,
+        HttpContext httpContext,
+        IRepository<T> repository
+    )
     {
+        await validator.GuardAsync(entity);
+
         Match match = UtilityService.PathExpressionRegex().Match(httpContext.Request.Path);
         if (!match.Success)
         {

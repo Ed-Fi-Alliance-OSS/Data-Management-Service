@@ -4,11 +4,14 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Security.Claims;
 using System.Text;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -81,6 +84,20 @@ public class ApplicationModuleTests
                 builder.ConfigureServices(
                     (collection) =>
                     {
+                        collection
+                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
+                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                                AuthenticationConstants.AuthenticationSchema,
+                                options => { }
+                            );
+
+                        collection.AddAuthorization(options =>
+                            options.AddPolicy(
+                                SecurityConstants.ServicePolicy,
+                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
+                            )
+                        );
+
                         collection.AddTransient((x) => _repository!);
                     }
                 );
@@ -95,6 +112,7 @@ public class ApplicationModuleTests
                     {
                       "ApplicationName": "Application 11",
                       "ClaimSetName": "Test",
+                      "VendorId": 1,
                       "ApplicationEducationOrganizations": [1]
                     }
                     """,
@@ -112,6 +130,7 @@ public class ApplicationModuleTests
                     {
                        "ApplicationName": "Application 11",
                         "ClaimSetName": "Test",
+                        "VendorId": 1,
                         "ApplicationEducationOrganizations": [1]
                     }
                     """,
@@ -127,6 +146,61 @@ public class ApplicationModuleTests
             getByIdResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        }
+    }
+
+    [TestFixture]
+    public class FailureValidationTests : ApplicationModuleTests
+    {
+        [Test]
+        public async Task Should_return_bad_request()
+        {
+            // Arrange
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(
+                    (collection) =>
+                    {
+                        collection
+                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
+                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                                AuthenticationConstants.AuthenticationSchema,
+                                options => { }
+                            );
+
+                        collection.AddAuthorization(options =>
+                            options.AddPolicy(
+                                SecurityConstants.ServicePolicy,
+                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
+                            )
+                        );
+
+                        collection.AddTransient((x) => _repository!);
+                    }
+                );
+            });
+            using var client = factory.CreateClient();
+
+            string invalidBody = """
+                                 {
+                                    "ApplicationName": "Application 101",
+                                     "ClaimSetName": "",
+                                     "VendorId":1,
+                                     "ApplicationEducationOrganizations": [1]
+                                 }
+                                 """;
+
+            //Act
+            var addResponse = await client.PostAsync("/v2/applications",
+                new StringContent(invalidBody, Encoding.UTF8, "application/json"));
+
+            //Assert
+            string expectedResponse =
+                @"{""title"":""Validation failed"",""errors"":{""ClaimSetName"":[""\u0027Claim Set Name\u0027 must not be empty.""]}}";
+            string addResponseContent = await addResponse.Content.ReadAsStringAsync();
+            addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            addResponseContent.Should().Contain(expectedResponse);
         }
     }
 
@@ -156,6 +230,20 @@ public class ApplicationModuleTests
                 builder.ConfigureServices(
                     (collection) =>
                     {
+                        collection
+                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
+                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                                AuthenticationConstants.AuthenticationSchema,
+                                options => { }
+                            );
+
+                        collection.AddAuthorization(options =>
+                            options.AddPolicy(
+                                SecurityConstants.ServicePolicy,
+                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
+                            )
+                        );
+
                         collection.AddTransient((x) => _repository!);
                     }
                 );
@@ -172,6 +260,7 @@ public class ApplicationModuleTests
                     {
                        "ApplicationName": "Application 101",
                         "ClaimSetName": "Test",
+                        "VendorId":1,
                         "ApplicationEducationOrganizations": [1]
                     }
                     """,
@@ -219,6 +308,20 @@ public class ApplicationModuleTests
                 builder.ConfigureServices(
                     (collection) =>
                     {
+                        collection
+                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
+                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                                AuthenticationConstants.AuthenticationSchema,
+                                options => { }
+                            );
+
+                        collection.AddAuthorization(options =>
+                            options.AddPolicy(
+                                SecurityConstants.ServicePolicy,
+                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
+                            )
+                        );
+
                         collection.AddTransient((x) => _repository!);
                     }
                 );
@@ -233,6 +336,7 @@ public class ApplicationModuleTests
                     {
                         "ApplicationName": "Application 102",
                         "ClaimSetName": "Test",
+                        "VendorId": 1,
                         "ApplicationEducationOrganizations": [1]
                     }
                     """,
@@ -249,7 +353,100 @@ public class ApplicationModuleTests
                     {
                         "ApplicationName": "Application 102",
                         "ClaimSetName": "Test",
+                        "VendorId": 1,
                         "ApplicationEducationOrganizations": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+            var deleteResponse = await client.DeleteAsync("/v2/applications/1");
+
+            //Assert
+            addResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            getResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            getByIdResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            deleteResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        }
+    }
+
+    [TestFixture]
+    public class FailureDefaultTests : ApplicationModuleTests
+    {
+        [SetUp]
+        public void SetUp()
+        {
+            A.CallTo(() => _repository.AddAsync(A<Application>.Ignored)).Returns(new InsertResult());
+
+            A.CallTo(() => _repository.GetAllAsync()).Returns(new GetResult<Application>());
+
+            A.CallTo(() => _repository.GetByIdAsync(A<long>.Ignored)).Returns(new GetResult<Application>());
+
+            A.CallTo(() => _repository.UpdateAsync(A<Application>.Ignored)).Returns(new UpdateResult());
+
+            A.CallTo(() => _repository.DeleteAsync(A<long>.Ignored)).Returns(new DeleteResult());
+        }
+
+        [Test]
+        public async Task Should_return_success_responses()
+        {
+            // Arrange
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(
+                    (collection) =>
+                    {
+                        collection
+                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
+                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                                AuthenticationConstants.AuthenticationSchema,
+                                options => { }
+                            );
+
+                        collection.AddAuthorization(options =>
+                            options.AddPolicy(
+                                SecurityConstants.ServicePolicy,
+                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
+                            )
+                        );
+
+                        collection.AddTransient((x) => _repository!);
+                    }
+                );
+            });
+            using var client = factory.CreateClient();
+
+            //Act
+            var addResponse = await client.PostAsync(
+                "/v2/applications",
+                new StringContent(
+                    """
+                    {
+                      "ApplicationName": "Application 11",
+                      "ClaimSetName": "Test",
+                      "VendorId": 1,
+                      "ApplicationEducationOrganizations": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            var getResponse = await client.GetAsync("/v2/applications");
+            var getByIdResponse = await client.GetAsync("/v2/applications/1");
+            var updateResponse = await client.PostAsync(
+                "/v2/applications",
+                new StringContent(
+                    """
+                    {
+                      "ApplicationName": "Application 11",
+                      "ClaimSetName": "Test",
+                      "VendorId": 1,
+                      "ApplicationEducationOrganizations": [1]
                     }
                     """,
                     Encoding.UTF8,

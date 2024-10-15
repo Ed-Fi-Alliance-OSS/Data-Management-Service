@@ -4,10 +4,11 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
-public class ApplicationModule : BaseModule<Application>
+public class ApplicationModule : BaseModule<Application, ApplicationValidator>
 {
     protected override string GetBaseRoute() => "/v2/applications";
 }
