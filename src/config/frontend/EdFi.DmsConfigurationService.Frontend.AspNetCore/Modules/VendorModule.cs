@@ -3,9 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DmsConfigurationService.Backend;
 using System.Text.RegularExpressions;
+using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -13,21 +15,38 @@ public class VendorModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost("/v2/vendors/", async (Vendor vendor, IRepository<Vendor> repository) => await Insert(vendor, repository));
+        endpoints.MapPost(
+            "/v2/vendors/",
+            async (VendorValidator validator, Vendor vendor, IRepository<Vendor> repository) =>
+                await Insert(validator, vendor, repository)
+        );
         endpoints.MapGet("/v2/vendors", GetAll);
         endpoints.MapGet("/v2/vendors/{id}", GetById);
-        endpoints.MapPut("/v2/vendors/{id}", async (Vendor vendor, HttpContext httpContext, IRepository<Vendor> repository) => await Update(vendor, httpContext, repository));
+        endpoints.MapPut(
+            "/v2/vendors/{id}",
+            async (
+                VendorValidator validator,
+                Vendor vendor,
+                HttpContext httpContext,
+                IRepository<Vendor> repository
+            ) => await Update(validator, vendor, httpContext, repository)
+        );
         endpoints.MapDelete("/v2/vendors/{id}", Delete);
     }
 
-    private async Task<IResult> Insert(Vendor vendor, IRepository<Vendor> repository)
+    private async Task<IResult> Insert(
+        VendorValidator validator,
+        Vendor vendor,
+        IRepository<Vendor> repository
+    )
     {
+        await validator.GuardAsync(vendor);
         var insertResult = await repository.AddAsync(vendor);
         return insertResult switch
         {
             InsertResult.InsertSuccess => Results.Created(),
             InsertResult.UnknownFailure => Results.Problem(statusCode: 500),
-            _ => Results.Problem(statusCode: 500)
+            _ => Results.Problem(statusCode: 500),
         };
     }
 
@@ -38,7 +57,7 @@ public class VendorModule : IEndpointModule
         {
             GetResult<Vendor>.GetSuccess success => Results.Ok(success.Results),
             GetResult<Vendor>.UnknownFailure => Results.Problem(statusCode: 500),
-            _ => Results.Problem(statusCode: 500)
+            _ => Results.Problem(statusCode: 500),
         };
     }
 
@@ -55,15 +74,21 @@ public class VendorModule : IEndpointModule
                 GetResult<Vendor>.GetByIdSuccess success => Results.Ok(success.Result),
                 GetResult<Vendor>.GetByIdFailureNotExists => Results.NotFound(),
                 GetResult<Vendor>.UnknownFailure => Results.Problem(statusCode: 500),
-                _ => Results.Problem(statusCode: 500)
+                _ => Results.Problem(statusCode: 500),
             };
         }
 
         return Results.NotFound();
     }
 
-    private async Task<IResult> Update(Vendor vendor, HttpContext httpContext, IRepository<Vendor> repository)
+    private async Task<IResult> Update(
+        VendorValidator validator,
+        Vendor vendor,
+        HttpContext httpContext,
+        IRepository<Vendor> repository
+    )
     {
+        await validator.GuardAsync(vendor);
         Match match = UtilityService.PathExpressionRegex().Match(httpContext.Request.Path);
 
         string idString = match.Groups["Id"].Value;
@@ -75,7 +100,7 @@ public class VendorModule : IEndpointModule
                 UpdateResult.UpdateSuccess success => Results.NoContent(),
                 UpdateResult.UpdateFailureNotExists => Results.NotFound(),
                 UpdateResult.UnknownFailure => Results.Problem(statusCode: 500),
-                _ => Results.Problem(statusCode: 500)
+                _ => Results.Problem(statusCode: 500),
             };
         }
 
@@ -95,7 +120,7 @@ public class VendorModule : IEndpointModule
                 DeleteResult.DeleteSuccess success => Results.NoContent(),
                 DeleteResult.DeleteFailureNotExists => Results.NotFound(),
                 DeleteResult.UnknownFailure => Results.Problem(statusCode: 500),
-                _ => Results.Problem(statusCode: 500)
+                _ => Results.Problem(statusCode: 500),
             };
         }
 

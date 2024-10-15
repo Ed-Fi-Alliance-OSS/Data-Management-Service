@@ -26,29 +26,34 @@ public class VendorModuleTests
         [SetUp]
         public void SetUp()
         {
-
             A.CallTo(() => _repository.AddAsync(A<Vendor>.Ignored))
                 .Returns(new InsertResult.InsertSuccess(1));
 
             A.CallTo(() => _repository.GetAllAsync())
-                .Returns(new GetResult<Vendor>.GetSuccess(
-                [new Vendor()
-                {
-                    Id = 1,
-                    Company = "Test Company",
-                    NamespacePrefixes = ["Test Prefix"]
-                }
-                ]));
+                .Returns(
+                    new GetResult<Vendor>.GetSuccess(
+                        [
+                            new Vendor()
+                            {
+                                Id = 1,
+                                Company = "Test Company",
+                                NamespacePrefixes = ["Test Prefix"],
+                            },
+                        ]
+                    )
+                );
 
             A.CallTo(() => _repository.GetByIdAsync(A<long>.Ignored))
-                .Returns(new GetResult<Vendor>.GetByIdSuccess(
-                new Vendor()
-                {
-                    Id = 1,
-                    Company = "Test Company",
-                    NamespacePrefixes = ["Test Prefix"]
-                }
-                ));
+                .Returns(
+                    new GetResult<Vendor>.GetByIdSuccess(
+                        new Vendor()
+                        {
+                            Id = 1,
+                            Company = "Test Company",
+                            NamespacePrefixes = ["Test Prefix"],
+                        }
+                    )
+                );
 
             A.CallTo(() => _repository.UpdateAsync(A<Vendor>.Ignored))
                 .Returns(new UpdateResult.UpdateSuccess(1));
@@ -74,28 +79,42 @@ public class VendorModuleTests
             using var client = factory.CreateClient();
 
             //Act
-            var addResponse = await client.PostAsync("/v2/vendors", new StringContent("""
-                {
-                  "company": "Test 11",
-                  "contactName": "Test",
-                  "contactEmailAddress": "Test",
-                  "namespacePrefixes": [
-                      "Test"
-                  ]
-                }
-                """, Encoding.UTF8, "application/json"));
+            var addResponse = await client.PostAsync(
+                "/v2/vendors",
+                new StringContent(
+                    """
+                    {
+                      "company": "Test 11",
+                      "contactName": "Test",
+                      "contactEmailAddress": "test@gmail.com",
+                      "namespacePrefixes": [
+                          "Test"
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
             var getResponse = await client.GetAsync("/v2/vendors");
             var getByIdResponse = await client.GetAsync("/v2/vendors/1");
-            var updateResponse = await client.PutAsync("/v2/vendors/1", new StringContent("""
-                {
-                    "company": "Test 11",
-                    "contactName": "Test",
-                    "contactEmailAddress": "Test",
-                    "namespacePrefixes": [
-                        "Test"
-                    ]
-                }
-                """, Encoding.UTF8, "application/json"));
+            var updateResponse = await client.PutAsync(
+                "/v2/vendors/1",
+                new StringContent(
+                    """
+                    {
+                        "company": "Test 11",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": [
+                            "Test"
+                        ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
             var deleteResponse = await client.DeleteAsync("/v2/vendors/1");
 
             //Assert
@@ -104,6 +123,59 @@ public class VendorModuleTests
             getByIdResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        }
+    }
+
+    [TestFixture]
+    public class FailureValidationTests : VendorModuleTests
+    {
+        [Test]
+        public async Task Should_return_bad_request()
+        {
+            // Arrange
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(
+                    (collection) =>
+                    {
+                        collection.AddTransient((x) => _repository!);
+                    }
+                );
+            });
+            using var client = factory.CreateClient();
+            var invalidBody = """
+                {
+                  "company": "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
+                  "contactName": "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
+                  "contactEmailAddress": "INVALID",
+                  "namespacePrefixes": [
+                      "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
+                  ]
+                }
+                """;
+
+            //Act
+            var addResponse = await client.PostAsync(
+                "/v2/vendors",
+                new StringContent(invalidBody, Encoding.UTF8, "application/json")
+            );
+
+            var updateResponse = await client.PutAsync(
+                "/v2/vendors/1",
+                new StringContent(invalidBody, Encoding.UTF8, "application/json")
+            );
+
+            //Assert
+            var expectedResponse =
+                @"{""title"":""Validation failed"",""errors"":{""Company"":[""The length of \u0027Company\u0027 must be 256 characters or fewer. You entered 300 characters.""],""ContactName"":[""The length of \u0027Contact Name\u0027 must be 128 characters or fewer. You entered 300 characters.""],""ContactEmailAddress"":[""\u0027Contact Email Address\u0027 is not a valid email address.""],""NamespacePrefixes[0]"":[""The length of \u0027Namespace Prefixes\u0027 must be 128 characters or fewer. You entered 130 characters.""]}}";
+            var addResponseContent = await addResponse.Content.ReadAsStringAsync();
+            addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            addResponseContent.Should().Contain(expectedResponse);
+
+            var updateResponseContent = await updateResponse.Content.ReadAsStringAsync();
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            updateResponseContent.Should().Contain(expectedResponse);
         }
     }
 
@@ -142,16 +214,23 @@ public class VendorModuleTests
             //Act
 
             var getByIdResponse = await client.GetAsync("/v2/vendors/1");
-            var updateResponse = await client.PutAsync("/v2/vendors/1", new StringContent("""
-                {
-                    "company": "Test 11",
-                    "contactName": "Test",
-                    "contactEmailAddress": "Test",
-                    "namespacePrefixes": [
-                        "Test"
-                    ]
-                }
-                """, Encoding.UTF8, "application/json"));
+            var updateResponse = await client.PutAsync(
+                "/v2/vendors/1",
+                new StringContent(
+                    """
+                    {
+                        "company": "Test 11",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": [
+                            "Test"
+                        ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
             var deleteResponse = await client.DeleteAsync("/v2/vendors/1");
 
             //Assert
@@ -179,16 +258,23 @@ public class VendorModuleTests
             //Act
 
             var getByIdResponse = await client.GetAsync("/v2/vendors/a");
-            var updateResponse = await client.PutAsync("/v2/vendors/b", new StringContent("""
-                {
-                    "company": "Test 11",
-                    "contactName": "Test",
-                    "contactEmailAddress": "Test",
-                    "namespacePrefixes": [
-                        "Test"
-                    ]
-                }
-                """, Encoding.UTF8, "application/json"));
+            var updateResponse = await client.PutAsync(
+                "/v2/vendors/b",
+                new StringContent(
+                    """
+                    {
+                        "company": "Test 11",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": [
+                            "Test"
+                        ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
             var deleteResponse = await client.DeleteAsync("/v2/vendors/c");
 
             //Assert
@@ -204,12 +290,10 @@ public class VendorModuleTests
         [SetUp]
         public void SetUp()
         {
-
             A.CallTo(() => _repository.AddAsync(A<Vendor>.Ignored))
                 .Returns(new InsertResult.UnknownFailure(""));
 
-            A.CallTo(() => _repository.GetAllAsync())
-                .Returns(new GetResult<Vendor>.UnknownFailure(""));
+            A.CallTo(() => _repository.GetAllAsync()).Returns(new GetResult<Vendor>.UnknownFailure(""));
 
             A.CallTo(() => _repository.GetByIdAsync(A<long>.Ignored))
                 .Returns(new GetResult<Vendor>.UnknownFailure(""));
@@ -238,28 +322,42 @@ public class VendorModuleTests
             using var client = factory.CreateClient();
 
             //Act
-            var addResponse = await client.PostAsync("/v2/vendors", new StringContent("""
-                {
-                  "company": "Test 11",
-                  "contactName": "Test",
-                  "contactEmailAddress": "Test",
-                  "namespacePrefixes": [
-                      "Test"
-                  ]
-                }
-                """, Encoding.UTF8, "application/json"));
+            var addResponse = await client.PostAsync(
+                "/v2/vendors",
+                new StringContent(
+                    """
+                    {
+                      "company": "Test 11",
+                      "contactName": "Test",
+                      "contactEmailAddress": "test@gmail.com",
+                      "namespacePrefixes": [
+                          "Test"
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
             var getResponse = await client.GetAsync("/v2/vendors");
             var getByIdResponse = await client.GetAsync("/v2/vendors/1");
-            var updateResponse = await client.PutAsync("/v2/vendors/1", new StringContent("""
-                {
-                    "company": "Test 11",
-                    "contactName": "Test",
-                    "contactEmailAddress": "Test",
-                    "namespacePrefixes": [
-                        "Test"
-                    ]
-                }
-                """, Encoding.UTF8, "application/json"));
+            var updateResponse = await client.PutAsync(
+                "/v2/vendors/1",
+                new StringContent(
+                    """
+                    {
+                        "company": "Test 11",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": [
+                            "Test"
+                        ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
             var deleteResponse = await client.DeleteAsync("/v2/vendors/1");
 
             //Assert
@@ -277,21 +375,15 @@ public class VendorModuleTests
         [SetUp]
         public void SetUp()
         {
+            A.CallTo(() => _repository.AddAsync(A<Vendor>.Ignored)).Returns(new InsertResult());
 
-            A.CallTo(() => _repository.AddAsync(A<Vendor>.Ignored))
-                .Returns(new InsertResult());
+            A.CallTo(() => _repository.GetAllAsync()).Returns(new GetResult<Vendor>());
 
-            A.CallTo(() => _repository.GetAllAsync())
-                .Returns(new GetResult<Vendor>());
+            A.CallTo(() => _repository.GetByIdAsync(A<long>.Ignored)).Returns(new GetResult<Vendor>());
 
-            A.CallTo(() => _repository.GetByIdAsync(A<long>.Ignored))
-                .Returns(new GetResult<Vendor>());
+            A.CallTo(() => _repository.UpdateAsync(A<Vendor>.Ignored)).Returns(new UpdateResult());
 
-            A.CallTo(() => _repository.UpdateAsync(A<Vendor>.Ignored))
-                .Returns(new UpdateResult());
-
-            A.CallTo(() => _repository.DeleteAsync(A<long>.Ignored))
-                .Returns(new DeleteResult());
+            A.CallTo(() => _repository.DeleteAsync(A<long>.Ignored)).Returns(new DeleteResult());
         }
 
         [Test]
@@ -311,28 +403,42 @@ public class VendorModuleTests
             using var client = factory.CreateClient();
 
             //Act
-            var addResponse = await client.PostAsync("/v2/vendors", new StringContent("""
-                {
-                  "company": "Test 11",
-                  "contactName": "Test",
-                  "contactEmailAddress": "Test",
-                  "namespacePrefixes": [
-                      "Test"
-                  ]
-                }
-                """, Encoding.UTF8, "application/json"));
+            var addResponse = await client.PostAsync(
+                "/v2/vendors",
+                new StringContent(
+                    """
+                    {
+                      "company": "Test 11",
+                      "contactName": "Test",
+                      "contactEmailAddress": "test@gmail.com",
+                      "namespacePrefixes": [
+                          "Test"
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
             var getResponse = await client.GetAsync("/v2/vendors");
             var getByIdResponse = await client.GetAsync("/v2/vendors/1");
-            var updateResponse = await client.PutAsync("/v2/vendors/1", new StringContent("""
-                {
-                    "company": "Test 11",
-                    "contactName": "Test",
-                    "contactEmailAddress": "Test",
-                    "namespacePrefixes": [
-                        "Test"
-                    ]
-                }
-                """, Encoding.UTF8, "application/json"));
+            var updateResponse = await client.PutAsync(
+                "/v2/vendors/1",
+                new StringContent(
+                    """
+                    {
+                        "company": "Test 11",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": [
+                            "Test"
+                        ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
             var deleteResponse = await client.DeleteAsync("/v2/vendors/1");
 
             //Assert
@@ -344,4 +450,3 @@ public class VendorModuleTests
         }
     }
 }
-
