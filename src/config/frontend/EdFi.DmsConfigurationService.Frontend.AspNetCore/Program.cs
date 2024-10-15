@@ -30,7 +30,6 @@ app.MapGet("/", () => "DMS Configuration Service");
 
 app.Run();
 
-
 /// <summary>
 /// Triggers configuration validation. If configuration is invalid, injects a short-circuit middleware to report.
 /// Returns true if the middleware was injected.

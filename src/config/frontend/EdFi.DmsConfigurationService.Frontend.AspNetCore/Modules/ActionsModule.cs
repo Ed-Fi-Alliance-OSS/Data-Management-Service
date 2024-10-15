@@ -17,16 +17,34 @@ public class ActionsModule : IEndpointModule
 
     public IResult GetUserActions(HttpContext httpContext)
     {
-
         var response = new AdminAction[]
         {
-            new AdminAction { Id = 1, Name = "Create", Uri = "uri://ed-fi.org/api/actions/create" },
-            new AdminAction { Id = 2, Name = "Read", Uri = "uri://ed-fi.org/api/actions/read" },
-            new AdminAction { Id = 3, Name = "Update", Uri = "uri://ed-fi.org/api/actions/update" },
-            new AdminAction { Id = 4, Name = "Delete", Uri = "uri://ed-fi.org/api/actions/delete" },
+            new AdminAction
+            {
+                Id = 1,
+                Name = "Create",
+                Uri = "uri://ed-fi.org/api/actions/create",
+            },
+            new AdminAction
+            {
+                Id = 2,
+                Name = "Read",
+                Uri = "uri://ed-fi.org/api/actions/read",
+            },
+            new AdminAction
+            {
+                Id = 3,
+                Name = "Update",
+                Uri = "uri://ed-fi.org/api/actions/update",
+            },
+            new AdminAction
+            {
+                Id = 4,
+                Name = "Delete",
+                Uri = "uri://ed-fi.org/api/actions/delete",
+            },
         };
 
         return Results.Ok(response);
-
     }
 }

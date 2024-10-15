@@ -7,7 +7,6 @@ using System.Text.Json.Serialization;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
 
-
 public class AdminAction
 {
     [JsonPropertyName("id")]

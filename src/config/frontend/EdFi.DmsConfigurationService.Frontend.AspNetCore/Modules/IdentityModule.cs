@@ -5,10 +5,10 @@
 
 using System.Text.Json;
 using EdFi.DmsConfigurationService.Backend;
-using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
-using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
-using Microsoft.Extensions.Options;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -20,8 +20,12 @@ public class IdentityModule : IEndpointModule
         endpoints.MapPost("/connect/token", GetClientAccessToken);
     }
 
-    public async Task<IResult> RegisterClient(RegisterRequest.Validator validator, RegisterRequest model,
-        IClientRepository clientRepository, IOptions<IdentitySettings> identitySettings)
+    public async Task<IResult> RegisterClient(
+        RegisterRequest.Validator validator,
+        RegisterRequest model,
+        IClientRepository clientRepository,
+        IOptions<IdentitySettings> identitySettings
+    )
     {
         var allowRegistration = identitySettings.Value.AllowRegistration;
         if (allowRegistration)
@@ -29,7 +33,11 @@ public class IdentityModule : IEndpointModule
             await validator.GuardAsync(model);
             try
             {
-                await clientRepository.CreateClientAsync(model.ClientId!, model.ClientSecret!, model.DisplayName!);
+                await clientRepository.CreateClientAsync(
+                    model.ClientId!,
+                    model.ClientSecret!,
+                    model.DisplayName!
+                );
                 return Results.Ok($"Registered client {model.ClientId} successfully.");
             }
             catch (Exception ex)
@@ -40,15 +48,21 @@ public class IdentityModule : IEndpointModule
         return Results.Forbid();
     }
 
-    public async Task<IResult> GetClientAccessToken(TokenRequest.Validator validator, TokenRequest model, ITokenManager tokenManager)
+    public async Task<IResult> GetClientAccessToken(
+        TokenRequest.Validator validator,
+        TokenRequest model,
+        ITokenManager tokenManager
+    )
     {
         await validator.GuardAsync(model);
         try
         {
-            var response = await tokenManager.GetAccessTokenAsync([
-                new KeyValuePair<string, string>("client_id", model.ClientId!),
-                new KeyValuePair<string, string>("client_secret", model.ClientSecret!)
-                ]);
+            var response = await tokenManager.GetAccessTokenAsync(
+                [
+                    new KeyValuePair<string, string>("client_id", model.ClientId!),
+                    new KeyValuePair<string, string>("client_secret", model.ClientSecret!),
+                ]
+            );
             var tokenResponse = JsonSerializer.Deserialize<TokenResponse>(response);
             return Results.Ok(tokenResponse);
         }
