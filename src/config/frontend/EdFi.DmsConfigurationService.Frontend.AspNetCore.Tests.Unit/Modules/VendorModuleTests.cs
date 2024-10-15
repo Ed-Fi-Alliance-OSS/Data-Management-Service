@@ -141,6 +141,7 @@ public class VendorModuleTests
 
             //Assert
             addResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+            addResponse.Headers.Location!.ToString().Should().EndWith("/v2/vendors/1");
             getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             getByIdResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);

@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model.Validator;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -17,8 +18,12 @@ public class VendorModule : IEndpointModule
         endpoints
             .MapPost(
                 "/v2/vendors/",
-                async (Vendor.Validator validator, Vendor vendor, IRepository<Vendor> repository) =>
-                    await Insert(validator, vendor, repository)
+                async (
+                    VendorValidator validator,
+                    Vendor vendor,
+                    HttpContext HttpContext,
+                    IRepository<Vendor> repository
+                ) => await Insert(validator, vendor, HttpContext, repository)
             )
             .RequireAuthorizationWithPolicy();
         endpoints.MapGet("/v2/vendors", GetAll).RequireAuthorizationWithPolicy();
@@ -27,7 +32,7 @@ public class VendorModule : IEndpointModule
             .MapPut(
                 "/v2/vendors/{id}",
                 async (
-                    Vendor.Validator validator,
+                    VendorValidator validator,
                     Vendor vendor,
                     HttpContext httpContext,
                     IRepository<Vendor> repository
@@ -38,16 +43,21 @@ public class VendorModule : IEndpointModule
     }
 
     private async Task<IResult> Insert(
-        Vendor.Validator validator,
+        VendorValidator validator,
         Vendor vendor,
+        HttpContext httpContext,
         IRepository<Vendor> repository
     )
     {
         await validator.GuardAsync(vendor);
         var insertResult = await repository.AddAsync(vendor);
+        var request = httpContext.Request;
         return insertResult switch
         {
-            InsertResult.InsertSuccess => Results.Created(),
+            InsertResult.InsertSuccess success => Results.Created(
+                $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
+                null
+            ),
             InsertResult.UnknownFailure => Results.Problem(statusCode: 500),
             _ => Results.Problem(statusCode: 500),
         };
@@ -85,7 +95,7 @@ public class VendorModule : IEndpointModule
     }
 
     private async Task<IResult> Update(
-        Vendor.Validator validator,
+        VendorValidator validator,
         Vendor vendor,
         HttpContext httpContext,
         IRepository<Vendor> repository
