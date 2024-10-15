@@ -10,8 +10,9 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
 {
     public class VendorTests : DatabaseTest
     {
-        private readonly IRepository<Vendor>
-            _repository = new VendorRepository(Configuration.DatabaseOptions);
+        private readonly IRepository<Vendor> _repository = new VendorRepository(
+            Configuration.DatabaseOptions
+        );
 
         [TestFixture]
         public class InsertTests : VendorTests
@@ -21,13 +22,14 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
             [SetUp]
             public async Task Setup()
             {
-                Vendor vendor = new()
-                {
-                    Company = "Test Company",
-                    ContactEmailAddress = "test@test.com",
-                    ContactName = "Fake Name",
-                    NamespacePrefixes = ["FakePrefix1", "FakePrefix2"]
-                };
+                Vendor vendor =
+                    new()
+                    {
+                        Company = "Test Company",
+                        ContactEmailAddress = "test@test.com",
+                        ContactName = "Fake Name",
+                        NamespacePrefixes = ["FakePrefix1", "FakePrefix2"],
+                    };
 
                 var result = await _repository.AddAsync(vendor);
                 result.Should().BeOfType<InsertResult.InsertSuccess>();
@@ -75,7 +77,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
                     Company = "Test Company",
                     ContactEmailAddress = "test@test.com",
                     ContactName = "Fake Name",
-                    NamespacePrefixes = []
+                    NamespacePrefixes = [],
                 };
 
                 var insertResult = await _repository.AddAsync(vendor);
@@ -130,7 +132,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
                     Company = "Test Company 1",
                     ContactEmailAddress = "test1@test.com",
                     ContactName = "Fake Name 1",
-                    NamespacePrefixes = []
+                    NamespacePrefixes = [],
                 };
 
                 var insertResult1 = await _repository.AddAsync(vendor1);
@@ -143,7 +145,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
                     Company = "Test Company 2",
                     ContactEmailAddress = "test2@test.com",
                     ContactName = "Fake Name 2",
-                    NamespacePrefixes = []
+                    NamespacePrefixes = [],
                 };
 
                 var insertResult2 = await _repository.AddAsync(vendor2);
@@ -162,10 +164,22 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
                 getResult.Should().BeOfType<GetResult<Vendor>.GetSuccess>();
 
                 ((GetResult<Vendor>.GetSuccess)getResult).Results.Count.Should().Be(1);
-                ((GetResult<Vendor>.GetSuccess)getResult).Results.Count(v => v.Id == vendor1.Id.GetValueOrDefault()).Should().Be(0);
-                ((GetResult<Vendor>.GetSuccess)getResult).Results.Count(v => v.Company == "Test Company 1").Should().Be(0);
-                ((GetResult<Vendor>.GetSuccess)getResult).Results.Count(v => v.Id == vendor2.Id.GetValueOrDefault()).Should().Be(1);
-                ((GetResult<Vendor>.GetSuccess)getResult).Results.Count(v => v.Company == "Test Company 2").Should().Be(1);
+                ((GetResult<Vendor>.GetSuccess)getResult)
+                    .Results.Count(v => v.Id == vendor1.Id.GetValueOrDefault())
+                    .Should()
+                    .Be(0);
+                ((GetResult<Vendor>.GetSuccess)getResult)
+                    .Results.Count(v => v.Company == "Test Company 1")
+                    .Should()
+                    .Be(0);
+                ((GetResult<Vendor>.GetSuccess)getResult)
+                    .Results.Count(v => v.Id == vendor2.Id.GetValueOrDefault())
+                    .Should()
+                    .Be(1);
+                ((GetResult<Vendor>.GetSuccess)getResult)
+                    .Results.Count(v => v.Company == "Test Company 2")
+                    .Should()
+                    .Be(1);
             }
 
             [Test]

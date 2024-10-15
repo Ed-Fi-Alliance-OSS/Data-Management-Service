@@ -9,7 +9,6 @@ using Respawn;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration;
 
-// A database test base class that creates a datasource and manages table truncation
 public abstract class DatabaseTestBase
 {
     private static readonly string _connectionString = Configuration.DatabaseOptions.Value.DatabaseConnection;
@@ -34,8 +33,14 @@ public abstract class DatabaseTestBase
             _respawnerConnection,
             new RespawnerOptions
             {
-                TablesToInclude = [new("dmscs", "vendor"), new("dmscs", "vendornamespaceprefix"), new("dmscs", "application"), new("dmscs", "applicationeducationorganization")],
-                DbAdapter = DbAdapter.Postgres
+                TablesToInclude =
+                [
+                    new("dmscs", "vendor"),
+                    new("dmscs", "vendornamespaceprefix"),
+                    new("dmscs", "application"),
+                    new("dmscs", "applicationeducationorganization"),
+                ],
+                DbAdapter = DbAdapter.Postgres,
             }
         );
     }

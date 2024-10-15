@@ -42,8 +42,7 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder
             .Services.Configure<AppSettings>(webApplicationBuilder.Configuration.GetSection("AppSettings"))
             .AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>()
-            .Configure<DatabaseOptions>(
-                webApplicationBuilder.Configuration.GetSection("ConnectionStrings"))
+            .Configure<DatabaseOptions>(webApplicationBuilder.Configuration.GetSection("ConnectionStrings"))
             .AddSingleton<IValidateOptions<DatabaseOptions>, DatabaseOptionsValidator>();
         ;
         ConfigureDatastore(webApplicationBuilder);
@@ -87,7 +86,7 @@ public static class WebApplicationBuilderExtensions
                     {
                         ValidateAudience = true,
                         ValidateIssuer = true,
-                        RoleClaimType = identitySettings.RoleClaimType
+                        RoleClaimType = identitySettings.RoleClaimType,
                     };
 
                     options.Events = new JwtBearerEvents
@@ -96,7 +95,7 @@ public static class WebApplicationBuilderExtensions
                         {
                             Console.WriteLine($"Authentication failed: {context.Exception.Message}");
                             return Task.CompletedTask;
-                        }
+                        },
                     };
                 }
             );
@@ -119,7 +118,7 @@ public static class WebApplicationBuilderExtensions
                 RequireHttpsMetadata = config.GetValue<bool>("IdentitySettings:RequireHttpsMetadata"),
                 Audience = config.GetValue<string>("IdentitySettings:Audience")!,
                 RoleClaimType = config.GetValue<string>("IdentitySettings:RoleClaimType")!,
-                ServiceRole = config.GetValue<string>("IdentitySettings:ServiceRole")!
+                ServiceRole = config.GetValue<string>("IdentitySettings:ServiceRole")!,
             };
         }
     }
@@ -136,7 +135,7 @@ public static class WebApplicationBuilderExtensions
         {
             webAppBuilder.Services.AddPostgresqlDatastore(
                 webAppBuilder.Configuration.GetSection("ConnectionStrings:DatabaseConnection").Value
-                ?? string.Empty
+                    ?? string.Empty
             );
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Postgresql.Deploy.DatabaseDeploy>();
         }
