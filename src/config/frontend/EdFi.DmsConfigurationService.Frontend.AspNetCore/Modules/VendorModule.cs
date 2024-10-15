@@ -7,7 +7,6 @@ using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
-using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -18,7 +17,7 @@ public class VendorModule : IEndpointModule
         endpoints
             .MapPost(
                 "/v2/vendors/",
-                async (VendorValidator validator, Vendor vendor, IRepository<Vendor> repository) =>
+                async (Vendor.Validator validator, Vendor vendor, IRepository<Vendor> repository) =>
                     await Insert(validator, vendor, repository)
             )
             .RequireAuthorizationWithPolicy();
@@ -28,7 +27,7 @@ public class VendorModule : IEndpointModule
             .MapPut(
                 "/v2/vendors/{id}",
                 async (
-                    VendorValidator validator,
+                    Vendor.Validator validator,
                     Vendor vendor,
                     HttpContext httpContext,
                     IRepository<Vendor> repository
@@ -39,7 +38,7 @@ public class VendorModule : IEndpointModule
     }
 
     private async Task<IResult> Insert(
-        VendorValidator validator,
+        Vendor.Validator validator,
         Vendor vendor,
         IRepository<Vendor> repository
     )
@@ -86,7 +85,7 @@ public class VendorModule : IEndpointModule
     }
 
     private async Task<IResult> Update(
-        VendorValidator validator,
+        Vendor.Validator validator,
         Vendor vendor,
         HttpContext httpContext,
         IRepository<Vendor> repository
