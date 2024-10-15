@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using System.Net;
 using System.Security.Claims;
 using System.Text;
@@ -22,6 +23,35 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 public class VendorModuleTests
 {
     private readonly IRepository<Vendor> _repository = A.Fake<IRepository<Vendor>>();
+
+    protected HttpClient SetUpClient()
+    {
+        var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection
+                        .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
+                        .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                            AuthenticationConstants.AuthenticationSchema,
+                            options => { }
+                        );
+
+                    collection.AddAuthorization(options =>
+                        options.AddPolicy(
+                            SecurityConstants.ServicePolicy,
+                            policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
+                        )
+                    );
+
+                    collection.AddTransient((x) => _repository!);
+                }
+            );
+        });
+        return factory.CreateClient();
+    }
 
     [TestFixture]
     public class SuccessTests : VendorModuleTests
@@ -69,31 +99,7 @@ public class VendorModuleTests
         public async Task Should_return_proper_success_responses()
         {
             // Arrange
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(
-                    (collection) =>
-                    {
-                        collection
-                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                                AuthenticationConstants.AuthenticationSchema,
-                                options => { }
-                            );
-
-                        collection.AddAuthorization(options =>
-                            options.AddPolicy(
-                                SecurityConstants.ServicePolicy,
-                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
-                            )
-                        );
-
-                        collection.AddTransient((x) => _repository!);
-                    }
-                );
-            });
-            using var client = factory.CreateClient();
+            using var client = SetUpClient();
 
             //Act
             var addResponse = await client.PostAsync(
@@ -150,31 +156,8 @@ public class VendorModuleTests
         public async Task Should_return_bad_request()
         {
             // Arrange
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(
-                    (collection) =>
-                    {
-                        collection
-                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                                AuthenticationConstants.AuthenticationSchema,
-                                options => { }
-                            );
+            using var client = SetUpClient();
 
-                        collection.AddAuthorization(options =>
-                            options.AddPolicy(
-                                SecurityConstants.ServicePolicy,
-                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
-                            )
-                        );
-
-                        collection.AddTransient((x) => _repository!);
-                    }
-                );
-            });
-            using var client = factory.CreateClient();
             var invalidBody = """
                 {
                   "company": "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
@@ -230,31 +213,7 @@ public class VendorModuleTests
         public async Task Should_return_proper_not_found_responses()
         {
             // Arrange
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(
-                    (collection) =>
-                    {
-                        collection
-                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                                AuthenticationConstants.AuthenticationSchema,
-                                options => { }
-                            );
-
-                        collection.AddAuthorization(options =>
-                            options.AddPolicy(
-                                SecurityConstants.ServicePolicy,
-                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
-                            )
-                        );
-
-                        collection.AddTransient((x) => _repository!);
-                    }
-                );
-            });
-            using var client = factory.CreateClient();
+            using var client = SetUpClient();
 
             //Act
 
@@ -288,34 +247,9 @@ public class VendorModuleTests
         public async Task Should_return_not_found_when_id_not_number()
         {
             // Arrange
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(
-                    (collection) =>
-                    {
-                        collection
-                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                                AuthenticationConstants.AuthenticationSchema,
-                                options => { }
-                            );
-
-                        collection.AddAuthorization(options =>
-                            options.AddPolicy(
-                                SecurityConstants.ServicePolicy,
-                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
-                            )
-                        );
-
-                        collection.AddTransient((x) => _repository!);
-                    }
-                );
-            });
-            using var client = factory.CreateClient();
+            using var client = SetUpClient();
 
             //Act
-
             var getByIdResponse = await client.GetAsync("/v2/vendors/a");
             var updateResponse = await client.PutAsync(
                 "/v2/vendors/b",
@@ -368,31 +302,7 @@ public class VendorModuleTests
         public async Task Should_return_proper_success_responses()
         {
             // Arrange
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(
-                    (collection) =>
-                    {
-                        collection
-                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                                AuthenticationConstants.AuthenticationSchema,
-                                options => { }
-                            );
-
-                        collection.AddAuthorization(options =>
-                            options.AddPolicy(
-                                SecurityConstants.ServicePolicy,
-                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
-                            )
-                        );
-
-                        collection.AddTransient((x) => _repository!);
-                    }
-                );
-            });
-            using var client = factory.CreateClient();
+            using var client = SetUpClient();
 
             //Act
             var addResponse = await client.PostAsync(
@@ -463,31 +373,7 @@ public class VendorModuleTests
         public async Task Should_return_proper_success_responses()
         {
             // Arrange
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(
-                    (collection) =>
-                    {
-                        collection
-                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                                AuthenticationConstants.AuthenticationSchema,
-                                options => { }
-                            );
-
-                        collection.AddAuthorization(options =>
-                            options.AddPolicy(
-                                SecurityConstants.ServicePolicy,
-                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
-                            )
-                        );
-
-                        collection.AddTransient((x) => _repository!);
-                    }
-                );
-            });
-            using var client = factory.CreateClient();
+            var client = SetUpClient();
 
             //Act
             var addResponse = await client.PostAsync(
