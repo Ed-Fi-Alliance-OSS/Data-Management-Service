@@ -15,23 +15,27 @@ public class VendorModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost(
-            "/v2/vendors/",
-            async (VendorValidator validator, Vendor vendor, IRepository<Vendor> repository) =>
-                await Insert(validator, vendor, repository)
-        );
-        endpoints.MapGet("/v2/vendors", GetAll);
-        endpoints.MapGet("/v2/vendors/{id}", GetById);
-        endpoints.MapPut(
-            "/v2/vendors/{id}",
-            async (
-                VendorValidator validator,
-                Vendor vendor,
-                HttpContext httpContext,
-                IRepository<Vendor> repository
-            ) => await Update(validator, vendor, httpContext, repository)
-        );
-        endpoints.MapDelete("/v2/vendors/{id}", Delete);
+        endpoints
+            .MapPost(
+                "/v2/vendors/",
+                async (VendorValidator validator, Vendor vendor, IRepository<Vendor> repository) =>
+                    await Insert(validator, vendor, repository)
+            )
+            .RequireAuthorizationWithPolicy();
+        endpoints.MapGet("/v2/vendors", GetAll).RequireAuthorizationWithPolicy();
+        endpoints.MapGet("/v2/vendors/{id}", GetById).RequireAuthorizationWithPolicy();
+        endpoints
+            .MapPut(
+                "/v2/vendors/{id}",
+                async (
+                    VendorValidator validator,
+                    Vendor vendor,
+                    HttpContext httpContext,
+                    IRepository<Vendor> repository
+                ) => await Update(validator, vendor, httpContext, repository)
+            )
+            .RequireAuthorizationWithPolicy();
+        endpoints.MapDelete("/v2/vendors/{id}", Delete).RequireAuthorizationWithPolicy();
     }
 
     private async Task<IResult> Insert(

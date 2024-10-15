@@ -4,11 +4,14 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Security.Claims;
 using System.Text;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -72,6 +75,20 @@ public class VendorModuleTests
                 builder.ConfigureServices(
                     (collection) =>
                     {
+                        collection
+                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
+                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                                AuthenticationConstants.AuthenticationSchema,
+                                options => { }
+                            );
+
+                        collection.AddAuthorization(options =>
+                            options.AddPolicy(
+                                SecurityConstants.ServicePolicy,
+                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
+                            )
+                        );
+
                         collection.AddTransient((x) => _repository!);
                     }
                 );
@@ -139,6 +156,20 @@ public class VendorModuleTests
                 builder.ConfigureServices(
                     (collection) =>
                     {
+                        collection
+                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
+                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                                AuthenticationConstants.AuthenticationSchema,
+                                options => { }
+                            );
+
+                        collection.AddAuthorization(options =>
+                            options.AddPolicy(
+                                SecurityConstants.ServicePolicy,
+                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
+                            )
+                        );
+
                         collection.AddTransient((x) => _repository!);
                     }
                 );
@@ -205,6 +236,20 @@ public class VendorModuleTests
                 builder.ConfigureServices(
                     (collection) =>
                     {
+                        collection
+                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
+                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                                AuthenticationConstants.AuthenticationSchema,
+                                options => { }
+                            );
+
+                        collection.AddAuthorization(options =>
+                            options.AddPolicy(
+                                SecurityConstants.ServicePolicy,
+                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
+                            )
+                        );
+
                         collection.AddTransient((x) => _repository!);
                     }
                 );
@@ -249,6 +294,20 @@ public class VendorModuleTests
                 builder.ConfigureServices(
                     (collection) =>
                     {
+                        collection
+                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
+                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                                AuthenticationConstants.AuthenticationSchema,
+                                options => { }
+                            );
+
+                        collection.AddAuthorization(options =>
+                            options.AddPolicy(
+                                SecurityConstants.ServicePolicy,
+                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
+                            )
+                        );
+
                         collection.AddTransient((x) => _repository!);
                     }
                 );
@@ -315,6 +374,20 @@ public class VendorModuleTests
                 builder.ConfigureServices(
                     (collection) =>
                     {
+                        collection
+                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
+                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                                AuthenticationConstants.AuthenticationSchema,
+                                options => { }
+                            );
+
+                        collection.AddAuthorization(options =>
+                            options.AddPolicy(
+                                SecurityConstants.ServicePolicy,
+                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
+                            )
+                        );
+
                         collection.AddTransient((x) => _repository!);
                     }
                 );
@@ -396,6 +469,20 @@ public class VendorModuleTests
                 builder.ConfigureServices(
                     (collection) =>
                     {
+                        collection
+                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
+                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                                AuthenticationConstants.AuthenticationSchema,
+                                options => { }
+                            );
+
+                        collection.AddAuthorization(options =>
+                            options.AddPolicy(
+                                SecurityConstants.ServicePolicy,
+                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
+                            )
+                        );
+
                         collection.AddTransient((x) => _repository!);
                     }
                 );
