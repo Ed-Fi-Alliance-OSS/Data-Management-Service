@@ -4,7 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.DataModel;
-using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model.Validator;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
