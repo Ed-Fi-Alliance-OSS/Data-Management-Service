@@ -11,5 +11,5 @@ public class Vendor
     public required string Company { get; set; }
     public string? ContactName { get; set; }
     public string? ContactEmailAddress { get; set; }
-    public required List<string?> NamespacePrefixes { get; set; } = [];
+    public required IList<string> NamespacePrefixes { get; set; } = [];
 }
