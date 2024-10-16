@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Deploy;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
@@ -28,7 +29,6 @@ app.MapRouteEndpoints();
 app.MapGet("/", () => "DMS Configuration Service");
 
 app.Run();
-
 
 /// <summary>
 /// Triggers configuration validation. If configuration is invalid, injects a short-circuit middleware to report.
@@ -59,7 +59,7 @@ void InitializeDatabase(WebApplication app)
             var result = app
                 .Services.GetRequiredService<IDatabaseDeploy>()
                 .DeployDatabase(
-                    app.Services.GetRequiredService<IOptions<ConnectionStrings>>().Value.DatabaseConnection
+                    app.Services.GetRequiredService<IOptions<DatabaseOptions>>().Value.DatabaseConnection
                 );
             if (result is DatabaseDeployResult.DatabaseDeployFailure failure)
             {

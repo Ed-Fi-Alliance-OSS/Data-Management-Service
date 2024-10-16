@@ -9,6 +9,7 @@ using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Deploy;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Postgresql;
+using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using FluentValidation;
 using FluentValidation.AspNetCore;
@@ -41,9 +42,8 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder
             .Services.Configure<AppSettings>(webApplicationBuilder.Configuration.GetSection("AppSettings"))
             .AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>()
-            .Configure<ConnectionStrings>(
-                webApplicationBuilder.Configuration.GetSection("ConnectionStrings"))
-            .AddSingleton<IValidateOptions<ConnectionStrings>, ConnectionStringsValidator>();
+            .Configure<DatabaseOptions>(webApplicationBuilder.Configuration.GetSection("ConnectionStrings"))
+            .AddSingleton<IValidateOptions<DatabaseOptions>, DatabaseOptionsValidator>();
         ;
         ConfigureDatastore(webApplicationBuilder);
 
@@ -66,6 +66,7 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder.Services.AddHttpClient();
 
         webApplicationBuilder.Services.AddTransient<IClientRepository, ClientRepository>();
+        webApplicationBuilder.Services.AddTransient<IRepository<Vendor>, VendorRepository>();
         webApplicationBuilder.Services.AddTransient<ITokenManager, TokenManager>();
 
         var metadataAddress = $"{identitySettings.Authority}/.well-known/openid-configuration";
@@ -84,7 +85,7 @@ public static class WebApplicationBuilderExtensions
                     {
                         ValidateAudience = true,
                         ValidateIssuer = true,
-                        RoleClaimType = identitySettings.RoleClaimType
+                        RoleClaimType = identitySettings.RoleClaimType,
                     };
 
                     options.Events = new JwtBearerEvents
@@ -93,7 +94,7 @@ public static class WebApplicationBuilderExtensions
                         {
                             Console.WriteLine($"Authentication failed: {context.Exception.Message}");
                             return Task.CompletedTask;
-                        }
+                        },
                     };
                 }
             );
@@ -116,7 +117,7 @@ public static class WebApplicationBuilderExtensions
                 RequireHttpsMetadata = config.GetValue<bool>("IdentitySettings:RequireHttpsMetadata"),
                 Audience = config.GetValue<string>("IdentitySettings:Audience")!,
                 RoleClaimType = config.GetValue<string>("IdentitySettings:RoleClaimType")!,
-                ServiceRole = config.GetValue<string>("IdentitySettings:ServiceRole")!
+                ServiceRole = config.GetValue<string>("IdentitySettings:ServiceRole")!,
             };
         }
     }
@@ -133,7 +134,7 @@ public static class WebApplicationBuilderExtensions
         {
             webAppBuilder.Services.AddPostgresqlDatastore(
                 webAppBuilder.Configuration.GetSection("ConnectionStrings:DatabaseConnection").Value
-                ?? string.Empty
+                    ?? string.Empty
             );
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Postgresql.Deploy.DatabaseDeploy>();
         }

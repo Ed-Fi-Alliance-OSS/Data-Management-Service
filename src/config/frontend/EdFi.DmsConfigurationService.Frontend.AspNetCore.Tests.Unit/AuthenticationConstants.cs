@@ -5,7 +5,7 @@
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit;
 
-public class AuthenticationConstants
+public static class AuthenticationConstants
 {
     public const string AuthenticationSchema = "TestScheme";
     public const string Role = "test-role";
