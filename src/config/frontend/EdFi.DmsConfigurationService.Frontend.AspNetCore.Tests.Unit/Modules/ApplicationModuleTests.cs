@@ -25,6 +25,35 @@ public class ApplicationModuleTests
     private readonly IRepository<Application> _repository = A.Fake<IRepository<Application>>();
     private readonly IRepository<Vendor> _vendorRepository = A.Fake<IRepository<Vendor>>();
 
+    protected HttpClient SetUpClient()
+    {
+        var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection
+                        .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
+                        .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                            AuthenticationConstants.AuthenticationSchema,
+                            options => { }
+                        );
+
+                    collection.AddAuthorization(options =>
+                        options.AddPolicy(
+                            SecurityConstants.ServicePolicy,
+                            policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
+                        )
+                    );
+
+                    collection.AddTransient((x) => _repository!);
+                }
+            );
+        });
+        return factory.CreateClient();
+    }
+
     [TestFixture]
     public class SuccessTests : ApplicationModuleTests
     {
@@ -78,33 +107,8 @@ public class ApplicationModuleTests
         public async Task Should_return_success_response()
         {
             // Arrange
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(
-                    (collection) =>
-                    {
-                        collection
-                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                                AuthenticationConstants.AuthenticationSchema,
-                                options => { }
-                            );
+            using var client = SetUpClient();
 
-                        collection.AddAuthorization(options =>
-                            options.AddPolicy(
-                                SecurityConstants.ServicePolicy,
-                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
-                            )
-                        );
-
-                        collection.AddTransient((x) => _repository!);
-                    }
-                );
-            });
-            using var client = factory.CreateClient();
-
-            //Act
             var addResponse = await client.PostAsync(
                 "/v2/applications",
                 new StringContent(
@@ -128,6 +132,7 @@ public class ApplicationModuleTests
                 new StringContent(
                     """
                     {
+                       "id": 1,
                        "ApplicationName": "Application 11",
                         "ClaimSetName": "Test",
                         "VendorId": 1,
@@ -156,44 +161,22 @@ public class ApplicationModuleTests
         public async Task Should_return_bad_request()
         {
             // Arrange
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(
-                    (collection) =>
-                    {
-                        collection
-                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                                AuthenticationConstants.AuthenticationSchema,
-                                options => { }
-                            );
-
-                        collection.AddAuthorization(options =>
-                            options.AddPolicy(
-                                SecurityConstants.ServicePolicy,
-                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
-                            )
-                        );
-
-                        collection.AddTransient((x) => _repository!);
-                    }
-                );
-            });
-            using var client = factory.CreateClient();
+            using var client = SetUpClient();
 
             string invalidBody = """
-                                 {
-                                    "ApplicationName": "Application 101",
-                                     "ClaimSetName": "",
-                                     "VendorId":1,
-                                     "ApplicationEducationOrganizations": [1]
-                                 }
-                                 """;
+                {
+                   "ApplicationName": "Application 101",
+                    "ClaimSetName": "",
+                    "VendorId":1,
+                    "ApplicationEducationOrganizations": [1]
+                }
+                """;
 
             //Act
-            var addResponse = await client.PostAsync("/v2/applications",
-                new StringContent(invalidBody, Encoding.UTF8, "application/json"));
+            var addResponse = await client.PostAsync(
+                "/v2/applications",
+                new StringContent(invalidBody, Encoding.UTF8, "application/json")
+            );
 
             //Assert
             string expectedResponse =
@@ -205,11 +188,14 @@ public class ApplicationModuleTests
     }
 
     [TestFixture]
-    public class FailureNotFound : ApplicationModuleTests
+    public class FailureNotFoundTest : ApplicationModuleTests
     {
         [SetUp]
         public void SetUp()
         {
+            A.CallTo(() => _vendorRepository.AddAsync(A<Vendor>.Ignored))
+                .Returns(new InsertResult.InsertSuccess(1));
+
             A.CallTo(() => _repository.GetByIdAsync(A<long>.Ignored))
                 .Returns(new GetResult<Application>.GetByIdFailureNotExists());
 
@@ -224,40 +210,16 @@ public class ApplicationModuleTests
         public async Task Should_return_proper_not_found_responses()
         {
             // Arrange
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(
-                    (collection) =>
-                    {
-                        collection
-                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                                AuthenticationConstants.AuthenticationSchema,
-                                options => { }
-                            );
-
-                        collection.AddAuthorization(options =>
-                            options.AddPolicy(
-                                SecurityConstants.ServicePolicy,
-                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
-                            )
-                        );
-
-                        collection.AddTransient((x) => _repository!);
-                    }
-                );
-            });
-            using var client = factory.CreateClient();
+            using var client = SetUpClient();
 
             //Act
-
             var getByIdResponse = await client.GetAsync("/v2/applications/1");
             var updateResponse = await client.PutAsync(
                 "/v2/applications/1",
                 new StringContent(
                     """
                     {
+                        "id": 1,
                        "ApplicationName": "Application 101",
                         "ClaimSetName": "Test",
                         "VendorId":1,
@@ -302,31 +264,7 @@ public class ApplicationModuleTests
         public async Task Should_return_proper_success_responses()
         {
             // Arrange
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(
-                    (collection) =>
-                    {
-                        collection
-                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                                AuthenticationConstants.AuthenticationSchema,
-                                options => { }
-                            );
-
-                        collection.AddAuthorization(options =>
-                            options.AddPolicy(
-                                SecurityConstants.ServicePolicy,
-                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
-                            )
-                        );
-
-                        collection.AddTransient((x) => _repository!);
-                    }
-                );
-            });
-            using var client = factory.CreateClient();
+            using var client = SetUpClient();
 
             //Act
             var addResponse = await client.PostAsync(
@@ -351,6 +289,7 @@ public class ApplicationModuleTests
                 new StringContent(
                     """
                     {
+                        "id": 1,
                         "ApplicationName": "Application 102",
                         "ClaimSetName": "Test",
                         "VendorId": 1,
@@ -393,31 +332,7 @@ public class ApplicationModuleTests
         public async Task Should_return_success_responses()
         {
             // Arrange
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(
-                    (collection) =>
-                    {
-                        collection
-                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                                AuthenticationConstants.AuthenticationSchema,
-                                options => { }
-                            );
-
-                        collection.AddAuthorization(options =>
-                            options.AddPolicy(
-                                SecurityConstants.ServicePolicy,
-                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
-                            )
-                        );
-
-                        collection.AddTransient((x) => _repository!);
-                    }
-                );
-            });
-            using var client = factory.CreateClient();
+            using var client = SetUpClient();
 
             //Act
             var addResponse = await client.PostAsync(

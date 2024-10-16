@@ -3,10 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Numerics;
 using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Backend;
+using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FluentValidation;
+using FluentValidation.Results;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -21,8 +24,8 @@ public abstract class BaseModule<T, TValidator> : IEndpointModule
         endpoints
             .MapPost(
                 $"{baseRoute}/",
-                async (TValidator validator, T entity, IRepository<T> repository) =>
-                    await Insert(validator, entity, repository)
+                async (TValidator validator, T entity, HttpContext httpContext, IRepository<T> repository) =>
+                    await Insert(validator, entity, httpContext, repository)
             )
             .RequireAuthorizationWithPolicy();
         endpoints.MapGet(baseRoute, GetAll).RequireAuthorizationWithPolicy();
@@ -39,15 +42,25 @@ public abstract class BaseModule<T, TValidator> : IEndpointModule
 
     protected abstract string GetBaseRoute();
 
-    private static async Task<IResult> Insert(TValidator validator, T entity, IRepository<T> repository)
+    private static async Task<IResult> Insert(
+        TValidator validator,
+        T entity,
+        HttpContext httpContext,
+        IRepository<T> repository
+    )
     {
         await validator.GuardAsync(entity);
-        InsertResult insertResult = await repository.AddAsync(entity);
+        var insertResult = await repository.AddAsync(entity);
+        var request = httpContext.Request;
         return insertResult switch
         {
-            InsertResult.InsertSuccess => Results.Created(),
+            InsertResult.InsertSuccess success
+                => Results.Created(
+                    $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
+                    null
+                ),
             InsertResult.UnknownFailure => Results.Problem(statusCode: 500),
-            _ => Results.Problem(statusCode: 500)
+            _ => Results.Problem(statusCode: 500),
         };
     }
 
@@ -94,27 +107,38 @@ public abstract class BaseModule<T, TValidator> : IEndpointModule
     )
     {
         await validator.GuardAsync(entity);
-
         Match match = UtilityService.PathExpressionRegex().Match(httpContext.Request.Path);
-        if (!match.Success)
-        {
-            return Results.Problem(statusCode: 500);
-        }
 
         string idString = match.Groups["Id"].Value;
-        if (!long.TryParse(idString, out long _))
+        if (long.TryParse(idString, out long id))
         {
-            return Results.NotFound();
+            var entityType = entity.GetType();
+            var idProperty = entityType.GetProperty("Id");
+            if (idProperty == null)
+            {
+                throw new InvalidOperationException("The entity does not contain an Id property.");
+            }
+
+            var entityId = idProperty.GetValue(entity) as long?;
+
+            if (entityId != id)
+            {
+                throw new ValidationException(
+                    new[] { new ValidationFailure("Id", "Request body id must match the id in the url.") }
+                );
+            }
+
+            var updateResult = await repository.UpdateAsync(entity);
+            return updateResult switch
+            {
+                UpdateResult.UpdateSuccess success => Results.NoContent(),
+                UpdateResult.UpdateFailureNotExists => Results.NotFound(),
+                UpdateResult.UnknownFailure => Results.Problem(statusCode: 500),
+                _ => Results.Problem(statusCode: 500),
+            };
         }
 
-        UpdateResult updateResult = await repository.UpdateAsync(entity);
-        return updateResult switch
-        {
-            UpdateResult.UpdateSuccess => Results.NoContent(),
-            UpdateResult.UpdateFailureNotExists => Results.NotFound(),
-            UpdateResult.UnknownFailure => Results.Problem(statusCode: 500),
-            _ => Results.Problem(statusCode: 500)
-        };
+        return Results.NotFound();
     }
 
     private static async Task<IResult> Delete(HttpContext httpContext, IRepository<T> repository)
