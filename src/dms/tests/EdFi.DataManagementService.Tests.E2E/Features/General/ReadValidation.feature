@@ -29,15 +29,15 @@ Feature: Check extra functionalities for GET requests
                       "schoolId": 4,
                       "nameOfInstitution": "UT Austin College of Education Graduate",
                       "educationOrganizationCategories": [
-                  {
-                      "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"
-                  }
-                  ],
-                  "gradeLevels": [
-                      {
-                          "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
-                      }
-                  ]
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"
+                          }
+                      ],
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
+                          }
+                      ]
                   }
                   """
               And a POST request is made to "/ed-fi/schools" with
