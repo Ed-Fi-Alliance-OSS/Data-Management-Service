@@ -197,7 +197,7 @@ Feature: Data strictness
                   """
 
         @ignore @API-246
-        Scenario: 14 Ensure clients cannot update a resource that is using a different value typa than boolean
+        Scenario: 14 Ensure clients cannot update a resource that is using a different value type than boolean
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
                   {
