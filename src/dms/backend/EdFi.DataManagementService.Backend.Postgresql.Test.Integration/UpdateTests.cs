@@ -3,8 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
@@ -62,6 +60,7 @@ public class UpdateTests : DatabaseTest
     public class Given_An_Update_Of_An_Existing_Document : UpdateTests
     {
         private UpdateResult? _updateResult;
+        private GetResult? _getInsertedResult;
         private GetResult? _getResult;
 
         private static readonly Guid _documentUuidGuid = Guid.NewGuid();
@@ -79,7 +78,11 @@ public class UpdateTests : DatabaseTest
                 _referentialIdGuid,
                 _edFiDocString1
             );
-            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, new TraceId(Guid.NewGuid().ToString()));
+
+            // Get
+            IGetRequest getInsertedRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
+            _getInsertedResult = await CreateGetById().GetById(getInsertedRequest, Connection!, Transaction!);
 
             // Update
             IUpdateRequest updateRequest = CreateUpdateRequest(
@@ -89,7 +92,7 @@ public class UpdateTests : DatabaseTest
                 _edFiDocString2
             );
             _updateResult = await CreateUpdate()
-                .UpdateById(updateRequest, Connection!, Transaction!, traceId);
+                .UpdateById(updateRequest, Connection!, Transaction!, new TraceId(Guid.NewGuid().ToString()));
 
             // Confirm change was made
             IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
@@ -108,7 +111,8 @@ public class UpdateTests : DatabaseTest
             _getResult!.Should().BeOfType<GetResult.GetSuccess>();
             (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
             (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Be(_edFiDocString2);
-            (_getResult! as GetResult.GetSuccess)!.LastModifiedTraceId.Should().Be(traceId.Value);
+            (_getResult! as GetResult.GetSuccess)!.LastModifiedTraceId.Should().NotBe((_getInsertedResult! as GetResult.GetSuccess)!.LastModifiedTraceId);
+            (_getResult! as GetResult.GetSuccess)!.LastModifiedDate.Should().NotBe((_getInsertedResult! as GetResult.GetSuccess)!.LastModifiedDate);
         }
     }
 
@@ -667,6 +671,7 @@ public class UpdateTests : DatabaseTest
 
         private static readonly Guid _courseOfferingDocumentUuid = Guid.NewGuid();
         private static readonly Guid _courseOfferingReferentialIdUuid = Guid.NewGuid();
+        private DateTime? _courseOfferingInsertDateTime;
 
         private static readonly Guid _section1DocumentUuid = Guid.NewGuid();
         private static readonly Guid _section1ReferentialIdUuid = Guid.NewGuid();
@@ -718,6 +723,16 @@ public class UpdateTests : DatabaseTest
             var courseOfferingUpsertResult = await CreateUpsert()
                 .Upsert(courseOfferingUpsertRequest, Connection!, Transaction!, traceId);
             courseOfferingUpsertResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+
+            var getCourseOffingInsertResult = await CreateGetById()
+                .GetById(
+                    CreateGetRequest("CourseOffering", _courseOfferingDocumentUuid),
+                    Connection!,
+                    Transaction!
+                );
+
+            _courseOfferingInsertDateTime =
+                (getCourseOffingInsertResult! as GetResult.GetSuccess)!.LastModifiedDate;
 
             IUpsertRequest section1UpsertRequest = CreateUpsertRequest(
                 "Section",
@@ -800,6 +815,7 @@ public class UpdateTests : DatabaseTest
             (getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_courseOfferingDocumentUuid);
             (getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("Fourth Quarter");
             (getResult! as GetResult.GetSuccess)!.LastModifiedTraceId.Should().Be(traceId.Value);
+            (getResult! as GetResult.GetSuccess)!.LastModifiedDate.Should().NotBe(_courseOfferingInsertDateTime);
         }
 
         [Test]
