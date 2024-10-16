@@ -365,7 +365,7 @@ Feature: Check the least amount of friction in the data exchange while still ens
 
 
         @ignore @API-247
-        Scenario: 15 Ensure clients cannot update a resource that is using a different value typa than boolean
+        Scenario: 15 Ensure clients cannot update a resource that is using a different value type than boolean
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
                   {
