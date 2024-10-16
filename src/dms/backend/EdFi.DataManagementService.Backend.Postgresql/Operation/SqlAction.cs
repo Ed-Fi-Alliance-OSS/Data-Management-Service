@@ -253,7 +253,7 @@ public class SqlAction() : ISqlAction
     {
         await using var command = new NpgsqlCommand(
             @"UPDATE dms.Document
-              SET EdfiDoc = $1
+              SET EdfiDoc = $1, LastModifiedAt = NOW(), LastModifiedTraceId = $4
               WHERE DocumentPartitionKey = $2 AND DocumentUuid = $3
               RETURNING Id;",
             connection,
