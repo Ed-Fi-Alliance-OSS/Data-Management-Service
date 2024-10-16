@@ -1,0 +1,67 @@
+{
+  "consumer": {
+    "name": "DMS API Consumer"
+  },
+  "interactions": [
+    {
+      "description": "A request for an access token with empty client credentials",
+      "request": {
+        "body": {
+          "clientid": "",
+          "clientsecret": ""
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "method": "POST",
+        "path": "/connect/token"
+      },
+      "response": {
+        "body": {
+          "error": "'Client Id' must not be empty."
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "description": "given a valid credentials",
+      "request": {
+        "body": {
+          "clientid": "CSClient1",
+          "clientsecret": "test123@Puiu"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "method": "POST",
+        "path": "/connect/token"
+      },
+      "response": {
+        "body": {
+          "access_token": "input123token",
+          "expires_in": 900,
+          "token_type": "bearer"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ],
+  "metadata": {
+    "pactRust": {
+      "ffi": "0.4.0",
+      "models": "1.0.4"
+    },
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "provider": {
+    "name": "DMS Configuration Service API"
+  }
+}
