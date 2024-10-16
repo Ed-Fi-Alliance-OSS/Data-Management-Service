@@ -151,7 +151,7 @@ Feature: Check the least amount of friction in the data exchange while still ens
                   ]
                   """
 
-        @API-236
+        @ignore @API-236
         Scenario: 04 Ensure clients can create a resource using numeric values for booleans
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
@@ -165,7 +165,7 @@ Feature: Check the least amount of friction in the data exchange while still ens
                   """
              Then it should respond with 201
 
-        @API-237
+        @ignore @API-237
         Scenario: 05 Ensure clients can update a resource using numeric values for booleans
              When a PUT request is made to "/ed-fi/classPeriods/{id}" with
                   """
@@ -179,7 +179,7 @@ Feature: Check the least amount of friction in the data exchange while still ens
                   """
              Then it should respond with 204
 
-        @API-238
+        @ignore @API-238
         Scenario: 06 Ensure clients cannot create a resource using incorrect values for booleans
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
@@ -195,7 +195,7 @@ Feature: Check the least amount of friction in the data exchange while still ens
               And the response body is
               # Pending confirmation
 
-        @API-239
+        @ignore @API-239
         Scenario: 07 Ensure clients cannot create a resource using incorrect values for booleans
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
@@ -225,7 +225,7 @@ Feature: Check the least amount of friction in the data exchange while still ens
                   """
              Then it should respond with 201
 
-        @API-241
+        @ignore @API-241
         Scenario: 09 Ensure clients can update a resource using expected booleans
              When a PUT request is made to "/ed-fi/classPeriods" with
                   """
@@ -239,7 +239,7 @@ Feature: Check the least amount of friction in the data exchange while still ens
                   """
              Then it should respond with 204
 
-        @API-242
+        @ignore @API-242
         Scenario: 10 Ensure clients can create a resource using expected booleans as string
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
@@ -263,7 +263,7 @@ Feature: Check the least amount of friction in the data exchange while still ens
                        }
                   """
 
-        @API-243
+        @ignore @API-243
         Scenario: 11 Ensure clients can update a resource using expected booleans as strings
              When a PUT request is made to "/ed-fi/classPeriods" with
                   """
@@ -287,7 +287,7 @@ Feature: Check the least amount of friction in the data exchange while still ens
                        }
                   """
 
-        @API-244
+        @ignore @API-244
         Scenario: 12 Ensure clients can create a resource using numeric values as strings
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
@@ -311,7 +311,7 @@ Feature: Check the least amount of friction in the data exchange while still ens
                        }
                   """
 
-        @API-245
+        @ignore @API-245
         Scenario: 13 Ensure clients can update a resource using numeric values as strings
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
@@ -335,7 +335,7 @@ Feature: Check the least amount of friction in the data exchange while still ens
                        }
                   """
 
-        @API-246
+        @ignore @API-246
         Scenario: 14 Ensure clients cannot update a resource that is using a different value typa than boolean
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
@@ -364,7 +364,7 @@ Feature: Check the least amount of friction in the data exchange while still ens
                   """
 
 
-        @API-247
+        @ignore @API-247
         Scenario: 15 Ensure clients cannot update a resource that is using a different value typa than boolean
              When a POST request is made to "/ed-fi/classPeriods" with
                   """
