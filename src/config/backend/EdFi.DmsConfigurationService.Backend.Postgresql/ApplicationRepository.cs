@@ -169,6 +169,10 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
                 ? new UpdateResult.UpdateSuccess(affectedRows)
                 : new UpdateResult.UpdateFailureNotExists();
         }
+        catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_vendor"))
+        {
+            return new UpdateResult.FailureReferenceNotFound("VendorId");
+        }
         catch (Exception ex)
         {
             await transaction.RollbackAsync();

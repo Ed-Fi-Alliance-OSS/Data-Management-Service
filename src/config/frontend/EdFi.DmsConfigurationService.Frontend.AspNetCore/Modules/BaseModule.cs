@@ -136,6 +136,14 @@ public abstract class BaseModule<T, TValidator> : IEndpointModule
             }
 
             var updateResult = await repository.UpdateAsync(entity);
+
+            if (updateResult is UpdateResult.FailureReferenceNotFound failure)
+            {
+                throw new ValidationException(
+                    new[] { new ValidationFailure(failure.ReferenceName, $"Reference '{failure.ReferenceName}' does not exist.") }
+                );
+            }
+
             return updateResult switch
             {
                 UpdateResult.UpdateSuccess success => Results.NoContent(),

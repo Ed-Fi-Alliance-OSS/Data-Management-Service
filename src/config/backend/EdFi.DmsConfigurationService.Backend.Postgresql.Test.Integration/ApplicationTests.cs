@@ -106,6 +106,58 @@ public class ApplicationTests : DatabaseTest
     }
 
     [TestFixture]
+    public class UpdateFailureTests : ApplicationTests
+    {
+        private Application _application = null!;
+
+        [Test]
+        public async Task Should_get_and_failure_reference_not_found_and_invalid_vendor_id()
+        {
+            IRepository<Vendor> vendorRepository = new VendorRepository(Configuration.DatabaseOptions);
+
+            Vendor vendor =
+                new()
+                {
+                    Company = "Test Company",
+                    ContactEmailAddress = "test@test.com",
+                    ContactName = "Fake Name",
+                    NamespacePrefixes = []
+                };
+
+            var vendorResult = await vendorRepository.AddAsync(vendor);
+            vendorResult.Should().BeOfType<InsertResult.InsertSuccess>();
+            _vendorId = (vendorResult as InsertResult.InsertSuccess)!.Id;
+
+            _application = new()
+            {
+                ApplicationName = "Test Application",
+                VendorId = _vendorId,
+                ClaimSetName = "Test Claim set",
+                ApplicationEducationOrganizations = []
+            };
+
+            var insertResult = await _repository.AddAsync(_application);
+            insertResult.Should().BeOfType<InsertResult.InsertSuccess>();
+            long appId = (insertResult as InsertResult.InsertSuccess)!.Id;
+
+            Application applicationUpdate = new()
+            {
+                Id = appId,
+                ApplicationName = "Test Application",
+                VendorId = 100,
+                ClaimSetName = "Test Claim set",
+                ApplicationEducationOrganizations = []
+            };
+
+            var updateResult = await _repository.UpdateAsync(applicationUpdate);
+            updateResult.Should().BeOfType<UpdateResult.FailureReferenceNotFound>();
+            var failure = updateResult as UpdateResult.FailureReferenceNotFound;
+            failure.Should().NotBeNull();
+            failure!.ReferenceName.Should().Be("VendorId");
+        }
+    }
+
+    [TestFixture]
     public class UpdateTests : ApplicationTests
     {
         private Application _application = null!;
