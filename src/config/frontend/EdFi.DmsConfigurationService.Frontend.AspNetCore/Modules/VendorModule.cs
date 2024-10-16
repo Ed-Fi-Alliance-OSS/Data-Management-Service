@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
@@ -16,10 +17,30 @@ public class VendorModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost("/v2/vendors/", Insert).RequireAuthorizationWithPolicy();
+        endpoints
+            .MapPost(
+                "/v2/vendors/",
+                async (
+                    VendorValidator validator,
+                    Vendor vendor,
+                    HttpContext HttpContext,
+                    IRepository<Vendor> repository
+                ) => await Insert(validator, vendor, HttpContext, repository)
+            )
+            .RequireAuthorizationWithPolicy();
         endpoints.MapGet("/v2/vendors", GetAll).RequireAuthorizationWithPolicy();
         endpoints.MapGet("/v2/vendors/{id}", GetById).RequireAuthorizationWithPolicy();
-        endpoints.MapPut("/v2/vendors/{id}", Update).RequireAuthorizationWithPolicy();
+        endpoints
+            .MapPut(
+                "/v2/vendors/{id}",
+                async (
+                    VendorValidator validator,
+                    Vendor vendor,
+                    HttpContext httpContext,
+                    IRepository<Vendor> repository
+                ) => await Update(validator, vendor, httpContext, repository)
+            )
+            .RequireAuthorizationWithPolicy();
         endpoints.MapDelete("/v2/vendors/{id}", Delete).RequireAuthorizationWithPolicy();
     }
 
@@ -55,51 +76,75 @@ public class VendorModule : IEndpointModule
         };
     }
 
-    private async Task<IResult> GetById(HttpContext httpContext, long id, IRepository<Vendor> repository)
+    private async Task<IResult> GetById(HttpContext httpContext, IRepository<Vendor> repository)
     {
-        var getResult = await repository.GetByIdAsync(id);
-        return getResult switch
+        Match match = UtilityService.PathExpressionRegex().Match(httpContext.Request.Path);
+
+        string idString = match.Groups["Id"].Value;
+        if (long.TryParse(idString, out long id))
         {
-            GetResult<Vendor>.GetByIdSuccess success => Results.Ok(success.Result),
-            GetResult<Vendor>.GetByIdFailureNotExists => Results.NotFound(),
-            GetResult<Vendor>.UnknownFailure => Results.Problem(statusCode: 500),
-            _ => Results.Problem(statusCode: 500),
-        };
+            var getResult = await repository.GetByIdAsync(id);
+            return getResult switch
+            {
+                GetResult<Vendor>.GetByIdSuccess success => Results.Ok(success.Result),
+                GetResult<Vendor>.GetByIdFailureNotExists => Results.NotFound(),
+                GetResult<Vendor>.UnknownFailure => Results.Problem(statusCode: 500),
+                _ => Results.Problem(statusCode: 500),
+            };
+        }
+
+        return Results.NotFound();
     }
 
     private async Task<IResult> Update(
         VendorValidator validator,
         Vendor vendor,
-        long id,
         HttpContext httpContext,
         IRepository<Vendor> repository
     )
     {
-        if (vendor.Id != id)
+        await validator.GuardAsync(vendor);
+        Match match = UtilityService.PathExpressionRegex().Match(httpContext.Request.Path);
+
+        string idString = match.Groups["Id"].Value;
+        if (long.TryParse(idString, out long id))
         {
-            throw new ValidationException(
-                [new ValidationFailure("Id", "Request body id must match the id in the url.")]
-            );
+            if (vendor.Id != id)
+            {
+                throw new ValidationException(
+                    [new ValidationFailure("Id", "Request body id must match the id in the url.")]
+                );
+            }
+            var updateResult = await repository.UpdateAsync(vendor);
+            return updateResult switch
+            {
+                UpdateResult.UpdateSuccess success => Results.NoContent(),
+                UpdateResult.UpdateFailureNotExists => Results.NotFound(),
+                UpdateResult.UnknownFailure => Results.Problem(statusCode: 500),
+                _ => Results.Problem(statusCode: 500),
+            };
         }
-        var updateResult = await repository.UpdateAsync(vendor);
-        return updateResult switch
-        {
-            UpdateResult.UpdateSuccess success => Results.NoContent(),
-            UpdateResult.UpdateFailureNotExists => Results.NotFound(),
-            UpdateResult.UnknownFailure => Results.Problem(statusCode: 500),
-            _ => Results.Problem(statusCode: 500),
-        };
+
+        return Results.NotFound();
     }
 
-    private async Task<IResult> Delete(HttpContext httpContext, long id, IRepository<Vendor> repository)
+    private async Task<IResult> Delete(HttpContext httpContext, IRepository<Vendor> repository)
     {
-        var deleteResult = await repository.DeleteAsync(id);
-        return deleteResult switch
+        Match match = UtilityService.PathExpressionRegex().Match(httpContext.Request.Path);
+
+        string idString = match.Groups["Id"].Value;
+        if (long.TryParse(idString, out long id))
         {
-            DeleteResult.DeleteSuccess success => Results.NoContent(),
-            DeleteResult.DeleteFailureNotExists => Results.NotFound(),
-            DeleteResult.UnknownFailure => Results.Problem(statusCode: 500),
-            _ => Results.Problem(statusCode: 500),
-        };
+            var deleteResult = await repository.DeleteAsync(id);
+            return deleteResult switch
+            {
+                DeleteResult.DeleteSuccess success => Results.NoContent(),
+                DeleteResult.DeleteFailureNotExists => Results.NotFound(),
+                DeleteResult.UnknownFailure => Results.Problem(statusCode: 500),
+                _ => Results.Problem(statusCode: 500),
+            };
+        }
+
+        return Results.NotFound();
     }
 }
