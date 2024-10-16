@@ -16,9 +16,21 @@ public class TokenEndpointModule : IEndpointModule
 
     internal static async Task GenerateToken(HttpContext httpContext)
     {
-        var tokenDetails = new TokenResponse("temporary-fake-token", 1800, "bearer");
-        httpContext.Response.StatusCode = StatusCodes.Status200OK;
-        await httpContext.Response.WriteAsSerializedJsonAsync(tokenDetails);
+        // Create Http client to proxy request
+        var httpClientFactory = httpContext.RequestServices.GetRequiredService<IHttpClientFactory>();
+        var client = httpClientFactory.CreateClient();
+        var forwardingAddress = "http://localhost:3000/";
+        var request = new HttpRequestMessage(HttpMethod.Post, forwardingAddress);
+
+
+        request!.Content = new StreamContent(httpContext.Request.Body);
+        request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(httpContext.Request.ContentType ?? "");
+
+        var response = await client.SendAsync(request);
+
+        httpContext.Response.StatusCode = (int)response.StatusCode;
+
+        await response.Content.CopyToAsync(httpContext.Response.Body);
     }
 }
 

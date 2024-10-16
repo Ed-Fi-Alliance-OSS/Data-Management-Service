@@ -15,6 +15,7 @@ using Microsoft.Extensions.Options;
 Environment.SetEnvironmentVariable("DOTNET_hostBuilder:reloadConfigOnChange", "false");
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddHttpClient();
 builder.AddServices();
 
 var app = builder.Build();
