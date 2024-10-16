@@ -323,7 +323,7 @@ Feature: Check the least amount of friction in the data exchange while still ens
                       "officialAttendancePeriod": "0"
                   }
                   """
-             Then it should respond with 201
+             Then it should respond with 204
               And the record can be retrieved with a GET request
                   """
                        {
