@@ -109,7 +109,7 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
             long id = await connection.ExecuteScalarAsync<long>(sql, application);
 
             sql = """
-                INSERT INTO dmscs.ApplicationEducationOrganization (ApplicationId, EducationOrganizationId) 
+                INSERT INTO dmscs.ApplicationEducationOrganization (ApplicationId, EducationOrganizationId)
                 VALUES (@ApplicationId, @EducationOrganizationId);
                 """;
 
@@ -122,6 +122,10 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
             await connection.ExecuteAsync(sql, educationOrganizations);
             await transaction.CommitAsync();
             return new InsertResult.InsertSuccess(id);
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_vendor"))
+        {
+            return new InsertResult.FailureReferenceNotFound("VendorId");
         }
         catch (Exception ex)
         {

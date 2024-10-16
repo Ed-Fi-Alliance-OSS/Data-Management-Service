@@ -3,10 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Numerics;
 using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Backend;
-using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FluentValidation;
 using FluentValidation.Results;
@@ -51,6 +49,14 @@ public abstract class BaseModule<T, TValidator> : IEndpointModule
     {
         await validator.GuardAsync(entity);
         var insertResult = await repository.AddAsync(entity);
+
+        if (insertResult is InsertResult.FailureReferenceNotFound failure)
+        {
+            throw new ValidationException(
+                new[] { new ValidationFailure(failure.ReferenceName, $"Reference '{failure.ReferenceName}' does not exist.") }
+            );
+        }
+
         var request = httpContext.Request;
         return insertResult switch
         {
@@ -59,6 +65,7 @@ public abstract class BaseModule<T, TValidator> : IEndpointModule
                     $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
                     null
                 ),
+            InsertResult.FailureReferenceNotFound => Results.NotFound(),
             InsertResult.UnknownFailure => Results.Problem(statusCode: 500),
             _ => Results.Problem(statusCode: 500),
         };

@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Numerics;
 using EdFi.DmsConfigurationService.DataModel;
 using FluentAssertions;
 
@@ -78,6 +77,31 @@ public class ApplicationTests : DatabaseTest
             application.ClaimSetName.Should().Be("Test Claim set");
             application.VendorId.Should().Be(_vendorId);
             application.ApplicationEducationOrganizations.Count.Should().Be(3);
+        }
+    }
+
+    [TestFixture]
+    public class InsertFailureTests : ApplicationTests
+    {
+        private Application _application = null!;
+
+        [Test]
+        public async Task Should_get_and_failure_reference_not_found_and_invalid_vendor_id()
+        {
+            _application = new()
+            {
+                ApplicationName = "Test Application",
+                VendorId = 15,
+                ClaimSetName = "Test Claim set",
+                ApplicationEducationOrganizations = []
+            };
+
+            var insertResult = await _repository.AddAsync(_application);
+            insertResult.Should().BeOfType<InsertResult.FailureReferenceNotFound>();
+
+            var failure = insertResult as InsertResult.FailureReferenceNotFound;
+            failure.Should().NotBeNull();
+            failure!.ReferenceName.Should().Be("VendorId");
         }
     }
 
