@@ -7,6 +7,7 @@ using System.Net;
 using System.Security.Claims;
 using System.Text;
 using EdFi.DmsConfigurationService.Backend;
+using EdFi.DmsConfigurationService.Backend.Postgresql;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FakeItEasy;
@@ -25,7 +26,7 @@ public class ApplicationModuleTests
     private readonly IRepository<Application> _repository = A.Fake<IRepository<Application>>();
     private readonly IRepository<Vendor> _vendorRepository = A.Fake<IRepository<Vendor>>();
 
-    protected HttpClient SetUpClient()
+    private HttpClient SetUpClient()
     {
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -37,7 +38,7 @@ public class ApplicationModuleTests
                         .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
                         .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
                             AuthenticationConstants.AuthenticationSchema,
-                            options => { }
+                            _ => { }
                         );
 
                     collection.AddAuthorization(options =>
@@ -47,7 +48,7 @@ public class ApplicationModuleTests
                         )
                     );
 
-                    collection.AddTransient((x) => _repository!);
+                    collection.AddTransient((_) => _repository);
                 }
             );
         });
@@ -165,10 +166,10 @@ public class ApplicationModuleTests
 
             string invalidBody = """
                 {
-                   "ApplicationName": "Application 101",
+                   "ApplicationName": "Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101",
                     "ClaimSetName": "",
                     "VendorId":1,
-                    "ApplicationEducationOrganizations": [1]
+                    "ApplicationEducationOrganizations": [0]
                 }
                 """;
 
@@ -180,7 +181,7 @@ public class ApplicationModuleTests
 
             //Assert
             string expectedResponse =
-                @"{""title"":""Validation failed"",""errors"":{""ClaimSetName"":[""\u0027Claim Set Name\u0027 must not be empty.""]}}";
+                @"{""title"":""Validation failed"",""errors"":{""ApplicationName"":[""The length of \u0027Application Name\u0027 must be 256 characters or fewer. You entered 266 characters.""],""ClaimSetName"":[""\u0027Claim Set Name\u0027 must not be empty.""],""ApplicationEducationOrganizations[0]"":[""\u0027Application Education Organizations\u0027 must be greater than \u00270\u0027.""]}}";
             string addResponseContent = await addResponse.Content.ReadAsStringAsync();
             addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             addResponseContent.Should().Contain(expectedResponse);
@@ -376,6 +377,122 @@ public class ApplicationModuleTests
             getByIdResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             updateResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        }
+    }
+
+    [TestFixture]
+    public class FailureReferenceValidationTests : ApplicationModuleTests
+    {
+        [SetUp]
+        public void SetUp()
+        {
+            A.CallTo(() => _repository.AddAsync(A<Application>.Ignored))
+                .Returns(new InsertResult.FailureReferenceNotFound("VendorId"));
+        }
+
+        private static HttpClient ReferenceClientSetup()
+        {
+            var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(
+                    (collection) =>
+                    {
+                        collection.AddTransient<IRepository<Application>, ApplicationRepository>();
+                        collection.AddTransient<IRepository<Vendor>, VendorRepository>();
+                        collection
+                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
+                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                                AuthenticationConstants.AuthenticationSchema,
+                                _ => { }
+                            );
+
+                        collection.AddAuthorization(options =>
+                            options.AddPolicy(
+                                SecurityConstants.ServicePolicy,
+                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
+                            )
+                        );
+                    }
+                );
+            });
+            return factory.CreateClient();
+        }
+
+        [Test]
+        public async Task Should_return_bad_request_due_to_invalid_vendor_id()
+        {
+            // Arrange
+            using var client = ReferenceClientSetup();
+
+            var invalidVendorRequest = new StringContent(
+                """
+                {
+                  "ApplicationName": "Invalid Vendor Application",
+                  "ClaimSetName": "Test",
+                  "VendorId": 9999,
+                  "ApplicationEducationOrganizations": [1]
+                }
+                """,
+                Encoding.UTF8,
+                "application/json"
+            );
+
+            // Act
+            var response = await client.PostAsync("/v2/applications", invalidVendorRequest);
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            string responseBody = await response.Content.ReadAsStringAsync();
+            responseBody.Should().Contain("VendorId");
+        }
+
+        [Test]
+        public async Task Should_return_bad_request_due_to_invalid_vendor_id_on_update()
+        {
+            // Arrange
+            using var client = ReferenceClientSetup();
+
+            var addResponse = await client.PostAsync(
+                "/v2/applications",
+                new StringContent(
+                    """
+                    {
+                      "ApplicationName": "Application 11",
+                      "ClaimSetName": "Test",
+                      "VendorId": 1,
+                      "ApplicationEducationOrganizations": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            addResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+            string location = addResponse.Headers.Location!.ToString();
+            string[] locationParts = location.Split('/');
+            long applicationId = long.Parse(locationParts[^1]);
+
+            // Act
+            var updateResponse = await client.PutAsync(
+                $"/v2/applications/{applicationId}",
+                new StringContent(
+                    $@"{{
+                       ""id"": {applicationId},
+                       ""ApplicationName"": ""Application 11"",
+                       ""ClaimSetName"": ""Test"",
+                       ""VendorId"": 9999,
+                       ""ApplicationEducationOrganizations"": [1]
+                    }}",
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            string responseBody = await updateResponse.Content.ReadAsStringAsync();
+            responseBody.Should().Contain("VendorId");
         }
     }
 }

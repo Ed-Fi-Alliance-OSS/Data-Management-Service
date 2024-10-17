@@ -125,6 +125,7 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
         }
         catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_vendor"))
         {
+            await transaction.RollbackAsync();
             return new InsertResult.FailureReferenceNotFound("VendorId");
         }
         catch (Exception ex)
@@ -171,6 +172,7 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
         }
         catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_vendor"))
         {
+            await transaction.RollbackAsync();
             return new UpdateResult.FailureReferenceNotFound("VendorId");
         }
         catch (Exception ex)
