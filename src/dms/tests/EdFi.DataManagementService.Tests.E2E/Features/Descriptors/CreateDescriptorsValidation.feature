@@ -18,7 +18,7 @@ Feature: Create a Descriptor
                   }
                   """
              Then it should respond with 201
-              And the response headers includes
+              And the response headers include
                   """
                     {
                         "location": "/ed-fi/absenceEventCategoryDescriptors/{id}"

@@ -8,7 +8,7 @@ Feature: Query Strings handling for GET requests
         Scenario: 01 Validate totalCount value when there are no existing schools in the Database
              When a GET request is made to "/ed-fi/schools?totalCount=true"
              Then it should respond with 200
-              And the response headers includes total-count 0
+              And the response headers include total-count 0
 
         @API-137
         Scenario: 02 Validate totalCount is not included when there are no existing schools in the Database and value equals to false
@@ -37,7 +37,7 @@ Feature: Query Strings handling for GET requests
         Scenario: 05 Ensure that schools return the total count
              When a GET request is made to "/ed-fi/schools?totalCount=true"
              Then it should respond with 200
-              And the response headers includes total-count 5
+              And the response headers include total-count 5
 
         @API-141
         Scenario: 06 Validate totalCount Header is not included when equals to false
@@ -55,13 +55,13 @@ Feature: Query Strings handling for GET requests
         Scenario: 08 Ensure results can be limited and totalCount matches the actual number of existing records
              When a GET request is made to "/ed-fi/schools?totalCount=true&limit=2"
              Then getting less schools than the total-count
-              And the response headers includes total-count 5
+              And the response headers include total-count 5
 
         @API-144
         Scenario: 09 Ensure clients can get information when filtering by limit and and a valid offset
              When a GET request is made to "/ed-fi/schools?totalCount=true&offset=3&limit=5"
              Then it should respond with 200
-              And the response headers includes total-count 5
+              And the response headers include total-count 5
               And the response body is
                   """
                   [
