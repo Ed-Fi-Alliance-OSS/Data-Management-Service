@@ -1,11 +1,12 @@
 Feature: Validation of the structure of the URLs
 
-        Background:
+        @addwait
+        Scenario: 00 Background
             Given the system has these descriptors
                   | descriptorValue                                                |
                   | uri://ed-fi.org/GradeLevelDescriptor#Sixth grade               |
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
-            Given the system has these "schools"
+              And the system has these "schools"
                   | schoolId  | nameOfInstitution        | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
                   | 255901044 | Grand Bend Middle School | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
 
