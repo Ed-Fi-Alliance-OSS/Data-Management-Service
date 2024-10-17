@@ -18,7 +18,7 @@ Feature: Data strictness
                   """
                   {
                       "schoolReference": {
-                          "schoolId": 12345
+                          "schoolId": 255901044
                       },
                       "classPeriodName": "Class Period 1",
                       "officialAttendancePeriod": 0
@@ -33,7 +33,7 @@ Feature: Data strictness
                   {
                       "classPeriodName": "Class Period Test 1",
                       "schoolReference": {
-                          "schoolId": 12345
+                          "schoolId": 255901044
                       },
                       "officialAttendancePeriod": 1
                   }
@@ -47,7 +47,7 @@ Feature: Data strictness
                   {
                       "classPeriodName": "Class Period Test 1",
                       "schoolReference": {
-                          "schoolId": 12345
+                          "schoolId": 255901044
                       },
                       "officialAttendancePeriod": 2
                   }
@@ -63,7 +63,7 @@ Feature: Data strictness
                   {
                       "classPeriodName": "Class Period Test 1",
                       "schoolReference": {
-                          "schoolId": 12345
+                          "schoolId": 255901044
                       },
                       "officialAttendancePeriod": 2
                   }
@@ -79,7 +79,7 @@ Feature: Data strictness
                   {
                       "classPeriodName": "Class Period Test 2",
                       "schoolReference": {
-                          "schoolId": 12345
+                          "schoolId": 255901044
                       },
                       "officialAttendancePeriod": true
                   }
@@ -93,7 +93,7 @@ Feature: Data strictness
                   {
                       "classPeriodName": "Class Period Test 2",
                       "schoolReference": {
-                          "schoolId": 12345
+                          "schoolId": 255901044
                       },
                       "officialAttendancePeriod": false
                   }
@@ -107,7 +107,7 @@ Feature: Data strictness
                   {
                       "classPeriodName": "Class Period Test 3",
                       "schoolReference": {
-                          "schoolId": 12345
+                          "schoolId": 255901044
                       },
                       "officialAttendancePeriod": "true"
                   }
@@ -118,7 +118,7 @@ Feature: Data strictness
                        {
                            "classPeriodName": "Class Period Test 3",
                            "schoolReference": {
-                               "schoolId": 12345
+                               "schoolId": 255901044
                            },
                            "officialAttendancePeriod": true
                        }
@@ -131,7 +131,7 @@ Feature: Data strictness
                   {
                       "classPeriodName": "Class Period Test 2",
                       "schoolReference": {
-                          "schoolId": 12345
+                          "schoolId": 255901044
                       },
                       "officialAttendancePeriod": "false"
                   }
@@ -142,7 +142,7 @@ Feature: Data strictness
                        {
                            "classPeriodName": "Class Period Test 3",
                            "schoolReference": {
-                               "schoolId": 12345
+                               "schoolId": 255901044
                            },
                            "officialAttendancePeriod": false
                        }
@@ -155,7 +155,7 @@ Feature: Data strictness
                   {
                       "classPeriodName": "Class Period Test 4",
                       "schoolReference": {
-                          "schoolId": 12345
+                          "schoolId": 255901044
                       },
                       "officialAttendancePeriod": "1"
                   }
@@ -166,7 +166,7 @@ Feature: Data strictness
                        {
                            "classPeriodName": "Class Period Test 4",
                            "schoolReference": {
-                               "schoolId": 12345
+                               "schoolId": 255901044
                            },
                            "officialAttendancePeriod": true
                        }
@@ -179,7 +179,7 @@ Feature: Data strictness
                   {
                       "classPeriodName": "Class Period Test 4",
                       "schoolReference": {
-                          "schoolId": 12345
+                          "schoolId": 255901044
                       },
                       "officialAttendancePeriod": "0"
                   }
@@ -190,7 +190,7 @@ Feature: Data strictness
                        {
                            "classPeriodName": "Class Period Test 4",
                            "schoolReference": {
-                               "schoolId": 12345
+                               "schoolId": 255901044
                            },
                            "officialAttendancePeriod": true
                        }
@@ -203,7 +203,7 @@ Feature: Data strictness
                   {
                       "classPeriodName": "Class Period Test 4",
                       "schoolReference": {
-                          "schoolId": 12345
+                          "schoolId": 255901044
                       },
                       "officialAttendancePeriod": "string"
                   }
@@ -232,7 +232,7 @@ Feature: Data strictness
                   {
                       "classPeriodName": "Class Period Test 4",
                       "schoolReference": {
-                          "schoolId": 12345
+                          "schoolId": 255901044
                       },
                       "officialAttendancePeriod": "0"
                   }
