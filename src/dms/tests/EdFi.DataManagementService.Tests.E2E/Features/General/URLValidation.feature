@@ -28,7 +28,9 @@ Feature: Validation of the structure of the URLs
                   """
               And the response headers include
                   """
-                  Content-Type: application/problem+json
+                    {
+                        "Content-Type": "application/problem+json"
+                    }
                   """
 
         ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-352
@@ -101,7 +103,9 @@ Feature: Validation of the structure of the URLs
                   """
               And the response headers include
                   """
-                  Content-Type: application/problem+json
+                    {
+                        "Content-Type": "application/problem+json"
+                    }
                   """
 
         ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-352
@@ -119,9 +123,11 @@ Feature: Validation of the structure of the URLs
                       "correlationId": null
                   }
                   """
-              And the headers contain
+              And the response headers include
                   """
-                  Content-Type: application/problem+json
+                    {
+                        "Content-Type": "application/problem+json"
+                    }
                   """
 
         ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-351
@@ -143,7 +149,9 @@ Feature: Validation of the structure of the URLs
                   """
               And the response headers include
                   """
-                  Content-Type: application/problem+json
+                    {
+                        "Content-Type": "application/problem+json"
+                    }
                   """
 
         ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-351
@@ -179,7 +187,9 @@ Feature: Validation of the structure of the URLs
                   """
               And the response headers include
                   """
-                  Content-Type: application/problem+json
+                    {
+                        "Content-Type": "application/problem+json"
+                    }
                   """
 
         ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-351
@@ -215,7 +225,9 @@ Feature: Validation of the structure of the URLs
                   """
               And the response headers include
                   """
-                  Content-Type: application/problem+json
+                    {
+                        "Content-Type": "application/problem+json"
+                    }
                   """
 
         ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-351
@@ -235,7 +247,9 @@ Feature: Validation of the structure of the URLs
                   """
               And the response headers include
                   """
-                  Content-Type: application/problem+json
+                    {
+                        "Content-Type": "application/problem+json"
+                    }
                   """
 
         ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-353
@@ -274,7 +288,9 @@ Feature: Validation of the structure of the URLs
                   """
               And the response headers include
                   """
-                  Content-Type: application/json; charset=utf-8
+                    {
+                        "Content-Type": "application/json; charset=utf-8"
+                    }
                   """
 
         ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-353
@@ -313,7 +329,9 @@ Feature: Validation of the structure of the URLs
                   """
               And the response headers include
                   """
-                  Content-Type: application/json; charset=utf-8
+                    {
+                        "Content-Type": "application/json; charset=utf-8"
+                    }
                   """
 
         ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-353
@@ -336,7 +354,9 @@ Feature: Validation of the structure of the URLs
                   """
               And the response headers include
                   """
-                  Content-Type: application/json; charset=utf-8
+                    {
+                        "Content-Type": "application/json; charset=utf-8"
+                    }
                   """
 
         @API-235
@@ -433,7 +453,9 @@ Feature: Validation of the structure of the URLs
                   """
               And the response headers include
                   """
-                  Content-Type: application/json; charset=utf-8
+                    {
+                        "Content-Type": "application/json; charset=utf-8"
+                    }
                   """
 
         @API-253 @ignore
@@ -454,6 +476,8 @@ Feature: Validation of the structure of the URLs
              Then it should respond with 200
               And the response headers include
                   """
-                  Content-Type: application/json; charset=utf-8
-                  Total-Count: 1
+                    {
+                        "Content-Type": "application/json; charset=utf-8",
+                        "Total-Count": 1
+                    }
                   """
