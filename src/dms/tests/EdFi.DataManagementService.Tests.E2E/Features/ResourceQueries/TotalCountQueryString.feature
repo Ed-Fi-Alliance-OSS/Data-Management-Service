@@ -1,12 +1,17 @@
-Feature: Query Strings handling for GET requests
-
-    Rule: Testing without data
+Feature: Paging and Total Count for GET Requests
         Background:
-            Given there are no schools
+            Given the system has these "schools"
+                  | schoolId  | nameOfInstitution                             | gradeLevels                                                                         | educationOrganizationCategories                                                                                        |
+                  | 5         | School with max edorgId value                 | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"} ]    | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+                  | 6         | UT Austin College of Education Under Graduate | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+                  | 255901001 | Grand Bend High School                        | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"} ]    | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+                  | 255901044 | Grand Bend Middle School                      | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"} ]    | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+                  | 255901045 | UT Austin Extended Campus                     | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Twelfth grade"} ]  | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
 
         @API-136
         Scenario: 01 Validate totalCount value when there are no existing schools in the Database
-             When a GET request is made to "/ed-fi/schools?totalCount=true"
+            Given there are no matching schools
+             When a GET request is made to "/ed-fi/schools?totalCount=true&nameOfInstitution=does+not+exist"
              Then it should respond with 200
               And the response headers include total-count 0
 
@@ -21,17 +26,6 @@ Feature: Query Strings handling for GET requests
              When a GET request is made to "/ed-fi/schools"
              Then it should respond with 200
               And the response headers does not include total-count
-
-    Rule: Testing with data upload
-        @API-139 @addwait
-        Scenario: 04 Background
-            Given the system has these "schools"
-                  | schoolId  | nameOfInstitution                             | gradeLevels                                                                         | educationOrganizationCategories                                                                                        |
-                  | 5         | School with max edorgId value                 | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"} ]    | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
-                  | 6         | UT Austin College of Education Under Graduate | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
-                  | 255901001 | Grand Bend High School                        | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"} ]    | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
-                  | 255901044 | Grand Bend Middle School                      | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"} ]    | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
-                  | 255901045 | UT Austin Extended Campus                     | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Twelfth grade"} ]  | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
 
         @API-140
         Scenario: 05 Ensure that schools return the total count
@@ -157,32 +151,59 @@ Feature: Query Strings handling for GET requests
                     }
                   """
 
-
-# TODO GET by parameters
-
-        @API-148 @ignore
+        @API-148
         Scenario: 12 Ensure clients can GET information changing the casing of the query value to be all lowercase
-            Given the system has these "schools"
-                  | schoolId | nameOfInstitution             | gradeLevels         | educationOrganizationCategories |
-                  | 5        | School with max edorgId value | [ "Postsecondary" ] | [ "School" ]                    |
              When a GET request is made to "/ed-fi/schools?nameOfInstitution=school+with+max+edorgid+value"
              Then it should respond with 200
-              And the response body includes "nameOfInstitution: School with max edorgId value"
+              And the response body is
+                  """
+                  [
+                        {
+                            "id": "{id}",
+                            "schoolId": 5,
+                            "gradeLevels": [
+                                {
+                                    "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"
+                                }
+                            ],
+                            "nameOfInstitution": "School with max edorgId value",
+                            "educationOrganizationCategories": [
+                                {
+                                    "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                                }
+                            ]
+                        }
+                      ]
+                  """
 
-        @API-149 @ignore
+
+        @API-149
         Scenario: 13 Ensure clients can GET information changing the casing of the query value to be all uppercase
-            Given the system has these "schools"
-                  | schoolId | nameOfInstitution                             | gradeLevels         | educationOrganizationCategories     |
-                  | 6        | UT Austin College of Education Under Graduate | [ "Postsecondary" ] | [ "Educator Preparation Provider" ] |
-             When a GET request is made to "/ed-fi/schools?nameOfInstitution=UT+AUSTIN+COLLEGE+OF+EDUCATION+UNDER+GRADUATE"
+             When a GET request is made to "/ed-fi/schools?nameOfInstitution=SCHOOL+WITH+MAX+EDORGID+VALUE"
              Then it should respond with 200
-              And the response body includes "nameOfInstitution: UT Austin College of Education Under Graduate"
+              And the response body is
+                  """
+                  [
+                        {
+                            "id": "{id}",
+                            "schoolId": 5,
+                            "gradeLevels": [
+                                {
+                                    "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"
+                                }
+                            ],
+                            "nameOfInstitution": "School with max edorgId value",
+                            "educationOrganizationCategories": [
+                                {
+                                    "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                                }
+                            ]
+                        }
+                      ]
+                  """
 
         @API-150
         Scenario: 14 Ensure empty array is returned if school name does not match
-            Given the system has these "schools"
-                  | schoolId | nameOfInstitution                             | gradeLevels         | educationOrganizationCategories     |
-                  | 6        | UT Austin College of Education Under Graduate | [ "Postsecondary" ] | [ "Educator Preparation Provider" ] |
              When a GET request is made to "/ed-fi/schools?nameOfInstitution=nonExisting+school"
              Then it should respond with 200
               And the response body is
@@ -190,14 +211,9 @@ Feature: Query Strings handling for GET requests
                   []
                   """
 
-                  ##I need a few more details on this scenario
-        @API-151 @ignore
-        Scenario: 15 Ensure clients can't GET information when querying with filter and offset using limit without offset
-            Given the system has these "schools"
-                  | schoolId | nameOfInstitution                             |
-                  | 5        | School with max edorgId value                 |
-                  | 6        | UT Austin College of Education Under Graduate |
-             When a GET request is made to "/ed-fi/schools?limit=-6&offset=-1"
+        @API-151
+        Scenario: 15 Ensure clients can't GET information when querying with filter and offset using offset without limit
+             When a GET request is made to "/ed-fi/schools?offset=6"
              Then it should respond with 400
               And the response body is
                   """
