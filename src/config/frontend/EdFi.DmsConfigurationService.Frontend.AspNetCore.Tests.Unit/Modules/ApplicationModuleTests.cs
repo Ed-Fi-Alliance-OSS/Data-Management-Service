@@ -261,7 +261,7 @@ public class ApplicationModuleTests
         }
 
         [Test]
-        public async Task Should_return_proper_success_responses()
+        public async Task Should_return_internal_server_error_response()
         {
             // Arrange
             using var client = SetUpClient();
@@ -329,7 +329,7 @@ public class ApplicationModuleTests
         }
 
         [Test]
-        public async Task Should_return_success_responses()
+        public async Task Should_return_internal_server_error_response()
         {
             // Arrange
             using var client = SetUpClient();
@@ -417,7 +417,8 @@ public class ApplicationModuleTests
 
             addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             string responseBody = await addResponse.Content.ReadAsStringAsync();
-            responseBody.Should().Contain("VendorId");
+            string expectedResponse = @"{""title"":""Validation failed"",""errors"":{""VendorId"":[""Reference \u0027VendorId\u0027 does not exist.""]}}";
+            responseBody.Should().Contain(expectedResponse);
         }
 
         [Test]
@@ -447,7 +448,8 @@ public class ApplicationModuleTests
             //Assert
             updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             string responseBody = await updateResponse.Content.ReadAsStringAsync();
-            responseBody.Should().Contain("VendorId");
+            string expectedResponse = @"{""title"":""Validation failed"",""errors"":{""VendorId"":[""Reference \u0027VendorId\u0027 does not exist.""]}}";
+            responseBody.Should().Contain(expectedResponse);
         }
     }
 }

@@ -334,7 +334,7 @@ public class VendorModuleTests
         }
 
         [Test]
-        public async Task Should_return_proper_success_responses()
+        public async Task Should_return_internal_server_error_response()
         {
             // Arrange
             using var client = SetUpClient();
@@ -406,7 +406,7 @@ public class VendorModuleTests
         }
 
         [Test]
-        public async Task Should_return_proper_success_responses()
+        public async Task Should_return_internal_server_error_response()
         {
             // Arrange
             var client = SetUpClient();
