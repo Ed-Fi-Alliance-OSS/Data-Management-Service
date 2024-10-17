@@ -1,8 +1,13 @@
 Feature: Validation of the structure of the URLs
 
+        Background
+            Given the system has these "schools"
+                  | schoolId  | nameOfInstitution        | gradeLevelDescriptor                             | educationOrganizationCategoryDescriptor                        |
+                  | 255901044 | Grand Bend Middle School | uri://ed-fi.org/GradeLevelDescriptor#Sixth grade | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
+
         ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-352
         @API-067 @ignore
-        Scenario: 01 Ensure clients cannot retrieve information if part of the endpoint is missing
+        Scenario: 01 Ensure clients cannot retrieve information when the data model name is missing
              When a GET request is made to "/schools"
              Then it should respond with 404
               And the response body is
@@ -17,14 +22,14 @@ Feature: Validation of the structure of the URLs
                       "errors": []
                   }
                   """
-              And the response headers includes
+              And the response headers include
                   """
                   Content-Type: application/problem+json
                   """
 
         ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-352
         @API-068 @ignore
-        Scenario: 02 Ensure clients cannot create a resource if part of the endpoint is missing
+        Scenario: 02 Ensure clients cannot create a resource when the data model name is missing
              When a POST request is made to "/schools" with
                   """
                   {
@@ -53,17 +58,14 @@ Feature: Validation of the structure of the URLs
                       "correlationId": null
                   }
                   """
-              And the response headers includes
+              And the response headers include
                   """
                   Content-Type: application/problem+json
                   """
 
         ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-352
         @API-069 @ignore
-        Scenario: 03 Ensure clients cannot update a resource if part of the endpoint is missing
-            Given the system has these "schools"
-                  | schoolId  | nameOfInstitution        | gradeLevelDescriptor                             | educationOrganizationCategoryDescriptor                        |
-                  | 255901044 | Grand Bend Middle School | uri://ed-fi.org/GradeLevelDescriptor#Sixth grade | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
+        Scenario: 03 Ensure clients cannot update a resource when the data model name is missing
              When a PUT request is made to "/schools/{id}" with
                   """
                   {
@@ -92,14 +94,14 @@ Feature: Validation of the structure of the URLs
                       "correlationId": null
                   }
                   """
-              And the response headers includes
+              And the response headers include
                   """
                   Content-Type: application/problem+json
                   """
 
         ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-352
         @API-070 @ignore
-        Scenario: 04 Ensure clients cannot delete a resource if part of the endpoint is missing
+        Scenario: 04 Ensure clients cannot delete a resource when the data model name is missing
             Given the system has these "schools"
                   | schoolId  | nameOfInstitution        | gradeLevelDescriptor                             | educationOrganizationCategoryDescriptor                        |
                   | 255901044 | Grand Bend Middle School | uri://ed-fi.org/GradeLevelDescriptor#Sixth grade | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
@@ -122,7 +124,7 @@ Feature: Validation of the structure of the URLs
 
         ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-351
         @API-071 @ignore
-        Scenario: 05 Ensure clients cannot retrieve a resource when endpoint does not end in plural
+        Scenario: 05 Ensure clients cannot retrieve a resource when endpoint is not pluralized
              When a GET request is made to "/ed-fi/school"
              Then it should respond with 404
               And the response body is
@@ -137,14 +139,14 @@ Feature: Validation of the structure of the URLs
                       "errors": []
                   }
                   """
-              And the response headers includes
+              And the response headers include
                   """
                   Content-Type: application/problem+json
                   """
 
         ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-351
         @API-072 @ignore
-        Scenario: 06 Ensure clients cannot create a resource when endpoint does not end in plural
+        Scenario: 06 Ensure clients cannot create a resource when endpoint is not pluralized
              When a POST request is made to "/ed-fi/school" with
                   """
                   {
@@ -173,7 +175,7 @@ Feature: Validation of the structure of the URLs
                       "correlationId": null
                   }
                   """
-              And the response headers includes
+              And the response headers include
                   """
                   Content-Type: application/problem+json
                   """
@@ -212,7 +214,7 @@ Feature: Validation of the structure of the URLs
                       "correlationId": null
                   }
                   """
-              And the response headers includes
+              And the response headers include
                   """
                   Content-Type: application/problem+json
                   """
@@ -220,9 +222,6 @@ Feature: Validation of the structure of the URLs
         ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-351
         @API-074 @ignore
         Scenario: 08 Ensure clients cannot delete a resource when endpoint does not end in plural
-            Given the system has these "schools"
-                  | schoolId  | nameOfInstitution        | gradeLevelDescriptor                             | educationOrganizationCategoryDescriptor                        |
-                  | 255901044 | Grand Bend Middle School | uri://ed-fi.org/GradeLevelDescriptor#Sixth grade | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
              When a DELETE request is made to "/ed-fi/school/{id}"
              Then it should respond with 404
               And the respond body is
@@ -235,7 +234,7 @@ Feature: Validation of the structure of the URLs
                       "correlationId": null
                   }
                   """
-              And the response headers includes
+              And the response headers include
                   """
                   Content-Type: application/problem+json
                   """
@@ -274,17 +273,14 @@ Feature: Validation of the structure of the URLs
                       ]
                   }
                   """
-              And the response headers includes
+              And the response headers include
                   """
                   Content-Type: application/json; charset=utf-8
                   """
 
         ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-353
-        @API-076 @ignore
-        Scenario: 10 Ensure clients validate required identifier on POST requests
-            Given the system has these "schools"
-                  | schoolId  | nameOfInstitution        | gradeLevelDescriptor                             | educationOrganizationCategoryDescriptor                        |
-                  | 255901044 | Grand Bend Middle School | uri://ed-fi.org/GradeLevelDescriptor#Sixth grade | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
+        @API-077 @ignore
+        Scenario: 10 Ensure PUT requests require an Id value
              When a PUT request is made to "/ed-fi/schools/" with
                   """
                   {
@@ -316,14 +312,14 @@ Feature: Validation of the structure of the URLs
                       ]
                   }
                   """
-              And the response headers includes
+              And the response headers include
                   """
                   Content-Type: application/json; charset=utf-8
                   """
 
         ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-353
-        @API-077 @ignore
-        Scenario: 11 Ensure clients validate required identifier on PUT requests
+        @API-078 @ignore
+        Scenario: 11 Ensure DELETE requests require an Id value
              When a DELETE request is made to "/ed-fi/schools/"
              Then it should respond with 405
               And the response body is
@@ -339,60 +335,120 @@ Feature: Validation of the structure of the URLs
                       ]
                   }
                   """
-              And the response headers includes
+              And the response headers include
                   """
                   Content-Type: application/json; charset=utf-8
                   """
 
-        ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-354
-        @API-078 @ignore
-        Scenario: 12 Ensure clients validate required identifier on DELETE requests
-             When a GET request is made to "/ed-fi/SCHOOLS?OfFSeT=1&LImiT=2&totalCount=TRue"
+        @API-235
+        Scenario: 12 Ensure client can retrieve information through a case insensitive query
+            Given a POST request is made to "/ed-fi/classPeriods" with
+                  """
+                  {
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      },
+                      "classPeriodName": "Class Period Test",
+                      "officialAttendancePeriod": true
+                  }
+                  """
+             When a GET request is made to "/ed-fi/classPeriods?classPeriodName=CLASS+pERIOD+test"
              Then it should respond with 200
               And the response body is
                   """
                   [
                       {
-                          "id": "49fac44c76ad417a9511101df379718f",
-                          "schoolId": 5,
-                          "nameOfInstitution": "UT Austin College of Education Graduate",
-                          "addresses": [
-                              {
-                                  "addressTypeDescriptor": "uri://ed-fi.org/AddressTypeDescriptor#Physical",
-                                  "city": "Austin",
-                                  "postalCode": "78712",
-                                  "stateAbbreviationDescriptor": "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
-                                  "streetNumberName": "1912 Speedway Stop D5000",
-                                  "nameOfCounty": "Travis",
-                                  "periods": []
-                              }
-                          ],
-                          "educationOrganizationCategories": [
-                              {
-                                  "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"
-                              }
-                          ],
-                          "identificationCodes": [],
-                          "indicators": [],
-                          "institutionTelephones": [],
-                          "internationalAddresses": [],
-                          "_ext": {
-                              "tpdm": {}
+                          "schoolReference": {
+                              "schoolId": 255901001
                           },
-                          "schoolCategories": [],
-                          "gradeLevels": [
-                              {
-                                  "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
-                              }
-                          ],
-                          "_etag": "5250218145643362917",
-                          "_lastModifiedDate": "2024-06-05T19:32:01.5975013Z"
+                          "classPeriodName": "Class Period Test",
+                          "officialAttendancePeriod": true
                       }
                   ]
                   """
-              And the response headers includes
+
+        @API-250
+        Scenario: 13 Ensure client can retrieve information through a case insensitive query parameter
+             When a GET request is made to "/ed-fi/classPeriods?CLaSSperIODName=Class+Period+Test"
+             Then it should respond with 200
+              And the response body is
                   """
-                  Content-Type: application/json; charset=utf-8
-                  Total-Count: 10
+                  [
+                      {
+                          "schoolReference": {
+                              "schoolId": 255901001
+                          },
+                          "classPeriodName": "Class Period Test",
+                          "officialAttendancePeriod": true
+                      }
+                  ]
                   """
 
+        @API-251
+        Scenario: 14 Ensure clients validate identifier on GET requests
+             When a GET request is made to "/ed-fi/schools/ffc0a272"
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                        "$.id": [
+                            "The value 'ffc0a272' is not valid for Id."
+                        ]
+                      }
+                  }
+                  """
+
+        @API-252
+        Scenario: 15 Ensure client can retrieve information through case insensitive LIMIT parameter
+             When a GET request is made to "/ed-fi/schools?lImIt=1"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [
+                    {
+                      "id": "{id}",
+                      "educationOrganizationCategories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution"
+                          }
+                      ],
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                          }
+                      ],
+                      "nameOfInstitution": "Middle School Test",
+                      "schoolId": 745672453832456000
+                    }
+                  ]
+                  """
+              And the response headers include
+                  """
+                  Content-Type: application/json; charset=utf-8
+                  """
+
+        @API-253
+        Scenario: 16 Ensure client can retrieve information through case insensitive OFFSET parameter
+             # There is only one item, and offset=1 skips that one item.
+             When a GET request is made to "/ed-fi/SCHOOLS?OfFSeT=1"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  []
+                  """
+
+        @API-254
+        Scenario: 17 Ensure client can retrieve information through case insensitive TOTALCOUNT parameter
+             When a GET request is made to "/ed-fi/SCHOOLS?tOtAlCoUnT=trUE"
+             Then it should respond with 200
+              And the response headers include
+                  """
+                  Content-Type: application/json; charset=utf-8
+                  Total-Count: 1
+                  """
