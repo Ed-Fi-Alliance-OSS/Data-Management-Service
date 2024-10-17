@@ -3,23 +3,68 @@ Feature: Data strictness
 
         Background:
             Given the system has these descriptors
-                  | descriptorValue                                                                    |
-                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution |
-                  | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade                                   |
-                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School                     |
-                  | uri://ed-fi.org/GradeLevelDescriptor#Twelfth grade                                 |
-                  | uri://ed-fi.org/AcademicSubjectDescriptor#English Language Arts                    |
+                  | descriptorValue                                                 |
+                  | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade                |
+                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School  |
+                  | uri://ed-fi.org/GradeLevelDescriptor#Twelfth grade              |
+                  | uri://ed-fi.org/AcademicSubjectDescriptor#English Language Arts |
+            Given the system has these "schools"
+                  | schoolId  | nameOfInstitution        | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
+                  | 255901044 | Grand Bend Middle School | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+
+        # TODO: check if we already have this.
+        @API-234
+        Scenario: 01 Should ignore extra attributes in a PUT request body that are not defined in the API specification
+             # This request includes an extra attribute "name"
+             When a PUT request is made to "/ed-fi/schools/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "educationOrganizationCategories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                          }
+                      ],
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Twelfth grade"
+                          }
+                      ],
+                      "schoolId": 12345,
+                      "nameOfInstitution": "Middle School Test",
+                      "name": "Test"
+                  }
+                  """
+             Then it should respond with 204
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                      "id": "{id}",
+                      "educationOrganizationCategories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                          }
+                      ],
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                          }
+                      ],
+                      "schoolId": 745672453832456000,
+                      "nameOfInstitution": "Middle School Test"
+                  }
+                  """
 
         # TODO: check if we already have this. SF
         @API-233
-        Scenario: 01 Should ignore extra attributes in a POST request body that are not defined in the API specification
+        Scenario: 02 Should ignore extra attributes in a POST request body that are not defined in the API specification
              # This request includes an extra attribute "name"
              When a POST request is made to "/ed-fi/schools" with
                   """
                   {
                       "educationOrganizationCategories": [
                           {
-                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution"
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
                           }
                       ],
                       "gradeLevels": [
@@ -39,7 +84,7 @@ Feature: Data strictness
                       "id": "{id}",
                       "educationOrganizationCategories": [
                           {
-                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution"
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
                           }
                       ],
                       "gradeLevels": [
@@ -49,48 +94,6 @@ Feature: Data strictness
                       ],
                       "nameOfInstitution": "Middle School Test",
                       "schoolId": 12345
-                  }
-                  """
-
-        @API-234
-        Scenario: 02 Should ignore extra attributes in a PUT request body that are not defined in the API specification
-             # This request includes an extra attribute "name"
-             When a PUT request is made to "/ed-fi/schools/{id}" with
-                  """
-                  {
-                      "id": "{id}",
-                      "educationOrganizationCategories": [
-                          {
-                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution"
-                          }
-                      ],
-                      "gradeLevels": [
-                          {
-                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
-                          }
-                      ],
-                      "schoolId": 12345,
-                      "nameOfInstitution": "Middle School Test",
-                      "name": "Test"
-                  }
-                  """
-             Then it should respond with 204
-              And the record can be retrieved with a GET request
-                  """
-                  {
-                      "id": "{id}",
-                      "educationOrganizationCategories": [
-                          {
-                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution"
-                          }
-                      ],
-                      "gradeLevels": [
-                          {
-                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
-                          }
-                      ],
-                      "schoolId": 745672453832456000,
-                      "nameOfInstitution": "Middle School Test"
                   }
                   """
 
@@ -344,7 +347,7 @@ Feature: Data strictness
                   {
                       "educationOrganizationCategories": [
                           {
-                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution"
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
                           }
                       ],
                       "GRADELEVELS": [
@@ -361,13 +364,13 @@ Feature: Data strictness
         @API-249
         Scenario: 17 Enforce case sensitivity of property names in PUT request bodies.
              # Uppercase GRADELEVELS
-             When a POST request is made to "/ed-fi/schools" with
+             When a POST request is made to "/ed-fi/schools/{id}" with
                   """
                   {
                       "id": "{id}",
                       "educationOrganizationCategories": [
                           {
-                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution"
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
                           }
                       ],
                       "GRADELEVELS": [

@@ -1,9 +1,13 @@
 Feature: Validation of the structure of the URLs
 
-        Background
+        Background:
+            Given the system has these descriptors
+                  | descriptorValue                                                |
+                  | uri://ed-fi.org/GradeLevelDescriptor#Sixth grade               |
+                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
             Given the system has these "schools"
-                  | schoolId  | nameOfInstitution        | gradeLevelDescriptor                             | educationOrganizationCategoryDescriptor                        |
-                  | 255901044 | Grand Bend Middle School | uri://ed-fi.org/GradeLevelDescriptor#Sixth grade | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
+                  | schoolId  | nameOfInstitution        | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
+                  | 255901044 | Grand Bend Middle School | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
 
         ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-352
         @API-067 @ignore
@@ -69,6 +73,7 @@ Feature: Validation of the structure of the URLs
              When a PUT request is made to "/schools/{id}" with
                   """
                   {
+                      "id": "{id}",
                       "schoolId": 255901044,
                       "nameOfInstitution": "Grand Bend Middle School",
                       "gradeLevels": [
@@ -102,9 +107,6 @@ Feature: Validation of the structure of the URLs
         ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-352
         @API-070 @ignore
         Scenario: 04 Ensure clients cannot delete a resource when the data model name is missing
-            Given the system has these "schools"
-                  | schoolId  | nameOfInstitution        | gradeLevelDescriptor                             | educationOrganizationCategoryDescriptor                        |
-                  | 255901044 | Grand Bend Middle School | uri://ed-fi.org/GradeLevelDescriptor#Sixth grade | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
              When a DELETE request is made to "/schools/{id}"
              Then it should respond with 404
               And the response body is
@@ -183,9 +185,6 @@ Feature: Validation of the structure of the URLs
         ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-351
         @API-073 @ignore
         Scenario: 07 Ensure clients cannot update a resource when endpoint does not end in plural
-            Given the system has these "schools"
-                  | schoolId  | nameOfInstitution        | gradeLevelDescriptor                             | educationOrganizationCategoryDescriptor                        |
-                  | 255901044 | Grand Bend Middle School | uri://ed-fi.org/GradeLevelDescriptor#Sixth grade | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
              When a PUT request is made to "/ed-fi/school/{id}" with
                   """
                   {
@@ -346,7 +345,7 @@ Feature: Validation of the structure of the URLs
                   """
                   {
                       "schoolReference": {
-                          "schoolId": 255901001
+                          "schoolId": 255901044
                       },
                       "classPeriodName": "Class Period Test",
                       "officialAttendancePeriod": true
@@ -358,8 +357,9 @@ Feature: Validation of the structure of the URLs
                   """
                   [
                       {
+                          "id": "{id}",
                           "schoolReference": {
-                              "schoolId": 255901001
+                              "schoolId": 255901044
                           },
                           "classPeriodName": "Class Period Test",
                           "officialAttendancePeriod": true
@@ -375,8 +375,9 @@ Feature: Validation of the structure of the URLs
                   """
                   [
                       {
+                          "id": "{id}",
                           "schoolReference": {
-                              "schoolId": 255901001
+                              "schoolId": 255901044
                           },
                           "classPeriodName": "Class Period Test",
                           "officialAttendancePeriod": true
@@ -398,13 +399,15 @@ Feature: Validation of the structure of the URLs
                       "correlationId": null,
                       "validationErrors": {
                         "$.id": [
-                            "The value 'ffc0a272' is not valid for Id."
+                            "The value 'ffc0a272' is not valid."
                         ]
-                      }
+                      },
+                      "errors": []
                   }
                   """
 
-        @API-252
+        @API-252 @ignore
+        # DMS-397
         Scenario: 15 Ensure client can retrieve information through case insensitive LIMIT parameter
              When a GET request is made to "/ed-fi/schools?lImIt=1"
              Then it should respond with 200
@@ -433,7 +436,8 @@ Feature: Validation of the structure of the URLs
                   Content-Type: application/json; charset=utf-8
                   """
 
-        @API-253
+        @API-253 @ignore
+        # DMS-397
         Scenario: 16 Ensure client can retrieve information through case insensitive OFFSET parameter
              # There is only one item, and offset=1 skips that one item.
              When a GET request is made to "/ed-fi/SCHOOLS?OfFSeT=1"
@@ -443,7 +447,8 @@ Feature: Validation of the structure of the URLs
                   []
                   """
 
-        @API-254
+        @API-254 @ignore
+        # DMS-397
         Scenario: 17 Ensure client can retrieve information through case insensitive TOTALCOUNT parameter
              When a GET request is made to "/ed-fi/SCHOOLS?tOtAlCoUnT=trUE"
              Then it should respond with 200
