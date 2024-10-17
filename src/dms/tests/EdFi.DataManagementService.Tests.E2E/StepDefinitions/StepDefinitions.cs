@@ -51,12 +51,9 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Given("a POST request is made to {string} with")]
         public async Task GivenAPOSTRequestIsMadeToWith(string url, string body)
         {
-            url = addDataPrefixIfNecessary(url);
+            await ExecutePostRequest(url, body);
 
-            _logger.log.Information(url);
-            _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
-
-            _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
+            _apiResponse.Status.Should().BeOneOf(OkCreated, $"Given post to {url} failed:\n{_apiResponse.TextAsync().Result}");
 
             WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
@@ -204,7 +201,13 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a POST request is made to {string} with")]
         public async Task WhenSendingAPOSTRequestToWithBody(string url, string body)
         {
+            await ExecutePostRequest(url, body);
+        }
+
+        private async Task ExecutePostRequest(string url, string body)
+        {
             url = addDataPrefixIfNecessary(url);
+
             _logger.log.Information($"POST url: {url}");
             _logger.log.Information($"POST body: {body}");
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
