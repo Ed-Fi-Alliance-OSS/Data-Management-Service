@@ -14,7 +14,7 @@ services:
     command:
       - start-dev
     ports:
-      - ${KEYCLOAK_PORT:-8045}:8080
+      - ${KEYCLOAK_PORT:-8065}:8080
     volumes:
       - dms-keycloak:/var/lib/keycloak/data
 
