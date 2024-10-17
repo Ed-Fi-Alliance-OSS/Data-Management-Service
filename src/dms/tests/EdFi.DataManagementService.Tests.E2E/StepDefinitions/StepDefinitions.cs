@@ -13,6 +13,7 @@ using Json.Schema;
 using Microsoft.Playwright;
 using Reqnroll;
 using static EdFi.DataManagementService.Tests.E2E.Management.JsonComparer;
+using System.Linq;
 
 namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 {
@@ -146,6 +147,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             {
                 string body = response.TextAsync().Result;
                 _logger.log.Information(body);
+
+                var good = new int[] { 200, 201, 204 };
+                if (!good.Contains(response.Status))
+                {
+                    throw new AssertionException($"A Given statement failed to execute:\n{body}");
+                }
             }
 
             WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
@@ -353,7 +360,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         {
             string body = _apiResponse.TextAsync().Result;
             _logger.log.Information(body);
-            _apiResponse.Status.Should().Be(statusCode);
+            _apiResponse.Status.Should().Be(statusCode, body);
         }
 
         [Then("it should respond with {int} or {int}")]
@@ -361,7 +368,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         {
             string body = _apiResponse.TextAsync().Result;
             _logger.log.Information(body);
-            _apiResponse.Status.Should().BeOneOf(statusCode1, statusCode2);
+            _apiResponse.Status.Should().BeOneOf([statusCode1, statusCode2], body);
         }
 
         [Then("there is a JSON file in the response body with a list of dependencies")]
