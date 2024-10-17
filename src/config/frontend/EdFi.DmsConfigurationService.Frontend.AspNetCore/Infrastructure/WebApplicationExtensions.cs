@@ -16,7 +16,7 @@ public static class WebApplicationExtensions
         var moduleClasses = Assembly
             .GetExecutingAssembly()
             .GetTypes()
-            .Where(p => moduleInterface.IsAssignableFrom(p) && p.IsClass);
+            .Where(p => moduleInterface.IsAssignableFrom(p) && p.IsClass && !p.IsGenericType);
 
         var modules = new List<IEndpointModule>();
 

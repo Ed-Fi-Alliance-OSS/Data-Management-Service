@@ -8,7 +8,7 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model.Validator;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
-public class VendorModule : BaseModule<Vendor, VendorValidator>
+public class ApplicationModule : BaseModule<Application, ApplicationValidator>
 {
-    protected override string GetBaseRoute() => "/v2/vendors";
+    protected override string GetBaseRoute() => "/v2/applications";
 }

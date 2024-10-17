@@ -22,4 +22,9 @@ public record UpdateResult
     /// Unexpected exception thrown and caught
     /// </summary>
     public record UnknownFailure(string FailureMessage) : UpdateResult();
+
+    /// <summary>
+    /// Reference not found exception thrown and caught
+    /// </summary>
+    public record FailureReferenceNotFound(string ReferenceName) : UpdateResult();
 }
