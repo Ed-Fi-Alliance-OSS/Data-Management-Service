@@ -385,9 +385,6 @@ public class ApplicationModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _vendorRepository.AddAsync(A<Vendor>.Ignored))
-                .Returns(new InsertResult.UnknownFailure("Error"));
-
             A.CallTo(() => _repository.AddAsync(A<Application>.Ignored))
                 .Returns(new InsertResult.FailureReferenceNotFound("VendorId"));
 
@@ -451,7 +448,6 @@ public class ApplicationModuleTests
             updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             string responseBody = await updateResponse.Content.ReadAsStringAsync();
             responseBody.Should().Contain("VendorId");
-
         }
     }
 }
