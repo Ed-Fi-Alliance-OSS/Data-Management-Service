@@ -3,6 +3,8 @@ Feature: CorrleationId
 
         @API-061
         Scenario: 01 Ensure the response will contain provided correlation id
+            # Note: this requires that the .env file used to startup the DMS container has the following setting:
+            # CORRELATION_ID_HEADER=correlationid
              When a POST request is made to "/ed-fi/academicWeeks" with header "correlationid" value "test-correlationId"
                   """
                   {
@@ -15,7 +17,6 @@ Feature: CorrleationId
                    "totalInstructionalDays": 300
                   }
                   """
-
              Then the response body should contain header value "test-correlationId"
                   """
                   {
