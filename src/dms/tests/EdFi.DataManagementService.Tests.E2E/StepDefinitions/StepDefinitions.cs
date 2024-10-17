@@ -13,7 +13,6 @@ using Json.Schema;
 using Microsoft.Playwright;
 using Reqnroll;
 using static EdFi.DataManagementService.Tests.E2E.Management.JsonComparer;
-using System.Linq;
 
 namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 {
@@ -344,13 +343,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(url)!;
         }
 
-        [When("a GET request is made to {string} using values as")]
-        public async Task WhenAGETRequestIsMadeToUsingValuesAs(string url, Table table)
-        {
-            url = addDataPrefixIfNecessary(url);
-            _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(url)!;
-        }
-
         #endregion
 
         #region Then
@@ -622,13 +614,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             int count = responseJson.AsArray().Count;
             count.Should().Be(totalRecords);
-        }
-
-        [Then("the response headers include total-count {int}")]
-        public void ThenTheResponseHeadersIncludesTotalCount(string totalCount)
-        {
-            var headers = _apiResponse.Headers;
-            headers.GetValueOrDefault("total-count").Should().Be(totalCount);
         }
 
         [Then("the response headers does not include total-count")]
