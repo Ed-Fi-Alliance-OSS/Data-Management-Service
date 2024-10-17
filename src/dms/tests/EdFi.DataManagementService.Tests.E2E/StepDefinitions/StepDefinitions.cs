@@ -435,7 +435,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             (responseJson as JsonObject)?.Remove("correlationId");
             (expectedBodyJson as JsonObject)?.Remove("correlationId");
 
-            AreEqual(expectedBodyJson, responseJson).Should().BeTrue();
+            AreEqual(expectedBodyJson, responseJson).Should().BeTrue($"Expected:\n{expectedBodyJson}\n\nActual:\n{responseJson}");
         }
 
         [Then("the general response body is")]
@@ -565,7 +565,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             return replacedBody;
         }
 
-        [Then("the response headers includes")]
+        [Then("the response headers include")]
         public void ThenTheResponseHeadersIncludes(string headers)
         {
             var value = JsonNode.Parse(headers)!;
@@ -617,7 +617,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             count.Should().Be(totalRecords);
         }
 
-        [Then("the response headers includes total-count {int}")]
+        [Then("the response headers include total-count {int}")]
         public void ThenTheResponseHeadersIncludesTotalCount(string totalCount)
         {
             var headers = _apiResponse.Headers;
