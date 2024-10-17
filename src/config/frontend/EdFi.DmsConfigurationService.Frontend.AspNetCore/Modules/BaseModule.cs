@@ -65,7 +65,6 @@ public abstract class BaseModule<T, TValidator> : IEndpointModule
                     $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
                     null
                 ),
-            InsertResult.FailureReferenceNotFound => Results.NotFound(),
             InsertResult.UnknownFailure => Results.Problem(statusCode: 500),
             _ => Results.Problem(statusCode: 500),
         };
