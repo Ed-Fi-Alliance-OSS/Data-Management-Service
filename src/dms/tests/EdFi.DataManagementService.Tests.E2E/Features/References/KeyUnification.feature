@@ -1,6 +1,6 @@
 Feature: Validation of Natural Key Unification
 
-        Background:
+        Scenario: 00 Background
             Given the system has these descriptors
                   | descriptorValue                                                      |
                   | uri://ed-fi.org/GradeLevelDescriptor#TenthGrade                      |
@@ -20,6 +20,7 @@ Feature: Validation of Natural Key Unification
                   """
                    {
                      "courseCode": "Course1",
+                     "courseTitle": "Title",
                      "identificationCodes": [
                        {
                          "courseIdentificationSystemDescriptor": "uri://ed-fi.org/courseIdentificationSystemDescriptor#LEA course code",
@@ -151,6 +152,9 @@ Feature: Validation of Natural Key Unification
 
         @API-103
         Scenario: 04 Verify clients can create a resource with a reference to a resource with a complex identity (CourseOffering)
+            Given the system has these "courseOfferings"
+                  | localCourseCode | courseReference                                         | schoolReference  | sessionReference                                                |
+                  | ALG-1           | {"courseCode":"Course1", "educationOrganizationId":123} | {"schoolId":123} | {"schoolId":123, "schoolYear": 2025, "sessionName":"Session1" } |
              When a POST request is made to "/ed-fi/sections" with
                   """
                   {
