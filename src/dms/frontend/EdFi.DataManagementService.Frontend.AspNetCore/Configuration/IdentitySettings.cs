@@ -21,21 +21,24 @@ public class IdentitySettingsValidator : IValidateOptions<IdentitySettings>
 {
     public ValidateOptionsResult Validate(string? name, IdentitySettings options)
     {
-        if (string.IsNullOrWhiteSpace(options.Authority))
+        if (options.EnforceAuthorization)
         {
-            return ValidateOptionsResult.Fail("Missing required IdentitySettings value: Authority");
-        }
-        if (string.IsNullOrEmpty(options.Audience))
-        {
-            return ValidateOptionsResult.Fail("Missing required IdentitySettings value: Audience");
-        }
-        if (string.IsNullOrEmpty(options.RoleClaimType))
-        {
-            return ValidateOptionsResult.Fail("Missing required IdentitySettings value: RoleClaimType");
-        }
-        if (string.IsNullOrEmpty(options.ServiceRole))
-        {
-            return ValidateOptionsResult.Fail("Missing required IdentitySettings value: ServiceRole");
+            if (string.IsNullOrWhiteSpace(options.Authority))
+            {
+                return ValidateOptionsResult.Fail("Missing required IdentitySettings value: Authority");
+            }
+            if (string.IsNullOrEmpty(options.Audience))
+            {
+                return ValidateOptionsResult.Fail("Missing required IdentitySettings value: Audience");
+            }
+            if (string.IsNullOrEmpty(options.RoleClaimType))
+            {
+                return ValidateOptionsResult.Fail("Missing required IdentitySettings value: RoleClaimType");
+            }
+            if (string.IsNullOrEmpty(options.ServiceRole))
+            {
+                return ValidateOptionsResult.Fail("Missing required IdentitySettings value: ServiceRole");
+            }
         }
         return ValidateOptionsResult.Success;
     }

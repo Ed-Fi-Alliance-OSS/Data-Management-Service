@@ -32,6 +32,8 @@ $files = @(
     "-f",
     "kafka-opensearch.yml",
     "-f",
+    "keycloak.yml",
+    "-f",
     "local-dms.yml"
 )
 
