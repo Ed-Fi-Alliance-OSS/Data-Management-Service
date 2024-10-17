@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Security.Claims;
 using System.Threading.RateLimiting;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Deploy;
@@ -11,7 +12,10 @@ using EdFi.DataManagementService.Backend.OpenSearch;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
+using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using static EdFi.DataManagementService.Core.DmsCoreServiceExtensions;
 using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
@@ -72,6 +76,61 @@ public static class WebApplicationBuilderExtensions
             webAppBuilder.Logging.AddSerilog(logger);
 
             return logger;
+        }
+
+        // For Security(Keycloak)
+        IConfiguration config = webAppBuilder.Configuration;
+        var settings = config.GetSection("IdentitySettings");
+        var identitySettings = ReadSettings();
+        webAppBuilder.Services.Configure<IdentitySettings>(settings);
+        webAppBuilder.Services.AddHttpClient();
+
+        var metadataAddress = $"{identitySettings.Authority}/.well-known/openid-configuration";
+
+        webAppBuilder
+            .Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(
+                JwtBearerDefaults.AuthenticationScheme,
+                options =>
+                {
+                    options.MetadataAddress = metadataAddress;
+                    options.Authority = identitySettings.Authority;
+                    options.Audience = identitySettings.Audience;
+                    options.RequireHttpsMetadata = identitySettings.RequireHttpsMetadata;
+                    options.TokenValidationParameters = new TokenValidationParameters
+                    {
+                        ValidateAudience = true,
+                        ValidateIssuer = false,
+                        RoleClaimType = identitySettings.RoleClaimType,
+                    };
+
+                    options.Events = new JwtBearerEvents
+                    {
+                        OnAuthenticationFailed = context =>
+                        {
+                            Console.WriteLine($"Authentication failed: {context.Exception.Message}");
+                            return Task.CompletedTask;
+                        },
+                    };
+                }
+            );
+        webAppBuilder.Services.AddAuthorization(options =>
+            options.AddPolicy(
+               SecurityConstants.ServicePolicy,
+                policy => policy.RequireClaim(ClaimTypes.Role, identitySettings.ServiceRole)
+            )
+        );
+
+        IdentitySettings ReadSettings()
+        {
+            return new IdentitySettings
+            {
+                Authority = config.GetValue<string>("IdentitySettings:Authority")!,
+                RequireHttpsMetadata = config.GetValue<bool>("IdentitySettings:RequireHttpsMetadata"),
+                Audience = config.GetValue<string>("IdentitySettings:Audience")!,
+                RoleClaimType = config.GetValue<string>("IdentitySettings:RoleClaimType")!,
+                ServiceRole = config.GetValue<string>("IdentitySettings:ServiceRole")!,
+            };
         }
     }
 
