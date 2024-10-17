@@ -103,12 +103,19 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             foreach (var descriptor in dataTable.ExtractDescriptors())
             {
-                _apiResponses.Add(
-                    await _playwrightContext.ApiRequestContext?.PostAsync(
-                        $"{baseUrl}/{descriptor["descriptorName"]}",
-                        new() { DataObject = descriptor }
-                    )!
-                );
+                var response = await _playwrightContext.ApiRequestContext?.PostAsync(
+                    $"{baseUrl}/{descriptor["descriptorName"]}",
+                    new() { DataObject = descriptor }
+                )!;
+                _apiResponses.Add(response);
+
+                response
+                    .Status.Should()
+                    .BeOneOf(
+                        OkCreated,
+                        $"POST request for {entityType} descriptor {descriptor["descriptorName"]} failed:\n{response.TextAsync().Result}"
+                    );
+
             }
 
             foreach (var row in dataTable.Rows)
@@ -118,41 +125,29 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 string body = row.Parse();
 
                 _logger.log.Information(dataUrl);
-                _apiResponses.Add(
-                    await _playwrightContext.ApiRequestContext?.PostAsync(dataUrl, new() { Data = body })!
-                );
+                var response = await _playwrightContext.ApiRequestContext?.PostAsync(
+                    dataUrl,
+                    new() { Data = body }
+                )!;
+                _apiResponses.Add(response);
+
+                response
+                    .Status.Should()
+                    .BeOneOf(
+                        OkCreated,
+                        $"POST request for {entityType} failed:\n{response.TextAsync().Result}"
+                    );
             }
 
-            foreach (var apiResponse in _apiResponses)
-            {
-                if (apiResponse.Status != 200 && apiResponse.Status != 201)
-                {
-                    JsonNode responseJson = JsonNode.Parse(apiResponse.TextAsync().Result)!;
-
-                    _logger.log.Information(responseJson.ToString());
-                }
-            }
             return _apiResponses;
         }
 
         [Given("the system has these {string}")]
         public async Task GivenTheSystemHasThese(string entityType, DataTable dataTable)
         {
-            var _apiResponses = await ProcessDataTable(entityType, dataTable);
+            _ = await ProcessDataTable(entityType, dataTable);
 
             _logger.log.Information($"Responses for Given(the system has these {entityType})");
-
-            foreach (var response in _apiResponses)
-            {
-                string body = response.TextAsync().Result;
-                _logger.log.Information(body);
-
-                var good = new int[] { 200, 201, 204 };
-                if (!good.Contains(response.Status))
-                {
-                    throw new AssertionException($"A Given statement failed to execute:\n{body}");
-                }
-            }
 
             WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
@@ -177,11 +172,13 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 string body = apiResponse.TextAsync().Result;
                 _logger.log.Information(body);
 
-                apiResponse.Status.Should().BeOneOf(201, 200);
+                apiResponse.Status.Should().BeOneOf(OkCreated, $"Request failed:\n{body}");
             }
 
             WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
+
+        private readonly int[] OkCreated = [200, 201];
 
         [Given("the system has these {string} references")]
         public async Task GivenTheSystemHasTheseReferences(string entityType, DataTable dataTable)
@@ -192,13 +189,9 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             foreach (var response in _apiResponses)
             {
-                string body = response.TextAsync().Result;
-                _logger.log.Information(body);
-                response.Status.Should().BeOneOf(201, 200);
-
-                if (response.Url.Contains(entityType, StringComparison.InvariantCultureIgnoreCase)
-                )
+                if (response.Url.Contains(entityType, StringComparison.InvariantCultureIgnoreCase))
                 {
+                    // Always saving the LAST id returned. This is very fragile.
                     _referencedResourceId = extractDataFromResponseAndReturnIdIfAvailable(response);
                 }
             }
@@ -434,7 +427,9 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             (responseJson as JsonObject)?.Remove("correlationId");
             (expectedBodyJson as JsonObject)?.Remove("correlationId");
 
-            AreEqual(expectedBodyJson, responseJson).Should().BeTrue($"Expected:\n{expectedBodyJson}\n\nActual:\n{responseJson}");
+            AreEqual(expectedBodyJson, responseJson)
+                .Should()
+                .BeTrue($"Expected:\n{expectedBodyJson}\n\nActual:\n{responseJson}");
         }
 
         [Then("the general response body is")]
@@ -471,9 +466,11 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
         private static string? CorrelationIdValue(JsonNode response)
         {
-            if (response is JsonObject jsonObject && jsonObject.TryGetPropertyValue("correlationId", out JsonNode? correlationId)
-                    && correlationId != null
-)
+            if (
+                response is JsonObject jsonObject
+                && jsonObject.TryGetPropertyValue("correlationId", out JsonNode? correlationId)
+                && correlationId != null
+            )
             {
                 return correlationId.GetValue<string?>();
             }
@@ -482,9 +479,11 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
         private static string? LastModifiedDate(JsonNode response)
         {
-            if (response is JsonObject jsonObject && jsonObject.TryGetPropertyValue("_lastModifiedDate", out JsonNode? lastModifiedDate)
-                    && lastModifiedDate != null
-)
+            if (
+                response is JsonObject jsonObject
+                && jsonObject.TryGetPropertyValue("_lastModifiedDate", out JsonNode? lastModifiedDate)
+                && lastModifiedDate != null
+            )
             {
                 return lastModifiedDate.GetValue<string?>();
             }
@@ -530,7 +529,11 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             string replacedBody = "";
             if (body.TrimStart().StartsWith('['))
             {
-                var responseAsArray = responseJson.AsArray() ?? throw new AssertionException("Expected a JSON array response, but it was not an array.");
+                var responseAsArray =
+                    responseJson.AsArray()
+                    ?? throw new AssertionException(
+                        "Expected a JSON array response, but it was not an array."
+                    );
                 if (responseAsArray.Count == 0)
                 {
                     return body;
