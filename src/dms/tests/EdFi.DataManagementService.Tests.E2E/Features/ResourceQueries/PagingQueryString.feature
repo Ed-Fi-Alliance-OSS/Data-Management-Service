@@ -12,7 +12,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
 
         @API-120
         Scenario: 01 Ensure clients can get information when filtering by limit and and a valid offset
-             When a GET request is made to "/ed-fi/schools?offset=3&limit=5"
+             When a GET request is made to "/ed-fi/schools?offset=3&limit=2"
              Then it should respond with 200
               And the response body is
                   """
@@ -52,7 +52,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
 
         @API-121
         Scenario: 02 Ensure clients can get information when filtering by limit and offset greater than the total
-             When a GET request is made to "/ed-fi/schools?offset=6&limit=5"
+             When a GET request is made to "/ed-fi/schools?offset=600&limit=5"
              Then it should respond with 200
               And the response body is
                   """
@@ -76,9 +76,9 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                             }
                             ],
                             "gradeLevels": [
-                            {
-                                "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
-                            }
+                                {
+                                    "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
+                                }
                             ]
                         }
                     ]
@@ -108,3 +108,30 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                         }
                     ]
                   """
+
+        @API-147
+        Scenario Outline: 12 Ensure clients can not GET information when filtering by limit and offset using invalid values
+            # Some of these are "SQL Injection" style attacks
+             When a GET request is made to "/ed-fi/schools?offset=<value>"
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                        "detail": "The request could not be processed. See 'errors' for details.",
+                        "type": "urn:ed-fi:api:bad-request",
+                        "title": "Bad Request",
+                        "status": 400,
+                        "correlationId": null,
+                        "validationErrors": {},
+                        "errors": [
+                            "Offset must be a numeric value greater than or equal to 0."
+                        ]
+                    }
+                  """
+        Examples:
+                  | value                    |
+                  | -1                       |
+                  | 'zero'                   |
+                  | '5; select * from users' |
+                  | '0)'                     |
+                  | '1%27'                   |
