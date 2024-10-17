@@ -226,7 +226,7 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
-        @API-160 @POST
+        @API-160 @API-233 @POST
         Scenario: 10 Create a document with an extra property (overpost) (Resource)
              When a POST request is made to "/ed-fi/educationContents" with
                   """
