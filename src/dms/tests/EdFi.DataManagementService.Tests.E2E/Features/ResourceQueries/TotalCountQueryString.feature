@@ -1,5 +1,6 @@
 Feature: TotalCount Response Header for GET Requests
-        Background:
+        @addwait
+        Scenario: 00 Background
             Given the system has these "schools"
                   | schoolId  | nameOfInstitution                             | gradeLevels                                                                         | educationOrganizationCategories                                                                                        |
                   | 5         | School with max edorgId value                 | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"} ]    | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
