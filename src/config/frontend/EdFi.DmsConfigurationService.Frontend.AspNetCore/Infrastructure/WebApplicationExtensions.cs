@@ -16,14 +16,16 @@ public static class WebApplicationExtensions
         var moduleClasses = Assembly
             .GetExecutingAssembly()
             .GetTypes()
-            .Where(p => moduleInterface.IsAssignableFrom(p) && p.IsClass);
+            .Where(p => moduleInterface.IsAssignableFrom(p) && p.IsClass && !p.IsGenericType);
 
         var modules = new List<IEndpointModule>();
 
         foreach (var moduleClass in moduleClasses)
         {
             if (Activator.CreateInstance(moduleClass) is IEndpointModule module)
+            {
                 modules.Add(module);
+            }
         }
         application.UseEndpoints(endpoints =>
         {

@@ -27,8 +27,8 @@ Sample commands:
 cd eng
 docker compose -f postgresql-compose.yml up -d
 cd ../
-./build.ps1 build
-./build.ps1 run
+./build-dms.ps1 build
+./build-dms.ps1 run
 ```
 
 ## Running the EdFi.DataManagementService.Backend.Postgresql.Test.Integration
@@ -38,7 +38,7 @@ terminal:
 
 ```shell
 # From base directory
-./build.ps1 IntegrationTest -Configuration Debug
+./build-dms.ps1 IntegrationTest -Configuration Debug
 ```
 
 You can see the result in the `TestResults` folder (located in the base
@@ -71,7 +71,7 @@ terminal:
 
 ```shell
 # From base directory
-./build.ps1 UnitTest -Configuration Debug
+./build-dms.ps1 UnitTest -Configuration Debug
 ```
 
 The previous command should generate two files in the base directory, which

@@ -317,7 +317,7 @@ $dockerTagBase = "local"
 $dockerTagDMS = "$($dockerTagBase)/edfi-dms-configuration-service"
 
 function DockerBuild {
-    Push-Location src/
+    Push-Location src/config/
     &docker build -t $dockerTagDMS -f Dockerfile .
     Pop-Location
 }

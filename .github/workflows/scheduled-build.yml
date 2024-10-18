@@ -30,9 +30,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: Build
+      - name: DMS Build
         id: build_step
-        run: ./build.ps1 Build -Configuration Debug
+        run: ./build-dms.ps1 Build -Configuration Debug
 
       - name: Install Coverlet Reference
         if: success()
@@ -40,9 +40,9 @@ jobs:
           dotnet tool install --global coverlet.console
           dotnet tool install --global dotnet-reportgenerator-globaltool
 
-      - name: Run Unit Tests
+      - name: Run DMS Unit Tests
         id: unit_test_step
-        run: ./build.ps1 UnitTest -Configuration Debug
+        run: ./build-dms.ps1 UnitTest -Configuration Debug
 
       - name: Notify Slack on success
         if: success()

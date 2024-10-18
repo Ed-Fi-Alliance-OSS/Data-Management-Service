@@ -12,7 +12,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
-using NUnit.Framework.Internal;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 

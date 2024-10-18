@@ -18,7 +18,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @API-184
+        @API-184 @PUT
         Scenario: 01 Put an existing document (Resource)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -45,7 +45,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @API-185
+        @API-185 @PUT
         Scenario: 02 Put an existing document with optional properties removed (Resource)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -66,7 +66,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @API-186
+        @API-186 @API-234 @PUT
         Scenario: 03 Put an existing document with an extra property (overpost) (Resource)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -96,7 +96,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @API-187
+        @API-187 @PUT
         Scenario: 04 Update a document that does not exist (Resource)
              # The id value should be replaced with a non existing resource
              When a PUT request is made to "/ed-fi/educationContents/00000000-0000-4000-a000-000000000000" with
@@ -121,7 +121,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @API-188
+        @API-188 @PUT
         Scenario: 05 Update a document with modification of an identity field (Resource)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -146,7 +146,7 @@ Feature: Resources "Update" Operation validations
                     }
                   """
 
-        @API-189
+        @API-189 @PUT
         Scenario: 06  Put an empty request object (Resource)
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -168,7 +168,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @API-190
+        @API-190 @PUT
         Scenario: 07 Put an empty JSON body (Resource)
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -200,7 +200,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @API-191
+        @API-191 @PUT
         Scenario: 08 Update a document with mismatch between URL and id (Resource)
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -227,7 +227,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @API-192
+        @API-192 @PUT
         Scenario: 09 Update a document with a blank id (Resource)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -254,7 +254,7 @@ Feature: Resources "Update" Operation validations
                    }
                   """
 
-        @API-193
+        @API-193 @PUT
         Scenario: 10 Update a document with an invalid id format (Resource)
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -281,7 +281,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @API-194
+        @API-194 @PUT
         Scenario: 11 Put an existing document with string coercion to a numeric value (Resource)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -310,7 +310,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @API-195
+        @API-195 @PUT
         Scenario: 12 Put an existing document with null optional value (Resource)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -338,7 +338,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @API-196
+        @API-196 @PUT
         Scenario: 13 Put an existing document with a string that is too long (Resource)
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
@@ -371,7 +371,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @API-197
+        @API-197 @PUT
         Scenario: 14 Update a document with a value that is too short (Resource)
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
                   """
@@ -406,7 +406,7 @@ Feature: Resources "Update" Operation validations
                     }
                   """
 
-        @API-198
+        @API-198 @PUT
         Scenario: 15 Update a document with a duplicated value (Resource)
              When a PUT request is made to "/ed-fi/educationContents/{id}" with
                   """
@@ -439,7 +439,7 @@ Feature: Resources "Update" Operation validations
                     }
                   """
 
-        @API-199
+        @API-199 @PUT
         Scenario: 16 Verify clients cannot update a resource with a duplicate descriptor
              When a PUT request is made to "/ed-fi/schools/{id}" with
                   """
@@ -487,7 +487,7 @@ Feature: Resources "Update" Operation validations
                     }
                   """
 
-        @API-200
+        @API-200 @PUT
         Scenario: 17 Verify clients cannot upadate a resource with a duplicate resource reference
              When a PUT request is made to "/ed-fi/bellschedules/{id}" with
                   """
@@ -553,7 +553,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @API-201
+        @API-201 @PUT
         Scenario: 18 Verify clients can update the identity of resources that allow identity updates
             Given the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
@@ -602,19 +602,19 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @API-202
+        @API-202 @PUT
         Scenario: 19 Verify cascading updates on non reference values
             Given the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
                   | 4003     | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
-            Given the system has these "schoolYearTypes"
+              And the system has these "schoolYearTypes"
                   | schoolYear | schoolYearDescription | currentSchoolYear |
                   | 2025       | "2025"                | false             |
-            Given the system has these descriptors
+              And the system has these descriptors
                   | descriptorValue                                          |
                   | uri://ed-fi.org/CourseIdentificationSystemDescriptor#LEA |
                   | uri://ed-fi.org/TermDescriptor#Quarter                   |
-            Given the system has these "courses"
+              And the system has these "courses"
                   | educationOrganizationReference    | courseCode | courseTitle    | numberOfParts | identificationCodes                                                                                                                       |
                   | {"educationOrganizationId": 4003} | "ART-01"   | "Art, Grade 1" | 1             | [ {"courseIdentificationSystemDescriptor": "uri://ed-fi.org/CourseIdentificationSystemDescriptor#LEA", "identificationCode": "ART-01" } ] |
              When a POST request is made for dependent resource "/ed-fi/sessions/" with
@@ -712,19 +712,19 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @API-203
+        @API-203 @PUT
         Scenario: 20 Verify recursive cascading updates on non reference values
             Given the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
                   | 4003     | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
-            Given the system has these "schoolYearTypes"
+              And the system has these "schoolYearTypes"
                   | schoolYear | schoolYearDescription | currentSchoolYear |
                   | 2025       | "2025"                | false             |
-            Given the system has these descriptors
+              And the system has these descriptors
                   | descriptorValue                                          |
                   | uri://ed-fi.org/CourseIdentificationSystemDescriptor#LEA |
                   | uri://ed-fi.org/TermDescriptor#Quarter                   |
-            Given the system has these "courses"
+              And the system has these "courses"
                   | educationOrganizationReference    | courseCode | courseTitle    | numberOfParts | identificationCodes                                                                                                                       |
                   | {"educationOrganizationId": 4003} | "ART-01"   | "Art, Grade 1" | 1             | [ {"courseIdentificationSystemDescriptor": "uri://ed-fi.org/CourseIdentificationSystemDescriptor#LEA", "identificationCode": "ART-01" } ] |
              When a POST request is made for dependent resource "/ed-fi/sessions/" with
@@ -830,7 +830,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-        @API-204 @ignore
+        @API-204 @PUT
         Scenario: 21 Verify cascading updates on dependent resources in lists
             Given the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
@@ -907,6 +907,214 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
-
-
+        Scenario: 22 Verify cascading updates on role named references
+            Given the system has these "schools"
+                  | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
+                  | 4003     | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+              And the system has these descriptors
+                  | descriptorValue                                          |
+                  | uri://ed-fi.org/GradeTypeDescriptor#Grading Period       |
+                  | uri://ed-fi.org/CourseIdentificationSystemDescriptor#LEA |
+              And the system has these "schoolYearTypes"
+                  | schoolYear | schoolYearDescription | currentSchoolYear |
+                  | 2025       | "2025"                | false             |
+                  | 2026       | "2026"                | false             |
+              And the system has these "gradingPeriods"
+                  | gradingPeriodDescriptor                                   | gradingPeriodName        | schoolReference      | schoolYearTypeReference | beginDate    | endDate      | totalInstructionalDays |
+                  | "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks" | "Spring Semester Exam 1" | { "schoolId": 4003 } | { "schoolYear": 2025}   | "2025-01-01" | "2025-03-01" | 31                     |
+                  | "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks" | "Fall Semester Exam 1"   | { "schoolId": 4003 } | { "schoolYear": 2025}   | "2025-01-01" | "2025-03-01" | 31                     |
+              And the system has these "students"
+                  | studentUniqueId | birthDate  | firstName | lastSurname |
+                  | "604824"        | 2010-01-13 | Traci     | Mathews     |
+              And the system has these "courses"
+                  | educationOrganizationReference    | courseCode | courseTitle    | numberOfParts | identificationCodes                                                                                                                       |
+                  | {"educationOrganizationId": 4003} | "ART-01"   | "Art, Grade 1" | 1             | [ {"courseIdentificationSystemDescriptor": "uri://ed-fi.org/CourseIdentificationSystemDescriptor#LEA", "identificationCode": "ART-01" } ] |
+              And the system has these "sessions"
+                  | sessionName     | schoolReference    | schoolYearTypeReference | beginDate  | endDate    | termDescriptor                                   | totalInstructionalDays |
+                  | "Fall Semester" | {"schoolId": 4003} | {"schoolYear": 2025}    | 2025-01-01 | 2025-05-27 | "uri://ed-fi.org/TermDescriptor#Spring Semester" | 88                     |
+              And the system has these "courseOfferings"
+                  | localCourseCode | courseReference                                         | schoolReference   | sessionReference                                                      |
+                  | "ART-01"        | {"courseCode":"ART-01", "educationOrganizationId":4003} | {"schoolId":4003} | {"schoolId":4003, "schoolYear": 2025, "sessionName":"Fall Semester" } |
+              And the system has these "sections"
+                  | sectionIdentifier | courseOfferingReference                                                                         |
+                  | "ABC"             | {"localCourseCode":"ART-01", "schoolId":4003, "schoolYear":2025, "sessionName":"Fall Semester"} |
+              And the system has these "studentSectionAssociations"
+                  | beginDate    | sectionReference                                                                                                              | studentReference             |
+                  | "2025-01-01" | {"localCourseCode":"ART-01", "schoolId":4003, "schoolYear": 2025, "sectionIdentifier":"ABC", "sessionName":"Fall Semester"  } | {"studentUniqueId":"604824"} |
+             When a POST request is made for dependent resource "/ed-fi/grades/" with
+                  """
+                  {
+                     "gradeTypeDescriptor": "uri://ed-fi.org/GradeTypeDescriptor#Grading Period",
+                     "gradingPeriodReference": {
+                        "gradingPeriodDescriptor": "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks",
+                        "gradingPeriodName": "Fall Semester Exam 1",
+                        "schoolId": 4003,
+                        "schoolYear": 2025
+                    },
+                    "studentSectionAssociationReference": {
+                        "beginDate": "2025-01-01",
+                        "localCourseCode": "ART-01",
+                        "schoolId": 4003,
+                        "schoolYear": 2025,
+                        "sectionIdentifier": "ABC",
+                        "sessionName": "Fall Semester",
+                        "studentUniqueId": "604824"
+                    }
+                  }
+                  """
+             Then it should respond with 201
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": "{dependentId}",
+                    "gradeTypeDescriptor": "uri://ed-fi.org/GradeTypeDescriptor#Grading Period",
+                    "gradingPeriodReference": {
+                        "schoolId": 4003,
+                        "schoolYear": 2025,
+                        "gradingPeriodName": "Fall Semester Exam 1",
+                        "gradingPeriodDescriptor": "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks"
+                    },
+                    "studentSectionAssociationReference": {
+                        "schoolId": 4003,
+                        "beginDate": "2025-01-01",
+                        "schoolYear": 2025,
+                        "sessionName": "Fall Semester",
+                        "localCourseCode": "ART-01",
+                        "studentUniqueId": "604824",
+                        "sectionIdentifier": "ABC"
+                    }
+                  }
+                  """
+             When a POST request is made to "/ed-fi/reportCards/" with
+                  """
+                    {
+                        "educationOrganizationReference": {
+                            "educationOrganizationId": 4003
+                        },
+                        "gradingPeriodReference": {
+                            "gradingPeriodDescriptor": "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks",
+                            "gradingPeriodName": "Fall Semester Exam 1",
+                            "schoolId": 4003,
+                            "schoolYear": 2025
+                        },
+                        "studentReference": {
+                            "studentUniqueId": "604824"
+                        },
+                        "grades": [
+                            {
+                                "gradeReference": {
+                                    "beginDate": "2025-01-01",
+                                    "gradeTypeDescriptor": "uri://ed-fi.org/GradeTypeDescriptor#Grading Period",
+                                    "gradingPeriodDescriptor": "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks",
+                                    "gradingPeriodName": "Fall Semester Exam 1",
+                                    "gradingPeriodSchoolYear": 2025,
+                                    "localCourseCode": "ART-01",
+                                    "schoolId": 4003,
+                                    "schoolYear": 2025,
+                                    "sectionIdentifier": "ABC",
+                                    "sessionName": "Fall Semester",
+                                    "studentUniqueId": "604824"
+                                }
+                            }
+                        ]
+                    }
+                  """
+             Then it should respond with 201
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": "{id}",
+                    "grades": [
+                        {
+                            "gradeReference": {
+                                "schoolId": 4003,
+                                "beginDate": "2025-01-01",
+                                "schoolYear": 2025,
+                                "sessionName": "Fall Semester",
+                                "localCourseCode": "ART-01",
+                                "studentUniqueId": "604824",
+                                "gradingPeriodName": "Fall Semester Exam 1",
+                                "sectionIdentifier": "ABC",
+                                "gradeTypeDescriptor": "uri://ed-fi.org/GradeTypeDescriptor#Grading Period",
+                                "gradingPeriodDescriptor": "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks",
+                                "gradingPeriodSchoolYear": 2025
+                            }
+                        }
+                    ],
+                    "studentReference": {
+                        "studentUniqueId": "604824"
+                    },
+                    "gradingPeriodReference": {
+                        "schoolId": 4003,
+                        "schoolYear": 2025,
+                        "gradingPeriodName": "Fall Semester Exam 1",
+                        "gradingPeriodDescriptor": "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks"
+                    },
+                    "educationOrganizationReference": {
+                        "educationOrganizationId": 4003
+                    }
+                  }
+                  """
+                  # Change gradingPeriodName
+             When a PUT request is made to "/ed-fi/grades/{dependentId}" with
+                  """
+                  {
+                    "id": "{dependentId}",
+                    "gradeTypeDescriptor": "uri://ed-fi.org/GradeTypeDescriptor#Grading Period",
+                    "gradingPeriodReference": {
+                        "schoolId": 4003,
+                        "schoolYear": 2025,
+                        "gradingPeriodName": "Spring Semester Exam 1",
+                        "gradingPeriodDescriptor": "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks"
+                    },
+                    "studentSectionAssociationReference": {
+                        "schoolId": 4003,
+                        "beginDate": "2025-01-01",
+                        "schoolYear": 2025,
+                        "sessionName": "Fall Semester",
+                        "localCourseCode": "ART-01",
+                        "studentUniqueId": "604824",
+                        "sectionIdentifier": "ABC"
+                    }
+                  }
+                  """
+             Then it should respond with 204
+             When a GET request is made to "/ed-fi/reportCards/{id}"
+             Then it should respond with 200
+             # The new gradingPeriodName should cascade to the reportCard
+              And the response body is
+                  """
+                  {
+                    "id": "{id}",
+                    "grades": [
+                        {
+                            "gradeReference": {
+                                "schoolId": 4003,
+                                "beginDate": "2025-01-01",
+                                "schoolYear": 2025,
+                                "sessionName": "Fall Semester",
+                                "localCourseCode": "ART-01",
+                                "studentUniqueId": "604824",
+                                "gradingPeriodName": "Spring Semester Exam 1",
+                                "sectionIdentifier": "ABC",
+                                "gradeTypeDescriptor": "uri://ed-fi.org/GradeTypeDescriptor#Grading Period",
+                                "gradingPeriodDescriptor": "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks",
+                                "gradingPeriodSchoolYear": 2025
+                            }
+                        }
+                    ],
+                    "studentReference": {
+                        "studentUniqueId": "604824"
+                    },
+                    "gradingPeriodReference": {
+                        "schoolId": 4003,
+                        "schoolYear": 2025,
+                        "gradingPeriodName": "Fall Semester Exam 1",
+                        "gradingPeriodDescriptor": "uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks"
+                    },
+                    "educationOrganizationReference": {
+                        "educationOrganizationId": 4003
+                    }
+                  }
+                  """
 

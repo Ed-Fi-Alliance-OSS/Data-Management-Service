@@ -19,5 +19,11 @@ namespace EdFi.DataManagementService.Core.Configuration
         /// Know whether to mask the requested Body
         /// </summary>
         public bool MaskRequestBodyInLogs { get; set; }
+
+        /// <summary>
+        /// When true the application will use \ApiSchema\ApiSchema.json
+        /// instead of the published package.
+        /// </summary>
+        public bool UseLocalApiSchemaJson { get; set; }
     }
 }

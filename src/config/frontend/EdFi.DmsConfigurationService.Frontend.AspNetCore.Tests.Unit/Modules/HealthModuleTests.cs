@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Net;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
@@ -30,6 +31,6 @@ public class HealthTests
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        DateTime.TryParse(content, out DateTime dt).Should().Be(true);
+        DateTime.TryParse(content, CultureInfo.InvariantCulture, out DateTime dt).Should().Be(true);
     }
 }

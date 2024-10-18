@@ -14,6 +14,8 @@ public static class ValidatorExtensions
         var validationResult = await validator.ValidateAsync(request);
 
         if (!validationResult.IsValid)
+        {
             throw new ValidationException(validationResult.Errors);
+        }
     }
 }
