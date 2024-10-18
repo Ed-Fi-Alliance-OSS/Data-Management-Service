@@ -234,7 +234,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
                 Application application1 =
                     new()
                     {
-                        ApplicationName = "Test Application",
+                        ApplicationName = "Test Application 1",
                         VendorId = _vendorId1,
                         ClaimSetName = "Test Claim set",
                         EducationOrganizationIds = [1, 255911001, 255911002]
@@ -263,6 +263,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
                 getResult.Should().BeOfType<GetResult<Application>.GetSuccess>();
                 var applicationsFromDb = ((GetResult<Application>.GetSuccess)getResult).Results.ToList();
                 applicationsFromDb.Count.Should().Be(2);
+                applicationsFromDb[0].ApplicationName.Should().Be("Test Application 1");
+                applicationsFromDb[1].ApplicationName.Should().Be("Test Application 2");
             }
 
             [Test]
