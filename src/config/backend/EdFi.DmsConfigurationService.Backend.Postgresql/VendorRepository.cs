@@ -10,7 +10,7 @@ using Npgsql;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql
 {
-    public class VendorRepository(IOptions<DatabaseOptions> databaseOptions) : IRepository<Vendor>
+    public class VendorRepository(IOptions<DatabaseOptions> databaseOptions) : IVendorRepository
     {
         public async Task<GetResult<Vendor>> GetAllAsync()
         {
@@ -186,6 +186,48 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql
             catch (Exception ex)
             {
                 return new DeleteResult.UnknownFailure(ex.Message);
+            }
+        }
+
+        public async Task<GetResult<Application>> GetApplicationsByVendorIdAsync(long vendorId)
+        {
+            string sql = """
+                    SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName, eo.EducationOrganizationId
+                    FROM dmscs.Application a
+                    LEFT OUTER JOIN dmscs.ApplicationEducationOrganization eo ON a.Id = eo.ApplicationId
+                    WHERE a.VendorId = @VendorId;
+                """;
+            await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+            try
+            {
+                var applications = await connection.QueryAsync<Application, long, Application>(
+                    sql,
+                    (application, educationOrganizationId) =>
+                    {
+                        application.EducationOrganizationIds.Add(educationOrganizationId);
+                        return application;
+                    },
+                    param: new { Id = vendorId },
+                    splitOn: "EducationOrganizationId"
+                );
+
+                var returnApplication = applications
+                    .GroupBy(a => a.Id)
+                    .Select(g =>
+                    {
+                        var grouped = g.First();
+                        grouped.EducationOrganizationIds = g.Select(e =>
+                                e.EducationOrganizationIds.Single()
+                            )
+                            .ToList();
+                        return grouped;
+                    }).ToList();
+
+                return new GetResult<Application>.GetSuccess(returnApplication);
+            }
+            catch (Exception ex)
+            {
+                return new GetResult<Application>.UnknownFailure(ex.Message);
             }
         }
     }
