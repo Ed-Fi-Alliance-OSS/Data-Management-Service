@@ -664,7 +664,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         {
             if (waitTags != null && waitTags.Contains("addwait") && _openSearchEnabled)
             {
-                Thread.Sleep(6000);
+                Thread.Sleep(5000);
             }
         }
 
