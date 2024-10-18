@@ -41,7 +41,8 @@ public static class WebApplicationBuilderExtensions
             .Configure<CoreAppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"))
             .AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>()
             .Configure<ConnectionStrings>(webAppBuilder.Configuration.GetSection("ConnectionStrings"))
-            .AddSingleton<IValidateOptions<ConnectionStrings>, ConnectionStringsValidator>();
+            .AddSingleton<IValidateOptions<ConnectionStrings>, ConnectionStringsValidator>()
+            .AddSingleton<IValidateOptions<IdentitySettings>, IdentitySettingsValidator>();
 
         if (webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
         {
@@ -125,6 +126,7 @@ public static class WebApplicationBuilderExtensions
         {
             return new IdentitySettings
             {
+                EnforceAuthorization = config.GetValue<bool>("IdentitySettings:EnforceAuthorization"),
                 Authority = config.GetValue<string>("IdentitySettings:Authority")!,
                 RequireHttpsMetadata = config.GetValue<bool>("IdentitySettings:RequireHttpsMetadata"),
                 Audience = config.GetValue<string>("IdentitySettings:Audience")!,
