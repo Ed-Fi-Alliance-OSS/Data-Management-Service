@@ -15,7 +15,7 @@ public abstract class BaseModule<T, TValidator> : IEndpointModule
     where T : class
     where TValidator : IValidator<T>
 {
-    public void MapEndpoints(IEndpointRouteBuilder endpoints)
+    public virtual void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         // The base path must be defined by the derived classes
         string baseRoute = GetBaseRoute();

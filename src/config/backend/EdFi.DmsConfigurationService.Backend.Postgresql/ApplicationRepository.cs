@@ -26,7 +26,7 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
                 sql,
                 (application, educationOrganizationId) =>
                 {
-                    application.ApplicationEducationOrganizations.Add(educationOrganizationId);
+                    application.EducationOrganizationIds.Add(educationOrganizationId);
                     return application;
                 },
                 splitOn: "EducationOrganizationId"
@@ -37,8 +37,8 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
                 .Select(g =>
                 {
                     var grouped = g.First();
-                    grouped.ApplicationEducationOrganizations = g.Select(e =>
-                            e.ApplicationEducationOrganizations.Single()
+                    grouped.EducationOrganizationIds = g.Select(e =>
+                            e.EducationOrganizationIds.Single()
                         )
                         .ToList();
                     return grouped;
@@ -67,7 +67,7 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
                 sql,
                 (application, educationOrganizationId) =>
                 {
-                    application.ApplicationEducationOrganizations.Add(educationOrganizationId);
+                    application.EducationOrganizationIds.Add(educationOrganizationId);
                     return application;
                 },
                 param: new { Id = id },
@@ -79,8 +79,8 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
                 .Select(g =>
                 {
                     var grouped = g.First();
-                    grouped.ApplicationEducationOrganizations = g.Select(e =>
-                            e.ApplicationEducationOrganizations.Single()
+                    grouped.EducationOrganizationIds = g.Select(e =>
+                            e.EducationOrganizationIds.Single()
                         )
                         .ToList();
                     return grouped;
@@ -113,7 +113,7 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
                 VALUES (@ApplicationId, @EducationOrganizationId);
                 """;
 
-            var educationOrganizations = application.ApplicationEducationOrganizations.Select(e => new
+            var educationOrganizations = application.EducationOrganizationIds.Select(e => new
             {
                 ApplicationId = id,
                 EducationOrganizationId = e
@@ -157,7 +157,7 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
                 VALUES (@ApplicationId, @EducationOrganizationId);
                 """;
 
-            var educationOrganizations = application.ApplicationEducationOrganizations.Select(e => new
+            var educationOrganizations = application.EducationOrganizationIds.Select(e => new
             {
                 ApplicationId = application.Id,
                 EducationOrganizationId = e

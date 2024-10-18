@@ -14,6 +14,6 @@ public class ApplicationValidator : AbstractValidator<Application>
     {
         RuleFor(a => a.ApplicationName).NotEmpty().MaximumLength(256);
         RuleFor(a => a.ClaimSetName).NotEmpty().MaximumLength(256);
-        RuleForEach(a => a.ApplicationEducationOrganizations).NotNull().GreaterThan(0);
+        RuleForEach(a => a.EducationOrganizationIds).NotNull().GreaterThan(0);
     }
 }

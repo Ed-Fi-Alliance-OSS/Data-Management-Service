@@ -44,7 +44,7 @@ public class ApplicationTests : DatabaseTest
                     ApplicationName = "Test Application",
                     VendorId = _vendorId,
                     ClaimSetName = "Test Claim set",
-                    ApplicationEducationOrganizations = [1, 255911001, 255911002]
+                    EducationOrganizationIds = [1, 255911001, 255911002]
                 };
 
             var result = await _repository.AddAsync(application);
@@ -63,7 +63,7 @@ public class ApplicationTests : DatabaseTest
             application.ApplicationName.Should().Be("Test Application");
             application.ClaimSetName.Should().Be("Test Claim set");
             application.VendorId.Should().Be(_vendorId);
-            application.ApplicationEducationOrganizations.Count.Should().Be(3);
+            application.EducationOrganizationIds.Count.Should().Be(3);
         }
 
         [Test]
@@ -76,7 +76,7 @@ public class ApplicationTests : DatabaseTest
             application.ApplicationName.Should().Be("Test Application");
             application.ClaimSetName.Should().Be("Test Claim set");
             application.VendorId.Should().Be(_vendorId);
-            application.ApplicationEducationOrganizations.Count.Should().Be(3);
+            application.EducationOrganizationIds.Count.Should().Be(3);
         }
     }
 
@@ -93,7 +93,7 @@ public class ApplicationTests : DatabaseTest
                 ApplicationName = "Test Application",
                 VendorId = 15,
                 ClaimSetName = "Test Claim set",
-                ApplicationEducationOrganizations = []
+                EducationOrganizationIds = []
             };
 
             var insertResult = await _repository.AddAsync(_application);
@@ -133,7 +133,7 @@ public class ApplicationTests : DatabaseTest
                 ApplicationName = "Test Application",
                 VendorId = _vendorId,
                 ClaimSetName = "Test Claim set",
-                ApplicationEducationOrganizations = []
+                EducationOrganizationIds = []
             };
 
             var insertResult = await _repository.AddAsync(_application);
@@ -146,7 +146,7 @@ public class ApplicationTests : DatabaseTest
                 ApplicationName = "Test Application",
                 VendorId = 100,
                 ClaimSetName = "Test Claim set",
-                ApplicationEducationOrganizations = []
+                EducationOrganizationIds = []
             };
 
             var updateResult = await _repository.UpdateAsync(applicationUpdate);
@@ -185,7 +185,7 @@ public class ApplicationTests : DatabaseTest
                 ApplicationName = "Test Application",
                 VendorId = _vendorId,
                 ClaimSetName = "Test Claim set",
-                ApplicationEducationOrganizations = []
+                EducationOrganizationIds = []
             };
 
             var insertResult = await _repository.AddAsync(_application);
@@ -193,7 +193,7 @@ public class ApplicationTests : DatabaseTest
 
             _application.Id = (insertResult as InsertResult.InsertSuccess)!.Id;
             _application.ApplicationName = "Update Application Name";
-            _application.ApplicationEducationOrganizations = [1, 2];
+            _application.EducationOrganizationIds = [1, 2];
 
             var updateResult = await _repository.UpdateAsync(_application);
             updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
@@ -208,7 +208,7 @@ public class ApplicationTests : DatabaseTest
 
             var applicationFromDb = ((GetResult<Application>.GetSuccess)getResult).Results.First();
             applicationFromDb.ApplicationName.Should().NotBe("Test Application");
-            applicationFromDb.ApplicationEducationOrganizations.Count.Should().Be(2);
+            applicationFromDb.EducationOrganizationIds.Count.Should().Be(2);
         }
 
         [Test]
@@ -252,7 +252,7 @@ public class ApplicationTests : DatabaseTest
                 ApplicationName = "Application One",
                 VendorId = _vendorId,
                 ClaimSetName = "Test Claim set",
-                ApplicationEducationOrganizations = [1, 2]
+                EducationOrganizationIds = [1, 2]
             };
 
             var insertResult = await _repository.AddAsync(_application1);
@@ -264,7 +264,7 @@ public class ApplicationTests : DatabaseTest
                 ApplicationName = "Application Two",
                 VendorId = _vendorId,
                 ClaimSetName = "Another ClaimSet",
-                ApplicationEducationOrganizations = [3, 4]
+                EducationOrganizationIds = [3, 4]
             };
 
             var insertResult2 = await _repository.AddAsync(_application2);
@@ -302,7 +302,7 @@ public class ApplicationTests : DatabaseTest
             application.ApplicationName.Should().Be("Application One");
             application.ClaimSetName.Should().Be("Test Claim set");
             application.VendorId.Should().Be(_vendorId);
-            application.ApplicationEducationOrganizations.Count.Should().Be(2);
+            application.EducationOrganizationIds.Count.Should().Be(2);
         }
     }
 }

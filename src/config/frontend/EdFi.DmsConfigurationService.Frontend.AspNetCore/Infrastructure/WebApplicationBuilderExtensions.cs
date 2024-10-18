@@ -68,6 +68,7 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder.Services.AddTransient<IClientRepository, ClientRepository>();
         webApplicationBuilder.Services.AddTransient<IRepository<Application>, ApplicationRepository>();
         webApplicationBuilder.Services.AddTransient<IRepository<Vendor>, VendorRepository>();
+        webApplicationBuilder.Services.AddTransient<IVendorRepository, VendorRepository>();
         webApplicationBuilder.Services.AddTransient<ITokenManager, TokenManager>();
 
         var metadataAddress = $"{identitySettings.Authority}/.well-known/openid-configuration";
