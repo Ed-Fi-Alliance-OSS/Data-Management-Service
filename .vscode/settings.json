@@ -125,7 +125,7 @@
     "Testcontainers",
     "TPDM"
   ],
-  "dotnet.defaultSolution": "src/EdFi.DataManagementService.sln",
+  "dotnet.defaultSolution": "src/dms/EdFi.DataManagementService.sln",
   "markdownlint.config": {
     "default": true,
     "line-length": {
