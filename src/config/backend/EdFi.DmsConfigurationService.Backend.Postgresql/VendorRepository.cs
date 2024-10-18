@@ -207,7 +207,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql
                         application.EducationOrganizationIds.Add(educationOrganizationId);
                         return application;
                     },
-                    param: new { Id = vendorId },
+                    param: new { VendorId = vendorId },
                     splitOn: "EducationOrganizationId"
                 );
 
