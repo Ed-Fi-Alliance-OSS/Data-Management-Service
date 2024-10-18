@@ -15,10 +15,10 @@ COPY backend/EdFi.DataManagementService.Backend/ backend/EdFi.DataManagementServ
 COPY backend/EdFi.DataManagementService.Backend.Mssql/ backend/EdFi.DataManagementService.Backend.Mssql/
 COPY backend/EdFi.DataManagementService.Backend.Postgresql/ backend/EdFi.DataManagementService.Backend.Postgresql/
 COPY backend/EdFi.DataManagementService.Backend.OpenSearch/ backend/EdFi.DataManagementService.Backend.OpenSearch/
-COPY .editorconfig .
+COPY --from=parentdir .editorconfig .
+COPY --from=parentdir Directory.Packages.props ./
+COPY --from=parentdir nuget.config .
 
-COPY Directory.Packages.props ./
-COPY nuget.config .
 RUN dotnet restore frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj && \
     dotnet restore backend/EdFi.DataManagementService.Backend.Installer/EdFi.DataManagementService.Backend.Installer.csproj
 

@@ -57,7 +57,7 @@ jobs:
           cd $folder
           dockerfile=$(echo ${{matrix.dockerfile.path}} | awk -F"/" '{print $NF}')
 
-          docker build -f $dockerfile -t ${{ matrix.dockerfile.name }} .
+          docker buildx build -f $dockerfile -t ${{ matrix.dockerfile.name }} . --build-context parentdir=../
 
       - name: Analyze
         uses: docker/scout-action@67eb1afe777307506aaecb9acd9a0e0389cb99ae # v1.5.0
