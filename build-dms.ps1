@@ -366,7 +366,7 @@ $dockerTagDMS = "$($dockerTagBase)/data-management-service"
 
 function DockerBuild {
     Push-Location src/dms/
-    &docker build -t $dockerTagDMS -f Dockerfile .
+    &docker buildx build -t $dockerTagDMS -f Dockerfile . --build-context parentdir=../
     Pop-Location
 }
 

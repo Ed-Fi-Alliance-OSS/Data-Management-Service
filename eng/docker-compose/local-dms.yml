@@ -5,7 +5,10 @@
 
 services:
   dms:
-    build: ../../src/dms/
+    build:
+      context: ../../src/dms/
+      additional_contexts:
+        parentdir: ../../src/
     hostname: dms
     ports:
       - 8080:8080

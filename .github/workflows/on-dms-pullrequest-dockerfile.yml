@@ -43,6 +43,9 @@ jobs:
         with:
           dockerfile: ${{ matrix.dockerfile.path }}
           failure-threshold: error
+          # DL3022 warning: `COPY --from` should reference a previously defined `FROM` alias
+          # ... this rule does not work well when the "from" is an additional _context_.
+          ignore: DL-3022
 
       - name: Log in to Docker Hub
         uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
@@ -57,7 +60,7 @@ jobs:
           cd $folder
           dockerfile=$(echo ${{matrix.dockerfile.path}} | awk -F"/" '{print $NF}')
 
-          docker build -f $dockerfile -t ${{ matrix.dockerfile.name }} .
+          docker buildx build -f $dockerfile -t ${{ matrix.dockerfile.name }} . --build-context parentdir=../
 
       - name: Analyze
         uses: docker/scout-action@67eb1afe777307506aaecb9acd9a0e0389cb99ae # v1.5.0

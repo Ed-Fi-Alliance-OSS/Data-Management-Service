@@ -13,10 +13,10 @@ COPY backend/EdFi.DmsConfigurationService.Backend.Keycloak/ backend/EdFi.DmsConf
 COPY backend/EdFi.DmsConfigurationService.Backend.Mssql/ backend/EdFi.DmsConfigurationService.Backend.Mssql/
 COPY backend/EdFi.DmsConfigurationService.Backend.Postgresql/ backend/EdFi.DmsConfigurationService.Backend.Postgresql/
 COPY datamodel/EdFi.DmsConfigurationService.DataModel/ datamodel/EdFi.DmsConfigurationService.DataModel/
-COPY .editorconfig .
+COPY --from=parentdir .editorconfig .
+COPY --from=parentdir Directory.Packages.props ./
+COPY --from=parentdir nuget.config .
 
-COPY Directory.Packages.props ./
-COPY nuget.config .
 RUN dotnet restore frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/EdFi.DmsConfigurationService.Frontend.AspNetCore.csproj
 
 WORKDIR /source/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore
