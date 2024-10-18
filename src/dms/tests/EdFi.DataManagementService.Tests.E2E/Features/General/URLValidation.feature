@@ -9,6 +9,16 @@ Feature: Validation of the structure of the URLs
               And the system has these "schools"
                   | schoolId  | nameOfInstitution        | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
                   | 255901044 | Grand Bend Middle School | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+              And a POST request is made to "/ed-fi/classPeriods" with
+                  """
+                  {
+                      "schoolReference": {
+                          "schoolId": 255901044
+                      },
+                      "classPeriodName": "Class Period Test",
+                      "officialAttendancePeriod": true
+                  }
+                  """
 
         ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-352
         @API-067 @ignore
@@ -362,16 +372,6 @@ Feature: Validation of the structure of the URLs
 
         @API-235
         Scenario: 12 Ensure client can retrieve information through a case insensitive query
-            Given a POST request is made to "/ed-fi/classPeriods" with
-                  """
-                  {
-                      "schoolReference": {
-                          "schoolId": 255901044
-                      },
-                      "classPeriodName": "Class Period Test",
-                      "officialAttendancePeriod": true
-                  }
-                  """
              When a GET request is made to "/ed-fi/classPeriods?classPeriodName=CLASS+pERIOD+test"
              Then it should respond with 200
               And the response body is
