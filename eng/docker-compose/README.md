@@ -22,6 +22,7 @@ start up different configurations:
 3. `postgresql.yml` starts only PostgreSQL
 4. `local-dms.yml` runs the DMS from local source code.
 5. `published-dms.yml` runs the latest DMS `pre` tag as published to Docker Hub.
+6. `keycloak.yml` runs KeyCloak (identity provider).
 
 Before running these, create a `.env` file. The `.env.example` is a good
 starting point.
@@ -49,6 +50,7 @@ relevant).
 * `start-published-dms.ps1` launches the DMS published build along with all
   necessary services.
 * `start-postgresql.ps1` only starts PostgreSQL.
+* `start-keycloak.ps` only starts KeyCloak.
 
 You can pass `-d` to each of these scripts to shut them down. To delete volumes,
 also append `-v`. Examples:
@@ -75,15 +77,18 @@ passing the -EnableOpenSearchUI option.
 ./start-local-dms.ps1 -EnableOpenSearchUI
 ```
 
+You can also pass `-r` to `start-local-dms.ps1` to force rebuilding the DMS API
+image from source code.
+
+```pwsh
+./start-local-dms.ps1 -r
+```
+
 ## Default URLs
 
 * The DMS API: [http://localhost:8080](http://localhost:8080)
 * Kafka UI: [http://localhost:8088/](http://localhost:8088/)
 * OpenSearch Dashboard: [http://localhost:5601/](http://localhost:5601/)
-
-## Known Problems
-
-* DELETE is not having any impact on OpenSearch.
 
 ## Tips
 
@@ -107,3 +112,17 @@ Delete all indices:
 ```none
 DELETE *
 ```
+
+### OpenSearch Integration Stops Working
+
+If the OpenSearch integration fails, you'll need to dig into log messages in the
+Docker containers. In PostgreSQL, if you see a message indicating that the
+replication setup failed, this may be a Docker problem where it has failed to
+load a startup script properly. Restarting Docker Desktop (and possibly applying
+the latest updates) may fix the issue.
+
+> [!TIP]
+> To diagnose the problem described above, open a terminal in the PostgreSQL container
+> and run `/docker-entrypoint-initdb.d/postgresql-init.sh`. Does the result show you
+> that this is a _file_ or a _directory_? Sometimes Docker Desktop incorrectly loads
+> this as a directory, which means that the file will not execute on startup.
