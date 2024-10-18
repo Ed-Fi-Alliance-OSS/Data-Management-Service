@@ -2,10 +2,10 @@
 
 Feature: Resources "Delete" Operation validations
 
-        Background:
+        Scenario: 00 Background
             Given the Data Management Service must receive a token issued by "http://localhost"
               And user is already authorized
-             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+              And a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "Sick Leave",
@@ -23,13 +23,13 @@ Feature: Resources "Delete" Operation validations
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
                   | 4003     | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
 
-            Given the system has these "schoolYearTypes"
+              And the system has these "schoolYearTypes"
                   | schoolYear | currentSchoolYear | schoolYearDescription |
-                  | 2022       | false             | School Year 2022      |
+                  | 2019       | false             | School Year 2019      |
 
-            Given the system has these "gradingPeriods"
+              And the system has these "gradingPeriods"
                   | schoolReference    | schoolYearTypeReference | gradingPeriodDescriptor                                 | gradingPeriodName              | beginDate  | endDate    | periodSequence | totalInstructionalDays |
-                  | {"schoolId": 4003} | {"schoolYear": 2022}    | uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks | 2021-2022 Fall Semester Exam 1 | 2021-08-23 | 2021-10-03 | 1              | 29                     |
+                  | {"schoolId": 4003} | {"schoolYear": 2019}    | uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks | 2019-2020 Fall Semester Exam 1 | 2019-08-23 | 2019-10-03 | 1              | 29                     |
 
              When a DELETE request is made to referenced resource "/ed-fi/schools/{id}"
              Then it should respond with 409
@@ -52,13 +52,13 @@ Feature: Resources "Delete" Operation validations
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
                   | 4003     | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
 
-            Given the system has these "schoolYearTypes" references
+              And the system has these "schoolYearTypes" references
                   | schoolYear | currentSchoolYear | schoolYearDescription |
-                  | 2022       | false             | School Year 2022      |
+                  | 2020       | false             | School Year 2020      |
 
-            Given the system has these "gradingPeriods"
+              And the system has these "gradingPeriods"
                   | schoolReference    | schoolYearTypeReference | gradingPeriodDescriptor                                 | gradingPeriodName              | beginDate  | endDate    | periodSequence | totalInstructionalDays |
-                  | {"schoolId": 4003} | {"schoolYear": 2022}    | uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks | 2021-2022 Fall Semester Exam 1 | 2021-08-23 | 2021-10-03 | 1              | 29                     |
+                  | {"schoolId": 4003} | {"schoolYear": 2020}    | uri://ed-fi.org/GradingPeriodDescriptor#First Six Weeks | 2020-2021 Fall Semester Exam 1 | 2020-08-23 | 2020-10-03 | 1              | 29                     |
 
              When a DELETE request is made to referenced resource "/ed-fi/schoolYearTypes/{id}"
              Then it should respond with 409
@@ -81,11 +81,11 @@ Feature: Resources "Delete" Operation validations
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
                   | 4005     | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#First Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
 
-            Given the system has these "students" references
+              And the system has these "students" references
                   | studentUniqueId | birthDate  | firstName   | lastSurname |
                   | "987"           | 2017-08-23 | "firstname" | "lastname"  |
 
-            Given the system has these "studentSchoolAssociations"
+              And the system has these "studentSchoolAssociations"
                   | entryDate  | schoolReference    | studentReference           | entryGradeLevelDescriptor                        |
                   | 2021-07-23 | {"schoolId": 4005} | {"studentUniqueId": "987"} | uri://ed-fi.org/GradeLevelDescriptor#First grade |
 
