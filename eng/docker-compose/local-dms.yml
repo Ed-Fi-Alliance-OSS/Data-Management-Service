@@ -39,9 +39,9 @@ services:
       MINIMUM_THROUGHPUT: ${MINIMUM_THROUGHPUT:-2}
       BREAK_DURATION_SECONDS: ${BREAK_DURATION_SECONDS:-30}
       OPENSEARCH_URL: ${OPENSEARCH_URL:-http://dms-opensearch:9200}
-      ENFORCE_AUTHORIZATION: ${ENFORCE_AUTHORIZATION:-false}
-      SERVICE_ROLE: ${SERVICE_ROLE:-dms-client}
-      AUTHORITY: ${AUTHORITY:-http://dms-keycloak:8080/realms/dms}
-      AUDIENCE: ${AUDIENCE:-account}
-      REQUIRE_HTTPS_METADATA: ${REQUIRE_HTTPS_METADATA:-false}
-      ROLE_CLAIM_TYPE: ${ROLE_CLAIM_TYPE:-http://schemas\\.microsoft\\.com/ws/2008/06/identity/claims/role}
+      ENFORCE_AUTHORIZATION: ${IDENTITY_ENFORCE_AUTHORIZATION:-false}
+      SERVICE_ROLE: ${IDENTITY_SERVICE_ROLE:-dms-client}
+      AUTHORITY: ${IDENTITY_AUTHORITY:-http://dms-keycloak:8080/realms/dms}
+      AUDIENCE: ${IDENTITY_AUDIENCE:-account}
+      REQUIRE_HTTPS_METADATA: ${IDENTITY_REQUIRE_HTTPS_METADATA:-false}
+      ROLE_CLAIM_TYPE: ${IDENTITY_ROLE_CLAIM_TYPE:-http://schemas\\.microsoft\\.com/ws/2008/06/identity/claims/role}
