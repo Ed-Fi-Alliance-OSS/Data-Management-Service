@@ -23,7 +23,11 @@ param (
 
     # Enable KafkaUI and OpenSearch Dashboard
     [Switch]
-    $EnableOpenSearchUI
+    $EnableOpenSearchUI,
+
+     # Enforce Authorization
+     [Switch]
+     $EnforceAuthorization
 )
 
 $files = @(
@@ -32,10 +36,13 @@ $files = @(
     "-f",
     "kafka-opensearch.yml",
     "-f",
-    "keycloak.yml",
-    "-f",
     "local-dms.yml"
 )
+
+if($EnforceAuthorization)
+{
+    $files += @("-f", "keycloak.yml")
+}
 
 if($EnableOpenSearchUI)
 {
