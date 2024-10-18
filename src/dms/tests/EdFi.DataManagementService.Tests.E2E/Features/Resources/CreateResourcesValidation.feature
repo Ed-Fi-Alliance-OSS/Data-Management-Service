@@ -226,7 +226,7 @@ Feature: Resources "Create" Operation validations
                     }
                   """
 
-        @API-160 @POST
+        @API-160 @API-233 @POST
         Scenario: 10 Create a document with an extra property (overpost) (Resource)
              When a POST request is made to "/ed-fi/educationContents" with
                   """
@@ -314,7 +314,7 @@ Feature: Resources "Create" Operation validations
                     }
                   """
              Then it should respond with 201
-              And the response headers includes
+              And the response headers include
                   """
                     {
                         "location": "/ed-fi/schools/{id}"
@@ -611,7 +611,7 @@ Feature: Resources "Create" Operation validations
                   }
                   """
              Then it should respond with 201
-              And the response headers includes
+              And the response headers include
                   """
                     {
                         "location": "/ed-fi/students/{id}"
@@ -689,7 +689,7 @@ Feature: Resources "Create" Operation validations
                   }
                   """
              Then it should respond with 201
-              And the response headers includes
+              And the response headers include
                   """
                     {
                         "location": "/ed-fi/students/{id}"

@@ -18,7 +18,7 @@ Feature: Create a Descriptor
                   }
                   """
              Then it should respond with 201
-              And the response headers includes
+              And the response headers include
                   """
                     {
                         "location": "/ed-fi/absenceEventCategoryDescriptors/{id}"
@@ -260,7 +260,7 @@ Feature: Create a Descriptor
 
         @API-014
         Scenario: 09 Post a new descriptor with an extra property (overpost)
-            Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "Sick Leave2",
@@ -288,7 +288,7 @@ Feature: Create a Descriptor
 
         @API-015
         Scenario: 10 Post a new descriptor with invalid JSON (trailing comma)
-            Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "Sick Leave",
@@ -347,7 +347,7 @@ Feature: Create a Descriptor
 
         @API-017
         Scenario: 12 Post a new descriptor with required attributes only
-            Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {
                         "codeValue": "SL",

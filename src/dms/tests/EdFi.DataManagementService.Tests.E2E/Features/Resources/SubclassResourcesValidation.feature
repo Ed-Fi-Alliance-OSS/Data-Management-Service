@@ -3,14 +3,14 @@ Feature: Subclass resources validation
         Background:
             Given the system has these "localEducationAgencies"
                   | localEducationAgencyId | nameOfInstitution | localEducationAgencyCategoryDescriptor                             | categories                                                                                                                                    |
-                  | 255901                 | Grand Bend ISD    | uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Independent | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider" }] |
+                  | 155901                 | Grand Bend ISD    | uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Independent | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider" }] |
 
         @API-183
         Scenario: 01 Ensure client can't get create a school with the same ID as another Subclass
              When a POST request is made to "/ed-fi/schools" with
                   """
                   {
-                      "schoolId": 255901,
+                      "schoolId": 155901,
                       "nameOfInstitution": "School Test",
                       "educationOrganizationCategories": [
                           {
@@ -35,7 +35,7 @@ Feature: Subclass resources validation
                       "correlationId": null,
                       "validationErrors": {},
                       "errors": [
-                      "A natural key conflict occurred when attempting to create a new resource School with a duplicate key. The duplicate keys and values are (schoolId = 255901)"
+                      "A natural key conflict occurred when attempting to create a new resource School with a duplicate key. The duplicate keys and values are (schoolId = 155901)"
                       ]
                   }
                   """

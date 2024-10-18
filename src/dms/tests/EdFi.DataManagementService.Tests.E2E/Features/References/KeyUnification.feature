@@ -1,6 +1,6 @@
 Feature: Validation of Natural Key Unification
 
-        Background:
+        Scenario: 00 Background
             Given the system has these descriptors
                   | descriptorValue                                                      |
                   | uri://ed-fi.org/GradeLevelDescriptor#TenthGrade                      |
@@ -16,9 +16,25 @@ Feature: Validation of Natural Key Unification
               And the system has these "Sessions"
                   | sessionName | schoolReference   | schoolYearTypeReference | beginDate  | endDate    | termDescriptor                                   | totalInstructionalDays |
                   | Session1    | {"schoolId": 123} | {"schoolYear": 2025}    | 2022-01-04 | 2022-05-27 | "uri://ed-fi.org/TermDescriptor#Spring Semester" | 88                     |
-              And the system has these "Courses"
-                  | courseCode | numberOfParts | identificationCode | schoolId | courseTitle  | educationOrganizationReference   | identificationCodes                                                                                                                                                                                                                                            |
-                  | Course1    | 1             | ALG-1              | 123      | Course1Title | {"educationOrganizationId": 123} | [{"courseIdentificationSystemDescriptor": "uri://ed-fi.org/courseIdentificationSystemDescriptor#LEA course code", "assigningOrganizationIdentificationCode": "IdentificationCode1", "courseCatalogURL": "URL12", "identificationCode": "IdentificationCode1"}] |
+              And a POST request is made to "/ed-fi/courses" with
+                  """
+                   {
+                     "courseCode": "Course1",
+                     "courseTitle": "Title",
+                     "identificationCodes": [
+                       {
+                         "courseIdentificationSystemDescriptor": "uri://ed-fi.org/courseIdentificationSystemDescriptor#LEA course code",
+                         "assigningOrganizationIdentificationCode": "IdentificationCode1",
+                         "courseCatalogURL": "URL12",
+                         "identificationCode": "IdentificationCode1"
+                        }
+                     ],
+                     "educationOrganizationReference": {
+                         "educationOrganizationId": 123
+                     },
+                     "numberOfParts": 1
+                   }
+                  """
 
         @API-100
         Scenario: 01 Verify clients can create a resource that contains multiple references with an overlapping natural key field
@@ -136,6 +152,9 @@ Feature: Validation of Natural Key Unification
 
         @API-103
         Scenario: 04 Verify clients can create a resource with a reference to a resource with a complex identity (CourseOffering)
+            Given the system has these "courseOfferings"
+                  | localCourseCode | courseReference                                         | schoolReference  | sessionReference                                                |
+                  | ALG-1           | {"courseCode":"Course1", "educationOrganizationId":123} | {"schoolId":123} | {"schoolId":123, "schoolYear": 2025, "sessionName":"Session1" } |
              When a POST request is made to "/ed-fi/sections" with
                   """
                   {
