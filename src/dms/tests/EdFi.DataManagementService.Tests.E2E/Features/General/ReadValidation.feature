@@ -1,80 +1,19 @@
 Feature: Check extra functionalities for GET requests
 
         Background:
-            Given a POST request is made to "/ed-fi/students" with
-                  """
-                  {
-                      "studentUniqueId": "604824",
-                      "birthDate": "2010-01-13",
-                      "firstName": "Traci",
-                      "lastSurname": "Mathews"
-                  }
-                  """
-              And a POST request is made to "/ed-fi/students" with
-                  """
-                  {
-                      "studentUniqueId": "604829",
-                      "birthDate": "2015-08-17",
-                      "firstName": "April",
-                      "lastSurname": "Shelton"
-                  }
-                  """
-              And the system has these descriptors
+            Given the system has these descriptors
                   | descriptorValue                                                                            |
                   | uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider |
                   | uri://ed-fi.org/GradeLevelDescriptor#Postsecondary                                         |
-              And a POST request is made to "/ed-fi/schools" with
-                  """
-                  {
-                      "schoolId": 4,
-                      "nameOfInstitution": "UT Austin College of Education Graduate",
-                      "educationOrganizationCategories": [
-                          {
-                              "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"
-                          }
-                      ],
-                      "gradeLevels": [
-                          {
-                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
-                          }
-                      ]
-                  }
-                  """
-              And a POST request is made to "/ed-fi/schools" with
-                  """
-                  {
-                      "schoolId": 6,
-                      "nameOfInstitution": "UT Austin College of Education Under Graduate",
-                      "educationOrganizationCategories": [
-                          {
-                              "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"
-                          }
-                      ],
-                      "gradeLevels": [
-                          {
-                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
-                          }
-                      ]
-                  }
-                  """
-              And a POST request is made to "/ed-fi/schools" with
-                  """
-                  {
-                      "schoolId": 5,
-                      "nameOfInstitution": "UT Austin College of Education Graduate",
-                      "educationOrganizationCategories": [
-                          {
-                              "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"
-                          }
-                      ],
-                      "gradeLevels": [
-                          {
-                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
-                          }
-                      ]
-                  }
-                  """
-
+            Given the system has these "schools"
+                  | schoolId  | nameOfInstitution            | gradeLevels                                                                         | educationOrganizationCategories                                                                                   |
+                  | 255901044 | Grand Bend Middle School     | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"} ]    | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+                  | 255901107 | Grand Bend Elementary School | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#First grade"} ]    | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+                  | 255901634 | Grand Bend High School       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+            Given the system has these "students"
+                  | studentUniqueId | birthDate  | firstName | lastSurname |
+                  | 604829          | 2010-01-13 | Traci     | Mathews     |
+                  | 604829          | 2015-08-17 | April     | Shelton     |
 
         @ignore
         Scenario: 01 Ensure that a resource can be retrieved by name
@@ -118,49 +57,50 @@ Feature: Check extra functionalities for GET requests
                   """
                   [
                       {
-                          "schoolId": 6,
-                          "nameOfInstitution": "UT Austin College of Education Under Graduate",
+                          "schoolId": 255901634,
+                          "nameOfInstitution": "Grand Bend High School",
                           "educationOrganizationCategories": [
                               {
-                                  "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"
+                                  "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
                               }
                           ],
                           "gradeLevels": [
                               {
-                                  "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
-                              }
-                          ],
-                          "_lastModifiedDate": "2024-05-10T21:16:55.435633Z"
-                      },
-                      {
-                          "schoolId": 5,
-                          "nameOfInstitution": "UT Austin College of Education Graduate",
-                          "educationOrganizationCategories": [
-                              {
-                                  "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"
-                              }
-                          ],
-                          "gradeLevels": [
-                              {
-                                  "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
-                              }
-                          ],
-                          "_lastModifiedDate": "2024-06-05T19:32:01.5975013Z"
-                      },
-                      {
-                          "schoolId": 4,
-                          "nameOfInstitution": "UT Austin College of Education Graduate",
-                          "educationOrganizationCategories": [
-                              {
-                                  "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"
-                              }
-                          ],
-                          "gradeLevels": [
-                              {
-                                "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
+                                  "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade"
                               }
                         ],
-                        "_lastModifiedDate": "2024-06-17T19:27:09.9480071Z"
+                        "_lastModifiedDate": "2024-09-20T18:15:46.8229446Z"
+                      },
+                      {
+                          "schoolId": 255901107,
+                          "nameOfInstitution": "Grand Bend Elementary School",
+                          "educationOrganizationCategories": [
+                              {
+                                  "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                              }
+                          ],
+                          "gradeLevels": [
+                              {
+                                  "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#First grade"
+                              }
+                          ],
+                        "_lastModifiedDate": "2024-05-10T20:56:29.7546249Z"
+                      },
+                      {
+                          "id": "ead36072b993441db409fc7f8c4ec31e",
+                          "schoolId": 255901044,
+                          "nameOfInstitution": "Grand Bend Middle School",
+                          "educationOrganizationCategories": [
+                              {
+                                  "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                              }
+                          ],
+                          "gradeLevels": [
+                              {
+                                  "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
+                              }
+                          ],
+                          "_lastModifiedDate": "2024-05-10T20:56:29.7546249Z"
                       }
                   ]
                   """
