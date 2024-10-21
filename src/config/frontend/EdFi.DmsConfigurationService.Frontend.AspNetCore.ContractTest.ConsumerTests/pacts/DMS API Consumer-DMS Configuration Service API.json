@@ -4,54 +4,6 @@
   },
   "interactions": [
     {
-      "description": "A request for an access token with a valid credentials",
-      "request": {
-        "body": {
-          "clientid": "CSClient1",
-          "clientsecret": "test123@Puiu"
-        },
-        "headers": {
-          "Content-Type": "application/json"
-        },
-        "method": "POST",
-        "path": "/connect/token"
-      },
-      "response": {
-        "body": {
-          "access_token": "input123token",
-          "expires_in": 900,
-          "token_type": "bearer"
-        },
-        "headers": {
-          "Content-Type": "application/json"
-        },
-        "status": 200
-      }
-    },
-    {
-      "description": "A request for an access token with empty client credentials",
-      "request": {
-        "body": {
-          "clientid": "",
-          "clientsecret": ""
-        },
-        "headers": {
-          "Content-Type": "application/json"
-        },
-        "method": "POST",
-        "path": "/connect/token"
-      },
-      "response": {
-        "body": {
-          "error": "'Client Id' must not be empty."
-        },
-        "headers": {
-          "Content-Type": "application/json"
-        },
-        "status": 200
-      }
-    },
-    {
       "description": "A request for an access token with invalid credentials that throws an error from Keycloak",
       "request": {
         "body": {

@@ -36,18 +36,20 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
         {
             this.next = next;
             _fakeTokenManager = fakeTokenManager;
-
-            writer.WriteLine("This will appear in the test results.");
-
-            Console.WriteLine($"FakeTokenManager instance Middleware: {_fakeTokenManager.GetHashCode()}");
-
             this.providerStates = new Dictionary<string, Action>
             {
                 {
                     "A request for an access token with invalid credentials that throws an error from Keycloak",
                     _fakeTokenManager.SetShouldThrowExceptionToTrue
+                    //SetShouldThrowExceptionToTrue
                 }
             };
+        }
+
+        private void SetShouldThrowExceptionToTrue()
+        {
+            // Set ShouldThrowException to true
+            this._fakeTokenManager.ShouldThrowException = true;
         }
 
         public async Task InvokeAsync(HttpContext context)
