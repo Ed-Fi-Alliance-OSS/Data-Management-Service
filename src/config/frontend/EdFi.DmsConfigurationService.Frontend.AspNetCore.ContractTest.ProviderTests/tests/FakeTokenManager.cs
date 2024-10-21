@@ -25,6 +25,7 @@ public class FakeTokenManager : ITokenManager
         // Set ShouldThrowException to true when this method is called
         ShouldThrowException = true;
     }
+
     public Task<string> GetAccessTokenAsync(IEnumerable<KeyValuePair<string, string>> parameters)
     {
         try

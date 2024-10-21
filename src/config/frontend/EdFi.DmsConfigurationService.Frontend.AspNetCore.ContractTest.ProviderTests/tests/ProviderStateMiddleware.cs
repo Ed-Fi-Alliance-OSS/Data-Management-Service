@@ -34,13 +34,8 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
 
         public ProviderStateMiddleware(RequestDelegate next, FakeTokenManager fakeTokenManager)
         {
-            var writer = TestContext.Out;
             this.next = next;
             _fakeTokenManager = fakeTokenManager;
-            writer.WriteLine("This will appear in the test results.");
-
-            Console.WriteLine($"FakeTokenManager instance Middleware: {_fakeTokenManager.GetHashCode()}");
-
             this.providerStates = new Dictionary<string, Action<IDictionary<string, string>>>
             {
                 {
