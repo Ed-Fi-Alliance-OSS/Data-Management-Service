@@ -26,7 +26,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
             PropertyNameCaseInsensitive = true
         };
 
-        private readonly IDictionary<string, Action<IDictionary<string, string>>> providerStates;
+        private readonly IDictionary<string, Action> providerStates;
         private readonly RequestDelegate next;
 
         // This should be an instance of your FakeTokenManager, which should be passed in.
@@ -41,7 +41,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
 
             Console.WriteLine($"FakeTokenManager instance Middleware: {_fakeTokenManager.GetHashCode()}");
 
-            this.providerStates = new Dictionary<string, Action<IDictionary<string, string>>>
+            this.providerStates = new Dictionary<string, Action>
             {
                 {
                     "A request for an access token with invalid credentials that throws an error from Keycloak",
@@ -73,7 +73,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
                 //A null or empty provider state key must be handled
                 if (!IsNullOrEmpty(providerState?.State))
                 {
-                    this.providerStates[providerState.State].Invoke(providerState.Params);
+                    this.providerStates[providerState.State].Invoke();
                 }
 
                 await context.Response.WriteAsync(Empty);

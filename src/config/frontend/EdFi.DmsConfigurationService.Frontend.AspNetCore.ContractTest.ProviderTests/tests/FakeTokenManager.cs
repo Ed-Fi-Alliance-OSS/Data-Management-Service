@@ -20,7 +20,7 @@ public class FakeTokenManager : ITokenManager
         """;
     public bool ShouldThrowException { get; set; } = false; // Property to control exception throwing
 
-    public void SetShouldThrowExceptionToTrue(IDictionary<string, string> parameters)
+    public void SetShouldThrowExceptionToTrue()
     {
         // Set ShouldThrowException to true when this method is called
         ShouldThrowException = true;
