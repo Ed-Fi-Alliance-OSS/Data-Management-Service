@@ -3,7 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
+using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
@@ -14,17 +15,16 @@ public class TokenEndpointModule : IEndpointModule
         endpoints.MapPost("/oauth/token", GenerateToken);
     }
 
-    internal static async Task GenerateToken(HttpContext httpContext)
+    internal static async Task GenerateToken(HttpContext httpContext, IOptions<AppSettings> appSettings)
     {
         // Create Http client to proxy request
         var httpClientFactory = httpContext.RequestServices.GetRequiredService<IHttpClientFactory>();
         var client = httpClientFactory.CreateClient();
-        var forwardingAddress = "http://localhost:3000/";
+        var forwardingAddress = appSettings.Value.AuthenticationService;
         var request = new HttpRequestMessage(HttpMethod.Post, forwardingAddress);
 
-
         request!.Content = new StreamContent(httpContext.Request.Body);
-        request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(httpContext.Request.ContentType ?? "");
+        request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
 
         var response = await client.SendAsync(request);
 
