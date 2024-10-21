@@ -23,6 +23,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
 
         private IHost _host;
         private IPactVerifier verifier;
+        private Uri pactURL = new Uri("http://localhost:5126");
 
         public ProviderIdentityTest()
         {
@@ -30,7 +31,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
                 .ConfigureWebHostDefaults(webBuilder =>
                 {
                     webBuilder.UseEnvironment("Test");
-                    webBuilder.UseUrls("http://localhost:5126"); // Explicitly set the URL and port
+                    webBuilder.UseUrls(pactURL.ToString()); // Explicitly set the URL and port
                     webBuilder.UseStartup<TestStartup>(); // Use TestStartup class for test configuration
                                                           // Configure logging.
                     webBuilder.ConfigureLogging(logging =>
@@ -64,8 +65,9 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
                                                    "pacts",
                                                    "DMS API Consumer-DMS Configuration Service API.json");
 
-            verifier!.ServiceProvider("DMS Configuration Service API", new Uri("http://localhost:5126"))
+            verifier!.ServiceProvider("DMS Configuration Service API", pactURL)
                 .WithFileSource(new FileInfo(pactFile))
+                .WithProviderStateUrl(new Uri("http://localhost:5126/provider-states"))
                 .Verify();
 
         }

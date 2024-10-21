@@ -30,21 +30,35 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
         public void Configure(IApplicationBuilder app)
         {
             app.UseRouting();
+
+            // Get the FakeTokenManager instance from the DI container.
+            var fakeTokenManager = app.ApplicationServices.GetRequiredService<ITokenManager>() as FakeTokenManager;
+            if (fakeTokenManager == null)
+            {
+                throw new InvalidOperationException("FakeTokenManager instance could not be resolved.");
+            }
+            // Use the middleware and pass the FakeTokenManager instance to it.
+            app.UseMiddleware<ProviderStateMiddleware>(fakeTokenManager);
+
             app.UseEndpoints(endpoints =>
             {
                 _ = endpoints.MapPost("/connect/token", async (TokenRequest request, ITokenManager tokenManager) =>
                 {
-                    // Use the tokenManager to get the access token
-                    var token = await tokenManager.GetAccessTokenAsync(new List<KeyValuePair<string, string>>
-                                {
-                                    new KeyValuePair<string, string>("client_id", request.ClientId),
-                                    new KeyValuePair<string, string>("client_secret", request.ClientSecret)
-                                });
+                    if (tokenManager is FakeTokenManager fakeTokenManager && fakeTokenManager.ShouldThrowException)
                     {
-                        // Assuming the token is in JSON format as defined in the FakeTokenManager
-                        return Results.Text(token, "application/json");
+                        var errorResponse = new { error = "Error from Keycloak" };
+                        return Results.Json(errorResponse, statusCode: 401);
                     }
+
+                    var token = await tokenManager.GetAccessTokenAsync(new List<KeyValuePair<string, string>>
+                    {
+                        new KeyValuePair<string, string>("client_id", request.ClientId),
+                        new KeyValuePair<string, string>("client_secret", request.ClientSecret)
+                    });
+
+                    return Results.Text(token, "application/json");
                 });
+
             });
         }
 

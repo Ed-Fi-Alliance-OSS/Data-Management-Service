@@ -12,9 +12,10 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest;
 
 public class ConsumerIdentityTest
 {
-    private readonly IPactBuilderV3 pact;
+    private IPactBuilderV3 pact;
 
-    public ConsumerIdentityTest()
+    [SetUp]
+    public void Setup()
     {
         pact = Pact.V3("DMS API Consumer", "DMS Configuration Service API").WithHttpInteractions();
     }
@@ -22,7 +23,7 @@ public class ConsumerIdentityTest
     [Test]
     public async Task Given_a_valid_credentials()
     {
-        pact.UponReceiving("given a valid credentials")
+        pact.UponReceiving("A request for an access token with a valid credentials")
             .WithRequest(HttpMethod.Post, "/connect/token")
             .WithJsonBody(new
             {
@@ -52,6 +53,70 @@ public class ConsumerIdentityTest
             content.Should().NotBeNull();
             content.Should().Contain("input123token");
             content.Should().Contain("bearer");
+        });
+    }
+
+    [Test]
+    public async Task Given_empty_client_credentials()
+    {
+        pact.UponReceiving("A request for an access token with empty client credentials")
+            .WithRequest(HttpMethod.Post, "/connect/token")
+            .WithHeader("Content-Type", "application/json")
+            .WithJsonBody(new
+            {
+                clientid = "",
+                clientsecret = ""
+            })
+            .WillRespond()
+            .WithStatus(HttpStatusCode.OK)
+            .WithHeader("Content-Type", "application/json")
+            .WithJsonBody(new
+            {
+                error = "'Client Id' must not be empty."
+            });
+
+        await pact.VerifyAsync(async ctx =>
+        {
+            var client = new HttpClient();
+
+            // Act
+            var requestBody = new { clientid = "", clientsecret = "" };
+            var response = await client.PostAsJsonAsync($"{ctx.MockServerUri}connect/token", requestBody);
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            content.Should().NotBeNull();
+            content.Should().Contain("'Client Id' must not be empty.");
+        });
+    }
+
+    [Test]
+    public async Task When_error_from_backend()
+    {
+        pact.UponReceiving("A request for an access token with invalid credentials that throws an error from Keycloak")
+            .WithRequest(HttpMethod.Post, "/connect/token")
+            .WithHeader("Content-Type", "application/json")
+            .WithJsonBody(new
+            {
+                clientid = "client123",
+                clientsecret = "clientsecret123"
+            })
+            .WillRespond()
+            .WithStatus(HttpStatusCode.Unauthorized)
+            .WithHeader("Content-Type", "application/json")
+            .WithJsonBody(new
+            {
+                error = "'Error from Keycloak"
+            });
+
+        await pact.VerifyAsync(async ctx =>
+        {
+            var client = new HttpClient();
+            // Act
+            var requestBody = new { clientid = "client123", clientsecret = "clientsecret123" };
+            var response = await client.PostAsJsonAsync($"{ctx.MockServerUri}connect/token", requestBody);
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            content.Should().Contain("Error from Keycloak");
         });
     }
 }

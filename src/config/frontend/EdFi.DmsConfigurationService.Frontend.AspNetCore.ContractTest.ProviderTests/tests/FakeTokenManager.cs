@@ -18,11 +18,62 @@ public class FakeTokenManager : ITokenManager
             "token_type": "bearer"
         }
         """;
+    public bool ShouldThrowException { get; set; } = false; // Property to control exception throwing
 
+    public void SetShouldThrowExceptionToTrue(IDictionary<string, string> parameters)
+    {
+        // Set ShouldThrowException to true when this method is called
+        ShouldThrowException = true;
+    }
     public Task<string> GetAccessTokenAsync(IEnumerable<KeyValuePair<string, string>> parameters)
     {
+        try
+        {
+            var clientIdPair = parameters.FirstOrDefault(p => p.Key == "client_id");
+            var clientSecretPair = parameters.FirstOrDefault(p => p.Key == "client_secret");
+
+            var clientId = clientIdPair.Value ?? string.Empty;
+            var clientSecret = clientSecretPair.Value ?? string.Empty;
+
+            // Check if ShouldThrowException is true to throw an error
+            if (ShouldThrowException)
+            {
+                throw new Exception("Error from Keycloak");
+            }
+
+            if (string.IsNullOrEmpty(clientId))
+            {
+                return Task.FromResult(
+                """
+            {
+                "error": "'Client Id' must not be empty."
+            }
+            """);
+            }
+
+            if (string.IsNullOrEmpty(clientSecret))
+            {
+                return Task.FromResult(
+                """
+            {
+                "error": "'Client Secret' must not be empty."
+            }
+            """);
+            }
+
+            // Return the fake token if the parameters are valid
+            return Task.FromResult(FakeToken);
+
+        }
+        catch (Exception ex)
+        {
+            // Log the exception or perform any error handling as needed
+            // Return a JSON-formatted error message with the exception details
+            return Task.FromResult(
+                $"{{\"error\": \"An unexpected error occurred: {ex.Message}\"}}");
+        }
         // You can add custom logic here if needed
-        return Task.FromResult(FakeToken);
+        //return Task.FromResult(FakeToken);
     }
 }
 
