@@ -121,7 +121,7 @@ public class CoreEndpointModuleTests
         }
 
         [Test]
-        public void Then_it_responds_with_status_OK()
+        public void Then_it_responds_with_status_forbidden()
         {
             _response!.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         }
