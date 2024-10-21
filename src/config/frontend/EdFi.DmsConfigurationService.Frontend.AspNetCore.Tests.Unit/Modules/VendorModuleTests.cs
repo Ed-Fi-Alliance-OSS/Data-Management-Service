@@ -545,7 +545,7 @@ public class VendorModuleTests
             using var client = SetUpClient();
 
             // Act
-            var response = await client.GetAsync("/v2/vendors/1/applications");
+            var response = await client.GetAsync("/v2/vendors/2/applications");
 
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
