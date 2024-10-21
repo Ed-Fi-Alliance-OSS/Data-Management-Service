@@ -13,6 +13,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Authentication;
 using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 using Microsoft.Extensions.Configuration;
+using EdFi.DataManagementService.Core.External.Interface;
+using FakeItEasy;
+using EdFi.DataManagementService.Core.External.Frontend;
+using System.Text.Json.Nodes;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 
@@ -28,6 +32,8 @@ public class CoreEndpointModuleTests
         public async Task SetUp()
         {
             // Arrange
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.Get(A<FrontendRequest>.Ignored)).Returns(new FakeFrontendResponse());
             await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -45,6 +51,7 @@ public class CoreEndpointModuleTests
                 builder.ConfigureServices(
                     (collection) =>
                     {
+                        collection.AddTransient((x) => apiService);
                         collection.AddAuthentication(AuthenticationConstants.AuthenticationSchema)
                         .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(AuthenticationConstants.AuthenticationSchema, options => { });
 
@@ -136,6 +143,8 @@ public class CoreEndpointModuleTests
         public async Task SetUp()
         {
             // Arrange
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.Get(A<FrontendRequest>.Ignored)).Returns(new FakeFrontendResponse());
             await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -150,6 +159,11 @@ public class CoreEndpointModuleTests
                            );
                        }
                    );
+                builder.ConfigureServices(
+                   (collection) =>
+                   {
+                       collection.AddTransient((x) => apiService);
+                   });
             });
             using var client = factory.CreateClient();
 
@@ -169,4 +183,15 @@ public class CoreEndpointModuleTests
             _response!.StatusCode.Should().Be(HttpStatusCode.OK);
         }
     }
+}
+
+public record FakeFrontendResponse : IFrontendResponse
+{
+    public int StatusCode => 200;
+
+    public JsonNode? Body => null;
+
+    public Dictionary<string, string> Headers => [];
+
+    public string? LocationHeaderPath => null;
 }
