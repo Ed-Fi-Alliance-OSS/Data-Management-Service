@@ -208,7 +208,7 @@ Please refer "Creating a Configuration Service Client" section above
         "Authority": "http://your-keycloak-url:port/realms/<your-realm>",
         "Audience": "account",
         "RequireHttpsMetadata": false,
-        "RoleClaimType": "http://schemas\\.microsoft\\.com/ws/2008/06/identity/claims/role"
+        "RoleClaimType": "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
     ```
   
 ## Shutting down the Keycloak container

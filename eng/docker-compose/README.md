@@ -77,6 +77,11 @@ passing the -EnableOpenSearchUI option.
 ./start-local-dms.ps1 -EnableOpenSearchUI
 ```
 
+```pwsh
+# To set up the Keycloak container for enabling authorization 
+./start-local-dms.ps1 -EnforceAuthorization
+```
+
 You can also pass `-r` to `start-local-dms.ps1` to force rebuilding the DMS API
 image from source code.
 

@@ -25,9 +25,9 @@ param (
     [Switch]
     $EnableOpenSearchUI,
 
-     # Enforce Authorization
-     [Switch]
-     $EnforceAuthorization
+    # Enforce Authorization
+    [Switch]
+    $EnforceAuthorization
 )
 
 $files = @(
