@@ -20,40 +20,40 @@ Keycloak locally using docker-compose.
     ./start-keycloak.ps1
     ```
 
-    ![alt text](./images/image-12.png)
+    ![Start Keycloak](./images/image-12.png)
 
 3. After executing either of the two commands, you can verify that Keycloak is
    up and running by checking Docker Desktop.
 
-    ![alt text](./images/image-13.png)
+    ![Keycloak setup in docker](./images/image-13.png)
 
 4. The Keycloak console can be accessed on: <http://localhost:8045/>
 
 5. On this page, provide your username (admin) and password (admin)
 
-    ![alt text](./images/image-2.png)
+    ![Keycloak login page](./images/image-2.png)
 
 6. Once authenticated, you will enter the settings
 
-    ![alt text](./images/image-14.png)
+    ![Default realm page](./images/image-14.png)
 
 ## Creating a New Realm
 
  1. In the top-left corner, select the dropdown labeled `master` (or whatever
     the default realm is called).
 
-    ![alt text](./images/image-4.png)
+    ![Create realm](./images/image-4.png)
 
  2. Click "Create Realm" to create a new one.
 
  3. Enter a unique Realm Name (e.g., edfi) and click "Enabled", then click
     "Create".
 
-    ![alt text](./images/image-5.png)
+    ![Realm setup](./images/image-5.png)
 
  4. Now home screen will show the newly created realm
 
-    ![alt text](./images/image-6.png)
+    ![Created edfi realm](./images/image-6.png)
 
 ## Configuring service specific realm roles
 
@@ -70,27 +70,27 @@ Keycloak locally using docker-compose.
 1. From the left menu, select Clients.
 2. Click Create client to add a new client.
 
-    ![alt text](./images/image-7.png)
+    ![Create new client](./images/image-7.png)
 
 3. In General settings, make sure to select OpenID Connect for Client type and
    enter the Client ID (`DmsConfigurationService`). This will be the identifier
    for your application.
 
-    ![alt text](./images/image-8.png)
+    ![Client general settings](./images/image-8.png)
 
 4. In Capability config, enable `Client authentication`, `Authorization`, in
    Authentication Flow section select `Standard flow` and `Direct access grants`
 
-    ![alt text](./images/image-9.png)
+    ![Client capability settings](./images/image-9.png)
 
 5. In Login settings, enter the Root URL of your application (e.g.,
    <http://localhost:5126>)
 
-    ![alt text](./images/image-10.png)
+    ![Client login settings](./images/image-10.png)
 
 6. Click Save
 
-    ![alt text](./images/image-11.png)
+    ![Client successfully created](./images/image-11.png)
 
 7. Once the client is created, you will be directed to the `Client details` page,
    where you can view the client information.
@@ -101,9 +101,9 @@ Keycloak locally using docker-compose.
    admin', and then click Assign. This will authorize the client to manage the
    realm.
 
-    ![alt text](./images/image-15.png)
+    ![Service accounts roles tab](./images/image-15.png)
 
-    ![alt text](./images/image-16.png)
+    ![Realm admin role assignment](./images/image-16.png)
 
 ## Time to update Configuration Service appsettings
 
@@ -162,28 +162,28 @@ Please refer "Creating a Configuration Service Client" section above
 4. Once you have created the role, assign it to your client by navigating to the
    `Service Account Roles` tab under the client settings.
 
-   ![alt text](./images/image-17.png)
+   ![DMS specific client creation](./images/image-17.png)
 
-   ![alt text](./images/image-18.png)
+   ![Assign role to DMS client](./images/image-18.png)
 
 5. After assigning the role, you need to create a mapper to map the role to a
  token claim.
 
    1. Navigate to the Client Scopes tab, click on the `<your-client-name>-dedicated`scope
-    ![alt text](./images/image-19.png)
-    ![alt text](./images/image-20.png)
+    ![Update client scope](./images/image-19.png)
+    ![Dedicated scope](./images/image-20.png)
    2. Click on `Add mapper` `By configuration`, then select "User Realm Role" mapper.
-    ![alt text](./images/image-21.png)
+    ![Add mapper](./images/image-21.png)
    3. Enter the following details for the role mapper:
       > [!NOTE]
       > For the `Token Claim Name`, use:
       > <http://schemas\.microsoft\.com/ws/2008/06/identity/claims/role>
-    ![alt text](./images/image-22.png)
+    ![Mapper settings](./images/image-22.png)
    4. Save the mapper configuration.
-6. At this point, your DMS client is fully configured with the necessary realm
+1. At this point, your DMS client is fully configured with the necessary realm
    roles and claim mappings.
 
-7. To retrieve a client token from Keycloak, follow these steps:
+2. To retrieve a client token from Keycloak, follow these steps:
     1. Use the following endpoint:
       <http://localhost:8045/realms/dms/protocol/openid-connect/token>
     2. Provide the required parameters:
