@@ -11,7 +11,7 @@ public class CoreEndpointModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        bool enforceAuthorization = endpoints.ServiceProvider.GetRequiredService<IConfiguration>().GetValue<bool>("IdentitySettings:EnforceAuthorization");
+        bool enforceAuthorization = IdentityConfiguration.EnforceAuthorization(endpoints);
         endpoints.MapPost("/data/{**dmsPath}", Upsert).RequireAuthorizationWithPolicy(enforceAuthorization);
         endpoints.MapGet("/data/{**dmsPath}", Get).RequireAuthorizationWithPolicy(enforceAuthorization);
         endpoints.MapPut("/data/{**dmsPath}", UpdateById).RequireAuthorizationWithPolicy(enforceAuthorization);
