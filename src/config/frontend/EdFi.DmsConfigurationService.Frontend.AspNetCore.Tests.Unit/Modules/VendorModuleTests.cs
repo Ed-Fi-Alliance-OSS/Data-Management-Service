@@ -541,10 +541,13 @@ public class VendorModuleTests
         }
 
         [Test]
-        public async Task Should_return_not_found_if_there_are_no_applications_related_to_vendor()
+        public async Task Should_return_an_empty_array_for_a_vendor_with_no_applications()
         {
             // Arrange
             using var client = SetUpIVendorClient();
+
+            A.CallTo(() => _repository.AddAsync(A<Vendor>.Ignored))
+                .Returns(new InsertResult.InsertSuccess(2));
 
             A.CallTo(() => _vendorRepository.GetApplicationsByVendorIdAsync(A<long>.Ignored))
                 .Returns(new GetResult<Application>.GetSuccess(new List<Application>()));
@@ -553,7 +556,29 @@ public class VendorModuleTests
             var response = await client.GetAsync("/v2/vendors/2/applications");
 
             // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            string responseContent = await response.Content.ReadAsStringAsync();
+            responseContent.Should().Be("[]");
+        }
+
+        [Test]
+        public async Task Should_return_not_found_related_to_a_not_found_vendor_id()
+        {
+            // Arrange
+            using var client = SetUpIVendorClient();
+
+            A.CallTo(() => _vendorRepository.GetApplicationsByVendorIdAsync(A<long>.Ignored))
+                .Returns(new GetResult<Application>.UnknownFailure("Not found: vendor with ID 99. It may have been recently deleted."));
+
+            // Act
+            var response = await client.GetAsync("/v2/vendors/99/applications");
+
+            // Assert
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            string responseContent = await response.Content.ReadAsStringAsync();
+            string expectedResponse =
+                @"{""title"":""Not found: vendor with ID 99. It may have been recently deleted.""}";
+            responseContent.Should().Be(expectedResponse);
         }
     }
 }

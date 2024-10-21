@@ -30,7 +30,8 @@ public class VendorModule : BaseModule<Vendor, VendorValidator>
         return getResult switch
         {
             GetResult<Application>.GetSuccess success when success.Results.Any() => Results.Ok(success.Results),
-            GetResult<Application>.GetSuccess => Results.NotFound(),
+            GetResult<Application>.GetSuccess success when !success.Results.Any() => Results.Ok(new List<Application>()),
+            GetResult<Application>.UnknownFailure failure => Results.NotFound(new { title = failure.FailureMessage }),
             _ => Results.Problem(statusCode: 500)
         };
     }

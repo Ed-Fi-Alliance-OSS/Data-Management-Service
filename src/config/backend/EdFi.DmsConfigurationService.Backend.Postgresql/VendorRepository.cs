@@ -193,37 +193,66 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql
         {
             string sql = """
                     SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName, eo.EducationOrganizationId
-                    FROM dmscs.Application a
+                    FROM dmscs.vendor v
+                    LEFT OUTER JOIN dmscs.Application a ON v.Id = a.VendorId
                     LEFT OUTER JOIN dmscs.ApplicationEducationOrganization eo ON a.Id = eo.ApplicationId
-                    WHERE a.VendorId = @VendorId;
+                    WHERE v.Id = @VendorId;
                 """;
+
             await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+
             try
             {
-                var applications = await connection.QueryAsync<Application, long, Application>(
+                var applications = await connection.QueryAsync<Application?, long?, Application?>(
                     sql,
                     (application, educationOrganizationId) =>
                     {
-                        application.EducationOrganizationIds.Add(educationOrganizationId);
+                        if (application == null)
+                        {
+                            return null;
+                        }
+
+                        if (educationOrganizationId.HasValue)
+                        {
+                            application.EducationOrganizationIds.Add(educationOrganizationId.Value);
+                        }
+
                         return application;
                     },
                     param: new { VendorId = vendorId },
                     splitOn: "EducationOrganizationId"
                 );
 
-                var returnApplication = applications
-                    .GroupBy(a => a.Id)
+                // Vendor not found
+                if (!applications.Any(a => a != null))
+                {
+                    return new GetResult<Application>.UnknownFailure(
+                        $"Not found: vendor with ID {vendorId}. It may have been recently deleted."
+                    );
+                }
+
+                // Vendor without applications
+                if (!applications.Any(a => a != null && a.ApplicationName != null))
+                {
+                    return new GetResult<Application>.GetSuccess([]);
+                }
+
+                var groupedApplications = applications
+                    .GroupBy(a => a!.Id)
                     .Select(g =>
                     {
                         var grouped = g.First();
-                        grouped.EducationOrganizationIds = g.Select(e =>
-                                e.EducationOrganizationIds.Single()
+                        grouped!.EducationOrganizationIds = g.SelectMany(e =>
+                                e!.EducationOrganizationIds
                             )
+                            .Distinct()
                             .ToList();
-                        return grouped;
-                    }).ToList();
 
-                return new GetResult<Application>.GetSuccess(returnApplication);
+                        return grouped;
+                    })
+                    .ToList();
+
+                return new GetResult<Application>.GetSuccess(groupedApplications);
             }
             catch (Exception ex)
             {
