@@ -465,6 +465,35 @@ public class VendorModuleTests
     {
         private readonly IVendorRepository _vendorRepository = A.Fake<IVendorRepository>();
 
+        private HttpClient SetUpIVendorClient()
+        {
+            var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(
+                    (collection) =>
+                    {
+                        collection
+                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
+                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                                AuthenticationConstants.AuthenticationSchema,
+                                _ => { }
+                            );
+
+                        collection.AddAuthorization(options =>
+                            options.AddPolicy(
+                                SecurityConstants.ServicePolicy,
+                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
+                            )
+                        );
+
+                        collection.AddTransient<IVendorRepository>((_) => _vendorRepository);
+                    }
+                );
+            });
+            return factory.CreateClient();
+        }
+
         [SetUp]
         public void SetUp()
         {
@@ -498,31 +527,7 @@ public class VendorModuleTests
         public async Task Should_get_a_list_of_applications_by_vendor_id()
         {
             // Arrange
-            var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(
-                    (collection) =>
-                    {
-                        collection
-                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                                AuthenticationConstants.AuthenticationSchema,
-                                _ => { }
-                            );
-
-                        collection.AddAuthorization(options =>
-                            options.AddPolicy(
-                                SecurityConstants.ServicePolicy,
-                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
-                            )
-                        );
-
-                        collection.AddTransient<IVendorRepository>((_) => _vendorRepository);
-                    }
-                );
-            });
-            using var client = factory.CreateClient();
+            using var client = SetUpIVendorClient();
 
             // Act
             var response = await client.GetAsync("/v2/vendors/1/applications");
@@ -539,10 +544,10 @@ public class VendorModuleTests
         public async Task Should_return_not_found_if_there_are_no_applications_related_to_vendor()
         {
             // Arrange
+            using var client = SetUpIVendorClient();
+
             A.CallTo(() => _vendorRepository.GetApplicationsByVendorIdAsync(A<long>.Ignored))
                 .Returns(new GetResult<Application>.GetSuccess(new List<Application>()));
-
-            using var client = SetUpClient();
 
             // Act
             var response = await client.GetAsync("/v2/vendors/2/applications");
