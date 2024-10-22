@@ -126,6 +126,7 @@ public static class WebApplicationBuilderExtensions
         {
             return new IdentitySettings
             {
+                EnforceAuthorization = config.GetValue<bool>("IdentitySettings:EnforceAuthorization"),
                 Authority = config.GetValue<string>("IdentitySettings:Authority")!,
                 RequireHttpsMetadata = config.GetValue<bool>("IdentitySettings:RequireHttpsMetadata"),
                 Audience = config.GetValue<string>("IdentitySettings:Audience")!,

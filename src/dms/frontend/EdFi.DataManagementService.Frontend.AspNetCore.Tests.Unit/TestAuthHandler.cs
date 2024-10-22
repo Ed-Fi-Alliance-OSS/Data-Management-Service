@@ -19,7 +19,7 @@ public class TestAuthHandler(
     {
         var claims = new[]
         {
-            new Claim("client_id", AuthenticationConstants.Client_Id),
+            new Claim("client_id", AuthenticationConstants.ClientId),
             new Claim(ClaimTypes.Role, AuthenticationConstants.Role)
         };
 

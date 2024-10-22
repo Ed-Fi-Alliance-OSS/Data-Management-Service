@@ -9,5 +9,5 @@ public static class AuthenticationConstants
 {
     public const string AuthenticationSchema = "TestScheme";
     public const string Role = "test-role";
-    public const string Client_Id = "test_client";
+    public const string ClientId = "test_client";
 }

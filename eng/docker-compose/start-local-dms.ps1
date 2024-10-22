@@ -64,7 +64,14 @@ else {
     if ($r) { $upArgs += "--build" }
 
     Write-Output "Starting locally-built DMS"
-    docker compose $files --env-file $EnvironmentFile up -d $upArgs
+    if($EnforceAuthorization)
+    {
+        $env:IDENTITY_ENFORCE_AUTHORIZATION=$true
+    }
+    else {
+        $env:IDENTITY_ENFORCE_AUTHORIZATION=$false
+    }
+    docker compose $files --env-file $EnvironmentFile up -d $upArg
 
     Start-Sleep 20
     ./setup-connectors.ps1 $EnvironmentFile
