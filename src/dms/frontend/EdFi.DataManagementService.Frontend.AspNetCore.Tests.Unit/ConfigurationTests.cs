@@ -112,4 +112,92 @@ public class ConfigurationTests
             }
         }
     }
+
+    [TestFixture]
+    public class Given_A_Configuration_With_Invalid_Identity_Settings
+    {
+        private WebApplicationFactory<Program>? _factoryWithAuthorization;
+        private WebApplicationFactory<Program>? _factoryWithoutAuthorization;
+
+        [SetUp]
+        public void Setup()
+        {
+            _factoryWithAuthorization = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureAppConfiguration(
+                   (context, configuration) =>
+                   {
+                       configuration.AddInMemoryCollection(
+                           new Dictionary<string, string?>
+                           {
+                               ["IdentitySettings:EnforceAuthorization"] = "true",
+                               ["IdentitySettings:Authority"] = ""
+                           }
+                       );
+                   }
+               );
+            });
+
+            _factoryWithoutAuthorization = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureAppConfiguration(
+                   (context, configuration) =>
+                   {
+                       configuration.AddInMemoryCollection(
+                           new Dictionary<string, string?>
+                           {
+                               ["IdentitySettings:EnforceAuthorization"] = "false",
+                               ["IdentitySettings:Authority"] = ""
+                           }
+                       );
+                   }
+               );
+            });
+        }
+
+        [TearDown]
+        public void Teardown()
+        {
+            _factoryWithAuthorization!.Dispose();
+            _factoryWithoutAuthorization!.Dispose();
+        }
+
+        [TestFixture]
+        public class When_Requesting_Any_Endpoint_Should_Return_InternalServerError
+            : Given_A_Configuration_With_Invalid_Identity_Settings
+        {
+            [Test]
+            public async Task When_authorization_enabled_and_no_authority()
+            {
+                // Arrange
+                using var client = _factoryWithAuthorization!.CreateClient();
+
+                // Act
+                var response = await client.GetAsync("/");
+                var content = await response.Content.ReadAsStringAsync();
+
+                // Assert
+                response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+                content.Should().Be(string.Empty);
+            }
+        }
+        [TestFixture]
+        public class When_Requesting_Any_Endpoint_Should_Return_Ok : Given_A_Configuration_With_Invalid_Identity_Settings
+        {
+            [Test]
+            public async Task When_authorization_disabled_and_no_authority()
+            {
+                // Arrange
+                using var client = _factoryWithoutAuthorization!.CreateClient();
+
+                // Act
+                var response = await client.GetAsync("/");
+                var content = await response.Content.ReadAsStringAsync();
+
+                // Assert
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                content.Should().NotBeEmpty();
+            }
+        }
+    }
 }
