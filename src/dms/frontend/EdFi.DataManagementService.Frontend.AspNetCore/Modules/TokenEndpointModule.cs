@@ -3,8 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using Azure;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
+using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
+using Polly.CircuitBreaker;
+using System.Net.Http.Headers;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
@@ -20,17 +24,29 @@ public class TokenEndpointModule : IEndpointModule
         // Create Http client to proxy request
         var httpClientFactory = httpContext.RequestServices.GetRequiredService<IHttpClientFactory>();
         var client = httpClientFactory.CreateClient();
-        var forwardingAddress = appSettings.Value.AuthenticationService;
-        var request = new HttpRequestMessage(HttpMethod.Post, forwardingAddress);
+        var upstreamAddress = appSettings.Value.AuthenticationService;
+        var upstreamRequest = new HttpRequestMessage(HttpMethod.Post, upstreamAddress);
 
-        request!.Content = new StreamContent(httpContext.Request.Body);
-        request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+        // Verify the header contains Authorization Bearer.
+        var authorizationString = httpContext.Request.Headers.Authorization.ToString();
+        if (!authorizationString.Contains("Basic"))
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await httpContext.Response.WriteAsync("Bad Request: Authorization: Basic");
+        }
+        else
+        {
+            upstreamRequest.Headers.Authorization = new AuthenticationHeaderValue("Basic", authorizationString);
+            upstreamRequest!.Content = new StreamContent(httpContext.Request.Body);
+            var response = await client.SendAsync(upstreamRequest);
+            httpContext.Response.StatusCode = (int)response.StatusCode;
+            await response.Content.CopyToAsync(httpContext.Response.Body);
+        }
 
-        var response = await client.SendAsync(request);
 
-        httpContext.Response.StatusCode = (int)response.StatusCode;
 
-        await response.Content.CopyToAsync(httpContext.Response.Body);
+
+
     }
 }
 

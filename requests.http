@@ -1,0 +1,43 @@
+POST http://localhost:8080/oauth/token
+
+Content-Type: "application/json"
+{
+    "clientId": "ClientId",
+    "clientSecret": "ClientSecret123#"
+}
+
+###
+POST http://localhost:5198/oauth/token
+Authorization: Basic clientId:clientSecret
+Content-Type: application/json
+
+{
+    "grant_type": "client_credentials",
+}
+
+###
+### Missing Authorization Headings
+POST http://localhost:5198/oauth/token
+Authorization: clientId:clientSecret
+Content-Type: application/json
+
+{
+    "grant_type": "client_credentials",
+}
+
+
+###
+### Missing grant_type body
+POST http://localhost:5198/oauth/token
+Authorization: Basic clientId:clientSecret
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+### Keycloak as a service
+POST http://localhost:8045/realms/edfi/protocol/openid-connect/token
+Authorization: Basic CSClientApp:test1@Secret
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
