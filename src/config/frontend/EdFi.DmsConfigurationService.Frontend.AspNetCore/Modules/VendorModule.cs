@@ -19,19 +19,24 @@ public class VendorModule : BaseModule<Vendor, VendorValidator>
     {
         base.MapEndpoints(endpoints);
 
-        endpoints.MapGet($"{GetBaseRoute()}/{{id}}/applications", GetApplicationsByVendorId)
+        endpoints
+            .MapGet($"{GetBaseRoute()}/{{id}}/applications", GetApplicationsByVendorId)
             .RequireAuthorizationWithPolicy();
     }
 
-    private static async Task<IResult> GetApplicationsByVendorId(long id, [FromServices] IVendorRepository repository)
+    private static async Task<IResult> GetApplicationsByVendorId(
+        long id,
+        [FromServices] IVendorRepository repository
+    )
     {
-        var getResult = await repository.GetApplicationsByVendorIdAsync(id);
+        var getResult = await repository.GetVendorByIdWithApplicationsAsync(id);
 
         return getResult switch
         {
-            GetResult<Application>.GetSuccess success when success.Results.Any() => Results.Ok(success.Results),
-            GetResult<Application>.GetSuccess success when !success.Results.Any() => Results.Ok(new List<Application>()),
-            GetResult<Application>.UnknownFailure failure => Results.NotFound(new { title = failure.FailureMessage }),
+            GetResult<Vendor>.GetByIdSuccess success => Results.Ok(success.Result.Applications),
+            GetResult<Vendor>.GetByIdFailureNotExists => Results.NotFound(
+                    new { title = $"Not found: vendor with ID {id}. It may have been recently deleted." }
+                ),
             _ => Results.Problem(statusCode: 500)
         };
     }

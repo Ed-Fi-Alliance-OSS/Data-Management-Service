@@ -12,5 +12,5 @@ public interface IVendorRepository : IRepository<Vendor>
     /// <summary>
     /// Get a collection of applications associated with a vendor
     /// </summary>
-    Task<GetResult<Application>> GetApplicationsByVendorIdAsync(long vendorId);
+    Task<GetResult<Vendor>> GetVendorByIdWithApplicationsAsync(long vendorId);
 }

@@ -189,10 +189,12 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql
             }
         }
 
-        public async Task<GetResult<Application>> GetApplicationsByVendorIdAsync(long vendorId)
+        public async Task<GetResult<Vendor>> GetVendorByIdWithApplicationsAsync(long vendorId)
         {
             string sql = """
-                    SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName, eo.EducationOrganizationId
+                    SELECT v.Company, v.ContactName, v.ContactEmailAddress,
+                        a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName, 
+                        eo.EducationOrganizationId
                     FROM dmscs.vendor v
                     LEFT OUTER JOIN dmscs.Application a ON v.Id = a.VendorId
                     LEFT OUTER JOIN dmscs.ApplicationEducationOrganization eo ON a.Id = eo.ApplicationId
@@ -203,60 +205,58 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql
 
             try
             {
-                var applications = await connection.QueryAsync<Application?, long?, Application?>(
+                var vendors = await connection.QueryAsync<Vendor, Application, long?, Vendor>(
                     sql,
-                    (application, educationOrganizationId) =>
+                    (vendor, application, educationOrganizationId) =>
                     {
-                        if (application == null)
+                        var existingApplication = vendor.Applications
+                            .FirstOrDefault(app => app.Id == application?.Id);
+
+                        if (existingApplication == null && application != null)
                         {
-                            return null;
+                            application.EducationOrganizationIds = new List<long>();
+                            vendor.Applications.Add(application);
+                            existingApplication = application;
                         }
 
-                        if (educationOrganizationId.HasValue)
+                        if (educationOrganizationId.HasValue && existingApplication != null)
                         {
-                            application.EducationOrganizationIds.Add(educationOrganizationId.Value);
+                            existingApplication.EducationOrganizationIds.Add(educationOrganizationId.Value);
                         }
 
-                        return application;
+                        return vendor;
                     },
                     param: new { VendorId = vendorId },
-                    splitOn: "EducationOrganizationId"
+                    splitOn: "Id, EducationOrganizationId"
                 );
 
-                // Vendor not found
-                if (!applications.Any(a => a != null))
-                {
-                    return new GetResult<Application>.UnknownFailure(
-                        $"Not found: vendor with ID {vendorId}. It may have been recently deleted."
-                    );
-                }
-
-                // Vendor without applications
-                if (!applications.Any(a => a != null && a.ApplicationName != null))
-                {
-                    return new GetResult<Application>.GetSuccess([]);
-                }
-
-                var groupedApplications = applications
-                    .GroupBy(a => a!.Id)
+                var result = vendors
+                    .GroupBy(v => v.Id)
                     .Select(g =>
                     {
-                        var grouped = g.First();
-                        grouped!.EducationOrganizationIds = g.SelectMany(e =>
-                                e!.EducationOrganizationIds
-                            )
-                            .Distinct()
+                        var groupedVendor = g.First();
+                        groupedVendor.Applications = g.SelectMany(v => v.Applications)
+                            .GroupBy(a => a.Id)
+                            .Select(a =>
+                            {
+                                var app = a.First();
+                                app.EducationOrganizationIds = a.SelectMany(x => x.EducationOrganizationIds)
+                                    .Distinct()
+                                    .ToList();
+                                return app;
+                            })
                             .ToList();
-
-                        return grouped;
+                        return groupedVendor;
                     })
                     .ToList();
 
-                return new GetResult<Application>.GetSuccess(groupedApplications);
+                return result.Any()
+                    ? new GetResult<Vendor>.GetByIdSuccess(result.Single())
+                    : new GetResult<Vendor>.GetByIdFailureNotExists();
             }
             catch (Exception ex)
             {
-                return new GetResult<Application>.UnknownFailure(ex.Message);
+                return new GetResult<Vendor>.UnknownFailure(ex.Message);
             }
         }
     }

@@ -210,7 +210,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
                         Company = "Test Company",
                         ContactEmailAddress = "test@test.com",
                         ContactName = "Fake Name",
-                        NamespacePrefixes = ["FakePrefix1", "FakePrefix2"],
+                        NamespacePrefixes = ["FakePrefix1"],
                     };
 
                 var result1 = await _repository.AddAsync(vendor1);
@@ -224,7 +224,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
                         Company = "Test Company 2",
                         ContactEmailAddress = "test@test.com",
                         ContactName = "Fake Name 2",
-                        NamespacePrefixes = ["FakePrefix1", "FakePrefix2"],
+                        NamespacePrefixes = ["FakePrefix1"],
                     };
 
                 var result2 = await _repository.AddAsync(vendor2);
@@ -260,9 +260,9 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
             [Test]
             public async Task Should_return_two_applications_for_vendor_one()
             {
-                var getResult = await _repository.GetApplicationsByVendorIdAsync(_vendorId1);
-                getResult.Should().BeOfType<GetResult<Application>.GetSuccess>();
-                var applicationsFromDb = ((GetResult<Application>.GetSuccess)getResult).Results.ToList();
+                var getResult = await _repository.GetVendorByIdWithApplicationsAsync(_vendorId1);
+                getResult.Should().BeOfType<GetResult<Vendor>.GetByIdSuccess>();
+                var applicationsFromDb = ((GetResult<Vendor>.GetByIdSuccess)getResult).Result.Applications;
                 applicationsFromDb.Count.Should().Be(2);
                 applicationsFromDb[0].ApplicationName.Should().Be("Test Application 1");
                 applicationsFromDb[1].ApplicationName.Should().Be("Test Application 2");
@@ -271,19 +271,17 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
             [Test]
             public async Task Should_return_empty_array_for_vendor_two_without_applications()
             {
-                var getResult = await _repository.GetApplicationsByVendorIdAsync(_vendorId2);
-                getResult.Should().BeOfType<GetResult<Application>.GetSuccess>();
-                var applicationsFromDb = ((GetResult<Application>.GetSuccess)getResult).Results.ToList();
+                var getResult = await _repository.GetVendorByIdWithApplicationsAsync(_vendorId2);
+                getResult.Should().BeOfType<GetResult<Vendor>.GetByIdSuccess>();
+                var applicationsFromDb = ((GetResult<Vendor>.GetByIdSuccess)getResult).Result.Applications;
                 applicationsFromDb.Count.Should().Be(0);
             }
 
             [Test]
             public async Task Should_return_not_found_for_non_existent_vendor()
             {
-                var getResult = await _repository.GetApplicationsByVendorIdAsync(_vendorIdNotExist);
-                getResult.Should().BeOfType<GetResult<Application>.UnknownFailure>();
-                var failure = (GetResult<Application>.UnknownFailure)getResult;
-                failure.FailureMessage.Should().Be($"Not found: vendor with ID {_vendorIdNotExist}. It may have been recently deleted.");
+                var getResult = await _repository.GetVendorByIdWithApplicationsAsync(_vendorIdNotExist);
+                getResult.Should().BeOfType<GetResult<Vendor>.GetByIdFailureNotExists>();
             }
         }
     }
