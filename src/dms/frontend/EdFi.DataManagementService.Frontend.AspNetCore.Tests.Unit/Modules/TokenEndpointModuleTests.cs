@@ -4,13 +4,12 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
-using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -29,16 +28,31 @@ public class TokenEndpointModuleTests
         [SetUp]
         public void SetUp()
         {
+            // TODO(): Fake A 200 response from upstream IdP server with token, bearer_type, and expires.
             // Arrange
+            var contentProvider = A.Fake<IContentProvider>();
+            var json =
+                """{"status_code":200, "body":{"token":"fake_access_token","token_type":"bearer","expires_in":300}}""";
+            JsonNode _descriptorsJson = JsonNode.Parse(json)!;
+
+            A.CallTo(
+                    () => contentProvider.LoadJsonContent(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)
+                )
+                .Returns(_descriptorsJson);
             using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
             });
             using var client = factory.CreateClient();
+            var proxyRequest = new HttpRequestMessage(HttpMethod.Post, "/oauth/token");
+            var clientId = "CSClient1";
+            var clientSecret = "test123@Puiu";
+            var encodedCredentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{clientId}:{clientSecret}"));
+            proxyRequest.Headers.Add("Authorization", $"Basic {encodedCredentials}");
 
             // Act
-            var requestContent = new { clientid = "CSClient1", clientsecret = "test123@Puiu", displayname = "CSClient1" };
-            _response = client.PostAsJsonAsync("/oauth/token").GetAwaiter().GetResult();
+            proxyRequest!.Content = new StringContent("grant_type=client_credentials", Encoding.UTF8, "application/x-www-form-urlencoded");
+            _response = client.SendAsync(proxyRequest).GetAwaiter().GetResult();
             var content = _response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
             _jsonContent = JsonNode.Parse(content) ?? throw new Exception("JSON parsing failed");
         }
@@ -58,134 +72,70 @@ public class TokenEndpointModuleTests
         [Test]
         public void Then_the_body_contains_a_bear_token_with_expiry()
         {
-            _jsonContent?["access_token"]?.ToString().Should().Be("token_for_access");
-            _jsonContent?["expires"]?.Should().Be(1800);
+            _jsonContent?["access_token"]?.ToString().Should().Be("fake_access_token");
+            _jsonContent?["expires_in"]?.Should().Be(300);
             _jsonContent?["token_type"]?.ToString().Should().Be("bearer");
         }
     }
 
     [Test]
-    public async Task Returns_400_when_the_authentication_headers_and_grant_type_missing()
+    public async Task Returns_400_when_the_authentication_headers_missing()
     {
         // Arrange
-        var contentProvider = A.Fake<IContentProvider>();
-        var json =
-            """{"openapi":"3.0.1", "info":"descriptors","servers":[{"url":"http://localhost:5000/data/v3"}]}""";
-        JsonNode _descriptorsJson = JsonNode.Parse(json)!;
-
-        A.CallTo(
-                () => contentProvider.LoadJsonContent(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)
-            )
-            .Returns(_descriptorsJson);
-
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    collection.AddTransient((x) => contentProvider);
-                }
-            );
         });
+
         using var client = factory.CreateClient();
+        var proxyRequest = new HttpRequestMessage(HttpMethod.Post, "/oauth/token");
 
         // Act
-
-        // TODO: Create test_fixtures for missing Authorization: Basic XxxXXXX= headers and missing grant_type.
-        var response = await client.GetAsync("/metadata/specifications/descriptors-spec.json");
-        var content = await response.Content.ReadAsStringAsync();
-
-        var jsonContent = JsonNode.Parse(content);
-        var sectionInfo = jsonContent?["info"]?.GetValue<string>();
+        proxyRequest!.Content = new StringContent("grant_type=client_credentials", Encoding.UTF8, "application/x-www-form-urlencoded");
+        var response = client.SendAsync(proxyRequest).GetAwaiter().GetResult();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        jsonContent.Should().NotBeNull();
-        sectionInfo.Should().Contain("descriptors");
-    }
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
-    [Test]
-    public async Task Returns_502_when_the_upstream_fails_with_invalid_response()
-    {
-        // Arrange
-        var contentProvider = A.Fake<IContentProvider>();
-        var json =
-            """{"openapi":"3.0.1", "info":"descriptors","servers":[{"url":"http://localhost:5000/data/v3"}]}""";
-        JsonNode _descriptorsJson = JsonNode.Parse(json)!;
-
-        A.CallTo(
-                () => contentProvider.LoadJsonContent(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)
-            )
-            .Returns(_descriptorsJson);
-
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    collection.AddTransient((x) => contentProvider);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
-
-        // Mock a call to the IdP service that returns a 500 error
-        // Act
-        var response = await client.GetAsync("/metadata/specifications/descriptors-spec.json");
-        var content = await response.Content.ReadAsStringAsync();
-
-        var jsonContent = JsonNode.Parse(content);
-        var sectionInfo = jsonContent?["info"]?.GetValue<string>();
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        jsonContent.Should().NotBeNull();
-        sectionInfo.Should().Contain("descriptors");
     }
 
     [Test]
     public async Task Returns_503_when_the_upstream_service_is_unavailable()
     {
+        // TODO(): Fake a 500 from an upstream IdP server.
         // Arrange
+        var contentProvider = A.Fake<IContentProvider>();
+        var json =
+            """{"status_code":500}""";
+        JsonNode _descriptorsJson = JsonNode.Parse(json)!;
+
+        A.CallTo(
+                () => contentProvider.LoadJsonContent(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)
+            )
+            .Returns(_descriptorsJson);
+
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection.AddTransient((x) => contentProvider);
+                }
+            );
         });
         using var client = factory.CreateClient();
+        var proxyRequest = new HttpRequestMessage(HttpMethod.Post, "/oauth/token");
+        var clientId = "CSClient1";
+        var clientSecret = "test123@Puiu";
+        var encodedCredentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{clientId}:{clientSecret}"));
+        proxyRequest.Headers.Add("Authorization", $"Basic {encodedCredentials}");
+        proxyRequest!.Content = new StringContent("grant_type=client_credentials", Encoding.UTF8, "application/x-www-form-urlencoded");
 
         // Act
-        var response = await client.GetAsync("/metadata/specifications");
-        var content = await response.Content.ReadAsStringAsync();
-
-        var jsonContent = JsonNode.Parse(content);
-        var section1 = jsonContent?[0]?["name"]?.GetValue<string>();
-        var section2 = jsonContent?[1]?["name"]?.GetValue<string>();
-        var section3 = jsonContent?[2]?["name"]?.GetValue<string>();
+        var response = client.SendAsync(proxyRequest).GetAwaiter().GetResult();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        jsonContent.Should().NotBeNull();
-        section1.Should().Contain("Resources");
-        section2.Should().Contain("Descriptors");
-        section3.Should().Contain("Discovery");
-    }
-
-    [Test]
-    public async Task Returns_504_when_upstream_gateway_timeout()
-    {
-        // Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Test");
-        });
-        using var client = factory.CreateClient();
-
-        // Act
-        var response = await client.GetAsync("/metadata/swagger.json");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
     }
 }

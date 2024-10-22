@@ -3,12 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using Azure;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
-using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
-using Polly.CircuitBreaker;
-using System.Net.Http.Headers;
+using System.Text;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
@@ -21,32 +18,48 @@ public class TokenEndpointModule : IEndpointModule
 
     internal static async Task GenerateToken(HttpContext httpContext, IOptions<AppSettings> appSettings)
     {
-        // Create Http client to proxy request
+        // Create HttpClient to proxy request.
         var httpClientFactory = httpContext.RequestServices.GetRequiredService<IHttpClientFactory>();
         var client = httpClientFactory.CreateClient();
         var upstreamAddress = appSettings.Value.AuthenticationService;
         var upstreamRequest = new HttpRequestMessage(HttpMethod.Post, upstreamAddress);
 
-        // Verify the header contains Authorization Bearer.
-        var authorizationString = httpContext.Request.Headers.Authorization.ToString();
-        if (!authorizationString.Contains("Basic"))
+        // Verify the request header contains Authorization Basic.
+        var authHeader = httpContext.Request.Headers.Authorization;
+        if (!authHeader.ToString().Contains("Basic"))
         {
             httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
-            await httpContext.Response.WriteAsync("Bad Request: Authorization: Basic");
+            await httpContext.Response.WriteAsync($"Bad Request - Malformed Authorization Header '{authHeader}'");
         }
         else
         {
-            upstreamRequest.Headers.Authorization = new AuthenticationHeaderValue("Basic", authorizationString);
-            upstreamRequest!.Content = new StreamContent(httpContext.Request.Body);
-            var response = await client.SendAsync(upstreamRequest);
-            httpContext.Response.StatusCode = (int)response.StatusCode;
-            await response.Content.CopyToAsync(httpContext.Response.Body);
+            // Decode Base64 clientId and clientSecret.
+            var base64Credentials = authHeader.ToString().Substring("Basic ".Length).Trim();
+            var credentials = Encoding.UTF8.GetString(Convert.FromBase64String(base64Credentials)).Split(':');
+            var clientId = credentials[0];
+            var clientSecret = credentials[1];
+            var encodedCredentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{clientId}:{clientSecret}"));
+
+            // Add Basic Authentication headers and grant_type to upstream request.
+            upstreamRequest.Headers.Add("Authorization", $"Basic {encodedCredentials}");
+            upstreamRequest!.Content = new StringContent("grant_type=client_credentials", Encoding.UTF8, "application/x-www-form-urlencoded");
+
+            // In case of 5xx Error, pass 503 Service unavailable to client, otherwise forward status directly to client.
+            var response = new HttpResponseMessage();
+            try
+            {
+                response = await client.SendAsync(upstreamRequest);
+                httpContext.Response.StatusCode = (int)response.StatusCode;
+            }
+            catch (Exception)
+            {
+                httpContext.Response.StatusCode = (int)System.Net.HttpStatusCode.ServiceUnavailable;
+            }
+            finally
+            {
+                await response.Content.CopyToAsync(httpContext.Response.Body);
+            }
         }
-
-
-
-
-
     }
 }
 
