@@ -62,7 +62,14 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
                 "ParsePathMiddleware: Not a valid path - {TraceId}",
                 context.FrontendRequest.TraceId
             );
-            context.FrontendResponse = new FrontendResponse(StatusCode: 404, Body: FailureResponse.ForNotFound("The specified data could not be found.", context.FrontendRequest.TraceId), Headers: []);
+            context.FrontendResponse = new FrontendResponse(
+                StatusCode: 404,
+                Body: FailureResponse.ForNotFound(
+                    "The specified data could not be found.",
+                    context.FrontendRequest.TraceId
+                ),
+                Headers: []
+            );
             return;
         }
 
@@ -80,7 +87,7 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
                     traceId: context.FrontendRequest.TraceId,
                     validationErrors: new Dictionary<string, string[]>
                     {
-                        { "$.id", new[] { $"The value '{pathInfo.DocumentUuid}' is not valid." } }
+                        { "$.id", new[] { $"The value '{pathInfo.DocumentUuid}' is not valid." } },
                     },
                     errors: []
                 ),

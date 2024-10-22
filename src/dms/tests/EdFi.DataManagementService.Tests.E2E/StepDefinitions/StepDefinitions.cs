@@ -53,7 +53,9 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         {
             await ExecutePostRequest(url, body);
 
-            _apiResponse.Status.Should().BeOneOf(OkCreated, $"Given post to {url} failed:\n{_apiResponse.TextAsync().Result}");
+            _apiResponse
+                .Status.Should()
+                .BeOneOf(OkCreated, $"Given post to {url} failed:\n{_apiResponse.TextAsync().Result}");
 
             WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
@@ -112,7 +114,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                         OkCreated,
                         $"POST request for {entityType} descriptor {descriptor["descriptorName"]} failed:\n{response.TextAsync().Result}"
                     );
-
             }
 
             foreach (var row in dataTable.Rows)
@@ -206,7 +207,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
         private async Task ExecutePostRequest(string url, string body)
         {
-            url = addDataPrefixIfNecessary(url);
+            url = AddDataPrefixIfNecessary(url);
 
             _logger.log.Information($"POST url: {url}");
             _logger.log.Information($"POST body: {body}");
@@ -246,7 +247,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             string body
         )
         {
-            url = addDataPrefixIfNecessary(url);
+            url = AddDataPrefixIfNecessary(url);
             _logger.log.Information($"POST url: {url}");
             _logger.log.Information($"POST body: {body}");
 
@@ -265,7 +266,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a POST request is made for dependent resource {string} with")]
         public async Task WhenSendingAPOSTRequestForDependentResourceWithBody(string url, string body)
         {
-            url = addDataPrefixIfNecessary(url);
+            url = AddDataPrefixIfNecessary(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;
 
             _dependentId = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
@@ -274,7 +275,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a PUT request is made to {string} with")]
         public async Task WhenAPUTRequestIsMadeToWith(string url, string body)
         {
-            url = addDataPrefixIfNecessary(url).Replace("{id}", _id).Replace("{dependentId}", _dependentId);
+            url = AddDataPrefixIfNecessary(url).Replace("{id}", _id).Replace("{dependentId}", _dependentId);
 
             body = body.Replace("{id}", _id).Replace("{dependentId}", _dependentId);
             _logger.log.Information($"PUT url: {url}");
@@ -287,7 +288,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a PUT request is made to referenced resource {string} with")]
         public async Task WhenAPUTRequestIsMadeToReferencedResourceWith(string url, string body)
         {
-            url = addDataPrefixIfNecessary(url).Replace("{id}", _referencedResourceId);
+            url = AddDataPrefixIfNecessary(url).Replace("{id}", _referencedResourceId);
 
             _logger.log.Information(url);
             body = body.Replace("{id}", _referencedResourceId);
@@ -317,7 +318,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a DELETE request is made to {string}")]
         public async Task WhenADELETERequestIsMadeTo(string url)
         {
-            url = addDataPrefixIfNecessary(url).Replace("{id}", _id);
+            url = AddDataPrefixIfNecessary(url).Replace("{id}", _id);
             _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(url)!;
 
             WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
@@ -326,7 +327,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a DELETE request is made to referenced resource {string}")]
         public async Task WhenADELETERequestIsMadeToReferencedResource(string url)
         {
-            url = addDataPrefixIfNecessary(url).Replace("{id}", _referencedResourceId);
+            url = AddDataPrefixIfNecessary(url).Replace("{id}", _referencedResourceId);
 
             _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(url)!;
         }
@@ -334,7 +335,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a GET request is made to {string}")]
         public async Task WhenAGETRequestIsMadeTo(string url)
         {
-            url = addDataPrefixIfNecessary(url).Replace("{id}", _id);
+            url = AddDataPrefixIfNecessary(url).Replace("{id}", _id);
             _logger.log.Information(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(url)!;
         }
@@ -659,15 +660,20 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
         #endregion
 
-        private static string addDataPrefixIfNecessary(string input)
+        private static string AddDataPrefixIfNecessary(string input)
         {
+            // Discovery endpoint
+            if (input == "/")
+            {
+                return input;
+            }
+
             // Prefer that the "url" fragment have a starting slash, but write
             // the code so it will work either way.
             input = input.StartsWith('/') ? input[1..] : input;
 
-            // If it doesn't start with ed-fi, then assume that this is looking
-            // for metadata and should not have "data" added to the URL.
-            input = input.StartsWith("ed-fi") ? $"data/{input}" : input;
+            // metadata should not have "data" added to the URL.
+            input = input.StartsWith("metadata") ? input : $"data/{input}";
 
             return input;
         }
