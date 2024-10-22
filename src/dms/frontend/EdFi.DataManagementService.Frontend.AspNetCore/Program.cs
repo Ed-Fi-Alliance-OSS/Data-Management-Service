@@ -34,6 +34,8 @@ if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
     app.UseRateLimiter();
 }
 
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapRouteEndpoints();
 
 app.MapHealthChecks("/health");
@@ -51,6 +53,7 @@ bool ReportInvalidConfiguration(WebApplication app)
         // Accessing IOptions<T> forces validation
         _ = app.Services.GetRequiredService<IOptions<AppSettings>>().Value;
         _ = app.Services.GetRequiredService<IOptions<ConnectionStrings>>().Value;
+        _ = app.Services.GetRequiredService<IOptions<IdentitySettings>>().Value;
     }
     catch (OptionsValidationException ex)
     {

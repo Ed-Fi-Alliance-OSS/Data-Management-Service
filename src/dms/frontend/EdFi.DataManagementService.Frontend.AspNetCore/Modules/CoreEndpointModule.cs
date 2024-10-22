@@ -11,9 +11,10 @@ public class CoreEndpointModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost("/data/{**dmsPath}", Upsert);
-        endpoints.MapGet("/data/{**dmsPath}", Get);
-        endpoints.MapPut("/data/{**dmsPath}", UpdateById);
-        endpoints.MapDelete("/data/{**dmsPath}", DeleteById);
+        bool enforceAuthorization = IdentityConfiguration.EnforceAuthorization(endpoints);
+        endpoints.MapPost("/data/{**dmsPath}", Upsert).RequireAuthorizationWithPolicy(enforceAuthorization);
+        endpoints.MapGet("/data/{**dmsPath}", Get).RequireAuthorizationWithPolicy(enforceAuthorization);
+        endpoints.MapPut("/data/{**dmsPath}", UpdateById).RequireAuthorizationWithPolicy(enforceAuthorization);
+        endpoints.MapDelete("/data/{**dmsPath}", DeleteById).RequireAuthorizationWithPolicy(enforceAuthorization);
     }
 }
