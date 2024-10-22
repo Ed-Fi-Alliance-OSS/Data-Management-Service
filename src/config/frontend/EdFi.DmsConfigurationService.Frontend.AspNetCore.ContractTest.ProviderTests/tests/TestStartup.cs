@@ -8,6 +8,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Http;
 using EdFi.DmsConfigurationService.Backend;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider.Tests.Middleware;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider.Tests
 {
@@ -39,16 +40,26 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
             }
             // Use the middleware and pass the FakeTokenManager instance to it.
             app.UseMiddleware<ProviderStateMiddleware>(fakeTokenManager);
-
             app.UseEndpoints(endpoints =>
             {
                 _ = endpoints.MapPost("/connect/token", async (TokenRequest request, ITokenManager tokenManager) =>
                 {
-                    if (tokenManager is FakeTokenManager fakeTokenManager && fakeTokenManager.ShouldThrowException)
+                    if (tokenManager is FakeTokenManager)
+                    {
+                        var fakeTokenManager = (FakeTokenManager)tokenManager; // Explicit cast
+                        //fakeTokenManager.ShouldThrowException = true;
+                        if (fakeTokenManager.ShouldThrowException)
+                        {
+                            var errorResponse = new { error = "Error from Keycloak" };
+                            return Results.Json(errorResponse, statusCode: 401);
+                        }
+                    }
+
+/*                     if (tokenManager is FakeTokenManager fakeTokenManager && fakeTokenManager.ShouldThrowException)
                     {
                         var errorResponse = new { error = "Error from Keycloak" };
                         return Results.Json(errorResponse, statusCode: 401);
-                    }
+                    } */
 
                     var token = await tokenManager.GetAccessTokenAsync(new List<KeyValuePair<string, string>>
                     {

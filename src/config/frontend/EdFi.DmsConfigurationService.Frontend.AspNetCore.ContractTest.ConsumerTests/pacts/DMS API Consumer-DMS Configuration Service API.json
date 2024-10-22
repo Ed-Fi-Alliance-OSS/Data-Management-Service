@@ -18,7 +18,7 @@
       },
       "response": {
         "body": {
-          "error": "'Error from Keycloak"
+          "error": "Error from Keycloak"
         },
         "headers": {
           "Content-Type": "application/json"

@@ -3,14 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Collections.Generic;
-
-namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider.Tests
+namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider.Tests.Middleware
 {
     public class ProviderState
     {
-        public required string State { get; set; }
-
-        public required IDictionary<string, string> Params { get; set; }
+        public string? State { get; set; }
+        public IDictionary<string, object>? Params { get; set; }
     }
 }
