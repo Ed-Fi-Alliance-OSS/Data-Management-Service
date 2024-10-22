@@ -205,12 +205,14 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql
 
             try
             {
-                var vendors = await connection.QueryAsync<Vendor, Application, long?, Vendor>(
+                var vendors = await connection.QueryAsync<Vendor, Application?, long?, Vendor>(
                     sql,
                     (vendor, application, educationOrganizationId) =>
                     {
-                        var existingApplication = vendor.Applications
-                            .FirstOrDefault(app => app.Id == application?.Id);
+                        vendor.Id = vendorId;
+                        var existingApplication = vendor.Applications.FirstOrDefault(app =>
+                            app.Id == application?.Id
+                        );
 
                         if (existingApplication == null && application != null)
                         {
@@ -219,9 +221,9 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql
                             existingApplication = application;
                         }
 
-                        if (educationOrganizationId.HasValue && existingApplication != null)
+                        if (educationOrganizationId.HasValue)
                         {
-                            existingApplication.EducationOrganizationIds.Add(educationOrganizationId.Value);
+                            existingApplication?.EducationOrganizationIds.Add(educationOrganizationId.Value);
                         }
 
                         return vendor;
