@@ -209,7 +209,7 @@ Feature: Validation of the structure of the URLs
 
         @API-073
         Scenario: 07 Ensure clients cannot update a resource when endpoint does not end in plural
-             When a PUT request is made to "/ed-fi/school/{id}" with
+             When a PUT request is made to "/ed-fi/school/00000000-0000-4000-a000-000000000000" with
                   """
                   {
                       "educationOrganizationCategories": [
@@ -248,7 +248,7 @@ Feature: Validation of the structure of the URLs
 
         @API-074
         Scenario: 08 Ensure clients cannot delete a resource when endpoint does not end in plural
-             When a DELETE request is made to "/ed-fi/school/{id}"
+             When a DELETE request is made to "/ed-fi/school/00000000-0000-4000-a000-000000000000"
              Then it should respond with 404
               And the response body is
                   """
@@ -271,7 +271,7 @@ Feature: Validation of the structure of the URLs
 
         @API-075
         Scenario: 09 Ensure clients cannot create a resource adding an ID as a path variable
-             When a POST request is made to "/ed-fi/schools/0123456789" with
+             When a POST request is made to "/ed-fi/schools/00000000-0000-4000-a000-000000000000" with
                   """
                   {
                       "educationOrganizationCategories": [
@@ -297,8 +297,9 @@ Feature: Validation of the structure of the URLs
                       "title": "Method Not Allowed",
                       "status": 405,
                       "correlationId": null,
+                      "validationErrors": {},
                       "errors": [
-                          "Resource items can only be updated using PUT. To \\"upsert\\" an item in the resource collection using POST, remove the \\"id\\" from the route."
+                          "Resource items can only be updated using PUT. To \"upsert\" an item in the resource collection using POST, remove the \"id\" from the route."
                       ]
                   }
                   """
@@ -337,8 +338,9 @@ Feature: Validation of the structure of the URLs
                       "title": "Method Not Allowed",
                       "status": 405,
                       "correlationId": null,
+                      "validationErrors": {},
                       "errors": [
-                         "Resource collections cannot be replaced. To \\"upsert\\" an item in the collection, use POST. To update a specific item, use PUT and include the \\"id\\" in the route."
+                         "Resource collections cannot be replaced. To \"upsert\" an item in the collection, use POST. To update a specific item, use PUT and include the \"id\" in the route."
                       ]
                   }
                   """
@@ -361,8 +363,9 @@ Feature: Validation of the structure of the URLs
                       "title": "Method Not Allowed",
                       "status": 405,
                       "correlationId": null,
+                      "validationErrors": {},
                       "errors": [
-                         "Resource collections cannot be deleted. To delete a specific item, use DELETE and include the \\"id\\" in the route."
+                         "Resource collections cannot be deleted. To delete a specific item, use DELETE and include the \"id\" in the route."
                       ]
                   }
                   """

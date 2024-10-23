@@ -97,20 +97,28 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
             return;
         }
 
-        DocumentUuid documentUuid =
-            pathInfo.DocumentUuid == null ? No.DocumentUuid : new(new(pathInfo.DocumentUuid));
-
         // Verify method allowed with/without documentUuid
         switch (context.Method)
         {
-            case RequestMethod.DELETE when documentUuid == No.DocumentUuid:
-            case RequestMethod.PUT when documentUuid == No.DocumentUuid:
-            case RequestMethod.POST when documentUuid != No.DocumentUuid:
+            case RequestMethod.DELETE when pathInfo.DocumentUuid == null:
                 {
-                    NotAllowed();
+                    NotAllowed(["Resource collections cannot be deleted. To delete a specific item, use DELETE and include the \"id\" in the route."]);
+                    return;
+                }
+            case RequestMethod.PUT when pathInfo.DocumentUuid == null:
+                {
+                    NotAllowed(["Resource collections cannot be replaced. To \"upsert\" an item in the collection, use POST. To update a specific item, use PUT and include the \"id\" in the route."]);
+                    return;
+                }
+            case RequestMethod.POST when pathInfo.DocumentUuid != null:
+                {
+                    NotAllowed(["Resource items can only be updated using PUT. To \"upsert\" an item in the resource collection using POST, remove the \"id\" from the route."]);
                     return;
                 }
         }
+
+        DocumentUuid documentUuid =
+            pathInfo.DocumentUuid == null ? No.DocumentUuid : new(new(pathInfo.DocumentUuid));
 
         context.PathComponents = new(
             ProjectNamespace: new(pathInfo.ProjectNamespace),
@@ -121,16 +129,17 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
         await next();
         return;
 
-        void NotAllowed()
+        void NotAllowed(string[] errors)
         {
             _logger.LogDebug("ParsePathMiddleware: Missing document UUID on request method {Method}", context.Method);
             context.FrontendResponse = new FrontendResponse(
                 StatusCode: 405,
                 Body: FailureResponse.ForMethodNotAllowed(
+                    errors,
                     traceId: context.FrontendRequest.TraceId
                 ),
                 Headers: [],
-                ContentType: "application/problem+json"
+                ContentType: "application/json; charset=utf-8"
             );
         }
     }
