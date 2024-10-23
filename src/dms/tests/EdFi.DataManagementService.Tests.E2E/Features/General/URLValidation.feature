@@ -269,8 +269,7 @@ Feature: Validation of the structure of the URLs
                     }
                   """
 
-        ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-353
-        @API-075 @ignore
+        @API-075
         Scenario: 09 Ensure clients cannot create a resource adding an ID as a path variable
              When a POST request is made to "/ed-fi/schools/0123456789" with
                   """
@@ -310,8 +309,7 @@ Feature: Validation of the structure of the URLs
                     }
                   """
 
-        ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-353
-        @API-077 @ignore
+        @API-077
         Scenario: 10 Ensure PUT requests require an Id value
              When a PUT request is made to "/ed-fi/schools/" with
                   """
@@ -351,8 +349,7 @@ Feature: Validation of the structure of the URLs
                     }
                   """
 
-        ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-353
-        @API-078 @ignore
+        @API-078
         Scenario: 11 Ensure DELETE requests require an Id value
              When a DELETE request is made to "/ed-fi/schools/"
              Then it should respond with 405

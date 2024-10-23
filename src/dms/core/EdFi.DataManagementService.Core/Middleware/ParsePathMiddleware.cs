@@ -104,7 +104,7 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
         switch (context.Method)
         {
             case RequestMethod.DELETE when documentUuid == No.DocumentUuid:
-            case RequestMethod.POST when documentUuid == No.DocumentUuid:
+            case RequestMethod.PUT when documentUuid == No.DocumentUuid:
             case RequestMethod.POST when documentUuid != No.DocumentUuid:
                 {
                     NotAllowed();
