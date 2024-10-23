@@ -20,8 +20,7 @@ Feature: Validation of the structure of the URLs
                   }
                   """
 
-        ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-352
-        @API-067 @ignore
+        @API-067
         Scenario: 01 Ensure clients cannot retrieve information when the data model name is missing
              When a GET request is made to "/schools"
              Then it should respond with 404
@@ -44,8 +43,7 @@ Feature: Validation of the structure of the URLs
                     }
                   """
 
-        ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-352
-        @API-068 @ignore
+        @API-068
         Scenario: 02 Ensure clients cannot create a resource when the data model name is missing
              When a POST request is made to "/schools" with
                   """
@@ -72,16 +70,19 @@ Feature: Validation of the structure of the URLs
                       "type": "urn:ed-fi:api:not-found",
                       "title": "Not Found",
                       "status": 404,
-                      "correlationId": null
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
                   }
                   """
               And the response headers include
                   """
-                  Content-Type: application/problem+json
+                    {
+                        "Content-Type": "application/problem+json"
+                    }
                   """
 
-        ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-352
-        @API-069 @ignore
+        @API-069
         Scenario: 03 Ensure clients cannot update a resource when the data model name is missing
              When a PUT request is made to "/schools/{id}" with
                   """
@@ -109,7 +110,9 @@ Feature: Validation of the structure of the URLs
                       "type": "urn:ed-fi:api:not-found",
                       "title": "Not Found",
                       "status": 404,
-                      "correlationId": null
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
                   }
                   """
               And the response headers include
@@ -119,8 +122,7 @@ Feature: Validation of the structure of the URLs
                     }
                   """
 
-        ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-352
-        @API-070 @ignore
+        @API-070
         Scenario: 04 Ensure clients cannot delete a resource when the data model name is missing
              When a DELETE request is made to "/schools/{id}"
              Then it should respond with 404
@@ -131,7 +133,9 @@ Feature: Validation of the structure of the URLs
                       "type": "urn:ed-fi:api:not-found",
                       "title": "Not Found",
                       "status": 404,
-                      "correlationId": null
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
                   }
                   """
               And the response headers include

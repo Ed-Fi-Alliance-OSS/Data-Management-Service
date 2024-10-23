@@ -68,7 +68,8 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
                     "The specified data could not be found.",
                     context.FrontendRequest.TraceId
                 ),
-                Headers: []
+                Headers: [],
+                ContentType: "application/problem+json"
             );
             return;
         }

@@ -50,19 +50,3 @@ Feature: Resources "Read" Operation validations
                   """
              When a GET request is made to "/ed-fi/students/{id}"
              Then it should respond with 200
-
-        Scenario: 03 Verify response code 404 when missing ed-fi section of url
-             When a GET request is made to "/students"
-             Then it should respond with 404
-              And the response body is
-                  """
-                  {
-                    "detail": "The specified data could not be found.",
-                    "type": "urn:ed-fi:api:not-found",
-                    "title": "Not Found",
-                    "status": 404,
-                    "correlationId": "{{_traceId}}",
-                    "validationErrors": {},
-                    "errors": []
-                  }
-                  """
