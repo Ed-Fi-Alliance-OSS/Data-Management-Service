@@ -40,38 +40,38 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
             }
             // Use the middleware and pass the FakeTokenManager instance to it.
             app.UseMiddleware<ProviderStateMiddleware>(fakeTokenManager);
+
             app.UseEndpoints(endpoints =>
             {
-                _ = endpoints.MapPost("/connect/token", async (TokenRequest request, ITokenManager tokenManager) =>
-                {
-                    if (tokenManager is FakeTokenManager)
-                    {
-                        var fakeTokenManager = (FakeTokenManager)tokenManager; // Explicit cast
-                        //fakeTokenManager.ShouldThrowException = true;
-                        if (fakeTokenManager.ShouldThrowException)
-                        {
-                            var errorResponse = new { error = "Error from Keycloak" };
-                            return Results.Json(errorResponse, statusCode: 401);
-                        }
-                    }
-
-/*                     if (tokenManager is FakeTokenManager fakeTokenManager && fakeTokenManager.ShouldThrowException)
-                    {
-                        var errorResponse = new { error = "Error from Keycloak" };
-                        return Results.Json(errorResponse, statusCode: 401);
-                    } */
-
-                    var token = await tokenManager.GetAccessTokenAsync(new List<KeyValuePair<string, string>>
-                    {
-                        new KeyValuePair<string, string>("client_id", request.ClientId),
-                        new KeyValuePair<string, string>("client_secret", request.ClientSecret)
-                    });
-
-                    return Results.Text(token, "application/json");
-                });
-
+                endpoints.MapPost("/connect/token", HandleRequest);
             });
-        }
 
+            static async Task<IResult> HandleRequest(TokenRequest request, ITokenManager tokenManager)
+            {
+                if (string.IsNullOrEmpty(request.ClientId))
+                {
+                    return Results.Json(new { error = "'Client Id' must not be empty." }, statusCode: 400);
+                }
+
+                if (string.IsNullOrEmpty(request.ClientSecret))
+                {
+                    return Results.Json(new { error = "'Client Secret' must not be empty." }, statusCode: 400);
+                }
+
+                try
+                {
+                    var token = await tokenManager.GetAccessTokenAsync(
+                    [
+                        new("client_id", request.ClientId),
+                        new("client_secret", request.ClientSecret)
+                    ]);
+                    return Results.Text(token, "application/json");
+                }
+                catch (Exception ex)
+                {
+                    return Results.Json(new { error = ex.Message }, statusCode: 401);
+                }
+            }
+        }
     }
 }

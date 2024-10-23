@@ -68,7 +68,7 @@ public class ConsumerIdentityTest
                 clientsecret = ""
             })
             .WillRespond()
-            .WithStatus(HttpStatusCode.OK)
+            .WithStatus(HttpStatusCode.BadRequest)
             .WithHeader("Content-Type", "application/json")
             .WithJsonBody(new
             {
@@ -83,7 +83,7 @@ public class ConsumerIdentityTest
             var requestBody = new { clientid = "", clientsecret = "" };
             var response = await client.PostAsJsonAsync($"{ctx.MockServerUri}connect/token", requestBody);
             var content = await response.Content.ReadAsStringAsync();
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             content.Should().NotBeNull();
             content.Should().Contain("'Client Id' must not be empty.");
         });
@@ -105,7 +105,7 @@ public class ConsumerIdentityTest
             .WithHeader("Content-Type", "application/json")
             .WithJsonBody(new
             {
-                error = "'Error from Keycloak"
+                error = "Error from Keycloak"
             });
 
         await pact.VerifyAsync(async ctx =>
