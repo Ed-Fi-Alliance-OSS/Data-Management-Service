@@ -54,7 +54,8 @@ internal class ValidateEndpointMiddleware(ILogger _logger) : IPipelineStep
             context.FrontendResponse = new FrontendResponse(
                 StatusCode: 404,
                 Body: ForNotFound("The specified data could not be found.", context.FrontendRequest.TraceId),
-                Headers: new Dictionary<string, string> { { "Content-Type", "application/problem+json" } }
+                Headers: [],
+                ContentType: "application/problem+json"
             );
             return;
         }

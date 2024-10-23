@@ -93,12 +93,10 @@ public static class AspNetCoreFrontend
             httpContext.Response.Headers.Append(header.Key, header.Value);
         }
 
-        string contentType = frontendResponse.Headers.TryGetValue("Content-Type", out string? value) ? value : "application/json";
-
         IResult result = Results.Content(
             statusCode: frontendResponse.StatusCode,
             content: frontendResponse.Body == null ? null : JsonSerializer.Serialize(frontendResponse.Body),
-            contentType: contentType,
+            contentType: frontendResponse.ContentType,
             contentEncoding: System.Text.Encoding.UTF8
         );
 

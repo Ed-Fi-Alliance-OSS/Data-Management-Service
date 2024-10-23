@@ -119,6 +119,12 @@ public class ValidateEndpointMiddlewareTests
         }
 
         [Test]
+        public void It_returns_content_type_problem_json()
+        {
+            _context.FrontendResponse.ContentType.Should().Be("application/problem+json");
+        }
+
+        [Test]
         public void It_has_a_project_schema_for_edfi()
         {
             _context?.ProjectSchema.ProjectName.Value.Should().Be("Ed-Fi");
