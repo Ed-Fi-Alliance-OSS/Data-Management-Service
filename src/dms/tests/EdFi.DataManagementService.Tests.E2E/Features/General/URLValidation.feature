@@ -141,8 +141,7 @@ Feature: Validation of the structure of the URLs
                     }
                   """
 
-        ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-351
-        @API-071 @ignore
+        @API-071
         Scenario: 05 Ensure clients cannot retrieve a resource when endpoint is not pluralized
              When a GET request is made to "/ed-fi/school"
              Then it should respond with 404
@@ -165,8 +164,7 @@ Feature: Validation of the structure of the URLs
                     }
                   """
 
-        ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-351
-        @API-072 @ignore
+        @API-072
         Scenario: 06 Ensure clients cannot create a resource when endpoint is not pluralized
              When a POST request is made to "/ed-fi/school" with
                   """
@@ -193,7 +191,9 @@ Feature: Validation of the structure of the URLs
                       "type": "urn:ed-fi:api:not-found",
                       "title": "Not Found",
                       "status": 404,
-                      "correlationId": null
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
                   }
                   """
               And the response headers include
@@ -203,8 +203,7 @@ Feature: Validation of the structure of the URLs
                     }
                   """
 
-        ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-351
-        @API-073 @ignore
+        @API-073
         Scenario: 07 Ensure clients cannot update a resource when endpoint does not end in plural
              When a PUT request is made to "/ed-fi/school/{id}" with
                   """
@@ -231,7 +230,9 @@ Feature: Validation of the structure of the URLs
                       "type": "urn:ed-fi:api:not-found",
                       "title": "Not Found",
                       "status": 404,
-                      "correlationId": null
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
                   }
                   """
               And the response headers include
@@ -241,19 +242,20 @@ Feature: Validation of the structure of the URLs
                     }
                   """
 
-        ## The resolution of this ticket will solve the execution error: https://edfi.atlassian.net/browse/DMS-351
-        @API-074 @ignore
+        @API-074
         Scenario: 08 Ensure clients cannot delete a resource when endpoint does not end in plural
              When a DELETE request is made to "/ed-fi/school/{id}"
              Then it should respond with 404
-              And the respond body is
+              And the response body is
                   """
                   {
                       "detail": "The specified data could not be found.",
                       "type": "urn:ed-fi:api:not-found",
                       "title": "Not Found",
                       "status": 404,
-                      "correlationId": null
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
                   }
                   """
               And the response headers include

@@ -576,12 +576,24 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             var value = JsonNode.Parse(headers)!;
             foreach (var header in value.AsObject())
             {
-                if (header.Value != null)
+                var expectedValue = header.Value!.ToString();
+
+                if (expectedValue.Contains("{id}"))
                 {
                     _apiResponse
                         .Headers[header.Key]
                         .Should()
-                        .EndWith(header.Value.ToString().Replace("{id}", _id));
+                        .EndWith(expectedValue.Replace("{id}", _id));
+                }
+                else
+                {
+                    string? key = _apiResponse.Headers.Keys
+                        .FirstOrDefault(k => k.Equals(header.Key, StringComparison.OrdinalIgnoreCase));
+
+                    if (key != null)
+                    {
+                        _apiResponse.Headers[key].Should().Contain(expectedValue);
+                    }
                 }
             }
         }

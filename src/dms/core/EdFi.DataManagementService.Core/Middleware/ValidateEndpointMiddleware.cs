@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
+using static EdFi.DataManagementService.Core.Response.FailureResponse;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
@@ -52,8 +53,9 @@ internal class ValidateEndpointMiddleware(ILogger _logger) : IPipelineStep
             );
             context.FrontendResponse = new FrontendResponse(
                 StatusCode: 404,
-                Body: $"Invalid resource '{context.PathComponents.EndpointName}'.",
-                Headers: []
+                Body: ForNotFound("The specified data could not be found.", context.FrontendRequest.TraceId),
+                Headers: [],
+                ContentType: "application/problem+json"
             );
             return;
         }

@@ -39,4 +39,9 @@ public interface IFrontendResponse
     /// There will never be a Location entry in the Headers dictionary if this is not null
     /// </summary>
     string? LocationHeaderPath { get; }
+
+    /// <summary>
+    /// Customize the content-type if necessary. Default value is application/json
+    /// </summary>
+    string? ContentType { get; }
 }

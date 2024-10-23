@@ -194,4 +194,6 @@ public record FakeFrontendResponse : IFrontendResponse
     public Dictionary<string, string> Headers => [];
 
     public string? LocationHeaderPath => null;
+
+    public string? ContentType => "application/json";
 }
