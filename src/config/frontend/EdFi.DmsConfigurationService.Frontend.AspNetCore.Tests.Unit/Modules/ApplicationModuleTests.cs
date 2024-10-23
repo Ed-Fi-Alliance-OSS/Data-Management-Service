@@ -76,7 +76,7 @@ public class ApplicationModuleTests
                                 ApplicationName = "Test Application",
                                 ClaimSetName = "ClaimSet",
                                 VendorId = 1,
-                                ApplicationEducationOrganizations = [1]
+                                EducationOrganizationIds = [1]
                             }
                         ]
                     )
@@ -91,7 +91,7 @@ public class ApplicationModuleTests
                             ApplicationName = "Test Application",
                             ClaimSetName = "ClaimSet",
                             VendorId = 1,
-                            ApplicationEducationOrganizations = [1]
+                            EducationOrganizationIds = [1]
                         }
                     )
                 );
@@ -117,7 +117,7 @@ public class ApplicationModuleTests
                       "ApplicationName": "Application 11",
                       "ClaimSetName": "Test",
                       "VendorId": 1,
-                      "ApplicationEducationOrganizations": [1]
+                      "EducationOrganizationIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -136,7 +136,7 @@ public class ApplicationModuleTests
                        "ApplicationName": "Application 11",
                         "ClaimSetName": "Test",
                         "VendorId": 1,
-                        "ApplicationEducationOrganizations": [1]
+                        "EducationOrganizationIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -168,7 +168,7 @@ public class ApplicationModuleTests
                    "ApplicationName": "Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101",
                     "ClaimSetName": "",
                     "VendorId":1,
-                    "ApplicationEducationOrganizations": [0]
+                    "EducationOrganizationIds": [0]
                 }
                 """;
 
@@ -180,7 +180,7 @@ public class ApplicationModuleTests
 
             //Assert
             string expectedResponse =
-                @"{""title"":""Validation failed"",""errors"":{""ApplicationName"":[""The length of \u0027Application Name\u0027 must be 256 characters or fewer. You entered 266 characters.""],""ClaimSetName"":[""\u0027Claim Set Name\u0027 must not be empty.""],""ApplicationEducationOrganizations[0]"":[""\u0027Application Education Organizations\u0027 must be greater than \u00270\u0027.""]}}";
+                @"{""title"":""Validation failed"",""errors"":{""ApplicationName"":[""The length of \u0027Application Name\u0027 must be 256 characters or fewer. You entered 266 characters.""],""ClaimSetName"":[""\u0027Claim Set Name\u0027 must not be empty.""],""EducationOrganizationIds[0]"":[""\u0027Education Organization Ids\u0027 must be greater than \u00270\u0027.""]}}";
             string addResponseContent = await addResponse.Content.ReadAsStringAsync();
             addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             addResponseContent.Should().Contain(expectedResponse);
@@ -223,7 +223,7 @@ public class ApplicationModuleTests
                        "ApplicationName": "Application 101",
                         "ClaimSetName": "Test",
                         "VendorId":1,
-                        "ApplicationEducationOrganizations": [1]
+                        "EducationOrganizationIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -275,7 +275,7 @@ public class ApplicationModuleTests
                         "ApplicationName": "Application 102",
                         "ClaimSetName": "Test",
                         "VendorId": 1,
-                        "ApplicationEducationOrganizations": [1]
+                        "EducationOrganizationIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -293,7 +293,7 @@ public class ApplicationModuleTests
                         "ApplicationName": "Application 102",
                         "ClaimSetName": "Test",
                         "VendorId": 1,
-                        "ApplicationEducationOrganizations": [1]
+                        "EducationOrganizationIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -343,7 +343,7 @@ public class ApplicationModuleTests
                       "ApplicationName": "Application 11",
                       "ClaimSetName": "Test",
                       "VendorId": 1,
-                      "ApplicationEducationOrganizations": [1]
+                      "EducationOrganizationIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -361,7 +361,7 @@ public class ApplicationModuleTests
                       "ApplicationName": "Application 11",
                       "ClaimSetName": "Test",
                       "VendorId": 1,
-                      "ApplicationEducationOrganizations": [1]
+                      "EducationOrganizationIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -407,7 +407,7 @@ public class ApplicationModuleTests
                         "ApplicationName": "Application 102",
                         "ClaimSetName": "Test",
                         "VendorId": 1,
-                        "ApplicationEducationOrganizations": [1]
+                        "EducationOrganizationIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -437,7 +437,7 @@ public class ApplicationModuleTests
                        "ApplicationName": "Application 101",
                         "ClaimSetName": "Test",
                         "VendorId":1,
-                        "ApplicationEducationOrganizations": [1]
+                        "EducationOrganizationIds": [1]
                     }
                     """,
                     Encoding.UTF8,

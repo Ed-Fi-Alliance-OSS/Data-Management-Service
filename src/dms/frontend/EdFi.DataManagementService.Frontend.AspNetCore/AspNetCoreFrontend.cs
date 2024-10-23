@@ -96,7 +96,7 @@ public static class AspNetCoreFrontend
         IResult result = Results.Content(
             statusCode: frontendResponse.StatusCode,
             content: frontendResponse.Body == null ? null : JsonSerializer.Serialize(frontendResponse.Body),
-            contentType: "application/json",
+            contentType: frontendResponse.ContentType,
             contentEncoding: System.Text.Encoding.UTF8
         );
 

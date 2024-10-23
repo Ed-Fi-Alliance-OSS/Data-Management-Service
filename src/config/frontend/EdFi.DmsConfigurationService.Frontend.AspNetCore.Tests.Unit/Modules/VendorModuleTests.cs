@@ -23,7 +23,7 @@ public class VendorModuleTests
 {
     private readonly IRepository<Vendor> _repository = A.Fake<IRepository<Vendor>>();
 
-    protected HttpClient SetUpClient()
+    private HttpClient SetUpClient()
     {
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -35,7 +35,7 @@ public class VendorModuleTests
                         .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
                         .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
                             AuthenticationConstants.AuthenticationSchema,
-                            options => { }
+                            _ => { }
                         );
 
                     collection.AddAuthorization(options =>
@@ -45,7 +45,7 @@ public class VendorModuleTests
                         )
                     );
 
-                    collection.AddTransient((x) => _repository!);
+                    collection.AddTransient((_) => _repository);
                 }
             );
         });
@@ -159,7 +159,7 @@ public class VendorModuleTests
             // Arrange
             using var client = SetUpClient();
 
-            var invalidBody = """
+            string invalidBody = """
                 {
                   "id": 1,
                   "company": "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
@@ -183,13 +183,13 @@ public class VendorModuleTests
             );
 
             //Assert
-            var expectedResponse =
+            string expectedResponse =
                 @"{""title"":""Validation failed"",""errors"":{""Company"":[""The length of \u0027Company\u0027 must be 256 characters or fewer. You entered 300 characters.""],""ContactName"":[""The length of \u0027Contact Name\u0027 must be 128 characters or fewer. You entered 300 characters.""],""ContactEmailAddress"":[""\u0027Contact Email Address\u0027 is not a valid email address.""],""NamespacePrefixes[0]"":[""The length of \u0027Namespace Prefixes\u0027 must be 128 characters or fewer. You entered 130 characters.""]}}";
-            var addResponseContent = await addResponse.Content.ReadAsStringAsync();
+            string addResponseContent = await addResponse.Content.ReadAsStringAsync();
             addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             addResponseContent.Should().Contain(expectedResponse);
 
-            var updateResponseContent = await updateResponse.Content.ReadAsStringAsync();
+            string updateResponseContent = await updateResponse.Content.ReadAsStringAsync();
             updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             updateResponseContent.Should().Contain(expectedResponse);
         }
@@ -221,7 +221,7 @@ public class VendorModuleTests
             );
 
             //Assert
-            var updateResponseContent = await updateResponse.Content.ReadAsStringAsync();
+            string updateResponseContent = await updateResponse.Content.ReadAsStringAsync();
             updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             updateResponseContent.Should().Contain("Request body id must match the id in the url.");
         }
@@ -457,6 +457,144 @@ public class VendorModuleTests
             getByIdResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             updateResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        }
+    }
+
+    [TestFixture]
+    public class GetApplicationsByVendorIdTests : VendorModuleTests
+    {
+        private readonly IVendorRepository _vendorRepository = A.Fake<IVendorRepository>();
+
+        private HttpClient SetUpIVendorClient()
+        {
+            var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(
+                    (collection) =>
+                    {
+                        collection
+                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
+                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                                AuthenticationConstants.AuthenticationSchema,
+                                _ => { }
+                            );
+
+                        collection.AddAuthorization(options =>
+                            options.AddPolicy(
+                                SecurityConstants.ServicePolicy,
+                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
+                            )
+                        );
+
+                        collection.AddTransient<IVendorRepository>((_) => _vendorRepository);
+                    }
+                );
+            });
+            return factory.CreateClient();
+        }
+
+        [SetUp]
+        public void SetUp()
+        {
+            A.CallTo(() => _vendorRepository.GetVendorByIdWithApplicationsAsync(A<long>.Ignored))
+                .Returns(
+                    new GetResult<Vendor>.GetByIdSuccess(
+                        new Vendor()
+                        {
+                            Company = "Test",
+                            ContactEmailAddress = "some@email.com",
+                            ContactName = "Contact",
+                            NamespacePrefixes = [],
+                            Applications =
+                            [
+                                new()
+                                {
+                                    Id = 1,
+                                    ApplicationName = "App 1",
+                                    ClaimSetName = "Name",
+                                    VendorId = 1,
+                                    EducationOrganizationIds = [1]
+                                },
+                                new()
+                                {
+                                    Id = 2,
+                                    ApplicationName = "App 2",
+                                    ClaimSetName = "Name",
+                                    VendorId = 1,
+                                    EducationOrganizationIds = [1]
+                                }
+                            ]
+                        }
+                    )
+                );
+        }
+
+        [Test]
+        public async Task Should_get_a_list_of_applications_by_vendor_id()
+        {
+            // Arrange
+            using var client = SetUpIVendorClient();
+
+            // Act
+            var response = await client.GetAsync("/v2/vendors/1/applications");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            string responseContent = await response.Content.ReadAsStringAsync();
+            responseContent.Should().Contain("App 1");
+            responseContent.Should().Contain("App 2");
+        }
+
+        [Test]
+        public async Task Should_return_an_empty_array_for_a_vendor_with_no_applications()
+        {
+            // Arrange
+            using var client = SetUpIVendorClient();
+
+            A.CallTo(() => _repository.AddAsync(A<Vendor>.Ignored))
+                .Returns(new InsertResult.InsertSuccess(2));
+
+            A.CallTo(() => _vendorRepository.GetVendorByIdWithApplicationsAsync(A<long>.Ignored))
+                .Returns(
+                    new GetResult<Vendor>.GetByIdSuccess(
+                        new Vendor()
+                        {
+                            Id = 1,
+                            Company = "Test Company",
+                            NamespacePrefixes = ["Test Prefix"],
+                        }
+                    )
+                );
+
+            // Act
+            var response = await client.GetAsync("/v2/vendors/2/applications");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            string responseContent = await response.Content.ReadAsStringAsync();
+            responseContent.Should().Be("[]");
+        }
+
+        [Test]
+        public async Task Should_return_not_found_related_to_a_not_found_vendor_id()
+        {
+            // Arrange
+            using var client = SetUpIVendorClient();
+
+            A.CallTo(() => _vendorRepository.GetVendorByIdWithApplicationsAsync(A<long>.Ignored))
+                .Returns(new GetResult<Vendor>.GetByIdFailureNotExists());
+
+            // Act
+            var response = await client.GetAsync("/v2/vendors/99/applications");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            string responseContent = await response.Content.ReadAsStringAsync();
+            string expectedResponse =
+                @"{""title"":""Not found: vendor with ID 99. It may have been recently deleted.""}";
+            responseContent.Should().Be(expectedResponse);
         }
     }
 }

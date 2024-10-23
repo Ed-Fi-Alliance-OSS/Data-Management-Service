@@ -17,9 +17,11 @@ namespace EdFi.DataManagementService.Core.Model;
 /// <param name="LocationHeaderPath">The path portion of a Location header URL for the response,
 ///     or null if there is no Location header for the response. Always begins with a forward-slash.
 ///     There will never be a Location entry in the Headers dictionary if this is not null.</param>
+/// <param name="ContentType">Customize the content-type if necessary. Default value is application/json</param>
 internal record FrontendResponse(
     int StatusCode,
     JsonNode? Body,
     Dictionary<string, string> Headers,
-    string? LocationHeaderPath = null
+    string? LocationHeaderPath = null,
+    string? ContentType = "application/json"
 ) : IFrontendResponse;
