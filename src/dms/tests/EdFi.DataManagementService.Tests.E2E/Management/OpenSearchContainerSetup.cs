@@ -21,7 +21,7 @@ public class OpenSearchContainerSetup : ContainerSetupBase
 
     public override string ApiUrl()
     {
-        return "http://localhost:8080/";
+        return "http://localhost:5198/";
     }
 
     public override async Task ResetData()
