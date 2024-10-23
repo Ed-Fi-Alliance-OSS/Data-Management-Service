@@ -5,7 +5,7 @@
 
 using Microsoft.AspNetCore.Http;
 
-namespace EdFi.DmsConfigurationService.Backend.OAuthService;
+namespace EdFi.DataManagementService.Backend.OAuthService;
 
 public interface IOAuthManager
 {
