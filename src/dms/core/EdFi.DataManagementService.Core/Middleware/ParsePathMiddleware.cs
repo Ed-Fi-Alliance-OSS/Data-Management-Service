@@ -100,6 +100,18 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
         DocumentUuid documentUuid =
             pathInfo.DocumentUuid == null ? No.DocumentUuid : new(new(pathInfo.DocumentUuid));
 
+        // Verify method allowed with/without documentUuid
+        switch (context.Method)
+        {
+            case RequestMethod.DELETE when documentUuid == No.DocumentUuid:
+            case RequestMethod.POST when documentUuid == No.DocumentUuid:
+            case RequestMethod.POST when documentUuid != No.DocumentUuid:
+                {
+                    NotAllowed();
+                    return;
+                }
+        }
+
         context.PathComponents = new(
             ProjectNamespace: new(pathInfo.ProjectNamespace),
             EndpointName: new(pathInfo.EndpointName),
@@ -107,5 +119,18 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
         );
 
         await next();
+        return;
+
+        void NotAllowed()
+        {
+            _logger.LogDebug("ParsePathMiddleware: Missing document UUID on request method {Method}", context.Method);
+            context.FrontendResponse = new FrontendResponse(
+                StatusCode: 405,
+                Body: FailureResponse.ForMethodNotAllowed(
+                    traceId: context.FrontendRequest.TraceId
+                ),
+                Headers: []
+            );
+        }
     }
 }
