@@ -129,7 +129,8 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
                 Body: FailureResponse.ForMethodNotAllowed(
                     traceId: context.FrontendRequest.TraceId
                 ),
-                Headers: []
+                Headers: [],
+                ContentType: "application/problem+json"
             );
         }
     }
