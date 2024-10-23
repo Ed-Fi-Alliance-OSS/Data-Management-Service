@@ -1,3 +1,4 @@
+### DMS Auth Via Docker
 POST http://localhost:8080/oauth/token
 
 Content-Type: "application/json"
@@ -7,29 +8,32 @@ Content-Type: "application/json"
 }
 
 ###
+### DMS Auth running locally Proper
 POST http://localhost:5198/oauth/token
-Authorization: Basic clientId:clientSecret
-Content-Type: application/json
+Authorization: Basic CSClientApp:test1@Secret
+Content-Type: application/x-www-form-urlencoded
 
-{
-    "grant_type": "client_credentials",
-}
+grant_type=client_credentials
+
+###
+### Wrong Authorization Headings
+POST http://localhost:5198/oauth/token
+Authorization: clientId:clientSecret
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
 
 ###
 ### Missing Authorization Headings
 POST http://localhost:5198/oauth/token
-Authorization: clientId:clientSecret
-Content-Type: application/json
+Content-Type: application/x-www-form-urlencoded
 
-{
-    "grant_type": "client_credentials",
-}
-
+grant_type=client_credentials
 
 ###
-### Missing grant_type body
+### Proper body
 POST http://localhost:5198/oauth/token
-Authorization: Basic clientId:clientSecret
+Authorization: Basic CSClientApp:test1@Secret
 Content-Type: application/x-www-form-urlencoded
 
 grant_type=client_credentials
