@@ -15,25 +15,8 @@ Feature: Check extra functionalities for GET requests
                   | 604829          | 2010-01-13 | Traci     | Mathews     |
                   | 604829          | 2015-08-17 | April     | Shelton     |
 
-        @ignore
-        Scenario: 01 Ensure that a resource can be retrieved by name
-             When a GET request is made to "/ed-fi/students?firstName=April"
-             Then it should respond with 200
-              And the response body is
-                  """
-                  [
-                      {
-                          "studentUniqueId": "604829",
-                          "birthDate": "2015-08-17",
-                          "firstName": "April",
-                          "lastSurname": "Shelton",
-                          "_lastModifiedDate": "2024-05-10T20:57:00.9107017Z"
-                      }
-                  ]
-                  """
-
-        @ignore
-        Scenario: 02 Ensure that a resource can be retrieved bt lastModifiedDate property
+        @API-257 @ignore
+        Scenario: 01 Ensure that a resource can be retrieved bt lastModifiedDate property
              When a GET request is made to "/ed-fi/students?_lastModifiedDate=2024-07-09T18:46:39.5385642Z"
              Then it should respond with 200
               And the response body is
@@ -49,9 +32,9 @@ Feature: Check extra functionalities for GET requests
                   ]
                   """
 
-        @ignore
+        @API-258 @ignore
         Scenario: 03 Ensure that resources can be ordered by attribute ascending or descending
-             When a POST request is made to "/ed-fi/schools?orderBy=schoolId&direction=desc"
+             When a GET request is made to "/ed-fi/schools?orderBy=schoolId&direction=desc"
              Then it should respond with 200
               And the response body is
                   """
