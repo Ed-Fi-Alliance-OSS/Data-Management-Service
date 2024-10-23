@@ -127,9 +127,9 @@ internal static class FailureResponse
         );
     }
 
-    public static JsonNode ForImmutableIdentity(string error, TraceId traceId) =>
+    public static JsonNode ForImmutableIdentity(string detail, TraceId traceId) =>
         CreateBaseJsonObject(
-            detail: error,
+            detail: detail,
             type: _keyChangeNotSupported,
             title: "Key Change Not Supported",
             status: 400,
@@ -138,7 +138,7 @@ internal static class FailureResponse
             errors: []
         );
 
-    public static JsonNode ForMethodNotAllowed(TraceId traceId) =>
+    public static JsonNode ForMethodNotAllowed(string[] errors, TraceId traceId) =>
         CreateBaseJsonObject(
             detail: "The request construction was invalid.",
             type: _methodNotAllowed,
@@ -146,6 +146,6 @@ internal static class FailureResponse
             status: 405,
             correlationId: traceId.Value,
             validationErrors: [],
-            errors: []
+            errors
         );
 }
