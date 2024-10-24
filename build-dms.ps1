@@ -242,17 +242,21 @@ function RunE2E {
 }
 
 function E2ETests {
+    Invoke-Step { DockerBuild }
+
     if ($EnableOpenSearch) {
-        try {
-            Push-Location eng/docker-compose/
-            ./start-local-dms.ps1 "./.env.e2e"
-        }
-        finally {
-            Pop-Location
+        Invoke-Execute {
+            try {
+                Push-Location eng/docker-compose/
+                ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e"
+            }
+            finally {
+                Pop-Location
+            }
         }
     }
     else {
-        Invoke-Step { DockerBuild }
+        Invoke-Step { DockerRun }
     }
     Invoke-Step { RunE2E }
 }
@@ -273,7 +277,13 @@ function RunNuGetPack {
     # NU5100 is the warning about DLLs outside of a "lib" folder. We're
     # deliberately using that pattern, therefore we bypass the
     # warning.
-    dotnet pack $ProjectPath --no-build --no-restore --output $PSScriptRoot -p:NuspecFile=$nuspecPath -p:NuspecProperties="version=$PackageVersion;year=$copyrightYear" /p:NoWarn=NU5100
+    dotnet pack $ProjectPath `
+        --no-build `
+        --no-restore `
+        --output $PSScriptRoot `
+        -p:NuspecFile=$nuspecPath `
+        -p:NuspecProperties="version=$PackageVersion;year=$copyrightYear" `
+        /p:NoWarn=NU5100
 }
 
 function BuildPackage {
