@@ -17,11 +17,14 @@ public class TokenEndpointModule : IEndpointModule
         endpoints.MapPost("/oauth/token", GenerateToken);
     }
 
-    internal static async Task GenerateToken(HttpContext httpContext, IOptions<AppSettings> appSettings, OAuthManager oAuthManager)
+    internal static async Task GenerateToken(HttpContext httpContext, IOptions<AppSettings> appSettings, OAuthManager oAuthManager, ILogger<TokenEndpointModule> logger)
     {
         try
         {
+            logger.LogInformation("Requesting access token from OAuth Manager.");
             var response = await oAuthManager.GetAccessTokenAsync(httpContext, appSettings.Value.AuthenticationService);
+
+            logger.LogInformation("OAuth Manager access token request successful.");
             await response.Content.CopyToAsync(httpContext.Response.Body);
         }
         catch (OAuthIdentityException ex)
