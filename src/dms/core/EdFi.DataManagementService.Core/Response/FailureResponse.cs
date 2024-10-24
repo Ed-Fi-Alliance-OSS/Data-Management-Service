@@ -20,6 +20,7 @@ internal static class FailureResponse
     private static readonly string _dataConflictTypePrefix = $"{_typePrefix}:data-conflict";
     private static readonly string _keyChangeNotSupported =
         $"{_badRequestTypePrefix}:data-validation-failed:key-change-not-supported";
+    private static readonly string _methodNotAllowed = $"{_typePrefix}:method-not-allowed";
 
     private static JsonObject CreateBaseJsonObject(
         string detail,
@@ -126,14 +127,25 @@ internal static class FailureResponse
         );
     }
 
-    public static JsonNode ForImmutableIdentity(string error, TraceId traceId) =>
+    public static JsonNode ForImmutableIdentity(string detail, TraceId traceId) =>
         CreateBaseJsonObject(
-            detail: error,
+            detail: detail,
             type: _keyChangeNotSupported,
             title: "Key Change Not Supported",
             status: 400,
             correlationId: traceId.Value,
             validationErrors: [],
             errors: []
+        );
+
+    public static JsonNode ForMethodNotAllowed(string[] errors, TraceId traceId) =>
+        CreateBaseJsonObject(
+            detail: "The request construction was invalid.",
+            type: _methodNotAllowed,
+            title: "Method Not Allowed",
+            status: 405,
+            correlationId: traceId.Value,
+            validationErrors: [],
+            errors
         );
 }
