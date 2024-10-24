@@ -102,17 +102,17 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
         {
             case RequestMethod.DELETE when pathInfo.DocumentUuid == null:
                 {
-                    NotAllowed(["Resource collections cannot be deleted. To delete a specific item, use DELETE and include the \"id\" in the route."]);
+                    NotAllowed(["Resource collections cannot be deleted. To delete a specific item, use DELETE and include the 'id' in the route."]);
                     return;
                 }
             case RequestMethod.PUT when pathInfo.DocumentUuid == null:
                 {
-                    NotAllowed(["Resource collections cannot be replaced. To \"upsert\" an item in the collection, use POST. To update a specific item, use PUT and include the \"id\" in the route."]);
+                    NotAllowed(["Resource collections cannot be replaced. To 'upsert' an item in the collection, use POST. To update a specific item, use PUT and include the 'id' in the route."]);
                     return;
                 }
             case RequestMethod.POST when pathInfo.DocumentUuid != null:
                 {
-                    NotAllowed(["Resource items can only be updated using PUT. To \"upsert\" an item in the resource collection using POST, remove the \"id\" from the route."]);
+                    NotAllowed(["Resource items can only be updated using PUT. To 'upsert' an item in the resource collection using POST, remove the 'id' from the route."]);
                     return;
                 }
         }
