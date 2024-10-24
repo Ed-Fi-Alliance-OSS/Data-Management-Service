@@ -60,8 +60,8 @@ if ($d) {
     }
 }
 else {
-    $upArgs = @()
-    if ($r) { $upArgs += "--build" }
+    $upArg = ""
+    if ($r) { $upArg = "--build" }
 
     Write-Output "Starting locally-built DMS"
     if($EnforceAuthorization)
@@ -71,6 +71,7 @@ else {
     else {
         $env:IDENTITY_ENFORCE_AUTHORIZATION=$false
     }
+
     docker compose $files --env-file $EnvironmentFile up -d $upArg
 
     Start-Sleep 20
