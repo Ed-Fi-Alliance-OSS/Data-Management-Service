@@ -35,9 +35,9 @@ public class VendorModule : BaseModule<Vendor, VendorValidator>
         {
             GetResult<Vendor>.GetByIdSuccess success => Results.Ok(success.Result.Applications),
             GetResult<Vendor>.GetByIdFailureNotExists => Results.NotFound(
-                    new { title = $"Not found: vendor with ID {id}. It may have been recently deleted." }
-                ),
-            _ => Results.Problem(statusCode: 500)
+                new { title = $"Not found: vendor with ID {id}. It may have been recently deleted." }
+            ),
+            _ => Results.Problem(statusCode: 500),
         };
     }
 }
