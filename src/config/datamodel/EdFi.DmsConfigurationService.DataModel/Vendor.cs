@@ -14,3 +14,12 @@ public class Vendor
     public required IList<string> NamespacePrefixes { get; set; } = [];
     public IList<Application> Applications { get; set; } = [];
 }
+
+public class Application
+{
+    public long Id { get; set; }
+    public required string ApplicationName { get; set; }
+    public long VendorId { get; set; }
+    public required string ClaimSetName { get; set; }
+    public IList<long> EducationOrganizationIds { get; set; } = [];
+}

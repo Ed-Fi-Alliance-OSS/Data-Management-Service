@@ -5,11 +5,12 @@
 
 namespace EdFi.DmsConfigurationService.DataModel;
 
-public class Application
-{
-    public long Id { get; set; }
-    public required string ApplicationName { get; set; }
-    public long VendorId { get; set; }
-    public required string ClaimSetName { get; set; }
-    public required IList<long> EducationOrganizationIds { get; set; } = [];
-}
+
+//public class Application
+//{
+//    public long Id { get; set; }
+//    public required string ApplicationName { get; set; }
+//    public long VendorId { get; set; }
+//    public required string ClaimSetName { get; set; }
+//    public required IList<long> EducationOrganizationIds { get; set; } = [];
+//}

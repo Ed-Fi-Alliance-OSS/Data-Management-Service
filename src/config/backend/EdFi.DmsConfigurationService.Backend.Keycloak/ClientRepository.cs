@@ -3,16 +3,20 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using Keycloak.Net;
 using Keycloak.Net.Models.Clients;
 using Keycloak.Net.Models.Roles;
-using Keycloak.Net;
 
 namespace EdFi.DmsConfigurationService.Backend.Keycloak;
 
 public class ClientRepository(KeycloakContext keycloakContext) : IClientRepository
 {
-    private readonly KeycloakClient _keycloakClient = new(keycloakContext.Url, keycloakContext.ClientSecret,
-       new KeycloakOptions(adminClientId: keycloakContext.ClientId));
+    private readonly KeycloakClient _keycloakClient =
+        new(
+            keycloakContext.Url,
+            keycloakContext.ClientSecret,
+            new KeycloakOptions(adminClientId: keycloakContext.ClientId)
+        );
     private readonly string _realm = keycloakContext.Realm!;
 
     public async Task<bool> CreateClientAsync(string clientId, string clientSecret, string displayName)
@@ -26,11 +30,13 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
             Secret = clientSecret,
             Name = displayName,
             ServiceAccountsEnabled = true,
-            ProtocolMappers = ConfigServiceProtocolMapper()
+            ProtocolMappers = ConfigServiceProtocolMapper(),
         };
 
         // Read service role from the realm
-        Role? clientRole = realmRoles.FirstOrDefault(x => x.Name.Equals(keycloakContext.ServiceRole, StringComparison.InvariantCultureIgnoreCase));
+        Role? clientRole = realmRoles.FirstOrDefault(x =>
+            x.Name.Equals(keycloakContext.ServiceRole, StringComparison.InvariantCultureIgnoreCase)
+        );
 
         var createdClientId = await _keycloakClient.CreateClientAndRetrieveClientIdAsync(_realm, client);
         if (!string.IsNullOrEmpty(createdClientId))
@@ -39,7 +45,11 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
             {
                 // Assign the service role to client's service account
                 var serviceAccountUserId = await GetServiceAccountUserIdAsync(createdClientId);
-                var result = await _keycloakClient.AddRealmRoleMappingsToUserAsync(_realm, serviceAccountUserId, [clientRole]);
+                var result = await _keycloakClient.AddRealmRoleMappingsToUserAsync(
+                    _realm,
+                    serviceAccountUserId,
+                    [clientRole]
+                );
                 return result;
             }
             else
@@ -69,9 +79,9 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
                         { "multivalued", "true" },
                         { "id.token.claim", "true" },
                         { "access.token.claim", "true" },
-                        { "userinfo.token.claim", "true" }
-                    }
-                }
+                        { "userinfo.token.claim", "true" },
+                    },
+                },
             ];
         }
     }

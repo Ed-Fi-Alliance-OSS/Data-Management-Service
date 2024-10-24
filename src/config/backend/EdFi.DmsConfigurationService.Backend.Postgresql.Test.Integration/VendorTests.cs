@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.Backend.Postgresql.Repository;
+using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using FluentAssertions;
 
@@ -197,7 +199,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
             private long _vendorId1;
             private long _vendorId2;
             private long _vendorIdNotExist = 9999;
-            private readonly IRepository<Application> _applicationRepository = new ApplicationRepository(
+            private readonly IApplicationRepository _applicationRepository = new ApplicationRepository(
                 Configuration.DatabaseOptions
             );
 
@@ -232,29 +234,29 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
                 _vendorId2 = (result2 as InsertResult.InsertSuccess)!.Id;
                 _vendorId2.Should().BeGreaterThan(0);
 
-                Application application1 =
+                await _applicationRepository.InsertApplication(
                     new()
                     {
                         ApplicationName = "Test Application 1",
                         VendorId = _vendorId1,
                         ClaimSetName = "Test Claim set",
-                        EducationOrganizationIds = [1, 255911001, 255911002]
-                    };
+                        EducationOrganizationIds = [1, 255911001, 255911002],
+                    },
+                    Guid.Empty,
+                    ""
+                );
 
-                var applicationResult1 = await _applicationRepository.AddAsync(application1);
-                applicationResult1.Should().BeOfType<InsertResult.InsertSuccess>();
-
-                Application application2 =
+                await _applicationRepository.InsertApplication(
                     new()
                     {
                         ApplicationName = "Test Application 2",
                         VendorId = _vendorId1,
                         ClaimSetName = "Test Claim set 2",
-                        EducationOrganizationIds = [1, 255911001, 255911002]
-                    };
-
-                var applicationResult2 = await _applicationRepository.AddAsync(application2);
-                applicationResult2.Should().BeOfType<InsertResult.InsertSuccess>();
+                        EducationOrganizationIds = [1, 255911001, 255911002],
+                    },
+                    Guid.Empty,
+                    ""
+                );
             }
 
             [Test]
