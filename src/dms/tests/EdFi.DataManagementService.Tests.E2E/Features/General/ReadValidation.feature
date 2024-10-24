@@ -16,7 +16,7 @@ Feature: Check extra functionalities for GET requests
                   | 604829          | 2015-08-17 | April     | Shelton     |
 
         @API-257 @ignore
-        Scenario: 01 Ensure that a resource can be retrieved bt lastModifiedDate property
+        Scenario: 01 Ensure that clients can retrieve a resource by lastModifiedDate
              When a GET request is made to "/ed-fi/students?_lastModifiedDate=2024-07-09T18:46:39.5385642Z"
              Then it should respond with 200
               And the response body is
@@ -33,7 +33,7 @@ Feature: Check extra functionalities for GET requests
                   """
 
         @API-258 @ignore
-        Scenario: 03 Ensure that resources can be ordered by attribute ascending or descending
+        Scenario: 03 Ensure that clients can order by attribute ascending or descending
              When a GET request is made to "/ed-fi/schools?orderBy=schoolId&direction=desc"
              Then it should respond with 200
               And the response body is
