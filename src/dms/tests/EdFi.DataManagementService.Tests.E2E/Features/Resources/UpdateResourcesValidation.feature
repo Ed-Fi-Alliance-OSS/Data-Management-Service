@@ -907,6 +907,7 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
+        @API-256
         Scenario: 22 Verify cascading updates on role named references
             Given the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
