@@ -299,7 +299,7 @@ Feature: Validation of the structure of the URLs
                       "correlationId": null,
                       "validationErrors": {},
                       "errors": [
-                          "Resource items can only be updated using PUT. To \"upsert\" an item in the resource collection using POST, remove the \"id\" from the route."
+                          "Resource items can only be updated using PUT. To 'upsert' an item in the resource collection using POST, remove the 'id' from the route."
                       ]
                   }
                   """
@@ -340,7 +340,7 @@ Feature: Validation of the structure of the URLs
                       "correlationId": null,
                       "validationErrors": {},
                       "errors": [
-                         "Resource collections cannot be replaced. To \"upsert\" an item in the collection, use POST. To update a specific item, use PUT and include the \"id\" in the route."
+                         "Resource collections cannot be replaced. To 'upsert' an item in the collection, use POST. To update a specific item, use PUT and include the 'id' in the route."
                       ]
                   }
                   """
@@ -365,7 +365,7 @@ Feature: Validation of the structure of the URLs
                       "correlationId": null,
                       "validationErrors": {},
                       "errors": [
-                         "Resource collections cannot be deleted. To delete a specific item, use DELETE and include the \"id\" in the route."
+                         "Resource collections cannot be deleted. To delete a specific item, use DELETE and include the 'id' in the route."
                       ]
                   }
                   """
