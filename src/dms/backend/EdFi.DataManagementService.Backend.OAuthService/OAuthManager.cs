@@ -8,14 +8,14 @@ using System.Text;
 
 namespace EdFi.DataManagementService.Backend.OAuthService;
 
-public class OAuthManager() : IOAuthManager
+public class OAuthManager : IOAuthManager
 {
     public async Task GetAccessTokenAsync(HttpContext httpContext, string upstreamUri)
     {
         // Create HttpClient to proxy request.
         var httpClientFactory = httpContext.RequestServices.GetRequiredService<IHttpClientFactory>();
         var client = httpClientFactory.CreateClient();
-        var upstreamRequest = new HttpRequestMessage(HttpMethod.Post, upstreamUri);
+        HttpRequestMessage upstreamRequest = new HttpRequestMessage(HttpMethod.Post, upstreamUri);
 
         // Verify the request header contains Authorization Basic.
         httpContext.Request.Headers.TryGetValue("Authorization", out var authHeader);
@@ -26,15 +26,11 @@ public class OAuthManager() : IOAuthManager
         }
         else
         {
-            // Decode Base64 clientId and clientSecret.
-            var base64Credentials = authHeader.ToString().Substring("Basic ".Length).Trim();
-            var credentials = Encoding.UTF8.GetString(Convert.FromBase64String(base64Credentials)).Split(':');
-            var clientId = credentials[0];
-            var clientSecret = credentials[1];
-            var encodedCredentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{clientId}:{clientSecret}"));
 
-            // Add Basic Authentication headers and grant_type to upstream request.
-            upstreamRequest.Headers.Add("Authorization", $"Basic {encodedCredentials}");
+            // Forward Basic Authentication headers to upstream request.
+            upstreamRequest.Headers.Add("Authorization", authHeader.ToString());
+
+            // TODO(DMS-408): Replace hard-coded with forwarded request body.
             upstreamRequest!.Content = new StringContent("grant_type=client_credentials", Encoding.UTF8, "application/x-www-form-urlencoded");
 
             // In case of 5xx Error, pass 503 Service unavailable to client, otherwise forward status directly to client.
