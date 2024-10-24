@@ -53,18 +53,23 @@ public abstract class BaseModule<T, TValidator> : IEndpointModule
         if (insertResult is InsertResult.FailureReferenceNotFound failure)
         {
             throw new ValidationException(
-                new[] { new ValidationFailure(failure.ReferenceName, $"Reference '{failure.ReferenceName}' does not exist.") }
+                new[]
+                {
+                    new ValidationFailure(
+                        failure.ReferenceName,
+                        $"Reference '{failure.ReferenceName}' does not exist."
+                    ),
+                }
             );
         }
 
         var request = httpContext.Request;
         return insertResult switch
         {
-            InsertResult.InsertSuccess success
-                => Results.Created(
-                    $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
-                    null
-                ),
+            InsertResult.InsertSuccess success => Results.Created(
+                $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
+                null
+            ),
             InsertResult.UnknownFailure => Results.Problem(statusCode: 500),
             _ => Results.Problem(statusCode: 500),
         };
@@ -76,16 +81,21 @@ public abstract class BaseModule<T, TValidator> : IEndpointModule
         return getResult switch
         {
             GetResult<T>.GetSuccess success => Results.Ok(success.Results),
-            GetResult<T>.UnknownFailure => Results.Problem(statusCode: 500),
-            _ => Results.Problem(statusCode: 500)
+            GetResult<T>.UnknownFailure failure => Results.Problem(statusCode: 500),
+            _ => Results.Problem(statusCode: 500),
         };
     }
 
-    private static async Task<IResult> GetById(HttpContext httpContext, IRepository<T> repository)
+    private static async Task<IResult> GetById(
+        HttpContext httpContext,
+        IRepository<T> repository,
+        ILogger<T> logger
+    )
     {
         Match match = UtilityService.PathExpressionRegex().Match(httpContext.Request.Path);
         if (!match.Success)
         {
+            logger.LogInformation("Request path did not match regex");
             return Results.Problem(statusCode: 500);
         }
 
@@ -101,7 +111,7 @@ public abstract class BaseModule<T, TValidator> : IEndpointModule
             GetResult<T>.GetByIdSuccess success => Results.Ok(success.Result),
             GetResult<T>.GetByIdFailureNotExists => Results.NotFound(),
             GetResult<T>.UnknownFailure => Results.Problem(statusCode: 500),
-            _ => Results.Problem(statusCode: 500)
+            _ => Results.Problem(statusCode: 500),
         };
     }
 
@@ -139,7 +149,13 @@ public abstract class BaseModule<T, TValidator> : IEndpointModule
             if (updateResult is UpdateResult.FailureReferenceNotFound failure)
             {
                 throw new ValidationException(
-                    new[] { new ValidationFailure(failure.ReferenceName, $"Reference '{failure.ReferenceName}' does not exist.") }
+                    new[]
+                    {
+                        new ValidationFailure(
+                            failure.ReferenceName,
+                            $"Reference '{failure.ReferenceName}' does not exist."
+                        ),
+                    }
                 );
             }
 
@@ -176,7 +192,7 @@ public abstract class BaseModule<T, TValidator> : IEndpointModule
             DeleteResult.DeleteSuccess => Results.NoContent(),
             DeleteResult.DeleteFailureNotExists => Results.NotFound(),
             DeleteResult.UnknownFailure => Results.Problem(statusCode: 500),
-            _ => Results.Problem(statusCode: 500)
+            _ => Results.Problem(statusCode: 500),
         };
     }
 }
