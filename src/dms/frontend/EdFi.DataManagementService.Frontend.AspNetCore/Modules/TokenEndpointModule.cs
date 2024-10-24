@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net;
 using EdFi.DataManagementService.Backend.OAuthService;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using Microsoft.Extensions.Options;
@@ -20,11 +21,13 @@ public class TokenEndpointModule : IEndpointModule
     {
         try
         {
-            await oAuthManager.GetAccessTokenAsync(httpContext, appSettings.Value.AuthenticationService);
+            var response = await oAuthManager.GetAccessTokenAsync(httpContext, appSettings.Value.AuthenticationService);
+            await response.Content.CopyToAsync(httpContext.Response.Body);
         }
-        catch (Exception)
+        catch (OAuthIdentityException ex)
         {
-            await httpContext.Response.WriteAsync("Error Getting Access Token Async");
+            httpContext.Response.StatusCode = (int?)ex.StatusCode ?? (int)HttpStatusCode.BadGateway;
+            await httpContext.Response.WriteAsync($"Error Getting Access Token Async: {ex.Message}");
         }
     }
 }

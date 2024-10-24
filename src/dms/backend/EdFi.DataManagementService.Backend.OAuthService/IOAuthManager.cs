@@ -9,5 +9,5 @@ namespace EdFi.DataManagementService.Backend.OAuthService;
 
 public interface IOAuthManager
 {
-    public Task GetAccessTokenAsync(HttpContext httpContext, string upstreamUri);
+    public Task<HttpResponseMessage> GetAccessTokenAsync(HttpContext httpContext, string upstreamUri);
 }
