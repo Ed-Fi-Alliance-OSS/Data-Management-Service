@@ -242,17 +242,21 @@ function RunE2E {
 }
 
 function E2ETests {
+    Invoke-Step { DockerBuild }
+
     if ($EnableOpenSearch) {
-        try {
-            Push-Location eng/docker-compose/
-            ./start-local-dms.ps1 "./.env.e2e"
-        }
-        finally {
-            Pop-Location
+        Invoke-Execute {
+            try {
+                Push-Location eng/docker-compose/
+                ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e"
+            }
+            finally {
+                Pop-Location
+            }
         }
     }
     else {
-        Invoke-Step { DockerBuild }
+        Invoke-Step { DockerRun }
     }
     Invoke-Step { RunE2E }
 }
@@ -273,7 +277,13 @@ function RunNuGetPack {
     # NU5100 is the warning about DLLs outside of a "lib" folder. We're
     # deliberately using that pattern, therefore we bypass the
     # warning.
-    dotnet pack $ProjectPath --no-build --no-restore --output $PSScriptRoot -p:NuspecFile=$nuspecPath -p:NuspecProperties="version=$PackageVersion;year=$copyrightYear" /p:NoWarn=NU5100
+    dotnet pack $ProjectPath `
+        --no-build `
+        --no-restore `
+        --output $PSScriptRoot `
+        -p:NuspecFile=$nuspecPath `
+        -p:NuspecProperties="version=$PackageVersion;year=$copyrightYear" `
+        /p:NoWarn=NU5100
 }
 
 function BuildPackage {
@@ -314,10 +324,13 @@ function Invoke-TestExecution {
             IgnoreCase = $true)]
         # File search filter
         [string]
-        $Filter
+        $Filter,
+
+        [switch]
+        $EnableOpenSearch
     )
     switch ($Filter) {
-        E2ETests { Invoke-Step { E2ETests } }
+        E2ETests { Invoke-Step { E2ETests -EnableOpenSearch:$EnableOpenSearch } }
         UnitTests { Invoke-Step { UnitTests } }
         IntegrationTests { Invoke-Step { IntegrationTests } }
         Default { "Unknow Test Type" }
@@ -398,7 +411,7 @@ Invoke-Main {
             Invoke-Publish
         }
         UnitTest { Invoke-TestExecution UnitTests }
-        E2ETest { Invoke-TestExecution E2ETests }
+        E2ETest { Invoke-TestExecution E2ETests -EnableOpenSearch:$EnableOpenSearch }
         IntegrationTest { Invoke-TestExecution IntegrationTests }
         Coverage { Invoke-Coverage }
         Package { Invoke-BuildPackage }

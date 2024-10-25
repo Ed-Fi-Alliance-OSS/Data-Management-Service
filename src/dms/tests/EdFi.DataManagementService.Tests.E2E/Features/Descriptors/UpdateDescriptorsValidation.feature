@@ -492,7 +492,7 @@ Feature: Update a Descriptor
 
         @API-049
         Scenario: 17 Ensure clients cannot update a descriptor omitting any of the required values
-             When a PUT request is made to "/ed-fi/disabilityDescriptors" with
+             When a PUT request is made to "/ed-fi/disabilityDescriptors/{id}" with
                   """
                   {
                       "id": "{id}",
