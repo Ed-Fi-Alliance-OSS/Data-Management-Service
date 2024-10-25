@@ -23,84 +23,92 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
             [SetUp]
             public async Task Setup()
             {
-                Vendor vendor =
+                VendorInsertCommand vendor =
                     new()
                     {
                         Company = "Test Company",
                         ContactEmailAddress = "test@test.com",
                         ContactName = "Fake Name",
-                        NamespacePrefixes = ["FakePrefix1", "FakePrefix2"],
+                        NamespacePrefixes = "FakePrefix1,FakePrefix2",
                     };
 
-                var result = await _repository.AddAsync(vendor);
-                result.Should().BeOfType<InsertResult.InsertSuccess>();
-                _id = (result as InsertResult.InsertSuccess)!.Id;
+                var result = await _repository.InsertVendor(vendor);
+                result.Should().BeOfType<VendorInsertResult.Success>();
+                _id = (result as VendorInsertResult.Success)!.Id;
                 _id.Should().BeGreaterThan(0);
             }
 
             [Test]
             public async Task Should_get_test_vendor_from_get_all()
             {
-                var getResult = await _repository.GetAllAsync();
-                getResult.Should().BeOfType<GetResult<Vendor>.GetSuccess>();
+                var getResult = await _repository.QueryVendor(new PagingQuery() { Limit = 25, Offset = 0 });
+                getResult.Should().BeOfType<VendorQueryResult.Success>();
 
-                var vendorFromDb = ((GetResult<Vendor>.GetSuccess)getResult).Results.First();
+                var vendorFromDb = ((VendorQueryResult.Success)getResult).VendorResponses.First();
                 vendorFromDb.Company.Should().Be("Test Company");
                 vendorFromDb.ContactEmailAddress.Should().Be("test@test.com");
                 vendorFromDb.ContactName.Should().Be("Fake Name");
-                vendorFromDb.NamespacePrefixes.Count.Should().Be(2);
+                vendorFromDb.NamespacePrefixes.Split(',').Length.Should().Be(2);
             }
 
             [Test]
             public async Task Should_get_test_vendor_from_get_by_id()
             {
-                var getByIdResult = (await _repository.GetByIdAsync(_id));
-                getByIdResult.Should().BeOfType<GetResult<Vendor>.GetByIdSuccess>();
+                var getByIdResult = (await _repository.GetVendor(_id));
+                getByIdResult.Should().BeOfType<VendorGetResult.Success>();
 
-                var vendorFromDb = ((GetResult<Vendor>.GetByIdSuccess)getByIdResult).Result;
+                var vendorFromDb = ((VendorGetResult.Success)getByIdResult).VendorResponse;
                 vendorFromDb.Company.Should().Be("Test Company");
                 vendorFromDb.ContactEmailAddress.Should().Be("test@test.com");
                 vendorFromDb.ContactName.Should().Be("Fake Name");
-                vendorFromDb.NamespacePrefixes.Count.Should().Be(2);
+                vendorFromDb.NamespacePrefixes.Split(',').Length.Should().Be(2);
             }
         }
 
         [TestFixture]
         public class UpdateTests : VendorTests
         {
-            private Vendor _vendor = null!;
+            private VendorInsertCommand _vendorInsert = null!;
+            private VendorUpdateCommand _vendorUpdate;
 
             [SetUp]
             public async Task Setup()
             {
-                _vendor = new()
+                _vendorInsert = new()
                 {
                     Company = "Test Company",
                     ContactEmailAddress = "test@test.com",
                     ContactName = "Fake Name",
-                    NamespacePrefixes = [],
+                    NamespacePrefixes = "",
                 };
 
-                var insertResult = await _repository.AddAsync(_vendor);
-                insertResult.Should().BeOfType<InsertResult.InsertSuccess>();
+                _vendorUpdate = new()
+                {
+                    Company = "Test Company",
+                    ContactEmailAddress = "test@test.com",
+                    ContactName = "Fake Name",
+                    NamespacePrefixes = "",
+                };
 
-                _vendor.Id = (insertResult as InsertResult.InsertSuccess)!.Id;
-                _vendor.Company = "Update Company";
-                _vendor.ContactEmailAddress = "update@update.com";
-                _vendor.ContactName = "Update Name";
+                var insertResult = await _repository.InsertVendor(_vendorInsert);
+                insertResult.Should().BeOfType<VendorInsertResult.Success>();
 
-                var updateResult = await _repository.UpdateAsync(_vendor);
-                updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
-                ((UpdateResult.UpdateSuccess)updateResult).RecordsUpdated.Should().Be(1);
+                _vendorUpdate.Id = (insertResult as VendorInsertResult.Success)!.Id;
+                _vendorUpdate.Company = "Update Company";
+                _vendorUpdate.ContactEmailAddress = "update@update.com";
+                _vendorUpdate.ContactName = "Update Name";
+
+                var VendorUpdateResult = await _repository.UpdateVendor(_vendorUpdate);
+                VendorUpdateResult.Should().BeOfType<VendorUpdateResult.Success>();
             }
 
             [Test]
             public async Task Should_get_update_vendor_from_get_all()
             {
-                var getResult = await _repository.GetAllAsync();
-                getResult.Should().BeOfType<GetResult<Vendor>.GetSuccess>();
+                var getResult = await _repository.QueryVendor(new PagingQuery() { Limit = 25, Offset = 0 });
+                getResult.Should().BeOfType<VendorQueryResult.Success>();
 
-                var vendorFromDb = ((GetResult<Vendor>.GetSuccess)getResult).Results.First();
+                var vendorFromDb = ((VendorQueryResult.Success)getResult).VendorResponses.First();
                 vendorFromDb.Company.Should().Be("Update Company");
                 vendorFromDb.ContactEmailAddress.Should().Be("update@update.com");
                 vendorFromDb.ContactName.Should().Be("Update Name");
@@ -109,10 +117,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
             [Test]
             public async Task Should_get_update_vendor_from_get_by_id()
             {
-                var getByIdResult = (await _repository.GetByIdAsync(_vendor.Id.GetValueOrDefault()));
-                getByIdResult.Should().BeOfType<GetResult<Vendor>.GetByIdSuccess>();
+                var getByIdResult = (await _repository.GetVendor(_vendorUpdate.Id));
+                getByIdResult.Should().BeOfType<VendorGetResult.Success>();
 
-                var vendorFromDb = ((GetResult<Vendor>.GetByIdSuccess)getByIdResult).Result;
+                var vendorFromDb = ((VendorGetResult.Success)getByIdResult).VendorResponse;
                 vendorFromDb.Company.Should().Be("Update Company");
                 vendorFromDb.ContactEmailAddress.Should().Be("update@update.com");
                 vendorFromDb.ContactName.Should().Be("Update Name");
@@ -122,63 +130,61 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
         [TestFixture]
         public class DeleteTests : VendorTests
         {
-            private Vendor _vendor1 = null!;
-            private Vendor _vendor2 = null!;
+            private long _vendor1Id = 0;
+            private long _vendor2Id = 0;
 
             [SetUp]
             public async Task Setup()
             {
-                _vendor1 = new()
-                {
-                    Company = "Test Company 1",
-                    ContactEmailAddress = "test1@test.com",
-                    ContactName = "Fake Name 1",
-                    NamespacePrefixes = [],
-                };
+                var insertResult1 = await _repository.InsertVendor(
+                    new VendorInsertCommand()
+                    {
+                        Company = "Test Company 1",
+                        ContactEmailAddress = "test1@test.com",
+                        ContactName = "Fake Name 1",
+                        NamespacePrefixes = "",
+                    }
+                );
 
-                var insertResult1 = await _repository.AddAsync(_vendor1);
-                insertResult1.Should().BeOfType<InsertResult.InsertSuccess>();
+                _vendor1Id = ((VendorInsertResult.Success)insertResult1).Id;
 
-                _vendor1.Id = ((InsertResult.InsertSuccess)insertResult1).Id;
+                var insertResult2 = await _repository.InsertVendor(
+                    new VendorInsertCommand()
+                    {
+                        Company = "Test Company 2",
+                        ContactEmailAddress = "test2@test.com",
+                        ContactName = "Fake Name 2",
+                        NamespacePrefixes = "",
+                    }
+                );
 
-                _vendor2 = new()
-                {
-                    Company = "Test Company 2",
-                    ContactEmailAddress = "test2@test.com",
-                    ContactName = "Fake Name 2",
-                    NamespacePrefixes = [],
-                };
+                _vendor2Id = ((VendorInsertResult.Success)insertResult2).Id;
 
-                var insertResult2 = await _repository.AddAsync(_vendor2);
-                insertResult2.Should().BeOfType<InsertResult.InsertSuccess>();
-
-                _vendor2.Id = ((InsertResult.InsertSuccess)insertResult2).Id;
-
-                var deleteResult = await _repository.DeleteAsync(_vendor1.Id.GetValueOrDefault());
-                deleteResult.Should().BeOfType<DeleteResult.DeleteSuccess>();
+                var deleteResult = await _repository.DeleteVendor(_vendor1Id);
+                deleteResult.Should().BeOfType<VendorDeleteResult.Success>();
             }
 
             [Test]
             public async Task Should_not_get_test_vendor_from_get_all()
             {
-                var getResult = await _repository.GetAllAsync();
-                getResult.Should().BeOfType<GetResult<Vendor>.GetSuccess>();
+                var getResult = await _repository.QueryVendor(new PagingQuery() { Limit = 25, Offset = 0 });
+                getResult.Should().BeOfType<VendorQueryResult.Success>();
 
-                ((GetResult<Vendor>.GetSuccess)getResult).Results.Count.Should().Be(1);
-                ((GetResult<Vendor>.GetSuccess)getResult)
-                    .Results.Count(v => v.Id == _vendor1.Id.GetValueOrDefault())
+                ((VendorQueryResult.Success)getResult).VendorResponses.Count().Should().Be(1);
+                ((VendorQueryResult.Success)getResult)
+                    .VendorResponses.Count(v => v.Id == _vendor1Id)
                     .Should()
                     .Be(0);
-                ((GetResult<Vendor>.GetSuccess)getResult)
-                    .Results.Count(v => v.Company == "Test Company 1")
+                ((VendorQueryResult.Success)getResult)
+                    .VendorResponses.Count(v => v.Company == "Test Company 1")
                     .Should()
                     .Be(0);
-                ((GetResult<Vendor>.GetSuccess)getResult)
-                    .Results.Count(v => v.Id == _vendor2.Id.GetValueOrDefault())
+                ((VendorQueryResult.Success)getResult)
+                    .VendorResponses.Count(v => v.Id == _vendor2Id)
                     .Should()
                     .Be(1);
-                ((GetResult<Vendor>.GetSuccess)getResult)
-                    .Results.Count(v => v.Company == "Test Company 2")
+                ((VendorQueryResult.Success)getResult)
+                    .VendorResponses.Count(v => v.Company == "Test Company 2")
                     .Should()
                     .Be(1);
             }
@@ -186,11 +192,11 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
             [Test]
             public async Task Should_not_get_test_vendor_from_get_by_id()
             {
-                var getByIdResult = (await _repository.GetByIdAsync(_vendor1.Id.GetValueOrDefault()));
-                getByIdResult.Should().BeOfType<GetResult<Vendor>.GetByIdFailureNotExists>();
+                var getByIdResult = (await _repository.GetVendor(_vendor1Id));
+                getByIdResult.Should().BeOfType<VendorGetResult.FailureNotFound>();
 
-                getByIdResult = (await _repository.GetByIdAsync(_vendor2.Id.GetValueOrDefault()));
-                getByIdResult.Should().BeOfType<GetResult<Vendor>.GetByIdSuccess>();
+                getByIdResult = (await _repository.GetVendor(_vendor2Id));
+                getByIdResult.Should().BeOfType<VendorGetResult.Success>();
             }
         }
 
@@ -207,32 +213,28 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
             [SetUp]
             public async Task Setup()
             {
-                Vendor vendor1 =
+                var result1 = await _repository.InsertVendor(
                     new()
                     {
                         Company = "Test Company",
                         ContactEmailAddress = "test@test.com",
                         ContactName = "Fake Name",
-                        NamespacePrefixes = ["FakePrefix1"],
-                    };
-
-                var result1 = await _repository.AddAsync(vendor1);
-                result1.Should().BeOfType<InsertResult.InsertSuccess>();
-                _vendorId1 = (result1 as InsertResult.InsertSuccess)!.Id;
+                        NamespacePrefixes = "FakePrefix1",
+                    }
+                );
+                _vendorId1 = (result1 as VendorInsertResult.Success)!.Id;
                 _vendorId1.Should().BeGreaterThan(0);
 
-                Vendor vendor2 =
+                var result2 = await _repository.InsertVendor(
                     new()
                     {
                         Company = "Test Company 2",
                         ContactEmailAddress = "test@test.com",
                         ContactName = "Fake Name 2",
-                        NamespacePrefixes = ["FakePrefix1"],
-                    };
-
-                var result2 = await _repository.AddAsync(vendor2);
-                result2.Should().BeOfType<InsertResult.InsertSuccess>();
-                _vendorId2 = (result2 as InsertResult.InsertSuccess)!.Id;
+                        NamespacePrefixes = "FakePrefix1",
+                    }
+                );
+                _vendorId2 = (result2 as VendorInsertResult.Success)!.Id;
                 _vendorId2.Should().BeGreaterThan(0);
 
                 await _applicationRepository.InsertApplication(

@@ -5,6 +5,7 @@
 
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Vendor;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -13,20 +14,20 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql
 {
     public class VendorRepository(IOptions<DatabaseOptions> databaseOptions) : IVendorRepository
     {
-        public async Task<GetResult<Vendor>> GetAllAsync()
+        public async Task<VendorQueryResult> QueryVendor(PagingQuery query)
         {
-            var sql = """
-                SELECT Id, Company, ContactName, ContactEmailAddress, NamespacePrefix
-                FROM dmscs.Vendor v LEFT OUTER JOIN dmscs.VendorNamespacePrefix p ON v.Id = p.VendorId;
-                """;
             await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
             try
             {
-                var vendors = await connection.QueryAsync<Vendor, string, Vendor>(
+                var sql = """
+                    SELECT Id, Company, ContactName, ContactEmailAddress, NamespacePrefix
+                    FROM dmscs.Vendor v LEFT OUTER JOIN dmscs.VendorNamespacePrefix p ON v.Id = p.VendorId;
+                    """;
+                var vendors = await connection.QueryAsync<VendorResponse, string, VendorResponse>(
                     sql,
                     (vendor, namespacePrefix) =>
                     {
-                        vendor.NamespacePrefixes.Add(namespacePrefix);
+                        vendor.NamespacePrefixes = namespacePrefix;
                         return vendor;
                     },
                     splitOn: "NamespacePrefix"
@@ -37,33 +38,33 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql
                     .Select(g =>
                     {
                         var grouped = g.First();
-                        grouped.NamespacePrefixes = g.Select(p => p.NamespacePrefixes.Single()).ToList();
+                        grouped.NamespacePrefixes = string.Join(',', g.Select(x => x.NamespacePrefixes));
                         return grouped;
                     })
                     .ToList();
-                return new GetResult<Vendor>.GetSuccess(returnVendors);
+                return new VendorQueryResult.Success(returnVendors);
             }
             catch (Exception ex)
             {
-                return new GetResult<Vendor>.UnknownFailure(ex.Message);
+                return new VendorQueryResult.FailureUnknown(ex.Message);
             }
         }
 
-        public async Task<GetResult<Vendor>> GetByIdAsync(long id)
+        public async Task<VendorGetResult> GetVendor(long id)
         {
-            var sql = """
-                SELECT Id, Company, ContactName, ContactEmailAddress, NamespacePrefix
-                FROM dmscs.Vendor v LEFT OUTER JOIN dmscs.VendorNamespacePrefix p ON v.Id = p.VendorId
-                WHERE v.Id = @Id;
-                """;
             await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
             try
             {
-                var vendors = await connection.QueryAsync<Vendor, string, Vendor>(
+                var sql = """
+                    SELECT Id, Company, ContactName, ContactEmailAddress, NamespacePrefix
+                    FROM dmscs.Vendor v LEFT OUTER JOIN dmscs.VendorNamespacePrefix p ON v.Id = p.VendorId
+                    WHERE v.Id = @Id;
+                    """;
+                var vendors = await connection.QueryAsync<VendorResponse, string, VendorResponse>(
                     sql,
                     (vendor, namespacePrefix) =>
                     {
-                        vendor.NamespacePrefixes.Add(namespacePrefix);
+                        vendor.NamespacePrefixes = namespacePrefix;
                         return vendor;
                     },
                     param: new { Id = id },
@@ -75,60 +76,23 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql
                     .Select(g =>
                     {
                         var grouped = g.First();
-                        grouped.NamespacePrefixes = g.Select(p => p.NamespacePrefixes.Single()).ToList();
+                        grouped.NamespacePrefixes = string.Join(',', g.Select(x => x.NamespacePrefixes));
                         return grouped;
                     });
 
-                return new GetResult<Vendor>.GetByIdSuccess(returnVendors.Single());
+                return new VendorGetResult.Success(returnVendors.Single());
             }
             catch (InvalidOperationException ex) when (ex.Message == "Sequence contains no elements")
             {
-                return new GetResult<Vendor>.GetByIdFailureNotExists();
+                return new VendorGetResult.FailureNotFound();
             }
             catch (Exception ex)
             {
-                return new GetResult<Vendor>.UnknownFailure(ex.Message);
+                return new VendorGetResult.FailureUnknown(ex.Message);
             }
         }
 
-        public async Task<InsertResult> AddAsync(Vendor vendor)
-        {
-            var sql = """
-                INSERT INTO dmscs.Vendor (Company, ContactName, ContactEmailAddress)
-                VALUES (@Company, @ContactName, @ContactEmailAddress)
-                RETURNING Id;
-                """;
-            await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
-            await connection.OpenAsync();
-            await using var transaction = await connection.BeginTransactionAsync();
-            try
-            {
-                var id = await connection.ExecuteScalarAsync<long>(sql, vendor);
-
-                sql = """
-                    INSERT INTO dmscs.VendorNamespacePrefix (VendorId, NamespacePrefix)
-                    VALUES (@VendorId, @NamespacePrefix);
-                    """;
-
-                var namespacePrefixes = vendor.NamespacePrefixes.Select(p => new
-                {
-                    VendorId = id,
-                    NamespacePrefix = p,
-                });
-
-                await connection.ExecuteAsync(sql, namespacePrefixes);
-                await transaction.CommitAsync();
-
-                return new InsertResult.InsertSuccess(id);
-            }
-            catch (Exception ex)
-            {
-                await transaction.RollbackAsync();
-                return new InsertResult.UnknownFailure(ex.Message);
-            }
-        }
-
-        public async Task<UpdateResult> UpdateAsync(Vendor vendor)
+        public async Task<VendorUpdateResult> UpdateVendor(VendorUpdateCommand command)
         {
             var sql = """
                 UPDATE dmscs.Vendor
@@ -140,53 +104,94 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql
             await using var transaction = await connection.BeginTransactionAsync();
             try
             {
-                var affectedRows = await connection.ExecuteAsync(sql, vendor);
+                var affectedRows = await connection.ExecuteAsync(sql, command);
 
                 sql = "DELETE FROM dmscs.VendorNamespacePrefix WHERE VendorId = @VendorId";
-                await connection.ExecuteAsync(sql, new { VendorId = vendor.Id });
+                await connection.ExecuteAsync(sql, new { VendorId = command.Id });
 
                 sql = """
                     INSERT INTO dmscs.VendorNamespacePrefix (VendorId, NamespacePrefix)
                     VALUES (@VendorId, @NamespacePrefix);
                     """;
 
-                var namespacePrefixes = vendor.NamespacePrefixes.Select(p => new
-                {
-                    VendorId = vendor.Id,
-                    NamespacePrefix = p,
-                });
+                var namespacePrefixes = command
+                    .NamespacePrefixes.Split(
+                        ',',
+                        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+                    )
+                    .Select(p => new { VendorId = command.Id, NamespacePrefix = p.Trim() });
 
                 await connection.ExecuteAsync(sql, namespacePrefixes);
                 await transaction.CommitAsync();
 
                 return affectedRows > 0
-                    ? new UpdateResult.UpdateSuccess(affectedRows)
-                    : new UpdateResult.UpdateFailureNotExists();
+                    ? new VendorUpdateResult.Success()
+                    : new VendorUpdateResult.FailureNotExists();
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
-                return new UpdateResult.UnknownFailure(ex.Message);
+                return new VendorUpdateResult.FailureUnknown(ex.Message);
             }
         }
 
-        public async Task<DeleteResult> DeleteAsync(long id)
+        public async Task<VendorDeleteResult> DeleteVendor(long id)
         {
-            var sql = """
-                DELETE FROM dmscs.Vendor where Id = @Id;
-                DELETE from dmscs.VendorNamespacePrefix WHERE VendorId = @Id;
-                """;
             await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
             try
             {
+                var sql = """
+                    DELETE FROM dmscs.Vendor where Id = @Id;
+                    DELETE from dmscs.VendorNamespacePrefix WHERE VendorId = @Id;
+                    """;
+
                 var affectedRows = await connection.ExecuteAsync(sql, new { Id = id });
                 return affectedRows > 0
-                    ? new DeleteResult.DeleteSuccess(affectedRows)
-                    : new DeleteResult.DeleteFailureNotExists();
+                    ? new VendorDeleteResult.Success()
+                    : new VendorDeleteResult.FailureNotExists();
             }
             catch (Exception ex)
             {
-                return new DeleteResult.UnknownFailure(ex.Message);
+                return new VendorDeleteResult.FailureUnknown(ex.Message);
+            }
+        }
+
+        public async Task<VendorInsertResult> InsertVendor(VendorInsertCommand command)
+        {
+            await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            try
+            {
+                var sql = """
+                    INSERT INTO dmscs.Vendor (Company, ContactName, ContactEmailAddress)
+                    VALUES (@Company, @ContactName, @ContactEmailAddress)
+                    RETURNING Id;
+                    """;
+
+                var id = await connection.ExecuteScalarAsync<long>(sql, command);
+
+                sql = """
+                    INSERT INTO dmscs.VendorNamespacePrefix (VendorId, NamespacePrefix)
+                    VALUES (@VendorId, @NamespacePrefix);
+                    """;
+
+                var namespacePrefixes = command
+                    .NamespacePrefixes.Split(
+                        ',',
+                        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+                    )
+                    .Select(p => new { VendorId = id, NamespacePrefix = p.Trim() });
+
+                await connection.ExecuteAsync(sql, namespacePrefixes);
+                await transaction.CommitAsync();
+
+                return new VendorInsertResult.Success(id);
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return new VendorInsertResult.FailureUnknown(ex.Message);
             }
         }
 

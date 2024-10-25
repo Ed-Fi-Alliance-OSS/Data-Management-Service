@@ -68,7 +68,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repository
             }
         }
 
-        public async Task<ApplicationQueryResult> QueryApplication(ApplicationQuery query)
+        public async Task<ApplicationQueryResult> QueryApplication(PagingQuery query)
         {
             await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
             await connection.OpenAsync();
@@ -163,7 +163,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repository
             }
         }
 
-        public async Task<ApplicationUpdateResult> UpdateApplication(ApplicationUpdateCommand command)
+        public async Task<ApplicationVendorUpdateResult> UpdateApplication(ApplicationUpdateCommand command)
         {
             await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
             await connection.OpenAsync();
@@ -197,18 +197,18 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repository
                 await transaction.CommitAsync();
 
                 return affectedRows > 0
-                    ? new ApplicationUpdateResult.Success()
-                    : new ApplicationUpdateResult.FailureNotExists();
+                    ? new ApplicationVendorUpdateResult.Success()
+                    : new ApplicationVendorUpdateResult.FailureNotExists();
             }
             catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_vendor"))
             {
                 await transaction.RollbackAsync();
-                return new ApplicationUpdateResult.FailureVendorNotFound();
+                return new ApplicationVendorUpdateResult.FailureVendorNotFound();
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
-                return new ApplicationUpdateResult.FailureUnknown(ex.Message);
+                return new ApplicationVendorUpdateResult.FailureUnknown(ex.Message);
             }
         }
 

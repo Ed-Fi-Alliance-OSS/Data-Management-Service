@@ -28,20 +28,20 @@ public class ApplicationTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            IRepository<Vendor> vendorRepository = new VendorRepository(Configuration.DatabaseOptions);
+            IVendorRepository repository = new VendorRepository(Configuration.DatabaseOptions);
 
-            Vendor vendor =
+            VendorInsertCommand vendor =
                 new()
                 {
                     Company = "Test Company",
                     ContactEmailAddress = "test@test.com",
                     ContactName = "Fake Name",
-                    NamespacePrefixes = ["FakePrefix1", "FakePrefix2"],
+                    NamespacePrefixes = "FakePrefix1,FakePrefix2",
                 };
 
-            var vendorResult = await vendorRepository.AddAsync(vendor);
-            vendorResult.Should().BeOfType<InsertResult.InsertSuccess>();
-            _vendorId = (vendorResult as InsertResult.InsertSuccess)!.Id;
+            var vendorResult = await repository.InsertVendor(vendor);
+            vendorResult.Should().BeOfType<VendorInsertResult.Success>();
+            _vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
 
             ApplicationInsertCommand application =
                 new()
@@ -66,7 +66,7 @@ public class ApplicationTests : DatabaseTest
         public async Task Should_get_test_application_from_get_all()
         {
             var getResult = await _applicationRepository.QueryApplication(
-                new ApplicationQuery() { Limit = 25, Offset = 0 }
+                new PagingQuery() { Limit = 25, Offset = 0 }
             );
             getResult.Should().BeOfType<ApplicationQueryResult.Success>();
 
@@ -122,20 +122,20 @@ public class ApplicationTests : DatabaseTest
         [Test]
         public async Task Should_get_and_failure_reference_not_found_and_invalid_vendor_id()
         {
-            IRepository<Vendor> vendorRepository = new VendorRepository(Configuration.DatabaseOptions);
+            IVendorRepository vendorRepository = new VendorRepository(Configuration.DatabaseOptions);
 
-            Vendor vendor =
+            VendorInsertCommand vendor =
                 new()
                 {
                     Company = "Test Company",
                     ContactEmailAddress = "test@test.com",
                     ContactName = "Fake Name",
-                    NamespacePrefixes = [],
+                    NamespacePrefixes = "",
                 };
 
-            var vendorResult = await vendorRepository.AddAsync(vendor);
-            vendorResult.Should().BeOfType<InsertResult.InsertSuccess>();
-            _vendorId = (vendorResult as InsertResult.InsertSuccess)!.Id;
+            var vendorResult = await vendorRepository.InsertVendor(vendor);
+            vendorResult.Should().BeOfType<VendorInsertResult.Success>();
+            _vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
 
             ApplicationInsertCommand _application =
                 new()
@@ -164,8 +164,8 @@ public class ApplicationTests : DatabaseTest
                     EducationOrganizationIds = [],
                 };
 
-            var updateResult = await _applicationRepository.UpdateApplication(applicationUpdate);
-            updateResult.Should().BeOfType<ApplicationUpdateResult.FailureVendorNotFound>();
+            var VendorUpdateResult = await _applicationRepository.UpdateApplication(applicationUpdate);
+            VendorUpdateResult.Should().BeOfType<ApplicationVendorUpdateResult.FailureVendorNotFound>();
         }
     }
 
@@ -177,20 +177,20 @@ public class ApplicationTests : DatabaseTest
         [SetUp]
         public async Task SetUp()
         {
-            IRepository<Vendor> vendorRepository = new VendorRepository(Configuration.DatabaseOptions);
+            IVendorRepository vendorRepository = new VendorRepository(Configuration.DatabaseOptions);
 
-            Vendor vendor =
+            VendorInsertCommand vendor =
                 new()
                 {
                     Company = "Test Company",
                     ContactEmailAddress = "test@test.com",
                     ContactName = "Fake Name",
-                    NamespacePrefixes = [],
+                    NamespacePrefixes = "",
                 };
 
-            var vendorResult = await vendorRepository.AddAsync(vendor);
-            vendorResult.Should().BeOfType<InsertResult.InsertSuccess>();
-            _vendorId = (vendorResult as InsertResult.InsertSuccess)!.Id;
+            var vendorResult = await vendorRepository.InsertVendor(vendor);
+            vendorResult.Should().BeOfType<VendorInsertResult.Success>();
+            _vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
 
             ApplicationInsertCommand command =
                 new()
@@ -208,7 +208,7 @@ public class ApplicationTests : DatabaseTest
             command.ApplicationName = "Update Application Name";
             command.EducationOrganizationIds = [1, 2];
 
-            var updateResult = await _applicationRepository.UpdateApplication(
+            var VendorUpdateResult = await _applicationRepository.UpdateApplication(
                 new ApplicationUpdateCommand()
                 {
                     Id = _id,
@@ -218,14 +218,14 @@ public class ApplicationTests : DatabaseTest
                     VendorId = command.VendorId,
                 }
             );
-            updateResult.Should().BeOfType<ApplicationUpdateResult.Success>();
+            VendorUpdateResult.Should().BeOfType<ApplicationVendorUpdateResult.Success>();
         }
 
         [Test]
         public async Task Should_get_update_application_from_get_all()
         {
             var getResult = await _applicationRepository.QueryApplication(
-                new ApplicationQuery() { Limit = 25, Offset = 0 }
+                new PagingQuery() { Limit = 25, Offset = 0 }
             );
             getResult.Should().BeOfType<ApplicationQueryResult.Success>();
 
@@ -255,20 +255,20 @@ public class ApplicationTests : DatabaseTest
         [SetUp]
         public async Task SetUp()
         {
-            IRepository<Vendor> vendorRepository = new VendorRepository(Configuration.DatabaseOptions);
+            IVendorRepository vendorRepository = new VendorRepository(Configuration.DatabaseOptions);
 
-            Vendor vendor =
+            VendorInsertCommand vendor =
                 new()
                 {
                     Company = "Test Company",
                     ContactEmailAddress = "test@test.com",
                     ContactName = "Fake Name",
-                    NamespacePrefixes = [],
+                    NamespacePrefixes = "",
                 };
 
-            var vendorResult = await vendorRepository.AddAsync(vendor);
-            vendorResult.Should().BeOfType<InsertResult.InsertSuccess>();
-            _vendorId = (vendorResult as InsertResult.InsertSuccess)!.Id;
+            var vendorResult = await vendorRepository.InsertVendor(vendor);
+            vendorResult.Should().BeOfType<VendorInsertResult.Success>();
+            _vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
 
             ApplicationInsertCommand application1 =
                 new()
@@ -302,7 +302,7 @@ public class ApplicationTests : DatabaseTest
         public async Task Should_not_get_application_two_from_get_all()
         {
             var getResult = await _applicationRepository.QueryApplication(
-                new ApplicationQuery() { Limit = 25, Offset = 0 }
+                new PagingQuery() { Limit = 25, Offset = 0 }
             );
             getResult.Should().BeOfType<ApplicationQueryResult.Success>();
 

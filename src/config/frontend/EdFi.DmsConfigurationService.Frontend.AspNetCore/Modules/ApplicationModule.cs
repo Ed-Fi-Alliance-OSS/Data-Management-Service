@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Net.Mime;
 using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
@@ -37,7 +36,7 @@ public class ApplicationModule : IEndpointModule
     )
     {
         logger.LogDebug("Entering UpsertApplication");
-        await validator.GuardAsync(command);
+        validator.GuardAsync(command);
 
         Guid clientId = Guid.NewGuid();
         string clientSecret = Guid.NewGuid().ToString();
@@ -85,7 +84,7 @@ public class ApplicationModule : IEndpointModule
     private static async Task<IResult> GetAll(IApplicationRepository applicationRepository)
     {
         ApplicationQueryResult getResult = await applicationRepository.QueryApplication(
-            new ApplicationQuery() { Limit = 25, Offset = 0 }
+            new PagingQuery() { Limit = 25, Offset = 0 }
         );
         return getResult switch
         {
@@ -131,7 +130,7 @@ public class ApplicationModule : IEndpointModule
         IApplicationRepository repository
     )
     {
-        await validator.GuardAsync(entity);
+        validator.GuardAsync(entity);
         Match match = UtilityService.PathExpressionRegex().Match(httpContext.Request.Path);
 
         string idString = match.Groups["Id"].Value;
@@ -153,20 +152,20 @@ public class ApplicationModule : IEndpointModule
                 );
             }
 
-            var updateResult = await repository.UpdateApplication(entity);
+            var VendorUpdateResult = await repository.UpdateApplication(entity);
 
-            if (updateResult is ApplicationUpdateResult.FailureVendorNotFound failure)
+            if (VendorUpdateResult is ApplicationVendorUpdateResult.FailureVendorNotFound failure)
             {
                 throw new ValidationException(
                     new[] { new ValidationFailure("VendorId", $"Reference 'VendorId' does not exist.") }
                 );
             }
 
-            return updateResult switch
+            return VendorUpdateResult switch
             {
-                ApplicationUpdateResult.Success success => Results.NoContent(),
-                ApplicationUpdateResult.FailureNotExists => Results.NotFound(),
-                ApplicationUpdateResult.FailureUnknown => Results.Problem(statusCode: 500),
+                ApplicationVendorUpdateResult.Success success => Results.NoContent(),
+                ApplicationVendorUpdateResult.FailureNotExists => Results.NotFound(),
+                ApplicationVendorUpdateResult.FailureUnknown => Results.Problem(statusCode: 500),
                 _ => Results.Problem(statusCode: 500),
             };
         }

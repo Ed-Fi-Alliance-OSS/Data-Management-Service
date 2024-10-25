@@ -27,7 +27,7 @@ public class ApplicationModuleTests
 {
     private readonly IApplicationRepository _applicationRepository = A.Fake<IApplicationRepository>();
     private readonly IClientRepository _clientRepository = A.Fake<IClientRepository>();
-    private readonly IRepository<Vendor> _vendorRepository = A.Fake<IRepository<Vendor>>();
+    private readonly IVendorRepository _vendorRepository = A.Fake<IVendorRepository>();
 
     private HttpClient SetUpClient()
     {
@@ -76,7 +76,7 @@ public class ApplicationModuleTests
                 )
                 .Returns(new ApplicationInsertResult.Success(1));
 
-            A.CallTo(() => _applicationRepository.QueryApplication(A<ApplicationQuery>.Ignored))
+            A.CallTo(() => _applicationRepository.QueryApplication(A<PagingQuery>.Ignored))
                 .Returns(
                     new ApplicationQueryResult.Success(
                         [
@@ -107,7 +107,7 @@ public class ApplicationModuleTests
                 );
 
             A.CallTo(() => _applicationRepository.UpdateApplication(A<ApplicationUpdateCommand>.Ignored))
-                .Returns(new ApplicationUpdateResult.Success());
+                .Returns(new ApplicationVendorUpdateResult.Success());
 
             A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
                 .Returns(new ApplicationDeleteResult.Success());
@@ -213,14 +213,14 @@ public class ApplicationModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _vendorRepository.AddAsync(A<Vendor>.Ignored))
-                .Returns(new InsertResult.InsertSuccess(1));
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+                .Returns(new VendorInsertResult.Success(1));
 
             A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
                 .Returns(new ApplicationGetResult.FailureNotFound());
 
             A.CallTo(() => _applicationRepository.UpdateApplication(A<ApplicationUpdateCommand>.Ignored))
-                .Returns(new ApplicationUpdateResult.FailureNotExists());
+                .Returns(new ApplicationVendorUpdateResult.FailureNotExists());
 
             A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
                 .Returns(new ApplicationDeleteResult.FailureNotExists());
@@ -285,14 +285,14 @@ public class ApplicationModuleTests
                 )
                 .Returns(new ApplicationInsertResult.FailureUnknown(""));
 
-            A.CallTo(() => _applicationRepository.QueryApplication(A<ApplicationQuery>.Ignored))
+            A.CallTo(() => _applicationRepository.QueryApplication(A<PagingQuery>.Ignored))
                 .Returns(new ApplicationQueryResult.FailureUnknown(""));
 
             A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
                 .Returns(new ApplicationGetResult.FailureUnknown(""));
 
             A.CallTo(() => _applicationRepository.UpdateApplication(A<ApplicationUpdateCommand>.Ignored))
-                .Returns(new ApplicationUpdateResult.FailureUnknown(""));
+                .Returns(new ApplicationVendorUpdateResult.FailureUnknown(""));
 
             A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
                 .Returns(new ApplicationDeleteResult.FailureUnknown(""));
@@ -365,14 +365,14 @@ public class ApplicationModuleTests
                 )
                 .Returns(new ApplicationInsertResult());
 
-            A.CallTo(() => _applicationRepository.QueryApplication(A<ApplicationQuery>.Ignored))
+            A.CallTo(() => _applicationRepository.QueryApplication(A<PagingQuery>.Ignored))
                 .Returns(new ApplicationQueryResult());
 
             A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
                 .Returns(new ApplicationGetResult());
 
             A.CallTo(() => _applicationRepository.UpdateApplication(A<ApplicationUpdateCommand>.Ignored))
-                .Returns(new ApplicationUpdateResult());
+                .Returns(new ApplicationVendorUpdateResult());
 
             A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
                 .Returns(new ApplicationDeleteResult());
@@ -456,7 +456,7 @@ public class ApplicationModuleTests
                 .Returns(new ApplicationInsertResult.FailureVendorNotFound());
 
             A.CallTo(() => _applicationRepository.UpdateApplication(A<ApplicationUpdateCommand>.Ignored))
-                .Returns(new ApplicationUpdateResult.FailureVendorNotFound());
+                .Returns(new ApplicationVendorUpdateResult.FailureVendorNotFound());
         }
 
         [Test]

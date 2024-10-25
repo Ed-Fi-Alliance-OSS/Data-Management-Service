@@ -18,3 +18,43 @@ public class VendorValidator : AbstractValidator<Vendor>
         RuleForEach(v => v.NamespacePrefixes).MaximumLength(128);
     }
 }
+
+public class VendorInsertCommandValidator : AbstractValidator<VendorInsertCommand>
+{
+    public VendorInsertCommandValidator()
+    {
+        RuleFor(v => v.Company).NotEmpty().MaximumLength(256);
+        RuleFor(v => v.ContactName).MaximumLength(128);
+        RuleFor(v => v.ContactEmailAddress).EmailAddress().MaximumLength(320);
+        RuleFor(v => v.NamespacePrefixes)
+            .Must(s =>
+            {
+                var split = s.Split(
+                    ',',
+                    StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+                );
+                return !split.Any(x => x.Length > 128);
+            })
+            .WithMessage("Each NamespacePrefix length must be less than 128");
+    }
+}
+
+public class VendorUpdateCommandValidator : AbstractValidator<VendorUpdateCommand>
+{
+    public VendorUpdateCommandValidator()
+    {
+        RuleFor(v => v.Company).NotEmpty().MaximumLength(256);
+        RuleFor(v => v.ContactName).MaximumLength(128);
+        RuleFor(v => v.ContactEmailAddress).EmailAddress().MaximumLength(320);
+        RuleFor(v => v.NamespacePrefixes)
+            .Must(s =>
+            {
+                var split = s.Split(
+                    ',',
+                    StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+                );
+                return !split.Any(x => x.Length > 128);
+            })
+            .WithMessage("Each NamespacePrefix length must be less than 128");
+    }
+}

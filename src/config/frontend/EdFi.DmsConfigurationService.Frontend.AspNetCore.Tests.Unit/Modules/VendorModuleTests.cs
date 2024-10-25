@@ -8,6 +8,7 @@ using System.Security.Claims;
 using System.Text;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Vendor;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FakeItEasy;
@@ -22,7 +23,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 
 public class VendorModuleTests
 {
-    private readonly IRepository<Vendor> _repository = A.Fake<IRepository<Vendor>>();
+    private readonly IVendorRepository _vendorRepository = A.Fake<IVendorRepository>();
 
     private HttpClient SetUpClient()
     {
@@ -45,8 +46,7 @@ public class VendorModuleTests
                             policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
                         )
                     );
-
-                    collection.AddTransient((_) => _repository);
+                    collection.AddTransient((_) => _vendorRepository);
                 }
             );
         });
@@ -59,40 +59,44 @@ public class VendorModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _repository.AddAsync(A<Vendor>.Ignored))
-                .Returns(new InsertResult.InsertSuccess(1));
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+                .Returns(new VendorInsertResult.Success(1));
 
-            A.CallTo(() => _repository.GetAllAsync())
+            A.CallTo(() => _vendorRepository.QueryVendor(A<PagingQuery>.Ignored))
                 .Returns(
-                    new GetResult<Vendor>.GetSuccess(
+                    new VendorQueryResult.Success(
                         [
-                            new Vendor()
+                            new VendorResponse()
                             {
                                 Id = 1,
                                 Company = "Test Company",
-                                NamespacePrefixes = ["Test Prefix"],
+                                ContactName = "Test Contact",
+                                ContactEmailAddress = "test@test.com",
+                                NamespacePrefixes = "Test Prefix",
                             },
                         ]
                     )
                 );
 
-            A.CallTo(() => _repository.GetByIdAsync(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
                 .Returns(
-                    new GetResult<Vendor>.GetByIdSuccess(
-                        new Vendor()
+                    new VendorGetResult.Success(
+                        new VendorResponse()
                         {
                             Id = 1,
                             Company = "Test Company",
-                            NamespacePrefixes = ["Test Prefix"],
+                            ContactEmailAddress = "Test",
+                            ContactName = "Test",
+                            NamespacePrefixes = "Test Prefix",
                         }
                     )
                 );
 
-            A.CallTo(() => _repository.UpdateAsync(A<Vendor>.Ignored))
-                .Returns(new UpdateResult.UpdateSuccess(1));
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Returns(new VendorUpdateResult.Success());
 
-            A.CallTo(() => _repository.DeleteAsync(A<long>.Ignored))
-                .Returns(new DeleteResult.DeleteSuccess(1));
+            A.CallTo(() => _vendorRepository.DeleteVendor(A<long>.Ignored))
+                .Returns(new VendorDeleteResult.Success());
         }
 
         [Test]
@@ -110,9 +114,7 @@ public class VendorModuleTests
                       "company": "Test 11",
                       "contactName": "Test",
                       "contactEmailAddress": "test@gmail.com",
-                      "namespacePrefixes": [
-                          "Test"
-                      ]
+                      "namespacePrefixes": "Test"
                     }
                     """,
                     Encoding.UTF8,
@@ -130,9 +132,7 @@ public class VendorModuleTests
                         "company": "Test 11",
                         "contactName": "Test",
                         "contactEmailAddress": "test@gmail.com",
-                        "namespacePrefixes": [
-                            "Test"
-                        ]
+                        "namespacePrefixes": "Test"
                     }
                     """,
                     Encoding.UTF8,
@@ -160,39 +160,48 @@ public class VendorModuleTests
             // Arrange
             using var client = SetUpClient();
 
-            string invalidBody = """
+            string invalidPostBody = """
+                {
+                  "company": "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
+                  "contactName": "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
+                  "contactEmailAddress": "INVALID",
+                  "namespacePrefixes": "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
+                }
+                """;
+
+            string invalidPutBody = """
                 {
                   "id": 1,
                   "company": "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
                   "contactName": "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
                   "contactEmailAddress": "INVALID",
-                  "namespacePrefixes": [
-                      "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
-                  ]
+                  "namespacePrefixes": "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
                 }
                 """;
 
             //Act
             var addResponse = await client.PostAsync(
                 "/v2/vendors",
-                new StringContent(invalidBody, Encoding.UTF8, "application/json")
+                new StringContent(invalidPostBody, Encoding.UTF8, "application/json")
             );
 
             var updateResponse = await client.PutAsync(
                 "/v2/vendors/1",
-                new StringContent(invalidBody, Encoding.UTF8, "application/json")
+                new StringContent(invalidPutBody, Encoding.UTF8, "application/json")
             );
 
             //Assert
-            string expectedResponse =
-                @"{""title"":""Validation failed"",""errors"":{""Company"":[""The length of \u0027Company\u0027 must be 256 characters or fewer. You entered 300 characters.""],""ContactName"":[""The length of \u0027Contact Name\u0027 must be 128 characters or fewer. You entered 300 characters.""],""ContactEmailAddress"":[""\u0027Contact Email Address\u0027 is not a valid email address.""],""NamespacePrefixes[0]"":[""The length of \u0027Namespace Prefixes\u0027 must be 128 characters or fewer. You entered 130 characters.""]}}";
+            string expectedPostResponse =
+                @"{""title"":""Validation failed"",""errors"":{""Company"":[""The length of \u0027Company\u0027 must be 256 characters or fewer. You entered 300 characters.""],""ContactName"":[""The length of \u0027Contact Name\u0027 must be 128 characters or fewer. You entered 300 characters.""],""ContactEmailAddress"":[""\u0027Contact Email Address\u0027 is not a valid email address.""],""NamespacePrefixes"":[""Each NamespacePrefix length must be less than 128""]}}";
+            string expectedPutResponse =
+                @"{""title"":""Validation failed"",""errors"":{""Company"":[""The length of \u0027Company\u0027 must be 256 characters or fewer. You entered 300 characters.""],""ContactName"":[""The length of \u0027Contact Name\u0027 must be 128 characters or fewer. You entered 300 characters.""],""ContactEmailAddress"":[""\u0027Contact Email Address\u0027 is not a valid email address.""],""NamespacePrefixes"":[""Each NamespacePrefix length must be less than 128""]}}";
             string addResponseContent = await addResponse.Content.ReadAsStringAsync();
             addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            addResponseContent.Should().Contain(expectedResponse);
+            addResponseContent.Should().Contain(expectedPostResponse);
 
             string updateResponseContent = await updateResponse.Content.ReadAsStringAsync();
             updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            updateResponseContent.Should().Contain(expectedResponse);
+            updateResponseContent.Should().Contain(expectedPutResponse);
         }
 
         [Test]
@@ -211,9 +220,7 @@ public class VendorModuleTests
                         "company": "Test 11",
                         "contactName": "Test",
                         "contactEmailAddress": "test@gmail.com",
-                        "namespacePrefixes": [
-                            "Test"
-                        ]
+                        "namespacePrefixes": "Test"
                     }
                     """,
                     Encoding.UTF8,
@@ -234,14 +241,14 @@ public class VendorModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _repository.GetByIdAsync(A<long>.Ignored))
-                .Returns(new GetResult<Vendor>.GetByIdFailureNotExists());
+            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+                .Returns(new VendorGetResult.FailureNotFound());
 
-            A.CallTo(() => _repository.UpdateAsync(A<Vendor>.Ignored))
-                .Returns(new UpdateResult.UpdateFailureNotExists());
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Returns(new VendorUpdateResult.FailureNotExists());
 
-            A.CallTo(() => _repository.DeleteAsync(A<long>.Ignored))
-                .Returns(new DeleteResult.DeleteFailureNotExists());
+            A.CallTo(() => _vendorRepository.DeleteVendor(A<long>.Ignored))
+                .Returns(new VendorDeleteResult.FailureNotExists());
         }
 
         [Test]
@@ -262,9 +269,7 @@ public class VendorModuleTests
                         "company": "Test 11",
                         "contactName": "Test",
                         "contactEmailAddress": "test@gmail.com",
-                        "namespacePrefixes": [
-                            "Test"
-                        ]
+                        "namespacePrefixes": "Test"
                     }
                     """,
                     Encoding.UTF8,
@@ -295,9 +300,7 @@ public class VendorModuleTests
                         "company": "Test 11",
                         "contactName": "Test",
                         "contactEmailAddress": "test@gmail.com",
-                        "namespacePrefixes": [
-                            "Test"
-                        ]
+                        "namespacePrefixes": "Test"
                     }
                     """,
                     Encoding.UTF8,
@@ -319,19 +322,20 @@ public class VendorModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _repository.AddAsync(A<Vendor>.Ignored))
-                .Returns(new InsertResult.UnknownFailure(""));
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+                .Returns(new VendorInsertResult.FailureUnknown(""));
 
-            A.CallTo(() => _repository.GetAllAsync()).Returns(new GetResult<Vendor>.UnknownFailure(""));
+            A.CallTo(() => _vendorRepository.QueryVendor(A<PagingQuery>.Ignored))
+                .Returns(new VendorQueryResult.FailureUnknown(""));
 
-            A.CallTo(() => _repository.GetByIdAsync(A<long>.Ignored))
-                .Returns(new GetResult<Vendor>.UnknownFailure(""));
+            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+                .Returns(new VendorGetResult.FailureUnknown(""));
 
-            A.CallTo(() => _repository.UpdateAsync(A<Vendor>.Ignored))
-                .Returns(new UpdateResult.UnknownFailure(""));
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Returns(new VendorUpdateResult.FailureUnknown(""));
 
-            A.CallTo(() => _repository.DeleteAsync(A<long>.Ignored))
-                .Returns(new DeleteResult.UnknownFailure(""));
+            A.CallTo(() => _vendorRepository.DeleteVendor(A<long>.Ignored))
+                .Returns(new VendorDeleteResult.FailureUnknown(""));
         }
 
         [Test]
@@ -349,9 +353,7 @@ public class VendorModuleTests
                       "company": "Test 11",
                       "contactName": "Test",
                       "contactEmailAddress": "test@gmail.com",
-                      "namespacePrefixes": [
-                          "Test"
-                      ]
+                      "namespacePrefixes": "Test"
                     }
                     """,
                     Encoding.UTF8,
@@ -369,9 +371,7 @@ public class VendorModuleTests
                         "company": "Test 11",
                         "contactName": "Test",
                         "contactEmailAddress": "test@gmail.com",
-                        "namespacePrefixes": [
-                            "Test"
-                        ]
+                        "namespacePrefixes": "Test"
                     }
                     """,
                     Encoding.UTF8,
@@ -395,15 +395,18 @@ public class VendorModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _repository.AddAsync(A<Vendor>.Ignored)).Returns(new InsertResult());
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+                .Returns(new VendorInsertResult());
 
-            A.CallTo(() => _repository.GetAllAsync()).Returns(new GetResult<Vendor>());
+            A.CallTo(() => _vendorRepository.QueryVendor(A<PagingQuery>.Ignored))
+                .Returns(new VendorQueryResult());
 
-            A.CallTo(() => _repository.GetByIdAsync(A<long>.Ignored)).Returns(new GetResult<Vendor>());
+            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored)).Returns(new VendorGetResult());
 
-            A.CallTo(() => _repository.UpdateAsync(A<Vendor>.Ignored)).Returns(new UpdateResult());
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Returns(new VendorUpdateResult());
 
-            A.CallTo(() => _repository.DeleteAsync(A<long>.Ignored)).Returns(new DeleteResult());
+            A.CallTo(() => _vendorRepository.DeleteVendor(A<long>.Ignored)).Returns(new VendorDeleteResult());
         }
 
         [Test]
@@ -421,9 +424,7 @@ public class VendorModuleTests
                       "company": "Test 11",
                       "contactName": "Test",
                       "contactEmailAddress": "test@gmail.com",
-                      "namespacePrefixes": [
-                          "Test"
-                      ]
+                      "namespacePrefixes": "Test"
                     }
                     """,
                     Encoding.UTF8,
@@ -441,9 +442,7 @@ public class VendorModuleTests
                         "company": "Test 11",
                         "contactName": "Test",
                         "contactEmailAddress": "test@gmail.com",
-                        "namespacePrefixes": [
-                            "Test"
-                        ]
+                        "namespacePrefixes": "Test"
                     }
                     """,
                     Encoding.UTF8,
@@ -464,8 +463,6 @@ public class VendorModuleTests
     [TestFixture]
     public class GetApplicationsByVendorIdTests : VendorModuleTests
     {
-        private readonly IVendorRepository _vendorRepository = A.Fake<IVendorRepository>();
-
         private HttpClient SetUpIVendorClient()
         {
             var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -554,8 +551,8 @@ public class VendorModuleTests
             // Arrange
             using var client = SetUpIVendorClient();
 
-            A.CallTo(() => _repository.AddAsync(A<Vendor>.Ignored))
-                .Returns(new InsertResult.InsertSuccess(2));
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+                .Returns(new VendorInsertResult.Success(2));
 
             A.CallTo(() => _vendorRepository.GetVendorByIdWithApplicationsAsync(A<long>.Ignored))
                 .Returns(

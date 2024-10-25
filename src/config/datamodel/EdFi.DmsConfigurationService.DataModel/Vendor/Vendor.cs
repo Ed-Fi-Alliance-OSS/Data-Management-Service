@@ -23,3 +23,25 @@ public class Application
     public required string ClaimSetName { get; set; }
     public IList<long> EducationOrganizationIds { get; set; } = [];
 }
+
+public class VendorResponse
+{
+    public long Id { get; set; }
+    public required string Company { get; set; }
+    public required string ContactName { get; set; }
+    public required string ContactEmailAddress { get; set; }
+    public required string NamespacePrefixes { get; set; }
+}
+
+public class VendorInsertCommand
+{
+    public required string Company { get; set; }
+    public required string ContactName { get; set; }
+    public required string ContactEmailAddress { get; set; }
+    public required string NamespacePrefixes { get; set; }
+}
+
+public class VendorUpdateCommand : VendorInsertCommand
+{
+    public long Id { get; set; }
+}

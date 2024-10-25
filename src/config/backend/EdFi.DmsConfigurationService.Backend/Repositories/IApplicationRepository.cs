@@ -16,9 +16,9 @@ public interface IApplicationRepository
         string clientSecret
     );
 
-    Task<ApplicationQueryResult> QueryApplication(ApplicationQuery query);
+    Task<ApplicationQueryResult> QueryApplication(PagingQuery query);
     Task<ApplicationGetResult> GetApplication(long id);
-    Task<ApplicationUpdateResult> UpdateApplication(ApplicationUpdateCommand command);
+    Task<ApplicationVendorUpdateResult> UpdateApplication(ApplicationUpdateCommand command);
     Task<ApplicationDeleteResult> DeleteApplication(long id);
 }
 
@@ -63,24 +63,24 @@ public record ApplicationGetResult
     public record FailureUnknown(string FailureMessage) : ApplicationGetResult();
 }
 
-public record ApplicationUpdateResult
+public record ApplicationVendorUpdateResult
 {
-    public record Success() : ApplicationUpdateResult();
+    public record Success() : ApplicationVendorUpdateResult();
 
     /// <summary>
     /// Application id not found
     /// </summary>
-    public record FailureNotExists() : ApplicationUpdateResult();
+    public record FailureNotExists() : ApplicationVendorUpdateResult();
 
     /// <summary>
     /// Referenced vendor not found exception thrown and caught
     /// </summary>
-    public record FailureVendorNotFound() : ApplicationUpdateResult();
+    public record FailureVendorNotFound() : ApplicationVendorUpdateResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught
     /// </summary>
-    public record FailureUnknown(string FailureMessage) : ApplicationUpdateResult();
+    public record FailureUnknown(string FailureMessage) : ApplicationVendorUpdateResult();
 }
 
 public record ApplicationDeleteResult
