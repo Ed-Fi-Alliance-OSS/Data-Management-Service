@@ -39,13 +39,11 @@ $files = @(
     "local-dms.yml"
 )
 
-if($EnforceAuthorization)
-{
+if ($EnforceAuthorization) {
     $files += @("-f", "keycloak.yml")
 }
 
-if($EnableOpenSearchUI)
-{
+if ($EnableOpenSearchUI) {
     $files += @("-f", "kafka-opensearch-ui.yml")
 }
 
@@ -60,20 +58,25 @@ if ($d) {
     }
 }
 else {
-    $upArg = ""
-    if ($r) { $upArg = "--build" }
+    $upArgs = @(
+        "--detach"
+    )
+    if ($r) { $upArgs += @("--build") }
 
     Write-Output "Starting locally-built DMS"
-    if($EnforceAuthorization)
-    {
-        $env:IDENTITY_ENFORCE_AUTHORIZATION=$true
+    if ($EnforceAuthorization) {
+        $env:IDENTITY_ENFORCE_AUTHORIZATION = $true
     }
     else {
-        $env:IDENTITY_ENFORCE_AUTHORIZATION=$false
+        $env:IDENTITY_ENFORCE_AUTHORIZATION = $false
     }
 
-    docker compose $files --env-file $EnvironmentFile up -d $upArg
+    docker compose $files --env-file $EnvironmentFile up $upArgs
 
-    Start-Sleep 30
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to start local Docker environment, with exit code $LASTEXITCODE."
+    }
+
+    Start-Sleep 20
     ./setup-connectors.ps1 $EnvironmentFile
 }

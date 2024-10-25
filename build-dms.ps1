@@ -324,10 +324,13 @@ function Invoke-TestExecution {
             IgnoreCase = $true)]
         # File search filter
         [string]
-        $Filter
+        $Filter,
+
+        [switch]
+        $EnableOpenSearch
     )
     switch ($Filter) {
-        E2ETests { Invoke-Step { E2ETests } }
+        E2ETests { Invoke-Step { E2ETests -EnableOpenSearch:$EnableOpenSearch } }
         UnitTests { Invoke-Step { UnitTests } }
         IntegrationTests { Invoke-Step { IntegrationTests } }
         Default { "Unknow Test Type" }
@@ -408,7 +411,7 @@ Invoke-Main {
             Invoke-Publish
         }
         UnitTest { Invoke-TestExecution UnitTests }
-        E2ETest { Invoke-TestExecution E2ETests }
+        E2ETest { Invoke-TestExecution E2ETests -EnableOpenSearch:$EnableOpenSearch }
         IntegrationTest { Invoke-TestExecution IntegrationTests }
         Coverage { Invoke-Coverage }
         Package { Invoke-BuildPackage }
