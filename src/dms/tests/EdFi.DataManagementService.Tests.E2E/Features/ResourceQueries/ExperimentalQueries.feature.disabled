@@ -1,0 +1,147 @@
+Feature: Experimental / proposed features for enhanced paging
+
+    # This file contains proposed new processes that are not a high priority for DMS v1.0.
+    #
+
+        Background:
+            Given the system has these descriptors
+                  | descriptorValue                                                                            |
+                  | uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider |
+                  | uri://ed-fi.org/GradeLevelDescriptor#Postsecondary                                         |
+            Given the system has these "schools"
+                  | schoolId | nameOfInstitution            | gradeLevels                                                                         | educationOrganizationCategories                                                                                   |
+                  | 1        | Grand Bend Middle School     | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"} ]    | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+                  | 2        | Grand Bend Elementary School | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#First grade"} ]    | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+                  | 3        | Grand Bend High School       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+
+        # TODO: this test will need additional work. (a) asynchronous insert of
+        # the three school records means we won't know the order of the inserts.
+        # Furthermore, we have no way of knowing in advance the
+        # lastModifiedDate. Proposed solution: retrieve _all_ records in a GIVEN
+        # statement, then pick the middle or last one (not the first). Look at
+        # its modified date. Use that to create the WHEN statement. Will also
+        # need to save that specific record in a temporary variable. Finally, in
+        # the THEN statement, confirm that the expected record is returned by
+        # the query.
+        @API-257 @ignore
+        Scenario: 01 Ensure that clients can retrieve resources by querying for the minimum modification date
+            Given we know the lastModifiedDate of the most recently inserted school
+             When a GET request is made to "/ed-fi/schools?minModifiedDate={lastModifiedDate}"
+             Then it should respond with 200
+              And the response body should match the most recently inserted school
+
+        @API-258 @ignore
+        Scenario: 03 Ensure that clients can perform a DESCending sort by an attribute
+             When a GET request is made to "/ed-fi/schools?orderBy=schoolId&direction=desc"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [
+                      {
+                          "schoolId": 3,
+                          "nameOfInstitution": "Grand Bend High School",
+                          "educationOrganizationCategories": [
+                              {
+                                  "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                              }
+                          ],
+                          "gradeLevels": [
+                              {
+                                  "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade"
+                              }
+                        ],
+                        "_lastModifiedDate": "{lastModifiedDate}"
+                      },
+                      {
+                          "schoolId": 2,
+                          "nameOfInstitution": "Grand Bend Elementary School",
+                          "educationOrganizationCategories": [
+                              {
+                                  "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                              }
+                          ],
+                          "gradeLevels": [
+                              {
+                                  "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#First grade"
+                              }
+                          ],
+                        "_lastModifiedDate": "{lastModifiedDate}"
+                      },
+                      {
+                          "id": "ead36072b993441db409fc7f8c4ec31e",
+                          "schoolId": 1,
+                          "nameOfInstitution": "Grand Bend Middle School",
+                          "educationOrganizationCategories": [
+                              {
+                                  "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                              }
+                          ],
+                          "gradeLevels": [
+                              {
+                                  "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
+                              }
+                          ],
+                          "_lastModifiedDate": "{lastModifiedDate}"
+                      }
+                  ]
+                  """
+
+        @API-258 @ignore
+        Scenario: 04 Ensure that clients can perform an ASCending sort by an attribute
+             When a GET request is made to "/ed-fi/schools?orderBy=schoolId&direction=asc"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [
+                      {
+                          "id": "ead36072b993441db409fc7f8c4ec31e",
+                          "schoolId": 1,
+                          "nameOfInstitution": "Grand Bend Middle School",
+                          "educationOrganizationCategories": [
+                              {
+                                  "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                              }
+                          ],
+                          "gradeLevels": [
+                              {
+                                  "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
+                              }
+                          ],
+                          "_lastModifiedDate": "{lastModifiedDate}"
+                      },
+                      {
+                          "schoolId": 2,
+                          "nameOfInstitution": "Grand Bend Elementary School",
+                          "educationOrganizationCategories": [
+                              {
+                                  "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                              }
+                          ],
+                          "gradeLevels": [
+                              {
+                                  "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#First grade"
+                              }
+                          ],
+                        "_lastModifiedDate": "{lastModifiedDate}"
+                      },
+                      {
+                          "schoolId": 3,
+                          "nameOfInstitution": "Grand Bend High School",
+                          "educationOrganizationCategories": [
+                              {
+                                  "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                              }
+                          ],
+                          "gradeLevels": [
+                              {
+                                  "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade"
+                              }
+                        ],
+                        "_lastModifiedDate": "{lastModifiedDate}"
+                      }
+                  ]
+                  """
+
+
+
+
