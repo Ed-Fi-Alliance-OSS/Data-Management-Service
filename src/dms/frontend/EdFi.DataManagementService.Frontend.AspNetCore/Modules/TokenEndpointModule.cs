@@ -34,6 +34,7 @@ public class TokenEndpointModule : IEndpointModule
         }
         catch (OAuthIdentityException ex)
         {
+            logger.LogError(ex, "Error from OAuthManager service");
             httpContext.Response.StatusCode = (int?)ex.StatusCode ?? (int)HttpStatusCode.BadGateway;
             await httpContext.Response.WriteAsync($"Error Getting Access Token Async: {ex.Message}");
         }
