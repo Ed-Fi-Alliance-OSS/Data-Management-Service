@@ -10,7 +10,6 @@ using EdFi.DataManagementService.Backend.OAuthService;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -40,7 +39,7 @@ public class TokenEndpointModuleTests
             };
 
             A.CallTo(
-                    () => oAuthManager.GetAccessTokenAsync(A<HttpContext>.Ignored, A<string>.Ignored)
+                    () => oAuthManager.GetAccessTokenAsync(A<HttpClient>.Ignored, A<string>.Ignored, A<string>.Ignored)
                 )
                 .Returns(_fake_response_200);
 
@@ -116,7 +115,7 @@ public class TokenEndpointModuleTests
         var oAuthManager = A.Fake<IOAuthManager>();
 
         A.CallTo(
-                () => oAuthManager.GetAccessTokenAsync(A<HttpContext>.Ignored, A<string>.Ignored)
+                () => oAuthManager.GetAccessTokenAsync(A<HttpClient>.Ignored, A<string>.Ignored, A<string>.Ignored)
             )
             .Throws(new OAuthIdentityException("Fake internal error", HttpStatusCode.ServiceUnavailable));
 

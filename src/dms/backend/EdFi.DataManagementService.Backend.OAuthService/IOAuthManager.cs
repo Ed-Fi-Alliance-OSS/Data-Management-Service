@@ -3,11 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using Microsoft.AspNetCore.Http;
-
 namespace EdFi.DataManagementService.Backend.OAuthService;
 
 public interface IOAuthManager
 {
-    public Task<HttpResponseMessage> GetAccessTokenAsync(HttpContext httpContext, string upstreamUri);
+    public Task<HttpResponseMessage> GetAccessTokenAsync(HttpClient httpClient, string authHeaderString, string upstreamUri);
 }
