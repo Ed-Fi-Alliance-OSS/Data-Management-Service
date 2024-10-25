@@ -41,6 +41,7 @@ public class RequestLoggingMiddleware(RequestDelegate next)
         {
             var response = context.Response;
             response.ContentType = "application/json";
+            logger.LogError(ex.Message + " - TraceId: {TraceId}", context.TraceIdentifier);
 
             switch (ex)
             {
@@ -65,9 +66,37 @@ public class RequestLoggingMiddleware(RequestDelegate next)
                     await response.WriteAsync(JsonSerializer.Serialize(validationResponse));
                     break;
 
-                case IdentityException identityException:
+                // Bad credentials
+                case IdentityException:
                     response.StatusCode = (int)HttpStatusCode.Unauthorized;
-                    await response.WriteAsync(JsonSerializer.Serialize(identityException.Message));
+                    await response.WriteAsync(
+                        JsonSerializer.Serialize(
+                            new
+                            {
+                                title = "Client token generation failed",
+                                message = "Invalid client or Invalid client credentials."
+                            }
+                        )
+                    );
+                    break;
+                // Keycloak is unreachable
+                case AggregateException
+                    when (
+                        ex.Message.Contains(
+                            "No connection could be made because the target machine actively refused it"
+                        )
+                    ):
+                    response.StatusCode = (int)HttpStatusCode.BadGateway;
+                    await response.WriteAsync(
+                        JsonSerializer.Serialize(new { message = "Keycloak is unreachable." })
+                    );
+                    break;
+                // Invalid realm
+                case AggregateException when (ex.Message.Contains("Call failed with status code 404")):
+                    response.StatusCode = (int)HttpStatusCode.BadGateway;
+                    await response.WriteAsync(
+                        JsonSerializer.Serialize(new { message = "Invalid real, please check the configuration." })
+                    );
                     break;
 
                 default:
