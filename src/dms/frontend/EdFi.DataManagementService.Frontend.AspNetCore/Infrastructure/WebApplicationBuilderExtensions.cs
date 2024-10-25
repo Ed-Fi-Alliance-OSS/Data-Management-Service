@@ -8,6 +8,7 @@ using System.Security.Claims;
 using System.Threading.RateLimiting;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Deploy;
+using EdFi.DataManagementService.Backend.OAuthService;
 using EdFi.DataManagementService.Backend.OpenSearch;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
@@ -36,6 +37,7 @@ public static class WebApplicationBuilderExtensions
             .AddTransient<IContentProvider, ContentProvider>()
             .AddTransient<IVersionProvider, VersionProvider>()
             .AddTransient<IAssemblyProvider, AssemblyProvider>()
+            .AddTransient<IOAuthManager, OAuthManager>()
             .Configure<DatabaseOptions>(webAppBuilder.Configuration.GetSection("DatabaseOptions"))
             .Configure<AppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"))
             .Configure<CoreAppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"))
