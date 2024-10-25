@@ -88,6 +88,10 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
 
             return new GetResult<Application>.GetByIdSuccess(returnApplication.Single());
         }
+        catch (InvalidOperationException ex) when (ex.Message == "Sequence contains no elements")
+        {
+            return new GetResult<Application>.GetByIdFailureNotExists();
+        }
         catch (Exception ex)
         {
             return new GetResult<Application>.UnknownFailure(ex.Message);
