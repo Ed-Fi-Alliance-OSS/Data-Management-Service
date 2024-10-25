@@ -17,7 +17,7 @@ public class TokenEndpointModule : IEndpointModule
         endpoints.MapPost("/oauth/token", GenerateToken);
     }
 
-    public static async Task GenerateToken(HttpContext httpContext, IOptions<AppSettings> appSettings, IOAuthManager oAuthManager, ILogger<TokenEndpointModule> logger)
+    internal static async Task GenerateToken(HttpContext httpContext, IOptions<AppSettings> appSettings, IOAuthManager oAuthManager, ILogger<TokenEndpointModule> logger)
     {
         try
         {
