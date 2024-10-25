@@ -8,7 +8,7 @@ using System.Security.Claims;
 using System.Threading.RateLimiting;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Deploy;
-using EdFi.DataManagementService.Backend.OAuthService;
+using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Backend.OpenSearch;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;

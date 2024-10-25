@@ -4,7 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
-using EdFi.DataManagementService.Backend.OAuthService;
+using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using Microsoft.Extensions.Options;
 
@@ -20,6 +20,7 @@ public class TokenEndpointModule : IEndpointModule
     internal static async Task GenerateToken(HttpContext httpContext, IOptions<AppSettings> appSettings, IOAuthManager oAuthManager, ILogger<TokenEndpointModule> logger, IHttpClientFactory httpClientFactory)
     {
         // Create client for sending upstream request.
+        logger.LogInformation("Handling OAuth Token request.");
         var client = httpClientFactory.CreateClient();
 
         // Extract the Authorization Headers.

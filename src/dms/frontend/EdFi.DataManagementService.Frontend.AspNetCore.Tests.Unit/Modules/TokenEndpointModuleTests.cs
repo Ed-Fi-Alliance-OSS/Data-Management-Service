@@ -6,7 +6,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Backend.OAuthService;
+using EdFi.DataManagementService.Core;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;

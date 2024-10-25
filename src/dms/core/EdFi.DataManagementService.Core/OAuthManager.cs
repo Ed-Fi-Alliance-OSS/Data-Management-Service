@@ -6,8 +6,12 @@ using Microsoft.Extensions.Logging;
 using System.Net;
 using System.Text;
 
-namespace EdFi.DataManagementService.Backend.OAuthService;
+namespace EdFi.DataManagementService.Core;
 
+public interface IOAuthManager
+{
+    public Task<HttpResponseMessage> GetAccessTokenAsync(HttpClient httpClient, string authHeaderString, string upstreamUri);
+}
 public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
 {
     private readonly ILogger<OAuthManager> _logger = logger;
@@ -21,7 +25,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         _logger.LogInformation("Verifying Authorization Header contains 'Basic' Authentication formatting");
         if (!authHeaderString.Contains("Basic"))
         {
-            _logger.LogError($"Malformed Authorization Header {authHeaderString}");
+            _logger.LogError("Malformed Authorization Header");
             throw new OAuthIdentityException($"Malformed Authorization Header", HttpStatusCode.BadRequest);
         }
 
