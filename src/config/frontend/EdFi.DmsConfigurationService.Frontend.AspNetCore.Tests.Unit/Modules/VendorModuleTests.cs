@@ -7,7 +7,8 @@ using System.Net;
 using System.Security.Claims;
 using System.Text;
 using EdFi.DmsConfigurationService.Backend;
-using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Vendor;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FakeItEasy;
 using FluentAssertions;
@@ -514,7 +515,7 @@ public class VendorModuleTests
                                     ApplicationName = "App 1",
                                     ClaimSetName = "Name",
                                     VendorId = 1,
-                                    EducationOrganizationIds = [1]
+                                    EducationOrganizationIds = [1],
                                 },
                                 new()
                                 {
@@ -522,9 +523,9 @@ public class VendorModuleTests
                                     ApplicationName = "App 2",
                                     ClaimSetName = "Name",
                                     VendorId = 1,
-                                    EducationOrganizationIds = [1]
-                                }
-                            ]
+                                    EducationOrganizationIds = [1],
+                                },
+                            ],
                         }
                     )
                 );

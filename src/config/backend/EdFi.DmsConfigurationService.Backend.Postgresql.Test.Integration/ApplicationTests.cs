@@ -6,6 +6,8 @@
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repository;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.DataModel.Application;
+using EdFi.DmsConfigurationService.DataModel.Vendor;
 using FluentAssertions;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration;

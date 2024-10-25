@@ -12,6 +12,7 @@ using EdFi.DmsConfigurationService.Backend.Postgresql;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repository;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.DataModel.Vendor;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using FluentValidation;
 using FluentValidation.AspNetCore;

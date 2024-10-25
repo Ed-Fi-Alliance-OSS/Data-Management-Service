@@ -4,7 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using Dapper;
-using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Vendor;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
