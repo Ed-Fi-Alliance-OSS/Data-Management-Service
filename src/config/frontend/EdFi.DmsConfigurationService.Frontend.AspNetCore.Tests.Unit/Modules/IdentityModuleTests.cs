@@ -6,6 +6,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using EdFi.DmsConfigurationService.Backend;
+using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
 using FakeItEasy;
@@ -26,7 +27,15 @@ public class RegisterEndpointTests
     public void Setup()
     {
         _clientRepository = A.Fake<IClientRepository>();
-        A.CallTo(() => _clientRepository.CreateClientAsync(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(Task.FromResult(true));
+        A.CallTo(
+                () =>
+                    _clientRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored
+                    )
+            )
+            .Returns(Task.FromResult(true));
         var clientList = A.Fake<IEnumerable<string>>();
         A.CallTo(() => _clientRepository.GetAllClientsAsync()).Returns(Task.FromResult(clientList));
     }
@@ -49,7 +58,12 @@ public class RegisterEndpointTests
         using var client = factory.CreateClient();
 
         // Act
-        var requestContent = new { clientid = "CSClient1", clientsecret = "test123@Puiu", displayname = "CSClient1" };
+        var requestContent = new
+        {
+            clientid = "CSClient1",
+            clientsecret = "test123@Puiu",
+            displayname = "CSClient1",
+        };
         var response = await client.PostAsJsonAsync("/connect/register", requestContent);
         var content = await response.Content.ReadAsStringAsync();
 
@@ -76,7 +90,12 @@ public class RegisterEndpointTests
         using var client = factory.CreateClient();
 
         // Act
-        var requestContent = new { clientid = "", clientsecret = "", displayname = "" };
+        var requestContent = new
+        {
+            clientid = "",
+            clientsecret = "",
+            displayname = "",
+        };
         var response = await client.PostAsJsonAsync("/connect/register", requestContent);
         var content = await response.Content.ReadAsStringAsync();
         content = System.Text.RegularExpressions.Regex.Unescape(content);
@@ -112,13 +131,22 @@ public class RegisterEndpointTests
         using var client = factory.CreateClient();
 
         // Act
-        var requestContent = new { clientid = "CSClient2", clientsecret = secret, displayname = "CSClient2@cs.com" };
+        var requestContent = new
+        {
+            clientid = "CSClient2",
+            clientsecret = secret,
+            displayname = "CSClient2@cs.com",
+        };
         var response = await client.PostAsJsonAsync("/connect/register", requestContent);
         var content = await response.Content.ReadAsStringAsync();
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        content.Should().Contain("Client secret must contain at least one lowercase letter, one uppercase letter, one number, and one special character, and must be 8 to 12 characters long.");
+        content
+            .Should()
+            .Contain(
+                "Client secret must contain at least one lowercase letter, one uppercase letter, one number, and one special character, and must be 8 to 12 characters long."
+            );
     }
 
     [Test]
@@ -128,8 +156,15 @@ public class RegisterEndpointTests
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             _clientRepository = A.Fake<IClientRepository>();
-            A.CallTo(() => _clientRepository.CreateClientAsync(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored))
-            .Throws(new Exception("Error from Keycloak"));
+            A.CallTo(
+                    () =>
+                        _clientRepository.CreateClientAsync(
+                            A<string>.Ignored,
+                            A<string>.Ignored,
+                            A<string>.Ignored
+                        )
+                )
+                .Throws(new Exception("Error from Keycloak"));
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
                 (collection) =>
@@ -142,7 +177,12 @@ public class RegisterEndpointTests
         using var client = factory.CreateClient();
 
         // Act
-        var requestContent = new { clientid = "CSClient3", clientsecret = "test123@Puiu", displayname = "CSClient3" };
+        var requestContent = new
+        {
+            clientid = "CSClient3",
+            clientsecret = "test123@Puiu",
+            displayname = "CSClient3",
+        };
         var response = await client.PostAsJsonAsync("/connect/register", requestContent);
         var content = await response.Content.ReadAsStringAsync();
 
@@ -174,13 +214,20 @@ public class RegisterEndpointTests
         using var client = factory.CreateClient();
 
         // Act
-        var requestContent = new { clientid = "CSClient2", clientsecret = "test123@Puiu", displayname = "CSClient2@cs.com" };
+        var requestContent = new
+        {
+            clientid = "CSClient2",
+            clientsecret = "test123@Puiu",
+            displayname = "CSClient2@cs.com",
+        };
         var response = await client.PostAsJsonAsync("/connect/register", requestContent);
         var content = await response.Content.ReadAsStringAsync();
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        content.Should().Contain("Client with the same Client Id already exists. Please provide different Client Id.");
+        content
+            .Should()
+            .Contain("Client with the same Client Id already exists. Please provide different Client Id.");
     }
 
     [Test]
@@ -205,7 +252,12 @@ public class RegisterEndpointTests
         using var client = factory.CreateClient();
 
         // Act
-        var requestContent = new { clientid = "CSClient2", clientsecret = "test123@Puiu", displayname = "CSClient2@cs.com" };
+        var requestContent = new
+        {
+            clientid = "CSClient2",
+            clientsecret = "test123@Puiu",
+            displayname = "CSClient2@cs.com",
+        };
         var response = await client.PostAsJsonAsync("/connect/register", requestContent);
 
         // Assert
@@ -222,15 +274,17 @@ public class TokenEndpointTests
     public void Setup()
     {
         _tokenManager = A.Fake<ITokenManager>();
-        var token =
-            """
+        var token = """
             {
                 "access_token":"input123token",
                 "expires_in":900,
                 "token_type":"bearer"
             }
             """;
-        A.CallTo(() => _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)).Returns(Task.FromResult(token));
+        A.CallTo(
+                () => _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
+            )
+            .Returns(Task.FromResult(token));
     }
 
     [Test]
@@ -291,7 +345,6 @@ public class TokenEndpointTests
         content.Should().Contain("'Client Secret' must not be empty.");
     }
 
-
     [Test]
     public async Task When_error_from_backend()
     {
@@ -299,8 +352,13 @@ public class TokenEndpointTests
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             _tokenManager = A.Fake<ITokenManager>();
-            A.CallTo(() => _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored))
-            .Throws(new Exception("Error from Keycloak"));
+            A.CallTo(
+                    () =>
+                        _tokenManager.GetAccessTokenAsync(
+                            A<IEnumerable<KeyValuePair<string, string>>>.Ignored
+                        )
+                )
+                .Throws(new Exception("Error from Keycloak"));
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(

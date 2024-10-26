@@ -3,8 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.RegularExpressions;
-using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Vendor;
@@ -66,24 +64,12 @@ public class VendorModule : IEndpointModule
     }
 
     private static async Task<IResult> GetById(
+        long id,
         HttpContext httpContext,
         IVendorRepository repository,
         ILogger<VendorModule> logger
     )
     {
-        Match match = UtilityService.PathExpressionRegex().Match(httpContext.Request.Path);
-        if (!match.Success)
-        {
-            logger.LogInformation("Request path did not match regex");
-            return Results.Problem(statusCode: 500);
-        }
-
-        string idString = match.Groups["Id"].Value;
-        if (!long.TryParse(idString, out long id))
-        {
-            return Results.NotFound();
-        }
-
         VendorGetResult getResult = await repository.GetVendor(id);
         return getResult switch
         {
@@ -95,6 +81,7 @@ public class VendorModule : IEndpointModule
     }
 
     private static async Task<IResult> Update(
+        long id,
         VendorUpdateCommandValidator validator,
         VendorUpdateCommand entity,
         HttpContext httpContext,
@@ -102,39 +89,48 @@ public class VendorModule : IEndpointModule
     )
     {
         validator.GuardAsync(entity);
-        Match match = UtilityService.PathExpressionRegex().Match(httpContext.Request.Path);
-
-        string idString = match.Groups["Id"].Value;
-        if (long.TryParse(idString, out long id))
+        var entityType = entity.GetType();
+        var idProperty = entityType.GetProperty("Id");
+        if (idProperty == null)
         {
-            var entityType = entity.GetType();
-            var idProperty = entityType.GetProperty("Id");
-            if (idProperty == null)
-            {
-                throw new InvalidOperationException("The entity does not contain an Id property.");
-            }
-
-            var entityId = idProperty.GetValue(entity) as long?;
-
-            if (entityId != id)
-            {
-                throw new ValidationException(
-                    new[] { new ValidationFailure("Id", "Request body id must match the id in the url.") }
-                );
-            }
-
-            var vendorUpdateResult = await repository.UpdateVendor(entity);
-
-            return vendorUpdateResult switch
-            {
-                VendorUpdateResult.Success success => Results.NoContent(),
-                VendorUpdateResult.FailureNotExists => Results.NotFound(),
-                VendorUpdateResult.FailureUnknown => Results.Problem(statusCode: 500),
-                _ => Results.Problem(statusCode: 500),
-            };
+            throw new InvalidOperationException("The entity does not contain an Id property.");
         }
 
-        return Results.NotFound();
+        var entityId = idProperty.GetValue(entity) as long?;
+
+        if (entityId != id)
+        {
+            throw new ValidationException(
+                new[] { new ValidationFailure("Id", "Request body id must match the id in the url.") }
+            );
+        }
+
+        var vendorUpdateResult = await repository.UpdateVendor(entity);
+
+        return vendorUpdateResult switch
+        {
+            VendorUpdateResult.Success success => Results.NoContent(),
+            VendorUpdateResult.FailureNotExists => Results.NotFound(),
+            VendorUpdateResult.FailureUnknown => Results.Problem(statusCode: 500),
+            _ => Results.Problem(statusCode: 500),
+        };
+    }
+
+    private static async Task<IResult> Delete(
+        long id,
+        HttpContext httpContext,
+        IVendorRepository repository,
+        ILogger<VendorModule> logger
+    )
+    {
+        VendorDeleteResult deleteResult = await repository.DeleteVendor(id);
+        return deleteResult switch
+        {
+            VendorDeleteResult.Success => Results.NoContent(),
+            VendorDeleteResult.FailureNotExists => Results.NotFound(),
+            VendorDeleteResult.FailureUnknown => Results.Problem(statusCode: 500),
+            _ => Results.Problem(statusCode: 500),
+        };
     }
 
     private static async Task<IResult> GetApplicationsByVendorId(
@@ -150,31 +146,6 @@ public class VendorModule : IEndpointModule
             ApplicationsByVendorResult.FailureVendorNotFound => Results.NotFound(
                 new { title = $"Not found: vendor with ID {id}. It may have been recently deleted." }
             ),
-            _ => Results.Problem(statusCode: 500),
-        };
-    }
-
-    private static async Task<IResult> Delete(HttpContext httpContext, IVendorRepository repository)
-    {
-        Match match = UtilityService.PathExpressionRegex().Match(httpContext.Request.Path);
-        if (!match.Success)
-        {
-            return Results.Problem(statusCode: 500);
-        }
-
-        string idString = match.Groups["Id"].Value;
-
-        if (!long.TryParse(idString, out long id))
-        {
-            return Results.NotFound();
-        }
-
-        VendorDeleteResult deleteResult = await repository.DeleteVendor(id);
-        return deleteResult switch
-        {
-            VendorDeleteResult.Success => Results.NoContent(),
-            VendorDeleteResult.FailureNotExists => Results.NotFound(),
-            VendorDeleteResult.FailureUnknown => Results.Problem(statusCode: 500),
             _ => Results.Problem(statusCode: 500),
         };
     }

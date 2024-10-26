@@ -286,7 +286,7 @@ public class VendorModuleTests
         }
 
         [Test]
-        public async Task Should_return_not_found_when_id_not_number()
+        public async Task Should_return_bad_request_when_id_not_number()
         {
             // Arrange
             using var client = SetUpClient();
@@ -311,9 +311,9 @@ public class VendorModuleTests
             var deleteResponse = await client.DeleteAsync("/v2/vendors/c");
 
             //Assert
-            getByIdResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-            updateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-            deleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            getByIdResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            deleteResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
     }
 

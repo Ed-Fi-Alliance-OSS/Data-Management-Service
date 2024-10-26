@@ -10,10 +10,49 @@ using EdFi.DmsConfigurationService.DataModel.Vendor;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
-namespace EdFi.DmsConfigurationService.Backend.Postgresql
+namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repository
 {
     public class VendorRepository(IOptions<DatabaseOptions> databaseOptions) : IVendorRepository
     {
+        public async Task<VendorInsertResult> InsertVendor(VendorInsertCommand command)
+        {
+            await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            try
+            {
+                var sql = """
+                    INSERT INTO dmscs.Vendor (Company, ContactName, ContactEmailAddress)
+                    VALUES (@Company, @ContactName, @ContactEmailAddress)
+                    RETURNING Id;
+                    """;
+
+                var id = await connection.ExecuteScalarAsync<long>(sql, command);
+
+                sql = """
+                    INSERT INTO dmscs.VendorNamespacePrefix (VendorId, NamespacePrefix)
+                    VALUES (@VendorId, @NamespacePrefix);
+                    """;
+
+                var namespacePrefixes = command
+                    .NamespacePrefixes.Split(
+                        ',',
+                        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+                    )
+                    .Select(p => new { VendorId = id, NamespacePrefix = p.Trim() });
+
+                await connection.ExecuteAsync(sql, namespacePrefixes);
+                await transaction.CommitAsync();
+
+                return new VendorInsertResult.Success(id);
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return new VendorInsertResult.FailureUnknown(ex.Message);
+            }
+        }
+
         public async Task<VendorQueryResult> QueryVendor(PagingQuery query)
         {
             await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
@@ -153,45 +192,6 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql
             catch (Exception ex)
             {
                 return new VendorDeleteResult.FailureUnknown(ex.Message);
-            }
-        }
-
-        public async Task<VendorInsertResult> InsertVendor(VendorInsertCommand command)
-        {
-            await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
-            await connection.OpenAsync();
-            await using var transaction = await connection.BeginTransactionAsync();
-            try
-            {
-                var sql = """
-                    INSERT INTO dmscs.Vendor (Company, ContactName, ContactEmailAddress)
-                    VALUES (@Company, @ContactName, @ContactEmailAddress)
-                    RETURNING Id;
-                    """;
-
-                var id = await connection.ExecuteScalarAsync<long>(sql, command);
-
-                sql = """
-                    INSERT INTO dmscs.VendorNamespacePrefix (VendorId, NamespacePrefix)
-                    VALUES (@VendorId, @NamespacePrefix);
-                    """;
-
-                var namespacePrefixes = command
-                    .NamespacePrefixes.Split(
-                        ',',
-                        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
-                    )
-                    .Select(p => new { VendorId = id, NamespacePrefix = p.Trim() });
-
-                await connection.ExecuteAsync(sql, namespacePrefixes);
-                await transaction.CommitAsync();
-
-                return new VendorInsertResult.Success(id);
-            }
-            catch (Exception ex)
-            {
-                await transaction.RollbackAsync();
-                return new VendorInsertResult.FailureUnknown(ex.Message);
             }
         }
     }

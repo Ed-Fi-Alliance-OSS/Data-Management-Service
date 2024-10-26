@@ -6,7 +6,6 @@
 using System.Net;
 using System.Security.Claims;
 using System.Text;
-using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Application;

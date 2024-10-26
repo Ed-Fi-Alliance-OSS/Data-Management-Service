@@ -3,8 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.RegularExpressions;
-using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Application;
@@ -27,7 +25,7 @@ public class ApplicationModule : IEndpointModule
     }
 
     private static async Task<IResult> InsertApplication(
-        ApplicationValidators.ApplicationInsertCommandValidator validator,
+        ApplicationInsertCommandValidator validator,
         ApplicationInsertCommand command,
         HttpContext httpContext,
         IApplicationRepository applicationRepository,
@@ -95,24 +93,12 @@ public class ApplicationModule : IEndpointModule
     }
 
     private static async Task<IResult> GetById(
+        long id,
         HttpContext httpContext,
         IApplicationRepository applicationRepository,
         ILogger<ApplicationModule> logger
     )
     {
-        Match match = UtilityService.PathExpressionRegex().Match(httpContext.Request.Path);
-        if (!match.Success)
-        {
-            logger.LogInformation("Request path did not match regex");
-            return Results.Problem(statusCode: 500);
-        }
-
-        string idString = match.Groups["Id"].Value;
-        if (!long.TryParse(idString, out long id))
-        {
-            return Results.NotFound();
-        }
-
         ApplicationGetResult getResult = await applicationRepository.GetApplication(id);
         return getResult switch
         {
@@ -124,70 +110,39 @@ public class ApplicationModule : IEndpointModule
     }
 
     private static async Task<IResult> Update(
-        ApplicationValidators.ApplicationUpdateCommandValidator validator,
+        long id,
+        ApplicationUpdateCommandValidator validator,
         ApplicationUpdateCommand entity,
         HttpContext httpContext,
         IApplicationRepository repository
     )
     {
         validator.GuardAsync(entity);
-        Match match = UtilityService.PathExpressionRegex().Match(httpContext.Request.Path);
 
-        string idString = match.Groups["Id"].Value;
-        if (long.TryParse(idString, out long id))
+        var vendorUpdateResult = await repository.UpdateApplication(entity);
+
+        if (vendorUpdateResult is ApplicationVendorUpdateResult.FailureVendorNotFound failure)
         {
-            var entityType = entity.GetType();
-            var idProperty = entityType.GetProperty("Id");
-            if (idProperty == null)
-            {
-                throw new InvalidOperationException("The entity does not contain an Id property.");
-            }
-
-            var entityId = idProperty.GetValue(entity) as long?;
-
-            if (entityId != id)
-            {
-                throw new ValidationException(
-                    new[] { new ValidationFailure("Id", "Request body id must match the id in the url.") }
-                );
-            }
-
-            var VendorUpdateResult = await repository.UpdateApplication(entity);
-
-            if (VendorUpdateResult is ApplicationVendorUpdateResult.FailureVendorNotFound failure)
-            {
-                throw new ValidationException(
-                    new[] { new ValidationFailure("VendorId", $"Reference 'VendorId' does not exist.") }
-                );
-            }
-
-            return VendorUpdateResult switch
-            {
-                ApplicationVendorUpdateResult.Success success => Results.NoContent(),
-                ApplicationVendorUpdateResult.FailureNotExists => Results.NotFound(),
-                ApplicationVendorUpdateResult.FailureUnknown => Results.Problem(statusCode: 500),
-                _ => Results.Problem(statusCode: 500),
-            };
+            throw new ValidationException(
+                new[] { new ValidationFailure("VendorId", $"Reference 'VendorId' does not exist.") }
+            );
         }
 
-        return Results.NotFound();
+        return vendorUpdateResult switch
+        {
+            ApplicationVendorUpdateResult.Success success => Results.NoContent(),
+            ApplicationVendorUpdateResult.FailureNotExists => Results.NotFound(),
+            ApplicationVendorUpdateResult.FailureUnknown => Results.Problem(statusCode: 500),
+            _ => Results.Problem(statusCode: 500),
+        };
     }
 
-    private static async Task<IResult> Delete(HttpContext httpContext, IApplicationRepository repository)
+    private static async Task<IResult> Delete(
+        long id,
+        HttpContext httpContext,
+        IApplicationRepository repository
+    )
     {
-        Match match = UtilityService.PathExpressionRegex().Match(httpContext.Request.Path);
-        if (!match.Success)
-        {
-            return Results.Problem(statusCode: 500);
-        }
-
-        string idString = match.Groups["Id"].Value;
-
-        if (!long.TryParse(idString, out long id))
-        {
-            return Results.NotFound();
-        }
-
         ApplicationDeleteResult deleteResult = await repository.DeleteApplication(id);
         return deleteResult switch
         {
