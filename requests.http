@@ -1,5 +1,13 @@
+## Authentication tests
+
+#@port = 8080
+@port = 5198
+
+@secret=test1@Secret
+#@secret=fv2MwsrzyyTzRUmDS0K6tHhi7tvDzhG4
+
 ### DMS Auth Via Docker
-POST http://localhost:8080/oauth/token
+POST http://localhost:{{port}}/oauth/token
 
 Content-Type: "application/json"
 {
@@ -10,7 +18,7 @@ Content-Type: "application/json"
 ###
 ### DMS Auth running locally Proper
 POST http://localhost:5198/oauth/token
-Authorization: Basic CSClientApp:test1@Secret
+Authorization: Basic CSClientApp:{{secret}}
 Content-Type: application/x-www-form-urlencoded
 
 grant_type=client_credentials
@@ -33,7 +41,7 @@ grant_type=client_credentials
 ###
 ### Proper body
 POST http://localhost:5198/oauth/token
-Authorization: Basic CSClientApp:test1@Secret
+Authorization: Basic CSClientApp:{{secret}}
 Content-Type: application/x-www-form-urlencoded
 
 grant_type=client_credentials
@@ -41,7 +49,7 @@ grant_type=client_credentials
 ###
 ### JSON body
 POST http://localhost:5198/oauth/token
-Authorization: Basic CSClientApp:test1@Secret
+Authorization: Basic CSClientApp:{{secret}}
 Content-Type: application/json
 
 {
@@ -51,7 +59,7 @@ Content-Type: application/json
 ###
 ### JSON Test
 POST http://localhost:5198/oauth/token
-Authorization: Basic CSClientApp:test1@Secret
+Authorization: Basic CSClientApp:{{secret}}
 Content-Type: application/json
 
 {}
@@ -59,7 +67,7 @@ Content-Type: application/json
 ###
 ### Keycloak as a service
 POST http://localhost:8045/realms/edfi/protocol/openid-connect/token
-Authorization: Basic CSClientApp:test1@Secret
+Authorization: Basic CSClientApp:{{secret}}
 Content-Type: application/x-www-form-urlencoded
 
 grant_type=client_credentials
