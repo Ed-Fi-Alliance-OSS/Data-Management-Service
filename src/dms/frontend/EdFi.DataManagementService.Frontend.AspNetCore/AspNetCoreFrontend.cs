@@ -38,7 +38,7 @@ public static class AspNetCoreFrontend
     /// <summary>
     /// Takes an HttpRequest and returns a unique trace identifier
     /// </summary>
-    private static TraceId ExtractTraceIdFrom(HttpRequest request, IOptions<AppSettings> options)
+    public static TraceId ExtractTraceIdFrom(HttpRequest request, IOptions<AppSettings> options)
     {
         string headerName = options.Value.CorrelationIdHeader;
         if (
