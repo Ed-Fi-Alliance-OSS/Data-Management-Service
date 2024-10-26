@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
@@ -17,6 +18,7 @@ internal static class FailureResponse
 {
     private static readonly string _typePrefix = "urn:ed-fi:api";
     private static readonly string _badRequestTypePrefix = $"{_typePrefix}:bad-request";
+    private static readonly string _unauthorizedType = $"{_typePrefix}:unauthorized";
     private static readonly string _dataConflictTypePrefix = $"{_typePrefix}:data-conflict";
     private static readonly string _keyChangeNotSupported =
         $"{_badRequestTypePrefix}:data-validation-failed:key-change-not-supported";
@@ -147,5 +149,33 @@ internal static class FailureResponse
             correlationId: traceId.Value,
             validationErrors: [],
             errors
+        );
+
+    public static JsonNode ForUnauthorized(
+        TraceId traceId,
+        string error,
+        string description
+    ) =>
+        CreateBaseJsonObject(
+            detail: description,
+            type: _unauthorizedType,
+            title: error,
+            status: 401,
+            correlationId: traceId.Value,
+            validationErrors: [],
+            errors: []
+        );
+
+    public static JsonNode ForGatewayError(
+        TraceId traceId
+    ) =>
+        CreateBaseJsonObject(
+            detail: string.Empty,
+            type: _unauthorizedType,
+            title: "Upstream service unavailable",
+            status: (int)HttpStatusCode.BadGateway,
+            correlationId: traceId.Value,
+            validationErrors: [],
+            errors: []
         );
 }
