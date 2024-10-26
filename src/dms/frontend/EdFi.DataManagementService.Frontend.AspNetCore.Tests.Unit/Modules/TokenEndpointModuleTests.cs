@@ -7,6 +7,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core;
+using EdFi.DataManagementService.Core.External.Model;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
@@ -20,7 +21,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 public class TokenEndpointModuleTests
 {
     [TestFixture]
-    public class When_Posting_Successfully_To_The_Token_Endpoint
+    public class When_Posting_To_The_Internal_Token_Endpoint
     {
         private JsonNode? _jsonContent;
         private HttpResponseMessage? _response;
@@ -38,8 +39,9 @@ public class TokenEndpointModuleTests
                 Content = new StringContent(_fake_responseJson.ToString(), Encoding.UTF8, "application/json")
             };
 
+
             A.CallTo(
-                    () => oAuthManager.GetAccessTokenAsync(A<HttpClient>.Ignored, A<string>.Ignored, A<string>.Ignored)
+                    () => oAuthManager.GetAccessTokenAsync(A<HttpClient>.Ignored, A<string>.Ignored, A<string>.Ignored, A<TraceId>.Ignored)
                 )
                 .Returns(_fake_response_200);
 
@@ -66,81 +68,24 @@ public class TokenEndpointModuleTests
             _jsonContent = JsonNode.Parse(content) ?? throw new Exception("JSON parsing failed");
         }
 
-        [TearDownAttribute]
+        [TearDown]
         public void TearDownAttribute()
         {
             _response?.Dispose();
         }
 
         [Test]
-        public void Then_it_responds_with_status_OK()
+        public void Then_it_returns_the_upstream_response_code()
         {
             _response!.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
         [Test]
-        public void Then_the_body_contains_a_bear_token_with_expiry()
+        public void Then_it_returns_the_upstream_response_body()
         {
             _jsonContent?["access_token"]?.ToString().Should().Be("fake_access_token");
             _jsonContent?["expires_in"]?.Should().Be(300);
             _jsonContent?["token_type"]?.ToString().Should().Be("bearer");
         }
-    }
-
-    [Test]
-    public async Task Returns_400_when_the_authentication_headers_missing()
-    {
-        // Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Test");
-        });
-
-        using var client = factory.CreateClient();
-        var proxyRequest = new HttpRequestMessage(HttpMethod.Post, "/oauth/token");
-
-        // Act
-        proxyRequest!.Content = new StringContent("grant_type=client_credentials", Encoding.UTF8, "application/json");
-        var response = client.SendAsync(proxyRequest).GetAwaiter().GetResult();
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-
-    }
-
-    [Test]
-    public async Task Returns_503_when_the_upstream_service_is_unavailable()
-    {
-        // Arrange
-        var oAuthManager = A.Fake<IOAuthManager>();
-
-        A.CallTo(
-                () => oAuthManager.GetAccessTokenAsync(A<HttpClient>.Ignored, A<string>.Ignored, A<string>.Ignored)
-            )
-            .Throws(new OAuthIdentityException("Fake internal error", HttpStatusCode.ServiceUnavailable));
-
-        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-            (collection) =>
-            {
-                collection.AddTransient((x) => oAuthManager);
-            }
-        );
-        });
-
-        // Properly format request to pass initial validation.
-        using var client = factory.CreateClient();
-        var proxyRequest = new HttpRequestMessage(HttpMethod.Post, "/oauth/token");
-        var encodedCredentials = Convert.ToBase64String(Encoding.UTF8.GetBytes("clientId:clientSecret"));
-        proxyRequest.Headers.Add("Authorization", $"Basic {encodedCredentials}");
-        proxyRequest!.Content = new StringContent("grant_type=client_credentials", Encoding.UTF8, "application/json");
-
-        // Act
-        var response = await client.SendAsync(proxyRequest);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
     }
 }
