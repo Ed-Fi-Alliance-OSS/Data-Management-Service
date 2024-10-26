@@ -139,15 +139,15 @@ public class VendorModule : IEndpointModule
 
     private static async Task<IResult> GetApplicationsByVendorId(
         long id,
-        [FromServices] IVendorRepository repository
+        [FromServices] IApplicationRepository repository
     )
     {
-        var getResult = await repository.GetVendorByIdWithApplicationsAsync(id);
+        var getResult = await repository.GetApplicationsByVendorId(id);
 
         return getResult switch
         {
-            GetResult<Vendor>.GetByIdSuccess success => Results.Ok(success.Result.Applications),
-            GetResult<Vendor>.GetByIdFailureNotExists => Results.NotFound(
+            ApplicationsByVendorResult.Success success => Results.Ok(success.ApplicationResponses),
+            ApplicationsByVendorResult.FailureVendorNotFound => Results.NotFound(
                 new { title = $"Not found: vendor with ID {id}. It may have been recently deleted." }
             ),
             _ => Results.Problem(statusCode: 500),

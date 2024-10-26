@@ -9,6 +9,7 @@ using System.Text;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.DataModel.Application;
 using EdFi.DmsConfigurationService.DataModel.Vendor;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FakeItEasy;
@@ -463,6 +464,8 @@ public class VendorModuleTests
     [TestFixture]
     public class GetApplicationsByVendorIdTests : VendorModuleTests
     {
+        private readonly IApplicationRepository _applicationRepository = A.Fake<IApplicationRepository>();
+
         private HttpClient SetUpIVendorClient()
         {
             var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -485,7 +488,7 @@ public class VendorModuleTests
                             )
                         );
 
-                        collection.AddTransient<IVendorRepository>((_) => _vendorRepository);
+                        collection.AddTransient<IApplicationRepository>((_) => _applicationRepository);
                     }
                 );
             });
@@ -495,35 +498,27 @@ public class VendorModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _vendorRepository.GetVendorByIdWithApplicationsAsync(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplicationsByVendorId(A<long>.Ignored))
                 .Returns(
-                    new GetResult<Vendor>.GetByIdSuccess(
-                        new Vendor()
-                        {
-                            Company = "Test",
-                            ContactEmailAddress = "some@email.com",
-                            ContactName = "Contact",
-                            NamespacePrefixes = [],
-                            Applications =
-                            [
-                                new()
-                                {
-                                    Id = 1,
-                                    ApplicationName = "App 1",
-                                    ClaimSetName = "Name",
-                                    VendorId = 1,
-                                    EducationOrganizationIds = [1],
-                                },
-                                new()
-                                {
-                                    Id = 2,
-                                    ApplicationName = "App 2",
-                                    ClaimSetName = "Name",
-                                    VendorId = 1,
-                                    EducationOrganizationIds = [1],
-                                },
-                            ],
-                        }
+                    new ApplicationsByVendorResult.Success(
+                        [
+                            new ApplicationResponse()
+                            {
+                                Id = 1,
+                                ApplicationName = "App 1",
+                                ClaimSetName = "Name",
+                                VendorId = 1,
+                                EducationOrganizationIds = [1],
+                            },
+                            new ApplicationResponse()
+                            {
+                                Id = 2,
+                                ApplicationName = "App 2",
+                                ClaimSetName = "Name",
+                                VendorId = 1,
+                                EducationOrganizationIds = [1],
+                            },
+                        ]
                     )
                 );
         }
@@ -554,17 +549,8 @@ public class VendorModuleTests
             A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
                 .Returns(new VendorInsertResult.Success(2));
 
-            A.CallTo(() => _vendorRepository.GetVendorByIdWithApplicationsAsync(A<long>.Ignored))
-                .Returns(
-                    new GetResult<Vendor>.GetByIdSuccess(
-                        new Vendor()
-                        {
-                            Id = 1,
-                            Company = "Test Company",
-                            NamespacePrefixes = ["Test Prefix"],
-                        }
-                    )
-                );
+            A.CallTo(() => _applicationRepository.GetApplicationsByVendorId(A<long>.Ignored))
+                .Returns(new ApplicationsByVendorResult.Success([]));
 
             // Act
             var response = await client.GetAsync("/v2/vendors/2/applications");
@@ -581,8 +567,8 @@ public class VendorModuleTests
             // Arrange
             using var client = SetUpIVendorClient();
 
-            A.CallTo(() => _vendorRepository.GetVendorByIdWithApplicationsAsync(A<long>.Ignored))
-                .Returns(new GetResult<Vendor>.GetByIdFailureNotExists());
+            A.CallTo(() => _applicationRepository.GetApplicationsByVendorId(A<long>.Ignored))
+                .Returns(new ApplicationsByVendorResult.FailureVendorNotFound());
 
             // Act
             var response = await client.GetAsync("/v2/vendors/99/applications");

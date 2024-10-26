@@ -15,11 +15,6 @@ public interface IVendorRepository
     Task<VendorGetResult> GetVendor(long id);
     Task<VendorUpdateResult> UpdateVendor(VendorUpdateCommand command);
     Task<VendorDeleteResult> DeleteVendor(long id);
-
-    /// <summary>
-    /// Get a collection of applications associated with a vendor
-    /// </summary>
-    Task<GetResult<Vendor>> GetVendorByIdWithApplicationsAsync(long vendorId);
 }
 
 public record VendorInsertResult

@@ -265,10 +265,12 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
             [Test]
             public async Task Should_return_two_applications_for_vendor_one()
             {
-                var getResult = await _repository.GetVendorByIdWithApplicationsAsync(_vendorId1);
-                getResult.Should().BeOfType<GetResult<Vendor>.GetByIdSuccess>();
-                var applicationsFromDb = ((GetResult<Vendor>.GetByIdSuccess)getResult).Result.Applications;
-                applicationsFromDb.Count.Should().Be(2);
+                var getResult = await _applicationRepository.GetApplicationsByVendorId(_vendorId1);
+                getResult.Should().BeOfType<ApplicationsByVendorResult.Success>();
+                var applicationsFromDb = (
+                    (ApplicationsByVendorResult.Success)getResult
+                ).ApplicationResponses.ToArray();
+                applicationsFromDb.Length.Should().Be(2);
                 applicationsFromDb[0].ApplicationName.Should().Be("Test Application 1");
                 applicationsFromDb[1].ApplicationName.Should().Be("Test Application 2");
             }
@@ -276,17 +278,19 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
             [Test]
             public async Task Should_return_empty_array_for_vendor_two_without_applications()
             {
-                var getResult = await _repository.GetVendorByIdWithApplicationsAsync(_vendorId2);
-                getResult.Should().BeOfType<GetResult<Vendor>.GetByIdSuccess>();
-                var applicationsFromDb = ((GetResult<Vendor>.GetByIdSuccess)getResult).Result.Applications;
-                applicationsFromDb.Count.Should().Be(0);
+                var getResult = await _applicationRepository.GetApplicationsByVendorId(_vendorId2);
+                getResult.Should().BeOfType<ApplicationsByVendorResult.Success>();
+                var applicationsFromDb = (
+                    (ApplicationsByVendorResult.Success)getResult
+                ).ApplicationResponses.ToArray();
+                applicationsFromDb.Length.Should().Be(0);
             }
 
             [Test]
             public async Task Should_return_not_found_for_non_existent_vendor()
             {
-                var getResult = await _repository.GetVendorByIdWithApplicationsAsync(_vendorIdNotExist);
-                getResult.Should().BeOfType<GetResult<Vendor>.GetByIdFailureNotExists>();
+                var getResult = await _applicationRepository.GetApplicationsByVendorId(_vendorIdNotExist);
+                getResult.Should().BeOfType<ApplicationsByVendorResult.FailureVendorNotFound>();
             }
         }
     }
