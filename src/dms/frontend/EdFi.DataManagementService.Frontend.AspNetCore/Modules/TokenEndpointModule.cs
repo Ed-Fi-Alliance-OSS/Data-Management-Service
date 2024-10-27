@@ -27,7 +27,7 @@ public class TokenEndpointModule : IEndpointModule
     {
         var traceId = AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, appSettings);
         logger.LogInformation(
-            "Received token request for proxying to identity provider - {TraceId}",
+            "Received token request for forwarding to identity provider - {TraceId}",
             traceId
         );
 
@@ -44,7 +44,7 @@ public class TokenEndpointModule : IEndpointModule
 
         if (logger.IsDebugEnabled())
         {
-            logger.LogDebug("Proxied token response code {Code} - {TraceId}", response.StatusCode, traceId);
+            logger.LogDebug("Upstream token response code {Code} - {TraceId}", response.StatusCode, traceId);
         }
         httpContext.Response.StatusCode = (int)response.StatusCode;
         await response.Content.CopyToAsync(httpContext.Response.Body);
