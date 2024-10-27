@@ -31,7 +31,7 @@ public class TokenEndpointModule : IEndpointModule
             traceId
         );
 
-        var client = httpClientFactory.CreateClient();
+        var client = new HttpClientWrapper(httpClientFactory.CreateClient());
 
         httpContext.Request.Headers.TryGetValue("Authorization", out var authHeader);
 

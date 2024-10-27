@@ -19,6 +19,7 @@ internal static class FailureResponse
     private static readonly string _typePrefix = "urn:ed-fi:api";
     private static readonly string _badRequestTypePrefix = $"{_typePrefix}:bad-request";
     private static readonly string _unauthorizedType = $"{_typePrefix}:unauthorized";
+    private static readonly string _gatewayType = $"{_typePrefix}:bad-gateway";
     private static readonly string _dataConflictTypePrefix = $"{_typePrefix}:data-conflict";
     private static readonly string _keyChangeNotSupported =
         $"{_badRequestTypePrefix}:data-validation-failed:key-change-not-supported";
@@ -46,7 +47,7 @@ internal static class FailureResponse
                     ? JsonSerializer.SerializeToNode(validationErrors, SerializerOptions)
                     : new JsonObject(),
             ["errors"] =
-                errors != null ? JsonSerializer.SerializeToNode(errors, SerializerOptions) : new JsonArray()
+                errors != null ? JsonSerializer.SerializeToNode(errors, SerializerOptions) : new JsonArray(),
         };
     }
 
@@ -151,11 +152,7 @@ internal static class FailureResponse
             errors
         );
 
-    public static JsonNode ForUnauthorized(
-        TraceId traceId,
-        string error,
-        string description
-    ) =>
+    public static JsonNode ForUnauthorized(TraceId traceId, string error, string description) =>
         CreateBaseJsonObject(
             detail: description,
             type: _unauthorizedType,
@@ -166,12 +163,10 @@ internal static class FailureResponse
             errors: []
         );
 
-    public static JsonNode ForGatewayError(
-        TraceId traceId
-    ) =>
+    public static JsonNode ForGatewayError(TraceId traceId, string detail = "") =>
         CreateBaseJsonObject(
-            detail: string.Empty,
-            type: _unauthorizedType,
+            detail,
+            type: _gatewayType,
             title: "Upstream service unavailable",
             status: (int)HttpStatusCode.BadGateway,
             correlationId: traceId.Value,

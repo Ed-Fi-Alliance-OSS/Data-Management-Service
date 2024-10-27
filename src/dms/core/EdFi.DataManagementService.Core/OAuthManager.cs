@@ -15,7 +15,7 @@ namespace EdFi.DataManagementService.Core;
 public interface IOAuthManager
 {
     public Task<HttpResponseMessage> GetAccessTokenAsync(
-        HttpClient httpClient,
+        IHttpClientWrapper httpClient,
         string authHeaderString,
         string upstreamUri,
         TraceId traceId
@@ -27,7 +27,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
     private readonly ILogger<OAuthManager> _logger = logger;
 
     public async Task<HttpResponseMessage> GetAccessTokenAsync(
-        HttpClient httpClient,
+        IHttpClientWrapper httpClient,
         string authHeaderString,
         string upstreamUri,
         TraceId traceId
@@ -47,7 +47,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         upstreamRequest.Headers.Add("Authorization", authHeaderString);
 
         // TODO(DMS-408): Replace hard-coded with forwarded request body.
-        upstreamRequest!.Content = new StringContent(
+        upstreamRequest.Content = new StringContent(
             "grant_type=client_credentials",
             Encoding.UTF8,
             "application/x-www-form-urlencoded"
@@ -56,18 +56,27 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         // In case of 5xx Error, pass 503 Service unavailable to client, otherwise forward response directly to client.
         try
         {
-            _logger.LogInformation(
-                "Forwarding proxied token request to upstream service - {TraceId}",
-                traceId
-            );
+            _logger.LogInformation("Forwarding token request to upstream service - {TraceId}", traceId);
             var response = await httpClient.SendAsync(upstreamRequest);
 
-            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            switch (response.StatusCode)
             {
-                return await GenerateUnauthorizedResponse(traceId, response);
+                case HttpStatusCode.OK:
+                    return response;
+                case HttpStatusCode.Unauthorized:
+                    return await GenerateUnauthorizedResponse(traceId, response);
+                default:
+                    var content = await response.Content.ReadAsStringAsync();
+                    _logger.LogWarning(
+                        "Error from upstream identity service - {TraceId} - {Content}",
+                        traceId,
+                        content
+                    );
+                    return GenerateProblemDetailResponse(
+                        HttpStatusCode.BadGateway,
+                        FailureResponse.ForGatewayError(traceId, content)
+                    );
             }
-
-            return response;
         }
         catch (Exception ex)
         {

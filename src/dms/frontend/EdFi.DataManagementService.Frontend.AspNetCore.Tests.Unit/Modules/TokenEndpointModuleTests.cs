@@ -36,12 +36,17 @@ public class TokenEndpointModuleTests
             JsonNode _fake_responseJson = JsonNode.Parse(json)!;
             var _fake_response_200 = new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent(_fake_responseJson.ToString(), Encoding.UTF8, "application/json")
+                Content = new StringContent(_fake_responseJson.ToString(), Encoding.UTF8, "application/json"),
             };
 
-
             A.CallTo(
-                    () => oAuthManager.GetAccessTokenAsync(A<HttpClient>.Ignored, A<string>.Ignored, A<string>.Ignored, A<TraceId>.Ignored)
+                    () =>
+                        oAuthManager.GetAccessTokenAsync(
+                            A<IHttpClientWrapper>.Ignored,
+                            A<string>.Ignored,
+                            A<string>.Ignored,
+                            A<TraceId>.Ignored
+                        )
                 )
                 .Returns(_fake_response_200);
 
@@ -49,11 +54,11 @@ public class TokenEndpointModuleTests
             {
                 builder.UseEnvironment("Test");
                 builder.ConfigureServices(
-                (collection) =>
-                {
-                    collection.AddTransient((x) => oAuthManager);
-                }
-            );
+                    (collection) =>
+                    {
+                        collection.AddTransient((x) => oAuthManager);
+                    }
+                );
             });
 
             using var client = factory.CreateClient();
@@ -62,7 +67,11 @@ public class TokenEndpointModuleTests
             proxyRequest.Headers.Add("Authorization", $"Basic {encodedCredentials}");
 
             // Act
-            proxyRequest!.Content = new StringContent("""{"grant_type"="client_credentials"}""", Encoding.UTF8, "application/json");
+            proxyRequest!.Content = new StringContent(
+                """{"grant_type"="client_credentials"}""",
+                Encoding.UTF8,
+                "application/json"
+            );
             _response = client.SendAsync(proxyRequest).GetAwaiter().GetResult();
             var content = _response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
             _jsonContent = JsonNode.Parse(content) ?? throw new Exception("JSON parsing failed");
