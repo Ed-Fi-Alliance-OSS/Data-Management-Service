@@ -31,7 +31,7 @@ public class IdentityModule : IEndpointModule
         var allowRegistration = identitySettings.Value.AllowRegistration;
         if (allowRegistration)
         {
-            validator.GuardAsync(model);
+            await validator.GuardAsync(model);
             try
             {
                 await clientRepository.CreateClientAsync(
@@ -55,7 +55,7 @@ public class IdentityModule : IEndpointModule
         ITokenManager tokenManager
     )
     {
-        validator.GuardAsync(model);
+        await validator.GuardAsync(model);
         try
         {
             var response = await tokenManager.GetAccessTokenAsync(

@@ -35,7 +35,7 @@ public class VendorModule : IEndpointModule
         [FromServices] IVendorRepository repository
     )
     {
-        validator.GuardAsync(entity);
+        await validator.GuardAsync(entity);
         var insertResult = await repository.InsertVendor(entity);
 
         var request = httpContext.Request;
@@ -88,7 +88,7 @@ public class VendorModule : IEndpointModule
         [FromServices] IVendorRepository repository
     )
     {
-        validator.GuardAsync(command);
+        await validator.GuardAsync(command);
         var entityType = command.GetType();
         var idProperty = entityType.GetProperty("Id");
         if (idProperty == null)

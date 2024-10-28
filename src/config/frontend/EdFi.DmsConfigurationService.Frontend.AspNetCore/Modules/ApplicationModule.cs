@@ -35,7 +35,7 @@ public class ApplicationModule : IEndpointModule
     )
     {
         logger.LogDebug("Entering UpsertApplication");
-        validator.GuardAsync(command);
+        await validator.GuardAsync(command);
 
         Guid clientId = Guid.NewGuid();
         string clientSecret = Guid.NewGuid().ToString();
@@ -119,7 +119,7 @@ public class ApplicationModule : IEndpointModule
         [FromServices] IApplicationRepository repository
     )
     {
-        validator.GuardAsync(command);
+        await validator.GuardAsync(command);
 
         var vendorUpdateResult = await repository.UpdateApplication(command);
 

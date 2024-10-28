@@ -9,9 +9,9 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
 public static class ValidatorExtensions
 {
-    public static void GuardAsync<TRequest>(this IValidator<TRequest> validator, TRequest request)
+    public static async Task GuardAsync<TRequest>(this IValidator<TRequest> validator, TRequest request)
     {
-        var validationResult = validator.Validate(request);
+        var validationResult = await validator.ValidateAsync(request);
 
         if (!validationResult.IsValid)
         {
