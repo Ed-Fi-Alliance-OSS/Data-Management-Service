@@ -21,7 +21,6 @@ public interface IApplicationRepository
     Task<ApplicationUpdateResult> UpdateApplication(ApplicationUpdateCommand command);
     Task<ApplicationDeleteResult> DeleteApplication(long id);
     Task<ApplicationApiClientsResult> GetApplicationApiClients(long id);
-    Task<ApplicationsByVendorResult> GetApplicationsByVendorId(long vendorId);
 }
 
 public record ApplicationInsertResult
@@ -98,22 +97,6 @@ public record ApplicationDeleteResult
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : ApplicationDeleteResult();
-}
-
-public record ApplicationsByVendorResult
-{
-    public record Success(IEnumerable<ApplicationResponse> ApplicationResponses)
-        : ApplicationsByVendorResult();
-
-    /// <summary>
-    /// Referenced vendor not found
-    /// </summary>
-    public record FailureVendorNotFound() : ApplicationsByVendorResult();
-
-    /// <summary>
-    /// Unexpected exception thrown and caught
-    /// </summary>
-    public record FailureUnknown(string FailureMessage) : ApplicationsByVendorResult();
 }
 
 public record ApplicationApiClientsResult

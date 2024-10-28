@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.DataModel.Application;
 using EdFi.DmsConfigurationService.DataModel.Vendor;
 
 namespace EdFi.DmsConfigurationService.Backend.Repositories;
@@ -15,6 +16,7 @@ public interface IVendorRepository
     Task<VendorGetResult> GetVendor(long id);
     Task<VendorUpdateResult> UpdateVendor(VendorUpdateCommand command);
     Task<VendorDeleteResult> DeleteVendor(long id);
+    Task<VendorApplicationsResult> GetVendorApplications(long vendorId);
 }
 
 public record VendorInsertResult
@@ -81,4 +83,19 @@ public record VendorDeleteResult
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : VendorDeleteResult();
+}
+
+public record VendorApplicationsResult
+{
+    public record Success(IEnumerable<ApplicationResponse> ApplicationResponses) : VendorApplicationsResult();
+
+    /// <summary>
+    /// Referenced vendor not found
+    /// </summary>
+    public record FailureNotExists() : VendorApplicationsResult();
+
+    /// <summary>
+    /// Unexpected exception thrown and caught
+    /// </summary>
+    public record FailureUnknown(string FailureMessage) : VendorApplicationsResult();
 }

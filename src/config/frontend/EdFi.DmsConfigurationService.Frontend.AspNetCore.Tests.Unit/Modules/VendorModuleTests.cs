@@ -13,7 +13,6 @@ using EdFi.DmsConfigurationService.DataModel.Vendor;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FakeItEasy;
 using FluentAssertions;
-using FluentValidation;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -26,6 +25,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 public class VendorModuleTests
 {
     private readonly IVendorRepository _vendorRepository = A.Fake<IVendorRepository>();
+    private readonly IApplicationRepository _applicationRepository = A.Fake<IApplicationRepository>();
     private readonly HttpContext _httpContext = A.Fake<HttpContext>();
 
     private HttpClient SetUpClient()
@@ -49,7 +49,10 @@ public class VendorModuleTests
                             policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
                         )
                     );
-                    collection.AddTransient((_) => _httpContext).AddTransient((_) => _vendorRepository);
+                    collection
+                        .AddTransient((_) => _httpContext)
+                        .AddTransient((_) => _vendorRepository)
+                        .AddTransient((_) => _applicationRepository);
                 }
             );
         });
@@ -467,43 +470,12 @@ public class VendorModuleTests
     [TestFixture]
     public class GetApplicationsByVendorIdTests : VendorModuleTests
     {
-        private readonly IApplicationRepository _applicationRepository = A.Fake<IApplicationRepository>();
-
-        private HttpClient SetUpIVendorClient()
-        {
-            var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(
-                    (collection) =>
-                    {
-                        collection
-                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                                AuthenticationConstants.AuthenticationSchema,
-                                _ => { }
-                            );
-
-                        collection.AddAuthorization(options =>
-                            options.AddPolicy(
-                                SecurityConstants.ServicePolicy,
-                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
-                            )
-                        );
-
-                        collection.AddTransient<IApplicationRepository>((_) => _applicationRepository);
-                    }
-                );
-            });
-            return factory.CreateClient();
-        }
-
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _applicationRepository.GetApplicationsByVendorId(A<long>.Ignored))
+            A.CallTo(() => _vendorRepository.GetVendorApplications(A<long>.Ignored))
                 .Returns(
-                    new ApplicationsByVendorResult.Success(
+                    new VendorApplicationsResult.Success(
                         [
                             new ApplicationResponse()
                             {
@@ -530,7 +502,30 @@ public class VendorModuleTests
         public async Task Should_get_a_list_of_applications_by_vendor_id()
         {
             // Arrange
-            using var client = SetUpIVendorClient();
+            using var client = SetUpClient();
+            A.CallTo(() => _vendorRepository.GetVendorApplications(A<long>.Ignored))
+                .Returns(
+                    new VendorApplicationsResult.Success(
+                        [
+                            new ApplicationResponse()
+                            {
+                                Id = 1,
+                                ApplicationName = "App 1",
+                                ClaimSetName = "Name",
+                                VendorId = 1,
+                                EducationOrganizationIds = [1],
+                            },
+                            new ApplicationResponse()
+                            {
+                                Id = 2,
+                                ApplicationName = "App 2",
+                                ClaimSetName = "Name",
+                                VendorId = 1,
+                                EducationOrganizationIds = [1],
+                            },
+                        ]
+                    )
+                );
 
             // Act
             var response = await client.GetAsync("/v2/vendors/1/applications");
@@ -547,13 +542,10 @@ public class VendorModuleTests
         public async Task Should_return_an_empty_array_for_a_vendor_with_no_applications()
         {
             // Arrange
-            using var client = SetUpIVendorClient();
+            using var client = SetUpClient();
 
-            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
-                .Returns(new VendorInsertResult.Success(2));
-
-            A.CallTo(() => _applicationRepository.GetApplicationsByVendorId(A<long>.Ignored))
-                .Returns(new ApplicationsByVendorResult.Success([]));
+            A.CallTo(() => _vendorRepository.GetVendorApplications(A<long>.Ignored))
+                .Returns(new VendorApplicationsResult.Success([]));
 
             // Act
             var response = await client.GetAsync("/v2/vendors/2/applications");
@@ -568,10 +560,10 @@ public class VendorModuleTests
         public async Task Should_return_not_found_related_to_a_not_found_vendor_id()
         {
             // Arrange
-            using var client = SetUpIVendorClient();
+            using var client = SetUpClient();
 
-            A.CallTo(() => _applicationRepository.GetApplicationsByVendorId(A<long>.Ignored))
-                .Returns(new ApplicationsByVendorResult.FailureVendorNotFound());
+            A.CallTo(() => _vendorRepository.GetVendorApplications(A<long>.Ignored))
+                .Returns(new VendorApplicationsResult.FailureNotExists());
 
             // Act
             var response = await client.GetAsync("/v2/vendors/99/applications");

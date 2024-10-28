@@ -265,10 +265,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
             [Test]
             public async Task Should_return_two_applications_for_vendor_one()
             {
-                var getResult = await _applicationRepository.GetApplicationsByVendorId(_vendorId1);
-                getResult.Should().BeOfType<ApplicationsByVendorResult.Success>();
+                var getResult = await _repository.GetVendorApplications(_vendorId1);
+                getResult.Should().BeOfType<VendorApplicationsResult.Success>();
                 var applicationsFromDb = (
-                    (ApplicationsByVendorResult.Success)getResult
+                    (VendorApplicationsResult.Success)getResult
                 ).ApplicationResponses.ToArray();
                 applicationsFromDb.Length.Should().Be(2);
                 applicationsFromDb[0].ApplicationName.Should().Be("Test Application 1");
@@ -278,10 +278,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
             [Test]
             public async Task Should_return_empty_array_for_vendor_two_without_applications()
             {
-                var getResult = await _applicationRepository.GetApplicationsByVendorId(_vendorId2);
-                getResult.Should().BeOfType<ApplicationsByVendorResult.Success>();
+                var getResult = await _repository.GetVendorApplications(_vendorId2);
+                getResult.Should().BeOfType<VendorApplicationsResult.Success>();
                 var applicationsFromDb = (
-                    (ApplicationsByVendorResult.Success)getResult
+                    (VendorApplicationsResult.Success)getResult
                 ).ApplicationResponses.ToArray();
                 applicationsFromDb.Length.Should().Be(0);
             }
@@ -289,8 +289,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
             [Test]
             public async Task Should_return_not_found_for_non_existent_vendor()
             {
-                var getResult = await _applicationRepository.GetApplicationsByVendorId(_vendorIdNotExist);
-                getResult.Should().BeOfType<ApplicationsByVendorResult.FailureVendorNotFound>();
+                var getResult = await _repository.GetVendorApplications(_vendorIdNotExist);
+                getResult.Should().BeOfType<VendorApplicationsResult.FailureNotExists>();
             }
         }
     }
