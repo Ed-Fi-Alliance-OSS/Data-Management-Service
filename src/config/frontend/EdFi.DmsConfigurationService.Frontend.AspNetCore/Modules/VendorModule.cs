@@ -53,7 +53,7 @@ public class VendorModule : IEndpointModule
     private static async Task<IResult> GetAll([FromServices] IVendorRepository repository)
     {
         VendorQueryResult getResult = await repository.QueryVendor(
-            new PagingQuery() { Limit = 25, Offset = 0 }
+            new PagingQuery() { Limit = 9999, Offset = 0 }
         );
         return getResult switch
         {

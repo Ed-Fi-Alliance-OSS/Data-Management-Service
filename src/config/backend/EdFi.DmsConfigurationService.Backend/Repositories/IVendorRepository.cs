@@ -35,6 +35,9 @@ public record VendorInsertResult
 
 public record VendorQueryResult
 {
+    /// <summary>
+    /// Successfully queried and returning list of vendor responses
+    /// </summary>
     public record Success(IEnumerable<VendorResponse> VendorResponses) : VendorQueryResult();
 
     /// <summary>
@@ -45,8 +48,14 @@ public record VendorQueryResult
 
 public record VendorGetResult
 {
+    /// <summary>
+    /// Successfully retrieved vendor and returning vendor response
+    /// </summary>
     public record Success(VendorResponse VendorResponse) : VendorGetResult();
 
+    /// <summary>
+    /// Vendor does not exist in the datastore
+    /// </summary>
     public record FailureNotFound() : VendorGetResult();
 
     /// <summary>
@@ -57,6 +66,9 @@ public record VendorGetResult
 
 public record VendorUpdateResult
 {
+    /// <summary>
+    /// Successfully updated vendor
+    /// </summary>
     public record Success() : VendorUpdateResult();
 
     /// <summary>
@@ -87,10 +99,13 @@ public record VendorDeleteResult
 
 public record VendorApplicationsResult
 {
+    /// <summary>
+    /// Successfully fetch applications for vendor and returning application responses
+    /// </summary>
     public record Success(IEnumerable<ApplicationResponse> ApplicationResponses) : VendorApplicationsResult();
 
     /// <summary>
-    /// Referenced vendor not found
+    /// Referenced vendor not found in data store
     /// </summary>
     public record FailureNotExists() : VendorApplicationsResult();
 

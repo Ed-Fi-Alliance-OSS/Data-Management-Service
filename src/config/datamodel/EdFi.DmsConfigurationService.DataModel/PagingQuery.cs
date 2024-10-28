@@ -5,6 +5,9 @@
 
 namespace EdFi.DmsConfigurationService.DataModel;
 
+/// <summary>
+/// Used in queries where paging is required.
+/// </summary>
 public class PagingQuery
 {
     public int Offset { get; set; }

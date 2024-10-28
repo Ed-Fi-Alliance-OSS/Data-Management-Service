@@ -84,7 +84,7 @@ public class ApplicationModule : IEndpointModule
     private static async Task<IResult> GetAll([FromServices] IApplicationRepository applicationRepository)
     {
         ApplicationQueryResult getResult = await applicationRepository.QueryApplication(
-            new PagingQuery() { Limit = 25, Offset = 0 }
+            new PagingQuery() { Limit = 9999, Offset = 0 }
         );
         return getResult switch
         {

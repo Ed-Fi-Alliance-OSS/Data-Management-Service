@@ -44,6 +44,9 @@ public record ApplicationInsertResult
 
 public record ApplicationQueryResult
 {
+    /// <summary>
+    /// A successful query result with responses
+    /// </summary>
     public record Success(IEnumerable<ApplicationResponse> ApplicationResponses) : ApplicationQueryResult();
 
     /// <summary>
@@ -54,8 +57,15 @@ public record ApplicationQueryResult
 
 public record ApplicationGetResult
 {
+    /// <summary>
+    /// Successful get application with the application response
+    /// </summary>
+    /// <param name="ApplicationResponse"></param>
     public record Success(ApplicationResponse ApplicationResponse) : ApplicationGetResult();
 
+    /// <summary>
+    /// Application not found in data store
+    /// </summary>
     public record FailureNotFound() : ApplicationGetResult();
 
     /// <summary>
@@ -66,6 +76,9 @@ public record ApplicationGetResult
 
 public record ApplicationUpdateResult
 {
+    /// <summary>
+    /// The application was updated successfully
+    /// </summary>
     public record Success() : ApplicationUpdateResult();
 
     /// <summary>
@@ -86,10 +99,13 @@ public record ApplicationUpdateResult
 
 public record ApplicationDeleteResult
 {
+    /// <summary>
+    /// The application was deleted successfully
+    /// </summary>
     public record Success() : ApplicationDeleteResult();
 
     /// <summary>
-    /// Application id not found
+    /// Application id does not exist in the datastore
     /// </summary>
     public record FailureNotExists() : ApplicationDeleteResult();
 
@@ -101,6 +117,9 @@ public record ApplicationDeleteResult
 
 public record ApplicationApiClientsResult
 {
+    /// <summary>
+    /// Successful retrieval of clientUuids
+    /// </summary>
     public record Success(Guid[] ClientUuids) : ApplicationApiClientsResult();
 
     /// <summary>
