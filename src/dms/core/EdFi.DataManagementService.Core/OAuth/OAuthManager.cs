@@ -10,18 +10,12 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Response;
 using Microsoft.Extensions.Logging;
 
-namespace EdFi.DataManagementService.Core;
+namespace EdFi.DataManagementService.Core.OAuth;
 
-public interface IOAuthManager
-{
-    public Task<HttpResponseMessage> GetAccessTokenAsync(
-        IHttpClientWrapper httpClient,
-        string authHeaderString,
-        string upstreamUri,
-        TraceId traceId
-    );
-}
-
+/// <summary>
+/// Retrieves an access token via upstream OAuth Service.
+/// </summary>
+/// <param name="logger"></param>
 public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
 {
     private readonly ILogger<OAuthManager> _logger = logger;

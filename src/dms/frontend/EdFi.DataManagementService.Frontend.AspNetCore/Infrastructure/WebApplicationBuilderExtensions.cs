@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Backend.Deploy;
 using EdFi.DataManagementService.Backend.OpenSearch;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core;
+using EdFi.DataManagementService.Core.OAuth;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Modules;

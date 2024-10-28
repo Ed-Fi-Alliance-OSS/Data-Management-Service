@@ -6,6 +6,7 @@
 using System.Net;
 using System.Text;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.OAuth;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;

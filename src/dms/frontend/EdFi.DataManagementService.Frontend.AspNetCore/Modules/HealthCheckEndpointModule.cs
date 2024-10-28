@@ -26,7 +26,7 @@ public class HealthCheckEndpointModule : IEndpointModule
             {
                 Name = entry.Key,
                 Status = entry.Value.Status.ToString(),
-                Description = entry.Value.Description
+                entry.Value.Description
             })
         };
 

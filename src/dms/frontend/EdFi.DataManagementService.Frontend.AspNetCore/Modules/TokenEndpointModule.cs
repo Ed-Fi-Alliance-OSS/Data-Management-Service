@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core;
+using EdFi.DataManagementService.Core.OAuth;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
@@ -51,4 +52,3 @@ public class TokenEndpointModule : IEndpointModule
     }
 }
 
-public record TokenResponse(string access_token, int expires_in, string token_type);
