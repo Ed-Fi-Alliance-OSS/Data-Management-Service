@@ -101,9 +101,7 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
                 })
                 .ToList();
 
-            return new ApplicationQueryResult.Success(
-                returnApplications.Skip(query.Offset).Take(query.Limit)
-            );
+            return new ApplicationQueryResult.Success(returnApplications);
         }
         catch (Exception e)
         {
