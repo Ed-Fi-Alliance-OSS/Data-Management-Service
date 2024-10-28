@@ -87,6 +87,11 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
         }
     }
 
+    public Task<bool> DeleteClientAsync(string clientId)
+    {
+        return _keycloakClient.DeleteClientAsync(_realm, clientId);
+    }
+
     public async Task<IEnumerable<string>> GetAllClientsAsync()
     {
         var clients = await _keycloakClient.GetClientsAsync(_realm);

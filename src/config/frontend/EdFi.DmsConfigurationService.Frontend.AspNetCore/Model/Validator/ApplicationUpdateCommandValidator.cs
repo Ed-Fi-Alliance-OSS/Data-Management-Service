@@ -8,7 +8,7 @@ using FluentValidation;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Model.Validator;
 
-internal class ApplicationUpdateCommandValidator : AbstractValidator<ApplicationUpdateCommand>
+public class ApplicationUpdateCommandValidator : AbstractValidator<ApplicationUpdateCommand>
 {
     public ApplicationUpdateCommandValidator()
     {

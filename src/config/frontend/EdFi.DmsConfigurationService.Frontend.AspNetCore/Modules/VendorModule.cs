@@ -29,10 +29,10 @@ public class VendorModule : IEndpointModule
     }
 
     private static async Task<IResult> InsertVendor(
-        VendorInsertCommandValidator validator,
-        VendorInsertCommand entity,
-        HttpContext httpContext,
-        IVendorRepository repository
+        [FromServices] VendorInsertCommandValidator validator,
+        [FromBody] VendorInsertCommand entity,
+        [FromServices] HttpContext httpContext,
+        [FromServices] IVendorRepository repository
     )
     {
         validator.GuardAsync(entity);
@@ -50,7 +50,7 @@ public class VendorModule : IEndpointModule
         };
     }
 
-    private static async Task<IResult> GetAll(IVendorRepository repository)
+    private static async Task<IResult> GetAll([FromServices] IVendorRepository repository)
     {
         VendorQueryResult getResult = await repository.QueryVendor(
             new PagingQuery() { Limit = 25, Offset = 0 }
@@ -65,9 +65,9 @@ public class VendorModule : IEndpointModule
 
     private static async Task<IResult> GetById(
         long id,
-        HttpContext httpContext,
-        IVendorRepository repository,
-        ILogger<VendorModule> logger
+        [FromServices] HttpContext httpContext,
+        [FromServices] IVendorRepository repository,
+        [FromServices] ILogger<VendorModule> logger
     )
     {
         VendorGetResult getResult = await repository.GetVendor(id);
@@ -82,21 +82,21 @@ public class VendorModule : IEndpointModule
 
     private static async Task<IResult> Update(
         long id,
-        VendorUpdateCommandValidator validator,
-        VendorUpdateCommand entity,
-        HttpContext httpContext,
-        IVendorRepository repository
+        [FromServices] VendorUpdateCommandValidator validator,
+        [FromBody] VendorUpdateCommand command,
+        [FromServices] HttpContext httpContext,
+        [FromServices] IVendorRepository repository
     )
     {
-        validator.GuardAsync(entity);
-        var entityType = entity.GetType();
+        validator.GuardAsync(command);
+        var entityType = command.GetType();
         var idProperty = entityType.GetProperty("Id");
         if (idProperty == null)
         {
             throw new InvalidOperationException("The entity does not contain an Id property.");
         }
 
-        var entityId = idProperty.GetValue(entity) as long?;
+        var entityId = idProperty.GetValue(command) as long?;
 
         if (entityId != id)
         {
@@ -105,7 +105,7 @@ public class VendorModule : IEndpointModule
             );
         }
 
-        var vendorUpdateResult = await repository.UpdateVendor(entity);
+        var vendorUpdateResult = await repository.UpdateVendor(command);
 
         return vendorUpdateResult switch
         {
@@ -118,9 +118,9 @@ public class VendorModule : IEndpointModule
 
     private static async Task<IResult> Delete(
         long id,
-        HttpContext httpContext,
-        IVendorRepository repository,
-        ILogger<VendorModule> logger
+        [FromServices] HttpContext httpContext,
+        [FromServices] IVendorRepository repository,
+        [FromServices] ILogger<VendorModule> logger
     )
     {
         VendorDeleteResult deleteResult = await repository.DeleteVendor(id);

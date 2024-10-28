@@ -8,7 +8,7 @@ using FluentValidation;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Model.Validator;
 
-internal class VendorInsertCommandValidator : AbstractValidator<VendorInsertCommand>
+public class VendorInsertCommandValidator : AbstractValidator<VendorInsertCommand>
 {
     public VendorInsertCommandValidator()
     {
@@ -22,8 +22,8 @@ internal class VendorInsertCommandValidator : AbstractValidator<VendorInsertComm
                     ',',
                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
                 );
-                return !split.Any(x => x.Length > 128);
+                return !split.Any(x => x.Length >= 128);
             })
-            .WithMessage("Each NamespacePrefix length must be less than 128");
+            .WithMessage("Each NamespacePrefix length must be 128 characters or fewer.");
     }
 }

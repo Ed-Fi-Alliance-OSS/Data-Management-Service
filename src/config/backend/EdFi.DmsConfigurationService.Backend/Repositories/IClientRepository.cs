@@ -10,4 +10,6 @@ public interface IClientRepository
     public Task<bool> CreateClientAsync(string clientId, string clientSecret, string displayName);
 
     public Task<IEnumerable<string>> GetAllClientsAsync();
+
+    public Task<bool> DeleteClientAsync(string clientId);
 }

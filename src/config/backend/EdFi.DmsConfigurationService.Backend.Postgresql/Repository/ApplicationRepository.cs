@@ -3,13 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Diagnostics;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Application;
-using EdFi.DmsConfigurationService.DataModel.Vendor;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -158,7 +155,7 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
         }
     }
 
-    public async Task<ApplicationVendorUpdateResult> UpdateApplication(ApplicationUpdateCommand command)
+    public async Task<ApplicationUpdateResult> UpdateApplication(ApplicationUpdateCommand command)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         await connection.OpenAsync();
@@ -191,18 +188,18 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
             await transaction.CommitAsync();
 
             return affectedRows > 0
-                ? new ApplicationVendorUpdateResult.Success()
-                : new ApplicationVendorUpdateResult.FailureNotExists();
+                ? new ApplicationUpdateResult.Success()
+                : new ApplicationUpdateResult.FailureNotExists();
         }
         catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_vendor"))
         {
             await transaction.RollbackAsync();
-            return new ApplicationVendorUpdateResult.FailureVendorNotFound();
+            return new ApplicationUpdateResult.FailureVendorNotFound();
         }
         catch (Exception ex)
         {
             await transaction.RollbackAsync();
-            return new ApplicationVendorUpdateResult.FailureUnknown(ex.Message);
+            return new ApplicationUpdateResult.FailureUnknown(ex.Message);
         }
     }
 
@@ -223,6 +220,27 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
         catch (Exception ex)
         {
             return new ApplicationDeleteResult.FailureUnknown(ex.Message);
+        }
+    }
+
+    public async Task<ApplicationApiClientsResult> GetApplicationApiClients(long id)
+    {
+        await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+        try
+        {
+            string sql = """
+                SELECT ClientUuid
+                FROM dmscs.ApiClient
+                WHERE ApplicationId = @Id
+                """;
+
+            var clientUuids = await connection.QueryAsync<Guid>(sql, new { Id = @id });
+
+            return new ApplicationApiClientsResult.Success(clientUuids.ToArray());
+        }
+        catch (Exception ex)
+        {
+            return new ApplicationApiClientsResult.FailureUnknown(ex.Message);
         }
     }
 

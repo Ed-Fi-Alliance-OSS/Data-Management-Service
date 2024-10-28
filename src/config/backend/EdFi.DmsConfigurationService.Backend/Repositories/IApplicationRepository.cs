@@ -18,8 +18,9 @@ public interface IApplicationRepository
 
     Task<ApplicationQueryResult> QueryApplication(PagingQuery query);
     Task<ApplicationGetResult> GetApplication(long id);
-    Task<ApplicationVendorUpdateResult> UpdateApplication(ApplicationUpdateCommand command);
+    Task<ApplicationUpdateResult> UpdateApplication(ApplicationUpdateCommand command);
     Task<ApplicationDeleteResult> DeleteApplication(long id);
+    Task<ApplicationApiClientsResult> GetApplicationApiClients(long id);
     Task<ApplicationsByVendorResult> GetApplicationsByVendorId(long vendorId);
 }
 
@@ -64,24 +65,24 @@ public record ApplicationGetResult
     public record FailureUnknown(string FailureMessage) : ApplicationGetResult();
 }
 
-public record ApplicationVendorUpdateResult
+public record ApplicationUpdateResult
 {
-    public record Success() : ApplicationVendorUpdateResult();
+    public record Success() : ApplicationUpdateResult();
 
     /// <summary>
     /// Application id not found
     /// </summary>
-    public record FailureNotExists() : ApplicationVendorUpdateResult();
+    public record FailureNotExists() : ApplicationUpdateResult();
 
     /// <summary>
     /// Referenced vendor not found exception thrown and caught
     /// </summary>
-    public record FailureVendorNotFound() : ApplicationVendorUpdateResult();
+    public record FailureVendorNotFound() : ApplicationUpdateResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught
     /// </summary>
-    public record FailureUnknown(string FailureMessage) : ApplicationVendorUpdateResult();
+    public record FailureUnknown(string FailureMessage) : ApplicationUpdateResult();
 }
 
 public record ApplicationDeleteResult
@@ -113,4 +114,14 @@ public record ApplicationsByVendorResult
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : ApplicationsByVendorResult();
+}
+
+public record ApplicationApiClientsResult
+{
+    public record Success(Guid[] ClientUuids) : ApplicationApiClientsResult();
+
+    /// <summary>
+    /// Unexpected exception thrown and caught
+    /// </summary>
+    public record FailureUnknown(string FailureMessage) : ApplicationApiClientsResult();
 }

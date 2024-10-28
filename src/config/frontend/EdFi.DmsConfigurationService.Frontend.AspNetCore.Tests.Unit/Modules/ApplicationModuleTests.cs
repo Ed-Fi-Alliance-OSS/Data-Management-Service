@@ -15,6 +15,7 @@ using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -51,8 +52,10 @@ public class ApplicationModuleTests
                     );
 
                     collection
+                        .AddTransient((_) => A.Fake<HttpContext>())
                         .AddTransient((_) => _applicationRepository)
-                        .AddTransient((_) => _clientRepository);
+                        .AddTransient((_) => _clientRepository)
+                        .AddTransient((_) => _vendorRepository);
                 }
             );
         });
@@ -106,7 +109,7 @@ public class ApplicationModuleTests
                 );
 
             A.CallTo(() => _applicationRepository.UpdateApplication(A<ApplicationUpdateCommand>.Ignored))
-                .Returns(new ApplicationVendorUpdateResult.Success());
+                .Returns(new ApplicationUpdateResult.Success());
 
             A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
                 .Returns(new ApplicationDeleteResult.Success());
@@ -219,10 +222,16 @@ public class ApplicationModuleTests
                 .Returns(new ApplicationGetResult.FailureNotFound());
 
             A.CallTo(() => _applicationRepository.UpdateApplication(A<ApplicationUpdateCommand>.Ignored))
-                .Returns(new ApplicationVendorUpdateResult.FailureNotExists());
+                .Returns(new ApplicationUpdateResult.FailureNotExists());
 
             A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
                 .Returns(new ApplicationDeleteResult.FailureNotExists());
+
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+                .Returns(new ApplicationApiClientsResult.Success([]));
+
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+                .Returns(new ApplicationApiClientsResult.Success([]));
         }
 
         [Test]
@@ -239,10 +248,10 @@ public class ApplicationModuleTests
                     """
                     {
                         "id": 1,
-                       "ApplicationName": "Application 101",
-                        "ClaimSetName": "Test",
-                        "VendorId":1,
-                        "EducationOrganizationIds": [1]
+                       "applicationName": "Application 101",
+                        "claimSetName": "Test",
+                        "vendorId":1,
+                        "educationOrganizationIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -291,7 +300,7 @@ public class ApplicationModuleTests
                 .Returns(new ApplicationGetResult.FailureUnknown(""));
 
             A.CallTo(() => _applicationRepository.UpdateApplication(A<ApplicationUpdateCommand>.Ignored))
-                .Returns(new ApplicationVendorUpdateResult.FailureUnknown(""));
+                .Returns(new ApplicationUpdateResult.FailureUnknown(""));
 
             A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
                 .Returns(new ApplicationDeleteResult.FailureUnknown(""));
@@ -371,10 +380,13 @@ public class ApplicationModuleTests
                 .Returns(new ApplicationGetResult());
 
             A.CallTo(() => _applicationRepository.UpdateApplication(A<ApplicationUpdateCommand>.Ignored))
-                .Returns(new ApplicationVendorUpdateResult());
+                .Returns(new ApplicationUpdateResult());
 
             A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
                 .Returns(new ApplicationDeleteResult());
+
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+                .Returns(new ApplicationApiClientsResult());
         }
 
         [Test]
@@ -455,7 +467,10 @@ public class ApplicationModuleTests
                 .Returns(new ApplicationInsertResult.FailureVendorNotFound());
 
             A.CallTo(() => _applicationRepository.UpdateApplication(A<ApplicationUpdateCommand>.Ignored))
-                .Returns(new ApplicationVendorUpdateResult.FailureVendorNotFound());
+                .Returns(new ApplicationUpdateResult.FailureVendorNotFound());
+
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+                .Returns(new ApplicationApiClientsResult.Success([]));
         }
 
         [Test]

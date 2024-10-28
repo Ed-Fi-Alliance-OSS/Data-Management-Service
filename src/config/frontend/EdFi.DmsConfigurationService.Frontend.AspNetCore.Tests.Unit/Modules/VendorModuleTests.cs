@@ -6,7 +6,6 @@
 using System.Net;
 using System.Security.Claims;
 using System.Text;
-using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Application;
@@ -14,8 +13,10 @@ using EdFi.DmsConfigurationService.DataModel.Vendor;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FakeItEasy;
 using FluentAssertions;
+using FluentValidation;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -25,6 +26,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 public class VendorModuleTests
 {
     private readonly IVendorRepository _vendorRepository = A.Fake<IVendorRepository>();
+    private readonly HttpContext _httpContext = A.Fake<HttpContext>();
 
     private HttpClient SetUpClient()
     {
@@ -47,7 +49,7 @@ public class VendorModuleTests
                             policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
                         )
                     );
-                    collection.AddTransient((_) => _vendorRepository);
+                    collection.AddTransient((_) => _httpContext).AddTransient((_) => _vendorRepository);
                 }
             );
         });
@@ -105,6 +107,7 @@ public class VendorModuleTests
         {
             // Arrange
             using var client = SetUpClient();
+            A.CallTo(() => _httpContext.Request.Path).Returns("/v2/vendors");
 
             //Act
             var addResponse = await client.PostAsync(
@@ -193,9 +196,9 @@ public class VendorModuleTests
 
             //Assert
             string expectedPostResponse =
-                @"{""title"":""Validation failed"",""errors"":{""Company"":[""The length of \u0027Company\u0027 must be 256 characters or fewer. You entered 300 characters.""],""ContactName"":[""The length of \u0027Contact Name\u0027 must be 128 characters or fewer. You entered 300 characters.""],""ContactEmailAddress"":[""\u0027Contact Email Address\u0027 is not a valid email address.""],""NamespacePrefixes"":[""Each NamespacePrefix length must be less than 128""]}}";
+                @"{""title"":""Validation failed"",""errors"":{""Company"":[""The length of \u0027Company\u0027 must be 256 characters or fewer. You entered 300 characters.""],""ContactName"":[""The length of \u0027Contact Name\u0027 must be 128 characters or fewer. You entered 300 characters.""],""ContactEmailAddress"":[""\u0027Contact Email Address\u0027 is not a valid email address.""],""NamespacePrefixes"":[""Each NamespacePrefix length must be 128 characters or fewer.""]}}";
             string expectedPutResponse =
-                @"{""title"":""Validation failed"",""errors"":{""Company"":[""The length of \u0027Company\u0027 must be 256 characters or fewer. You entered 300 characters.""],""ContactName"":[""The length of \u0027Contact Name\u0027 must be 128 characters or fewer. You entered 300 characters.""],""ContactEmailAddress"":[""\u0027Contact Email Address\u0027 is not a valid email address.""],""NamespacePrefixes"":[""Each NamespacePrefix length must be less than 128""]}}";
+                @"{""title"":""Validation failed"",""errors"":{""Company"":[""The length of \u0027Company\u0027 must be 256 characters or fewer. You entered 300 characters.""],""ContactName"":[""The length of \u0027Contact Name\u0027 must be 128 characters or fewer. You entered 300 characters.""],""ContactEmailAddress"":[""\u0027Contact Email Address\u0027 is not a valid email address.""],""NamespacePrefixes"":[""Each NamespacePrefix length must be 128 characters or fewer.""]}}";
             string addResponseContent = await addResponse.Content.ReadAsStringAsync();
             addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             addResponseContent.Should().Contain(expectedPostResponse);

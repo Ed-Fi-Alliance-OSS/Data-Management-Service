@@ -164,8 +164,8 @@ public class ApplicationTests : DatabaseTest
                     EducationOrganizationIds = [],
                 };
 
-            var VendorUpdateResult = await _applicationRepository.UpdateApplication(applicationUpdate);
-            VendorUpdateResult.Should().BeOfType<ApplicationVendorUpdateResult.FailureVendorNotFound>();
+            var applicationUpdateResult = await _applicationRepository.UpdateApplication(applicationUpdate);
+            applicationUpdateResult.Should().BeOfType<ApplicationUpdateResult.FailureVendorNotFound>();
         }
     }
 
@@ -218,7 +218,7 @@ public class ApplicationTests : DatabaseTest
                     VendorId = command.VendorId,
                 }
             );
-            VendorUpdateResult.Should().BeOfType<ApplicationVendorUpdateResult.Success>();
+            VendorUpdateResult.Should().BeOfType<ApplicationUpdateResult.Success>();
         }
 
         [Test]
