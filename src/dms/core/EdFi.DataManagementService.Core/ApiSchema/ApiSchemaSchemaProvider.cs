@@ -3,9 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using Microsoft.Extensions.Logging;
-using Json.Schema;
 using System.Reflection;
+using Json.Schema;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.ApiSchema;
 

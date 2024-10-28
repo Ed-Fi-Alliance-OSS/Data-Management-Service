@@ -3,11 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using Microsoft.Extensions.Logging;
 using EdFi.DataManagementService.Core.ApiSchema;
-using EdFi.DataManagementService.Core.Response;
-using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Response;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 

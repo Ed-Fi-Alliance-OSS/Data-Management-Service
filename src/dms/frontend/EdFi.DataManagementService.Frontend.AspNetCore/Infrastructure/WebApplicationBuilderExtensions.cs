@@ -10,6 +10,8 @@ using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Deploy;
 using EdFi.DataManagementService.Backend.OpenSearch;
 using EdFi.DataManagementService.Backend.Postgresql;
+using EdFi.DataManagementService.Core;
+using EdFi.DataManagementService.Core.OAuth;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
@@ -36,6 +38,7 @@ public static class WebApplicationBuilderExtensions
             .AddTransient<IContentProvider, ContentProvider>()
             .AddTransient<IVersionProvider, VersionProvider>()
             .AddTransient<IAssemblyProvider, AssemblyProvider>()
+            .AddTransient<IOAuthManager, OAuthManager>()
             .Configure<DatabaseOptions>(webAppBuilder.Configuration.GetSection("DatabaseOptions"))
             .Configure<AppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"))
             .Configure<CoreAppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"))
