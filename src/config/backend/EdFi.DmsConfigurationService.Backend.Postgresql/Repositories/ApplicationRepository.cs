@@ -10,7 +10,7 @@ using EdFi.DmsConfigurationService.DataModel.Application;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
-namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repository;
+namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 
 public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : IApplicationRepository
 {

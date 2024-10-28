@@ -11,7 +11,7 @@ using EdFi.DmsConfigurationService.DataModel.Vendor;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
-namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repository
+namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
 {
     public class VendorRepository(IOptions<DatabaseOptions> databaseOptions) : IVendorRepository
     {
