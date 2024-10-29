@@ -10,7 +10,6 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model.Validator;
 using FluentValidation;
 using FluentValidation.Results;
-using Microsoft.AspNetCore.Mvc;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -29,10 +28,10 @@ public class VendorModule : IEndpointModule
     }
 
     private static async Task<IResult> InsertVendor(
-        [FromServices] VendorInsertCommandValidator validator,
-        [FromBody] VendorInsertCommand entity,
-        [FromServices] HttpContext httpContext,
-        [FromServices] IVendorRepository repository
+        VendorInsertCommandValidator validator,
+        VendorInsertCommand entity,
+        HttpContext httpContext,
+        IVendorRepository repository
     )
     {
         await validator.GuardAsync(entity);
@@ -50,7 +49,7 @@ public class VendorModule : IEndpointModule
         };
     }
 
-    private static async Task<IResult> GetAll([FromServices] IVendorRepository repository)
+    private static async Task<IResult> GetAll(IVendorRepository repository)
     {
         VendorQueryResult getResult = await repository.QueryVendor(
             new PagingQuery() { Limit = 9999, Offset = 0 }
@@ -65,9 +64,9 @@ public class VendorModule : IEndpointModule
 
     private static async Task<IResult> GetById(
         long id,
-        [FromServices] HttpContext httpContext,
-        [FromServices] IVendorRepository repository,
-        [FromServices] ILogger<VendorModule> logger
+        HttpContext httpContext,
+        IVendorRepository repository,
+        ILogger<VendorModule> logger
     )
     {
         VendorGetResult getResult = await repository.GetVendor(id);
@@ -82,10 +81,10 @@ public class VendorModule : IEndpointModule
 
     private static async Task<IResult> Update(
         long id,
-        [FromServices] VendorUpdateCommandValidator validator,
-        [FromBody] VendorUpdateCommand command,
-        [FromServices] HttpContext httpContext,
-        [FromServices] IVendorRepository repository
+        VendorUpdateCommandValidator validator,
+        VendorUpdateCommand command,
+        HttpContext httpContext,
+        IVendorRepository repository
     )
     {
         await validator.GuardAsync(command);
@@ -118,9 +117,9 @@ public class VendorModule : IEndpointModule
 
     private static async Task<IResult> Delete(
         long id,
-        [FromServices] HttpContext httpContext,
-        [FromServices] IVendorRepository repository,
-        [FromServices] ILogger<VendorModule> logger
+        HttpContext httpContext,
+        IVendorRepository repository,
+        ILogger<VendorModule> logger
     )
     {
         VendorDeleteResult deleteResult = await repository.DeleteVendor(id);
@@ -133,10 +132,7 @@ public class VendorModule : IEndpointModule
         };
     }
 
-    private static async Task<IResult> GetApplicationsByVendorId(
-        long id,
-        [FromServices] IVendorRepository repository
-    )
+    private static async Task<IResult> GetApplicationsByVendorId(long id, IVendorRepository repository)
     {
         var getResult = await repository.GetVendorApplications(id);
 

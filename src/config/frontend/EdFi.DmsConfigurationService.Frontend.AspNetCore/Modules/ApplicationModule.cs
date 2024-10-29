@@ -10,7 +10,6 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model.Validator;
 using FluentValidation;
 using FluentValidation.Results;
-using Microsoft.AspNetCore.Mvc;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -26,12 +25,12 @@ public class ApplicationModule : IEndpointModule
     }
 
     private static async Task<IResult> InsertApplication(
-        [FromServices] ApplicationInsertCommandValidator validator,
-        [FromBody] ApplicationInsertCommand command,
-        [FromServices] HttpContext httpContext,
-        [FromServices] IApplicationRepository applicationRepository,
-        [FromServices] IClientRepository clientRepository,
-        [FromServices] ILogger<ApplicationModule> logger
+        ApplicationInsertCommandValidator validator,
+        ApplicationInsertCommand command,
+        HttpContext httpContext,
+        IApplicationRepository applicationRepository,
+        IClientRepository clientRepository,
+        ILogger<ApplicationModule> logger
     )
     {
         logger.LogDebug("Entering UpsertApplication");
@@ -81,7 +80,7 @@ public class ApplicationModule : IEndpointModule
         return Results.Problem(statusCode: 500);
     }
 
-    private static async Task<IResult> GetAll([FromServices] IApplicationRepository applicationRepository)
+    private static async Task<IResult> GetAll(IApplicationRepository applicationRepository)
     {
         ApplicationQueryResult getResult = await applicationRepository.QueryApplication(
             new PagingQuery() { Limit = 9999, Offset = 0 }
@@ -96,9 +95,9 @@ public class ApplicationModule : IEndpointModule
 
     private static async Task<IResult> GetById(
         long id,
-        [FromServices] HttpContext httpContext,
-        [FromServices] IApplicationRepository applicationRepository,
-        [FromServices] ILogger<ApplicationModule> logger
+        HttpContext httpContext,
+        IApplicationRepository applicationRepository,
+        ILogger<ApplicationModule> logger
     )
     {
         ApplicationGetResult getResult = await applicationRepository.GetApplication(id);
@@ -113,10 +112,10 @@ public class ApplicationModule : IEndpointModule
 
     private static async Task<IResult> Update(
         long id,
-        [FromServices] ApplicationUpdateCommandValidator validator,
-        [FromBody] ApplicationUpdateCommand command,
-        [FromServices] HttpContext httpContext,
-        [FromServices] IApplicationRepository repository
+        ApplicationUpdateCommandValidator validator,
+        ApplicationUpdateCommand command,
+        HttpContext httpContext,
+        IApplicationRepository repository
     )
     {
         await validator.GuardAsync(command);
@@ -141,10 +140,10 @@ public class ApplicationModule : IEndpointModule
 
     private static async Task<IResult> Delete(
         long id,
-        [FromServices] HttpContext httpContext,
-        [FromServices] IApplicationRepository repository,
-        [FromServices] IClientRepository clientRepository,
-        [FromServices] ILogger<ApplicationModule> logger
+        HttpContext httpContext,
+        IApplicationRepository repository,
+        IClientRepository clientRepository,
+        ILogger<ApplicationModule> logger
     )
     {
         logger.LogInformation("Deleting Application {id}", id);
