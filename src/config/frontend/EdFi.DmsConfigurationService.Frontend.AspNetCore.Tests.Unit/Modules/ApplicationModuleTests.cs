@@ -122,7 +122,7 @@ public class ApplicationModuleTests
                             A<string>.Ignored
                         )
                 )
-                .Returns(true);
+                .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
         }
 
         [Test]
@@ -281,7 +281,7 @@ public class ApplicationModuleTests
                             A<string>.Ignored
                         )
                 )
-                .Returns(true);
+                .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
 
             A.CallTo(
                     () =>
@@ -454,7 +454,7 @@ public class ApplicationModuleTests
                             A<string>.Ignored
                         )
                 )
-                .Returns(true);
+                .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
 
             A.CallTo(
                     () =>
