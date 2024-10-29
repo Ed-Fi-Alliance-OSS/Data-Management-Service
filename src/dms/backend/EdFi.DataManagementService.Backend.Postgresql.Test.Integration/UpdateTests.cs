@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
@@ -832,6 +833,7 @@ public class UpdateTests : DatabaseTest
                 );
 
             (getResult! as GetResult.GetSuccess)!.LastModifiedDate.Should().NotBe(_courseOfferingInsertDateTime);
+            _courseOfferingLastModifiedDate.Should().Be(DateTime.ParseExact("2024-10-29T14:54:49+00:00", "yyyy-MM-ddTHH:mm:sszzz", DateTimeFormatInfo.InvariantInfo));
             (getResult! as GetResult.GetSuccess)!.EdfiDoc["_lastModifiedDate"]!.GetValue<DateTime>().Should().NotBe(_courseOfferingLastModifiedDate);
         }
 
