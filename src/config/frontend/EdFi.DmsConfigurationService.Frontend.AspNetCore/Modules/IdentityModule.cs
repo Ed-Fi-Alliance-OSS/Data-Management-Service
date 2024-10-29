@@ -20,14 +20,14 @@ public class IdentityModule : IEndpointModule
         endpoints.MapPost("/connect/token", GetClientAccessToken);
     }
 
-    public async Task<IResult> RegisterClient(
+    private async Task<IResult> RegisterClient(
         RegisterRequest.Validator validator,
         RegisterRequest model,
         IClientRepository clientRepository,
         IOptions<IdentitySettings> identitySettings
     )
     {
-        var allowRegistration = identitySettings.Value.AllowRegistration;
+        bool allowRegistration = identitySettings.Value.AllowRegistration;
         if (allowRegistration)
         {
             await validator.GuardAsync(model);
@@ -48,7 +48,7 @@ public class IdentityModule : IEndpointModule
         return Results.Forbid();
     }
 
-    public async Task<IResult> GetClientAccessToken(
+    private static async Task<IResult> GetClientAccessToken(
         TokenRequest.Validator validator,
         TokenRequest model,
         ITokenManager tokenManager
@@ -57,7 +57,7 @@ public class IdentityModule : IEndpointModule
         await validator.GuardAsync(model);
         try
         {
-            var response = await tokenManager.GetAccessTokenAsync(
+            string response = await tokenManager.GetAccessTokenAsync(
                 [
                     new KeyValuePair<string, string>("client_id", model.ClientId!),
                     new KeyValuePair<string, string>("client_secret", model.ClientSecret!),
@@ -66,9 +66,9 @@ public class IdentityModule : IEndpointModule
             var tokenResponse = JsonSerializer.Deserialize<TokenResponse>(response);
             return Results.Ok(tokenResponse);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            throw new IdentityException($"Client token generation failed with: {ex.Message}");
+            throw new IdentityException("Client registration failed with: Invalid client or Invalid client credentials.");
         }
     }
 }

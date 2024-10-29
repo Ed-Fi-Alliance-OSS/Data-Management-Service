@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Reflection.PortableExecutable;
 using System.Text.Json;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FluentValidation;
@@ -71,11 +72,7 @@ public class RequestLoggingMiddleware(RequestDelegate next)
                     response.StatusCode = (int)HttpStatusCode.Unauthorized;
                     await response.WriteAsync(
                         JsonSerializer.Serialize(
-                            new
-                            {
-                                title = "Client token generation failed",
-                                message = "Invalid client or Invalid client credentials."
-                            }
+                            new { title = "Client token generation failed", message = ex.Message }
                         )
                     );
                     break;
@@ -88,14 +85,22 @@ public class RequestLoggingMiddleware(RequestDelegate next)
                     ):
                     response.StatusCode = (int)HttpStatusCode.BadGateway;
                     await response.WriteAsync(
-                        JsonSerializer.Serialize(new { message = "Keycloak is unreachable." })
+                        JsonSerializer.Serialize(
+                            new
+                            {
+                                title = "Keycloak is unreachable.",
+                                message = "No connection could be made because the target machine actively refused it."
+                            }
+                        )
                     );
                     break;
                 // Invalid realm
                 case AggregateException when (ex.Message.Contains("Call failed with status code 404")):
                     response.StatusCode = (int)HttpStatusCode.BadGateway;
                     await response.WriteAsync(
-                        JsonSerializer.Serialize(new { message = "Invalid real, please check the configuration." })
+                        JsonSerializer.Serialize(
+                            new { message = "Invalid real, please check the configuration." }
+                        )
                     );
                     break;
 
