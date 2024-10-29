@@ -4,7 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.RegularExpressions;
-using EdFi.DmsConfigurationService.Backend;
+using EdFi.DmsConfigurationService.Backend.Repositories;
 using FluentValidation;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;

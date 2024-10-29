@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
@@ -10,7 +11,6 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
-using System.Text.Json;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 using static EdFi.DataManagementService.Core.UtilityService;
@@ -125,7 +125,7 @@ public class ParsePathMiddlewareTests
                     QueryParameters: [],
                     TraceId: new TraceId("")
                 );
-            _context = new(frontendRequest, RequestMethod.POST);
+            _context = new(frontendRequest, RequestMethod.PUT);
             await Middleware().Execute(_context, NullNext);
         }
 
@@ -185,6 +185,132 @@ public class ParsePathMiddlewareTests
             response
                 .Should()
                 .Contain("\"validationErrors\":{\"$.id\":[\"The value 'invalidId' is not valid.\"]}");
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Post_With_ResourceId : ParsePathMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            FrontendRequest frontendRequest =
+                new(
+                    Body: "{}",
+                    Path: $"/ed-fi/endpointName/{Guid.NewGuid()}",
+                    QueryParameters: [],
+                    TraceId: new TraceId("")
+                );
+            _context = new(frontendRequest, RequestMethod.POST);
+            await Middleware().Execute(_context, NullNext);
+        }
+
+        [Test]
+        public void It_has_a_response()
+        {
+            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+        }
+
+        [Test]
+        public void It_returns_status_405()
+        {
+            _context?.FrontendResponse.StatusCode.Should().Be(405);
+        }
+
+        [Test]
+        public void It_returns_method_not_allowed_message()
+        {
+            string response = JsonSerializer.Serialize(_context.FrontendResponse.Body, SerializerOptions);
+
+            response
+                .Should()
+                .Contain("Method Not Allowed");
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Put_With_Missing_ResourceId : ParsePathMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            FrontendRequest frontendRequest =
+                new(
+                    Body: "{}",
+                    Path: "/ed-fi/endpointName/",
+                    QueryParameters: [],
+                    TraceId: new TraceId("")
+                );
+            _context = new(frontendRequest, RequestMethod.PUT);
+            await Middleware().Execute(_context, NullNext);
+        }
+
+        [Test]
+        public void It_has_a_response()
+        {
+            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+        }
+
+        [Test]
+        public void It_returns_status_405()
+        {
+            _context?.FrontendResponse.StatusCode.Should().Be(405);
+        }
+
+        [Test]
+        public void It_returns_method_not_allowed_message()
+        {
+            string response = JsonSerializer.Serialize(_context.FrontendResponse.Body, SerializerOptions);
+
+            response
+                .Should()
+                .Contain("Method Not Allowed");
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Delete_With_Missing_ResourceId : ParsePathMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            FrontendRequest frontendRequest =
+                new(
+                    Body: "{}",
+                    Path: "/ed-fi/endpointName/",
+                    QueryParameters: [],
+                    TraceId: new TraceId("")
+                );
+            _context = new(frontendRequest, RequestMethod.DELETE);
+            await Middleware().Execute(_context, NullNext);
+        }
+
+        [Test]
+        public void It_has_a_response()
+        {
+            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+        }
+
+        [Test]
+        public void It_returns_status_405()
+        {
+            _context?.FrontendResponse.StatusCode.Should().Be(405);
+        }
+
+        [Test]
+        public void It_returns_method_not_allowed_message()
+        {
+            string response = JsonSerializer.Serialize(_context.FrontendResponse.Body, SerializerOptions);
+
+            response
+                .Should()
+                .Contain("Method Not Allowed");
         }
     }
 }

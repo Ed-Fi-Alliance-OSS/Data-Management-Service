@@ -1,0 +1,73 @@
+## Authentication tests
+
+#@port = 8080
+@port = 5198
+
+@secret=test1@Secret
+#@secret=fv2MwsrzyyTzRUmDS0K6tHhi7tvDzhG4
+
+### DMS Auth Via Docker
+POST http://localhost:{{port}}/oauth/token
+
+Content-Type: "application/json"
+{
+    "clientId": "ClientId",
+    "clientSecret": "ClientSecret123#"
+}
+
+###
+### DMS Auth running locally Proper
+POST http://localhost:5198/oauth/token
+Authorization: Basic CSClientApp:{{secret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+### Wrong Authorization Headings
+POST http://localhost:5198/oauth/token
+Authorization: clientId:clientSecret
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+### Missing Authorization Headings
+POST http://localhost:5198/oauth/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+### Proper body
+POST http://localhost:5198/oauth/token
+Authorization: Basic CSClientApp:{{secret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+### JSON body
+POST http://localhost:5198/oauth/token
+Authorization: Basic CSClientApp:{{secret}}
+Content-Type: application/json
+
+{
+    "grant_type": "client_credentials"
+}
+
+###
+### JSON Test
+POST http://localhost:5198/oauth/token
+Authorization: Basic CSClientApp:{{secret}}
+Content-Type: application/json
+
+{}
+
+###
+### Keycloak as a service
+POST http://localhost:8045/realms/edfi/protocol/openid-connect/token
+Authorization: Basic CSClientApp:{{secret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials

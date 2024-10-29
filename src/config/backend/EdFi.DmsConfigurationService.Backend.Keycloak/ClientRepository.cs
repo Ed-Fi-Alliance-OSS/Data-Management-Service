@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.Backend.Repositories;
 using Keycloak.Net;
 using Keycloak.Net.Models.Clients;
 using Keycloak.Net.Models.Roles;
@@ -17,7 +18,7 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
             keycloakContext.ClientSecret,
             new KeycloakOptions(adminClientId: keycloakContext.ClientId)
         );
-    private readonly string _realm = keycloakContext.Realm;
+    private readonly string _realm = keycloakContext.Realm!;
 
     public async Task<bool> CreateClientAsync(string clientId, string clientSecret, string displayName)
     {
@@ -80,10 +81,15 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
                         { "id.token.claim", "true" },
                         { "access.token.claim", "true" },
                         { "userinfo.token.claim", "true" },
-                    }
-                }
+                    },
+                },
             ];
         }
+    }
+
+    public Task<bool> DeleteClientAsync(string clientId)
+    {
+        return _keycloakClient.DeleteClientAsync(_realm, clientId);
     }
 
     public async Task<IEnumerable<string>> GetAllClientsAsync()

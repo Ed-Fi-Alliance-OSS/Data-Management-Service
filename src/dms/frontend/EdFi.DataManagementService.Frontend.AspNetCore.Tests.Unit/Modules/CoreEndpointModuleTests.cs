@@ -4,19 +4,19 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
-using Microsoft.AspNetCore.Mvc.Testing;
-using NUnit.Framework;
-using FluentAssertions;
 using System.Security.Claims;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.AspNetCore.Authentication;
-using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
-using Microsoft.Extensions.Configuration;
-using EdFi.DataManagementService.Core.External.Interface;
-using FakeItEasy;
-using EdFi.DataManagementService.Core.External.Frontend;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Frontend;
+using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
+using FakeItEasy;
+using FluentAssertions;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 

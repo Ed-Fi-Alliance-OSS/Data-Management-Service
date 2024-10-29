@@ -6,6 +6,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using EdFi.DmsConfigurationService.Backend;
+using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
 using FakeItEasy;
@@ -61,7 +62,7 @@ public class RegisterEndpointTests
         {
             clientid = "CSClient1",
             clientsecret = "test123@Puiu",
-            displayname = "CSClient1"
+            displayname = "CSClient1",
         };
         var response = await client.PostAsJsonAsync("/connect/register", requestContent);
         string content = await response.Content.ReadAsStringAsync();
@@ -93,7 +94,7 @@ public class RegisterEndpointTests
         {
             clientid = "",
             clientsecret = "",
-            displayname = ""
+            displayname = "",
         };
         var response = await client.PostAsJsonAsync("/connect/register", requestContent);
         string content = await response.Content.ReadAsStringAsync();
@@ -134,7 +135,7 @@ public class RegisterEndpointTests
         {
             clientid = "CSClient2",
             clientsecret = secret,
-            displayname = "CSClient2@cs.com"
+            displayname = "CSClient2@cs.com",
         };
         var response = await client.PostAsJsonAsync("/connect/register", requestContent);
         string content = await response.Content.ReadAsStringAsync();
@@ -180,7 +181,7 @@ public class RegisterEndpointTests
         {
             clientid = "CSClient3",
             clientsecret = "test123@Puiu",
-            displayname = "CSClient3"
+            displayname = "CSClient3",
         };
         var response = await client.PostAsJsonAsync("/connect/register", requestContent);
         string content = await response.Content.ReadAsStringAsync();
@@ -217,7 +218,7 @@ public class RegisterEndpointTests
         {
             clientid = "CSClient2",
             clientsecret = "test123@Puiu",
-            displayname = "CSClient2@cs.com"
+            displayname = "CSClient2@cs.com",
         };
         var response = await client.PostAsJsonAsync("/connect/register", requestContent);
         string content = await response.Content.ReadAsStringAsync();
@@ -255,7 +256,7 @@ public class RegisterEndpointTests
         {
             clientid = "CSClient2",
             clientsecret = "test123@Puiu",
-            displayname = "CSClient2@cs.com"
+            displayname = "CSClient2@cs.com",
         };
         var response = await client.PostAsJsonAsync("/connect/register", requestContent);
 

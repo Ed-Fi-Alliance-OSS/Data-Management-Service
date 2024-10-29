@@ -9,7 +9,8 @@ using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Deploy;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Postgresql;
-using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
+using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using FluentValidation;
 using FluentValidation.AspNetCore;
@@ -70,8 +71,7 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder.Services.AddHttpClient();
 
         webApplicationBuilder.Services.AddTransient<IClientRepository, ClientRepository>();
-        webApplicationBuilder.Services.AddTransient<IRepository<Application>, ApplicationRepository>();
-        webApplicationBuilder.Services.AddTransient<IRepository<Vendor>, VendorRepository>();
+        webApplicationBuilder.Services.AddTransient<IApplicationRepository, ApplicationRepository>();
         webApplicationBuilder.Services.AddTransient<IVendorRepository, VendorRepository>();
         webApplicationBuilder.Services.AddTransient<ITokenManager, TokenManager>();
 
