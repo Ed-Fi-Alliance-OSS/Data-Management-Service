@@ -19,21 +19,22 @@ Feature: Validates the functionality of the ETag
         @API-260
         Scenario: 01 Ensure that clients can retrieve an ETag in the response header
              When a GET request is made to "/ed-fi/students/{id}"
-             Then it should respond with 201
+             Then it should respond with 200
               And the response body is
                   """
                   {
-                      "studentUniqueId": "111111",
-                      "birthDate": "2014-08-14",
-                      "firstName": "Russella",
-                      "lastSurname": "Mayers"
+                    "studentUniqueId": "111111",
+                    "birthDate": "2014-08-14",
+                    "firstName": "Russella",
+                    "lastSurname": "Mayers",
+                    "_etag": "{etag}",
                   }
                   """
               And the ETag is in the response header
 
         @API-261
         Scenario: 02 Ensure that clients can pass an ETag in the request header
-             When a PUT request is made to "/ed-fi/students/{id}" with
+             When a PUT if-match "{etag}" request is made to "/ed-fi/students/{id}" with
                   """
                   {
                       "studentUniqueId": "111111",
@@ -42,13 +43,11 @@ Feature: Validates the functionality of the ETag
                       "lastSurname": "Mayorga"
                   }
                   """
-              And the ETag is in the request header
-              And If-Match value matches ETag
              Then it should respond with 204
 
         @API-262
         Scenario: 03 Ensure that clients cannot pass a different ETag in the If-Match header
-             When a PUT request is made to "/ed-fi/students/{id}" with
+             When a PUT if-match "0000000000" request is made to "/ed-fi/students/{id}" with
                   """
                   {
                       "studentUniqueId": "111111",
@@ -57,8 +56,6 @@ Feature: Validates the functionality of the ETag
                       "lastSurname": "Mulligan"
                   }
                   """
-              And the ETag is in the request header
-              And If-Match value is Invalid-ETag
              Then it should respond with 412
               And the response body is
                   """
