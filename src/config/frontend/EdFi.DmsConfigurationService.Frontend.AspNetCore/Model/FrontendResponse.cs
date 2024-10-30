@@ -12,6 +12,5 @@ public class FrontendResponse
     public int StatusCode { get; set; }
     public JsonNode? Body { get; set; }
     public Dictionary<string, string> Headers { get; set; } = new();
-    public string? LocationHeaderPath { get; set; } = null;
     public string? ContentType { get; set; } = "application/json";
 }

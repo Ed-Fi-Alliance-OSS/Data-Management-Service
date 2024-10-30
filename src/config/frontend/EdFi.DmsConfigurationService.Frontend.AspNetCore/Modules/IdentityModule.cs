@@ -43,6 +43,14 @@ public class IdentityModule : IEndpointModule
             }
             catch (Exception ex)
             {
+                if (
+                    ex.Message.Contains(
+                        "No connection could be made because the target machine actively refused it"
+                    )
+                )
+                {
+                    throw new AggregateException(ex.Message);
+                }
                 throw new IdentityException($"Client registration failed with: {ex.Message}");
             }
         }
@@ -67,9 +75,19 @@ public class IdentityModule : IEndpointModule
             var tokenResponse = JsonSerializer.Deserialize<TokenResponse>(response);
             return Results.Ok(tokenResponse);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            throw new IdentityException("Client registration failed with: Invalid client or Invalid client credentials.");
+            if (
+                ex.Message.Contains(
+                    "No connection could be made because the target machine actively refused it"
+                )
+            )
+            {
+                throw new AggregateException(ex.Message);
+            }
+            throw new IdentityException(
+                "Client registration failed with: Invalid client or Invalid client credentials."
+            );
         }
     }
 }

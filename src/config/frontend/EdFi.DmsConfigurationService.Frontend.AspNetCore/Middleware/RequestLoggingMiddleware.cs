@@ -125,8 +125,6 @@ public class RequestLoggingMiddleware(RequestDelegate next)
                     Headers = new Dictionary<string, string> { { "TraceId", context.TraceIdentifier } }
                 };
 
-            var response = context.Response;
-            response.ContentType = "application/json";
             logger.LogError(ex.Message + " - TraceId: {TraceId}", context.TraceIdentifier);
 
             context.Response.StatusCode = frontendResponse.StatusCode;
