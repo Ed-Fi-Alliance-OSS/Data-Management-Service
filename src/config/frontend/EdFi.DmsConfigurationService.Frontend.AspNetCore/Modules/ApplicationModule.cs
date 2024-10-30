@@ -279,8 +279,8 @@ public class ApplicationModule : IEndpointModule
         switch (response.Count)
         {
             case <= 0:
-                logger.LogError("No credentials updated");
-                return Results.Problem(statusCode: 500);
+                logger.LogWarning("No credentials updated");
+                return Results.NotFound();
             case 1:
                 return Results.Ok(response.Single());
             case > 1:

@@ -113,6 +113,9 @@ public class ApplicationModuleTests
             A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
                 .Returns(new ApplicationDeleteResult.Success());
 
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+                .Returns(new ApplicationApiClientsResult.Success([new("1", Guid.NewGuid())]));
+
             A.CallTo(
                     () =>
                         _clientRepository.CreateClientAsync(
@@ -122,6 +125,9 @@ public class ApplicationModuleTests
                         )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
+
+            A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored))
+                .Returns(new ClientResetResult.Success("SECRET"));
         }
 
         [Test]
@@ -165,6 +171,7 @@ public class ApplicationModuleTests
                 )
             );
             var deleteResponse = await client.DeleteAsync("/v2/applications/1");
+            var resetCredentialsResponse = await client.PutAsync("/v2/applications/1/reset-credential", null);
 
             //Assert
             addResponse.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -172,6 +179,7 @@ public class ApplicationModuleTests
             getByIdResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            resetCredentialsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         }
     }
 
@@ -231,6 +239,9 @@ public class ApplicationModuleTests
 
             A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
                 .Returns(new ApplicationApiClientsResult.Success([]));
+
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+                .Returns(new ApplicationApiClientsResult.Success([]));
         }
 
         [Test]
@@ -258,11 +269,13 @@ public class ApplicationModuleTests
                 )
             );
             var deleteResponse = await client.DeleteAsync("/v2/applications/1");
+            var resetCredentialsResponse = await client.PutAsync("/v2/applications/1/reset-credential", null);
 
             //Assert
             getByIdResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            resetCredentialsResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
     }
 
@@ -291,6 +304,9 @@ public class ApplicationModuleTests
                 )
                 .Returns(new ApplicationInsertResult.FailureUnknown(""));
 
+            A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored))
+                .Returns(new ClientResetResult.FailureUnknown(""));
+
             A.CallTo(() => _applicationRepository.QueryApplication(A<PagingQuery>.Ignored))
                 .Returns(new ApplicationQueryResult.FailureUnknown(""));
 
@@ -302,6 +318,9 @@ public class ApplicationModuleTests
 
             A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
                 .Returns(new ApplicationDeleteResult.FailureUnknown(""));
+
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+                .Returns(new ApplicationApiClientsResult.FailureUnknown(""));
         }
 
         [Test]
@@ -345,6 +364,7 @@ public class ApplicationModuleTests
                 )
             );
             var deleteResponse = await client.DeleteAsync("/v2/applications/1");
+            var resetCredentialsResponse = await client.PutAsync("/v2/applications/1/reset-credential", null);
 
             //Assert
             addResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
@@ -352,6 +372,7 @@ public class ApplicationModuleTests
             getByIdResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             updateResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            resetCredentialsResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         }
     }
 
