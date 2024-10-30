@@ -72,9 +72,14 @@ public class ConsumerIdentityTest
             .WithHeader("Content-Type", "application/json")
             .WithJsonBody(new
             {
-                error = "'Client Id' must not be empty."
-            });
-
+                title = "Validation failed",
+                errors = new
+                {
+                    ClientId = new[] { "'Client Id' must not be empty." },
+                    ClientSecret = new[] { "'Client Secret' must not be empty." }
+                }
+            }
+            );
         await pact.VerifyAsync(async ctx =>
         {
             var client = new HttpClient();

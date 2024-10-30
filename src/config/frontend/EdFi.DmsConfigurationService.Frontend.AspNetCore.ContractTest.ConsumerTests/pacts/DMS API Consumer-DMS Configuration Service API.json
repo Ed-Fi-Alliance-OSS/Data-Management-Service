@@ -27,6 +27,60 @@
         },
         "status": 200
       }
+    },
+    {
+      "description": "A request for an access token with empty client credentials",
+      "request": {
+        "body": {
+          "clientid": "",
+          "clientsecret": ""
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "method": "POST",
+        "path": "/connect/token"
+      },
+      "response": {
+        "body": {
+          "errors": {
+            "ClientId": [
+              "'Client Id' must not be empty."
+            ],
+            "ClientSecret": [
+              "'Client Secret' must not be empty."
+            ]
+          },
+          "title": "Validation failed"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
+      "description": "A request for an access token with invalid credentials that throws an error from Keycloak",
+      "request": {
+        "body": {
+          "clientid": "client123",
+          "clientsecret": "clientsecret123"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "method": "POST",
+        "path": "/connect/token"
+      },
+      "response": {
+        "body": {
+          "error": "Error from Keycloak"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "status": 401
+      }
     }
   ],
   "metadata": {

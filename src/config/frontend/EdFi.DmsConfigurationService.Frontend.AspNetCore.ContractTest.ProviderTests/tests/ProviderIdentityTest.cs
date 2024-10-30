@@ -24,7 +24,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
 
         private IHost _host;
         private IPactVerifier verifier;
-        private Uri pactURL = new Uri("http://localhost:5126");
+        private Uri pactURL = new Uri("http://localhost:5120");
 
         public ProviderIdentityTest()
         {
