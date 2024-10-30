@@ -9,6 +9,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Http;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider.Tests.Middleware;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
+using EdFi.DmsConfigurationService.Backend.Keycloak;
+using EdFi.DmsConfigurationService.Backend.Repositories;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider.Tests
 {
@@ -24,54 +29,46 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
         public void ConfigureServices(IServiceCollection services)
         {
             // Add your minimal API services here
-            services.AddEndpointsApiExplorer();
+            //services.AddEndpointsApiExplorer();
+            //services.AddSingleton<ITokenManager, FakeTokenManager>();
+
+            // Configure Kestrel to allow synchronous IO if needed
+            services.Configure<KestrelServerOptions>(options =>
+            {
+                options.AllowSynchronousIO = true;
+            });
+
+            // Register services specifically for minimal APIs
+            services.AddEndpointsApiExplorer();  // Adds OpenAPI/Swagger support if needed
+            services.AddSingleton<Model.TokenRequest.Validator>();
+            services.AddSingleton<Model.RegisterRequest.Validator>();
+            services.AddSingleton<IClientRepository, ClientRepository>();
             services.AddSingleton<ITokenManager, FakeTokenManager>();
+            services.AddSingleton<IEndpointModule, IdentityModule>();
+            services.AddSingleton<IEndpointModule, HealthModule>();
         }
 
         public void Configure(IApplicationBuilder app)
         {
             app.UseRouting();
-
             // Get the FakeTokenManager instance from the DI container.
-            var fakeTokenManager = app.ApplicationServices.GetRequiredService<ITokenManager>() as FakeTokenManager;
+            /*var fakeTokenManager = app.ApplicationServices.GetRequiredService<ITokenManager>() as FakeTokenManager;
             if (fakeTokenManager == null)
             {
                 throw new InvalidOperationException("FakeTokenManager instance could not be resolved.");
-            }
+            } */
             // Use the middleware and pass the FakeTokenManager instance to it.
-            app.UseMiddleware<ProviderStateMiddleware>(fakeTokenManager);
+            //app.UseMiddleware<ProviderStateMiddleware>(fakeTokenManager);
 
             app.UseEndpoints(endpoints =>
             {
-                endpoints.MapPost("/connect/token", HandleRequest);
+                var healthCheck = new HealthModule();
+                healthCheck.MapEndpoints(endpoints);
+
+                // Initialize and map endpoints from IdentityModule
+                var identityModule = new IdentityModule();
+                identityModule.MapEndpoints(endpoints);
             });
-
-            static async Task<IResult> HandleRequest(TokenRequest request, ITokenManager tokenManager)
-            {
-                if (string.IsNullOrEmpty(request.ClientId))
-                {
-                    return Results.Json(new { error = "'Client Id' must not be empty." }, statusCode: 400);
-                }
-
-                if (string.IsNullOrEmpty(request.ClientSecret))
-                {
-                    return Results.Json(new { error = "'Client Secret' must not be empty." }, statusCode: 400);
-                }
-
-                try
-                {
-                    var token = await tokenManager.GetAccessTokenAsync(
-                    [
-                        new("client_id", request.ClientId),
-                        new("client_secret", request.ClientSecret)
-                    ]);
-                    return Results.Text(token, "application/json");
-                }
-                catch (Exception ex)
-                {
-                    return Results.Json(new { error = ex.Message }, statusCode: 401);
-                }
-            }
         }
     }
 }

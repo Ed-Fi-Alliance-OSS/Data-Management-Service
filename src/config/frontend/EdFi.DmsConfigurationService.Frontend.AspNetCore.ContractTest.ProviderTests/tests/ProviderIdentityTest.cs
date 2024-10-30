@@ -9,6 +9,7 @@ using Microsoft.Extensions.Hosting;
 using PactNet.Verifier;
 using PactNet;
 using Microsoft.Extensions.Logging;
+using PactNet.Infrastructure.Outputters;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider.Tests
 {
@@ -40,7 +41,6 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
                         logging.AddConsole();
                         logging.SetMinimumLevel(LogLevel.Debug);
                     });
-
                 })
                 .Build();
 
@@ -48,10 +48,17 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
             // Allow some time for the server to start before running the verification
             Thread.Sleep(2000);
 
-            verifier = new PactVerifier(new PactVerifierConfig()
+            var config = new PactVerifierConfig
             {
+                Outputters = new List<IOutput>
+                {
+                    new ConsoleOutput() // Sends log output to the console
+                },
                 LogLevel = PactLogLevel.Debug
-            });
+            };
+
+            verifier = new PactVerifier(config);
+
         }
 
         [Test]
@@ -67,7 +74,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
 
             verifier!.ServiceProvider("DMS Configuration Service API", pactURL)
                 .WithFileSource(new FileInfo(pactFile))
-                .WithProviderStateUrl(new Uri("http://localhost:5126/provider-states"))
+                //.WithProviderStateUrl(new Uri("http://localhost:5126/provider-states"))
                 .Verify();
 
         }

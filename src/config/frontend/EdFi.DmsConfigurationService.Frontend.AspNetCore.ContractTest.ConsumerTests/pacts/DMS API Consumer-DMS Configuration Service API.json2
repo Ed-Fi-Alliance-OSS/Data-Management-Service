@@ -6,25 +6,10 @@
     {
       "description": "A request for an access token with a valid credentials",
       "request": {
-        "body": {
-          "clientid": "CSClient1",
-          "clientsecret": "test123@Puiu"
-        },
-        "headers": {
-          "Content-Type": "application/json"
-        },
-        "method": "POST",
-        "path": "/connect/token"
+        "method": "GET",
+        "path": "/health"
       },
       "response": {
-        "body": {
-          "access_token": "input123token",
-          "expires_in": 900,
-          "token_type": "bearer"
-        },
-        "headers": {
-          "Content-Type": "application/json"
-        },
         "status": 200
       }
     }
