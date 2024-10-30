@@ -4,9 +4,10 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
-using System.Reflection.PortableExecutable;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
 using FluentValidation;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
@@ -40,92 +41,102 @@ public class RequestLoggingMiddleware(RequestDelegate next)
         }
         catch (Exception ex)
         {
+            FrontendResponse frontendResponse =
+                new()
+                {
+                    StatusCode = ex switch
+                    {
+                        ValidationException => (int)HttpStatusCode.BadRequest,
+                        BadHttpRequestException => (int)HttpStatusCode.BadRequest,
+                        IdentityException => (int)HttpStatusCode.Unauthorized,
+                        AggregateException ae when ae.Message.Contains("No connection could be made")
+                            => (int)HttpStatusCode.BadGateway,
+                        AggregateException ae when ae.Message.Contains("status code 404")
+                            => (int)HttpStatusCode.BadGateway,
+                        _ => (int)HttpStatusCode.InternalServerError,
+                    },
+                    Body = ex switch
+                    {
+                        ValidationException validationEx
+                            => JsonNode.Parse(
+                                JsonSerializer.Serialize(
+                                    new
+                                    {
+                                        title = "Validation failed.",
+                                        errors = validationEx
+                                            .Errors.GroupBy(e => e.PropertyName)
+                                            .ToDictionary(
+                                                g => g.Key,
+                                                g =>
+                                                    g.Select(e => e.ErrorMessage.Replace("\u0027", "'"))
+                                                        .ToList()
+                                            )
+                                    }
+                                )
+                            ),
+
+                        IdentityException
+                            => JsonNode.Parse(
+                                JsonSerializer.Serialize(
+                                    new { title = "Client token generation failed.", message = ex.Message }
+                                )
+                            ),
+
+                        AggregateException ae when ae.Message.Contains("No connection could be made")
+                            => JsonNode.Parse(
+                                JsonSerializer.Serialize(
+                                    new
+                                    {
+                                        title = "Keycloak is unreachable.",
+                                        message = "No connection could be made because the target machine actively refused it."
+                                    }
+                                )
+                            ),
+
+                        AggregateException ae when ae.Message.Contains("status code 404")
+                            => JsonNode.Parse(
+                                JsonSerializer.Serialize(
+                                    new
+                                    {
+                                        title = "Invalid realm.",
+                                        message = "Please check the configuration."
+                                    }
+                                )
+                            ),
+
+                        BadHttpRequestException
+                            => JsonNode.Parse(
+                                JsonSerializer.Serialize(
+                                    new { title = "Invalid Request Format.", message = ex.Message }
+                                )
+                            ),
+
+                        _
+                            => JsonNode.Parse(
+                                JsonSerializer.Serialize(
+                                    new
+                                    {
+                                        title = "Unexpected Server Error.",
+                                        message = "The server encountered an unexpected condition that prevented it from fulfilling the request."
+                                    }
+                                )
+                            )
+                    },
+                    Headers = new Dictionary<string, string> { { "TraceId", context.TraceIdentifier } }
+                };
+
             var response = context.Response;
             response.ContentType = "application/json";
             logger.LogError(ex.Message + " - TraceId: {TraceId}", context.TraceIdentifier);
 
-            switch (ex)
+            context.Response.StatusCode = frontendResponse.StatusCode;
+            context.Response.ContentType = frontendResponse.ContentType;
+            foreach (var header in frontendResponse.Headers)
             {
-                case ValidationException validationException:
-                    var validationResponse = new
-                    {
-                        title = "Validation failed",
-                        errors = new Dictionary<string, List<string>>(),
-                    };
-
-                    foreach (var error in validationException.Errors)
-                    {
-                        if (!validationResponse.errors.ContainsKey(error.PropertyName))
-                        {
-                            validationResponse.errors[error.PropertyName] = new List<string>();
-                        }
-                        validationResponse
-                            .errors[error.PropertyName]
-                            .Add(error.ErrorMessage.Replace("\u0027", "'"));
-                    }
-                    response.StatusCode = (int)HttpStatusCode.BadRequest;
-                    await response.WriteAsync(JsonSerializer.Serialize(validationResponse));
-                    break;
-
-                // Bad credentials
-                case IdentityException:
-                    response.StatusCode = (int)HttpStatusCode.Unauthorized;
-                    await response.WriteAsync(
-                        JsonSerializer.Serialize(
-                            new { title = "Client token generation failed", message = ex.Message }
-                        )
-                    );
-                    break;
-                // Keycloak is unreachable
-                case AggregateException
-                    when (
-                        ex.Message.Contains(
-                            "No connection could be made because the target machine actively refused it"
-                        )
-                    ):
-                    response.StatusCode = (int)HttpStatusCode.BadGateway;
-                    await response.WriteAsync(
-                        JsonSerializer.Serialize(
-                            new
-                            {
-                                title = "Keycloak is unreachable.",
-                                message = "No connection could be made because the target machine actively refused it."
-                            }
-                        )
-                    );
-                    break;
-                // Invalid realm
-                case AggregateException when (ex.Message.Contains("Call failed with status code 404")):
-                    response.StatusCode = (int)HttpStatusCode.BadGateway;
-                    await response.WriteAsync(
-                        JsonSerializer.Serialize(
-                            new { message = "Invalid real, please check the configuration." }
-                        )
-                    );
-                    break;
-
-                default:
-                    logger.LogError(
-                        JsonSerializer.Serialize(
-                            new
-                            {
-                                message = "An uncaught error has occurred",
-                                error = new { ex.Message, ex.StackTrace },
-                                traceId = context.TraceIdentifier,
-                            }
-                        )
-                    );
-                    response.StatusCode = (int)HttpStatusCode.InternalServerError;
-                    await response.WriteAsync(
-                        JsonSerializer.Serialize(
-                            new
-                            {
-                                message = "The server encountered an unexpected condition that prevented it from fulfilling the request.",
-                            }
-                        )
-                    );
-                    break;
+                context.Response.Headers[header.Key] = header.Value;
             }
+
+            await context.Response.WriteAsync(frontendResponse.Body?.ToJsonString() ?? string.Empty);
         }
     }
 }

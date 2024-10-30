@@ -69,7 +69,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
         public class UpdateTests : VendorTests
         {
             private VendorInsertCommand _vendorInsert = null!;
-            private VendorUpdateCommand _vendorUpdate;
+            private VendorUpdateCommand _vendorUpdate = null!;
 
             [SetUp]
             public async Task Setup()
@@ -98,8 +98,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
                 _vendorUpdate.ContactEmailAddress = "update@update.com";
                 _vendorUpdate.ContactName = "Update Name";
 
-                var VendorUpdateResult = await _repository.UpdateVendor(_vendorUpdate);
-                VendorUpdateResult.Should().BeOfType<VendorUpdateResult.Success>();
+                var vendorUpdateResult = await _repository.UpdateVendor(_vendorUpdate);
+                vendorUpdateResult.Should().BeOfType<VendorUpdateResult.Success>();
             }
 
             [Test]
@@ -130,8 +130,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
         [TestFixture]
         public class DeleteTests : VendorTests
         {
-            private long _vendor1Id = 0;
-            private long _vendor2Id = 0;
+            private long _vendor1Id;
+            private long _vendor2Id;
 
             [SetUp]
             public async Task Setup()

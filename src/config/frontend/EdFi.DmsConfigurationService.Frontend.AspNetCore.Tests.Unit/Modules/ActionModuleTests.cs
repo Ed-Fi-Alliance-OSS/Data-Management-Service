@@ -22,7 +22,7 @@ public class RegisterActionEndpointTests
     [TestFixture]
     public class When_Making_Action_Request
     {
-        private AdminAction[] _mockActionResponse;
+        private AdminAction[] _mockActionResponse = null!;
         private HttpResponseMessage? _response;
 
         [SetUp]
@@ -47,7 +47,7 @@ public class RegisterActionEndpointTests
                     (collection) =>
                     {
                         collection.AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                        .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(AuthenticationConstants.AuthenticationSchema, options => { });
+                        .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(AuthenticationConstants.AuthenticationSchema, _ => { });
 
                         collection.AddAuthorization(options => options.AddPolicy(SecurityConstants.ServicePolicy,
                         policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)));
@@ -95,7 +95,7 @@ public class RegisterActionEndpointTests
                     (collection) =>
                     {
                         collection.AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                        .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(AuthenticationConstants.AuthenticationSchema, options => { });
+                        .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(AuthenticationConstants.AuthenticationSchema, _ => { });
 
                         collection.AddAuthorization(options => options.AddPolicy(SecurityConstants.ServicePolicy,
                         policy => policy.RequireClaim(ClaimTypes.Role, "invalid-role")));

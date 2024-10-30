@@ -18,7 +18,7 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
             keycloakContext.ClientSecret,
             new KeycloakOptions(adminClientId: keycloakContext.ClientId)
         );
-    private readonly string _realm = keycloakContext.Realm!;
+    private readonly string _realm = keycloakContext.Realm;
 
     public async Task<bool> CreateClientAsync(string clientId, string clientSecret, string displayName)
     {
@@ -89,7 +89,14 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
 
     public Task<bool> DeleteClientAsync(string clientId)
     {
-        return _keycloakClient.DeleteClientAsync(_realm, clientId);
+        try
+        {
+            return _keycloakClient.DeleteClientAsync(_realm, clientId);
+        }
+        catch (Exception ex)
+        {
+            throw new Exception(ex.Message);
+        }
     }
 
     public async Task<IEnumerable<string>> GetAllClientsAsync()
