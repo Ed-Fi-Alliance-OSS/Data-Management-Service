@@ -4,11 +4,11 @@
   },
   "interactions": [
     {
-      "description": "A request for an access token with a valid credentials",
+      "description": "A request for an access token with empty client credentials",
       "request": {
         "body": {
-          "clientid": "CSClient1",
-          "clientsecret": "test123@Puiu"
+          "clientid": "",
+          "clientsecret": ""
         },
         "headers": {
           "Content-Type": "application/json"
@@ -18,14 +18,12 @@
       },
       "response": {
         "body": {
-          "access_token": "input123token",
-          "expires_in": 900,
-          "token_type": "bearer"
+          "error": "'Client Id' must not be empty."
         },
         "headers": {
           "Content-Type": "application/json"
         },
-        "status": 200
+        "status": 400
       }
     }
   ],
