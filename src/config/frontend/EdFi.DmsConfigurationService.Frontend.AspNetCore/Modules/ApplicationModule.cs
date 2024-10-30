@@ -223,12 +223,12 @@ public class ApplicationModule : IEndpointModule
         ILogger<ApplicationModule> logger
     )
     {
-        List<ApplicationCredentialsResponse> response = [];
         var apiClientsResult = await repository.GetApplicationApiClients(id);
         switch (apiClientsResult)
         {
             case ApplicationApiClientsResult.Success success:
-                foreach (var client in success.Clients)
+                var client = success.Clients.FirstOrDefault();
+                if (client != null)
                 {
                     try
                     {
@@ -239,7 +239,7 @@ public class ApplicationModule : IEndpointModule
                         switch (clientResetResult)
                         {
                             case ClientResetResult.Success resetSuccess:
-                                response.Add(
+                                return Results.Ok(
                                     new ApplicationCredentialsResponse()
                                     {
                                         Id = id,
@@ -247,7 +247,6 @@ public class ApplicationModule : IEndpointModule
                                         Secret = resetSuccess.ClientSecret,
                                     }
                                 );
-                                break;
                             case ClientResetResult.FailureUnknown failure:
                                 logger.LogError(
                                     "Error resetting client credentials {clientId} {clientUuid}: {message}",
@@ -269,22 +268,15 @@ public class ApplicationModule : IEndpointModule
                         return Results.Problem(statusCode: 500);
                     }
                 }
-
+                else
+                {
+                    return Results.NotFound();
+                }
                 break;
             case ApplicationApiClientsResult.FailureUnknown failure:
                 logger.LogError("Error fetching ApiClients: {failure}", failure);
                 return Results.Problem(statusCode: 500);
         }
-
-        switch (response.Count)
-        {
-            case <= 0:
-                logger.LogWarning("No credentials updated");
-                return Results.NotFound();
-            case 1:
-                return Results.Ok(response.Single());
-            case > 1:
-                return Results.Ok(response);
-        }
+        return Results.Problem(statusCode: 500);
     }
 }

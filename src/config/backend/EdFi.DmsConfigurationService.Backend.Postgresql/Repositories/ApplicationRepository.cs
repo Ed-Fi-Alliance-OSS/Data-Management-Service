@@ -237,6 +237,7 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
                 SELECT ClientId, ClientUuid
                 FROM dmscs.ApiClient
                 WHERE ApplicationId = @Id
+                ORDER BY Id
                 """;
 
             var clients = await connection.QueryAsync<ApiClient>(sql, new { Id = @id });
