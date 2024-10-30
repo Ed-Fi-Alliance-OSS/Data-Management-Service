@@ -41,13 +41,14 @@ public class ApplicationModule : IEndpointModule
         logger.LogDebug("Entering UpsertApplication");
         await validator.GuardAsync(command);
 
+        var clientId = Guid.NewGuid().ToString();
         var clientSecret = RandomNumberGenerator.GetString(
             "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
             32
         );
 
         var clientCreateResult = await clientRepository.CreateClientAsync(
-            command.ApplicationName,
+            clientId,
             clientSecret,
             command.ApplicationName
         );
@@ -60,8 +61,7 @@ public class ApplicationModule : IEndpointModule
             case ClientCreateResult.Success clientSuccess:
                 var repositoryResult = await applicationRepository.InsertApplication(
                     command,
-                    clientSuccess.ClientUuid,
-                    clientSecret
+                    new() { ClientId = clientId, ClientUuid = clientSuccess.ClientUuid }
                 );
 
                 if (repositoryResult is ApplicationInsertResult.FailureVendorNotFound)
@@ -79,7 +79,7 @@ public class ApplicationModule : IEndpointModule
                         new ApplicationCredentialsResponse()
                         {
                             Id = success.Id,
-                            Key = clientSuccess.ClientUuid.ToString(),
+                            Key = clientId,
                             Secret = clientSecret,
                         }
                     ),
@@ -164,19 +164,20 @@ public class ApplicationModule : IEndpointModule
         switch (apiClientsResult)
         {
             case ApplicationApiClientsResult.Success success:
-                foreach (var clientUuid in success.ClientUuids)
+                foreach (var client in success.Clients)
                 {
                     try
                     {
-                        logger.LogInformation("Deleting client {clientUuid}", clientUuid);
+                        logger.LogInformation("Deleting client {clientId}", client.ClientId);
                         var clientDeleteResult = await clientRepository.DeleteClientAsync(
-                            clientUuid.ToString()
+                            client.ClientUuid.ToString()
                         );
                         if (clientDeleteResult is ClientDeleteResult.FailureUnknown failureUnknown)
                         {
                             logger.LogWarning(
-                                "Client {ClientUuid} was not deleted: {failureMessage}",
-                                clientUuid,
+                                "Client {ClientId} {ClientUuid} was not deleted: {failureMessage}",
+                                client.ClientId,
+                                client.ClientUuid,
                                 failureUnknown.FailureMessage
                             );
                         }
@@ -184,8 +185,9 @@ public class ApplicationModule : IEndpointModule
                     catch (Exception ex)
                     {
                         logger.LogError(
-                            "Error deleting client {clientUuid}: {message}",
-                            clientUuid,
+                            "Error deleting client {clientId} {clientUuid}: {message}",
+                            client.ClientId,
+                            client.ClientUuid,
                             ex.Message
                         );
                         return Results.Problem(statusCode: 500);
@@ -226,13 +228,13 @@ public class ApplicationModule : IEndpointModule
         switch (apiClientsResult)
         {
             case ApplicationApiClientsResult.Success success:
-                foreach (var clientUuid in success.ClientUuids)
+                foreach (var client in success.Clients)
                 {
                     try
                     {
-                        logger.LogInformation("Resetting client {clientUuid}", clientUuid);
+                        logger.LogInformation("Resetting client {clientId}", client.ClientId);
                         var clientResetResult = await clientRepository.ResetCredentialsAsync(
-                            clientUuid.ToString()
+                            client.ClientUuid.ToString()
                         );
                         switch (clientResetResult)
                         {
@@ -241,15 +243,16 @@ public class ApplicationModule : IEndpointModule
                                     new ApplicationCredentialsResponse()
                                     {
                                         Id = id,
-                                        Key = clientUuid.ToString(),
+                                        Key = client.ClientId,
                                         Secret = resetSuccess.ClientSecret,
                                     }
                                 );
                                 break;
                             case ClientResetResult.FailureUnknown failure:
                                 logger.LogError(
-                                    "Error deleting client {clientUuid}: {message}",
-                                    clientUuid,
+                                    "Error resetting client credentials {clientId} {clientUuid}: {message}",
+                                    client.ClientId,
+                                    client.ClientUuid,
                                     failure.FailureMessage
                                 );
                                 return Results.Problem(statusCode: 500);
@@ -258,8 +261,9 @@ public class ApplicationModule : IEndpointModule
                     catch (Exception ex)
                     {
                         logger.LogError(
-                            "Error deleting client {clientUuid}: {message}",
-                            clientUuid,
+                            "Error deleting client {clientId} {clientUuid}: {message}",
+                            client.ClientId,
+                            client.ClientUuid,
                             ex.Message
                         );
                         return Results.Problem(statusCode: 500);

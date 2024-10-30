@@ -5,10 +5,8 @@
 
 namespace EdFi.DmsConfigurationService.DataModel.Application;
 
-public class ApplicationInsertCommand
+public class ApiClientInsertCommand
 {
-    public required string ApplicationName { get; set; }
-    public long VendorId { get; set; }
-    public required string ClaimSetName { get; set; }
-    public long[] EducationOrganizationIds { get; set; } = [];
+    public required string ClientId { get; set; }
+    public required Guid ClientUuid { get; set; }
 }

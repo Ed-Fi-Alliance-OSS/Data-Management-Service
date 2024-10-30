@@ -54,8 +54,7 @@ public class ApplicationTests : DatabaseTest
 
             var result = await _applicationRepository.InsertApplication(
                 application,
-                Guid.NewGuid(),
-                Guid.NewGuid().ToString()
+                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
             );
             result.Should().BeOfType<ApplicationInsertResult.Success>();
             _id = (result as ApplicationInsertResult.Success)!.Id;
@@ -109,8 +108,7 @@ public class ApplicationTests : DatabaseTest
 
             var insertResult = await _applicationRepository.InsertApplication(
                 _application,
-                Guid.NewGuid(),
-                Guid.NewGuid().ToString()
+                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
             );
             insertResult.Should().BeOfType<ApplicationInsertResult.FailureVendorNotFound>();
         }
@@ -148,8 +146,7 @@ public class ApplicationTests : DatabaseTest
 
             var insertResult = await _applicationRepository.InsertApplication(
                 _application,
-                Guid.Empty,
-                Guid.Empty.ToString()
+                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
             );
             insertResult.Should().BeOfType<ApplicationInsertResult.Success>();
             long appId = ((ApplicationInsertResult.Success)insertResult).Id;
@@ -201,7 +198,10 @@ public class ApplicationTests : DatabaseTest
                     EducationOrganizationIds = [],
                 };
 
-            var insertResult = await _applicationRepository.InsertApplication(command, Guid.Empty, "");
+            var insertResult = await _applicationRepository.InsertApplication(
+                command,
+                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
             insertResult.Should().BeOfType<ApplicationInsertResult.Success>();
 
             _id = ((ApplicationInsertResult.Success)insertResult).Id;
@@ -279,7 +279,10 @@ public class ApplicationTests : DatabaseTest
                     EducationOrganizationIds = [1, 2],
                 };
 
-            var insertResult = await _applicationRepository.InsertApplication(application1, Guid.Empty, "");
+            var insertResult = await _applicationRepository.InsertApplication(
+                application1,
+                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
             _application1Id = ((ApplicationInsertResult.Success)insertResult).Id;
 
             ApplicationInsertCommand application2 =
@@ -291,7 +294,10 @@ public class ApplicationTests : DatabaseTest
                     EducationOrganizationIds = [3, 4],
                 };
 
-            insertResult = await _applicationRepository.InsertApplication(application2, Guid.Empty, "");
+            insertResult = await _applicationRepository.InsertApplication(
+                application2,
+                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
             _application2Id = ((ApplicationInsertResult.Success)insertResult).Id;
 
             var deleteResult = await _applicationRepository.DeleteApplication(_application2Id);

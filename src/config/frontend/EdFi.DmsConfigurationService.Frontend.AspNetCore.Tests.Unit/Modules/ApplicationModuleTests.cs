@@ -72,8 +72,7 @@ public class ApplicationModuleTests
                     () =>
                         _applicationRepository.InsertApplication(
                             A<ApplicationInsertCommand>.Ignored,
-                            A<Guid>.Ignored,
-                            A<string>.Ignored
+                            A<ApiClientInsertCommand>.Ignored
                         )
                 )
                 .Returns(new ApplicationInsertResult.Success(1));
@@ -287,8 +286,7 @@ public class ApplicationModuleTests
                     () =>
                         _applicationRepository.InsertApplication(
                             A<ApplicationInsertCommand>.Ignored,
-                            A<Guid>.Ignored,
-                            A<string>.Ignored
+                            A<ApiClientInsertCommand>.Ignored
                         )
                 )
                 .Returns(new ApplicationInsertResult.FailureUnknown(""));
@@ -367,8 +365,7 @@ public class ApplicationModuleTests
                     () =>
                         _applicationRepository.InsertApplication(
                             A<ApplicationInsertCommand>.Ignored,
-                            Guid.Empty,
-                            ""
+                            A<ApiClientInsertCommand>.Ignored
                         )
                 )
                 .Returns(new ApplicationInsertResult());
@@ -460,8 +457,7 @@ public class ApplicationModuleTests
                     () =>
                         _applicationRepository.InsertApplication(
                             A<ApplicationInsertCommand>.Ignored,
-                            A<Guid>.Ignored,
-                            A<string>.Ignored
+                            A<ApiClientInsertCommand>.Ignored
                         )
                 )
                 .Returns(new ApplicationInsertResult.FailureVendorNotFound());
