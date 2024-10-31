@@ -5,6 +5,7 @@
 
 using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FluentValidation;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
@@ -45,8 +46,16 @@ public class RegisterRequest
 
         private bool BeUniqueClient(string? clientId)
         {
-            var clients = Task.Run(_clientRepository.GetAllClientsAsync).Result;
-            return !clients.Any(c => c.Equals(clientId, StringComparison.InvariantCultureIgnoreCase));
+            var clientResult = Task.Run(_clientRepository.GetAllClientsAsync).Result;
+
+            switch (clientResult)
+            {
+                case ClientClientsResult.Success clientSuccess:
+                    return !clientSuccess.ClientList.Any(c => c.Equals(clientId, StringComparison.InvariantCultureIgnoreCase));
+                case ClientClientsResult.FailureKeycloak clientFailure:
+                    throw new IdentityException(clientFailure.FailureMessage);
+            }
+            return true;
         }
     }
 }

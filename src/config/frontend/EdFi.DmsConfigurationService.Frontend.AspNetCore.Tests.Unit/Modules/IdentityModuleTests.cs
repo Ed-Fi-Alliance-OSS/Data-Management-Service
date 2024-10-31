@@ -37,7 +37,7 @@ public class RegisterEndpointTests
             )
             .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
         var clientList = A.Fake<IEnumerable<string>>();
-        A.CallTo(() => _clientRepository.GetAllClientsAsync()).Returns(Task.FromResult(clientList));
+        A.CallTo(() => _clientRepository.GetAllClientsAsync()).Returns(new ClientClientsResult.Success(clientList));
     }
 
     [Test]
@@ -198,7 +198,7 @@ public class RegisterEndpointTests
         var clientList = A.Fake<IEnumerable<string>>();
         _clientRepository = A.Fake<IClientRepository>();
         clientList = clientList.Append("CSClient2");
-        A.CallTo(() => _clientRepository.GetAllClientsAsync()).Returns(Task.FromResult(clientList));
+        A.CallTo(() => _clientRepository.GetAllClientsAsync()).Returns(new ClientClientsResult.Success(clientList));
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
