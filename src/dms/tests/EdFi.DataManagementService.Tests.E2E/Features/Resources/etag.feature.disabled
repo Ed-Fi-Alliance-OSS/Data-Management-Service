@@ -1,20 +1,10 @@
 Feature: Validates the functionality of the ETag
 
         Background:
-            Given the system has these descriptors
-                  | descriptorValue                                                |
-                  | uri://ed-fi.org/GradeLevelDescriptor#Seventh grade             |
-                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
-                  | uri://ed-fi.org/GradeLevelDescriptor#Sixth grade               |
+
             Given the system has these "students"
                   | studentUniqueId | birthDate  | firstName | lastSurname |
                   | 111111          | 2014-08-14 | Russella  | Mayers      |
-            Given the system has these "schools"
-                  | schoolId  | nameOfInstitution        | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
-                  | 255901044 | Grand Bend Middle School | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
-            Given the system has these "studentSchoolAssociations"
-                  | entryDate  | schoolReference | studentReference | entryGradeLevelDescriptor                                                               |
-                  | 2024-10-28 | 255901044       | 111111           | [ {"entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Seventh grade"} ] |
 
         @API-260
         Scenario: 01 Ensure that clients can retrieve an ETag in the response header
@@ -27,7 +17,7 @@ Feature: Validates the functionality of the ETag
                     "birthDate": "2014-08-14",
                     "firstName": "Russella",
                     "lastSurname": "Mayers",
-                    "_etag": "{etag}",
+                    "_etag": "{etag}"
                   }
                   """
               And the ETag is in the response header
