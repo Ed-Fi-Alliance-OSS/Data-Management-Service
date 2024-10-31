@@ -86,6 +86,7 @@ public class ApplicationModule : IEndpointModule
                             }
                         );
                     case ApplicationInsertResult.FailureUnknown:
+                        await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
                         return Results.Problem(statusCode: 500);
                 }
 
