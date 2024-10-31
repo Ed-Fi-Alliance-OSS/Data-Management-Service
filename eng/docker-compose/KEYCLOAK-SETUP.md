@@ -16,7 +16,6 @@ Keycloak locally using docker-compose.
    `keycloak.yml` Docker Compose file or run the `start-keycloak.ps1` script.
 
     ```pwsh
-    # Start keykloack
     ./start-keycloak.ps1
     ```
 
@@ -185,15 +184,13 @@ Please refer "Creating a Configuration Service Client" section above
    1. Navigate to Client scopes, then click `Create client scope`
    2. Enter a Name for the client scope (the name should match the ClaimSet name
       you want to use). Set the Type to `Default`, and check the option for
-      `Include in token scope`. Finally, click Save to create the client scope
-       ![ClaimSet scope creation](./images/image-24.png)
+      `Include in token scope`. Finally, click Save to create the client scope.
    3. To add the client scope to the DMS client you created, follow these steps:
 
       1. Select the client to which you want to assign the claim set scope.
       2. Go to the Client Scopes tab and click `Add Client Scope`.
       3. Choose the scope you want to assign from the list, then click `Add
          (Default)` to complete the assignment.
-      ![Add client scope ](./images/image-25.png)
 
 7. Creating and assigning the custom claims to DMS client
       1. To create a custom `namespacePrefixes` claim, select the client you
@@ -203,13 +200,74 @@ Please refer "Creating a Configuration Service Client" section above
       3. Click on `Add mapper` `By configuration`, then select "Hardcoded claim"
          mapper.
       4. Enter the following details for the custom claim mapper:
-            > [!NOTE]
-            > For the `Token Claim Name`, use: `namespacePrefixes`
-        ![Custom claim mapper settings](./images/image-26.png)
-      5. Save the mapper configuration.
-            > [!NOTE]
-            > The decoded token will appear as follows.
-            ![Token content](./images/image-27.png)
+
+         | Parameter                     | Value                      |
+         | ----------------------------- | -------------------------- |
+         | Name                          | `namespacePrefixes`        |
+         | Token CLaim Name              | `namespacePrefixes`        |
+         | Claim value                   | example: `uri://ed-fi.org` |
+         | Claim JSON type               | string                     |
+         | Add to ID token               | on                         |
+         | Add to access token           | on                         |
+         | Add to lightweight...         | off                        |
+         | Add to userinfo               | on                         |
+         | Add to access token response  | off                        |
+         | Add to to token introspection | on                         |
+
+      5. Save the mapper configuration. The decoded token will appear as follows.
+
+         <details>
+         <summary>Sample decoded JWT</summary>
+
+         > [!TIP]
+         > Look carefully at the `scope`, and look for `namespacePrefixes` close below it.
+
+         ```json
+         {
+             "exp": 1730409520,
+             "iat": 1730409220,
+             "jti": "3cd13f2f-53ba-434e-b1f0-e5375f14bd84",
+             "iss": "<http://localhost:8045/realms/edfi>",
+             "aud": "account",
+             "sub": "61e5e011-4e3c-418c-b974-535bf37bdcc6",
+             "typ": "Bearer",
+             "azp": "CSClientApp",
+             "acr": "1",
+             "allowed-origins": [
+                 "/*"
+             ],
+             "realm_access": {
+                 "roles": [
+                 "offline_access",
+                 "default-roles-edfi",
+                 "uma_authorization"
+                 ]
+             },
+             "resource_access": {
+                 "CSClientApp": {
+                 "roles": [
+                     "uma_protection"
+                 ]
+                 },
+                 "account": {
+                 "roles": [
+                     "manage-account",
+                     "manage-account-links",
+                     "view-profile"
+                 ]
+                 }
+             },
+             "scope": "email sis-vendor profile",
+             "email_verified": false,
+             "clientHost": "172.19.0.1",
+             "namespacePrefixes": "uri://ed-fi.org",
+             "preferred_username": "service-account-csclientapp",
+             "clientAddress": "172.19.0.1",
+             "client_id": "CSClientApp"
+             }
+         ```
+
+         </details>
 
 8. At this point, your DMS client is fully configured with the necessary realm
    roles and claim mappings.
