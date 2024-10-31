@@ -24,6 +24,8 @@ public class ApplicationTests : DatabaseTest
     public class InsertTest : ApplicationTests
     {
         private long _id;
+        private readonly string _clientId = Guid.NewGuid().ToString();
+        private readonly Guid _clientUuid = Guid.NewGuid();
 
         [SetUp]
         public async Task Setup()
@@ -54,7 +56,7 @@ public class ApplicationTests : DatabaseTest
 
             var result = await _applicationRepository.InsertApplication(
                 application,
-                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+                new() { ClientId = _clientId, ClientUuid = _clientUuid }
             );
             result.Should().BeOfType<ApplicationInsertResult.Success>();
             _id = (result as ApplicationInsertResult.Success)!.Id;
@@ -87,6 +89,18 @@ public class ApplicationTests : DatabaseTest
             application.ClaimSetName.Should().Be("Test Claim set");
             application.VendorId.Should().Be(_vendorId);
             application.EducationOrganizationIds.Count.Should().Be(3);
+        }
+
+        [Test]
+        public async Task Should_get_api_clients()
+        {
+            var getApiClientsResult = await _applicationRepository.GetApplicationApiClients(_id);
+            getApiClientsResult.Should().BeOfType<ApplicationApiClientsResult.Success>();
+
+            var apiClients = ((ApplicationApiClientsResult.Success)getApiClientsResult).Clients;
+            apiClients.Length.Should().Be(1);
+            apiClients[0].ClientId.Should().Be(_clientId);
+            apiClients[0].ClientUuid.Should().Be(_clientUuid);
         }
     }
 
@@ -336,6 +350,16 @@ public class ApplicationTests : DatabaseTest
             application.ClaimSetName.Should().Be("Test Claim set");
             application.VendorId.Should().Be(_vendorId);
             application.EducationOrganizationIds.Count.Should().Be(2);
+        }
+
+        [Test]
+        public async Task Should_not_get_api_clients()
+        {
+            var getApiClientsResult = await _applicationRepository.GetApplicationApiClients(_application2Id);
+            getApiClientsResult.Should().BeOfType<ApplicationApiClientsResult.Success>();
+
+            var apiClients = ((ApplicationApiClientsResult.Success)getApiClientsResult).Clients;
+            apiClients.Length.Should().Be(0);
         }
     }
 }

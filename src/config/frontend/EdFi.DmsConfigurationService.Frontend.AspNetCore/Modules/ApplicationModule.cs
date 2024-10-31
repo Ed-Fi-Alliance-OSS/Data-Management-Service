@@ -64,28 +64,32 @@ public class ApplicationModule : IEndpointModule
                     new() { ClientId = clientId, ClientUuid = clientSuccess.ClientUuid }
                 );
 
-                if (repositoryResult is ApplicationInsertResult.FailureVendorNotFound)
+                switch (repositoryResult)
                 {
-                    throw new ValidationException(
-                        new[] { new ValidationFailure("VendorId", $"Reference 'VendorId' does not exist.") }
-                    );
+                    case ApplicationInsertResult.Success success:
+                        var request = httpContext.Request;
+                        return Results.Created(
+                            $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
+                            new ApplicationCredentialsResponse()
+                            {
+                                Id = success.Id,
+                                Key = clientId,
+                                Secret = clientSecret,
+                            }
+                        );
+                    case ApplicationInsertResult.FailureVendorNotFound:
+                        await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
+                        throw new ValidationException(
+                            new[]
+                            {
+                                new ValidationFailure("VendorId", $"Reference 'VendorId' does not exist."),
+                            }
+                        );
+                    case ApplicationInsertResult.FailureUnknown:
+                        return Results.Problem(statusCode: 500);
                 }
 
-                var request = httpContext.Request;
-                return repositoryResult switch
-                {
-                    ApplicationInsertResult.Success success => Results.Created(
-                        $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
-                        new ApplicationCredentialsResponse()
-                        {
-                            Id = success.Id,
-                            Key = clientId,
-                            Secret = clientSecret,
-                        }
-                    ),
-                    ApplicationInsertResult.FailureUnknown => Results.Problem(statusCode: 500),
-                    _ => Results.Problem(statusCode: 500),
-                };
+                break;
         }
 
         logger.LogError("Failure creating client");
@@ -174,8 +178,8 @@ public class ApplicationModule : IEndpointModule
                         );
                         if (clientDeleteResult is ClientDeleteResult.FailureUnknown failureUnknown)
                         {
-                            logger.LogWarning(
-                                "Client {ClientId} {ClientUuid} was not deleted: {failureMessage}",
+                            logger.LogError(
+                                "Error deleting client {clientId} {clientUuid}: {failureMessage}",
                                 client.ClientId,
                                 client.ClientUuid,
                                 failureUnknown.FailureMessage
@@ -260,7 +264,7 @@ public class ApplicationModule : IEndpointModule
                     catch (Exception ex)
                     {
                         logger.LogError(
-                            "Error deleting client {clientId} {clientUuid}: {message}",
+                            "Error resetting client credentials {clientId} {clientUuid}: {message}",
                             client.ClientId,
                             client.ClientUuid,
                             ex.Message
