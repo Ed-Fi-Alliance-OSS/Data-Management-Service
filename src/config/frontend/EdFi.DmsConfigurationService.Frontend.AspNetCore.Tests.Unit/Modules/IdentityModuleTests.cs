@@ -308,7 +308,9 @@ public class RegisterEndpointTests
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
-        content.Should().Contain("Keycloak is unreachable.");
+        string expectedResponse =
+            @"{""title"":""Keycloak is unreachable."",""message"":""One or more errors occurred. (No connection could be made because the target machine actively refused it)""}";
+        content.Should().Be(expectedResponse);
     }
 }
 
@@ -422,5 +424,47 @@ public class TokenEndpointTests
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         content.Should().Contain("Invalid client or Invalid client credentials");
+    }
+
+    [Test]
+    public async Task When_provider_is_unreacheable()
+    {
+        //Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            _tokenManager = A.Fake<ITokenManager>();
+
+            var innerException = new Exception(
+                "No connection could be made because the target machine actively refused it"
+            );
+            A.CallTo(
+                    () =>
+                        _tokenManager.GetAccessTokenAsync(
+                            A<IEnumerable<KeyValuePair<string, string>>>.Ignored
+                        )
+                )
+                .Throws(new AggregateException(innerException));
+
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection.AddTransient((_) => new TokenRequest.Validator());
+                    collection.AddTransient((_) => _tokenManager!);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        //Act
+        var requestContent = new { clientid = "CSClient3", clientsecret = "test123@Puiu" };
+        var response = await client.PostAsJsonAsync("/connect/token", requestContent);
+        string content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+        string expectedResponse =
+            @"{""title"":""Keycloak is unreachable."",""message"":""One or more errors occurred. (No connection could be made because the target machine actively refused it)""}";
+        content.Should().Be(expectedResponse);
     }
 }

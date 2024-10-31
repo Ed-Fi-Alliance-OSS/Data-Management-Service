@@ -88,7 +88,7 @@ public class RequestLoggingMiddleware(RequestDelegate next)
                                     new
                                     {
                                         title = "Keycloak is unreachable.",
-                                        message = "No connection could be made because the target machine actively refused it."
+                                        message = ex.Message,
                                     }
                                 )
                             ),
