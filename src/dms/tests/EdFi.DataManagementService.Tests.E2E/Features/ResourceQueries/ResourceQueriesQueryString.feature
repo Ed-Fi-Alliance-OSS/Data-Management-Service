@@ -27,9 +27,27 @@ Feature: Query String handling for GET requests for Resource Queries
                   }]
                   """
 
+        @API-124
+        Scenario: 01.1 Ensure clients can GET information when querying by valid datetime ignoring time
+             When a GET request is made to "/ed-fi/academicWeeks?beginDate=2024-05-15T17:30:00.000000Z"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [{
+                    "id": "{id}",
+                    "schoolReference": {
+                        "schoolId": 2
+                    },
+                    "weekIdentifier": "Week One",
+                    "beginDate": "2024-05-15",
+                    "endDate": "2024-05-22",
+                    "totalInstructionalDays": 2
+                  }]
+                  """
+
         @API-125
         Scenario: 02 Ensure clients can't GET information when querying by invalid date
-             When a GET request is made to "/ed-fi/academicWeeks?beginDate=024-04-09"
+             When a GET request is made to "/ed-fi/academicWeeks?beginDate=099-99-09"
              Then it should respond with 400
               And the response body is
                   """
@@ -40,7 +58,7 @@ Feature: Query String handling for GET requests for Resource Queries
                        "status": 400,
                        "correlationId": null,
                        "validationErrors": {
-                           "$.beginDate": ["The value '024-04-09' is not valid for beginDate."]
+                           "$.beginDate": ["The value '099-99-09' is not valid for beginDate."]
                        },
                        "errors": []
                    }
