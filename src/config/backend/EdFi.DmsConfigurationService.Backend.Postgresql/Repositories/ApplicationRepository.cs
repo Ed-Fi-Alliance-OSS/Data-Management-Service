@@ -16,8 +16,7 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
 {
     public async Task<ApplicationInsertResult> InsertApplication(
         ApplicationInsertCommand command,
-        Guid clientUuid,
-        string clientSecret
+        ApiClientInsertCommand clientCommand
     )
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
@@ -47,11 +46,19 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
             await connection.ExecuteAsync(sql, educationOrganizations);
 
             sql = """
-                INSERT INTO dmscs.ApiClient (ApplicationId, ClientUuid)
-                VALUES (@ApplicationId, @clientUuid);
+                INSERT INTO dmscs.ApiClient (ApplicationId, ClientId, ClientUuid)
+                VALUES (@ApplicationId, @ClientId, @ClientUuid);
                 """;
 
-            await connection.ExecuteAsync(sql, new { ApplicationId = id, ClientUuid = clientUuid });
+            await connection.ExecuteAsync(
+                sql,
+                new
+                {
+                    ApplicationId = id,
+                    clientCommand.ClientId,
+                    clientCommand.ClientUuid,
+                }
+            );
 
             await transaction.CommitAsync();
             return new ApplicationInsertResult.Success(id);
@@ -227,14 +234,15 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
         try
         {
             string sql = """
-                SELECT ClientUuid
+                SELECT ClientId, ClientUuid
                 FROM dmscs.ApiClient
                 WHERE ApplicationId = @Id
+                ORDER BY Id
                 """;
 
-            var clientUuids = await connection.QueryAsync<Guid>(sql, new { Id = @id });
+            var clients = await connection.QueryAsync<ApiClient>(sql, new { Id = @id });
 
-            return new ApplicationApiClientsResult.Success(clientUuids.ToArray());
+            return new ApplicationApiClientsResult.Success(clients.ToArray());
         }
         catch (Exception ex)
         {
