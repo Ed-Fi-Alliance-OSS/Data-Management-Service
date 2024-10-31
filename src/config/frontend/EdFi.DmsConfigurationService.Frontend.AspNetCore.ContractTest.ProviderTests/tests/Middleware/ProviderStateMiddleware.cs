@@ -22,18 +22,16 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
 {
     public class ProviderStateMiddleware
     {
-        private static readonly JsonSerializerOptions Options = new()
+        private static readonly JsonSerializerOptions _options = new()
         {
             PropertyNameCaseInsensitive = true
         };
 
         private readonly RequestDelegate _next;
         private readonly IDictionary<string, Func<IDictionary<string, object>, Task>>? _providerStates;
-        //private readonly FakeTokenManger _fakeTokenManager;
         private readonly FakeTokenManager _fakeTokenManager;
 
         public ProviderStateMiddleware(RequestDelegate next, FakeTokenManager fakeTokenManager)
-        //public ProviderStateMiddleware(RequestDelegate next, FakeTokenManager fakeTokenManager)
         {
             _next = next;
             _fakeTokenManager = fakeTokenManager;
@@ -42,34 +40,16 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
                 ["A request for an access token with invalid credentials that throws an error from Keycloak"] = SetShouldThrowExceptionToTrue
             };
         }
+
         private async Task SetShouldThrowExceptionToTrue(IDictionary<string, object> parameters)
         {
             //// Set ShouldThrowException to true
             ////this._fakeTokenManager.ShouldThrowException = true;
-            //_fakeTokenManager.SetShouldThrowExceptionToTrue();
+            _fakeTokenManager.ShouldThrowException = true;
 
             // If you don't have anything to await, you can still just return Task.CompletedTask
             await Task.CompletedTask; // This is effectively a no-op.
         }
-        //PACT EXAMPLE
-        /* private async Task CreateAddress(IDictionary<string, object> parameters)
-        {
-            JsonElement id = (JsonElement)parameters["id"];
-
-            AddressDto address = new AddressDto
-            {
-                Id = id.GetString()!,
-                AddressType = "delivery",
-                Street = "Main street",
-                Number = 123,
-                City = "Sun City",
-                ZipCode = 90210,
-                State = "Yukon",
-                Country = "United States"
-            };
-
-            await _addresses.AddAddressAsync(address);
-        } */
 
         public async Task InvokeAsync(HttpContext context)
         {
@@ -92,7 +72,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
 
                 try
                 {
-                    ProviderState? providerState = JsonSerializer.Deserialize<ProviderState>(jsonRequestBody, Options);
+                    ProviderState? providerState = JsonSerializer.Deserialize<ProviderState>(jsonRequestBody, _options);
 
                     // Ensure _providerStates is not null and providerState.State is not null or empty
                     if (this._providerStates != null && !string.IsNullOrEmpty(providerState?.State))

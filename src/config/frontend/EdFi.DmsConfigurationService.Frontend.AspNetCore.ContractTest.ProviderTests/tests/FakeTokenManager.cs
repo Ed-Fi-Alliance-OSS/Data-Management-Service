@@ -18,17 +18,22 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
             "token_type": "bearer"
         }
         """;
+        public bool ShouldThrowException = false;
 
         public Task<string> GetAccessTokenAsync(IEnumerable<KeyValuePair<string, string>> parameters)
         {
             var clientIdPair = parameters.FirstOrDefault(p => p.Key == "client_id");
             var clientSecretPair = parameters.FirstOrDefault(p => p.Key == "client_secret");
-            /* if (clientIdPair.Value == "CSClient1" && clientSecretPair.Value == "test123@Puiu")
+            if (!ShouldThrowException)
             {
                 return Task.FromResult(FakeToken);
-            } */
-            return Task.FromResult(FakeToken);
-            //throw new Exception("Error from Keycloak");
+            }
+            /* if (clientIdPair.Value == "CSClient1" && clientSecretPair.Value == "test123@Puiu")
+{
+   return Task.FromResult(FakeToken);
+} */
+
+            throw new Exception("Error from Keycloak");
         }
     }
 

@@ -74,7 +74,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
 
             verifier!.ServiceProvider("DMS Configuration Service API", pactURL)
                 .WithFileSource(new FileInfo(pactFile))
-                //.WithProviderStateUrl(new Uri("http://localhost:5126/provider-states"))
+                .WithProviderStateUrl(new Uri(pactURL + "provider-states"))
                 .Verify();
 
         }

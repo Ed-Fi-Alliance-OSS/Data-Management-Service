@@ -11,6 +11,7 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider.Tests.Middleware;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider.Tests
 {
@@ -32,6 +33,14 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
         {
             app.UseRouting();
             app.UseMiddleware<RequestLoggingMiddleware>();
+            // Get the FakeTokenManager instance from the DI container.
+            var fakeTokenManager = app.ApplicationServices.GetRequiredService<ITokenManager>() as FakeTokenManager;
+            if (fakeTokenManager == null)
+            {
+                throw new InvalidOperationException("FakeTokenManager instance could not be resolved.");
+            }
+            // Use the middleware and pass the FakeTokenManager instance to it.
+            app.UseMiddleware<ProviderStateMiddleware>(fakeTokenManager);
             app.UseEndpoints(endpoints =>
             {
                 var healthCheck = new HealthModule();
