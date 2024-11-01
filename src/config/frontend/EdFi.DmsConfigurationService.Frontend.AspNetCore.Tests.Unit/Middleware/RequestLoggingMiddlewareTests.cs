@@ -116,12 +116,11 @@ internal class RequestLoggingMiddlewareTests
         }
 
         [Test]
-        public async Task When_middleware_receives_aggregate_exception_with_404_status_code()
+        public async Task When_middleware_receives_keycloack_exception_with_404_status_code()
         {
             // Arrange
             var httpContext = new DefaultHttpContext { Response = { Body = new MemoryStream() } };
-            var innerException = new Exception("status code 404");
-            var exception = new KeycloakException(innerException);
+            var exception = new KeycloakException("status code 404");
 
             A.CallTo(() => _next.Invoke(httpContext)).Throws(exception);
 
@@ -136,6 +135,29 @@ internal class RequestLoggingMiddlewareTests
 
             // Assert
             responseBody.Should().Contain("Invalid realm.");
+            statusCode.Should().Be((int)HttpStatusCode.NotFound);
+        }
+
+        [Test]
+        public async Task When_middleware_receives_keycloack_exception_bad_gateway()
+        {
+            // Arrange
+            var httpContext = new DefaultHttpContext { Response = { Body = new MemoryStream() } };
+            var exception = new KeycloakException("No connection could be made");
+
+            A.CallTo(() => _next.Invoke(httpContext)).Throws(exception);
+
+            var middleWare = new RequestLoggingMiddleware(_next);
+
+            // Act
+            await middleWare.Invoke(httpContext, _logger);
+
+            httpContext.Response.Body.Seek(0, SeekOrigin.Begin);
+            string responseBody = await new StreamReader(httpContext.Response.Body).ReadToEndAsync();
+            int statusCode = httpContext.Response.StatusCode;
+
+            // Assert
+            responseBody.Should().Contain("Keycloak is unreachable.");
             statusCode.Should().Be((int)HttpStatusCode.BadGateway);
         }
 

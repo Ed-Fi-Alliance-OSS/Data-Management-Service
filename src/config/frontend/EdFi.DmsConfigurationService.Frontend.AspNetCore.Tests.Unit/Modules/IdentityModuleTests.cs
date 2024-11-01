@@ -275,9 +275,6 @@ public class RegisterEndpointTests
         {
             _clientRepository = A.Fake<IClientRepository>();
 
-            var innerException = new KeycloakException(
-                "No connection could be made because the target machine actively refused it"
-            );
             A.CallTo(
                     () =>
                         _clientRepository.CreateClientAsync(
@@ -286,7 +283,11 @@ public class RegisterEndpointTests
                             A<string>.Ignored
                         )
                 )
-                .Throws(new KeycloakException(innerException));
+                .Throws(
+                    new KeycloakException(
+                        "No connection could be made because the target machine actively refused it."
+                    )
+                );
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -312,7 +313,7 @@ public class RegisterEndpointTests
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
         string expectedResponse =
-            @"{""title"":""Keycloak is unreachable."",""message"":""One or more errors occurred. (No connection could be made because the target machine actively refused it)""}";
+            @"{""title"":""Keycloak is unreachable."",""message"":""No connection could be made because the target machine actively refused it.""}";
         content.Should().Be(expectedResponse);
     }
 }
@@ -437,16 +438,13 @@ public class TokenEndpointTests
         {
             _tokenManager = A.Fake<ITokenManager>();
 
-            var innerException = new KeycloakException(
-                "No connection could be made because the target machine actively refused it"
-            );
             A.CallTo(
                     () =>
                         _tokenManager.GetAccessTokenAsync(
                             A<IEnumerable<KeyValuePair<string, string>>>.Ignored
                         )
                 )
-                .Throws(new KeycloakException(innerException));
+                .Throws(new KeycloakException("No connection could be made because the target machine actively refused it."));
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -467,7 +465,7 @@ public class TokenEndpointTests
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
         string expectedResponse =
-            @"{""title"":""Keycloak is unreachable."",""message"":""One or more errors occurred. (No connection could be made because the target machine actively refused it)""}";
+            @"{""title"":""Keycloak is unreachable."",""message"":""No connection could be made because the target machine actively refused it.""}";
         content.Should().Be(expectedResponse);
     }
 }

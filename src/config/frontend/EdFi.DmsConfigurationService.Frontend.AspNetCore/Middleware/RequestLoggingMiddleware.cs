@@ -49,9 +49,10 @@ public class RequestLoggingMiddleware(RequestDelegate next)
                         ValidationException => (int)HttpStatusCode.BadRequest,
                         BadHttpRequestException => (int)HttpStatusCode.BadRequest,
                         IdentityException => (int)HttpStatusCode.Unauthorized,
-                        KeycloakException => (int)HttpStatusCode.BadGateway,
-                        AggregateException ae when ae.Message.Contains("status code 404")
+                        KeycloakException ke when ke.Message.Contains("No connection could be made")
                             => (int)HttpStatusCode.BadGateway,
+                        KeycloakException ke when ke.Message.Contains("status code 404")
+                            => (int)HttpStatusCode.NotFound,
                         _ => (int)HttpStatusCode.InternalServerError,
                     },
                     Body = ex switch
@@ -81,14 +82,14 @@ public class RequestLoggingMiddleware(RequestDelegate next)
                                 )
                             ),
 
-                        KeycloakException
+                        KeycloakException ke when ke.Message.Contains("No connection could be made")
                             => JsonNode.Parse(
                                 JsonSerializer.Serialize(
                                     new { title = "Keycloak is unreachable.", message = ex.Message, }
                                 )
                             ),
 
-                        AggregateException ae when ae.Message.Contains("status code 404")
+                        KeycloakException ke when ke.Message.Contains("status code 404")
                             => JsonNode.Parse(
                                 JsonSerializer.Serialize(
                                     new
