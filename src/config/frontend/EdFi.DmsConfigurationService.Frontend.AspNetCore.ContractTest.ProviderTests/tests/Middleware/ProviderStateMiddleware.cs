@@ -41,14 +41,11 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
             };
         }
 
-        private async Task SetShouldThrowExceptionToTrue(IDictionary<string, object> parameters)
+        private Task SetShouldThrowExceptionToTrue(IDictionary<string, object> parameters)
         {
-            //// Set ShouldThrowException to true
-            ////this._fakeTokenManager.ShouldThrowException = true;
             _fakeTokenManager.ShouldThrowException = true;
-
-            // If you don't have anything to await, you can still just return Task.CompletedTask
-            await Task.CompletedTask; // This is effectively a no-op.
+            // Return a completed task since there’s no async operation here
+            return Task.CompletedTask;
         }
 
         public async Task InvokeAsync(HttpContext context)

@@ -21,18 +21,17 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
 
         public void ConfigureServices(IServiceCollection services)
         {
-            services.AddTransient<Model.TokenRequest.Validator>();
-            services.AddTransient<Model.RegisterRequest.Validator>();
-            services.AddTransient<IClientRepository, ClientRepository>();
-            services.AddTransient<ITokenManager, FakeTokenManager>();
-            services.AddTransient<IEndpointModule, IdentityModule>();
-            services.AddTransient<IEndpointModule, HealthModule>();
+            services.AddSingleton<Model.TokenRequest.Validator>();
+            services.AddSingleton<Model.RegisterRequest.Validator>();
+            services.AddSingleton<IClientRepository, ClientRepository>();
+            services.AddSingleton<ITokenManager, FakeTokenManager>();
+            services.AddSingleton<IEndpointModule, IdentityModule>();
+            services.AddSingleton<IEndpointModule, HealthModule>();
         }
 
         public static void Configure(IApplicationBuilder app)
         {
             app.UseRouting();
-            app.UseMiddleware<RequestLoggingMiddleware>();
             // Get the FakeTokenManager instance from the DI container.
             var fakeTokenManager = app.ApplicationServices.GetRequiredService<ITokenManager>() as FakeTokenManager;
             if (fakeTokenManager == null)
@@ -41,6 +40,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
             }
             // Use the middleware and pass the FakeTokenManager instance to it.
             app.UseMiddleware<ProviderStateMiddleware>(fakeTokenManager);
+            app.UseMiddleware<RequestLoggingMiddleware>();
             app.UseEndpoints(endpoints =>
             {
                 var healthCheck = new HealthModule();

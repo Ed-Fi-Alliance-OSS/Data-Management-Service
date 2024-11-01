@@ -5,6 +5,11 @@
   "interactions": [
     {
       "description": "A request for an access token with invalid credentials that throws an error from Keycloak",
+      "providerStates": [
+        {
+          "name": "A request for an access token with invalid credentials that throws an error from Keycloak"
+        }
+      ],
       "request": {
         "body": {
           "clientid": "client123",
@@ -18,7 +23,7 @@
       },
       "response": {
         "body": {
-          "error": "Error from Keycloak"
+          "error": "Client token generation failed with: Error from Keycloak"
         },
         "headers": {
           "Content-Type": "application/json"

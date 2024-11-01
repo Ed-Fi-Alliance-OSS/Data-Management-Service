@@ -97,7 +97,9 @@ public class ConsumerIdentityTest
     [Test]
     public async Task When_error_from_backend()
     {
-        pact.UponReceiving("A request for an access token with invalid credentials that throws an error from Keycloak")
+        pact
+            .UponReceiving("A request for an access token with invalid credentials that throws an error from Keycloak")
+            .Given("A request for an access token with invalid credentials that throws an error from Keycloak")
             .WithRequest(HttpMethod.Post, "/connect/token")
             .WithHeader("Content-Type", "application/json")
             .WithJsonBody(new

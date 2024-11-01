@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FluentValidation;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider.Tests
@@ -28,11 +29,6 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
             {
                 return Task.FromResult(FakeToken);
             }
-            /* if (clientIdPair.Value == "CSClient1" && clientSecretPair.Value == "test123@Puiu")
-{
-   return Task.FromResult(FakeToken);
-} */
-
             throw new Exception("Error from Keycloak");
         }
     }
