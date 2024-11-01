@@ -24,6 +24,8 @@ public class ApplicationTests : DatabaseTest
     public class InsertTest : ApplicationTests
     {
         private long _id;
+        private readonly string _clientId = Guid.NewGuid().ToString();
+        private readonly Guid _clientUuid = Guid.NewGuid();
 
         [SetUp]
         public async Task Setup()
@@ -54,8 +56,7 @@ public class ApplicationTests : DatabaseTest
 
             var result = await _applicationRepository.InsertApplication(
                 application,
-                Guid.NewGuid(),
-                Guid.NewGuid().ToString()
+                new() { ClientId = _clientId, ClientUuid = _clientUuid }
             );
             result.Should().BeOfType<ApplicationInsertResult.Success>();
             _id = (result as ApplicationInsertResult.Success)!.Id;
@@ -89,6 +90,18 @@ public class ApplicationTests : DatabaseTest
             application.VendorId.Should().Be(_vendorId);
             application.EducationOrganizationIds.Count.Should().Be(3);
         }
+
+        [Test]
+        public async Task Should_get_api_clients()
+        {
+            var getApiClientsResult = await _applicationRepository.GetApplicationApiClients(_id);
+            getApiClientsResult.Should().BeOfType<ApplicationApiClientsResult.Success>();
+
+            var apiClients = ((ApplicationApiClientsResult.Success)getApiClientsResult).Clients;
+            apiClients.Length.Should().Be(1);
+            apiClients[0].ClientId.Should().Be(_clientId);
+            apiClients[0].ClientUuid.Should().Be(_clientUuid);
+        }
     }
 
     [TestFixture]
@@ -109,8 +122,7 @@ public class ApplicationTests : DatabaseTest
 
             var insertResult = await _applicationRepository.InsertApplication(
                 _application,
-                Guid.NewGuid(),
-                Guid.NewGuid().ToString()
+                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
             );
             insertResult.Should().BeOfType<ApplicationInsertResult.FailureVendorNotFound>();
         }
@@ -148,8 +160,7 @@ public class ApplicationTests : DatabaseTest
 
             var insertResult = await _applicationRepository.InsertApplication(
                 _application,
-                Guid.Empty,
-                Guid.Empty.ToString()
+                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
             );
             insertResult.Should().BeOfType<ApplicationInsertResult.Success>();
             long appId = ((ApplicationInsertResult.Success)insertResult).Id;
@@ -201,7 +212,10 @@ public class ApplicationTests : DatabaseTest
                     EducationOrganizationIds = [],
                 };
 
-            var insertResult = await _applicationRepository.InsertApplication(command, Guid.Empty, "");
+            var insertResult = await _applicationRepository.InsertApplication(
+                command,
+                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
             insertResult.Should().BeOfType<ApplicationInsertResult.Success>();
 
             _id = ((ApplicationInsertResult.Success)insertResult).Id;
@@ -279,7 +293,10 @@ public class ApplicationTests : DatabaseTest
                     EducationOrganizationIds = [1, 2],
                 };
 
-            var insertResult = await _applicationRepository.InsertApplication(application1, Guid.Empty, "");
+            var insertResult = await _applicationRepository.InsertApplication(
+                application1,
+                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
             _application1Id = ((ApplicationInsertResult.Success)insertResult).Id;
 
             ApplicationInsertCommand application2 =
@@ -291,7 +308,10 @@ public class ApplicationTests : DatabaseTest
                     EducationOrganizationIds = [3, 4],
                 };
 
-            insertResult = await _applicationRepository.InsertApplication(application2, Guid.Empty, "");
+            insertResult = await _applicationRepository.InsertApplication(
+                application2,
+                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
             _application2Id = ((ApplicationInsertResult.Success)insertResult).Id;
 
             var deleteResult = await _applicationRepository.DeleteApplication(_application2Id);
@@ -330,6 +350,16 @@ public class ApplicationTests : DatabaseTest
             application.ClaimSetName.Should().Be("Test Claim set");
             application.VendorId.Should().Be(_vendorId);
             application.EducationOrganizationIds.Count.Should().Be(2);
+        }
+
+        [Test]
+        public async Task Should_not_get_api_clients()
+        {
+            var getApiClientsResult = await _applicationRepository.GetApplicationApiClients(_application2Id);
+            getApiClientsResult.Should().BeOfType<ApplicationApiClientsResult.Success>();
+
+            var apiClients = ((ApplicationApiClientsResult.Success)getApiClientsResult).Clients;
+            apiClients.Length.Should().Be(0);
         }
     }
 }

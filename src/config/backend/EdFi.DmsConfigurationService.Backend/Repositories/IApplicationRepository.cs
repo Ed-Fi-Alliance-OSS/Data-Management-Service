@@ -12,10 +12,8 @@ public interface IApplicationRepository
 {
     Task<ApplicationInsertResult> InsertApplication(
         ApplicationInsertCommand command,
-        Guid clientUuid,
-        string clientSecret
+        ApiClientInsertCommand clientCommand
     );
-
     Task<ApplicationQueryResult> QueryApplication(PagingQuery query);
     Task<ApplicationGetResult> GetApplication(long id);
     Task<ApplicationUpdateResult> UpdateApplication(ApplicationUpdateCommand command);
@@ -120,10 +118,25 @@ public record ApplicationApiClientsResult
     /// <summary>
     /// Successful retrieval of clientUuids
     /// </summary>
-    public record Success(Guid[] ClientUuids) : ApplicationApiClientsResult();
+    public record Success(ApiClient[] Clients) : ApplicationApiClientsResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : ApplicationApiClientsResult();
 }
+
+/// <summary>
+/// Relevant keycloak identifying values for api clients
+/// </summary>
+public record ApiClient(
+    /// <summary>
+    /// The identifying string of a client. Must be unique per realm.
+    /// </summary>
+    string ClientId,
+    /// <summary>
+    /// The behind the scenes globally unique identifier for the client.
+    /// This must be used for deleting the resource and resetting credentials.
+    /// </summary>
+    Guid ClientUuid
+);

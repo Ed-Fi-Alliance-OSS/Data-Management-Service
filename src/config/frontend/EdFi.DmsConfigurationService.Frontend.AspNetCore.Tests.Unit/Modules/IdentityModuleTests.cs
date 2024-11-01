@@ -35,7 +35,7 @@ public class RegisterEndpointTests
                         A<string>.Ignored
                     )
             )
-            .Returns(Task.FromResult(true));
+            .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
         var clientList = A.Fake<IEnumerable<string>>();
         A.CallTo(() => _clientRepository.GetAllClientsAsync()).Returns(Task.FromResult(clientList));
     }

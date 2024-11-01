@@ -5,10 +5,9 @@
 
 namespace EdFi.DmsConfigurationService.DataModel.Application;
 
-public class ApplicationInsertCommand
+public class ApplicationCredentialsResponse
 {
-    public required string ApplicationName { get; set; }
-    public long VendorId { get; set; }
-    public required string ClaimSetName { get; set; }
-    public long[] EducationOrganizationIds { get; set; } = [];
+    public long Id { get; set; }
+    public required string Key { get; set; }
+    public required string Secret { get; set; }
 }

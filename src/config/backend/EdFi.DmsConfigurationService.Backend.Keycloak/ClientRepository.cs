@@ -20,7 +20,11 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
         );
     private readonly string _realm = keycloakContext.Realm!;
 
-    public async Task<bool> CreateClientAsync(string clientId, string clientSecret, string displayName)
+    public async Task<ClientCreateResult> CreateClientAsync(
+        string clientId,
+        string clientSecret,
+        string displayName
+    )
     {
         var realmRoles = await _keycloakClient.GetRolesAsync(_realm);
 
@@ -39,28 +43,30 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
             x.Name.Equals(keycloakContext.ServiceRole, StringComparison.InvariantCultureIgnoreCase)
         );
 
-        var createdClientId = await _keycloakClient.CreateClientAndRetrieveClientIdAsync(_realm, client);
-        if (!string.IsNullOrEmpty(createdClientId))
+        var createdClientUuid = await _keycloakClient.CreateClientAndRetrieveClientIdAsync(_realm, client);
+        if (!string.IsNullOrEmpty(createdClientUuid))
         {
             if (clientRole != null)
             {
                 // Assign the service role to client's service account
-                var serviceAccountUserId = await GetServiceAccountUserIdAsync(createdClientId);
+                var serviceAccountUserId = await GetServiceAccountUserIdAsync(createdClientUuid);
                 var result = await _keycloakClient.AddRealmRoleMappingsToUserAsync(
                     _realm,
                     serviceAccountUserId,
                     [clientRole]
                 );
-                return result;
+                return new ClientCreateResult.Success(Guid.Parse(createdClientUuid));
             }
             else
             {
-                throw new Exception($"Role {keycloakContext.ServiceRole} not found.");
+                return new ClientCreateResult.FailureUnknown(
+                    $"Role {keycloakContext.ServiceRole} not found."
+                );
             }
         }
         else
         {
-            throw new Exception($"Error while creating the client: {clientId}");
+            return new ClientCreateResult.FailureUnknown($"Error while creating the client: {clientId}");
         }
 
         List<ClientProtocolMapper> ConfigServiceProtocolMapper()
@@ -87,9 +93,31 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
         }
     }
 
-    public Task<bool> DeleteClientAsync(string clientId)
+    public async Task<ClientDeleteResult> DeleteClientAsync(string clientUuid)
     {
-        return _keycloakClient.DeleteClientAsync(_realm, clientId);
+        try
+        {
+            return await _keycloakClient.DeleteClientAsync(_realm, clientUuid)
+                ? new ClientDeleteResult.Success()
+                : new ClientDeleteResult.FailureUnknown($"Unknown failure deleting {clientUuid}");
+        }
+        catch (Exception ex)
+        {
+            return new ClientDeleteResult.FailureUnknown(ex.Message);
+        }
+    }
+
+    public async Task<ClientResetResult> ResetCredentialsAsync(string clientUuid)
+    {
+        try
+        {
+            var credentials = await _keycloakClient.GenerateClientSecretAsync(_realm, clientUuid);
+            return new ClientResetResult.Success(credentials.Value);
+        }
+        catch (Exception ex)
+        {
+            return new ClientResetResult.FailureUnknown(ex.Message);
+        }
     }
 
     public async Task<IEnumerable<string>> GetAllClientsAsync()
