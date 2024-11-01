@@ -6,13 +6,16 @@
 using System.Net;
 using System.Security.Claims;
 using System.Text;
-using EdFi.DmsConfigurationService.Backend;
+using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.DataModel.Application;
+using EdFi.DmsConfigurationService.DataModel.Vendor;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -22,8 +25,9 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 [TestFixture]
 public class ApplicationModuleTests
 {
-    private readonly IRepository<Application> _repository = A.Fake<IRepository<Application>>();
-    private readonly IRepository<Vendor> _vendorRepository = A.Fake<IRepository<Vendor>>();
+    private readonly IApplicationRepository _applicationRepository = A.Fake<IApplicationRepository>();
+    private readonly IClientRepository _clientRepository = A.Fake<IClientRepository>();
+    private readonly IVendorRepository _vendorRepository = A.Fake<IVendorRepository>();
 
     private HttpClient SetUpClient()
     {
@@ -47,7 +51,11 @@ public class ApplicationModuleTests
                         )
                     );
 
-                    collection.AddTransient((_) => _repository);
+                    collection
+                        .AddTransient((_) => A.Fake<HttpContext>())
+                        .AddTransient((_) => _applicationRepository)
+                        .AddTransient((_) => _clientRepository)
+                        .AddTransient((_) => _vendorRepository);
                 }
             );
         });
@@ -60,47 +68,66 @@ public class ApplicationModuleTests
         [SetUp]
         public void Setup()
         {
-            A.CallTo(() => _vendorRepository.AddAsync(A<Vendor>.Ignored))
-                .Returns(new InsertResult.InsertSuccess(1));
+            A.CallTo(
+                    () =>
+                        _applicationRepository.InsertApplication(
+                            A<ApplicationInsertCommand>.Ignored,
+                            A<ApiClientInsertCommand>.Ignored
+                        )
+                )
+                .Returns(new ApplicationInsertResult.Success(1));
 
-            A.CallTo(() => _repository.AddAsync(A<Application>.Ignored))
-                .Returns(new InsertResult.InsertSuccess(1));
-
-            A.CallTo(() => _repository.GetAllAsync())
+            A.CallTo(() => _applicationRepository.QueryApplication(A<PagingQuery>.Ignored))
                 .Returns(
-                    new GetResult<Application>.GetSuccess(
+                    new ApplicationQueryResult.Success(
                         [
-                            new Application()
+                            new ApplicationResponse()
                             {
                                 Id = 1,
                                 ApplicationName = "Test Application",
                                 ClaimSetName = "ClaimSet",
                                 VendorId = 1,
-                                EducationOrganizationIds = [1]
-                            }
+                                EducationOrganizationIds = [1],
+                            },
                         ]
                     )
                 );
 
-            A.CallTo(() => _repository.GetByIdAsync(A<long>.Ignored))
+            A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
                 .Returns(
-                    new GetResult<Application>.GetByIdSuccess(
-                        new Application()
+                    new ApplicationGetResult.Success(
+                        new ApplicationResponse()
                         {
                             Id = 1,
                             ApplicationName = "Test Application",
                             ClaimSetName = "ClaimSet",
                             VendorId = 1,
-                            EducationOrganizationIds = [1]
+                            EducationOrganizationIds = [1],
                         }
                     )
                 );
 
-            A.CallTo(() => _repository.UpdateAsync(A<Application>.Ignored))
-                .Returns(new UpdateResult.UpdateSuccess(1));
+            A.CallTo(() => _applicationRepository.UpdateApplication(A<ApplicationUpdateCommand>.Ignored))
+                .Returns(new ApplicationUpdateResult.Success());
 
-            A.CallTo(() => _repository.DeleteAsync(A<long>.Ignored))
-                .Returns(new DeleteResult.DeleteSuccess(1));
+            A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
+                .Returns(new ApplicationDeleteResult.Success());
+
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+                .Returns(new ApplicationApiClientsResult.Success([new("1", Guid.NewGuid())]));
+
+            A.CallTo(
+                    () =>
+                        _clientRepository.CreateClientAsync(
+                            A<string>.Ignored,
+                            A<string>.Ignored,
+                            A<string>.Ignored
+                        )
+                )
+                .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
+
+            A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored))
+                .Returns(new ClientResetResult.Success("SECRET"));
         }
 
         [Test]
@@ -144,6 +171,7 @@ public class ApplicationModuleTests
                 )
             );
             var deleteResponse = await client.DeleteAsync("/v2/applications/1");
+            var resetCredentialsResponse = await client.PutAsync("/v2/applications/1/reset-credential", null);
 
             //Assert
             addResponse.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -151,6 +179,7 @@ public class ApplicationModuleTests
             getByIdResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            resetCredentialsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         }
     }
 
@@ -193,17 +222,26 @@ public class ApplicationModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _vendorRepository.AddAsync(A<Vendor>.Ignored))
-                .Returns(new InsertResult.InsertSuccess(1));
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+                .Returns(new VendorInsertResult.Success(1));
 
-            A.CallTo(() => _repository.GetByIdAsync(A<long>.Ignored))
-                .Returns(new GetResult<Application>.GetByIdFailureNotExists());
+            A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
+                .Returns(new ApplicationGetResult.FailureNotFound());
 
-            A.CallTo(() => _repository.UpdateAsync(A<Application>.Ignored))
-                .Returns(new UpdateResult.UpdateFailureNotExists());
+            A.CallTo(() => _applicationRepository.UpdateApplication(A<ApplicationUpdateCommand>.Ignored))
+                .Returns(new ApplicationUpdateResult.FailureNotExists());
 
-            A.CallTo(() => _repository.DeleteAsync(A<long>.Ignored))
-                .Returns(new DeleteResult.DeleteFailureNotExists());
+            A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
+                .Returns(new ApplicationDeleteResult.FailureNotExists());
+
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+                .Returns(new ApplicationApiClientsResult.Success([]));
+
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+                .Returns(new ApplicationApiClientsResult.Success([]));
+
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+                .Returns(new ApplicationApiClientsResult.Success([]));
         }
 
         [Test]
@@ -220,10 +258,10 @@ public class ApplicationModuleTests
                     """
                     {
                         "id": 1,
-                       "ApplicationName": "Application 101",
-                        "ClaimSetName": "Test",
-                        "VendorId":1,
-                        "EducationOrganizationIds": [1]
+                       "applicationName": "Application 101",
+                        "claimSetName": "Test",
+                        "vendorId":1,
+                        "educationOrganizationIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -231,11 +269,13 @@ public class ApplicationModuleTests
                 )
             );
             var deleteResponse = await client.DeleteAsync("/v2/applications/1");
+            var resetCredentialsResponse = await client.PutAsync("/v2/applications/1/reset-credential", null);
 
             //Assert
             getByIdResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            resetCredentialsResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
     }
 
@@ -245,19 +285,42 @@ public class ApplicationModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _repository.AddAsync(A<Application>.Ignored))
-                .Returns(new InsertResult.UnknownFailure(""));
+            A.CallTo(
+                    () =>
+                        _clientRepository.CreateClientAsync(
+                            A<string>.Ignored,
+                            A<string>.Ignored,
+                            A<string>.Ignored
+                        )
+                )
+                .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
 
-            A.CallTo(() => _repository.GetAllAsync()).Returns(new GetResult<Application>.UnknownFailure(""));
+            A.CallTo(
+                    () =>
+                        _applicationRepository.InsertApplication(
+                            A<ApplicationInsertCommand>.Ignored,
+                            A<ApiClientInsertCommand>.Ignored
+                        )
+                )
+                .Returns(new ApplicationInsertResult.FailureUnknown(""));
 
-            A.CallTo(() => _repository.GetByIdAsync(A<long>.Ignored))
-                .Returns(new GetResult<Application>.UnknownFailure(""));
+            A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored))
+                .Returns(new ClientResetResult.FailureUnknown(""));
 
-            A.CallTo(() => _repository.UpdateAsync(A<Application>.Ignored))
-                .Returns(new UpdateResult.UnknownFailure(""));
+            A.CallTo(() => _applicationRepository.QueryApplication(A<PagingQuery>.Ignored))
+                .Returns(new ApplicationQueryResult.FailureUnknown(""));
 
-            A.CallTo(() => _repository.DeleteAsync(A<long>.Ignored))
-                .Returns(new DeleteResult.UnknownFailure(""));
+            A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
+                .Returns(new ApplicationGetResult.FailureUnknown(""));
+
+            A.CallTo(() => _applicationRepository.UpdateApplication(A<ApplicationUpdateCommand>.Ignored))
+                .Returns(new ApplicationUpdateResult.FailureUnknown(""));
+
+            A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
+                .Returns(new ApplicationDeleteResult.FailureUnknown(""));
+
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+                .Returns(new ApplicationApiClientsResult.FailureUnknown(""));
         }
 
         [Test]
@@ -301,6 +364,7 @@ public class ApplicationModuleTests
                 )
             );
             var deleteResponse = await client.DeleteAsync("/v2/applications/1");
+            var resetCredentialsResponse = await client.PutAsync("/v2/applications/1/reset-credential", null);
 
             //Assert
             addResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
@@ -308,6 +372,7 @@ public class ApplicationModuleTests
             getByIdResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             updateResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            resetCredentialsResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         }
     }
 
@@ -317,15 +382,29 @@ public class ApplicationModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _repository.AddAsync(A<Application>.Ignored)).Returns(new InsertResult());
+            A.CallTo(
+                    () =>
+                        _applicationRepository.InsertApplication(
+                            A<ApplicationInsertCommand>.Ignored,
+                            A<ApiClientInsertCommand>.Ignored
+                        )
+                )
+                .Returns(new ApplicationInsertResult());
 
-            A.CallTo(() => _repository.GetAllAsync()).Returns(new GetResult<Application>());
+            A.CallTo(() => _applicationRepository.QueryApplication(A<PagingQuery>.Ignored))
+                .Returns(new ApplicationQueryResult());
 
-            A.CallTo(() => _repository.GetByIdAsync(A<long>.Ignored)).Returns(new GetResult<Application>());
+            A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
+                .Returns(new ApplicationGetResult());
 
-            A.CallTo(() => _repository.UpdateAsync(A<Application>.Ignored)).Returns(new UpdateResult());
+            A.CallTo(() => _applicationRepository.UpdateApplication(A<ApplicationUpdateCommand>.Ignored))
+                .Returns(new ApplicationUpdateResult());
 
-            A.CallTo(() => _repository.DeleteAsync(A<long>.Ignored)).Returns(new DeleteResult());
+            A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
+                .Returns(new ApplicationDeleteResult());
+
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+                .Returns(new ApplicationApiClientsResult());
         }
 
         [Test]
@@ -385,11 +464,30 @@ public class ApplicationModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _repository.AddAsync(A<Application>.Ignored))
-                .Returns(new InsertResult.FailureReferenceNotFound("VendorId"));
+            A.CallTo(
+                    () =>
+                        _clientRepository.CreateClientAsync(
+                            A<string>.Ignored,
+                            A<string>.Ignored,
+                            A<string>.Ignored
+                        )
+                )
+                .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
 
-            A.CallTo(() => _repository.UpdateAsync(A<Application>.Ignored))
-                .Returns(new UpdateResult.FailureReferenceNotFound("VendorId"));
+            A.CallTo(
+                    () =>
+                        _applicationRepository.InsertApplication(
+                            A<ApplicationInsertCommand>.Ignored,
+                            A<ApiClientInsertCommand>.Ignored
+                        )
+                )
+                .Returns(new ApplicationInsertResult.FailureVendorNotFound());
+
+            A.CallTo(() => _applicationRepository.UpdateApplication(A<ApplicationUpdateCommand>.Ignored))
+                .Returns(new ApplicationUpdateResult.FailureVendorNotFound());
+
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+                .Returns(new ApplicationApiClientsResult.Success([]));
         }
 
         [Test]
@@ -417,7 +515,8 @@ public class ApplicationModuleTests
 
             addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             string responseBody = await addResponse.Content.ReadAsStringAsync();
-            string expectedResponse = @"{""title"":""Validation failed"",""errors"":{""VendorId"":[""Reference \u0027VendorId\u0027 does not exist.""]}}";
+            string expectedResponse =
+                @"{""title"":""Validation failed"",""errors"":{""VendorId"":[""Reference \u0027VendorId\u0027 does not exist.""]}}";
             responseBody.Should().Contain(expectedResponse);
         }
 
@@ -448,7 +547,8 @@ public class ApplicationModuleTests
             //Assert
             updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             string responseBody = await updateResponse.Content.ReadAsStringAsync();
-            string expectedResponse = @"{""title"":""Validation failed"",""errors"":{""VendorId"":[""Reference \u0027VendorId\u0027 does not exist.""]}}";
+            string expectedResponse =
+                @"{""title"":""Validation failed"",""errors"":{""VendorId"":[""Reference \u0027VendorId\u0027 does not exist.""]}}";
             responseBody.Should().Contain(expectedResponse);
         }
     }

@@ -9,13 +9,15 @@ using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Deploy;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Postgresql;
-using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
+using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using Serilog;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
@@ -23,6 +25,9 @@ public static class WebApplicationBuilderExtensions
 {
     public static void AddServices(this WebApplicationBuilder webApplicationBuilder)
     {
+        var logger = ConfigureLogging();
+        webApplicationBuilder.Services.AddLogging(loggingBuilder => loggingBuilder.AddSerilog(dispose: true));
+
         // For FluentValidation
         var executingAssembly = Assembly.GetExecutingAssembly();
 
@@ -45,7 +50,7 @@ public static class WebApplicationBuilderExtensions
             .Configure<DatabaseOptions>(webApplicationBuilder.Configuration.GetSection("ConnectionStrings"))
             .AddSingleton<IValidateOptions<DatabaseOptions>, DatabaseOptionsValidator>();
         ;
-        ConfigureDatastore(webApplicationBuilder);
+        ConfigureDatastore(webApplicationBuilder, logger);
 
         // For Security(Keycloak)
         IConfiguration config = webApplicationBuilder.Configuration;
@@ -66,8 +71,7 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder.Services.AddHttpClient();
 
         webApplicationBuilder.Services.AddTransient<IClientRepository, ClientRepository>();
-        webApplicationBuilder.Services.AddTransient<IRepository<Application>, ApplicationRepository>();
-        webApplicationBuilder.Services.AddTransient<IRepository<Vendor>, VendorRepository>();
+        webApplicationBuilder.Services.AddTransient<IApplicationRepository, ApplicationRepository>();
         webApplicationBuilder.Services.AddTransient<IVendorRepository, VendorRepository>();
         webApplicationBuilder.Services.AddTransient<ITokenManager, TokenManager>();
 
@@ -107,6 +111,18 @@ public static class WebApplicationBuilderExtensions
             )
         );
 
+        Serilog.ILogger ConfigureLogging()
+        {
+            var logger = new LoggerConfiguration()
+                .ReadFrom.Configuration(webApplicationBuilder.Configuration)
+                .Enrich.FromLogContext()
+                .CreateLogger();
+            webApplicationBuilder.Logging.ClearProviders();
+            webApplicationBuilder.Logging.AddSerilog(logger);
+
+            return logger;
+        }
+
         IdentitySettings ReadSettings()
         {
             return new IdentitySettings
@@ -124,7 +140,7 @@ public static class WebApplicationBuilderExtensions
         }
     }
 
-    private static void ConfigureDatastore(WebApplicationBuilder webAppBuilder)
+    private static void ConfigureDatastore(WebApplicationBuilder webAppBuilder, Serilog.ILogger logger)
     {
         if (
             string.Equals(
@@ -134,6 +150,7 @@ public static class WebApplicationBuilderExtensions
             )
         )
         {
+            logger.Information("Injecting PostgreSQL as the primary backend datastore");
             webAppBuilder.Services.AddPostgresqlDatastore(
                 webAppBuilder.Configuration.GetSection("ConnectionStrings:DatabaseConnection").Value
                     ?? string.Empty
@@ -142,6 +159,7 @@ public static class WebApplicationBuilderExtensions
         }
         else
         {
+            logger.Information("Injecting MSSQL as the primary backend datastore");
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Mssql.Deploy.DatabaseDeploy>();
         }
     }

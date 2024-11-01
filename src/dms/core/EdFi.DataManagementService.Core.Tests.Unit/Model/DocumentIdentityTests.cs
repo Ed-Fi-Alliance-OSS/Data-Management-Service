@@ -8,8 +8,8 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using FluentAssertions;
 using NUnit.Framework;
-using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
 using static EdFi.DataManagementService.Core.Extraction.IdentityExtractor;
+using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Model;
 

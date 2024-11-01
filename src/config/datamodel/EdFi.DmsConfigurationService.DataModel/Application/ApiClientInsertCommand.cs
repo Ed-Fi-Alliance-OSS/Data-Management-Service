@@ -3,11 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-namespace EdFi.DmsConfigurationService.Backend;
+namespace EdFi.DmsConfigurationService.DataModel.Application;
 
-public interface IClientRepository
+public class ApiClientInsertCommand
 {
-    public Task<bool> CreateClientAsync(string clientId, string clientSecret, string displayName);
-
-    public Task<IEnumerable<string>> GetAllClientsAsync();
+    public required string ClientId { get; set; }
+    public required Guid ClientUuid { get; set; }
 }

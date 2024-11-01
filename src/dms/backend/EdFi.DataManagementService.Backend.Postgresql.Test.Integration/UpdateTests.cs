@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
@@ -672,6 +673,7 @@ public class UpdateTests : DatabaseTest
         private static readonly Guid _courseOfferingDocumentUuid = Guid.NewGuid();
         private static readonly Guid _courseOfferingReferentialIdUuid = Guid.NewGuid();
         private DateTime? _courseOfferingInsertDateTime;
+        private DateTime? _courseOfferingLastModifiedDate;
 
         private static readonly Guid _section1DocumentUuid = Guid.NewGuid();
         private static readonly Guid _section1ReferentialIdUuid = Guid.NewGuid();
@@ -712,7 +714,8 @@ public class UpdateTests : DatabaseTest
                     "localCourseCode": "ABC",
                     "sessionReference": {
                         "sessionName": "Third Quarter"
-                    }
+                    },
+                    "_lastModifiedDate": "2024-10-29T14:54:49+00:00"
                 }
                 """,
                 CreateDocumentReferences(
@@ -733,6 +736,8 @@ public class UpdateTests : DatabaseTest
 
             _courseOfferingInsertDateTime =
                 (getCourseOffingInsertResult! as GetResult.GetSuccess)!.LastModifiedDate;
+
+            _courseOfferingLastModifiedDate = (getCourseOffingInsertResult! as GetResult.GetSuccess)!.EdfiDoc["_lastModifiedDate"]!.GetValue<DateTime>();
 
             IUpsertRequest section1UpsertRequest = CreateUpsertRequest(
                 "Section",
@@ -815,7 +820,21 @@ public class UpdateTests : DatabaseTest
             (getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_courseOfferingDocumentUuid);
             (getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("Fourth Quarter");
             (getResult! as GetResult.GetSuccess)!.LastModifiedTraceId.Should().Be(traceId.Value);
+        }
+
+        [Test]
+        public async Task It_should_update_the_lastmodifieddate_in_the_document_body()
+        {
+            var getResult = await CreateGetById()
+                .GetById(
+                CreateGetRequest("CourseOffering", _courseOfferingDocumentUuid),
+                Connection!,
+                Transaction!
+                );
+
             (getResult! as GetResult.GetSuccess)!.LastModifiedDate.Should().NotBe(_courseOfferingInsertDateTime);
+            _courseOfferingLastModifiedDate.Should().Be(DateTime.ParseExact("2024-10-29T14:54:49+00:00", "yyyy-MM-ddTHH:mm:sszzz", DateTimeFormatInfo.InvariantInfo));
+            (getResult! as GetResult.GetSuccess)!.EdfiDoc["_lastModifiedDate"]!.GetValue<DateTime>().Should().NotBe(_courseOfferingLastModifiedDate);
         }
 
         [Test]
