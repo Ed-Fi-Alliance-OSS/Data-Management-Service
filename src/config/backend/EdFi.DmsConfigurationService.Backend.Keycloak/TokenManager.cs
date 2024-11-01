@@ -7,7 +7,7 @@ namespace EdFi.DmsConfigurationService.Backend.Keycloak;
 
 public class TokenManager(KeycloakContext keycloakContext) : ITokenManager
 {
-    public async Task<string> GetAccessTokenAsync(IEnumerable<KeyValuePair<string, string>> credentials)
+    public async Task<TokenResult> GetAccessTokenAsync(IEnumerable<KeyValuePair<string, string>> credentials)
     {
         using var client = new HttpClient();
 
@@ -16,17 +16,17 @@ public class TokenManager(KeycloakContext keycloakContext) : ITokenManager
             [new KeyValuePair<string, string>("grant_type", "client_credentials")]);
 
         var content = new FormUrlEncodedContent(contentList);
-        var path = $"{keycloakContext.Url}/realms/{keycloakContext.Realm}/protocol/openid-connect/token";
+        string path = $"{keycloakContext.Url}/realms/{keycloakContext.Realm}/protocol/openid-connect/token";
         var response = await client.PostAsync(path, content);
-        var responseString = await response.Content.ReadAsStringAsync();
+        string responseString = await response.Content.ReadAsStringAsync();
 
         if (response.IsSuccessStatusCode)
         {
-            return responseString;
+            return new TokenResult.Success(responseString);
         }
         else
         {
-            throw new Exception(responseString);
+            return new TokenResult.FailureUnknown();
         }
     }
 }

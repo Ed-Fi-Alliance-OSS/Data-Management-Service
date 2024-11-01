@@ -49,8 +49,7 @@ public class RequestLoggingMiddleware(RequestDelegate next)
                         ValidationException => (int)HttpStatusCode.BadRequest,
                         BadHttpRequestException => (int)HttpStatusCode.BadRequest,
                         IdentityException => (int)HttpStatusCode.Unauthorized,
-                        AggregateException ae when ae.Message.Contains("No connection could be made")
-                            => (int)HttpStatusCode.BadGateway,
+                        KeycloakException => (int)HttpStatusCode.BadGateway,
                         AggregateException ae when ae.Message.Contains("status code 404")
                             => (int)HttpStatusCode.BadGateway,
                         _ => (int)HttpStatusCode.InternalServerError,
@@ -82,14 +81,10 @@ public class RequestLoggingMiddleware(RequestDelegate next)
                                 )
                             ),
 
-                        AggregateException ae when ae.Message.Contains("No connection could be made")
+                        KeycloakException
                             => JsonNode.Parse(
                                 JsonSerializer.Serialize(
-                                    new
-                                    {
-                                        title = "Keycloak is unreachable.",
-                                        message = ex.Message,
-                                    }
+                                    new { title = "Keycloak is unreachable.", message = ex.Message, }
                                 )
                             ),
 
@@ -125,7 +120,14 @@ public class RequestLoggingMiddleware(RequestDelegate next)
                     Headers = new Dictionary<string, string> { { "TraceId", context.TraceIdentifier } }
                 };
 
-            logger.LogError(ex.Message + " - TraceId: {TraceId}", context.TraceIdentifier);
+            if (ex is KeycloakException)
+            {
+                logger.LogCritical(ex.Message + " - TraceId: {TraceId}", context.TraceIdentifier);
+            }
+            else
+            {
+                logger.LogError(ex.Message + " - TraceId: {TraceId}", context.TraceIdentifier);
+            }
 
             context.Response.StatusCode = frontendResponse.StatusCode;
             context.Response.ContentType = frontendResponse.ContentType;

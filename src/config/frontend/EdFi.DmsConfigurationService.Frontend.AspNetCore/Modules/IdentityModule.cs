@@ -49,7 +49,7 @@ public class IdentityModule : IEndpointModule
                     )
                 )
                 {
-                    throw new AggregateException(ex.Message);
+                    throw new KeycloakException(ex.Message);
                 }
                 throw new IdentityException($"Client registration failed with: {ex.Message}");
             }
@@ -66,12 +66,20 @@ public class IdentityModule : IEndpointModule
         await validator.GuardAsync(model);
         try
         {
-            string response = await tokenManager.GetAccessTokenAsync(
+            string response = string.Empty;
+            var tokenResult = await tokenManager.GetAccessTokenAsync(
                 [
                     new KeyValuePair<string, string>("client_id", model.ClientId!),
                     new KeyValuePair<string, string>("client_secret", model.ClientSecret!),
                 ]
             );
+
+            response = tokenResult switch
+            {
+                TokenResult.Success tokenSuccess => tokenSuccess.Token,
+                _ => response
+            };
+
             var tokenResponse = JsonSerializer.Deserialize<TokenResponse>(response);
             return Results.Ok(tokenResponse);
         }
@@ -83,7 +91,7 @@ public class IdentityModule : IEndpointModule
                 )
             )
             {
-                throw new AggregateException(ex.Message);
+                throw new KeycloakException(ex.Message);
             }
             throw new IdentityException(
                 "Client registration failed with: Invalid client or Invalid client credentials."

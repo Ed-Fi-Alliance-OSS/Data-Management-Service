@@ -8,6 +8,7 @@ using System.Net.Http.Json;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
 using FakeItEasy;
 using FluentAssertions;
@@ -37,7 +38,8 @@ public class RegisterEndpointTests
             )
             .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
         var clientList = A.Fake<IEnumerable<string>>();
-        A.CallTo(() => _clientRepository.GetAllClientsAsync()).Returns(new ClientClientsResult.Success(clientList));
+        A.CallTo(() => _clientRepository.GetAllClientsAsync())
+            .Returns(new ClientClientsResult.Success(clientList));
     }
 
     [Test]
@@ -198,7 +200,8 @@ public class RegisterEndpointTests
         var clientList = A.Fake<IEnumerable<string>>();
         _clientRepository = A.Fake<IClientRepository>();
         clientList = clientList.Append("CSClient2");
-        A.CallTo(() => _clientRepository.GetAllClientsAsync()).Returns(new ClientClientsResult.Success(clientList));
+        A.CallTo(() => _clientRepository.GetAllClientsAsync())
+            .Returns(new ClientClientsResult.Success(clientList));
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -272,7 +275,7 @@ public class RegisterEndpointTests
         {
             _clientRepository = A.Fake<IClientRepository>();
 
-            var innerException = new Exception(
+            var innerException = new KeycloakException(
                 "No connection could be made because the target machine actively refused it"
             );
             A.CallTo(
@@ -283,7 +286,7 @@ public class RegisterEndpointTests
                             A<string>.Ignored
                         )
                 )
-                .Throws(new AggregateException(innerException));
+                .Throws(new KeycloakException(innerException));
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -333,7 +336,7 @@ public class TokenEndpointTests
         A.CallTo(
                 () => _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
             )
-            .Returns(Task.FromResult(token));
+            .Returns(new TokenResult.Success(token));
     }
 
     [Test]
@@ -434,7 +437,7 @@ public class TokenEndpointTests
         {
             _tokenManager = A.Fake<ITokenManager>();
 
-            var innerException = new Exception(
+            var innerException = new KeycloakException(
                 "No connection could be made because the target machine actively refused it"
             );
             A.CallTo(
@@ -443,7 +446,7 @@ public class TokenEndpointTests
                             A<IEnumerable<KeyValuePair<string, string>>>.Ignored
                         )
                 )
-                .Throws(new AggregateException(innerException));
+                .Throws(new KeycloakException(innerException));
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(

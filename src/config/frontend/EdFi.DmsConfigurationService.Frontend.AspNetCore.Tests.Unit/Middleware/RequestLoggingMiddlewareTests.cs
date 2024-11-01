@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
 using FakeItEasy;
 using FluentAssertions;
@@ -120,7 +121,7 @@ internal class RequestLoggingMiddlewareTests
             // Arrange
             var httpContext = new DefaultHttpContext { Response = { Body = new MemoryStream() } };
             var innerException = new Exception("status code 404");
-            var exception = new AggregateException(innerException);
+            var exception = new KeycloakException(innerException);
 
             A.CallTo(() => _next.Invoke(httpContext)).Throws(exception);
 

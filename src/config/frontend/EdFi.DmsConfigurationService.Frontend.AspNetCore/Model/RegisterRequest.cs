@@ -53,7 +53,7 @@ public class RegisterRequest
                 case ClientClientsResult.Success clientSuccess:
                     return !clientSuccess.ClientList.Any(c => c.Equals(clientId, StringComparison.InvariantCultureIgnoreCase));
                 case ClientClientsResult.FailureKeycloak clientFailure:
-                    throw new IdentityException(clientFailure.FailureMessage);
+                    throw new KeycloakException(clientFailure.FailureMessage);
             }
             return true;
         }
