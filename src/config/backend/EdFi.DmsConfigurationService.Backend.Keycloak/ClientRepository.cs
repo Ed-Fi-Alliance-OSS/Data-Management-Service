@@ -124,11 +124,13 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
         try
         {
             var credentials = await _keycloakClient.GenerateClientSecretAsync(_realm, clientUuid);
-            return new ClientResetResult.Success(credentials.Value);
+            return credentials != null
+                ? new ClientResetResult.Success(credentials.Value)
+                : new ClientResetResult.FailureUnknown($"Unknown failure deleting {clientUuid}");
         }
         catch (Exception ex)
         {
-            return new ClientResetResult.FailureUnknown(ex.Message);
+            return new ClientResetResult.FailureKeycloak(ex.Message);
         }
     }
 

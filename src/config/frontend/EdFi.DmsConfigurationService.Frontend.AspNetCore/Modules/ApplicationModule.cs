@@ -11,7 +11,6 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model.Validator;
 using FluentValidation;
 using FluentValidation.Results;
-using Keycloak.Net.Models.Clients;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
