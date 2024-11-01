@@ -86,6 +86,7 @@
     "isshoolyearenumeration",
     "issubclass",
     "jsonschemaforinsert",
+    "Keycloak",
     "lastmodifiedat",
     "noallowidentityupdates",
     "nodocumentpathsmappings",
