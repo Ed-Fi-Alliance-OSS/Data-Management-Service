@@ -6,6 +6,7 @@
 CREATE TABLE dmscs.ApiClient (
     Id BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1) PRIMARY KEY,
     ApplicationId BIGINT NOT NULL,
+    ClientId VARCHAR(36) NOT NULL,
     ClientUuid UUID NOT NULL NOT NULL,
     CONSTRAINT fk_apiclient_application FOREIGN KEY (ApplicationId) REFERENCES dmscs.Application(Id) ON DELETE CASCADE
 );

@@ -7,9 +7,36 @@ namespace EdFi.DmsConfigurationService.Backend.Repositories;
 
 public interface IClientRepository
 {
-    public Task<bool> CreateClientAsync(string clientId, string clientSecret, string displayName);
+    public Task<ClientCreateResult> CreateClientAsync(
+        string clientId,
+        string clientSecret,
+        string displayName
+    );
 
     public Task<IEnumerable<string>> GetAllClientsAsync();
 
-    public Task<bool> DeleteClientAsync(string clientId);
+    public Task<ClientDeleteResult> DeleteClientAsync(string clientUuid);
+
+    public Task<ClientResetResult> ResetCredentialsAsync(string clientUuid);
+}
+
+public record ClientCreateResult
+{
+    public record Success(Guid ClientUuid) : ClientCreateResult;
+
+    public record FailureUnknown(string FailureMessage) : ClientCreateResult();
+}
+
+public record ClientDeleteResult
+{
+    public record Success() : ClientDeleteResult;
+
+    public record FailureUnknown(string FailureMessage) : ClientDeleteResult();
+}
+
+public record ClientResetResult
+{
+    public record Success(string ClientSecret) : ClientResetResult;
+
+    public record FailureUnknown(string FailureMessage) : ClientResetResult();
 }

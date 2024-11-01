@@ -245,8 +245,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
                         ClaimSetName = "Test Claim set",
                         EducationOrganizationIds = [1, 255911001, 255911002],
                     },
-                    Guid.Empty,
-                    ""
+                    new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
                 );
 
                 await _applicationRepository.InsertApplication(
@@ -257,8 +256,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
                         ClaimSetName = "Test Claim set 2",
                         EducationOrganizationIds = [1, 255911001, 255911002],
                     },
-                    Guid.Empty,
-                    ""
+                    new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
                 );
             }
 
