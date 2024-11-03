@@ -4,6 +4,62 @@
   },
   "interactions": [
     {
+      "description": "A request for an access token with a valid credentials",
+      "request": {
+        "body": {
+          "clientid": "CSClient1",
+          "clientsecret": "test123@Puiu"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "method": "POST",
+        "path": "/connect/token"
+      },
+      "response": {
+        "body": {
+          "access_token": "input123token",
+          "expires_in": 900,
+          "token_type": "bearer"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "A request for an access token with empty client credentials",
+      "request": {
+        "body": {
+          "clientid": "",
+          "clientsecret": ""
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "method": "POST",
+        "path": "/connect/token"
+      },
+      "response": {
+        "body": {
+          "errors": {
+            "ClientId": [
+              "'Client Id' must not be empty."
+            ],
+            "ClientSecret": [
+              "'Client Secret' must not be empty."
+            ]
+          },
+          "title": "Validation failed"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "status": 400
+      }
+    },
+    {
       "description": "A request for an access token with invalid credentials that throws an error from Keycloak",
       "providerStates": [
         {
@@ -22,9 +78,7 @@
         "path": "/connect/token"
       },
       "response": {
-        "body": {
-          "error": "Client token generation failed with: Error from Keycloak"
-        },
+        "body": "Client token generation failed with: Error from Keycloak",
         "headers": {
           "Content-Type": "application/json"
         },

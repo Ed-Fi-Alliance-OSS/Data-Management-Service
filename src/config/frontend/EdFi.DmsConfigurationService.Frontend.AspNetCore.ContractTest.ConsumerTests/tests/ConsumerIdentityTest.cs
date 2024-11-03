@@ -110,10 +110,9 @@ public class ConsumerIdentityTest
             .WillRespond()
             .WithStatus(HttpStatusCode.Unauthorized)
             .WithHeader("Content-Type", "application/json")
-            .WithJsonBody(new
-            {
-                error = "Error from Keycloak"
-            });
+            .WithJsonBody(
+                "Client token generation failed with: Error from Keycloak"
+            );
 
         await pact.VerifyAsync(async ctx =>
         {
@@ -123,7 +122,7 @@ public class ConsumerIdentityTest
             var response = await client.PostAsJsonAsync($"{ctx.MockServerUri}connect/token", requestBody);
             var content = await response.Content.ReadAsStringAsync();
             response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-            content.Should().Contain("Error from Keycloak");
+            content.Should().Contain("Client token generation failed with: Error from Keycloak");
         });
     }
 }

@@ -29,7 +29,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
             {
                 return Task.FromResult(FakeToken);
             }
-            throw new Exception("Error from Keycloak");
+            throw new IdentityException("Error from Keycloak");
         }
     }
 
