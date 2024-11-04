@@ -88,13 +88,8 @@ public class IdentityModule : IEndpointModule
                 _ => response
             };
 
-            if (response != string.Empty)
-            {
-                var tokenResponse = JsonSerializer.Deserialize<TokenResponse>(response);
-                return Results.Ok(tokenResponse);
-            }
-
-            return Results.Problem(statusCode: 500);
+            var tokenResponse = JsonSerializer.Deserialize<TokenResponse>(response);
+            return Results.Ok(tokenResponse);
         }
         catch (KeycloakException)
         {
