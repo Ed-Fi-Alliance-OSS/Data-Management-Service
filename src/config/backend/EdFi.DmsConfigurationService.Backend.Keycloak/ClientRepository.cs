@@ -163,7 +163,7 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
         }
         catch (Exception ex)
         {
-            return new ClientClientsResult.FailureKeycloak(ex.Message);
+            return new ClientClientsResult.FailureUnknown(ex.Message);
         }
     }
 }
