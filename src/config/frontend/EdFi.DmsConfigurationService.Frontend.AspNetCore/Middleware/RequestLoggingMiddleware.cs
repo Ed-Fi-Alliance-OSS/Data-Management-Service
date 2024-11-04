@@ -41,111 +41,102 @@ public class RequestLoggingMiddleware(RequestDelegate next)
         }
         catch (Exception ex)
         {
-            FrontendResponse frontendResponse =
-                new()
-                {
-                    StatusCode = ex switch
+            int statusCode = ex switch
+            {
+                ValidationException => (int)HttpStatusCode.BadRequest,
+                BadHttpRequestException => (int)HttpStatusCode.BadRequest,
+                IdentityException => (int)HttpStatusCode.Unauthorized,
+                KeycloakException ke
+                    => ke.FailureType switch
                     {
-                        ValidationException => (int)HttpStatusCode.BadRequest,
-                        BadHttpRequestException => (int)HttpStatusCode.BadRequest,
-                        IdentityException => (int)HttpStatusCode.Unauthorized,
-                        KeycloakException ke
-                            => ke.FailureType switch
-                            {
-                                KeycloakFailureType.Unreachable => (int)HttpStatusCode.BadGateway,
-                                KeycloakFailureType.BadCredentials => (int)HttpStatusCode.Unauthorized,
-                                KeycloakFailureType.InvalidRealm => (int)HttpStatusCode.NotFound,
-                                KeycloakFailureType.InsufficientPermissions => (int)HttpStatusCode.Forbidden,
-                                _ => (int)HttpStatusCode.InternalServerError
-                            },
-                        _ => (int)HttpStatusCode.InternalServerError,
+                        KeycloakFailureType.Unreachable => (int)HttpStatusCode.BadGateway,
+                        KeycloakFailureType.BadCredentials => (int)HttpStatusCode.Unauthorized,
+                        KeycloakFailureType.InvalidRealm => (int)HttpStatusCode.NotFound,
+                        KeycloakFailureType.InsufficientPermissions => (int)HttpStatusCode.Forbidden,
+                        _ => (int)HttpStatusCode.InternalServerError
                     },
-                    Body = ex switch
+                _ => (int)HttpStatusCode.InternalServerError,
+            };
+
+            JsonNode? responseBody = ex switch
+            {
+                ValidationException validationEx => JsonNode.Parse(
+                    JsonSerializer.Serialize(new
                     {
-                        ValidationException validationEx
+                        title = "Validation failed.",
+                        errors = validationEx.Errors.GroupBy(e => e.PropertyName)
+                            .ToDictionary(
+                                g => g.Key,
+                                g => g.Select(e => e.ErrorMessage.Replace("\u0027", "'")).ToList()
+                            )
+                    })),
+                IdentityException
+                    => JsonNode.Parse(
+                        JsonSerializer.Serialize(
+                            new { title = "Client token generation failed.", message = ex.Message }
+                        )
+                    ),
+                KeycloakException ke
+                    => ke.FailureType switch
+                    {
+                        KeycloakFailureType.Unreachable
+                            => JsonNode.Parse(
+                                JsonSerializer.Serialize(
+                                    new { title = "Keycloak is unreachable.", message = ex.Message }
+                                )
+                            ),
+                        KeycloakFailureType.InvalidRealm
                             => JsonNode.Parse(
                                 JsonSerializer.Serialize(
                                     new
                                     {
-                                        title = "Validation failed.",
-                                        errors = validationEx
-                                            .Errors.GroupBy(e => e.PropertyName)
-                                            .ToDictionary(
-                                                g => g.Key,
-                                                g =>
-                                                    g.Select(e => e.ErrorMessage.Replace("\u0027", "'"))
-                                                        .ToList()
-                                            )
+                                        title = "Invalid realm.",
+                                        message = "Please check the configuration."
                                     }
                                 )
                             ),
-
-                        IdentityException
+                        KeycloakFailureType.BadCredentials
                             => JsonNode.Parse(
                                 JsonSerializer.Serialize(
-                                    new { title = "Client token generation failed.", message = ex.Message }
+                                    new { title = "Bad Credentials.", message = ex.Message }
                                 )
                             ),
-
-                        KeycloakException ke
-                            => ke.FailureType switch
-                            {
-                                KeycloakFailureType.Unreachable
-                                    => JsonNode.Parse(
-                                        JsonSerializer.Serialize(
-                                            new { title = "Keycloak is unreachable.", message = ex.Message }
-                                        )
-                                    ),
-                                KeycloakFailureType.InvalidRealm
-                                    => JsonNode.Parse(
-                                        JsonSerializer.Serialize(
-                                            new
-                                            {
-                                                title = "Invalid realm.",
-                                                message = "Please check the configuration."
-                                            }
-                                        )
-                                    ),
-                                KeycloakFailureType.BadCredentials
-                                    => JsonNode.Parse(
-                                        JsonSerializer.Serialize(
-                                            new { title = "Bad Credentials.", message = ex.Message }
-                                        )
-                                    ),
-                                KeycloakFailureType.InsufficientPermissions
-                                    => JsonNode.Parse(
-                                        JsonSerializer.Serialize(
-                                            new { title = "Insufficient Permissions.", message = ex.Message }
-                                        )
-                                    ),
-                                _
-                                    => JsonNode.Parse(
-                                        JsonSerializer.Serialize(
-                                            new { title = "Unexpected Keycloak Error.", message = ex.Message }
-                                        )
-                                    )
-                            },
-
-                        BadHttpRequestException
+                        KeycloakFailureType.InsufficientPermissions
                             => JsonNode.Parse(
                                 JsonSerializer.Serialize(
-                                    new { title = "Invalid Request Format.", message = ex.Message }
+                                    new { title = "Insufficient Permissions.", message = ex.Message }
                                 )
                             ),
-
                         _
                             => JsonNode.Parse(
                                 JsonSerializer.Serialize(
-                                    new
-                                    {
-                                        title = "Unexpected Server Error.",
-                                        message = "The server encountered an unexpected condition that prevented it from fulfilling the request."
-                                    }
+                                    new { title = "Unexpected Keycloak Error.", message = ex.Message }
                                 )
                             )
                     },
-                    Headers = new Dictionary<string, string> { { "TraceId", context.TraceIdentifier } }
-                };
+                BadHttpRequestException
+                    => JsonNode.Parse(
+                        JsonSerializer.Serialize(
+                            new { title = "Invalid Request Format.", message = ex.Message }
+                        )
+                    ),
+                _
+                    => JsonNode.Parse(
+                        JsonSerializer.Serialize(
+                            new
+                            {
+                                title = "Unexpected Server Error.",
+                                message = "The server encountered an unexpected condition that prevented it from fulfilling the request."
+                            }
+                        )
+                    )
+            };
+
+            context.Response.StatusCode = statusCode;
+            context.Response.ContentType = "application/json";
+            context.Response.Headers["TraceId"] = context.TraceIdentifier;
+
+            await context.Response.WriteAsync(responseBody?.ToJsonString() ?? string.Empty);
 
             if (ex is KeycloakException { FailureType: KeycloakFailureType.Unreachable })
             {
@@ -155,15 +146,6 @@ public class RequestLoggingMiddleware(RequestDelegate next)
             {
                 logger.LogError(ex.Message + " - TraceId: {TraceId}", context.TraceIdentifier);
             }
-
-            context.Response.StatusCode = frontendResponse.StatusCode;
-            context.Response.ContentType = frontendResponse.ContentType;
-            foreach (var header in frontendResponse.Headers)
-            {
-                context.Response.Headers[header.Key] = header.Value;
-            }
-
-            await context.Response.WriteAsync(frontendResponse.Body?.ToJsonString() ?? string.Empty);
         }
     }
 }
