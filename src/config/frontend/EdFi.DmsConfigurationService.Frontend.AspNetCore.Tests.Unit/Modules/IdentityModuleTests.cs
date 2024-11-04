@@ -152,7 +152,7 @@ public class RegisterEndpointTests
     }
 
     [Test]
-    public async Task When_error_from_backend()
+    public async Task When_provider_has_bad_credentials()
     {
         // Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -166,7 +166,7 @@ public class RegisterEndpointTests
                             A<string>.Ignored
                         )
                 )
-                .Throws(new Exception("Error from Keycloak"));
+                .Throws(new KeycloakException("Unauthorized", KeycloakFailureType.BadCredentials));
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
                 (collection) =>
@@ -190,7 +190,91 @@ public class RegisterEndpointTests
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        content.Should().Contain("Error from Keycloak");
+        content.Should().Contain("Unauthorized");
+    }
+
+    [Test]
+    public async Task When_provider_has_not_real_admin_role()
+    {
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            _clientRepository = A.Fake<IClientRepository>();
+            A.CallTo(
+                    () =>
+                        _clientRepository.CreateClientAsync(
+                            A<string>.Ignored,
+                            A<string>.Ignored,
+                            A<string>.Ignored
+                        )
+                )
+                .Throws(new KeycloakException("Forbidden", KeycloakFailureType.InsufficientPermissions));
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection.AddTransient((_) => new RegisterRequest.Validator(_clientRepository!));
+                    collection.AddTransient((_) => _clientRepository!);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var requestContent = new
+        {
+            clientid = "CSClient3",
+            clientsecret = "test123@Puiu",
+            displayname = "CSClient3",
+        };
+        var response = await client.PostAsJsonAsync("/connect/register", requestContent);
+        string content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        content.Should().Contain("Forbidden");
+    }
+
+    [Test]
+    public async Task When_provider_has_invalid_real()
+    {
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            _clientRepository = A.Fake<IClientRepository>();
+            A.CallTo(
+                    () =>
+                        _clientRepository.CreateClientAsync(
+                            A<string>.Ignored,
+                            A<string>.Ignored,
+                            A<string>.Ignored
+                        )
+                )
+                .Throws(new KeycloakException("Invalid realm", KeycloakFailureType.InvalidRealm));
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection.AddTransient((_) => new RegisterRequest.Validator(_clientRepository!));
+                    collection.AddTransient((_) => _clientRepository!);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var requestContent = new
+        {
+            clientid = "CSClient3",
+            clientsecret = "test123@Puiu",
+            displayname = "CSClient3",
+        };
+        var response = await client.PostAsJsonAsync("/connect/register", requestContent);
+        string content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        content.Should().Contain("Invalid realm");
     }
 
     [Test]
@@ -268,7 +352,7 @@ public class RegisterEndpointTests
     }
 
     [Test]
-    public async Task When_provider_is_unreacheable()
+    public async Task When_provider_is_unreachable()
     {
         //Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -285,7 +369,8 @@ public class RegisterEndpointTests
                 )
                 .Throws(
                     new KeycloakException(
-                        "No connection could be made because the target machine actively refused it."
+                        "No connection could be made because the target machine actively refused it.",
+                        KeycloakFailureType.Unreachable
                     )
                 );
 
@@ -444,7 +529,12 @@ public class TokenEndpointTests
                             A<IEnumerable<KeyValuePair<string, string>>>.Ignored
                         )
                 )
-                .Throws(new KeycloakException("No connection could be made because the target machine actively refused it."));
+                .Throws(
+                    new KeycloakException(
+                        "No connection could be made because the target machine actively refused it.",
+                        KeycloakFailureType.Unreachable
+                    )
+                );
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(

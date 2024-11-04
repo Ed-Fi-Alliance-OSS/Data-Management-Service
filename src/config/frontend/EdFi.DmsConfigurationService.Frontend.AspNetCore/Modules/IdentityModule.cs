@@ -32,27 +32,13 @@ public class IdentityModule : IEndpointModule
         if (allowRegistration)
         {
             await validator.GuardAsync(model);
-            try
-            {
-                await clientRepository.CreateClientAsync(
-                    model.ClientId!,
-                    model.ClientSecret!,
-                    model.DisplayName!
-                );
-                return Results.Ok($"Registered client {model.ClientId} successfully.");
-            }
-            catch (Exception ex)
-            {
-                if (
-                    ex.Message.Contains(
-                        "No connection could be made because the target machine actively refused it"
-                    )
-                )
-                {
-                    throw new KeycloakException(ex.Message);
-                }
-                throw new IdentityException($"Client registration failed with: {ex.Message}");
-            }
+
+            await clientRepository.CreateClientAsync(
+                model.ClientId!,
+                model.ClientSecret!,
+                model.DisplayName!
+            );
+            return Results.Ok($"Registered client {model.ClientId} successfully.");
         }
         return Results.Forbid();
     }
@@ -85,16 +71,10 @@ public class IdentityModule : IEndpointModule
         }
         catch (Exception ex)
         {
-            if (
-                ex.Message.Contains(
-                    "No connection could be made because the target machine actively refused it"
-                )
-            )
-            {
-                throw new KeycloakException(ex.Message);
-            }
+            //TO DO KeycloakException
+
             throw new IdentityException(
-                "Client registration failed with: Invalid client or Invalid client credentials."
+                "Client registration failed with: Invalid client or Invalid client credentials." + ex.Message
             );
         }
     }

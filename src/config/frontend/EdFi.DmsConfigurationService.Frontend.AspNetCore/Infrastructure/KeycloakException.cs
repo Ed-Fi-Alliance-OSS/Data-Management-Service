@@ -7,11 +7,26 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
 public class KeycloakException : Exception
 {
-    public KeycloakException(string message) : base(message) { }
+    public KeycloakFailureType FailureType { get; }
 
-    public KeycloakException(Exception innerException)
+    public KeycloakException(string message, KeycloakFailureType failureType)
+        : base(message)
     {
+        FailureType = failureType;
     }
 
-    public KeycloakException(string message, Exception innerException) : base(message, innerException) { }
+    public KeycloakException(string message, Exception innerException, KeycloakFailureType failureType)
+        : base(message, innerException)
+    {
+        FailureType = failureType;
+    }
+}
+
+public enum KeycloakFailureType
+{
+    Unreachable,
+    BadCredentials,
+    InsufficientPermissions,
+    InvalidRealm,
+    Unknown
 }

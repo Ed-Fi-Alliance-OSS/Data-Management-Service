@@ -51,5 +51,9 @@ public record ClientClientsResult
 {
     public record Success(IEnumerable<string> ClientList) : ClientClientsResult;
     public record FailureKeycloak(string FailureMessage) : ClientClientsResult;
+    public record KeycloakUnreachable(string FailureMessage) : ClientClientsResult;
+    public record InvalidRealm(string FailureMessage) : ClientClientsResult;
+    public record BadCredentials(string FailureMessage) : ClientClientsResult;
+    public record InsufficientPermissions(string FailureMessage) : ClientClientsResult;
 }
 

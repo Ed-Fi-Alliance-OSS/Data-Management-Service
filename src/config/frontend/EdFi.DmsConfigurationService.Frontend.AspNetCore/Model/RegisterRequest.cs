@@ -52,8 +52,16 @@ public class RegisterRequest
             {
                 case ClientClientsResult.Success clientSuccess:
                     return !clientSuccess.ClientList.Any(c => c.Equals(clientId, StringComparison.InvariantCultureIgnoreCase));
+                case ClientClientsResult.KeycloakUnreachable clientFailure:
+                    throw new KeycloakException(clientFailure.FailureMessage, KeycloakFailureType.Unreachable);
+                case ClientClientsResult.InvalidRealm clientFailure:
+                    throw new KeycloakException(clientFailure.FailureMessage, KeycloakFailureType.InvalidRealm);
+                case ClientClientsResult.BadCredentials clientFailure:
+                    throw new KeycloakException(clientFailure.FailureMessage, KeycloakFailureType.BadCredentials);
+                case ClientClientsResult.InsufficientPermissions clientFailure:
+                    throw new KeycloakException(clientFailure.FailureMessage, KeycloakFailureType.InsufficientPermissions);
                 case ClientClientsResult.FailureKeycloak clientFailure:
-                    throw new KeycloakException(clientFailure.FailureMessage);
+                    throw new KeycloakException(clientFailure.FailureMessage, KeycloakFailureType.Unknown);
             }
             return true;
         }

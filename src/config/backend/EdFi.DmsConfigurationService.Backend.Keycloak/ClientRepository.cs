@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using Flurl.Http;
 using Keycloak.Net;
 using Keycloak.Net.Models.Clients;
 using Keycloak.Net.Models.Roles;
@@ -140,6 +141,25 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
         {
             var clients = await _keycloakClient.GetClientsAsync(_realm);
             return new ClientClientsResult.Success(clients.Select(x => x.ClientId).ToList());
+        }
+        catch (FlurlHttpException ex)
+        {
+            var resultMap = new Dictionary<int, Func<string, ClientClientsResult>>
+            {
+                { -1, msg => new ClientClientsResult.KeycloakUnreachable(msg) },
+                { 401, msg => new ClientClientsResult.BadCredentials(msg) },
+                { 403, msg => new ClientClientsResult.InsufficientPermissions(msg) },
+                { 404, msg => new ClientClientsResult.InvalidRealm(msg) }
+            };
+
+            int statusCode = ex.StatusCode ?? -1;
+
+            if (resultMap.TryGetValue(statusCode, out var resultFunc))
+            {
+                return resultFunc(ex.Message);
+            }
+
+            return new ClientClientsResult.FailureKeycloak(ex.Message);
         }
         catch (Exception ex)
         {

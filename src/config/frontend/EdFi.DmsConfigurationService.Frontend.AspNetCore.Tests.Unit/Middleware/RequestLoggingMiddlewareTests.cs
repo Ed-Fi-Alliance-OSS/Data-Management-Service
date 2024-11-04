@@ -120,7 +120,7 @@ internal class RequestLoggingMiddlewareTests
         {
             // Arrange
             var httpContext = new DefaultHttpContext { Response = { Body = new MemoryStream() } };
-            var exception = new KeycloakException("status code 404");
+            var exception = new KeycloakException("status code 404", KeycloakFailureType.InvalidRealm);
 
             A.CallTo(() => _next.Invoke(httpContext)).Throws(exception);
 
@@ -143,7 +143,7 @@ internal class RequestLoggingMiddlewareTests
         {
             // Arrange
             var httpContext = new DefaultHttpContext { Response = { Body = new MemoryStream() } };
-            var exception = new KeycloakException("No connection could be made");
+            var exception = new KeycloakException("No connection could be made", KeycloakFailureType.Unreachable);
 
             A.CallTo(() => _next.Invoke(httpContext)).Throws(exception);
 

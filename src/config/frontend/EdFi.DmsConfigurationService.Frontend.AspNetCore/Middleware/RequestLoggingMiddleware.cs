@@ -49,10 +49,15 @@ public class RequestLoggingMiddleware(RequestDelegate next)
                         ValidationException => (int)HttpStatusCode.BadRequest,
                         BadHttpRequestException => (int)HttpStatusCode.BadRequest,
                         IdentityException => (int)HttpStatusCode.Unauthorized,
-                        KeycloakException ke when ke.Message.Contains("No connection could be made")
-                            => (int)HttpStatusCode.BadGateway,
-                        KeycloakException ke when ke.Message.Contains("status code 404")
-                            => (int)HttpStatusCode.NotFound,
+                        KeycloakException ke
+                            => ke.FailureType switch
+                            {
+                                KeycloakFailureType.Unreachable => (int)HttpStatusCode.BadGateway,
+                                KeycloakFailureType.BadCredentials => (int)HttpStatusCode.Unauthorized,
+                                KeycloakFailureType.InvalidRealm => (int)HttpStatusCode.NotFound,
+                                KeycloakFailureType.InsufficientPermissions => (int)HttpStatusCode.Forbidden,
+                                _ => (int)HttpStatusCode.InternalServerError
+                            },
                         _ => (int)HttpStatusCode.InternalServerError,
                     },
                     Body = ex switch
@@ -82,23 +87,44 @@ public class RequestLoggingMiddleware(RequestDelegate next)
                                 )
                             ),
 
-                        KeycloakException ke when ke.Message.Contains("No connection could be made")
-                            => JsonNode.Parse(
-                                JsonSerializer.Serialize(
-                                    new { title = "Keycloak is unreachable.", message = ex.Message, }
-                                )
-                            ),
-
-                        KeycloakException ke when ke.Message.Contains("status code 404")
-                            => JsonNode.Parse(
-                                JsonSerializer.Serialize(
-                                    new
-                                    {
-                                        title = "Invalid realm.",
-                                        message = "Please check the configuration."
-                                    }
-                                )
-                            ),
+                        KeycloakException ke
+                            => ke.FailureType switch
+                            {
+                                KeycloakFailureType.Unreachable
+                                    => JsonNode.Parse(
+                                        JsonSerializer.Serialize(
+                                            new { title = "Keycloak is unreachable.", message = ex.Message }
+                                        )
+                                    ),
+                                KeycloakFailureType.InvalidRealm
+                                    => JsonNode.Parse(
+                                        JsonSerializer.Serialize(
+                                            new
+                                            {
+                                                title = "Invalid realm.",
+                                                message = "Please check the configuration."
+                                            }
+                                        )
+                                    ),
+                                KeycloakFailureType.BadCredentials
+                                    => JsonNode.Parse(
+                                        JsonSerializer.Serialize(
+                                            new { title = "Bad Credentials.", message = ex.Message }
+                                        )
+                                    ),
+                                KeycloakFailureType.InsufficientPermissions
+                                    => JsonNode.Parse(
+                                        JsonSerializer.Serialize(
+                                            new { title = "Insufficient Permissions.", message = ex.Message }
+                                        )
+                                    ),
+                                _
+                                    => JsonNode.Parse(
+                                        JsonSerializer.Serialize(
+                                            new { title = "Unexpected Keycloak Error.", message = ex.Message }
+                                        )
+                                    )
+                            },
 
                         BadHttpRequestException
                             => JsonNode.Parse(
@@ -121,7 +147,7 @@ public class RequestLoggingMiddleware(RequestDelegate next)
                     Headers = new Dictionary<string, string> { { "TraceId", context.TraceIdentifier } }
                 };
 
-            if (ex is KeycloakException)
+            if (ex is KeycloakException { FailureType: KeycloakFailureType.Unreachable })
             {
                 logger.LogCritical(ex.Message + " - TraceId: {TraceId}", context.TraceIdentifier);
             }
