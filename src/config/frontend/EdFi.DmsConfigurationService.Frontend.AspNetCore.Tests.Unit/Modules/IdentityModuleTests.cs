@@ -558,4 +558,130 @@ public class TokenEndpointTests
             @"{""title"":""Keycloak is unreachable."",""message"":""No connection could be made because the target machine actively refused it.""}";
         content.Should().Be(expectedResponse);
     }
+
+    [Test]
+    public async Task When_provider_has_invalid_realm()
+    {
+        //Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            _tokenManager = A.Fake<ITokenManager>();
+
+            A.CallTo(
+                    () =>
+                        _tokenManager.GetAccessTokenAsync(
+                            A<IEnumerable<KeyValuePair<string, string>>>.Ignored
+                        )
+                )
+                .Throws(
+                    new KeycloakException(
+                        "Invalid realm.",
+                        KeycloakFailureType.InvalidRealm
+                    )
+                );
+
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection.AddTransient((_) => new TokenRequest.Validator());
+                    collection.AddTransient((_) => _tokenManager!);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        //Act
+        var requestContent = new { clientid = "CSClient3", clientsecret = "test123@Puiu" };
+        var response = await client.PostAsJsonAsync("/connect/token", requestContent);
+        string content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        content.Should().Contain("Invalid realm");
+    }
+
+    [Test]
+    public async Task When_provider_has_not_realm_admin_role()
+    {
+        //Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            _tokenManager = A.Fake<ITokenManager>();
+
+            A.CallTo(
+                    () =>
+                        _tokenManager.GetAccessTokenAsync(
+                            A<IEnumerable<KeyValuePair<string, string>>>.Ignored
+                        )
+                )
+                .Throws(
+                    new KeycloakException(
+                        "Insufficient Permissions.",
+                        KeycloakFailureType.InsufficientPermissions
+                    )
+                );
+
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection.AddTransient((_) => new TokenRequest.Validator());
+                    collection.AddTransient((_) => _tokenManager!);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        //Act
+        var requestContent = new { clientid = "CSClient3", clientsecret = "test123@Puiu" };
+        var response = await client.PostAsJsonAsync("/connect/token", requestContent);
+        string content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        content.Should().Contain("Insufficient Permissions");
+    }
+
+    [Test]
+    public async Task When_provider_has_bad_credetials()
+    {
+        //Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            _tokenManager = A.Fake<ITokenManager>();
+
+            A.CallTo(
+                    () =>
+                        _tokenManager.GetAccessTokenAsync(
+                            A<IEnumerable<KeyValuePair<string, string>>>.Ignored
+                        )
+                )
+                .Throws(
+                    new KeycloakException(
+                        "Bad Credentials.",
+                        KeycloakFailureType.BadCredentials
+                    )
+                );
+
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection.AddTransient((_) => new TokenRequest.Validator());
+                    collection.AddTransient((_) => _tokenManager!);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        //Act
+        var requestContent = new { clientid = "CSClient3", clientsecret = "test123@Puiu" };
+        var response = await client.PostAsJsonAsync("/connect/token", requestContent);
+        string content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        content.Should().Contain("Bad Credentials");
+    }
 }
