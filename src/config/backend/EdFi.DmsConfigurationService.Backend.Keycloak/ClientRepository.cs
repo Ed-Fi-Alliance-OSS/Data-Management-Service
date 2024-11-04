@@ -178,29 +178,24 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
 
         if (typeof(T) == typeof(ClientClientsResult))
         {
-            return new ClientClientsResult.FailureKeycloak(keycloakError) as T
-                   ?? throw new InvalidOperationException("Error creating instance.");
+            return (T)(object)new ClientClientsResult.FailureKeycloak(keycloakError);
         }
 
         if (typeof(T) == typeof(ClientCreateResult))
         {
-            return new ClientCreateResult.FailureKeycloak(keycloakError) as T
-                   ?? throw new InvalidOperationException("Error creating instance.");
+            return (T)(object)new ClientCreateResult.FailureKeycloak(keycloakError);
         }
 
         if (typeof(T) == typeof(ClientDeleteResult))
         {
-            return new ClientDeleteResult.FailureKeycloak(keycloakError) as T
-                   ?? throw new InvalidOperationException("Error creating instance.");
+            return (T)(object)new ClientDeleteResult.FailureKeycloak(keycloakError);
         }
 
         if (typeof(T) == typeof(ClientResetResult))
         {
-            return new ClientResetResult.FailureKeycloak(keycloakError) as T
-                   ?? throw new InvalidOperationException("Error creating instance.");
+            return (T)(object)new ClientResetResult.FailureKeycloak(keycloakError);
         }
 
         throw new InvalidOperationException($"Error creating instance of type {typeof(T).Name}.");
     }
-
 }

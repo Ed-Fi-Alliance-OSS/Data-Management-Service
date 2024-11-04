@@ -28,7 +28,7 @@ public class ApplicationModule : IEndpointModule
             .RequireAuthorizationWithPolicy();
     }
 
-    private static async Task<IResult> InsertApplication(
+    private async Task<IResult> InsertApplication(
         ApplicationInsertCommandValidator validator,
         ApplicationInsertCommand command,
         HttpContext httpContext,
@@ -57,6 +57,9 @@ public class ApplicationModule : IEndpointModule
             case ClientCreateResult.FailureUnknown:
                 logger.LogError("Failure creating client");
                 return Results.Problem(statusCode: 500);
+            case ClientCreateResult.FailureKeycloak failureKeycloak:
+                logger.LogError("Failure creating client");
+                throw MapKeycloakErrorToException(failureKeycloak.FailureMessage);
             case ClientCreateResult.Success clientSuccess:
                 var repositoryResult = await applicationRepository.InsertApplication(
                     command,
@@ -94,6 +97,38 @@ public class ApplicationModule : IEndpointModule
 
         logger.LogError("Failure creating client");
         return Results.Problem(statusCode: 500);
+    }
+
+    private KeycloakException MapKeycloakErrorToException(KeycloakError keycloakError)
+    {
+        return keycloakError switch
+        {
+            KeycloakError.KeycloakUnreachable unreachableError
+                => new KeycloakException(
+                    unreachableError.FailureMessage,
+                    KeycloakFailureType.Unreachable
+                ),
+
+            KeycloakError.InvalidRealm invalidRealmError
+                => new KeycloakException(
+                    invalidRealmError.FailureMessage,
+                    KeycloakFailureType.InvalidRealm
+                ),
+
+            KeycloakError.BadCredentials badCredentialsError
+                => new KeycloakException(
+                    badCredentialsError.FailureMessage,
+                    KeycloakFailureType.BadCredentials
+                ),
+
+            KeycloakError.InsufficientPermissions insufficientPermissionsError
+                => new KeycloakException(
+                    insufficientPermissionsError.FailureMessage,
+                    KeycloakFailureType.InsufficientPermissions
+                ),
+
+            _ => new KeycloakException("An unknown Keycloak error occurred.", KeycloakFailureType.Unknown)
+        };
     }
 
     private static async Task<IResult> GetAll(IApplicationRepository applicationRepository)
