@@ -6,6 +6,7 @@
 using System.Net;
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Application;
@@ -198,17 +199,64 @@ public class VendorModuleTests
             );
 
             //Assert
-            string expectedPostResponse =
-                @"{""title"":""Validation failed."",""errors"":{""Company"":[""The length of \u0027Company\u0027 must be 256 characters or fewer. You entered 300 characters.""],""ContactName"":[""The length of \u0027Contact Name\u0027 must be 128 characters or fewer. You entered 300 characters.""],""ContactEmailAddress"":[""\u0027Contact Email Address\u0027 is not a valid email address.""],""NamespacePrefixes"":[""Each NamespacePrefix length must be 128 characters or fewer.""]}}";
-            string expectedPutResponse =
-                @"{""title"":""Validation failed."",""errors"":{""Company"":[""The length of \u0027Company\u0027 must be 256 characters or fewer. You entered 300 characters.""],""ContactName"":[""The length of \u0027Contact Name\u0027 must be 128 characters or fewer. You entered 300 characters.""],""ContactEmailAddress"":[""\u0027Contact Email Address\u0027 is not a valid email address.""],""NamespacePrefixes"":[""Each NamespacePrefix length must be 128 characters or fewer.""]}}";
+            var expectedPostResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "validationErrors": {
+                    "Company": [
+                      "The length of 'Company' must be 256 characters or fewer. You entered 300 characters."
+                    ],
+                    "ContactName": [
+                      "The length of 'Contact Name' must be 128 characters or fewer. You entered 300 characters."
+                    ],
+                    "ContactEmailAddress": [
+                      "'Contact Email Address' is not a valid email address."
+                    ],
+                    "NamespacePrefixes": [
+                      "Each NamespacePrefix length must be 128 characters or fewer."
+                    ]
+                  }
+                }
+                """
+            );
+            var expectedPutResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "validationErrors": {
+                    "Company": [
+                      "The length of 'Company' must be 256 characters or fewer. You entered 300 characters."
+                    ],
+                    "ContactName": [
+                      "The length of 'Contact Name' must be 128 characters or fewer. You entered 300 characters."
+                    ],
+                    "ContactEmailAddress": [
+                      "'Contact Email Address' is not a valid email address."
+                    ],
+                    "NamespacePrefixes": [
+                      "Each NamespacePrefix length must be 128 characters or fewer."
+                    ]
+                  }
+                }
+                """
+            );
+
             string addResponseContent = await addResponse.Content.ReadAsStringAsync();
             addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            addResponseContent.Should().Contain(expectedPostResponse);
+            var postResponse = JsonNode.Parse(addResponseContent);
+            JsonNode.DeepEquals(postResponse, expectedPostResponse).Should().Be(true);
 
             string updateResponseContent = await updateResponse.Content.ReadAsStringAsync();
             updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            updateResponseContent.Should().Contain(expectedPutResponse);
+            var putResponse = JsonNode.Parse(updateResponseContent);
+            JsonNode.DeepEquals(putResponse, expectedPutResponse).Should().Be(true);
         }
 
         [Test]

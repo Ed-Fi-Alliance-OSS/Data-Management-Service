@@ -6,6 +6,7 @@
 using System.Net;
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Application;
@@ -208,11 +209,30 @@ public class ApplicationModuleTests
             );
 
             //Assert
-            string expectedResponse =
-                @"{""title"":""Validation failed."",""errors"":{""ApplicationName"":[""The length of \u0027Application Name\u0027 must be 256 characters or fewer. You entered 266 characters.""],""ClaimSetName"":[""\u0027Claim Set Name\u0027 must not be empty.""],""EducationOrganizationIds[0]"":[""\u0027Education Organization Ids\u0027 must be greater than \u00270\u0027.""]}}";
+            var expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "validationErrors": {
+                    "ApplicationName": [
+                      "The length of 'Application Name' must be 256 characters or fewer. You entered 266 characters."
+                    ],
+                    "ClaimSetName": [
+                      "'Claim Set Name' must not be empty."
+                    ],
+                    "EducationOrganizationIds[0]": [
+                      "'Education Organization Ids' must be greater than '0'."
+                    ]
+                  }
+                }
+                """
+            );
             string addResponseContent = await addResponse.Content.ReadAsStringAsync();
             addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            addResponseContent.Should().Contain(expectedResponse);
+            JsonNode.DeepEquals(JsonNode.Parse(addResponseContent), expectedResponse).Should().Be(true);
         }
     }
 
@@ -515,9 +535,22 @@ public class ApplicationModuleTests
 
             addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             string responseBody = await addResponse.Content.ReadAsStringAsync();
-            string expectedResponse =
-                @"{""title"":""Validation failed."",""errors"":{""VendorId"":[""Reference \u0027VendorId\u0027 does not exist.""]}}";
-            responseBody.Should().Contain(expectedResponse);
+            var expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "validationErrors": {
+                    "VendorId": [
+                      "Reference 'VendorId' does not exist."
+                    ]
+                  }
+                }
+                """
+            );
+            JsonNode.DeepEquals(JsonNode.Parse(responseBody), expectedResponse).Should().Be(true);
         }
 
         [Test]
@@ -547,9 +580,22 @@ public class ApplicationModuleTests
             //Assert
             updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             string responseBody = await updateResponse.Content.ReadAsStringAsync();
-            string expectedResponse =
-                @"{""title"":""Validation failed."",""errors"":{""VendorId"":[""Reference \u0027VendorId\u0027 does not exist.""]}}";
-            responseBody.Should().Contain(expectedResponse);
+            var expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "validationErrors": {
+                    "VendorId": [
+                      "Reference 'VendorId' does not exist."
+                    ]
+                  }
+                }
+                """
+            );
+            JsonNode.DeepEquals(JsonNode.Parse(responseBody), expectedResponse).Should().Be(true);
         }
     }
 }

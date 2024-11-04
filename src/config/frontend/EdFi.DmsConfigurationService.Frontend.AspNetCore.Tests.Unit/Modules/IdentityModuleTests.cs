@@ -5,6 +5,7 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
@@ -16,7 +17,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
-using static EdFi.DmsConfigurationService.Backend.KeycloakError;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 
@@ -187,7 +187,7 @@ public class RegisterEndpointTests
         string content = await response.Content.ReadAsStringAsync();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
         content.Should().Contain("Unauthorized");
     }
 
@@ -226,7 +226,7 @@ public class RegisterEndpointTests
         string content = await response.Content.ReadAsStringAsync();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
         content.Should().Contain("Forbidden");
     }
 
@@ -265,7 +265,7 @@ public class RegisterEndpointTests
         string content = await response.Content.ReadAsStringAsync();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
         content.Should().Contain("Invalid realm");
     }
 
@@ -381,9 +381,10 @@ public class RegisterEndpointTests
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
-        string expectedResponse =
-            @"{""title"":""Keycloak is unreachable."",""message"":""No connection could be made because the target machine actively refused it.""}";
-        content.Should().Be(expectedResponse);
+        var expectedResponse = JsonNode.Parse(
+            """{"detail":"No connection could be made because the target machine actively refused it.","type":"urn:ed-fi:api:bad-gateway","title":"Bad Gateway","status":502,"validationErrors":{}}"""
+        );
+        JsonNode.DeepEquals(JsonNode.Parse(content), expectedResponse).Should().Be(true);
     }
 }
 
@@ -539,9 +540,18 @@ public class TokenEndpointTests
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
-        string expectedResponse =
-            @"{""title"":""Keycloak is unreachable."",""message"":""No connection could be made because the target machine actively refused it.""}";
-        content.Should().Be(expectedResponse);
+        var expectedResponse = JsonNode.Parse(
+            """
+            {
+              "detail": "No connection could be made because the target machine actively refused it.",
+              "type": "urn:ed-fi:api:bad-gateway",
+              "title": "Bad Gateway",
+              "status": 502,
+              "validationErrors": {}
+            }
+            """
+        );
+        JsonNode.DeepEquals(JsonNode.Parse(content), expectedResponse).Should().Be(true);
     }
 
     [Test]
@@ -577,7 +587,7 @@ public class TokenEndpointTests
         string content = await response.Content.ReadAsStringAsync();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
         content.Should().Contain("Invalid realm");
     }
 
@@ -614,7 +624,7 @@ public class TokenEndpointTests
         string content = await response.Content.ReadAsStringAsync();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
         content.Should().Contain("Insufficient Permissions");
     }
 
@@ -651,7 +661,7 @@ public class TokenEndpointTests
         string content = await response.Content.ReadAsStringAsync();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
         content.Should().Contain("Bad Credentials");
     }
 }

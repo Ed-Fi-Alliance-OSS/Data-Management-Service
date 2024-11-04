@@ -32,8 +32,10 @@ public static class WebApplicationBuilderExtensions
         var executingAssembly = Assembly.GetExecutingAssembly();
 
         webApplicationBuilder
-            .Services.AddValidatorsFromAssembly(executingAssembly)
+            .Services.AddExceptionHandler<GlobalExceptionHandler>()
+            .AddValidatorsFromAssembly(executingAssembly)
             .AddFluentValidationAutoValidation();
+
         ValidatorOptions.Global.DisplayNameResolver = (type, memberInfo, expression) =>
             memberInfo
                 ?.GetCustomAttribute<System.ComponentModel.DataAnnotations.DisplayAttribute>()

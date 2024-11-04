@@ -36,7 +36,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                     """;
 
                 var namespacePrefixes = command
-                    .NamespacePrefixes.Split(
+                    .NamespacePrefixes?.Split(
                         ',',
                         StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
                     )
@@ -155,7 +155,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                     """;
 
                 var namespacePrefixes = command
-                    .NamespacePrefixes.Split(
+                    .NamespacePrefixes?.Split(
                         ',',
                         StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
                     )
