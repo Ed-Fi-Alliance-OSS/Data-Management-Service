@@ -27,7 +27,7 @@ public class RegisterRequest
             RuleFor(m => m.ClientId).NotEmpty();
 
             RuleFor(m => m.ClientId)
-                .Must(BeUniqueClient)
+                .MustAsync(BeUniqueClientAsync)
                 .When(m => !string.IsNullOrEmpty(m.ClientId))
                 .WithMessage(
                     "Client with the same Client Id already exists. Please provide different Client Id."
@@ -44,26 +44,54 @@ public class RegisterRequest
             RuleFor(m => m.DisplayName).NotEmpty();
         }
 
-        private bool BeUniqueClient(string? clientId)
+        private async Task<bool> BeUniqueClientAsync(string? clientId, CancellationToken cancellationToken)
         {
-            var clientResult = Task.Run(_clientRepository.GetAllClientsAsync).Result;
+            var clientResult = await _clientRepository.GetAllClientsAsync();
 
-            switch (clientResult)
+            return clientResult switch
             {
-                case ClientClientsResult.Success clientSuccess:
-                    return !clientSuccess.ClientList.Any(c => c.Equals(clientId, StringComparison.InvariantCultureIgnoreCase));
-                case ClientClientsResult.KeycloakUnreachable clientFailure:
-                    throw new KeycloakException(clientFailure.FailureMessage, KeycloakFailureType.Unreachable);
-                case ClientClientsResult.InvalidRealm clientFailure:
-                    throw new KeycloakException(clientFailure.FailureMessage, KeycloakFailureType.InvalidRealm);
-                case ClientClientsResult.BadCredentials clientFailure:
-                    throw new KeycloakException(clientFailure.FailureMessage, KeycloakFailureType.BadCredentials);
-                case ClientClientsResult.InsufficientPermissions clientFailure:
-                    throw new KeycloakException(clientFailure.FailureMessage, KeycloakFailureType.InsufficientPermissions);
-                case ClientClientsResult.FailureKeycloak clientFailure:
-                    throw new KeycloakException(clientFailure.FailureMessage, KeycloakFailureType.Unknown);
-            }
-            return true;
+                ClientClientsResult.Success clientSuccess
+                    => !clientSuccess.ClientList.Any(c =>
+                        c.Equals(clientId, StringComparison.InvariantCultureIgnoreCase)
+                    ),
+
+                ClientClientsResult.FailureKeycloak failureKeycloak
+                    => throw MapKeycloakErrorToException(failureKeycloak.FailureMessage),
+
+                _ => throw new KeycloakException("Unexpected error occurred.", KeycloakFailureType.Unknown)
+            };
+        }
+
+        private KeycloakException MapKeycloakErrorToException(KeycloakError keycloakError)
+        {
+            return keycloakError switch
+            {
+                KeycloakError.KeycloakUnreachable unreachableError
+                    => new KeycloakException(
+                        unreachableError.FailureMessage,
+                        KeycloakFailureType.Unreachable
+                    ),
+
+                KeycloakError.InvalidRealm invalidRealmError
+                    => new KeycloakException(
+                        invalidRealmError.FailureMessage,
+                        KeycloakFailureType.InvalidRealm
+                    ),
+
+                KeycloakError.BadCredentials badCredentialsError
+                    => new KeycloakException(
+                        badCredentialsError.FailureMessage,
+                        KeycloakFailureType.BadCredentials
+                    ),
+
+                KeycloakError.InsufficientPermissions insufficientPermissionsError
+                    => new KeycloakException(
+                        insufficientPermissionsError.FailureMessage,
+                        KeycloakFailureType.InsufficientPermissions
+                    ),
+
+                _ => new KeycloakException("An unknown Keycloak error occurred.", KeycloakFailureType.Unknown)
+            };
         }
     }
 }

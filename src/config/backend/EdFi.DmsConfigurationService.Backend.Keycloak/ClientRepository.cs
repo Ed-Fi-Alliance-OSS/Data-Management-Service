@@ -56,7 +56,10 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
                 if (clientRole != null)
                 {
                     // Assign the service role to client's service account
-                    var serviceAccountUser = await _keycloakClient.GetUserForServiceAccountAsync(_realm, createdClientUuid);
+                    var serviceAccountUser = await _keycloakClient.GetUserForServiceAccountAsync(
+                        _realm,
+                        createdClientUuid
+                    );
 
                     _ = await _keycloakClient.AddRealmRoleMappingsToUserAsync(
                         _realm,
@@ -77,9 +80,13 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
                 return new ClientCreateResult.FailureUnknown($"Error while creating the client: {clientId}");
             }
         }
+        catch (FlurlHttpException ex)
+        {
+            return HandleFlurlHttpException<ClientCreateResult>(ex);
+        }
         catch (Exception ex)
         {
-            return new ClientCreateResult.FailureKeycloak(ex.Message);
+            return new ClientCreateResult.FailureUnknown(ex.Message);
         }
 
         List<ClientProtocolMapper> ConfigServiceProtocolMapper()
@@ -114,9 +121,9 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
                 ? new ClientDeleteResult.Success()
                 : new ClientDeleteResult.FailureUnknown($"Unknown failure deleting {clientUuid}");
         }
-        catch (Exception ex)
+        catch (FlurlHttpException ex)
         {
-            return new ClientDeleteResult.FailureKeycloak(ex.Message);
+            return HandleFlurlHttpException<ClientDeleteResult>(ex);
         }
     }
 
@@ -125,13 +132,15 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
         try
         {
             var credentials = await _keycloakClient.GenerateClientSecretAsync(_realm, clientUuid);
-            return credentials != null
-                ? new ClientResetResult.Success(credentials.Value)
-                : new ClientResetResult.FailureUnknown($"Unknown failure deleting {clientUuid}");
+            return new ClientResetResult.Success(credentials.Value);
+        }
+        catch (FlurlHttpException ex)
+        {
+            return HandleFlurlHttpException<ClientResetResult>(ex);
         }
         catch (Exception ex)
         {
-            return new ClientResetResult.FailureKeycloak(ex.Message);
+            return new ClientResetResult.FailureUnknown(ex.Message);
         }
     }
 
@@ -144,26 +153,54 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
         }
         catch (FlurlHttpException ex)
         {
-            var resultMap = new Dictionary<int, Func<string, ClientClientsResult>>
-            {
-                { -1, msg => new ClientClientsResult.KeycloakUnreachable(msg) },
-                { 401, msg => new ClientClientsResult.BadCredentials(msg) },
-                { 403, msg => new ClientClientsResult.InsufficientPermissions(msg) },
-                { 404, msg => new ClientClientsResult.InvalidRealm(msg) }
-            };
-
-            int statusCode = ex.StatusCode ?? -1;
-
-            if (resultMap.TryGetValue(statusCode, out var resultFunc))
-            {
-                return resultFunc(ex.Message);
-            }
-
-            return new ClientClientsResult.FailureKeycloak(ex.Message);
+            return HandleFlurlHttpException<ClientClientsResult>(ex);
         }
         catch (Exception ex)
         {
             return new ClientClientsResult.FailureUnknown(ex.Message);
         }
     }
+
+    private T HandleFlurlHttpException<T>(FlurlHttpException ex)
+        where T : class
+    {
+        var errorMap = new Dictionary<int, KeycloakError>
+        {
+            { -1, new KeycloakError.KeycloakUnreachable(ex.Message) },
+            { 401, new KeycloakError.BadCredentials(ex.Message) },
+            { 403, new KeycloakError.InsufficientPermissions(ex.Message) },
+            { 404, new KeycloakError.InvalidRealm(ex.Message) }
+        };
+
+        int statusCode = ex.StatusCode ?? -1;
+
+        var keycloakError = errorMap.TryGetValue(statusCode, out var error) ? error : new KeycloakError();
+
+        if (typeof(T) == typeof(ClientClientsResult))
+        {
+            return new ClientClientsResult.FailureKeycloak(keycloakError) as T
+                   ?? throw new InvalidOperationException("Error creating instance.");
+        }
+
+        if (typeof(T) == typeof(ClientCreateResult))
+        {
+            return new ClientCreateResult.FailureKeycloak(keycloakError) as T
+                   ?? throw new InvalidOperationException("Error creating instance.");
+        }
+
+        if (typeof(T) == typeof(ClientDeleteResult))
+        {
+            return new ClientDeleteResult.FailureKeycloak(keycloakError) as T
+                   ?? throw new InvalidOperationException("Error creating instance.");
+        }
+
+        if (typeof(T) == typeof(ClientResetResult))
+        {
+            return new ClientResetResult.FailureKeycloak(keycloakError) as T
+                   ?? throw new InvalidOperationException("Error creating instance.");
+        }
+
+        throw new InvalidOperationException($"Error creating instance of type {typeof(T).Name}.");
+    }
+
 }

@@ -158,15 +158,12 @@ public class RegisterEndpointTests
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             _clientRepository = A.Fake<IClientRepository>();
-            A.CallTo(
-                    () =>
-                        _clientRepository.CreateClientAsync(
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored
-                        )
-                )
-                .Throws(new KeycloakException("Unauthorized", KeycloakFailureType.BadCredentials));
+
+            var error = new KeycloakError.BadCredentials("Unauthorized");
+
+            A.CallTo(() => _clientRepository.GetAllClientsAsync())
+                .Returns(new ClientClientsResult.FailureKeycloak(error));
+
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
                 (collection) =>
@@ -200,15 +197,12 @@ public class RegisterEndpointTests
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             _clientRepository = A.Fake<IClientRepository>();
-            A.CallTo(
-                    () =>
-                        _clientRepository.CreateClientAsync(
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored
-                        )
-                )
-                .Throws(new KeycloakException("Forbidden", KeycloakFailureType.InsufficientPermissions));
+
+            var error = new KeycloakError.InsufficientPermissions("Forbidden.");
+
+            A.CallTo(() => _clientRepository.GetAllClientsAsync())
+                .Returns(new ClientClientsResult.FailureKeycloak(error));
+
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
                 (collection) =>
@@ -242,15 +236,12 @@ public class RegisterEndpointTests
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             _clientRepository = A.Fake<IClientRepository>();
-            A.CallTo(
-                    () =>
-                        _clientRepository.CreateClientAsync(
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored
-                        )
-                )
-                .Throws(new KeycloakException("Invalid realm", KeycloakFailureType.InvalidRealm));
+
+            var error = new KeycloakError.InvalidRealm("Invalid realm.");
+
+            A.CallTo(() => _clientRepository.GetAllClientsAsync())
+                .Returns(new ClientClientsResult.FailureKeycloak(error));
+
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
                 (collection) =>
@@ -359,20 +350,12 @@ public class RegisterEndpointTests
         {
             _clientRepository = A.Fake<IClientRepository>();
 
-            A.CallTo(
-                    () =>
-                        _clientRepository.CreateClientAsync(
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored
-                        )
-                )
-                .Throws(
-                    new KeycloakException(
-                        "No connection could be made because the target machine actively refused it.",
-                        KeycloakFailureType.Unreachable
-                    )
-                );
+            var error = new KeycloakError.KeycloakUnreachable(
+                "No connection could be made because the target machine actively refused it."
+            );
+
+            A.CallTo(() => _clientRepository.GetAllClientsAsync())
+                .Returns(new ClientClientsResult.FailureKeycloak(error));
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -573,12 +556,7 @@ public class TokenEndpointTests
                             A<IEnumerable<KeyValuePair<string, string>>>.Ignored
                         )
                 )
-                .Throws(
-                    new KeycloakException(
-                        "Invalid realm.",
-                        KeycloakFailureType.InvalidRealm
-                    )
-                );
+                .Throws(new KeycloakException("Invalid realm.", KeycloakFailureType.InvalidRealm));
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -657,12 +635,7 @@ public class TokenEndpointTests
                             A<IEnumerable<KeyValuePair<string, string>>>.Ignored
                         )
                 )
-                .Throws(
-                    new KeycloakException(
-                        "Bad Credentials.",
-                        KeycloakFailureType.BadCredentials
-                    )
-                );
+                .Throws(new KeycloakException("Bad Credentials.", KeycloakFailureType.BadCredentials));
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
