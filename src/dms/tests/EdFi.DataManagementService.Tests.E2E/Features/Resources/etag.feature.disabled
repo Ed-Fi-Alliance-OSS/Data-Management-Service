@@ -61,7 +61,25 @@ Feature: Validates the functionality of the ETag
                   }
                   """
 
+        @API-263
+        Scenario: 04 Ensure that clients cannot pass a different ETag in the If-Match header to delete a resource
+             When a DELETE if-match "0000000000" request is made to "/ed-fi/students/{id}"
+             Then it should respond with 412
+              And the response body is
+                  """
+                  {
+                      "detail": "The item has been modified by another user.",
+                      "type": "urn:ed-fi:api:optimistic-lock-failed",
+                      "title": "Optimistic Lock Failed",
+                      "status": 412,
+                      "correlationId": null,
+                      "errors": [
+                          "The resource item's etag value does not match what was specified in the 'If-Match' request header indicating that it has been modified by another client since it was last retrieved."
+                      ]
+                  }
+                  """
 
-
-
-
+        @API-264
+        Scenario: 05 Ensure that clients can pass an ETag to delete a resource
+             When a DELETE if-match "{etag}" request is made to "/ed-fi/students/{id}"
+             Then it should respond with 204
