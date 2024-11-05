@@ -24,22 +24,15 @@ public class TokenManager(KeycloakContext keycloakContext) : ITokenManager
             var response = await client.PostAsync(path, content);
             string responseString = await response.Content.ReadAsStringAsync();
 
-            if (response.IsSuccessStatusCode)
-            {
-                return new TokenResult.Success(responseString);
-            }
-
             return response.StatusCode switch
             {
-                HttpStatusCode.Unauthorized => new TokenResult.FailureKeycloak(
-                    new KeycloakError.Unauthorized(responseString)
-                ),
-                HttpStatusCode.Forbidden => new TokenResult.FailureKeycloak(
-                    new KeycloakError.Forbidden(responseString)
-                ),
-                HttpStatusCode.NotFound => new TokenResult.FailureKeycloak(
-                    new KeycloakError.NotFound(responseString)
-                ),
+                HttpStatusCode.OK => new TokenResult.Success(responseString),
+                HttpStatusCode.Unauthorized
+                    => new TokenResult.FailureKeycloak(new KeycloakError.Unauthorized(responseString)),
+                HttpStatusCode.Forbidden
+                    => new TokenResult.FailureKeycloak(new KeycloakError.Forbidden(responseString)),
+                HttpStatusCode.NotFound
+                    => new TokenResult.FailureKeycloak(new KeycloakError.NotFound(responseString)),
                 _ => new TokenResult.FailureUnknown(responseString),
             };
         }

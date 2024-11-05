@@ -33,12 +33,26 @@ public class IdentityModule : IEndpointModule
         {
             await validator.GuardAsync(model);
 
-            await clientRepository.CreateClientAsync(
+            var result = await clientRepository.CreateClientAsync(
                 model.ClientId!,
                 model.ClientSecret!,
                 model.DisplayName!
             );
-            return Results.Ok($"Registered client {model.ClientId} successfully.");
+
+            return result switch
+            {
+                ClientCreateResult.Success => Results.Ok($"Registered client {model.ClientId} successfully."),
+                ClientCreateResult.FailureKeycloak ke => ke.KeycloakError
+                    switch
+                    {
+                        KeycloakError.Unreachable => Results.StatusCode(502),
+                        KeycloakError.Unauthorized => Results.Unauthorized(),
+                        KeycloakError.NotFound => Results.NotFound(),
+                        KeycloakError.Forbidden => Results.Forbid(),
+                        _ => Results.Problem(statusCode: 500),
+                    },
+                _ => Results.Problem(statusCode: 500),
+            };
         }
         return Results.Forbid();
     }
