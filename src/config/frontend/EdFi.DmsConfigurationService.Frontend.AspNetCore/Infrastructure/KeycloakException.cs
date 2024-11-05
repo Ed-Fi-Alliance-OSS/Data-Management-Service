@@ -17,9 +17,4 @@ public class KeycloakException : Exception
         KeycloakError = keycloakError;
     }
 
-    public KeycloakException(Exception innerException, KeycloakError keycloakError)
-        : base(keycloakError.FailureMessage, innerException)
-    {
-        KeycloakError = keycloakError;
-    }
 }

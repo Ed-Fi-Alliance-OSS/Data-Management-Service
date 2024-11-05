@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.RegularExpressions;
-using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FluentValidation;
@@ -51,32 +50,15 @@ public class RegisterRequest
 
             return clientResult switch
             {
-                ClientClientsResult.Success clientSuccess => !clientSuccess.ClientList.Any(c =>
-                    c.Equals(clientId, StringComparison.InvariantCultureIgnoreCase)
-                ),
+                ClientClientsResult.Success clientSuccess
+                    => !clientSuccess.ClientList.Any(c =>
+                        c.Equals(clientId, StringComparison.InvariantCultureIgnoreCase)
+                    ),
 
-                ClientClientsResult.FailureKeycloak failureKeycloak => throw new KeycloakException(
-                    failureKeycloak.KeycloakError
-                ),
+                ClientClientsResult.FailureKeycloak failureKeycloak
+                    => throw new KeycloakException(failureKeycloak.KeycloakError),
 
                 _ => false,
-            };
-        }
-
-        private KeycloakException MapKeycloakErrorToException(KeycloakError keycloakError)
-        {
-            return keycloakError switch
-            {
-                KeycloakError.Unreachable unreachableError => new KeycloakException(unreachableError),
-
-                KeycloakError.NotFound invalidRealmError => new KeycloakException(invalidRealmError),
-
-                KeycloakError.Unauthorized badCredentialsError => new KeycloakException(badCredentialsError),
-
-                KeycloakError.Forbidden insufficientPermissionsError => new KeycloakException(
-                    insufficientPermissionsError
-                ),
-                _ => new KeycloakException(new KeycloakError("Unexpected error occurred.")),
             };
         }
     }
