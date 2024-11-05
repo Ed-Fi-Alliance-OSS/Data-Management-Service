@@ -80,6 +80,6 @@ Feature: Validates the functionality of the ETag
                   """
 
         @API-264
-        Scenario: 04 Ensure that clients can pass an ETag to delete a resource
-             When a DELETE if-match "0000000000" request is made to "/ed-fi/students/{id}"
+        Scenario: 05 Ensure that clients can pass an ETag to delete a resource
+             When a DELETE if-match "{etag}" request is made to "/ed-fi/students/{id}"
              Then it should respond with 204
