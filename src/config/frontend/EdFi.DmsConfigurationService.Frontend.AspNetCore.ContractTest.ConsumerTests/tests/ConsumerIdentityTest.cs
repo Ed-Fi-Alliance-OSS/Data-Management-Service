@@ -17,7 +17,7 @@ public class ConsumerIdentityTest
     [SetUp]
     public void Setup()
     {
-        pact = Pact.V3("DMS API Consumer", "DMS Configuration Service API").WithHttpInteractions();
+        pact = Pact.V3("ConfigurationService-API", "DMS-API").WithHttpInteractions();
     }
 
     [Test]

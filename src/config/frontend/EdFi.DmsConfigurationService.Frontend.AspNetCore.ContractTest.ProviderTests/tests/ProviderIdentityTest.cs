@@ -10,6 +10,7 @@ using PactNet.Verifier;
 using PactNet;
 using Microsoft.Extensions.Logging;
 using PactNet.Infrastructure.Outputters;
+using Microsoft.Extensions.Configuration;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider.Tests
 {
@@ -24,10 +25,24 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
 
         private IHost _host;
         private IPactVerifier verifier;
-        private Uri pactURL = new Uri("http://localhost:5120");
+
+        private readonly Uri? pactURL;
+        private readonly string? pactFilePath;
+        private readonly string? providerStatePath;
 
         public ProviderIdentityTest()
         {
+            // Load configuration from appsettings.json
+            var configuration = new ConfigurationBuilder()
+                .SetBasePath(Directory.GetCurrentDirectory())  // Set the base path for your appsettings.json
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                .Build();
+
+            // Get values from the configuration file
+            pactURL = new Uri(configuration["Pact:PactURL"]!);
+            pactFilePath = configuration["Pact:PactFilePath"];
+            providerStatePath = configuration["Pact:ProviderStatePath"];
+
             _host = Host.CreateDefaultBuilder()
                 .ConfigureWebHostDefaults(webBuilder =>
                 {
@@ -64,19 +79,10 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
         [Test]
         public void Verify()
         {
-            string pactFile = Path.Combine("..",
-                                                   "..",
-                                                   "..",
-                                                   "..",
-                                                   "EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.ConsumerTests",
-                                                   "pacts",
-                                                   "DMS API Consumer-DMS Configuration Service API.json");
-
             verifier!.ServiceProvider("DMS Configuration Service API", pactURL)
-                .WithFileSource(new FileInfo(pactFile))
-                .WithProviderStateUrl(new Uri(pactURL + "provider-states"))
+                .WithFileSource(new FileInfo(pactFilePath!))
+                .WithProviderStateUrl(new Uri(pactURL + providerStatePath))
                 .Verify();
-
         }
 
         #region IDisposable Support
@@ -92,7 +98,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
 
             if (disposing)
             {
-                //server.Dispose();
+                _host.Dispose();
             }
 
             _disposed = true;

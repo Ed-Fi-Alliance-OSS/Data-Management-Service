@@ -1,6 +1,6 @@
 {
   "consumer": {
-    "name": "DMS API Consumer"
+    "name": "ConfigurationService-API"
   },
   "interactions": [
     {
@@ -96,6 +96,6 @@
     }
   },
   "provider": {
-    "name": "DMS Configuration Service API"
+    "name": "DMS-API"
   }
 }
