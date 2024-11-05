@@ -5,7 +5,6 @@
 
 using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Backend.Repositories;
-using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FluentValidation;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
@@ -25,14 +24,6 @@ public class RegisterRequest
             _clientRepository = clientRepository;
 
             RuleFor(m => m.ClientId).NotEmpty();
-
-            RuleFor(m => m.ClientId)
-                .MustAsync(BeUniqueClientAsync)
-                .When(m => !string.IsNullOrEmpty(m.ClientId))
-                .WithMessage(
-                    "Client with the same Client Id already exists. Please provide different Client Id."
-                );
-
             RuleFor(m => m.ClientSecret).NotEmpty();
             RuleFor(m => m.ClientSecret)
                 .Matches(new Regex(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z\d]).{8,12}$"))
@@ -42,24 +33,6 @@ public class RegisterRequest
                 );
 
             RuleFor(m => m.DisplayName).NotEmpty();
-        }
-
-        private async Task<bool> BeUniqueClientAsync(string? clientId, CancellationToken cancellationToken)
-        {
-            var clientResult = await _clientRepository.GetAllClientsAsync();
-
-            return clientResult switch
-            {
-                ClientClientsResult.Success clientSuccess
-                    => !clientSuccess.ClientList.Any(c =>
-                        c.Equals(clientId, StringComparison.InvariantCultureIgnoreCase)
-                    ),
-
-                ClientClientsResult.FailureKeycloak failureKeycloak
-                    => throw new KeycloakException(failureKeycloak.KeycloakError),
-
-                _ => false,
-            };
         }
     }
 }

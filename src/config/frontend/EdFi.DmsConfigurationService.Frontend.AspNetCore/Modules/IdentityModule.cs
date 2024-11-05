@@ -9,6 +9,8 @@ using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
+using FluentValidation;
+using FluentValidation.Results;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
@@ -33,27 +35,47 @@ public class IdentityModule : IEndpointModule
         {
             await validator.GuardAsync(model);
 
-            var result = await clientRepository.CreateClientAsync(
-                model.ClientId!,
-                model.ClientSecret!,
-                model.DisplayName!
-            );
-
-            return result switch
+            var clientResult = await clientRepository.GetAllClientsAsync();
+            switch (clientResult)
             {
-                ClientCreateResult.Success => Results.Ok($"Registered client {model.ClientId} successfully."),
-                ClientCreateResult.FailureKeycloak ke
-                    => ke.KeycloakError switch
+                case ClientClientsResult.FailureUnknown:
+                    return Results.Problem(statusCode: 500);
+                case ClientClientsResult.FailureKeycloak failureKeycloak:
+                    throw new KeycloakException(failureKeycloak.KeycloakError);
+                case ClientClientsResult.Success clientSuccess:
+                    if (IsUnique(clientSuccess))
                     {
-                        KeycloakError.Unreachable => Results.StatusCode(502),
-                        KeycloakError.Unauthorized => Results.Unauthorized(),
-                        KeycloakError.NotFound => Results.NotFound(),
-                        KeycloakError.Forbidden => Results.Forbid(),
-                        _ => Results.Problem(statusCode: 500),
-                    },
-                _ => Results.Problem(statusCode: 500),
-            };
+                        var result = await clientRepository.CreateClientAsync(
+                            model.ClientId!,
+                            model.ClientSecret!,
+                            model.DisplayName!
+                        );
+                        return result switch
+                        {
+                            ClientCreateResult.Success => Results.Ok($"Registered client {model.ClientId} successfully."),
+                            ClientCreateResult.FailureKeycloak ke => throw new KeycloakException(ke.KeycloakError),
+                            _ => Results.Problem(statusCode: 500),
+                        };
+                    }
+                    break;
+            }
+            bool IsUnique(ClientClientsResult.Success clientSuccess)
+            {
+                bool clientExists = clientSuccess.ClientList.Any(c =>
+                    c.Equals(model.ClientId!, StringComparison.InvariantCultureIgnoreCase)
+                );
+                if (clientExists)
+                {
+                    var validationFailures = new List<ValidationFailure>
+                    {
+                        new() { PropertyName = "ClientId", ErrorMessage = "Client with the same Client Id already exists. Please provide different Client Id." }
+                    };
+                    throw new ValidationException(validationFailures);
+                }
+                return true;
+            }
         }
+
         return Results.Forbid();
     }
 
