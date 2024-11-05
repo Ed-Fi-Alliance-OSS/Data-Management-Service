@@ -59,7 +59,7 @@ public class ApplicationModule : IEndpointModule
                 return Results.Problem(statusCode: 500);
             case ClientCreateResult.FailureKeycloak failureKeycloak:
                 logger.LogError("Failure creating client");
-                throw MapKeycloakErrorToException(failureKeycloak.FailureMessage);
+                throw new KeycloakException(failureKeycloak.KeycloakError);
             case ClientCreateResult.Success clientSuccess:
                 var repositoryResult = await applicationRepository.InsertApplication(
                     command,
@@ -97,38 +97,6 @@ public class ApplicationModule : IEndpointModule
 
         logger.LogError("Failure creating client");
         return Results.Problem(statusCode: 500);
-    }
-
-    private KeycloakException MapKeycloakErrorToException(KeycloakError keycloakError)
-    {
-        return keycloakError switch
-        {
-            KeycloakError.KeycloakUnreachable unreachableError
-                => new KeycloakException(
-                    unreachableError.FailureMessage,
-                    KeycloakFailureType.Unreachable
-                ),
-
-            KeycloakError.InvalidRealm invalidRealmError
-                => new KeycloakException(
-                    invalidRealmError.FailureMessage,
-                    KeycloakFailureType.InvalidRealm
-                ),
-
-            KeycloakError.BadCredentials badCredentialsError
-                => new KeycloakException(
-                    badCredentialsError.FailureMessage,
-                    KeycloakFailureType.BadCredentials
-                ),
-
-            KeycloakError.InsufficientPermissions insufficientPermissionsError
-                => new KeycloakException(
-                    insufficientPermissionsError.FailureMessage,
-                    KeycloakFailureType.InsufficientPermissions
-                ),
-
-            _ => new KeycloakException("An unknown Keycloak error occurred.", KeycloakFailureType.Unknown)
-        };
     }
 
     private static async Task<IResult> GetAll(IApplicationRepository applicationRepository)

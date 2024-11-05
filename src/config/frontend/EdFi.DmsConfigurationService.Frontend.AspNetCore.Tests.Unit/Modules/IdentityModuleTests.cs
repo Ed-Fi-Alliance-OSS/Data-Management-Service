@@ -16,6 +16,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
+using static EdFi.DmsConfigurationService.Backend.KeycloakError;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 
@@ -159,7 +160,7 @@ public class RegisterEndpointTests
         {
             _clientRepository = A.Fake<IClientRepository>();
 
-            var error = new KeycloakError.BadCredentials("Unauthorized");
+            var error = new KeycloakError.Unauthorized("Unauthorized");
 
             A.CallTo(() => _clientRepository.GetAllClientsAsync())
                 .Returns(new ClientClientsResult.FailureKeycloak(error));
@@ -198,7 +199,7 @@ public class RegisterEndpointTests
         {
             _clientRepository = A.Fake<IClientRepository>();
 
-            var error = new KeycloakError.InsufficientPermissions("Forbidden.");
+            var error = new KeycloakError.Forbidden("Forbidden.");
 
             A.CallTo(() => _clientRepository.GetAllClientsAsync())
                 .Returns(new ClientClientsResult.FailureKeycloak(error));
@@ -237,7 +238,7 @@ public class RegisterEndpointTests
         {
             _clientRepository = A.Fake<IClientRepository>();
 
-            var error = new KeycloakError.InvalidRealm("Invalid realm.");
+            var error = new KeycloakError.NotFound("Invalid realm.");
 
             A.CallTo(() => _clientRepository.GetAllClientsAsync())
                 .Returns(new ClientClientsResult.FailureKeycloak(error));
@@ -350,7 +351,7 @@ public class RegisterEndpointTests
         {
             _clientRepository = A.Fake<IClientRepository>();
 
-            var error = new KeycloakError.KeycloakUnreachable(
+            var error = new KeycloakError.Unreachable(
                 "No connection could be made because the target machine actively refused it."
             );
 
@@ -373,7 +374,7 @@ public class RegisterEndpointTests
         {
             clientid = "CSClient3",
             clientsecret = "test123@Puiu",
-            displayname = "CSClient3"
+            displayname = "CSClient3",
         };
         var response = await client.PostAsJsonAsync("/connect/register", requestContent);
         string content = await response.Content.ReadAsStringAsync();
@@ -514,8 +515,9 @@ public class TokenEndpointTests
                 )
                 .Throws(
                     new KeycloakException(
-                        "No connection could be made because the target machine actively refused it.",
-                        KeycloakFailureType.Unreachable
+                        new KeycloakError.Unreachable(
+                            "No connection could be made because the target machine actively refused it."
+                        )
                     )
                 );
 
@@ -556,7 +558,7 @@ public class TokenEndpointTests
                             A<IEnumerable<KeyValuePair<string, string>>>.Ignored
                         )
                 )
-                .Throws(new KeycloakException("Invalid realm.", KeycloakFailureType.InvalidRealm));
+                .Throws(new KeycloakException(new KeycloakError.NotFound("Invalid realm.")));
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -593,12 +595,7 @@ public class TokenEndpointTests
                             A<IEnumerable<KeyValuePair<string, string>>>.Ignored
                         )
                 )
-                .Throws(
-                    new KeycloakException(
-                        "Insufficient Permissions.",
-                        KeycloakFailureType.InsufficientPermissions
-                    )
-                );
+                .Throws(new KeycloakException(new KeycloakError.Forbidden("Insufficient Permissions.")));
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -635,7 +632,7 @@ public class TokenEndpointTests
                             A<IEnumerable<KeyValuePair<string, string>>>.Ignored
                         )
                 )
-                .Throws(new KeycloakException("Bad Credentials.", KeycloakFailureType.BadCredentials));
+                .Throws(new KeycloakException(new KeycloakError.Unauthorized("Bad Credentials.")));
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(

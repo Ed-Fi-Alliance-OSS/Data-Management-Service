@@ -13,10 +13,8 @@ public interface ITokenManager
 public record TokenResult
 {
     public record Success(string Token) : TokenResult;
+
     public record FailureUnknown(string FailureMessage) : TokenResult;
-    public record FailureKeycloak(string FailureMessage) : TokenResult;
-    public record KeycloakUnreachable(string FailureMessage) : TokenResult;
-    public record InvalidRealm(string FailureMessage) : TokenResult;
-    public record BadCredentials(string FailureMessage) : TokenResult;
-    public record InsufficientPermissions(string FailureMessage) : TokenResult;
+
+    public record FailureKeycloak(KeycloakError KeycloakError) : TokenResult;
 }
