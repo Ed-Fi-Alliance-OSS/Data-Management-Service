@@ -63,29 +63,8 @@ public class IdentityModule : IEndpointModule
             response = tokenResult switch
             {
                 TokenResult.Success tokenSuccess => tokenSuccess.Token,
-                TokenResult.KeycloakUnreachable tokenFailure
-                    => throw new KeycloakException(
-                        tokenFailure.FailureMessage,
-                        KeycloakFailureType.Unreachable
-                    ),
-                TokenResult.InvalidRealm tokenFailure
-                    => throw new KeycloakException(
-                        tokenFailure.FailureMessage,
-                        KeycloakFailureType.InvalidRealm
-                    ),
-                TokenResult.BadCredentials tokenFailure
-                    => throw new KeycloakException(
-                        tokenFailure.FailureMessage,
-                        KeycloakFailureType.BadCredentials
-                    ),
-                TokenResult.InsufficientPermissions tokenFailure
-                    => throw new KeycloakException(
-                        tokenFailure.FailureMessage,
-                        KeycloakFailureType.InsufficientPermissions
-                    ),
-                TokenResult.FailureUnknown tokenFailure
-                    => throw new KeycloakException(tokenFailure.FailureMessage, KeycloakFailureType.Unknown),
-                _ => response
+                TokenResult.FailureKeycloak failure => throw new KeycloakException(failure.KeycloakError),
+                _ => response,
             };
 
             var tokenResponse = JsonSerializer.Deserialize<TokenResponse>(response);

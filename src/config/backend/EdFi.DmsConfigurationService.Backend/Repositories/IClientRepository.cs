@@ -26,7 +26,7 @@ public record ClientCreateResult
 
     public record FailureUnknown(string FailureMessage) : ClientCreateResult();
 
-    public record FailureKeycloak(KeycloakError FailureMessage) : ClientCreateResult();
+    public record FailureKeycloak(KeycloakError KeycloakError) : ClientCreateResult();
 }
 
 public record ClientDeleteResult
@@ -35,7 +35,7 @@ public record ClientDeleteResult
 
     public record FailureUnknown(string FailureMessage) : ClientDeleteResult();
 
-    public record FailureKeycloak(KeycloakError FailureMessage) : ClientDeleteResult();
+    public record FailureKeycloak(KeycloakError KeycloakError) : ClientDeleteResult();
 }
 
 public record ClientResetResult
@@ -44,20 +44,14 @@ public record ClientResetResult
 
     public record FailureUnknown(string FailureMessage) : ClientResetResult();
 
-    public record FailureKeycloak(KeycloakError FailureMessage) : ClientResetResult();
+    public record FailureKeycloak(KeycloakError KeycloakError) : ClientResetResult();
 }
 
 public record ClientClientsResult
 {
     public record Success(IEnumerable<string> ClientList) : ClientClientsResult;
-    public record FailureUnknown(string FailureMessage) : ClientClientsResult();
-    public record FailureKeycloak(KeycloakError FailureMessage) : ClientClientsResult;
-}
 
-public record KeycloakError
-{
-    public record KeycloakUnreachable(string FailureMessage) : KeycloakError;
-    public record InvalidRealm(string FailureMessage) : KeycloakError;
-    public record BadCredentials(string FailureMessage) : KeycloakError;
-    public record InsufficientPermissions(string FailureMessage) : KeycloakError;
+    public record FailureUnknown(string FailureMessage) : ClientClientsResult();
+
+    public record FailureKeycloak(KeycloakError KeycloakError) : ClientClientsResult;
 }

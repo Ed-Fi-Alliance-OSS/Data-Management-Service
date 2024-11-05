@@ -24,30 +24,30 @@ public class TokenManager(KeycloakContext keycloakContext) : ITokenManager
             var response = await client.PostAsync(path, content);
             string responseString = await response.Content.ReadAsStringAsync();
 
-            if (!response.IsSuccessStatusCode)
+            if (response.IsSuccessStatusCode)
             {
-                var resultMap = new Dictionary<HttpStatusCode, Func<string, TokenResult>>
-                {
-                    { HttpStatusCode.Unauthorized, msg => new TokenResult.BadCredentials(msg) },
-                    { HttpStatusCode.Forbidden, msg => new TokenResult.InsufficientPermissions(msg) },
-                    { HttpStatusCode.NotFound, msg => new TokenResult.InvalidRealm(msg) }
-                };
-
-                if (resultMap.TryGetValue(response.StatusCode, out var resultFunc))
-                {
-                    return resultFunc(responseString);
-                }
-
-                return new TokenResult.FailureKeycloak(responseString);
+                return new TokenResult.Success(responseString);
             }
 
-            return new TokenResult.Success(responseString);
+            return response.StatusCode switch
+            {
+                HttpStatusCode.Unauthorized => new TokenResult.FailureKeycloak(
+                    new KeycloakError.Unauthorized(responseString)
+                ),
+                HttpStatusCode.Forbidden => new TokenResult.FailureKeycloak(
+                    new KeycloakError.Forbidden(responseString)
+                ),
+                HttpStatusCode.NotFound => new TokenResult.FailureKeycloak(
+                    new KeycloakError.NotFound(responseString)
+                ),
+                _ => new TokenResult.FailureUnknown(responseString),
+            };
         }
         catch (HttpRequestException ex)
         {
-            return ex.StatusCode == null
-                ? new TokenResult.KeycloakUnreachable(ex.Message)
-                : new TokenResult.FailureKeycloak(ex.Message);
+            return ex.HttpRequestError == HttpRequestError.ConnectionError
+                ? new TokenResult.FailureKeycloak(new KeycloakError.Unreachable(ex.Message))
+                : new TokenResult.FailureUnknown(ex.Message);
         }
         catch (Exception ex)
         {

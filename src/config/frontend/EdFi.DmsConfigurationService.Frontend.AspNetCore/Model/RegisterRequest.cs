@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.RegularExpressions;
+using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FluentValidation;
@@ -50,15 +51,15 @@ public class RegisterRequest
 
             return clientResult switch
             {
-                ClientClientsResult.Success clientSuccess
-                    => !clientSuccess.ClientList.Any(c =>
-                        c.Equals(clientId, StringComparison.InvariantCultureIgnoreCase)
-                    ),
+                ClientClientsResult.Success clientSuccess => !clientSuccess.ClientList.Any(c =>
+                    c.Equals(clientId, StringComparison.InvariantCultureIgnoreCase)
+                ),
 
-                ClientClientsResult.FailureKeycloak failureKeycloak
-                    => throw MapKeycloakErrorToException(failureKeycloak.FailureMessage),
+                ClientClientsResult.FailureKeycloak failureKeycloak => throw new KeycloakException(
+                    failureKeycloak.KeycloakError
+                ),
 
-                _ => throw new KeycloakException("Unexpected error occurred.", KeycloakFailureType.Unknown)
+                _ => false,
             };
         }
 
@@ -66,31 +67,16 @@ public class RegisterRequest
         {
             return keycloakError switch
             {
-                KeycloakError.KeycloakUnreachable unreachableError
-                    => new KeycloakException(
-                        unreachableError.FailureMessage,
-                        KeycloakFailureType.Unreachable
-                    ),
+                KeycloakError.Unreachable unreachableError => new KeycloakException(unreachableError),
 
-                KeycloakError.InvalidRealm invalidRealmError
-                    => new KeycloakException(
-                        invalidRealmError.FailureMessage,
-                        KeycloakFailureType.InvalidRealm
-                    ),
+                KeycloakError.NotFound invalidRealmError => new KeycloakException(invalidRealmError),
 
-                KeycloakError.BadCredentials badCredentialsError
-                    => new KeycloakException(
-                        badCredentialsError.FailureMessage,
-                        KeycloakFailureType.BadCredentials
-                    ),
+                KeycloakError.Unauthorized badCredentialsError => new KeycloakException(badCredentialsError),
 
-                KeycloakError.InsufficientPermissions insufficientPermissionsError
-                    => new KeycloakException(
-                        insufficientPermissionsError.FailureMessage,
-                        KeycloakFailureType.InsufficientPermissions
-                    ),
-
-                _ => new KeycloakException("An unknown Keycloak error occurred.", KeycloakFailureType.Unknown)
+                KeycloakError.Forbidden insufficientPermissionsError => new KeycloakException(
+                    insufficientPermissionsError
+                ),
+                _ => new KeycloakException(new KeycloakError("Unexpected error occurred.")),
             };
         }
     }

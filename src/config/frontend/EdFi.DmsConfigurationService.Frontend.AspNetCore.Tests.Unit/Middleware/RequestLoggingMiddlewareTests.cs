@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
 using FakeItEasy;
@@ -105,7 +106,10 @@ internal class RequestLoggingMiddlewareTests
         {
             // Arrange
             var middleWare = new RequestLoggingMiddleware(_next);
-            var httpContext = new DefaultHttpContext { Request = { Path = "/.well-known/openid-configuration" } };
+            var httpContext = new DefaultHttpContext
+            {
+                Request = { Path = "/.well-known/openid-configuration" },
+            };
 
             // Act
             await middleWare.Invoke(httpContext, _logger);
@@ -120,7 +124,7 @@ internal class RequestLoggingMiddlewareTests
         {
             // Arrange
             var httpContext = new DefaultHttpContext { Response = { Body = new MemoryStream() } };
-            var exception = new KeycloakException("status code 404", KeycloakFailureType.InvalidRealm);
+            var exception = new KeycloakException(new KeycloakError.NotFound("Status Code 404"));
 
             A.CallTo(() => _next.Invoke(httpContext)).Throws(exception);
 
@@ -143,7 +147,9 @@ internal class RequestLoggingMiddlewareTests
         {
             // Arrange
             var httpContext = new DefaultHttpContext { Response = { Body = new MemoryStream() } };
-            var exception = new KeycloakException("No connection could be made", KeycloakFailureType.Unreachable);
+            var exception = new KeycloakException(
+                new KeycloakError.Unreachable("No connection could be made")
+            );
 
             A.CallTo(() => _next.Invoke(httpContext)).Throws(exception);
 

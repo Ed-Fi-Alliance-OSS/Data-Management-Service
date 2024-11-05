@@ -75,14 +75,12 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
                     );
                 }
             }
-            else
-            {
-                return new ClientCreateResult.FailureUnknown($"Error while creating the client: {clientId}");
-            }
+
+            return new ClientCreateResult.FailureUnknown($"Error while creating the client: {clientId}");
         }
         catch (FlurlHttpException ex)
         {
-            return HandleFlurlHttpException<ClientCreateResult>(ex);
+            return new ClientCreateResult.FailureKeycloak(ExceptionToKeycloakError(ex));
         }
         catch (Exception ex)
         {
@@ -123,7 +121,7 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
         }
         catch (FlurlHttpException ex)
         {
-            return HandleFlurlHttpException<ClientDeleteResult>(ex);
+            return new ClientDeleteResult.FailureKeycloak(ExceptionToKeycloakError(ex));
         }
     }
 
@@ -136,7 +134,7 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
         }
         catch (FlurlHttpException ex)
         {
-            return HandleFlurlHttpException<ClientResetResult>(ex);
+            return new ClientResetResult.FailureKeycloak(ExceptionToKeycloakError(ex));
         }
         catch (Exception ex)
         {
@@ -153,7 +151,7 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
         }
         catch (FlurlHttpException ex)
         {
-            return HandleFlurlHttpException<ClientClientsResult>(ex);
+            return new ClientClientsResult.FailureKeycloak(ExceptionToKeycloakError(ex));
         }
         catch (Exception ex)
         {
@@ -161,41 +159,15 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
         }
     }
 
-    private T HandleFlurlHttpException<T>(FlurlHttpException ex)
-        where T : class
+    private static KeycloakError ExceptionToKeycloakError(FlurlHttpException ex)
     {
-        var errorMap = new Dictionary<int, KeycloakError>
+        return ex.StatusCode switch
         {
-            { -1, new KeycloakError.KeycloakUnreachable(ex.Message) },
-            { 401, new KeycloakError.BadCredentials(ex.Message) },
-            { 403, new KeycloakError.InsufficientPermissions(ex.Message) },
-            { 404, new KeycloakError.InvalidRealm(ex.Message) }
+            null => new KeycloakError.Unreachable(ex.Message),
+            401 => new KeycloakError.Unauthorized(ex.Message),
+            403 => new KeycloakError.Forbidden(ex.Message),
+            404 => new KeycloakError.NotFound(ex.Message),
+            _ => new KeycloakError("Unknown"),
         };
-
-        int statusCode = ex.StatusCode ?? -1;
-
-        var keycloakError = errorMap.TryGetValue(statusCode, out var error) ? error : new KeycloakError();
-
-        if (typeof(T) == typeof(ClientClientsResult))
-        {
-            return (T)(object)new ClientClientsResult.FailureKeycloak(keycloakError);
-        }
-
-        if (typeof(T) == typeof(ClientCreateResult))
-        {
-            return (T)(object)new ClientCreateResult.FailureKeycloak(keycloakError);
-        }
-
-        if (typeof(T) == typeof(ClientDeleteResult))
-        {
-            return (T)(object)new ClientDeleteResult.FailureKeycloak(keycloakError);
-        }
-
-        if (typeof(T) == typeof(ClientResetResult))
-        {
-            return (T)(object)new ClientResetResult.FailureKeycloak(keycloakError);
-        }
-
-        throw new InvalidOperationException($"Error creating instance of type {typeof(T).Name}.");
     }
 }
