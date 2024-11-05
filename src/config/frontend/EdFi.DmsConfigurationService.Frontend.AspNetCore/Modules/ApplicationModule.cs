@@ -11,7 +11,6 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model.Validator;
 using FluentValidation;
 using FluentValidation.Results;
-using Keycloak.Net.Models.Clients;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -29,7 +28,7 @@ public class ApplicationModule : IEndpointModule
             .RequireAuthorizationWithPolicy();
     }
 
-    private static async Task<IResult> InsertApplication(
+    private async Task<IResult> InsertApplication(
         ApplicationInsertCommandValidator validator,
         ApplicationInsertCommand command,
         HttpContext httpContext,
@@ -58,6 +57,9 @@ public class ApplicationModule : IEndpointModule
             case ClientCreateResult.FailureUnknown:
                 logger.LogError("Failure creating client");
                 return Results.Problem(statusCode: 500);
+            case ClientCreateResult.FailureKeycloak failureKeycloak:
+                logger.LogError("Failure creating client");
+                throw new KeycloakException(failureKeycloak.KeycloakError);
             case ClientCreateResult.Success clientSuccess:
                 var repositoryResult = await applicationRepository.InsertApplication(
                     command,

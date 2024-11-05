@@ -7,5 +7,14 @@ namespace EdFi.DmsConfigurationService.Backend;
 
 public interface ITokenManager
 {
-    public Task<string> GetAccessTokenAsync(IEnumerable<KeyValuePair<string, string>> credentials);
+    public Task<TokenResult> GetAccessTokenAsync(IEnumerable<KeyValuePair<string, string>> credentials);
+}
+
+public record TokenResult
+{
+    public record Success(string Token) : TokenResult;
+
+    public record FailureUnknown(string FailureMessage) : TokenResult;
+
+    public record FailureKeycloak(KeycloakError KeycloakError) : TokenResult;
 }

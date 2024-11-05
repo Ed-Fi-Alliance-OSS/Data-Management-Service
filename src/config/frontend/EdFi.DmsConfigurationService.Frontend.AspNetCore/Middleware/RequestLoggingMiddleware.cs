@@ -5,6 +5,8 @@
 
 using System.Net;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FluentValidation;
 
@@ -39,58 +41,96 @@ public class RequestLoggingMiddleware(RequestDelegate next)
         }
         catch (Exception ex)
         {
-            var response = context.Response;
-            response.ContentType = "application/json";
-
-            switch (ex)
+            int statusCode = ex switch
             {
-                case ValidationException validationException:
-                    var validationResponse = new
-                    {
-                        title = "Validation failed",
-                        errors = new Dictionary<string, List<string>>(),
-                    };
+                ValidationException => (int)HttpStatusCode.BadRequest,
+                BadHttpRequestException => (int)HttpStatusCode.BadRequest,
+                IdentityException => (int)HttpStatusCode.Unauthorized,
+                KeycloakException ke => ke.KeycloakError switch
+                {
+                    KeycloakError.Unreachable => (int)HttpStatusCode.BadGateway,
+                    KeycloakError.Unauthorized => (int)HttpStatusCode.Unauthorized,
+                    KeycloakError.NotFound => (int)HttpStatusCode.NotFound,
+                    KeycloakError.Forbidden => (int)HttpStatusCode.Forbidden,
+                    _ => (int)HttpStatusCode.InternalServerError,
+                },
+                _ => (int)HttpStatusCode.InternalServerError,
+            };
 
-                    foreach (var error in validationException.Errors)
-                    {
-                        if (!validationResponse.errors.ContainsKey(error.PropertyName))
+            JsonNode? responseBody = ex switch
+            {
+                ValidationException validationEx => JsonNode.Parse(
+                    JsonSerializer.Serialize(
+                        new
                         {
-                            validationResponse.errors[error.PropertyName] = new List<string>();
+                            title = "Validation failed.",
+                            errors = validationEx
+                                .Errors.GroupBy(e => e.PropertyName)
+                                .ToDictionary(
+                                    g => g.Key,
+                                    g => g.Select(e => e.ErrorMessage.Replace("\u0027", "'")).ToList()
+                                ),
                         }
-                        validationResponse
-                            .errors[error.PropertyName]
-                            .Add(error.ErrorMessage.Replace("\u0027", "'"));
-                    }
-                    response.StatusCode = (int)HttpStatusCode.BadRequest;
-                    await response.WriteAsync(JsonSerializer.Serialize(validationResponse));
-                    break;
-
-                case IdentityException identityException:
-                    response.StatusCode = (int)HttpStatusCode.Unauthorized;
-                    await response.WriteAsync(JsonSerializer.Serialize(identityException.Message));
-                    break;
-
-                default:
-                    logger.LogError(
+                    )
+                ),
+                IdentityException => JsonNode.Parse(
+                    JsonSerializer.Serialize(
+                        new { title = "Client token generation failed.", message = ex.Message }
+                    )
+                ),
+                KeycloakException ke => ke.KeycloakError switch
+                {
+                    KeycloakError.Unreachable => JsonNode.Parse(
                         JsonSerializer.Serialize(
-                            new
-                            {
-                                message = "An uncaught error has occurred",
-                                error = new { ex.Message, ex.StackTrace },
-                                traceId = context.TraceIdentifier,
-                            }
+                            new { title = "Keycloak is unreachable.", message = ex.Message }
                         )
-                    );
-                    response.StatusCode = (int)HttpStatusCode.InternalServerError;
-                    await response.WriteAsync(
+                    ),
+                    KeycloakError.NotFound => JsonNode.Parse(
                         JsonSerializer.Serialize(
-                            new
-                            {
-                                message = "The server encountered an unexpected condition that prevented it from fulfilling the request.",
-                            }
+                            new { title = "Invalid realm.", message = "Please check the configuration." }
                         )
-                    );
-                    break;
+                    ),
+                    KeycloakError.Unauthorized => JsonNode.Parse(
+                        JsonSerializer.Serialize(new { title = "Bad Credentials.", message = ex.Message })
+                    ),
+                    KeycloakError.Forbidden => JsonNode.Parse(
+                        JsonSerializer.Serialize(
+                            new { title = "Insufficient Permissions.", message = ex.Message }
+                        )
+                    ),
+                    _ => JsonNode.Parse(
+                        JsonSerializer.Serialize(
+                            new { title = "Unexpected Keycloak Error.", message = ex.Message }
+                        )
+                    ),
+                },
+                BadHttpRequestException => JsonNode.Parse(
+                    JsonSerializer.Serialize(new { title = "Invalid Request Format.", message = ex.Message })
+                ),
+                _ => JsonNode.Parse(
+                    JsonSerializer.Serialize(
+                        new
+                        {
+                            title = "Unexpected Server Error.",
+                            message = "The server encountered an unexpected condition that prevented it from fulfilling the request.",
+                        }
+                    )
+                ),
+            };
+
+            context.Response.StatusCode = statusCode;
+            context.Response.ContentType = "application/json";
+            context.Response.Headers["TraceId"] = context.TraceIdentifier;
+
+            await context.Response.WriteAsync(responseBody?.ToJsonString() ?? string.Empty);
+
+            if (ex is KeycloakException { KeycloakError: KeycloakError.Unreachable })
+            {
+                logger.LogCritical(ex.Message + " - TraceId: {TraceId}", context.TraceIdentifier);
+            }
+            else
+            {
+                logger.LogError(ex.Message + " - TraceId: {TraceId}", context.TraceIdentifier);
             }
         }
     }

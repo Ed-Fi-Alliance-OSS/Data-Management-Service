@@ -24,14 +24,6 @@ public class RegisterRequest
             _clientRepository = clientRepository;
 
             RuleFor(m => m.ClientId).NotEmpty();
-
-            RuleFor(m => m.ClientId)
-                .Must(BeUniqueClient)
-                .When(m => !string.IsNullOrEmpty(m.ClientId))
-                .WithMessage(
-                    "Client with the same Client Id already exists. Please provide different Client Id."
-                );
-
             RuleFor(m => m.ClientSecret).NotEmpty();
             RuleFor(m => m.ClientSecret)
                 .Matches(new Regex(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z\d]).{8,12}$"))
@@ -41,12 +33,6 @@ public class RegisterRequest
                 );
 
             RuleFor(m => m.DisplayName).NotEmpty();
-        }
-
-        private bool BeUniqueClient(string? clientId)
-        {
-            var clients = Task.Run(_clientRepository.GetAllClientsAsync).Result;
-            return !clients.Any(c => c.Equals(clientId, StringComparison.InvariantCultureIgnoreCase));
         }
     }
 }

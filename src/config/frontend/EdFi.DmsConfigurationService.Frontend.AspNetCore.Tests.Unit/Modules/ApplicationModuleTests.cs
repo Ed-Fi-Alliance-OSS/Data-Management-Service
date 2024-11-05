@@ -209,7 +209,7 @@ public class ApplicationModuleTests
 
             //Assert
             string expectedResponse =
-                @"{""title"":""Validation failed"",""errors"":{""ApplicationName"":[""The length of \u0027Application Name\u0027 must be 256 characters or fewer. You entered 266 characters.""],""ClaimSetName"":[""\u0027Claim Set Name\u0027 must not be empty.""],""EducationOrganizationIds[0]"":[""\u0027Education Organization Ids\u0027 must be greater than \u00270\u0027.""]}}";
+                @"{""title"":""Validation failed."",""errors"":{""ApplicationName"":[""The length of \u0027Application Name\u0027 must be 256 characters or fewer. You entered 266 characters.""],""ClaimSetName"":[""\u0027Claim Set Name\u0027 must not be empty.""],""EducationOrganizationIds[0]"":[""\u0027Education Organization Ids\u0027 must be greater than \u00270\u0027.""]}}";
             string addResponseContent = await addResponse.Content.ReadAsStringAsync();
             addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             addResponseContent.Should().Contain(expectedResponse);
@@ -516,7 +516,7 @@ public class ApplicationModuleTests
             addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             string responseBody = await addResponse.Content.ReadAsStringAsync();
             string expectedResponse =
-                @"{""title"":""Validation failed"",""errors"":{""VendorId"":[""Reference \u0027VendorId\u0027 does not exist.""]}}";
+                @"{""title"":""Validation failed."",""errors"":{""VendorId"":[""Reference \u0027VendorId\u0027 does not exist.""]}}";
             responseBody.Should().Contain(expectedResponse);
         }
 
@@ -548,7 +548,7 @@ public class ApplicationModuleTests
             updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             string responseBody = await updateResponse.Content.ReadAsStringAsync();
             string expectedResponse =
-                @"{""title"":""Validation failed"",""errors"":{""VendorId"":[""Reference \u0027VendorId\u0027 does not exist.""]}}";
+                @"{""title"":""Validation failed."",""errors"":{""VendorId"":[""Reference \u0027VendorId\u0027 does not exist.""]}}";
             responseBody.Should().Contain(expectedResponse);
         }
     }

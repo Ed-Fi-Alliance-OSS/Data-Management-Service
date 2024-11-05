@@ -9,6 +9,8 @@ using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
+using FluentValidation;
+using FluentValidation.Results;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
@@ -21,35 +23,63 @@ public class IdentityModule : IEndpointModule
         endpoints.MapPost("/connect/token", GetClientAccessToken);
     }
 
-    public async Task<IResult> RegisterClient(
+    private async Task<IResult> RegisterClient(
         RegisterRequest.Validator validator,
         RegisterRequest model,
         IClientRepository clientRepository,
         IOptions<IdentitySettings> identitySettings
     )
     {
-        var allowRegistration = identitySettings.Value.AllowRegistration;
+        bool allowRegistration = identitySettings.Value.AllowRegistration;
         if (allowRegistration)
         {
             await validator.GuardAsync(model);
-            try
+
+            var clientResult = await clientRepository.GetAllClientsAsync();
+            switch (clientResult)
             {
-                await clientRepository.CreateClientAsync(
-                    model.ClientId!,
-                    model.ClientSecret!,
-                    model.DisplayName!
-                );
-                return Results.Ok($"Registered client {model.ClientId} successfully.");
+                case ClientClientsResult.FailureUnknown:
+                    return Results.Problem(statusCode: 500);
+                case ClientClientsResult.FailureKeycloak failureKeycloak:
+                    throw new KeycloakException(failureKeycloak.KeycloakError);
+                case ClientClientsResult.Success clientSuccess:
+                    if (IsUnique(clientSuccess))
+                    {
+                        var result = await clientRepository.CreateClientAsync(
+                            model.ClientId!,
+                            model.ClientSecret!,
+                            model.DisplayName!
+                        );
+                        return result switch
+                        {
+                            ClientCreateResult.Success => Results.Ok($"Registered client {model.ClientId} successfully."),
+                            ClientCreateResult.FailureKeycloak ke => throw new KeycloakException(ke.KeycloakError),
+                            _ => Results.Problem(statusCode: 500),
+                        };
+                    }
+                    break;
             }
-            catch (Exception ex)
+            bool IsUnique(ClientClientsResult.Success clientSuccess)
             {
-                throw new IdentityException($"Client registration failed with: {ex.Message}");
+                bool clientExists = clientSuccess.ClientList.Any(c =>
+                    c.Equals(model.ClientId!, StringComparison.InvariantCultureIgnoreCase)
+                );
+                if (clientExists)
+                {
+                    var validationFailures = new List<ValidationFailure>
+                    {
+                        new() { PropertyName = "ClientId", ErrorMessage = "Client with the same Client Id already exists. Please provide different Client Id." }
+                    };
+                    throw new ValidationException(validationFailures);
+                }
+                return true;
             }
         }
+
         return Results.Forbid();
     }
 
-    public async Task<IResult> GetClientAccessToken(
+    private static async Task<IResult> GetClientAccessToken(
         TokenRequest.Validator validator,
         TokenRequest model,
         ITokenManager tokenManager
@@ -58,18 +88,33 @@ public class IdentityModule : IEndpointModule
         await validator.GuardAsync(model);
         try
         {
-            var response = await tokenManager.GetAccessTokenAsync(
+            string response = string.Empty;
+            var tokenResult = await tokenManager.GetAccessTokenAsync(
                 [
                     new KeyValuePair<string, string>("client_id", model.ClientId!),
                     new KeyValuePair<string, string>("client_secret", model.ClientSecret!),
                 ]
             );
+
+            response = tokenResult switch
+            {
+                TokenResult.Success tokenSuccess => tokenSuccess.Token,
+                TokenResult.FailureKeycloak failure => throw new KeycloakException(failure.KeycloakError),
+                _ => response,
+            };
+
             var tokenResponse = JsonSerializer.Deserialize<TokenResponse>(response);
             return Results.Ok(tokenResponse);
         }
+        catch (KeycloakException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
-            throw new IdentityException($"Client token generation failed with: {ex.Message}");
+            throw new IdentityException(
+                "Client registration failed with: Invalid client or Invalid client credentials." + ex.Message
+            );
         }
     }
 }

@@ -8,6 +8,7 @@ using System.Net.Http.Json;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
 using FakeItEasy;
 using FluentAssertions;
@@ -15,6 +16,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
+using static EdFi.DmsConfigurationService.Backend.KeycloakError;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 
@@ -37,7 +39,8 @@ public class RegisterEndpointTests
             )
             .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
         var clientList = A.Fake<IEnumerable<string>>();
-        A.CallTo(() => _clientRepository.GetAllClientsAsync()).Returns(Task.FromResult(clientList));
+        A.CallTo(() => _clientRepository.GetAllClientsAsync())
+            .Returns(new ClientClientsResult.Success(clientList));
     }
 
     [Test]
@@ -50,8 +53,8 @@ public class RegisterEndpointTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((x) => new RegisterRequest.Validator(_clientRepository!));
-                    collection.AddTransient((x) => _clientRepository!);
+                    collection.AddTransient((_) => new RegisterRequest.Validator(_clientRepository!));
+                    collection.AddTransient((_) => _clientRepository!);
                 }
             );
         });
@@ -65,7 +68,7 @@ public class RegisterEndpointTests
             displayname = "CSClient1",
         };
         var response = await client.PostAsJsonAsync("/connect/register", requestContent);
-        var content = await response.Content.ReadAsStringAsync();
+        string content = await response.Content.ReadAsStringAsync();
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -82,8 +85,8 @@ public class RegisterEndpointTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((x) => new RegisterRequest.Validator(_clientRepository!));
-                    collection.AddTransient((x) => _clientRepository!);
+                    collection.AddTransient((_) => new RegisterRequest.Validator(_clientRepository!));
+                    collection.AddTransient((_) => _clientRepository!);
                 }
             );
         });
@@ -97,7 +100,7 @@ public class RegisterEndpointTests
             displayname = "",
         };
         var response = await client.PostAsJsonAsync("/connect/register", requestContent);
-        var content = await response.Content.ReadAsStringAsync();
+        string content = await response.Content.ReadAsStringAsync();
         content = System.Text.RegularExpressions.Regex.Unescape(content);
 
         // Assert
@@ -123,8 +126,8 @@ public class RegisterEndpointTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((x) => new RegisterRequest.Validator(_clientRepository!));
-                    collection.AddTransient((x) => _clientRepository!);
+                    collection.AddTransient((_) => new RegisterRequest.Validator(_clientRepository!));
+                    collection.AddTransient((_) => _clientRepository!);
                 }
             );
         });
@@ -138,7 +141,7 @@ public class RegisterEndpointTests
             displayname = "CSClient2@cs.com",
         };
         var response = await client.PostAsJsonAsync("/connect/register", requestContent);
-        var content = await response.Content.ReadAsStringAsync();
+        string content = await response.Content.ReadAsStringAsync();
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -150,27 +153,24 @@ public class RegisterEndpointTests
     }
 
     [Test]
-    public async Task When_error_from_backend()
+    public async Task When_provider_has_bad_credentials()
     {
         // Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             _clientRepository = A.Fake<IClientRepository>();
-            A.CallTo(
-                    () =>
-                        _clientRepository.CreateClientAsync(
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored
-                        )
-                )
-                .Throws(new Exception("Error from Keycloak"));
+
+            var error = new KeycloakError.Unauthorized("Unauthorized");
+
+            A.CallTo(() => _clientRepository.GetAllClientsAsync())
+                .Returns(new ClientClientsResult.FailureKeycloak(error));
+
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((x) => new RegisterRequest.Validator(_clientRepository!));
-                    collection.AddTransient((x) => _clientRepository!);
+                    collection.AddTransient((_) => new RegisterRequest.Validator(_clientRepository!));
+                    collection.AddTransient((_) => _clientRepository!);
                 }
             );
         });
@@ -184,11 +184,89 @@ public class RegisterEndpointTests
             displayname = "CSClient3",
         };
         var response = await client.PostAsJsonAsync("/connect/register", requestContent);
-        var content = await response.Content.ReadAsStringAsync();
+        string content = await response.Content.ReadAsStringAsync();
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        content.Should().Contain("Error from Keycloak");
+        content.Should().Contain("Unauthorized");
+    }
+
+    [Test]
+    public async Task When_provider_has_not_real_admin_role()
+    {
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            _clientRepository = A.Fake<IClientRepository>();
+
+            var error = new KeycloakError.Forbidden("Forbidden.");
+
+            A.CallTo(() => _clientRepository.GetAllClientsAsync())
+                .Returns(new ClientClientsResult.FailureKeycloak(error));
+
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection.AddTransient((_) => new RegisterRequest.Validator(_clientRepository!));
+                    collection.AddTransient((_) => _clientRepository!);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var requestContent = new
+        {
+            clientid = "CSClient3",
+            clientsecret = "test123@Puiu",
+            displayname = "CSClient3",
+        };
+        var response = await client.PostAsJsonAsync("/connect/register", requestContent);
+        string content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        content.Should().Contain("Forbidden");
+    }
+
+    [Test]
+    public async Task When_provider_has_invalid_real()
+    {
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            _clientRepository = A.Fake<IClientRepository>();
+
+            var error = new KeycloakError.NotFound("Invalid realm.");
+
+            A.CallTo(() => _clientRepository.GetAllClientsAsync())
+                .Returns(new ClientClientsResult.FailureKeycloak(error));
+
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection.AddTransient((_) => new RegisterRequest.Validator(_clientRepository!));
+                    collection.AddTransient((_) => _clientRepository!);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var requestContent = new
+        {
+            clientid = "CSClient3",
+            clientsecret = "test123@Puiu",
+            displayname = "CSClient3",
+        };
+        var response = await client.PostAsJsonAsync("/connect/register", requestContent);
+        string content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        content.Should().Contain("Invalid realm");
     }
 
     [Test]
@@ -198,7 +276,8 @@ public class RegisterEndpointTests
         var clientList = A.Fake<IEnumerable<string>>();
         _clientRepository = A.Fake<IClientRepository>();
         clientList = clientList.Append("CSClient2");
-        A.CallTo(() => _clientRepository.GetAllClientsAsync()).Returns(Task.FromResult(clientList));
+        A.CallTo(() => _clientRepository.GetAllClientsAsync())
+            .Returns(new ClientClientsResult.Success(clientList));
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -206,8 +285,8 @@ public class RegisterEndpointTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((x) => new RegisterRequest.Validator(_clientRepository!));
-                    collection.AddTransient((x) => _clientRepository!);
+                    collection.AddTransient((_) => new RegisterRequest.Validator(_clientRepository!));
+                    collection.AddTransient((_) => _clientRepository!);
                 }
             );
         });
@@ -221,7 +300,7 @@ public class RegisterEndpointTests
             displayname = "CSClient2@cs.com",
         };
         var response = await client.PostAsJsonAsync("/connect/register", requestContent);
-        var content = await response.Content.ReadAsStringAsync();
+        string content = await response.Content.ReadAsStringAsync();
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -244,8 +323,8 @@ public class RegisterEndpointTests
                     {
                         opts.AllowRegistration = false;
                     });
-                    collection.AddTransient((x) => new RegisterRequest.Validator(_clientRepository!));
-                    collection.AddTransient((x) => _clientRepository!);
+                    collection.AddTransient((_) => new RegisterRequest.Validator(_clientRepository!));
+                    collection.AddTransient((_) => _clientRepository!);
                 }
             );
         });
@@ -263,6 +342,49 @@ public class RegisterEndpointTests
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
+
+    [Test]
+    public async Task When_provider_is_unreachable()
+    {
+        //Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            _clientRepository = A.Fake<IClientRepository>();
+
+            var error = new KeycloakError.Unreachable(
+                "No connection could be made because the target machine actively refused it."
+            );
+
+            A.CallTo(() => _clientRepository.GetAllClientsAsync())
+                .Returns(new ClientClientsResult.FailureKeycloak(error));
+
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection.AddTransient((_) => new RegisterRequest.Validator(_clientRepository!));
+                    collection.AddTransient((_) => _clientRepository!);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        //Act
+        var requestContent = new
+        {
+            clientid = "CSClient3",
+            clientsecret = "test123@Puiu",
+            displayname = "CSClient3",
+        };
+        var response = await client.PostAsJsonAsync("/connect/register", requestContent);
+        string content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+        string expectedResponse =
+            @"{""title"":""Keycloak is unreachable."",""message"":""No connection could be made because the target machine actively refused it.""}";
+        content.Should().Be(expectedResponse);
+    }
 }
 
 [TestFixture]
@@ -274,7 +396,7 @@ public class TokenEndpointTests
     public void Setup()
     {
         _tokenManager = A.Fake<ITokenManager>();
-        var token = """
+        string token = """
             {
                 "access_token":"input123token",
                 "expires_in":900,
@@ -284,7 +406,7 @@ public class TokenEndpointTests
         A.CallTo(
                 () => _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
             )
-            .Returns(Task.FromResult(token));
+            .Returns(new TokenResult.Success(token));
     }
 
     [Test]
@@ -297,8 +419,8 @@ public class TokenEndpointTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((x) => new TokenRequest.Validator());
-                    collection.AddTransient((x) => _tokenManager!);
+                    collection.AddTransient((_) => new TokenRequest.Validator());
+                    collection.AddTransient((_) => _tokenManager!);
                 }
             );
         });
@@ -307,7 +429,7 @@ public class TokenEndpointTests
         // Act
         var requestContent = new { clientid = "CSClient1", clientsecret = "test123@Puiu" };
         var response = await client.PostAsJsonAsync("/connect/token", requestContent);
-        var content = await response.Content.ReadAsStringAsync();
+        string content = await response.Content.ReadAsStringAsync();
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -326,8 +448,8 @@ public class TokenEndpointTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((x) => new TokenRequest.Validator());
-                    collection.AddTransient((x) => _tokenManager!);
+                    collection.AddTransient((_) => new TokenRequest.Validator());
+                    collection.AddTransient((_) => _tokenManager!);
                 }
             );
         });
@@ -336,7 +458,7 @@ public class TokenEndpointTests
         // Act
         var requestContent = new { clientid = "", clientsecret = "" };
         var response = await client.PostAsJsonAsync("/connect/token", requestContent);
-        var content = await response.Content.ReadAsStringAsync();
+        string content = await response.Content.ReadAsStringAsync();
         content = System.Text.RegularExpressions.Regex.Unescape(content);
 
         // Assert
@@ -353,19 +475,15 @@ public class TokenEndpointTests
         {
             _tokenManager = A.Fake<ITokenManager>();
             A.CallTo(
-                    () =>
-                        _tokenManager.GetAccessTokenAsync(
-                            A<IEnumerable<KeyValuePair<string, string>>>.Ignored
-                        )
-                )
-                .Throws(new Exception("Error from Keycloak"));
+                () => _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
+            );
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((x) => new TokenRequest.Validator());
-                    collection.AddTransient((x) => _tokenManager!);
+                    collection.AddTransient((_) => new TokenRequest.Validator());
+                    collection.AddTransient((_) => _tokenManager!);
                 }
             );
         });
@@ -374,10 +492,166 @@ public class TokenEndpointTests
         // Act
         var requestContent = new { clientid = "CSClient3", clientsecret = "test123@Puiu" };
         var response = await client.PostAsJsonAsync("/connect/token", requestContent);
-        var content = await response.Content.ReadAsStringAsync();
+        string content = await response.Content.ReadAsStringAsync();
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        content.Should().Contain("Error from Keycloak");
+        content.Should().Contain("Invalid client or Invalid client credentials");
+    }
+
+    [Test]
+    public async Task When_provider_is_unreacheable()
+    {
+        //Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            _tokenManager = A.Fake<ITokenManager>();
+
+            A.CallTo(
+                    () =>
+                        _tokenManager.GetAccessTokenAsync(
+                            A<IEnumerable<KeyValuePair<string, string>>>.Ignored
+                        )
+                )
+                .Throws(
+                    new KeycloakException(
+                        new KeycloakError.Unreachable(
+                            "No connection could be made because the target machine actively refused it."
+                        )
+                    )
+                );
+
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection.AddTransient((_) => new TokenRequest.Validator());
+                    collection.AddTransient((_) => _tokenManager!);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        //Act
+        var requestContent = new { clientid = "CSClient3", clientsecret = "test123@Puiu" };
+        var response = await client.PostAsJsonAsync("/connect/token", requestContent);
+        string content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+        string expectedResponse =
+            @"{""title"":""Keycloak is unreachable."",""message"":""No connection could be made because the target machine actively refused it.""}";
+        content.Should().Be(expectedResponse);
+    }
+
+    [Test]
+    public async Task When_provider_has_invalid_realm()
+    {
+        //Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            _tokenManager = A.Fake<ITokenManager>();
+
+            A.CallTo(
+                    () =>
+                        _tokenManager.GetAccessTokenAsync(
+                            A<IEnumerable<KeyValuePair<string, string>>>.Ignored
+                        )
+                )
+                .Throws(new KeycloakException(new KeycloakError.NotFound("Invalid realm.")));
+
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection.AddTransient((_) => new TokenRequest.Validator());
+                    collection.AddTransient((_) => _tokenManager!);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        //Act
+        var requestContent = new { clientid = "CSClient3", clientsecret = "test123@Puiu" };
+        var response = await client.PostAsJsonAsync("/connect/token", requestContent);
+        string content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        content.Should().Contain("Invalid realm");
+    }
+
+    [Test]
+    public async Task When_provider_has_not_realm_admin_role()
+    {
+        //Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            _tokenManager = A.Fake<ITokenManager>();
+
+            A.CallTo(
+                    () =>
+                        _tokenManager.GetAccessTokenAsync(
+                            A<IEnumerable<KeyValuePair<string, string>>>.Ignored
+                        )
+                )
+                .Throws(new KeycloakException(new KeycloakError.Forbidden("Insufficient Permissions.")));
+
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection.AddTransient((_) => new TokenRequest.Validator());
+                    collection.AddTransient((_) => _tokenManager!);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        //Act
+        var requestContent = new { clientid = "CSClient3", clientsecret = "test123@Puiu" };
+        var response = await client.PostAsJsonAsync("/connect/token", requestContent);
+        string content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        content.Should().Contain("Insufficient Permissions");
+    }
+
+    [Test]
+    public async Task When_provider_has_bad_credetials()
+    {
+        //Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            _tokenManager = A.Fake<ITokenManager>();
+
+            A.CallTo(
+                    () =>
+                        _tokenManager.GetAccessTokenAsync(
+                            A<IEnumerable<KeyValuePair<string, string>>>.Ignored
+                        )
+                )
+                .Throws(new KeycloakException(new KeycloakError.Unauthorized("Bad Credentials.")));
+
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection.AddTransient((_) => new TokenRequest.Validator());
+                    collection.AddTransient((_) => _tokenManager!);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        //Act
+        var requestContent = new { clientid = "CSClient3", clientsecret = "test123@Puiu" };
+        var response = await client.PostAsJsonAsync("/connect/token", requestContent);
+        string content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        content.Should().Contain("Bad Credentials");
     }
 }

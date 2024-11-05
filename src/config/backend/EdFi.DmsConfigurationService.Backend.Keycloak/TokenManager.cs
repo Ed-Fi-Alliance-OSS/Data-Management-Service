@@ -3,30 +3,48 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net;
+
 namespace EdFi.DmsConfigurationService.Backend.Keycloak;
 
 public class TokenManager(KeycloakContext keycloakContext) : ITokenManager
 {
-    public async Task<string> GetAccessTokenAsync(IEnumerable<KeyValuePair<string, string>> credentials)
+    public async Task<TokenResult> GetAccessTokenAsync(IEnumerable<KeyValuePair<string, string>> credentials)
     {
-        using var client = new HttpClient();
-
-        var contentList = credentials.ToList();
-        contentList.AddRange(
-            [new KeyValuePair<string, string>("grant_type", "client_credentials")]);
-
-        var content = new FormUrlEncodedContent(contentList);
-        var path = $"{keycloakContext.Url}/realms/{keycloakContext.Realm}/protocol/openid-connect/token";
-        var response = await client.PostAsync(path, content);
-        var responseString = await response.Content.ReadAsStringAsync();
-
-        if (response.IsSuccessStatusCode)
+        try
         {
-            return responseString;
+            using var client = new HttpClient();
+
+            var contentList = credentials.ToList();
+            contentList.AddRange([new KeyValuePair<string, string>("grant_type", "client_credentials")]);
+
+            var content = new FormUrlEncodedContent(contentList);
+            string path =
+                $"{keycloakContext.Url}/realms/{keycloakContext.Realm}/protocol/openid-connect/token";
+            var response = await client.PostAsync(path, content);
+            string responseString = await response.Content.ReadAsStringAsync();
+
+            return response.StatusCode switch
+            {
+                HttpStatusCode.OK => new TokenResult.Success(responseString),
+                HttpStatusCode.Unauthorized
+                    => new TokenResult.FailureKeycloak(new KeycloakError.Unauthorized(responseString)),
+                HttpStatusCode.Forbidden
+                    => new TokenResult.FailureKeycloak(new KeycloakError.Forbidden(responseString)),
+                HttpStatusCode.NotFound
+                    => new TokenResult.FailureKeycloak(new KeycloakError.NotFound(responseString)),
+                _ => new TokenResult.FailureUnknown(responseString),
+            };
         }
-        else
+        catch (HttpRequestException ex)
         {
-            throw new Exception(responseString);
+            return ex.HttpRequestError == HttpRequestError.ConnectionError
+                ? new TokenResult.FailureKeycloak(new KeycloakError.Unreachable(ex.Message))
+                : new TokenResult.FailureUnknown(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return new TokenResult.FailureUnknown(ex.Message);
         }
     }
 }

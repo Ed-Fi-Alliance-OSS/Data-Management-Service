@@ -10,5 +10,30 @@
     // Hover to view descriptions of existing attributes.
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
-    "configurations": []
+    "configurations": [
+        {
+            "name": "DMS",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "DMS",
+            "program": "${workspaceFolder}\\src\\dms\\frontend\\EdFi.DataManagementService.Frontend.AspNetCore\\bin\\Debug\\net8.0\\EdFi.DataManagementService.Frontend.AspNetCore.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}\\src\\dms\\frontend\\EdFi.DataManagementService.Frontend.AspNetCore",
+            "stopAtEntry": false,
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen"
+        },
+        {
+            "name": "Config",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "Config",
+            "program": "${workspaceFolder}\\src\\config\\frontend\\EdFi.DmsConfigurationService.Frontend.AspNetCore\\bin\\Debug\\net8.0\\EdFi.DmsConfigurationService.Frontend.AspNetCore.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}\\src\\config\\frontend\\EdFi.DmsConfigurationService.Frontend.AspNetCore",
+            "stopAtEntry": false,
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen"
+        }
+    ]
 }
