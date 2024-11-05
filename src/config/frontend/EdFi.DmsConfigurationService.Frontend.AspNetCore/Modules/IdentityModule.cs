@@ -42,8 +42,8 @@ public class IdentityModule : IEndpointModule
             return result switch
             {
                 ClientCreateResult.Success => Results.Ok($"Registered client {model.ClientId} successfully."),
-                ClientCreateResult.FailureKeycloak ke => ke.KeycloakError
-                    switch
+                ClientCreateResult.FailureKeycloak ke
+                    => ke.KeycloakError switch
                     {
                         KeycloakError.Unreachable => Results.StatusCode(502),
                         KeycloakError.Unauthorized => Results.Unauthorized(),
