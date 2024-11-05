@@ -433,10 +433,10 @@ Feature: Validation of the structure of the URLs
                   }
                   """
 
-        @API-252 @ignore
+        @API-252
         # DMS-397
         Scenario: 15 Ensure client can retrieve information through case insensitive LIMIT parameter
-             When a GET request is made to "/ed-fi/schools?lImIt=1"
+             When a GET request is made to "/ed-fi/schools?liMIt=2"
              Then it should respond with 200
               And the response body is
                   """
@@ -445,16 +445,16 @@ Feature: Validation of the structure of the URLs
                       "id": "{id}",
                       "educationOrganizationCategories": [
                           {
-                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution"
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
                           }
                       ],
                       "gradeLevels": [
                           {
-                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
                           }
                       ],
-                      "nameOfInstitution": "Middle School Test",
-                      "schoolId": 745672453832456000
+                      "nameOfInstitution": "Grand Bend Middle School",
+                      "schoolId": 255901044
                     }
                   ]
                   """
@@ -465,7 +465,7 @@ Feature: Validation of the structure of the URLs
                     }
                   """
 
-        @API-253 @ignore
+        @API-253
         # DMS-397
         Scenario: 16 Ensure client can retrieve information through case insensitive OFFSET parameter
              # There is only one item, and offset=1 skips that one item.
@@ -476,7 +476,7 @@ Feature: Validation of the structure of the URLs
                   []
                   """
 
-        @API-254 @ignore
+        @API-254
         # DMS-397
         Scenario: 17 Ensure client can retrieve information through case insensitive TOTALCOUNT parameter
              When a GET request is made to "/ed-fi/SCHOOLS?tOtAlCoUnT=trUE"

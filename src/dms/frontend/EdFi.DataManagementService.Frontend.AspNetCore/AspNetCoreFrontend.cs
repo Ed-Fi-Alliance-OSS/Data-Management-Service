@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 using AppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore;
@@ -52,6 +53,21 @@ public static class AspNetCoreFrontend
         return new TraceId(request.HttpContext.TraceIdentifier);
     }
 
+    private static string FromValidatedQueryParam(KeyValuePair<string, StringValues> queryParam)
+    {
+        switch (queryParam.Key.ToLower())
+        {
+            case "limit":
+                return "limit";
+            case "offset":
+                return "offset";
+            case "totalcount":
+                return "totalCount";
+            default:
+                return queryParam.Key;
+        }
+    }
+
     /// <summary>
     /// Converts an AspNetCore HttpRequest to a DMS FrontendRequest
     /// </summary>
@@ -64,7 +80,7 @@ public static class AspNetCoreFrontend
         return new(
             Body: await ExtractJsonBodyFrom(HttpRequest),
             Path: $"/{dmsPath}",
-            QueryParameters: HttpRequest.Query.ToDictionary(x => x.Key, x => x.Value[^1] ?? ""),
+            QueryParameters: HttpRequest.Query.ToDictionary(FromValidatedQueryParam, x => x.Value[^1] ?? ""),
             TraceId: ExtractTraceIdFrom(HttpRequest, options)
         );
     }
