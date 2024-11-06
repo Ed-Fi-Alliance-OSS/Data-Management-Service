@@ -10,6 +10,7 @@ param (
     $KeycloakServer = "http://localhost:8045",
 
     # Admin realm for admin access
+    [string]
     $AdminRealm = "master",
 
     # Realm name
@@ -17,25 +18,45 @@ param (
     $Realm = "edfi",
 
     # Admin username
+    [string]
     $Username = "admin",
 
     # Admin password
+    [string]
     $Password = "admin",
 
     # Client Id for accessing Keycloak admin API
+    [string]
     $AdminClientId = "admin-cli",
 
     # Client Id
+    [string]
     $NewClientId = "test-client",
 
     # Client Name
+    [string]
     $NewClientName = "Test Client",
 
     # Client Secret -Client secret must contain at least one lowercase letter, one uppercase letter,
     # one number, and one special character, and must be 8 to 12 characters long.
+    [string]
     $NewClientSecret = "s3creT@09",
 
-    $NewClientRole = "dms-client"
+    # DMS specific client role
+    [string]
+    $NewClientRole = "dms-client",
+
+    # Scope name should match the ClaimSet name
+    [string]
+    $ClientScopeName = "sis-vendor",
+
+    # Name of the hardcoded claim
+    [string]
+    $ClaimName = "namespacePrefixes",
+
+    # Value of the hardcoded claim
+    $ClaimValue = "http://ed-fi.org"
+
 )
 
 function Get_Access_Token()
@@ -149,6 +170,45 @@ function Create_Role([string] $access_token)
     }
 }
 
+function Get_ClientScope([string] $access_token)
+{
+    $existingClientScopes = Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/client-scopes" `
+    -Method Get `
+    -Headers @{ Authorization = "Bearer $access_token" }
+
+    $clientScope = $existingClientScopes | Where-Object { $_.name -eq $ClientScopeName }
+
+    return $clientScope
+}
+
+function Create_ClientScope([string] $access_token)
+{
+    $existingClientScope = Get_ClientScope $access_token
+
+    if ($existingClientScope) {
+        Write-Output "Client scope '$ClientScopeName' already exists."
+    } else {
+        # Create the client scope
+        $clientScopePayload = @{
+            name = $ClientScopeName
+            protocol = "openid-connect"
+        } | ConvertTo-Json
+
+        $clientScopeCreationResponse = Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/client-scopes" `
+            -Method Post `
+            -Headers @{ Authorization = "Bearer $access_token" } `
+            -Body $clientScopePayload `
+            -ContentType "application/json"
+
+        Write-Output "Client scope '$ClientScopeName' created successfully."
+
+        # Retrieve the client scope ID
+        $createdClientScope = Get_ClientScope $access_token
+    }
+
+    return $clientScopeId
+}
+
 function Create_Client([string] $access_token)
 {
     # Define the new client configuration
@@ -161,9 +221,6 @@ function Create_Client([string] $access_token)
         publicClient = $false
     }
 
-    # Create a required role
-    Create_Role $access_token
-
     # Retrieve the role ID
     $role = Get_Role $access_token
 
@@ -173,6 +230,8 @@ function Create_Client([string] $access_token)
         -Headers @{ Authorization = "Bearer $access_token" } `
         -ContentType "application/json" `
         -Body ($ClientData | ConvertTo-Json -Depth 10)
+
+    Write-Output "Client created successfully: $NewClientName"
 
     $client = Get_Client $access_token
     $ClientId = $client[0].id
@@ -219,21 +278,63 @@ function Create_Client([string] $access_token)
 
     Write-Output "ProtocolMapper added to client '$NewClientName' to map '$NewClientRole' in tokens."
 
-    Write-Output "Client created successfully: $NewClientName"
+    # Add Claim set scope
+    $existingClientScope = Get_ClientScope $access_token
+    $scopeId = $existingClientScope.id
+
+    # Assign the client scope to the client
+    Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/clients/$ClientId/default-client-scopes/$scopeId" `
+    -Method Put `
+    -Headers @{ "Authorization" = "Bearer $access_token" } `
+    -ContentType "application/json"
+
+    Write-Output "Claim set scope added to client '$NewClientName'."
+
+    # Add custom claim for "namespacePrefixes"
+    $customClaimProtocolMapperPayload = @{
+        name = "namespacePrefixes"
+        protocol = "openid-connect"
+        protocolMapper = "oidc-hardcoded-claim-mapper"
+        config = @{
+            "claim.name" = $ClaimName
+            "claim.value" = $ClaimValue
+            "jsonType.label" = "String"
+            "id.token.claim" = "true"
+            "access.token.claim" = "true"
+            "userinfo.token.claim" = "true"
+        }
+    } | ConvertTo-Json
+
+    Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/clients/$ClientId/protocol-mappers/models" `
+        -Method Post `
+        -Headers @{ "Authorization" = "Bearer $access_token" } `
+        -Body $customClaimProtocolMapperPayload `
+        -ContentType "application/json"
+
+    Write-Output "Custom claim added to client '$NewClientName'."
+
+    Write-Output "Client created and configured successfully: $NewClientName"
 }
 
+# Get access token
 $token = Get_Access_Token
-if( -not (Check_RealmExists $token))
-{
+
+# Create Realm
+if( -not (Check_RealmExists $token)){
     Create_Realm $token
 }
-else
-{
+else{
     Write-Output "Realm already exists: $Realm"
 }
 
-if(Check_ClientExists $token)
-{
+# Create a required role
+Create_Role $token
+
+# Create custom scope
+Create_ClientScope $token
+
+# Create client
+if(Check_ClientExists $token){
      Write-Warning "Client '$NewClientId' already exists. Please provide new client id."
 }
 else{
