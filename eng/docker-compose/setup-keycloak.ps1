@@ -101,27 +101,52 @@ function Create_Realm([string] $access_token) {
     }
 
     # Create the new realm
-    $CreateRealmResponse = Invoke-RestMethod -Uri "$KeycloakServer/admin/realms" `
-        -Method Post `
-        -Headers @{ Authorization = "Bearer $access_token" } `
-        -ContentType "application/json" `
-        -Body ($RealmData | ConvertTo-Json -Depth 10)
+    try
+    {
+        $CreateRealmResponse = Invoke-RestMethod -Uri "$KeycloakServer/admin/realms" `
+            -Method Post `
+            -Headers @{ Authorization = "Bearer $access_token" } `
+            -ContentType "application/json" `
+            -Body ($RealmData | ConvertTo-Json -Depth 10)
 
-    Write-Output $CreateRealmResponse
-    Write-Output "Realm created successfully: $Realm"
+            $realmSettingsPayload = @{
+                accessTokenLifespan = 1800
+            } | ConvertTo-Json
+
+            Write-Host $realmSettingsPayload
+
+            Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm" `
+                -Method Put `
+                -Headers @{ "Authorization" = "Bearer $access_token" } `
+                -Body $realmSettingsPayload `
+                -ContentType "application/json"
+
+        Write-Output "Realm created successfully: $Realm"
+    }
+    catch
+    {
+        Write-Error $_.Exception.Response
+    }
 }
 
 function Get_Client ([string] $access_token)
 {
-    $existingClient = Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/clients?clientId=$NewClientId" `
-    -Method Get `
-    -Headers  @{ Authorization = "Bearer $access_token" }
-
-    return $existingClient
+    try{
+        $existingClient = Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/clients?clientId=$NewClientId" `
+        -Method Get `
+        -Headers  @{ Authorization = "Bearer $access_token" }
+        return $existingClient
+    } catch {
+        if ($_.Exception.Response.StatusCode.Value__ -eq 404) {
+            return $null
+        }
+        else{
+            Write-Error $_.Exception.Response
+        }
+    }
 }
 
 function Check_ClientExists ([string] $access_token) {
-
     $client = Get_Client $access_token
     if($client){
         return $true
@@ -134,17 +159,16 @@ function Check_ClientExists ([string] $access_token) {
 function Get_Role([string] $access_token)
 {
     try {
-        # Check if the role exists
         $existingRole = Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/roles/$NewClientRole" `
         -Method Get `
         -Headers @{ Authorization = "Bearer $access_token" }
         return $existingRole
     } catch {
-        # The role does not exist
         if ($_.Exception.Response.StatusCode.Value__ -eq 404) {
             return $null
-        } else {
-            throw
+        }
+        else{
+            Write-Error $_.Exception.Response
         }
     }
 }
