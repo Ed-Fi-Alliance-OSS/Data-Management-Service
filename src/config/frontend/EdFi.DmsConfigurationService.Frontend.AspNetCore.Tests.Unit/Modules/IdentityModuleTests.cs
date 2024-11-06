@@ -160,10 +160,10 @@ public class RegisterEndpointTests
         {
             _clientRepository = A.Fake<IClientRepository>();
 
-            var error = new KeycloakError.Unauthorized("Unauthorized");
+            var error = new IdentityProviderError.Unauthorized("Unauthorized");
 
             A.CallTo(() => _clientRepository.GetAllClientsAsync())
-                .Returns(new ClientClientsResult.FailureKeycloak(error));
+                .Returns(new ClientClientsResult.FailureIdentityProvider(error));
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -199,10 +199,10 @@ public class RegisterEndpointTests
         {
             _clientRepository = A.Fake<IClientRepository>();
 
-            var error = new KeycloakError.Forbidden("Forbidden.");
+            var error = new IdentityProviderError.Forbidden("Forbidden.");
 
             A.CallTo(() => _clientRepository.GetAllClientsAsync())
-                .Returns(new ClientClientsResult.FailureKeycloak(error));
+                .Returns(new ClientClientsResult.FailureIdentityProvider(error));
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -238,10 +238,10 @@ public class RegisterEndpointTests
         {
             _clientRepository = A.Fake<IClientRepository>();
 
-            var error = new KeycloakError.NotFound("Invalid realm.");
+            var error = new IdentityProviderError.NotFound("Invalid realm.");
 
             A.CallTo(() => _clientRepository.GetAllClientsAsync())
-                .Returns(new ClientClientsResult.FailureKeycloak(error));
+                .Returns(new ClientClientsResult.FailureIdentityProvider(error));
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -351,12 +351,12 @@ public class RegisterEndpointTests
         {
             _clientRepository = A.Fake<IClientRepository>();
 
-            var error = new KeycloakError.Unreachable(
+            var error = new IdentityProviderError.Unreachable(
                 "No connection could be made because the target machine actively refused it."
             );
 
             A.CallTo(() => _clientRepository.GetAllClientsAsync())
-                .Returns(new ClientClientsResult.FailureKeycloak(error));
+                .Returns(new ClientClientsResult.FailureIdentityProvider(error));
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -515,8 +515,8 @@ public class TokenEndpointTests
                         )
                 )
                 .Throws(
-                    new KeycloakException(
-                        new KeycloakError.Unreachable(
+                    new IdentityProviderException(
+                        new IdentityProviderError.Unreachable(
                             "No connection could be made because the target machine actively refused it."
                         )
                     )
@@ -568,7 +568,7 @@ public class TokenEndpointTests
                             A<IEnumerable<KeyValuePair<string, string>>>.Ignored
                         )
                 )
-                .Throws(new KeycloakException(new KeycloakError.NotFound("Invalid realm.")));
+                .Throws(new IdentityProviderException(new IdentityProviderError.NotFound("Invalid realm.")));
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -605,7 +605,11 @@ public class TokenEndpointTests
                             A<IEnumerable<KeyValuePair<string, string>>>.Ignored
                         )
                 )
-                .Throws(new KeycloakException(new KeycloakError.Forbidden("Insufficient Permissions.")));
+                .Throws(
+                    new IdentityProviderException(
+                        new IdentityProviderError.Forbidden("Insufficient Permissions.")
+                    )
+                );
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -642,7 +646,9 @@ public class TokenEndpointTests
                             A<IEnumerable<KeyValuePair<string, string>>>.Ignored
                         )
                 )
-                .Throws(new KeycloakException(new KeycloakError.Unauthorized("Bad Credentials.")));
+                .Throws(
+                    new IdentityProviderException(new IdentityProviderError.Unauthorized("Bad Credentials."))
+                );
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(

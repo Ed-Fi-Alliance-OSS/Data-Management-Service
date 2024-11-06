@@ -27,19 +27,22 @@ public class TokenManager(KeycloakContext keycloakContext) : ITokenManager
             return response.StatusCode switch
             {
                 HttpStatusCode.OK => new TokenResult.Success(responseString),
-                HttpStatusCode.Unauthorized
-                    => new TokenResult.FailureKeycloak(new KeycloakError.Unauthorized(responseString)),
-                HttpStatusCode.Forbidden
-                    => new TokenResult.FailureKeycloak(new KeycloakError.Forbidden(responseString)),
-                HttpStatusCode.NotFound
-                    => new TokenResult.FailureKeycloak(new KeycloakError.NotFound(responseString)),
+                HttpStatusCode.Unauthorized => new TokenResult.FailureIdentityProvider(
+                    new IdentityProviderError.Unauthorized(responseString)
+                ),
+                HttpStatusCode.Forbidden => new TokenResult.FailureIdentityProvider(
+                    new IdentityProviderError.Forbidden(responseString)
+                ),
+                HttpStatusCode.NotFound => new TokenResult.FailureIdentityProvider(
+                    new IdentityProviderError.NotFound(responseString)
+                ),
                 _ => new TokenResult.FailureUnknown(responseString),
             };
         }
         catch (HttpRequestException ex)
         {
             return ex.HttpRequestError == HttpRequestError.ConnectionError
-                ? new TokenResult.FailureKeycloak(new KeycloakError.Unreachable(ex.Message))
+                ? new TokenResult.FailureIdentityProvider(new IdentityProviderError.Unreachable(ex.Message))
                 : new TokenResult.FailureUnknown(ex.Message);
         }
         catch (Exception ex)

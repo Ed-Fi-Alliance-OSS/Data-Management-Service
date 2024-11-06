@@ -7,14 +7,13 @@ using EdFi.DmsConfigurationService.Backend;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
-public class KeycloakException : Exception
+public class IdentityProviderException : Exception
 {
-    public KeycloakError KeycloakError { get; }
+    public IdentityProviderError IdentityProviderError { get; }
 
-    public KeycloakException(KeycloakError keycloakError)
-        : base(keycloakError.FailureMessage)
+    public IdentityProviderException(IdentityProviderError identityProviderError)
+        : base(identityProviderError.FailureMessage)
     {
-        KeycloakError = keycloakError;
+        IdentityProviderError = identityProviderError;
     }
-
 }

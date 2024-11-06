@@ -76,8 +76,8 @@ public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logge
                     cancellationToken: cancellationToken
                 );
                 break;
-            case KeycloakException keycloakException:
-                if (keycloakException.KeycloakError is KeycloakError.Unreachable)
+            case IdentityProviderException keycloakException:
+                if (keycloakException.IdentityProviderError is IdentityProviderError.Unreachable)
                 {
                     logger.LogCritical(
                         JsonSerializer.Serialize(
@@ -93,7 +93,7 @@ public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logge
                 response.StatusCode = (int)HttpStatusCode.BadGateway;
                 await response.WriteAsync(
                     JsonSerializer.Serialize(
-                        FailureResponse.ForBadGateway(keycloakException.KeycloakError.FailureMessage),
+                        FailureResponse.ForBadGateway(keycloakException.IdentityProviderError.FailureMessage),
                         relaxedSerializer
                     ),
                     cancellationToken: cancellationToken

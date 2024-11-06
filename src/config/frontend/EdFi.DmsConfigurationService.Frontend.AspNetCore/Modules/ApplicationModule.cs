@@ -57,9 +57,9 @@ public class ApplicationModule : IEndpointModule
             case ClientCreateResult.FailureUnknown:
                 logger.LogError("Failure creating client");
                 return Results.Problem(statusCode: 500);
-            case ClientCreateResult.FailureKeycloak failureKeycloak:
+            case ClientCreateResult.FailureIdentityProvider failureIdentityProvider:
                 logger.LogError("Failure creating client");
-                throw new KeycloakException(failureKeycloak.KeycloakError);
+                throw new IdentityProviderException(failureIdentityProvider.IdentityProviderError);
             case ClientCreateResult.Success clientSuccess:
                 var repositoryResult = await applicationRepository.InsertApplication(
                     command,

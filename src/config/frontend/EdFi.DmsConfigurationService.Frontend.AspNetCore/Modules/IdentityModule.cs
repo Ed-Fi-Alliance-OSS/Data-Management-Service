@@ -40,8 +40,8 @@ public class IdentityModule : IEndpointModule
             {
                 case ClientClientsResult.FailureUnknown:
                     return Results.Problem(statusCode: 500);
-                case ClientClientsResult.FailureKeycloak failureKeycloak:
-                    throw new KeycloakException(failureKeycloak.KeycloakError);
+                case ClientClientsResult.FailureIdentityProvider failureIdentityProvider:
+                    throw new IdentityProviderException(failureIdentityProvider.IdentityProviderError);
                 case ClientClientsResult.Success clientSuccess:
                     if (IsUnique(clientSuccess))
                     {
@@ -52,8 +52,11 @@ public class IdentityModule : IEndpointModule
                         );
                         return result switch
                         {
-                            ClientCreateResult.Success => Results.Ok($"Registered client {model.ClientId} successfully."),
-                            ClientCreateResult.FailureKeycloak ke => throw new KeycloakException(ke.KeycloakError),
+                            ClientCreateResult.Success => Results.Ok(
+                                $"Registered client {model.ClientId} successfully."
+                            ),
+                            ClientCreateResult.FailureIdentityProvider ke =>
+                                throw new IdentityProviderException(ke.IdentityProviderError),
                             _ => Results.Problem(statusCode: 500),
                         };
                     }
@@ -68,7 +71,12 @@ public class IdentityModule : IEndpointModule
                 {
                     var validationFailures = new List<ValidationFailure>
                     {
-                        new() { PropertyName = "ClientId", ErrorMessage = "Client with the same Client Id already exists. Please provide different Client Id." }
+                        new()
+                        {
+                            PropertyName = "ClientId",
+                            ErrorMessage =
+                                "Client with the same Client Id already exists. Please provide different Client Id.",
+                        },
                     };
                     throw new ValidationException(validationFailures);
                 }
@@ -99,14 +107,16 @@ public class IdentityModule : IEndpointModule
             response = tokenResult switch
             {
                 TokenResult.Success tokenSuccess => tokenSuccess.Token,
-                TokenResult.FailureKeycloak failure => throw new KeycloakException(failure.KeycloakError),
+                TokenResult.FailureIdentityProvider failure => throw new IdentityProviderException(
+                    failure.IdentityProviderError
+                ),
                 _ => response,
             };
 
             var tokenResponse = JsonSerializer.Deserialize<TokenResponse>(response);
             return Results.Ok(tokenResponse);
         }
-        catch (KeycloakException)
+        catch (IdentityProviderException)
         {
             throw;
         }

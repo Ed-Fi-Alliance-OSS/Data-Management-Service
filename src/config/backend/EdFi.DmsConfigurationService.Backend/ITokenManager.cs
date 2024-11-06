@@ -14,7 +14,7 @@ public record TokenResult
 {
     public record Success(string Token) : TokenResult;
 
-    public record FailureUnknown(string FailureMessage) : TokenResult;
+    public record FailureIdentityProvider(IdentityProviderError IdentityProviderError) : TokenResult;
 
-    public record FailureKeycloak(KeycloakError KeycloakError) : TokenResult;
+    public record FailureUnknown(string FailureMessage) : TokenResult;
 }

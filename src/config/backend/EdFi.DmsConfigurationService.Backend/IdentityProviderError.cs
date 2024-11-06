@@ -5,25 +5,25 @@
 
 namespace EdFi.DmsConfigurationService.Backend;
 
-public record KeycloakError(string FailureMessage)
+public record IdentityProviderError(string FailureMessage)
 {
     /// <summary>
     /// Keycloak is unreachable
     /// </summary>
-    public record Unreachable(string FailureMessage) : KeycloakError(FailureMessage);
+    public record Unreachable(string FailureMessage) : IdentityProviderError(FailureMessage);
 
     /// <summary>
-    /// Received a 404 when calling Keycloak, possibly due to realm being invalid
+    /// Received a 404 when calling the IDP
     /// </summary>
-    public record NotFound(string FailureMessage) : KeycloakError(FailureMessage);
+    public record NotFound(string FailureMessage) : IdentityProviderError(FailureMessage);
 
     /// <summary>
     /// Bad credentials
     /// </summary>
-    public record Unauthorized(string FailureMessage) : KeycloakError(FailureMessage);
+    public record Unauthorized(string FailureMessage) : IdentityProviderError(FailureMessage);
 
     /// <summary>
     /// Insufficient permission to perform the request
     /// </summary>
-    public record Forbidden(string FailureMessage) : KeycloakError(FailureMessage);
+    public record Forbidden(string FailureMessage) : IdentityProviderError(FailureMessage);
 }

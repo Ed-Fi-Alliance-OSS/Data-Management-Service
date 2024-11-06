@@ -80,7 +80,7 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
         }
         catch (FlurlHttpException ex)
         {
-            return new ClientCreateResult.FailureKeycloak(ExceptionToKeycloakError(ex));
+            return new ClientCreateResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
         }
         catch (Exception ex)
         {
@@ -121,7 +121,7 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
         }
         catch (FlurlHttpException ex)
         {
-            return new ClientDeleteResult.FailureKeycloak(ExceptionToKeycloakError(ex));
+            return new ClientDeleteResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
         }
     }
 
@@ -134,7 +134,7 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
         }
         catch (FlurlHttpException ex)
         {
-            return new ClientResetResult.FailureKeycloak(ExceptionToKeycloakError(ex));
+            return new ClientResetResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
         }
         catch (Exception ex)
         {
@@ -151,7 +151,7 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
         }
         catch (FlurlHttpException ex)
         {
-            return new ClientClientsResult.FailureKeycloak(ExceptionToKeycloakError(ex));
+            return new ClientClientsResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
         }
         catch (Exception ex)
         {
@@ -159,15 +159,15 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
         }
     }
 
-    private static KeycloakError ExceptionToKeycloakError(FlurlHttpException ex)
+    private static IdentityProviderError ExceptionToKeycloakError(FlurlHttpException ex)
     {
         return ex.StatusCode switch
         {
-            null => new KeycloakError.Unreachable(ex.Message),
-            401 => new KeycloakError.Unauthorized(ex.Message),
-            403 => new KeycloakError.Forbidden(ex.Message),
-            404 => new KeycloakError.NotFound(ex.Message),
-            _ => new KeycloakError("Unknown"),
+            null => new IdentityProviderError.Unreachable(ex.Message),
+            401 => new IdentityProviderError.Unauthorized(ex.Message),
+            403 => new IdentityProviderError.Forbidden(ex.Message),
+            404 => new IdentityProviderError.NotFound(ex.Message),
+            _ => new IdentityProviderError("Unknown"),
         };
     }
 }
