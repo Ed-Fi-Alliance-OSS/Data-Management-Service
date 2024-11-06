@@ -381,10 +381,20 @@ public class RegisterEndpointTests
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+        var actualResponse = JsonNode.Parse(content);
         var expectedResponse = JsonNode.Parse(
-            """{"detail":"No connection could be made because the target machine actively refused it.","type":"urn:ed-fi:api:bad-gateway","title":"Bad Gateway","status":502,"validationErrors":{}}"""
+            """
+            {
+              "detail": "No connection could be made because the target machine actively refused it.",
+              "type": "urn:ed-fi:api:bad-gateway",
+              "title": "Bad Gateway",
+              "status": 502,
+              "correlationId": "{correlationId}",
+              "validationErrors": {}
+            }
+            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
         );
-        JsonNode.DeepEquals(JsonNode.Parse(content), expectedResponse).Should().Be(true);
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
     }
 }
 
@@ -540,6 +550,7 @@ public class TokenEndpointTests
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+        var actualResponse = JsonNode.Parse(content);
         var expectedResponse = JsonNode.Parse(
             """
             {
@@ -547,11 +558,12 @@ public class TokenEndpointTests
               "type": "urn:ed-fi:api:bad-gateway",
               "title": "Bad Gateway",
               "status": 502,
+              "correlationId": "{correlationId}",
               "validationErrors": {}
             }
-            """
+            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
         );
-        JsonNode.DeepEquals(JsonNode.Parse(content), expectedResponse).Should().Be(true);
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
     }
 
     [Test]

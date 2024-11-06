@@ -199,6 +199,7 @@ public class VendorModuleTests
             );
 
             //Assert
+            var actualPostResponse = JsonNode.Parse(await addResponse.Content.ReadAsStringAsync());
             var expectedPostResponse = JsonNode.Parse(
                 """
                 {
@@ -206,6 +207,7 @@ public class VendorModuleTests
                   "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                   "title": "Data Validation Failed",
                   "status": 400,
+                  "correlationId": "{correlationId}",
                   "validationErrors": {
                     "Company": [
                       "The length of 'Company' must be 256 characters or fewer. You entered 300 characters."
@@ -221,8 +223,10 @@ public class VendorModuleTests
                     ]
                   }
                 }
-                """
+                """.Replace("{correlationId}", actualPostResponse!["correlationId"]!.GetValue<string>())
             );
+
+            var actualPutResponse = JsonNode.Parse(await updateResponse.Content.ReadAsStringAsync());
             var expectedPutResponse = JsonNode.Parse(
                 """
                 {
@@ -230,6 +234,7 @@ public class VendorModuleTests
                   "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                   "title": "Data Validation Failed",
                   "status": 400,
+                  "correlationId": "{correlationId}",
                   "validationErrors": {
                     "Company": [
                       "The length of 'Company' must be 256 characters or fewer. You entered 300 characters."
@@ -245,18 +250,14 @@ public class VendorModuleTests
                     ]
                   }
                 }
-                """
+                """.Replace("{correlationId}", actualPutResponse!["correlationId"]!.GetValue<string>())
             );
 
-            string addResponseContent = await addResponse.Content.ReadAsStringAsync();
             addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            var postResponse = JsonNode.Parse(addResponseContent);
-            JsonNode.DeepEquals(postResponse, expectedPostResponse).Should().Be(true);
+            JsonNode.DeepEquals(actualPostResponse, expectedPostResponse).Should().Be(true);
 
-            string updateResponseContent = await updateResponse.Content.ReadAsStringAsync();
             updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            var putResponse = JsonNode.Parse(updateResponseContent);
-            JsonNode.DeepEquals(putResponse, expectedPutResponse).Should().Be(true);
+            JsonNode.DeepEquals(actualPutResponse, expectedPutResponse).Should().Be(true);
         }
 
         [Test]

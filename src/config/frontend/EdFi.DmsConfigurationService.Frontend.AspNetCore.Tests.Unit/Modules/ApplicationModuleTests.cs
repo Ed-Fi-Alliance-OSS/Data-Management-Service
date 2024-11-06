@@ -53,7 +53,6 @@ public class ApplicationModuleTests
                     );
 
                     collection
-                        .AddTransient((_) => A.Fake<HttpContext>())
                         .AddTransient((_) => _applicationRepository)
                         .AddTransient((_) => _clientRepository)
                         .AddTransient((_) => _vendorRepository);
@@ -209,6 +208,8 @@ public class ApplicationModuleTests
             );
 
             //Assert
+            string addResponseContent = await addResponse.Content.ReadAsStringAsync();
+            var actualResponse = JsonNode.Parse(addResponseContent);
             var expectedResponse = JsonNode.Parse(
                 """
                 {
@@ -216,6 +217,7 @@ public class ApplicationModuleTests
                   "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                   "title": "Data Validation Failed",
                   "status": 400,
+                  "correlationId": "{correlationId}",
                   "validationErrors": {
                     "ApplicationName": [
                       "The length of 'Application Name' must be 256 characters or fewer. You entered 266 characters."
@@ -228,9 +230,8 @@ public class ApplicationModuleTests
                     ]
                   }
                 }
-                """
+                """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
             );
-            string addResponseContent = await addResponse.Content.ReadAsStringAsync();
             addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             JsonNode.DeepEquals(JsonNode.Parse(addResponseContent), expectedResponse).Should().Be(true);
         }
@@ -535,6 +536,7 @@ public class ApplicationModuleTests
 
             addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             string responseBody = await addResponse.Content.ReadAsStringAsync();
+            var actualResponse = JsonNode.Parse(responseBody);
             var expectedResponse = JsonNode.Parse(
                 """
                 {
@@ -542,15 +544,16 @@ public class ApplicationModuleTests
                   "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                   "title": "Data Validation Failed",
                   "status": 400,
+                  "correlationId": "{correlationId}",
                   "validationErrors": {
                     "VendorId": [
                       "Reference 'VendorId' does not exist."
                     ]
                   }
                 }
-                """
+                """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
             );
-            JsonNode.DeepEquals(JsonNode.Parse(responseBody), expectedResponse).Should().Be(true);
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
         }
 
         [Test]
@@ -580,6 +583,7 @@ public class ApplicationModuleTests
             //Assert
             updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             string responseBody = await updateResponse.Content.ReadAsStringAsync();
+            var actualResponse = JsonNode.Parse(responseBody);
             var expectedResponse = JsonNode.Parse(
                 """
                 {
@@ -587,15 +591,16 @@ public class ApplicationModuleTests
                   "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                   "title": "Data Validation Failed",
                   "status": 400,
+                  "correlationId": "{correlationId}",
                   "validationErrors": {
                     "VendorId": [
                       "Reference 'VendorId' does not exist."
                     ]
                   }
                 }
-                """
+                """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
             );
-            JsonNode.DeepEquals(JsonNode.Parse(responseBody), expectedResponse).Should().Be(true);
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
         }
     }
 }

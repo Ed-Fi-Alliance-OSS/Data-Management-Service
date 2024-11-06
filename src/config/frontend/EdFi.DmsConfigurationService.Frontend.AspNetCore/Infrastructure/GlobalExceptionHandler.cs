@@ -6,9 +6,7 @@
 using System.Net;
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend;
-using FluentValidation.Results;
 using Microsoft.AspNetCore.Diagnostics;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
@@ -21,19 +19,20 @@ public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logge
         CancellationToken cancellationToken
     )
     {
+        var traceId = httpContext.TraceIdentifier;
         logger.LogError(
             JsonSerializer.Serialize(
                 new
                 {
                     message = "An uncaught error has occurred",
                     error = new { exception.Message, exception.StackTrace },
-                    traceId = httpContext.TraceIdentifier,
+                    traceId = traceId,
                 }
             )
         );
         var response = httpContext.Response;
         response.ContentType = "application/problem+json";
-        response.Headers["TraceId"] = httpContext.TraceIdentifier;
+        response.Headers["TraceId"] = traceId;
 
         var relaxedSerializer = new JsonSerializerOptions
         {
@@ -47,7 +46,7 @@ public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logge
                 response.StatusCode = (int)HttpStatusCode.BadRequest;
                 await response.WriteAsync(
                     JsonSerializer.Serialize(
-                        FailureResponse.ForBadRequest(badHttpRequest.Message),
+                        FailureResponse.ForBadRequest(badHttpRequest.Message, traceId),
                         relaxedSerializer
                     ),
                     cancellationToken: cancellationToken
@@ -57,7 +56,7 @@ public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logge
                 response.StatusCode = (int)HttpStatusCode.BadRequest;
                 await response.WriteAsync(
                     JsonSerializer.Serialize(
-                        FailureResponse.ForDataValidation(validationException.Errors),
+                        FailureResponse.ForDataValidation(validationException.Errors, traceId),
                         relaxedSerializer
                     ),
                     cancellationToken: cancellationToken
@@ -66,11 +65,11 @@ public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logge
             case IdentityException identityException:
                 response.StatusCode = (int)HttpStatusCode.Unauthorized;
                 string responseString = JsonSerializer.Serialize(
-                    FailureResponse.ForUnauthorized(identityException.Message)
+                    FailureResponse.ForUnauthorized(identityException.Message, traceId)
                 );
                 await response.WriteAsync(
                     JsonSerializer.Serialize(
-                        FailureResponse.ForUnauthorized(identityException.Message),
+                        FailureResponse.ForUnauthorized(identityException.Message, traceId),
                         relaxedSerializer
                     ),
                     cancellationToken: cancellationToken
@@ -93,7 +92,10 @@ public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logge
                 response.StatusCode = (int)HttpStatusCode.BadGateway;
                 await response.WriteAsync(
                     JsonSerializer.Serialize(
-                        FailureResponse.ForBadGateway(keycloakException.IdentityProviderError.FailureMessage),
+                        FailureResponse.ForBadGateway(
+                            keycloakException.IdentityProviderError.FailureMessage,
+                            traceId
+                        ),
                         relaxedSerializer
                     ),
                     cancellationToken: cancellationToken
@@ -102,91 +104,11 @@ public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logge
             default:
                 response.StatusCode = (int)HttpStatusCode.ServiceUnavailable;
                 await response.WriteAsync(
-                    JsonSerializer.Serialize(FailureResponse.ForUnhandled(), relaxedSerializer),
+                    JsonSerializer.Serialize(FailureResponse.ForUnhandled(traceId), relaxedSerializer),
                     cancellationToken: cancellationToken
                 );
                 break;
         }
         return true;
     }
-}
-
-internal static class FailureResponse
-{
-    private static readonly JsonSerializerOptions _serializerOptions =
-        new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
-
-    private static readonly string _typePrefix = "urn:ed-fi:api";
-    private static readonly string _badRequestTypePrefix = $"{_typePrefix}:bad-request";
-    private static readonly string _badGatewayTypePrefix = $"{_typePrefix}:bad-gateway";
-    private static readonly string _unauthorizedType = $"{_typePrefix}:unauthorized";
-    private static readonly string _unavailableType = $"{_typePrefix}:service-unavailable";
-
-    private static JsonObject CreateBaseJsonObject(
-        string detail,
-        string type,
-        string title,
-        int status,
-        Dictionary<string, string[]>? validationErrors = null
-    )
-    {
-        return new JsonObject
-        {
-            ["detail"] = detail,
-            ["type"] = type,
-            ["title"] = title,
-            ["status"] = status,
-            ["validationErrors"] =
-                validationErrors != null
-                    ? JsonSerializer.SerializeToNode(validationErrors, _serializerOptions)
-                    : new JsonObject(),
-        };
-    }
-
-    public static JsonNode ForBadRequest(string detail) =>
-        CreateBaseJsonObject(
-            detail: detail,
-            type: _badRequestTypePrefix,
-            title: "Bad Request",
-            status: 400,
-            []
-        );
-
-    public static JsonNode ForDataValidation(IEnumerable<ValidationFailure> validationFailures) =>
-        CreateBaseJsonObject(
-            detail: "",
-            type: $"{_badRequestTypePrefix}:data-validation-failed",
-            title: "Data Validation Failed",
-            status: 400,
-            validationFailures
-                .GroupBy(x => x.PropertyName)
-                .ToDictionary(g => g.Key, g => g.Select(x => x.ErrorMessage).ToArray())
-        );
-
-    public static JsonNode ForUnauthorized(string detail) =>
-        CreateBaseJsonObject(
-            detail: detail,
-            type: _unauthorizedType,
-            title: "Unauthorized",
-            status: 401,
-            validationErrors: []
-        );
-
-    public static JsonNode ForBadGateway(string detail) =>
-        CreateBaseJsonObject(
-            detail: detail,
-            type: _badGatewayTypePrefix,
-            title: "Bad Gateway",
-            status: 502,
-            validationErrors: []
-        );
-
-    public static JsonNode ForUnhandled() =>
-        CreateBaseJsonObject(
-            detail: "",
-            type: _unavailableType,
-            title: "Service Unavailable",
-            status: 401,
-            validationErrors: []
-        );
 }
