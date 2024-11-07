@@ -56,12 +56,11 @@ param (
 
     # Value of the hardcoded claim
     [string]
-    $ClaimValue = "http://ed-fi.org"
+    $ClaimValue = "http://ed-fi.org",
 
     # Token life span
     [int]
     $TokenLifespan = 1800
-
 
 )
 
