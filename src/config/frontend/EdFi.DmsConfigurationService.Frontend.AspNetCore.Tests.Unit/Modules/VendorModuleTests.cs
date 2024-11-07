@@ -620,9 +620,7 @@ public class VendorModuleTests
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
             string responseContent = await response.Content.ReadAsStringAsync();
-            string expectedResponse =
-                @"{""title"":""Not found: vendor with ID 99. It may have been recently deleted.""}";
-            responseContent.Should().Be(expectedResponse);
+            responseContent.Should().Contain("It may have been recently deleted.");
         }
     }
 }

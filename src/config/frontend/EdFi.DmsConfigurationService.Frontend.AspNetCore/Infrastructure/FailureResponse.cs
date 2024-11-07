@@ -17,9 +17,9 @@ internal static class FailureResponse
 
     private static readonly string _typePrefix = "urn:ed-fi:api";
     private static readonly string _badRequestTypePrefix = $"{_typePrefix}:bad-request";
+    private static readonly string _notFoundTypePrefix = $"{_typePrefix}:not-found";
     private static readonly string _badGatewayTypePrefix = $"{_typePrefix}:bad-gateway";
-    private static readonly string _unauthorizedType = $"{_typePrefix}:unauthorized";
-    private static readonly string _unavailableType = $"{_typePrefix}:service-unavailable";
+    private static readonly string _unavailableType = $"{_typePrefix}:internal-server-error";
 
     private static JsonObject CreateBaseJsonObject(
         string detail,
@@ -54,6 +54,16 @@ internal static class FailureResponse
             []
         );
 
+    public static JsonNode ForNotFound(string detail, string correlationId) =>
+        CreateBaseJsonObject(
+            detail: detail,
+            type: _notFoundTypePrefix,
+            title: "Not Found",
+            status: 404,
+            correlationId: correlationId,
+            []
+        );
+
     public static JsonNode ForDataValidation(
         IEnumerable<ValidationFailure> validationFailures,
         string correlationId
@@ -69,16 +79,6 @@ internal static class FailureResponse
                 .ToDictionary(g => g.Key, g => g.Select(x => x.ErrorMessage).ToArray())
         );
 
-    public static JsonNode ForUnauthorized(string detail, string correlationId) =>
-        CreateBaseJsonObject(
-            detail: detail,
-            type: _unauthorizedType,
-            title: "Unauthorized",
-            status: 401,
-            correlationId: correlationId,
-            validationErrors: []
-        );
-
     public static JsonNode ForBadGateway(string detail, string correlationId) =>
         CreateBaseJsonObject(
             detail: detail,
@@ -89,12 +89,12 @@ internal static class FailureResponse
             validationErrors: []
         );
 
-    public static JsonNode ForUnhandled(string correlationId) =>
+    public static JsonNode ForUnknown(string correlationId) =>
         CreateBaseJsonObject(
             detail: "",
             type: _unavailableType,
-            title: "Service Unavailable",
-            status: 401,
+            title: "Internal Server Error",
+            status: 500,
             correlationId: correlationId,
             validationErrors: []
         );

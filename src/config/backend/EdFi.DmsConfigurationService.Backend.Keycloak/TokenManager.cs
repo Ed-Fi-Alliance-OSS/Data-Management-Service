@@ -42,7 +42,7 @@ public class TokenManager(KeycloakContext keycloakContext, ILogger<TokenManager>
         }
         catch (HttpRequestException ex)
         {
-            logger.LogError(ex, "Get access token error");
+            logger.LogCritical(ex, "Get access token error");
             return ex.HttpRequestError == HttpRequestError.ConnectionError
                 ? new TokenResult.FailureIdentityProvider(new IdentityProviderError.Unreachable(ex.Message))
                 : new TokenResult.FailureUnknown(ex.Message);

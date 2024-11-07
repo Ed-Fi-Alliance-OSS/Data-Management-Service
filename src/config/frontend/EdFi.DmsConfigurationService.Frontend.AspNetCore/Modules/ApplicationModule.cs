@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net;
 using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
@@ -54,12 +55,24 @@ public class ApplicationModule : IEndpointModule
 
         switch (clientCreateResult)
         {
-            case ClientCreateResult.FailureUnknown:
-                logger.LogError("Failure creating client");
-                return Results.Problem(statusCode: 500);
+            case ClientCreateResult.FailureUnknown failure:
+                logger.LogError("Failure creating client {failure}", failure);
+                return Results.Json(
+                    FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                    statusCode: (int)HttpStatusCode.InternalServerError
+                );
             case ClientCreateResult.FailureIdentityProvider failureIdentityProvider:
-                logger.LogError("Failure creating client");
-                throw new IdentityProviderException(failureIdentityProvider.IdentityProviderError);
+                logger.LogError(
+                    "Failure creating client: {failureMessage}",
+                    failureIdentityProvider.IdentityProviderError.FailureMessage
+                );
+                return Results.Json(
+                    FailureResponse.ForBadGateway(
+                        failureIdentityProvider.IdentityProviderError.FailureMessage,
+                        httpContext.TraceIdentifier
+                    ),
+                    statusCode: (int)HttpStatusCode.BadGateway
+                );
             case ClientCreateResult.Success clientSuccess:
                 var repositoryResult = await applicationRepository.InsertApplication(
                     command,
@@ -87,19 +100,29 @@ public class ApplicationModule : IEndpointModule
                                 new ValidationFailure("VendorId", $"Reference 'VendorId' does not exist."),
                             }
                         );
-                    case ApplicationInsertResult.FailureUnknown:
+                    case ApplicationInsertResult.FailureUnknown failure:
+                        logger.LogError("Failure creating client {failure}", failure);
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
-                        return Results.Problem(statusCode: 500);
+                        return Results.Json(
+                            FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                            statusCode: (int)HttpStatusCode.InternalServerError
+                        );
                 }
 
                 break;
         }
 
         logger.LogError("Failure creating client");
-        return Results.Problem(statusCode: 500);
+        return Results.Json(
+            FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+            statusCode: (int)HttpStatusCode.InternalServerError
+        );
     }
 
-    private static async Task<IResult> GetAll(IApplicationRepository applicationRepository)
+    private static async Task<IResult> GetAll(
+        IApplicationRepository applicationRepository,
+        HttpContext httpContext
+    )
     {
         ApplicationQueryResult getResult = await applicationRepository.QueryApplication(
             new PagingQuery() { Limit = 9999, Offset = 0 }
@@ -107,8 +130,10 @@ public class ApplicationModule : IEndpointModule
         return getResult switch
         {
             ApplicationQueryResult.Success success => Results.Ok(success.ApplicationResponses),
-            ApplicationQueryResult.FailureUnknown failure => Results.Problem(statusCode: 500),
-            _ => Results.Problem(statusCode: 500),
+            _ => Results.Json(
+                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                statusCode: (int)HttpStatusCode.InternalServerError
+            ),
         };
     }
 
@@ -123,9 +148,14 @@ public class ApplicationModule : IEndpointModule
         return getResult switch
         {
             ApplicationGetResult.Success success => Results.Ok(success.ApplicationResponse),
-            ApplicationGetResult.FailureNotFound => Results.NotFound(),
-            ApplicationGetResult.FailureUnknown => Results.Problem(statusCode: 500),
-            _ => Results.Problem(statusCode: 500),
+            ApplicationGetResult.FailureNotFound => Results.Json(
+                FailureResponse.ForNotFound("Application not found", httpContext.TraceIdentifier),
+                statusCode: (int)HttpStatusCode.NotFound
+            ),
+            _ => Results.Json(
+                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                statusCode: (int)HttpStatusCode.InternalServerError
+            ),
         };
     }
 
@@ -139,21 +169,26 @@ public class ApplicationModule : IEndpointModule
     {
         await validator.GuardAsync(command);
 
-        var vendorUpdateResult = await repository.UpdateApplication(command);
+        var applicationUpdateResult = await repository.UpdateApplication(command);
 
-        if (vendorUpdateResult is ApplicationUpdateResult.FailureVendorNotFound)
+        if (applicationUpdateResult is ApplicationUpdateResult.FailureVendorNotFound)
         {
             throw new ValidationException(
                 new[] { new ValidationFailure("VendorId", $"Reference 'VendorId' does not exist.") }
             );
         }
 
-        return vendorUpdateResult switch
+        return applicationUpdateResult switch
         {
             ApplicationUpdateResult.Success success => Results.NoContent(),
-            ApplicationUpdateResult.FailureNotExists => Results.NotFound(),
-            ApplicationUpdateResult.FailureUnknown => Results.Problem(statusCode: 500),
-            _ => Results.Problem(statusCode: 500),
+            ApplicationUpdateResult.FailureNotExists => Results.Json(
+                FailureResponse.ForNotFound("Application not found", httpContext.TraceIdentifier),
+                statusCode: (int)HttpStatusCode.NotFound
+            ),
+            _ => Results.Json(
+                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                statusCode: (int)HttpStatusCode.InternalServerError
+            ),
         };
     }
 
@@ -197,14 +232,20 @@ public class ApplicationModule : IEndpointModule
                             client.ClientUuid,
                             ex.Message
                         );
-                        return Results.Problem(statusCode: 500);
+                        return Results.Json(
+                            FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                            statusCode: (int)HttpStatusCode.InternalServerError
+                        );
                     }
                 }
 
                 break;
             case ApplicationApiClientsResult.FailureUnknown failure:
                 logger.LogError("Error fetching ApiClients: {failure}", failure);
-                return Results.Problem(statusCode: 500);
+                return Results.Json(
+                    FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                    statusCode: (int)HttpStatusCode.InternalServerError
+                );
         }
 
         ApplicationDeleteResult deleteResult = await repository.DeleteApplication(id);
@@ -218,7 +259,10 @@ public class ApplicationModule : IEndpointModule
         {
             ApplicationDeleteResult.Success => Results.NoContent(),
             ApplicationDeleteResult.FailureNotExists => Results.NotFound(),
-            _ => Results.Problem(statusCode: 500),
+            _ => Results.Json(
+                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                statusCode: (int)HttpStatusCode.InternalServerError
+            ),
         };
     }
 
@@ -272,7 +316,10 @@ public class ApplicationModule : IEndpointModule
                             client.ClientUuid,
                             ex.Message
                         );
-                        return Results.Problem(statusCode: 500);
+                        return Results.Json(
+                            FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                            statusCode: (int)HttpStatusCode.InternalServerError
+                        );
                     }
                 }
                 else
@@ -282,8 +329,14 @@ public class ApplicationModule : IEndpointModule
                 break;
             case ApplicationApiClientsResult.FailureUnknown failure:
                 logger.LogError("Error fetching ApiClients: {failure}", failure);
-                return Results.Problem(statusCode: 500);
+                return Results.Json(
+                    FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                    statusCode: (int)HttpStatusCode.InternalServerError
+                );
         }
-        return Results.Problem(statusCode: 500);
+        return Results.Json(
+            FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+            statusCode: (int)HttpStatusCode.InternalServerError
+        );
     }
 }

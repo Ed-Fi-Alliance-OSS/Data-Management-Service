@@ -486,8 +486,16 @@ public class TokenEndpointTests
         {
             _tokenManager = A.Fake<ITokenManager>();
             A.CallTo(
-                () => _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
-            );
+                    () =>
+                        _tokenManager.GetAccessTokenAsync(
+                            A<IEnumerable<KeyValuePair<string, string>>>.Ignored
+                        )
+                )
+                .Returns(
+                    new TokenResult.FailureUnknown(
+                        "No connection could be made because the target machine actively refused it."
+                    )
+                );
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -503,11 +511,9 @@ public class TokenEndpointTests
         // Act
         var requestContent = new { clientid = "CSClient3", clientsecret = "test123@Puiu" };
         var response = await client.PostAsJsonAsync("/connect/token", requestContent);
-        string content = await response.Content.ReadAsStringAsync();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        content.Should().Contain("Invalid client or Invalid client credentials");
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
     }
 
     [Test]
@@ -524,8 +530,8 @@ public class TokenEndpointTests
                             A<IEnumerable<KeyValuePair<string, string>>>.Ignored
                         )
                 )
-                .Throws(
-                    new IdentityProviderException(
+                .Returns(
+                    new TokenResult.FailureIdentityProvider(
                         new IdentityProviderError.Unreachable(
                             "No connection could be made because the target machine actively refused it."
                         )
@@ -580,7 +586,11 @@ public class TokenEndpointTests
                             A<IEnumerable<KeyValuePair<string, string>>>.Ignored
                         )
                 )
-                .Throws(new IdentityProviderException(new IdentityProviderError.NotFound("Invalid realm.")));
+                .Returns(
+                    new TokenResult.FailureIdentityProvider(
+                        new IdentityProviderError.NotFound("Invalid realm")
+                    )
+                );
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -617,9 +627,9 @@ public class TokenEndpointTests
                             A<IEnumerable<KeyValuePair<string, string>>>.Ignored
                         )
                 )
-                .Throws(
-                    new IdentityProviderException(
-                        new IdentityProviderError.Forbidden("Insufficient Permissions.")
+                .Returns(
+                    new TokenResult.FailureIdentityProvider(
+                        new IdentityProviderError.Unauthorized("Insufficient Permissions")
                     )
                 );
 
@@ -637,11 +647,9 @@ public class TokenEndpointTests
         //Act
         var requestContent = new { clientid = "CSClient3", clientsecret = "test123@Puiu" };
         var response = await client.PostAsJsonAsync("/connect/token", requestContent);
-        string content = await response.Content.ReadAsStringAsync();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
-        content.Should().Contain("Insufficient Permissions");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
     [Test]
@@ -658,9 +666,7 @@ public class TokenEndpointTests
                             A<IEnumerable<KeyValuePair<string, string>>>.Ignored
                         )
                 )
-                .Throws(
-                    new IdentityProviderException(new IdentityProviderError.Unauthorized("Bad Credentials."))
-                );
+                .Returns(new TokenResult.FailureIdentityProvider(new IdentityProviderError.Unauthorized("")));
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -676,10 +682,8 @@ public class TokenEndpointTests
         //Act
         var requestContent = new { clientid = "CSClient3", clientsecret = "test123@Puiu" };
         var response = await client.PostAsJsonAsync("/connect/token", requestContent);
-        string content = await response.Content.ReadAsStringAsync();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
-        content.Should().Contain("Bad Credentials");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 }

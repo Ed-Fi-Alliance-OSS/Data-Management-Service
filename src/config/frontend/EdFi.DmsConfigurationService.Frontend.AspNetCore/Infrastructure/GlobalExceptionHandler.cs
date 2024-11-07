@@ -6,7 +6,6 @@
 using System.Net;
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using EdFi.DmsConfigurationService.Backend;
 using Microsoft.AspNetCore.Diagnostics;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
@@ -62,49 +61,10 @@ public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logge
                     cancellationToken: cancellationToken
                 );
                 break;
-            case IdentityException identityException:
-                response.StatusCode = (int)HttpStatusCode.Unauthorized;
-                string responseString = JsonSerializer.Serialize(
-                    FailureResponse.ForUnauthorized(identityException.Message, traceId)
-                );
-                await response.WriteAsync(
-                    JsonSerializer.Serialize(
-                        FailureResponse.ForUnauthorized(identityException.Message, traceId),
-                        relaxedSerializer
-                    ),
-                    cancellationToken: cancellationToken
-                );
-                break;
-            case IdentityProviderException keycloakException:
-                if (keycloakException.IdentityProviderError is IdentityProviderError.Unreachable)
-                {
-                    logger.LogCritical(
-                        JsonSerializer.Serialize(
-                            new
-                            {
-                                message = "Keycloak is unreachable",
-                                error = new { exception.Message, exception.StackTrace },
-                                traceId = httpContext.TraceIdentifier,
-                            }
-                        )
-                    );
-                }
-                response.StatusCode = (int)HttpStatusCode.BadGateway;
-                await response.WriteAsync(
-                    JsonSerializer.Serialize(
-                        FailureResponse.ForBadGateway(
-                            keycloakException.IdentityProviderError.FailureMessage,
-                            traceId
-                        ),
-                        relaxedSerializer
-                    ),
-                    cancellationToken: cancellationToken
-                );
-                break;
             default:
-                response.StatusCode = (int)HttpStatusCode.ServiceUnavailable;
+                response.StatusCode = (int)HttpStatusCode.InternalServerError;
                 await response.WriteAsync(
-                    JsonSerializer.Serialize(FailureResponse.ForUnhandled(traceId), relaxedSerializer),
+                    JsonSerializer.Serialize(FailureResponse.ForUnknown(traceId), relaxedSerializer),
                     cancellationToken: cancellationToken
                 );
                 break;

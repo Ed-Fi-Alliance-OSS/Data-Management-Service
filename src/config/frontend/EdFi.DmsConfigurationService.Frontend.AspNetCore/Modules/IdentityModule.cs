@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net;
 using System.Text.Json;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
@@ -27,7 +28,8 @@ public class IdentityModule : IEndpointModule
         RegisterRequest.Validator validator,
         RegisterRequest model,
         IClientRepository clientRepository,
-        IOptions<IdentitySettings> identitySettings
+        IOptions<IdentitySettings> identitySettings,
+        HttpContext httpContext
     )
     {
         bool allowRegistration = identitySettings.Value.AllowRegistration;
@@ -39,9 +41,18 @@ public class IdentityModule : IEndpointModule
             switch (clientResult)
             {
                 case ClientClientsResult.FailureUnknown:
-                    return Results.Problem(statusCode: 500);
+                    return Results.Json(
+                        FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                        statusCode: (int)HttpStatusCode.InternalServerError
+                    );
                 case ClientClientsResult.FailureIdentityProvider failureIdentityProvider:
-                    throw new IdentityProviderException(failureIdentityProvider.IdentityProviderError);
+                    return Results.Json(
+                        FailureResponse.ForBadGateway(
+                            failureIdentityProvider.IdentityProviderError.FailureMessage,
+                            httpContext.TraceIdentifier
+                        ),
+                        statusCode: (int)HttpStatusCode.BadGateway
+                    );
                 case ClientClientsResult.Success clientSuccess:
                     if (IsUnique(clientSuccess))
                     {
@@ -55,9 +66,18 @@ public class IdentityModule : IEndpointModule
                             ClientCreateResult.Success => Results.Ok(
                                 $"Registered client {model.ClientId} successfully."
                             ),
-                            ClientCreateResult.FailureIdentityProvider ke =>
-                                throw new IdentityProviderException(ke.IdentityProviderError),
-                            _ => Results.Problem(statusCode: 500),
+                            ClientCreateResult.FailureIdentityProvider failureIdentityProvider =>
+                                Results.Json(
+                                    FailureResponse.ForBadGateway(
+                                        failureIdentityProvider.IdentityProviderError.FailureMessage,
+                                        httpContext.TraceIdentifier
+                                    ),
+                                    statusCode: (int)HttpStatusCode.BadGateway
+                                ),
+                            _ => Results.Json(
+                                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                                statusCode: (int)HttpStatusCode.InternalServerError
+                            ),
                         };
                     }
                     break;
@@ -90,41 +110,46 @@ public class IdentityModule : IEndpointModule
     private static async Task<IResult> GetClientAccessToken(
         TokenRequest.Validator validator,
         TokenRequest model,
-        ITokenManager tokenManager
+        ITokenManager tokenManager,
+        HttpContext httpContext
     )
     {
         await validator.GuardAsync(model);
-        try
+
+        string response = string.Empty;
+        var tokenResult = await tokenManager.GetAccessTokenAsync(
+            [
+                new KeyValuePair<string, string>("client_id", model.ClientId!),
+                new KeyValuePair<string, string>("client_secret", model.ClientSecret!),
+            ]
+        );
+
+        if (tokenResult is TokenResult.Success tokenSuccess)
         {
-            string response = string.Empty;
-            var tokenResult = await tokenManager.GetAccessTokenAsync(
-                [
-                    new KeyValuePair<string, string>("client_id", model.ClientId!),
-                    new KeyValuePair<string, string>("client_secret", model.ClientSecret!),
-                ]
-            );
-
-            response = tokenResult switch
-            {
-                TokenResult.Success tokenSuccess => tokenSuccess.Token,
-                TokenResult.FailureIdentityProvider failure => throw new IdentityProviderException(
-                    failure.IdentityProviderError
-                ),
-                _ => response,
-            };
-
+            response = tokenSuccess.Token;
             var tokenResponse = JsonSerializer.Deserialize<TokenResponse>(response);
             return Results.Ok(tokenResponse);
         }
-        catch (IdentityProviderException)
+
+        if (tokenResult is TokenResult.FailureIdentityProvider failureIdentityProvider)
         {
-            throw;
+            return failureIdentityProvider.IdentityProviderError switch
+            {
+                IdentityProviderError.Unauthorized => Results.Unauthorized(),
+                IdentityProviderError.Forbidden => Results.Forbid(),
+                _ => Results.Json(
+                    FailureResponse.ForBadGateway(
+                        failureIdentityProvider.IdentityProviderError.FailureMessage,
+                        httpContext.TraceIdentifier
+                    ),
+                    statusCode: (int)HttpStatusCode.BadGateway
+                ),
+            };
         }
-        catch (Exception ex)
-        {
-            throw new IdentityException(
-                "Client registration failed with: Invalid client or Invalid client credentials." + ex.Message
-            );
-        }
+
+        return Results.Json(
+            FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+            statusCode: (int)HttpStatusCode.InternalServerError
+        );
     }
 }

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Vendor;
@@ -44,12 +45,14 @@ public class VendorModule : IEndpointModule
                 $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
                 null
             ),
-            VendorInsertResult.FailureUnknown => Results.Problem(statusCode: 500),
-            _ => Results.Problem(statusCode: 500),
+            _ => Results.Json(
+                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                statusCode: (int)HttpStatusCode.InternalServerError
+            ),
         };
     }
 
-    private static async Task<IResult> GetAll(IVendorRepository repository)
+    private static async Task<IResult> GetAll(IVendorRepository repository, HttpContext httpContext)
     {
         VendorQueryResult getResult = await repository.QueryVendor(
             new PagingQuery() { Limit = 9999, Offset = 0 }
@@ -57,8 +60,10 @@ public class VendorModule : IEndpointModule
         return getResult switch
         {
             VendorQueryResult.Success success => Results.Ok(success.VendorResponses),
-            VendorQueryResult.FailureUnknown failure => Results.Problem(statusCode: 500),
-            _ => Results.Problem(statusCode: 500),
+            _ => Results.Json(
+                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                statusCode: (int)HttpStatusCode.InternalServerError
+            ),
         };
     }
 
@@ -73,9 +78,17 @@ public class VendorModule : IEndpointModule
         return getResult switch
         {
             VendorGetResult.Success success => Results.Ok(success.VendorResponse),
-            VendorGetResult.FailureNotFound => Results.NotFound(),
-            VendorGetResult.FailureUnknown => Results.Problem(statusCode: 500),
-            _ => Results.Problem(statusCode: 500),
+            VendorGetResult.FailureNotFound => Results.Json(
+                FailureResponse.ForNotFound(
+                    $"Vendor {id} not found. It may have been recently deleted.",
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.NotFound
+            ),
+            _ => Results.Json(
+                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                statusCode: (int)HttpStatusCode.InternalServerError
+            ),
         };
     }
 
@@ -109,9 +122,17 @@ public class VendorModule : IEndpointModule
         return vendorUpdateResult switch
         {
             VendorUpdateResult.Success success => Results.NoContent(),
-            VendorUpdateResult.FailureNotExists => Results.NotFound(),
-            VendorUpdateResult.FailureUnknown => Results.Problem(statusCode: 500),
-            _ => Results.Problem(statusCode: 500),
+            VendorUpdateResult.FailureNotExists => Results.Json(
+                FailureResponse.ForNotFound(
+                    $"Vendor {id} not found. It may have been recently deleted.",
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.NotFound
+            ),
+            _ => Results.Json(
+                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                statusCode: (int)HttpStatusCode.InternalServerError
+            ),
         };
     }
 
@@ -126,23 +147,42 @@ public class VendorModule : IEndpointModule
         return deleteResult switch
         {
             VendorDeleteResult.Success => Results.NoContent(),
-            VendorDeleteResult.FailureNotExists => Results.NotFound(),
-            VendorDeleteResult.FailureUnknown => Results.Problem(statusCode: 500),
-            _ => Results.Problem(statusCode: 500),
+            VendorDeleteResult.FailureNotExists => Results.Json(
+                FailureResponse.ForNotFound(
+                    $"Vendor {id} not found. It may have been recently deleted.",
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.NotFound
+            ),
+            _ => Results.Json(
+                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                statusCode: (int)HttpStatusCode.InternalServerError
+            ),
         };
     }
 
-    private static async Task<IResult> GetApplicationsByVendorId(long id, IVendorRepository repository)
+    private static async Task<IResult> GetApplicationsByVendorId(
+        long id,
+        IVendorRepository repository,
+        HttpContext httpContext
+    )
     {
         var getResult = await repository.GetVendorApplications(id);
 
         return getResult switch
         {
             VendorApplicationsResult.Success success => Results.Ok(success.ApplicationResponses),
-            VendorApplicationsResult.FailureNotExists => Results.NotFound(
-                new { title = $"Not found: vendor with ID {id}. It may have been recently deleted." }
+            VendorApplicationsResult.FailureNotExists => Results.Json(
+                FailureResponse.ForNotFound(
+                    $"Vendor {id} not found. It may have been recently deleted.",
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.NotFound
             ),
-            _ => Results.Problem(statusCode: 500),
+            _ => Results.Json(
+                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                statusCode: (int)HttpStatusCode.InternalServerError
+            ),
         };
     }
 }
