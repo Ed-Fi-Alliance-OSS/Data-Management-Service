@@ -45,10 +45,7 @@ public class VendorModule : IEndpointModule
                 $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
                 null
             ),
-            _ => Results.Json(
-                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
-                statusCode: (int)HttpStatusCode.InternalServerError
-            ),
+            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
 
@@ -60,10 +57,7 @@ public class VendorModule : IEndpointModule
         return getResult switch
         {
             VendorQueryResult.Success success => Results.Ok(success.VendorResponses),
-            _ => Results.Json(
-                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
-                statusCode: (int)HttpStatusCode.InternalServerError
-            ),
+            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
 
@@ -85,10 +79,7 @@ public class VendorModule : IEndpointModule
                 ),
                 statusCode: (int)HttpStatusCode.NotFound
             ),
-            _ => Results.Json(
-                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
-                statusCode: (int)HttpStatusCode.InternalServerError
-            ),
+            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
 
@@ -101,16 +92,8 @@ public class VendorModule : IEndpointModule
     )
     {
         await validator.GuardAsync(command);
-        var entityType = command.GetType();
-        var idProperty = entityType.GetProperty("Id");
-        if (idProperty == null)
-        {
-            throw new InvalidOperationException("The entity does not contain an Id property.");
-        }
 
-        var entityId = idProperty.GetValue(command) as long?;
-
-        if (entityId != id)
+        if (command.Id != id)
         {
             throw new ValidationException(
                 new[] { new ValidationFailure("Id", "Request body id must match the id in the url.") }
@@ -129,10 +112,7 @@ public class VendorModule : IEndpointModule
                 ),
                 statusCode: (int)HttpStatusCode.NotFound
             ),
-            _ => Results.Json(
-                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
-                statusCode: (int)HttpStatusCode.InternalServerError
-            ),
+            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
 
@@ -154,10 +134,7 @@ public class VendorModule : IEndpointModule
                 ),
                 statusCode: (int)HttpStatusCode.NotFound
             ),
-            _ => Results.Json(
-                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
-                statusCode: (int)HttpStatusCode.InternalServerError
-            ),
+            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
 
@@ -179,10 +156,7 @@ public class VendorModule : IEndpointModule
                 ),
                 statusCode: (int)HttpStatusCode.NotFound
             ),
-            _ => Results.Json(
-                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
-                statusCode: (int)HttpStatusCode.InternalServerError
-            ),
+            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
 }

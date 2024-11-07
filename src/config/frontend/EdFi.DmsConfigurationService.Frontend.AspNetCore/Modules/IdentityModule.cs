@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Net;
 using System.Text.Json;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
@@ -41,17 +40,11 @@ public class IdentityModule : IEndpointModule
             switch (clientResult)
             {
                 case ClientClientsResult.FailureUnknown:
-                    return Results.Json(
-                        FailureResponse.ForUnknown(httpContext.TraceIdentifier),
-                        statusCode: (int)HttpStatusCode.InternalServerError
-                    );
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
                 case ClientClientsResult.FailureIdentityProvider failureIdentityProvider:
-                    return Results.Json(
-                        FailureResponse.ForBadGateway(
-                            failureIdentityProvider.IdentityProviderError.FailureMessage,
-                            httpContext.TraceIdentifier
-                        ),
-                        statusCode: (int)HttpStatusCode.BadGateway
+                    return FailureResults.BadGateway(
+                        failureIdentityProvider.IdentityProviderError.FailureMessage,
+                        httpContext.TraceIdentifier
                     );
                 case ClientClientsResult.Success clientSuccess:
                     if (IsUnique(clientSuccess))
@@ -67,17 +60,11 @@ public class IdentityModule : IEndpointModule
                                 $"Registered client {model.ClientId} successfully."
                             ),
                             ClientCreateResult.FailureIdentityProvider failureIdentityProvider =>
-                                Results.Json(
-                                    FailureResponse.ForBadGateway(
-                                        failureIdentityProvider.IdentityProviderError.FailureMessage,
-                                        httpContext.TraceIdentifier
-                                    ),
-                                    statusCode: (int)HttpStatusCode.BadGateway
+                                FailureResults.BadGateway(
+                                    failureIdentityProvider.IdentityProviderError.FailureMessage,
+                                    httpContext.TraceIdentifier
                                 ),
-                            _ => Results.Json(
-                                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
-                                statusCode: (int)HttpStatusCode.InternalServerError
-                            ),
+                            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
                         };
                     }
                     break;
@@ -137,19 +124,13 @@ public class IdentityModule : IEndpointModule
             {
                 IdentityProviderError.Unauthorized => Results.Unauthorized(),
                 IdentityProviderError.Forbidden => Results.Forbid(),
-                _ => Results.Json(
-                    FailureResponse.ForBadGateway(
-                        failureIdentityProvider.IdentityProviderError.FailureMessage,
-                        httpContext.TraceIdentifier
-                    ),
-                    statusCode: (int)HttpStatusCode.BadGateway
+                _ => FailureResults.BadGateway(
+                    failureIdentityProvider.IdentityProviderError.FailureMessage,
+                    httpContext.TraceIdentifier
                 ),
             };
         }
 
-        return Results.Json(
-            FailureResponse.ForUnknown(httpContext.TraceIdentifier),
-            statusCode: (int)HttpStatusCode.InternalServerError
-        );
+        return FailureResults.Unknown(httpContext.TraceIdentifier);
     }
 }

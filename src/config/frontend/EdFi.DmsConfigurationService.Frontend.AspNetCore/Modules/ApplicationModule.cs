@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Net;
 using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
@@ -57,21 +56,15 @@ public class ApplicationModule : IEndpointModule
         {
             case ClientCreateResult.FailureUnknown failure:
                 logger.LogError("Failure creating client {failure}", failure);
-                return Results.Json(
-                    FailureResponse.ForUnknown(httpContext.TraceIdentifier),
-                    statusCode: (int)HttpStatusCode.InternalServerError
-                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
             case ClientCreateResult.FailureIdentityProvider failureIdentityProvider:
                 logger.LogError(
                     "Failure creating client: {failureMessage}",
                     failureIdentityProvider.IdentityProviderError.FailureMessage
                 );
-                return Results.Json(
-                    FailureResponse.ForBadGateway(
-                        failureIdentityProvider.IdentityProviderError.FailureMessage,
-                        httpContext.TraceIdentifier
-                    ),
-                    statusCode: (int)HttpStatusCode.BadGateway
+                return FailureResults.BadGateway(
+                    failureIdentityProvider.IdentityProviderError.FailureMessage,
+                    httpContext.TraceIdentifier
                 );
             case ClientCreateResult.Success clientSuccess:
                 var repositoryResult = await applicationRepository.InsertApplication(
@@ -103,20 +96,14 @@ public class ApplicationModule : IEndpointModule
                     case ApplicationInsertResult.FailureUnknown failure:
                         logger.LogError("Failure creating client {failure}", failure);
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
-                        return Results.Json(
-                            FailureResponse.ForUnknown(httpContext.TraceIdentifier),
-                            statusCode: (int)HttpStatusCode.InternalServerError
-                        );
+                        return FailureResults.Unknown(httpContext.TraceIdentifier);
                 }
 
                 break;
         }
 
         logger.LogError("Failure creating client");
-        return Results.Json(
-            FailureResponse.ForUnknown(httpContext.TraceIdentifier),
-            statusCode: (int)HttpStatusCode.InternalServerError
-        );
+        return FailureResults.Unknown(httpContext.TraceIdentifier);
     }
 
     private static async Task<IResult> GetAll(
@@ -130,10 +117,7 @@ public class ApplicationModule : IEndpointModule
         return getResult switch
         {
             ApplicationQueryResult.Success success => Results.Ok(success.ApplicationResponses),
-            _ => Results.Json(
-                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
-                statusCode: (int)HttpStatusCode.InternalServerError
-            ),
+            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
 
@@ -148,14 +132,11 @@ public class ApplicationModule : IEndpointModule
         return getResult switch
         {
             ApplicationGetResult.Success success => Results.Ok(success.ApplicationResponse),
-            ApplicationGetResult.FailureNotFound => Results.Json(
-                FailureResponse.ForNotFound("Application not found", httpContext.TraceIdentifier),
-                statusCode: (int)HttpStatusCode.NotFound
+            ApplicationGetResult.FailureNotFound => FailureResults.NotFound(
+                "Application not found",
+                httpContext.TraceIdentifier
             ),
-            _ => Results.Json(
-                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
-                statusCode: (int)HttpStatusCode.InternalServerError
-            ),
+            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
 
@@ -181,14 +162,11 @@ public class ApplicationModule : IEndpointModule
         return applicationUpdateResult switch
         {
             ApplicationUpdateResult.Success success => Results.NoContent(),
-            ApplicationUpdateResult.FailureNotExists => Results.Json(
-                FailureResponse.ForNotFound("Application not found", httpContext.TraceIdentifier),
-                statusCode: (int)HttpStatusCode.NotFound
+            ApplicationUpdateResult.FailureNotExists => FailureResults.NotFound(
+                "Application not found",
+                httpContext.TraceIdentifier
             ),
-            _ => Results.Json(
-                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
-                statusCode: (int)HttpStatusCode.InternalServerError
-            ),
+            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
 
@@ -232,20 +210,14 @@ public class ApplicationModule : IEndpointModule
                             client.ClientUuid,
                             ex.Message
                         );
-                        return Results.Json(
-                            FailureResponse.ForUnknown(httpContext.TraceIdentifier),
-                            statusCode: (int)HttpStatusCode.InternalServerError
-                        );
+                        return FailureResults.Unknown(httpContext.TraceIdentifier);
                     }
                 }
 
                 break;
             case ApplicationApiClientsResult.FailureUnknown failure:
                 logger.LogError("Error fetching ApiClients: {failure}", failure);
-                return Results.Json(
-                    FailureResponse.ForUnknown(httpContext.TraceIdentifier),
-                    statusCode: (int)HttpStatusCode.InternalServerError
-                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
 
         ApplicationDeleteResult deleteResult = await repository.DeleteApplication(id);
@@ -253,16 +225,16 @@ public class ApplicationModule : IEndpointModule
         if (deleteResult is ApplicationDeleteResult.FailureUnknown unknown)
         {
             logger.LogError("Error deleting Application {id}: {message}", id, unknown.FailureMessage);
-            return Results.Problem(statusCode: 500);
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
         return deleteResult switch
         {
             ApplicationDeleteResult.Success => Results.NoContent(),
-            ApplicationDeleteResult.FailureNotExists => Results.NotFound(),
-            _ => Results.Json(
-                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
-                statusCode: (int)HttpStatusCode.InternalServerError
+            ApplicationDeleteResult.FailureNotExists => FailureResults.NotFound(
+                "Application not found",
+                httpContext.TraceIdentifier
             ),
+            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
 
@@ -305,7 +277,7 @@ public class ApplicationModule : IEndpointModule
                                     client.ClientUuid,
                                     failure.FailureMessage
                                 );
-                                return Results.Problem(statusCode: 500);
+                                return FailureResults.Unknown(httpContext.TraceIdentifier);
                         }
                     }
                     catch (Exception ex)
@@ -316,27 +288,18 @@ public class ApplicationModule : IEndpointModule
                             client.ClientUuid,
                             ex.Message
                         );
-                        return Results.Json(
-                            FailureResponse.ForUnknown(httpContext.TraceIdentifier),
-                            statusCode: (int)HttpStatusCode.InternalServerError
-                        );
+                        return FailureResults.Unknown(httpContext.TraceIdentifier);
                     }
                 }
                 else
                 {
-                    return Results.NotFound();
+                    return FailureResults.NotFound("Application not found", httpContext.TraceIdentifier);
                 }
                 break;
             case ApplicationApiClientsResult.FailureUnknown failure:
                 logger.LogError("Error fetching ApiClients: {failure}", failure);
-                return Results.Json(
-                    FailureResponse.ForUnknown(httpContext.TraceIdentifier),
-                    statusCode: (int)HttpStatusCode.InternalServerError
-                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
-        return Results.Json(
-            FailureResponse.ForUnknown(httpContext.TraceIdentifier),
-            statusCode: (int)HttpStatusCode.InternalServerError
-        );
+        return FailureResults.Unknown(httpContext.TraceIdentifier);
     }
 }
