@@ -8,12 +8,16 @@ using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Vendor;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
 {
     public class VendorTests : DatabaseTest
     {
-        private readonly IVendorRepository _repository = new VendorRepository(Configuration.DatabaseOptions);
+        private readonly IVendorRepository _repository = new VendorRepository(
+            Configuration.DatabaseOptions,
+            NullLogger<VendorRepository>.Instance
+        );
 
         [TestFixture]
         public class InsertTests : VendorTests
@@ -207,7 +211,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
             private long _vendorId2;
             private long _vendorIdNotExist = 9999;
             private readonly IApplicationRepository _applicationRepository = new ApplicationRepository(
-                Configuration.DatabaseOptions
+                Configuration.DatabaseOptions,
+                NullLogger<ApplicationRepository>.Instance
             );
 
             [SetUp]

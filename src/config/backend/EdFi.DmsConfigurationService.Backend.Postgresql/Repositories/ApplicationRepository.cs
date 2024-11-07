@@ -7,12 +7,16 @@ using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Application;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 
-public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : IApplicationRepository
+public class ApplicationRepository(
+    IOptions<DatabaseOptions> databaseOptions,
+    ILogger<ApplicationRepository> logger
+) : IApplicationRepository
 {
     public async Task<ApplicationInsertResult> InsertApplication(
         ApplicationInsertCommand command,
@@ -65,11 +69,13 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
         }
         catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_vendor"))
         {
+            logger.LogWarning(ex, "Vendor not found");
             await transaction.RollbackAsync();
             return new ApplicationInsertResult.FailureVendorNotFound();
         }
         catch (Exception ex)
         {
+            logger.LogError(ex, "Insert application failure");
             await transaction.RollbackAsync();
             return new ApplicationInsertResult.FailureUnknown(ex.Message);
         }
@@ -82,7 +88,7 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
         try
         {
             string sql = """
-                SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName, e.EducationOrganizationId 
+                SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName, e.EducationOrganizationId
                 FROM dmscs.Application a
                 LEFT OUTER JOIN dmscs.ApplicationEducationOrganization e ON a.Id = e.ApplicationId
                 ORDER BY a.ApplicationName;
@@ -110,9 +116,10 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
 
             return new ApplicationQueryResult.Success(returnApplications);
         }
-        catch (Exception e)
+        catch (Exception ex)
         {
-            return new ApplicationQueryResult.FailureUnknown(e.Message);
+            logger.LogError(ex, "Query application failure");
+            return new ApplicationQueryResult.FailureUnknown(ex.Message);
         }
     }
 
@@ -123,7 +130,7 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
         try
         {
             string sql = """
-                SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName, e.EducationOrganizationId 
+                SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName, e.EducationOrganizationId
                 FROM dmscs.Application a
                 LEFT OUTER JOIN dmscs.ApplicationEducationOrganization e ON a.Id = e.ApplicationId
                 WHERE a.Id = @Id;
@@ -154,9 +161,10 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
                 ? new ApplicationGetResult.Success(returnApplication)
                 : new ApplicationGetResult.FailureNotFound();
         }
-        catch (Exception e)
+        catch (Exception ex)
         {
-            return new ApplicationGetResult.FailureUnknown(e.Message);
+            logger.LogError(ex, "Get application failure");
+            return new ApplicationGetResult.FailureUnknown(ex.Message);
         }
     }
 
@@ -198,11 +206,13 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
         }
         catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_vendor"))
         {
+            logger.LogWarning(ex, "Update application failure: Vendor not found");
             await transaction.RollbackAsync();
             return new ApplicationUpdateResult.FailureVendorNotFound();
         }
         catch (Exception ex)
         {
+            logger.LogError(ex, "Update application failure");
             await transaction.RollbackAsync();
             return new ApplicationUpdateResult.FailureUnknown(ex.Message);
         }
@@ -224,6 +234,7 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
         }
         catch (Exception ex)
         {
+            logger.LogError(ex, "Delete application failure");
             return new ApplicationDeleteResult.FailureUnknown(ex.Message);
         }
     }
@@ -246,6 +257,7 @@ public class ApplicationRepository(IOptions<DatabaseOptions> databaseOptions) : 
         }
         catch (Exception ex)
         {
+            logger.LogError(ex, "Get application clients failure");
             return new ApplicationApiClientsResult.FailureUnknown(ex.Message);
         }
     }

@@ -9,13 +9,15 @@ using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Application;
 using EdFi.DmsConfigurationService.DataModel.Vendor;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration;
 
 public class ApplicationTests : DatabaseTest
 {
     private readonly IApplicationRepository _applicationRepository = new ApplicationRepository(
-        Configuration.DatabaseOptions
+        Configuration.DatabaseOptions,
+        NullLogger<ApplicationRepository>.Instance
     );
 
     private long _vendorId;
@@ -30,7 +32,10 @@ public class ApplicationTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            IVendorRepository repository = new VendorRepository(Configuration.DatabaseOptions);
+            IVendorRepository repository = new VendorRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance
+            );
 
             VendorInsertCommand vendor =
                 new()
@@ -134,7 +139,10 @@ public class ApplicationTests : DatabaseTest
         [Test]
         public async Task Should_get_and_failure_reference_not_found_and_invalid_vendor_id()
         {
-            IVendorRepository vendorRepository = new VendorRepository(Configuration.DatabaseOptions);
+            IVendorRepository vendorRepository = new VendorRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance
+            );
 
             VendorInsertCommand vendor =
                 new()
@@ -188,7 +196,10 @@ public class ApplicationTests : DatabaseTest
         [SetUp]
         public async Task SetUp()
         {
-            IVendorRepository vendorRepository = new VendorRepository(Configuration.DatabaseOptions);
+            IVendorRepository vendorRepository = new VendorRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance
+            );
 
             VendorInsertCommand vendor =
                 new()
@@ -269,7 +280,10 @@ public class ApplicationTests : DatabaseTest
         [SetUp]
         public async Task SetUp()
         {
-            IVendorRepository vendorRepository = new VendorRepository(Configuration.DatabaseOptions);
+            IVendorRepository vendorRepository = new VendorRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance
+            );
 
             VendorInsertCommand vendor =
                 new()

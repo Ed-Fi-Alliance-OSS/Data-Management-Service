@@ -8,10 +8,12 @@ using Flurl.Http;
 using Keycloak.Net;
 using Keycloak.Net.Models.Clients;
 using Keycloak.Net.Models.Roles;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DmsConfigurationService.Backend.Keycloak;
 
-public class ClientRepository(KeycloakContext keycloakContext) : IClientRepository
+public class ClientRepository(KeycloakContext keycloakContext, ILogger<ClientRepository> logger)
+    : IClientRepository
 {
     private readonly KeycloakClient _keycloakClient =
         new(
@@ -76,14 +78,19 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
                 }
             }
 
+            logger.LogError(
+                $"Error while creating the client: {clientId}. CreateClientAndRetrieveClientIdAsync returned empty string with no exception."
+            );
             return new ClientCreateResult.FailureUnknown($"Error while creating the client: {clientId}");
         }
         catch (FlurlHttpException ex)
         {
+            logger.LogError(ex, "Create client failure");
             return new ClientCreateResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
         }
         catch (Exception ex)
         {
+            logger.LogError(ex, "Create client failure");
             return new ClientCreateResult.FailureUnknown(ex.Message);
         }
 
@@ -121,6 +128,7 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
         }
         catch (FlurlHttpException ex)
         {
+            logger.LogError(ex, "Delete client failure");
             return new ClientDeleteResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
         }
     }
@@ -134,10 +142,12 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
         }
         catch (FlurlHttpException ex)
         {
+            logger.LogError(ex, "Delete client failure");
             return new ClientResetResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
         }
         catch (Exception ex)
         {
+            logger.LogError(ex, "Delete client failure");
             return new ClientResetResult.FailureUnknown(ex.Message);
         }
     }
@@ -151,10 +161,12 @@ public class ClientRepository(KeycloakContext keycloakContext) : IClientReposito
         }
         catch (FlurlHttpException ex)
         {
+            logger.LogError(ex, "Get all clients failure");
             return new ClientClientsResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
         }
         catch (Exception ex)
         {
+            logger.LogError(ex, "Get all clients failure");
             return new ClientClientsResult.FailureUnknown(ex.Message);
         }
     }

@@ -8,12 +8,14 @@ using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Application;
 using EdFi.DmsConfigurationService.DataModel.Vendor;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
 {
-    public class VendorRepository(IOptions<DatabaseOptions> databaseOptions) : IVendorRepository
+    public class VendorRepository(IOptions<DatabaseOptions> databaseOptions, ILogger<VendorRepository> logger)
+        : IVendorRepository
     {
         public async Task<VendorInsertResult> InsertVendor(VendorInsertCommand command)
         {
@@ -49,6 +51,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             }
             catch (Exception ex)
             {
+                logger.LogError(ex, "Insert vendor failure");
                 await transaction.RollbackAsync();
                 return new VendorInsertResult.FailureUnknown(ex.Message);
             }
@@ -86,6 +89,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             }
             catch (Exception ex)
             {
+                logger.LogError(ex, "Query vendor failure");
                 return new VendorQueryResult.FailureUnknown(ex.Message);
             }
         }
@@ -111,6 +115,11 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                     splitOn: "NamespacePrefix"
                 );
 
+                if (!vendors.Any())
+                {
+                    return new VendorGetResult.FailureNotFound();
+                }
+
                 var returnVendors = vendors
                     .GroupBy(v => v.Id)
                     .Select(g =>
@@ -122,12 +131,9 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
 
                 return new VendorGetResult.Success(returnVendors.Single());
             }
-            catch (InvalidOperationException ex) when (ex.Message == "Sequence contains no elements")
-            {
-                return new VendorGetResult.FailureNotFound();
-            }
             catch (Exception ex)
             {
+                logger.LogError(ex, "Get vendor failure");
                 return new VendorGetResult.FailureUnknown(ex.Message);
             }
         }
@@ -170,6 +176,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             }
             catch (Exception ex)
             {
+                logger.LogError(ex, "Update vendor failure");
                 await transaction.RollbackAsync();
                 return new VendorUpdateResult.FailureUnknown(ex.Message);
             }
@@ -192,6 +199,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             }
             catch (Exception ex)
             {
+                logger.LogError(ex, "Delete vendor failure");
                 return new VendorDeleteResult.FailureUnknown(ex.Message);
             }
         }
@@ -202,8 +210,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             try
             {
                 string sql = """
-                        SELECT 
-                            v.Id as VendorId, a.Id, a.ApplicationName, a.ClaimSetName, 
+                        SELECT
+                            v.Id as VendorId, a.Id, a.ApplicationName, a.ClaimSetName,
                             eo.EducationOrganizationId
                         FROM dmscs.vendor v
                         LEFT OUTER JOIN dmscs.Application a ON v.Id = a.VendorId
@@ -261,6 +269,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             }
             catch (Exception ex)
             {
+                logger.LogError(ex, "Get vendor applications failure");
                 return new VendorApplicationsResult.FailureUnknown(ex.Message);
             }
         }
