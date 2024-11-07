@@ -55,7 +55,13 @@ param (
     $ClaimName = "namespacePrefixes",
 
     # Value of the hardcoded claim
+    [string]
     $ClaimValue = "http://ed-fi.org"
+
+    # Token life span
+    [int]
+    $TokenLifespan = 1800
+
 
 )
 
@@ -109,7 +115,7 @@ function Create_Realm() {
             -Body ($RealmData | ConvertTo-Json -Depth 10)
 
             $realmSettingsPayload = @{
-                accessTokenLifespan = 1800
+                accessTokenLifespan = $TokenLifespan
             } | ConvertTo-Json
 
             Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm" `

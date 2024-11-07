@@ -140,12 +140,12 @@ credentials, required role, and custom claims.
 ```pwsh
 
 $parameters = @{
-    KeycloakServer = "http://localhost:8065",  # Keycloak URL
-    Realm = "your_realm",                      # Realm name (default: edfi)
-    AdminUsername = "admin",                   # Admin username (default: admin, If you used a different admin
+    KeycloakServer = "http://localhost:8065"  # Keycloak URL
+    Realm = "your_realm"                      # Realm name (default: edfi)
+    AdminUsername = "admin"                   # Admin username (default: admin, If you used a different admin
     # username during the Keycloak setup, please ensure you use that specific value instead of the default 
     # 'admin' username when running this script.)
-    AdminPassword = "admin",                   # Admin password (default: admin, If you used a different admin
+    AdminPassword = "admin"                   # Admin password (default: admin, If you used a different admin
     # password during the Keycloak setup, please ensure you use that specific value instead of the default 
     # 'admin' password when running this script.)
     NewClientRole = "dms-client"               # Client role (default: dms-client), If you want to setup 
@@ -156,6 +156,7 @@ $parameters = @{
     ClientScopeName = "sis-vendor"             # Scope name (default: sis-vendor) We are including the 
     # claim set name as a scope in the token. This can be customized to any claim set name (e.g., 'Ed-Fi-Sandbox').
     # Please note that the claim name cannot contain spaces; use a hyphen (-) instead.
+    TokenLifespan  = 1800                      # Token life span (default: 1800)
 }
 # To set up the Keycloak with Realm and client 
 ./setup-keycloak.ps1  @parameters
