@@ -50,7 +50,7 @@ relevant).
 * `start-published-dms.ps1` launches the DMS published build along with all
   necessary services.
 * `start-postgresql.ps1` only starts PostgreSQL.
-* `start-keycloak.ps` only starts KeyCloak.
+* `start-keycloak.ps1` only starts KeyCloak.
 
 You can pass `-d` to each of these scripts to shut them down. To delete volumes,
 also append `-v`. Examples:
@@ -131,3 +131,33 @@ the latest updates) may fix the issue.
 > and run `/docker-entrypoint-initdb.d/postgresql-init.sh`. Does the result show you
 > that this is a _file_ or a _directory_? Sometimes Docker Desktop incorrectly loads
 > this as a directory, which means that the file will not execute on startup.
+
+### Setup Keycloak
+
+`setup-keycloak.ps1` will setup all the required realm, client, client
+credentials, required role, and custom claims.
+
+```pwsh
+
+$parameters = @{
+    KeycloakServer = "http://localhost:8065",  # Keycloak URL
+    Realm = "your_realm",                      # Realm name (default: edfi)
+    AdminUsername = "admin",                   # Admin username (default: admin, If you used a different admin
+    # username during the Keycloak setup, please ensure you use that specific value instead of the default 
+    # 'admin' username when running this script.)
+    AdminPassword = "admin",                   # Admin password (default: admin, If you used a different admin
+    # password during the Keycloak setup, please ensure you use that specific value instead of the default 
+    # 'admin' password when running this script.)
+    NewClientRole = "dms-client"               # Client role (default: dms-client), If you want to setup 
+    # Configuration service client, then use "config-service-app"
+    NewClientId = "test-client"                # Client id (default: test-client)
+    NewClientName = "test-client"              # Client name (default: Test client)
+    NewClientSecret = "s3creT@09"              # Client id (default: s3creT@09)
+    ClientScopeName = "sis-vendor"             # Scope name (default: sis-vendor) We are including the 
+    # claim set name as a scope in the token. This can be customized to any claim set name (e.g., 'Ed-Fi-Sandbox').
+    # Please note that the claim name cannot contain spaces; use a hyphen (-) instead.
+}
+# To set up the Keycloak with Realm and client 
+./setup-keycloak.ps1  @parameters
+
+```
