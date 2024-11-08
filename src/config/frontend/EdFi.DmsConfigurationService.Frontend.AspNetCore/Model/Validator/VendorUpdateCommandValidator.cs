@@ -16,13 +16,14 @@ public class VendorUpdateCommandValidator : AbstractValidator<VendorUpdateComman
         RuleFor(v => v.ContactName).MaximumLength(128);
         RuleFor(v => v.ContactEmailAddress).EmailAddress().MaximumLength(320);
         RuleFor(v => v.NamespacePrefixes)
+            .NotEmpty()
             .Must(s =>
             {
-                var split = s.Split(
+                var split = s?.Split(
                     ',',
                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
                 );
-                return !split.Any(x => x.Length >= 128);
+                return split != null && !split.Any(x => x.Length >= 128);
             })
             .WithMessage("Each NamespacePrefix length must be 128 characters or fewer.");
     }

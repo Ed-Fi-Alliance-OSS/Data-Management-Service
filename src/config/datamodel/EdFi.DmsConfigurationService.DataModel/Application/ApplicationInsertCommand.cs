@@ -7,8 +7,8 @@ namespace EdFi.DmsConfigurationService.DataModel.Application;
 
 public class ApplicationInsertCommand
 {
-    public required string ApplicationName { get; set; }
+    public string ApplicationName { get; set; } = "";
     public long VendorId { get; set; }
-    public required string ClaimSetName { get; set; }
+    public string ClaimSetName { get; set; } = "";
     public long[] EducationOrganizationIds { get; set; } = [];
 }

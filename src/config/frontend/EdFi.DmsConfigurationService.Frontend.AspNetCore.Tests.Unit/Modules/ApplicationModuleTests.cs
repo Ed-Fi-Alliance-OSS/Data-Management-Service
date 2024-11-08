@@ -6,6 +6,7 @@
 using System.Net;
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Application;
@@ -15,7 +16,6 @@ using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -52,7 +52,6 @@ public class ApplicationModuleTests
                     );
 
                     collection
-                        .AddTransient((_) => A.Fake<HttpContext>())
                         .AddTransient((_) => _applicationRepository)
                         .AddTransient((_) => _clientRepository)
                         .AddTransient((_) => _vendorRepository);
@@ -208,11 +207,33 @@ public class ApplicationModuleTests
             );
 
             //Assert
-            string expectedResponse =
-                @"{""title"":""Validation failed."",""errors"":{""ApplicationName"":[""The length of \u0027Application Name\u0027 must be 256 characters or fewer. You entered 266 characters.""],""ClaimSetName"":[""\u0027Claim Set Name\u0027 must not be empty.""],""EducationOrganizationIds[0]"":[""\u0027Education Organization Ids\u0027 must be greater than \u00270\u0027.""]}}";
             string addResponseContent = await addResponse.Content.ReadAsStringAsync();
+            var actualResponse = JsonNode.Parse(addResponseContent);
+            var expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "ApplicationName": [
+                      "The length of 'Application Name' must be 256 characters or fewer. You entered 266 characters."
+                    ],
+                    "ClaimSetName": [
+                      "'Claim Set Name' must not be empty."
+                    ],
+                    "EducationOrganizationIds[0]": [
+                      "'Education Organization Ids' must be greater than '0'."
+                    ]
+                  },
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+            );
             addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            addResponseContent.Should().Contain(expectedResponse);
+            JsonNode.DeepEquals(JsonNode.Parse(addResponseContent), expectedResponse).Should().Be(true);
         }
     }
 
@@ -515,9 +536,25 @@ public class ApplicationModuleTests
 
             addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             string responseBody = await addResponse.Content.ReadAsStringAsync();
-            string expectedResponse =
-                @"{""title"":""Validation failed."",""errors"":{""VendorId"":[""Reference \u0027VendorId\u0027 does not exist.""]}}";
-            responseBody.Should().Contain(expectedResponse);
+            var actualResponse = JsonNode.Parse(responseBody);
+            var expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "VendorId": [
+                      "Reference 'VendorId' does not exist."
+                    ]
+                  },
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+            );
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
         }
 
         [Test]
@@ -547,9 +584,25 @@ public class ApplicationModuleTests
             //Assert
             updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             string responseBody = await updateResponse.Content.ReadAsStringAsync();
-            string expectedResponse =
-                @"{""title"":""Validation failed."",""errors"":{""VendorId"":[""Reference \u0027VendorId\u0027 does not exist.""]}}";
-            responseBody.Should().Contain(expectedResponse);
+            var actualResponse = JsonNode.Parse(responseBody);
+            var expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "VendorId": [
+                      "Reference 'VendorId' does not exist."
+                    ]
+                  },
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+            );
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
         }
     }
 }

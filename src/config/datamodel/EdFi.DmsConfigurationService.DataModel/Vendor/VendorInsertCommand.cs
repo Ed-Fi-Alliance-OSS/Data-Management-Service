@@ -7,8 +7,8 @@ namespace EdFi.DmsConfigurationService.DataModel.Vendor;
 
 public class VendorInsertCommand
 {
-    public required string Company { get; set; }
-    public required string ContactName { get; set; }
-    public required string ContactEmailAddress { get; set; }
-    public required string NamespacePrefixes { get; set; }
+    public string Company { get; set; } = "";
+    public string ContactName { get; set; } = "";
+    public string ContactEmailAddress { get; set; } = "";
+    public string NamespacePrefixes { get; set; } = "";
 }

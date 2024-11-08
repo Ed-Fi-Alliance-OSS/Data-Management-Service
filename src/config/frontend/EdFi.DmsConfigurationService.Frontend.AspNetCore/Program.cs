@@ -21,6 +21,7 @@ if (!ReportInvalidConfiguration(app))
     InitializeDatabase(app);
 }
 
+app.UseExceptionHandler(o => { });
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();

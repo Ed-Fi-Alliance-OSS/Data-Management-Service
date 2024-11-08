@@ -6,6 +6,7 @@
 using System.Net;
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Application;
@@ -198,17 +199,67 @@ public class VendorModuleTests
             );
 
             //Assert
-            string expectedPostResponse =
-                @"{""title"":""Validation failed."",""errors"":{""Company"":[""The length of \u0027Company\u0027 must be 256 characters or fewer. You entered 300 characters.""],""ContactName"":[""The length of \u0027Contact Name\u0027 must be 128 characters or fewer. You entered 300 characters.""],""ContactEmailAddress"":[""\u0027Contact Email Address\u0027 is not a valid email address.""],""NamespacePrefixes"":[""Each NamespacePrefix length must be 128 characters or fewer.""]}}";
-            string expectedPutResponse =
-                @"{""title"":""Validation failed."",""errors"":{""Company"":[""The length of \u0027Company\u0027 must be 256 characters or fewer. You entered 300 characters.""],""ContactName"":[""The length of \u0027Contact Name\u0027 must be 128 characters or fewer. You entered 300 characters.""],""ContactEmailAddress"":[""\u0027Contact Email Address\u0027 is not a valid email address.""],""NamespacePrefixes"":[""Each NamespacePrefix length must be 128 characters or fewer.""]}}";
-            string addResponseContent = await addResponse.Content.ReadAsStringAsync();
-            addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            addResponseContent.Should().Contain(expectedPostResponse);
+            var actualPostResponse = JsonNode.Parse(await addResponse.Content.ReadAsStringAsync());
+            var expectedPostResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "Company": [
+                      "The length of 'Company' must be 256 characters or fewer. You entered 300 characters."
+                    ],
+                    "ContactName": [
+                      "The length of 'Contact Name' must be 128 characters or fewer. You entered 300 characters."
+                    ],
+                    "ContactEmailAddress": [
+                      "'Contact Email Address' is not a valid email address."
+                    ],
+                    "NamespacePrefixes": [
+                      "Each NamespacePrefix length must be 128 characters or fewer."
+                    ]
+                  }, 
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualPostResponse!["correlationId"]!.GetValue<string>())
+            );
 
-            string updateResponseContent = await updateResponse.Content.ReadAsStringAsync();
+            var actualPutResponse = JsonNode.Parse(await updateResponse.Content.ReadAsStringAsync());
+            var expectedPutResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "Company": [
+                      "The length of 'Company' must be 256 characters or fewer. You entered 300 characters."
+                    ],
+                    "ContactName": [
+                      "The length of 'Contact Name' must be 128 characters or fewer. You entered 300 characters."
+                    ],
+                    "ContactEmailAddress": [
+                      "'Contact Email Address' is not a valid email address."
+                    ],
+                    "NamespacePrefixes": [
+                      "Each NamespacePrefix length must be 128 characters or fewer."
+                    ]
+                  }, 
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualPutResponse!["correlationId"]!.GetValue<string>())
+            );
+
+            addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            JsonNode.DeepEquals(actualPostResponse, expectedPostResponse).Should().Be(true);
+
             updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            updateResponseContent.Should().Contain(expectedPutResponse);
+            JsonNode.DeepEquals(actualPutResponse, expectedPutResponse).Should().Be(true);
         }
 
         [Test]
@@ -571,9 +622,7 @@ public class VendorModuleTests
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
             string responseContent = await response.Content.ReadAsStringAsync();
-            string expectedResponse =
-                @"{""title"":""Not found: vendor with ID 99. It may have been recently deleted.""}";
-            responseContent.Should().Be(expectedResponse);
+            responseContent.Should().Contain("It may have been recently deleted.");
         }
     }
 }

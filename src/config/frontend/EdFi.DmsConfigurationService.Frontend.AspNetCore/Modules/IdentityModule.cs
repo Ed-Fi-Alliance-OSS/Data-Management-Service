@@ -12,6 +12,7 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
 using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.Extensions.Options;
+using static EdFi.DmsConfigurationService.Backend.IdentityProviderError;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -27,7 +28,8 @@ public class IdentityModule : IEndpointModule
         RegisterRequest.Validator validator,
         RegisterRequest model,
         IClientRepository clientRepository,
-        IOptions<IdentitySettings> identitySettings
+        IOptions<IdentitySettings> identitySettings,
+        HttpContext httpContext
     )
     {
         bool allowRegistration = identitySettings.Value.AllowRegistration;
@@ -39,9 +41,12 @@ public class IdentityModule : IEndpointModule
             switch (clientResult)
             {
                 case ClientClientsResult.FailureUnknown:
-                    return Results.Problem(statusCode: 500);
-                case ClientClientsResult.FailureKeycloak failureKeycloak:
-                    throw new KeycloakException(failureKeycloak.KeycloakError);
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                case ClientClientsResult.FailureIdentityProvider failureIdentityProvider:
+                    return FailureResults.BadGateway(
+                        failureIdentityProvider.IdentityProviderError.FailureMessage,
+                        httpContext.TraceIdentifier
+                    );
                 case ClientClientsResult.Success clientSuccess:
                     if (IsUnique(clientSuccess))
                     {
@@ -52,9 +57,15 @@ public class IdentityModule : IEndpointModule
                         );
                         return result switch
                         {
-                            ClientCreateResult.Success => Results.Ok($"Registered client {model.ClientId} successfully."),
-                            ClientCreateResult.FailureKeycloak ke => throw new KeycloakException(ke.KeycloakError),
-                            _ => Results.Problem(statusCode: 500),
+                            ClientCreateResult.Success => Results.Ok(
+                                $"Registered client {model.ClientId} successfully."
+                            ),
+                            ClientCreateResult.FailureIdentityProvider failureIdentityProvider =>
+                                FailureResults.BadGateway(
+                                    failureIdentityProvider.IdentityProviderError.FailureMessage,
+                                    httpContext.TraceIdentifier
+                                ),
+                            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
                         };
                     }
                     break;
@@ -68,7 +79,12 @@ public class IdentityModule : IEndpointModule
                 {
                     var validationFailures = new List<ValidationFailure>
                     {
-                        new() { PropertyName = "ClientId", ErrorMessage = "Client with the same Client Id already exists. Please provide different Client Id." }
+                        new()
+                        {
+                            PropertyName = "ClientId",
+                            ErrorMessage =
+                                "Client with the same Client Id already exists. Please provide different Client Id.",
+                        },
                     };
                     throw new ValidationException(validationFailures);
                 }
@@ -82,39 +98,41 @@ public class IdentityModule : IEndpointModule
     private static async Task<IResult> GetClientAccessToken(
         TokenRequest.Validator validator,
         TokenRequest model,
-        ITokenManager tokenManager
+        ITokenManager tokenManager,
+        HttpContext httpContext
     )
     {
         await validator.GuardAsync(model);
-        try
-        {
-            string response = string.Empty;
-            var tokenResult = await tokenManager.GetAccessTokenAsync(
-                [
-                    new KeyValuePair<string, string>("client_id", model.ClientId!),
-                    new KeyValuePair<string, string>("client_secret", model.ClientSecret!),
-                ]
-            );
 
-            response = tokenResult switch
-            {
-                TokenResult.Success tokenSuccess => tokenSuccess.Token,
-                TokenResult.FailureKeycloak failure => throw new KeycloakException(failure.KeycloakError),
-                _ => response,
-            };
+        var tokenResult = await tokenManager.GetAccessTokenAsync(
+            [
+                new KeyValuePair<string, string>("client_id", model.ClientId!),
+                new KeyValuePair<string, string>("client_secret", model.ClientSecret!),
+            ]
+        );
 
-            var tokenResponse = JsonSerializer.Deserialize<TokenResponse>(response);
-            return Results.Ok(tokenResponse);
-        }
-        catch (KeycloakException)
+        return tokenResult switch
         {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            throw new IdentityException(
-                "Client registration failed with: Invalid client or Invalid client credentials." + ex.Message
-            );
-        }
+            TokenResult.Success tokenSuccess => Results.Ok(
+                JsonSerializer.Deserialize<TokenResponse>(tokenSuccess.Token)
+            ),
+            TokenResult.FailureIdentityProvider failureIdentityProvider =>
+                failureIdentityProvider.IdentityProviderError switch
+                {
+                    Unauthorized unauthorized => FailureResults.Unauthorized(
+                        unauthorized.FailureMessage,
+                        httpContext.TraceIdentifier
+                    ),
+                    Forbidden forbidden => FailureResults.Forbidden(
+                        forbidden.FailureMessage,
+                        httpContext.TraceIdentifier
+                    ),
+                    _ => FailureResults.BadGateway(
+                        failureIdentityProvider.IdentityProviderError.FailureMessage,
+                        httpContext.TraceIdentifier
+                    ),
+                },
+            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
+        };
     }
 }

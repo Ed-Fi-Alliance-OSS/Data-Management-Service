@@ -5,10 +5,10 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
-using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
 using FakeItEasy;
 using FluentAssertions;
@@ -16,7 +16,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
-using static EdFi.DmsConfigurationService.Backend.KeycloakError;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 
@@ -160,10 +159,10 @@ public class RegisterEndpointTests
         {
             _clientRepository = A.Fake<IClientRepository>();
 
-            var error = new KeycloakError.Unauthorized("Unauthorized");
+            var error = new IdentityProviderError.Unauthorized("Unauthorized");
 
             A.CallTo(() => _clientRepository.GetAllClientsAsync())
-                .Returns(new ClientClientsResult.FailureKeycloak(error));
+                .Returns(new ClientClientsResult.FailureIdentityProvider(error));
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -187,7 +186,7 @@ public class RegisterEndpointTests
         string content = await response.Content.ReadAsStringAsync();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
         content.Should().Contain("Unauthorized");
     }
 
@@ -199,10 +198,10 @@ public class RegisterEndpointTests
         {
             _clientRepository = A.Fake<IClientRepository>();
 
-            var error = new KeycloakError.Forbidden("Forbidden.");
+            var error = new IdentityProviderError.Forbidden("Forbidden.");
 
             A.CallTo(() => _clientRepository.GetAllClientsAsync())
-                .Returns(new ClientClientsResult.FailureKeycloak(error));
+                .Returns(new ClientClientsResult.FailureIdentityProvider(error));
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -226,7 +225,7 @@ public class RegisterEndpointTests
         string content = await response.Content.ReadAsStringAsync();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
         content.Should().Contain("Forbidden");
     }
 
@@ -238,10 +237,10 @@ public class RegisterEndpointTests
         {
             _clientRepository = A.Fake<IClientRepository>();
 
-            var error = new KeycloakError.NotFound("Invalid realm.");
+            var error = new IdentityProviderError.NotFound("Invalid realm.");
 
             A.CallTo(() => _clientRepository.GetAllClientsAsync())
-                .Returns(new ClientClientsResult.FailureKeycloak(error));
+                .Returns(new ClientClientsResult.FailureIdentityProvider(error));
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -265,7 +264,7 @@ public class RegisterEndpointTests
         string content = await response.Content.ReadAsStringAsync();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
         content.Should().Contain("Invalid realm");
     }
 
@@ -351,12 +350,12 @@ public class RegisterEndpointTests
         {
             _clientRepository = A.Fake<IClientRepository>();
 
-            var error = new KeycloakError.Unreachable(
+            var error = new IdentityProviderError.Unreachable(
                 "No connection could be made because the target machine actively refused it."
             );
 
             A.CallTo(() => _clientRepository.GetAllClientsAsync())
-                .Returns(new ClientClientsResult.FailureKeycloak(error));
+                .Returns(new ClientClientsResult.FailureIdentityProvider(error));
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -381,9 +380,21 @@ public class RegisterEndpointTests
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
-        string expectedResponse =
-            @"{""title"":""Keycloak is unreachable."",""message"":""No connection could be made because the target machine actively refused it.""}";
-        content.Should().Be(expectedResponse);
+        var actualResponse = JsonNode.Parse(content);
+        var expectedResponse = JsonNode.Parse(
+            """
+            {
+              "detail": "No connection could be made because the target machine actively refused it.",
+              "type": "urn:ed-fi:api:bad-gateway",
+              "title": "Bad Gateway",
+              "status": 502,
+              "correlationId": "{correlationId}",
+              "validationErrors": {},
+              "errors": []
+            }
+            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+        );
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
     }
 }
 
@@ -475,8 +486,16 @@ public class TokenEndpointTests
         {
             _tokenManager = A.Fake<ITokenManager>();
             A.CallTo(
-                () => _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
-            );
+                    () =>
+                        _tokenManager.GetAccessTokenAsync(
+                            A<IEnumerable<KeyValuePair<string, string>>>.Ignored
+                        )
+                )
+                .Returns(
+                    new TokenResult.FailureUnknown(
+                        "No connection could be made because the target machine actively refused it."
+                    )
+                );
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -492,11 +511,9 @@ public class TokenEndpointTests
         // Act
         var requestContent = new { clientid = "CSClient3", clientsecret = "test123@Puiu" };
         var response = await client.PostAsJsonAsync("/connect/token", requestContent);
-        string content = await response.Content.ReadAsStringAsync();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        content.Should().Contain("Invalid client or Invalid client credentials");
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
     }
 
     [Test]
@@ -513,9 +530,9 @@ public class TokenEndpointTests
                             A<IEnumerable<KeyValuePair<string, string>>>.Ignored
                         )
                 )
-                .Throws(
-                    new KeycloakException(
-                        new KeycloakError.Unreachable(
+                .Returns(
+                    new TokenResult.FailureIdentityProvider(
+                        new IdentityProviderError.Unreachable(
                             "No connection could be made because the target machine actively refused it."
                         )
                     )
@@ -539,9 +556,21 @@ public class TokenEndpointTests
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
-        string expectedResponse =
-            @"{""title"":""Keycloak is unreachable."",""message"":""No connection could be made because the target machine actively refused it.""}";
-        content.Should().Be(expectedResponse);
+        var actualResponse = JsonNode.Parse(content);
+        var expectedResponse = JsonNode.Parse(
+            """
+            {
+              "detail": "No connection could be made because the target machine actively refused it.",
+              "type": "urn:ed-fi:api:bad-gateway",
+              "title": "Bad Gateway",
+              "status": 502,
+              "correlationId": "{correlationId}",
+              "validationErrors": {}, 
+              "errors": []
+            }
+            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+        );
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
     }
 
     [Test]
@@ -558,7 +587,11 @@ public class TokenEndpointTests
                             A<IEnumerable<KeyValuePair<string, string>>>.Ignored
                         )
                 )
-                .Throws(new KeycloakException(new KeycloakError.NotFound("Invalid realm.")));
+                .Returns(
+                    new TokenResult.FailureIdentityProvider(
+                        new IdentityProviderError.NotFound("Invalid realm")
+                    )
+                );
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -577,7 +610,7 @@ public class TokenEndpointTests
         string content = await response.Content.ReadAsStringAsync();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
         content.Should().Contain("Invalid realm");
     }
 
@@ -595,7 +628,11 @@ public class TokenEndpointTests
                             A<IEnumerable<KeyValuePair<string, string>>>.Ignored
                         )
                 )
-                .Throws(new KeycloakException(new KeycloakError.Forbidden("Insufficient Permissions.")));
+                .Returns(
+                    new TokenResult.FailureIdentityProvider(
+                        new IdentityProviderError.Unauthorized("Insufficient Permissions")
+                    )
+                );
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -611,11 +648,9 @@ public class TokenEndpointTests
         //Act
         var requestContent = new { clientid = "CSClient3", clientsecret = "test123@Puiu" };
         var response = await client.PostAsJsonAsync("/connect/token", requestContent);
-        string content = await response.Content.ReadAsStringAsync();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        content.Should().Contain("Insufficient Permissions");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
     [Test]
@@ -632,7 +667,7 @@ public class TokenEndpointTests
                             A<IEnumerable<KeyValuePair<string, string>>>.Ignored
                         )
                 )
-                .Throws(new KeycloakException(new KeycloakError.Unauthorized("Bad Credentials.")));
+                .Returns(new TokenResult.FailureIdentityProvider(new IdentityProviderError.Unauthorized("")));
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -648,10 +683,8 @@ public class TokenEndpointTests
         //Act
         var requestContent = new { clientid = "CSClient3", clientsecret = "test123@Puiu" };
         var response = await client.PostAsJsonAsync("/connect/token", requestContent);
-        string content = await response.Content.ReadAsStringAsync();
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        content.Should().Contain("Bad Credentials");
     }
 }
