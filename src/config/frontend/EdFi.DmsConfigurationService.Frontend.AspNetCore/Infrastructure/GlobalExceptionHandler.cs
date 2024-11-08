@@ -23,7 +23,7 @@ public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logge
             JsonSerializer.Serialize(
                 new
                 {
-                    message = "An uncaught error has occurred",
+                    message = "An uncaught error has occurred.",
                     error = new { exception.Message, exception.StackTrace },
                     traceId = traceId,
                 }
