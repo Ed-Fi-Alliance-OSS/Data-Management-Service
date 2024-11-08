@@ -29,6 +29,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
         private readonly Uri? pactURL;
         private readonly string? pactFilePath;
         private readonly string? providerStatePath;
+        private readonly string? registerPactFilePath;
 
         public ProviderIdentityTest()
         {
@@ -41,6 +42,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
             // Get values from the configuration file
             pactURL = new Uri(configuration["Pact:PactURL"]!);
             pactFilePath = configuration["Pact:PactFilePath"];
+            registerPactFilePath = configuration["Pact:RegisterPactFilePath"];
             providerStatePath = configuration["Pact:ProviderStatePath"];
 
             _host = Host.CreateDefaultBuilder()
@@ -77,13 +79,22 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
         }
 
         [Test]
-        public void Verify()
+        public void VerifyToken()
         {
             verifier!.ServiceProvider("DMS Configuration Service API", pactURL)
-                .WithFileSource(new FileInfo(pactFilePath!))
+                .WithFileSource(new FileInfo(registerPactFilePath!))
                 .WithProviderStateUrl(new Uri(pactURL + providerStatePath))
                 .Verify();
         }
+/*
+        [Test]
+        public void VerifyRegister()
+        {
+            verifier!.ServiceProvider("DMS Configuration Service API", pactURL)
+                .WithFileSource(new FileInfo(registerPactFilePath!))
+                .WithProviderStateUrl(new Uri(pactURL + providerStatePath))
+                .Verify();
+        } */
 
         #region IDisposable Support
 

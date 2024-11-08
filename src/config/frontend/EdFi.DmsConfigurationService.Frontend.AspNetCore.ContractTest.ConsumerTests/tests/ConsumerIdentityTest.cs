@@ -10,6 +10,7 @@ using FluentAssertions;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest;
 
+[TestFixture]
 public class ConsumerIdentityTest
 {
     private IPactBuilderV3 pact;
@@ -25,21 +26,21 @@ public class ConsumerIdentityTest
     {
         pact.UponReceiving("A request for an access token with a valid credentials")
             .WithRequest(HttpMethod.Post, "/connect/token")
-            .WithJsonBody(new
-            {
-                clientid = "CSClient1",
-                clientsecret = "test123@Puiu"
-            })
-            .WithHeader("Content-Type", "application/json")
+                .WithJsonBody(new
+                {
+                    clientid = "CSClient1",
+                    clientsecret = "test123@Puiu"
+                })
+                .WithHeader("Content-Type", "application/json")
             .WillRespond()
-            .WithStatus(HttpStatusCode.OK)
-            .WithHeader("Content-Type", "application/json")
-            .WithJsonBody(new
-            {
-                access_token = "input123token",
-                expires_in = 900,
-                token_type = "bearer"
-            });
+                .WithStatus(HttpStatusCode.OK)
+                .WithHeader("Content-Type", "application/json")
+                .WithJsonBody(new
+                {
+                    access_token = "input123token",
+                    expires_in = 900,
+                    token_type = "bearer"
+                });
 
         await pact.VerifyAsync(async ctx =>
         {
@@ -61,24 +62,24 @@ public class ConsumerIdentityTest
     {
         pact.UponReceiving("A request for an access token with empty client credentials")
             .WithRequest(HttpMethod.Post, "/connect/token")
-            .WithHeader("Content-Type", "application/json")
-            .WithJsonBody(new
-            {
-                clientid = "",
-                clientsecret = ""
-            })
-            .WillRespond()
-            .WithStatus(HttpStatusCode.BadRequest)
-            .WithHeader("Content-Type", "application/json")
-            .WithJsonBody(new
-            {
-                title = "Validation failed",
-                errors = new
+                .WithHeader("Content-Type", "application/json")
+                .WithJsonBody(new
                 {
-                    ClientId = new[] { "'Client Id' must not be empty." },
-                    ClientSecret = new[] { "'Client Secret' must not be empty." }
+                    clientid = "",
+                    clientsecret = ""
+                })
+            .WillRespond()
+                .WithStatus(HttpStatusCode.BadRequest)
+                .WithHeader("Content-Type", "application/json")
+                .WithJsonBody(new
+                {
+                    title = "Validation failed",
+                    errors = new
+                    {
+                        ClientId = new[] { "'Client Id' must not be empty." },
+                        ClientSecret = new[] { "'Client Secret' must not be empty." }
+                    }
                 }
-            }
             );
         await pact.VerifyAsync(async ctx =>
         {
@@ -101,18 +102,18 @@ public class ConsumerIdentityTest
             .UponReceiving("A request for an access token with invalid credentials that throws an error from Keycloak")
             .Given("A request for an access token with invalid credentials that throws an error from Keycloak")
             .WithRequest(HttpMethod.Post, "/connect/token")
-            .WithHeader("Content-Type", "application/json")
-            .WithJsonBody(new
-            {
-                clientid = "client123",
-                clientsecret = "clientsecret123"
-            })
+                .WithHeader("Content-Type", "application/json")
+                .WithJsonBody(new
+                {
+                    clientid = "client123",
+                    clientsecret = "clientsecret123"
+                })
             .WillRespond()
-            .WithStatus(HttpStatusCode.Unauthorized)
-            .WithHeader("Content-Type", "application/json")
-            .WithJsonBody(
-                "Client token generation failed with: Error from Keycloak"
-            );
+                .WithStatus(HttpStatusCode.Unauthorized)
+                .WithHeader("Content-Type", "application/json")
+                .WithJsonBody(
+                    "Client token generation failed with: Error from Keycloak"
+                );
 
         await pact.VerifyAsync(async ctx =>
         {
@@ -126,3 +127,46 @@ public class ConsumerIdentityTest
         });
     }
 }
+
+[TestFixture]
+public class ConsumerRegisterTest
+{
+    private IPactBuilderV3 pact;
+
+    [SetUp]
+    public void Setup()
+    {
+        pact = Pact.V3("ConfigurationService-API", "Register").WithHttpInteractions();
+    }
+
+    [Test]
+    public async Task Given_valid_client_details()
+    {
+        pact.UponReceiving("A request for an access token with a valid credentials")
+            .WithRequest(HttpMethod.Post, "/connect/register")
+                .WithJsonBody(new
+                {
+                    clientid = "CSClient1",
+                    clientsecret = "test123@Puiu",
+                    displayname = "CSClient1"
+                })
+                .WithHeader("Content-Type", "application/json")
+            .WillRespond()
+                .WithStatus(HttpStatusCode.OK)
+                .WithHeader("Content-Type", "application/json");
+
+        await pact.VerifyAsync(async ctx =>
+        {
+            var client = new HttpClient();
+
+            // Act
+            var requestBody = new { clientid = "CSClient1", clientsecret = "test123@Puiu", displayname = "CSClient1" };
+            var response = await client.PostAsJsonAsync($"{ctx.MockServerUri}connect/register", requestBody);
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            content.Should().NotBeNull();
+        });
+    }
+}
+
+

@@ -1,0 +1,40 @@
+{
+  "consumer": {
+    "name": "ConfigurationService-API"
+  },
+  "interactions": [
+    {
+      "description": "A request for an access token with a valid credentials",
+      "request": {
+        "body": {
+          "clientid": "CSClient1",
+          "clientsecret": "test123@Puiu",
+          "displayname": "CSClient1"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "method": "POST",
+        "path": "/connect/register"
+      },
+      "response": {
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "status": 200
+      }
+    }
+  ],
+  "metadata": {
+    "pactRust": {
+      "ffi": "0.4.0",
+      "models": "1.0.4"
+    },
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "provider": {
+    "name": "Register"
+  }
+}

@@ -12,6 +12,8 @@ using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider.Tests.Middleware;
+using Microsoft.Extensions.Options;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider.Tests
 {
@@ -27,6 +29,8 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
             services.AddSingleton<ITokenManager, FakeTokenManager>();
             services.AddSingleton<IEndpointModule, IdentityModule>();
             services.AddSingleton<IEndpointModule, HealthModule>();
+            services.AddSingleton<IClientRepository, FakeClientRepository>();
+            services.AddTransient<IValidateOptions<IdentitySettings>, IdentitySettingsValidator>();
         }
 
         public static void Configure(IApplicationBuilder app)
@@ -34,6 +38,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
             app.UseRouting();
             // Get the FakeTokenManager instance from the DI container.
             var fakeTokenManager = app.ApplicationServices.GetRequiredService<ITokenManager>() as FakeTokenManager;
+            var fakeClientRepository = app.ApplicationServices.GetRequiredService<IClientRepository>() as FakeClientRepository;
             if (fakeTokenManager == null)
             {
                 throw new InvalidOperationException("FakeTokenManager instance could not be resolved.");
