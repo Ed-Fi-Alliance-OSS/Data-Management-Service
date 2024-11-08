@@ -1,0 +1,284 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+name: On Configuration Service Pre-Release
+on:
+  release:
+    types:
+      - prereleased
+
+env:
+  ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+  ARTIFACTS_FEED_URL: "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json"
+  VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
+  MANIFEST_FILE: "_manifest/spdx_2.2/manifest.spdx.json"
+  PACKAGE_NAME: "EdFi.DmsConfigurationService"
+  IMAGE_NAME: ${{ vars.IMAGE_NAME }}
+  DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME }}
+  DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
+  REF: ${{ github.ref_name }}
+
+permissions: read-all
+
+jobs:
+  pack:
+    name: Build and Pack
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    outputs:
+      hash-code: ${{ steps.hash-code.outputs.hash-code }}
+      dms-version: ${{ steps.versions.outputs.dms-v }}
+
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Set Version Numbers
+        id: versions
+        run: |
+          Import-Module ./package-helpers.psm1
+          Get-VersionNumber
+
+      - name: Publish .NET Assemblies
+        run: |
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}"
+
+          ./build-config.ps1 -Command BuildAndPublish `
+              -Configuration Release `
+              -DmsCSVersion $packageVersion
+
+      - name: Create NuGet Package
+        run: |
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}"
+
+          ./build-config.ps1 -Command Package `
+              -DmsCSVersion $packageVersion `
+              -Configuration Release
+
+      - name: Generate hash for NuGet package
+        id: hash-code
+        run: |
+          "hash-code=$(sha256sum *.nupkg | base64 -w0)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Upload Packages as Artifacts
+        if: success()
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+        with:
+          name: "${{ env.PACKAGE_NAME }}-NuGet"
+          path: ${{ github.workspace }}/*DmsConfigurationService*.nupkg
+          if-no-files-found: error
+          retention-days: 30
+
+  sbom-create:
+    name: Create SBOM
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    needs: pack
+    permissions:
+      actions: read
+      contents: write
+    outputs:
+      sbom-hash-code: ${{ steps.sbom-hash-code.outputs.sbom-hash-code }}
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Get Artifacts
+        uses: actions/download-artifact@6b208ae046db98c579e8a3aa621ab581ff575935 #v4.1.1
+        with:
+          name: ${{ env.PACKAGE_NAME }}-NuGet
+
+      - name: Generate Software Bill of Materials (SBOM)
+        run: |
+          $packageName = "${{ env.PACKAGE_NAME }}"
+          $version = "${{ needs.pack.outputs.dms-version }}"
+
+          Get-ChildItem -Include "$packageName.*.nupkg" -Recurse | ForEach-Object { $_.FullName } > buildfilelist.txt
+
+          dotnet tool install --global Microsoft.Sbom.DotNetTool
+
+          sbom-tool generate `
+              -b ./ `
+              -bl ./buildfilelist.txt `
+              -bc "./" `
+              -pn "$packageName" `
+              -pv $version `
+              -nsb https://ed-fi.org `
+              -m ./ `
+              -ps "Ed-Fi Alliance"
+
+          cp _manifest/spdx_2.2/manifest.spdx.* .
+
+      - name: Upload SBOM
+        if: success()
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+        with:
+          name: ${{ env.PACKAGE_NAME }}-SBOM
+          path: ${{ env.MANIFEST_FILE }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Generate hash code for SBOM
+        id: sbom-hash-code
+        shell: bash
+        run: |
+          # sha256sum returns "<hashcode>  <name of file". Split that and return only the <hashcode>.
+          sbom_hash=$(sha256sum ./${{ env.MANIFEST_FILE }} | awk '{split($0,a); print a[1]}')
+          echo "sbom-hash-code=$sbom_hash" >> $GITHUB_OUTPUT
+
+  sbom-attach:
+    name: Attach SBOM file
+    runs-on: ubuntu-latest
+    needs:
+      - sbom-create
+      - pack
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Download the SBOM
+        uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/actions/secure-download-artifact@v2.0.0
+        with:
+          name: "${{ env.PACKAGE_NAME }}-SBOM"
+          path: ${{ env.MANIFEST_FILE }}
+          sha256: "${{ needs.sbom-create.outputs.sbom-hash-code }}"
+
+      - name: Attach to release
+        shell: pwsh
+        run: |
+          $release = "${{ github.ref_name }}"
+          $repo = "${{ github.repository }}"
+          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $file = "${{ env.MANIFEST_FILE }}"
+          $uploadName = "${{ env.PACKAGE_NAME }}-SBOM.zip"
+
+          $url = "https://api.github.com/repos/$repo/releases/tags/$release"
+
+          $gh_headers = @{
+              "Accept"        = "application/vnd.github+json"
+              "Authorization" = "Bearer $token"
+          }
+
+          $response = Invoke-RestMethod -Uri $url -Headers $gh_headers
+          $releaseId = $response.id
+
+          $url = "https://uploads.github.com/repos/$repo/releases/$releaseId/assets"
+
+          Compress-Archive $file -DestinationPath $uploadName
+
+          $gh_headers["Content-Type"] = "application/octet"
+          Invoke-RestMethod -Method POST `
+              -Uri "$($url)?name=$($uploadName)" `
+              -Headers $gh_headers `
+              -InFile $uploadName
+
+  provenance-create:
+    name: Create Provenance
+    needs: pack
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+    uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
+    with:
+      base64-subjects: ${{ needs.pack.outputs.hash-code }}
+      provenance-name: dmsCSApi.intoto.jsonl
+      upload-assets: true
+      # TODO: remove this after this issue is resolved: https://github.com/slsa-framework/slsa-github-generator/issues/876
+      compile-generator: true
+
+  publish-package:
+    name: Publish NuGet Package
+    needs: pack
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Get Artifact
+        uses: actions/download-artifact@6b208ae046db98c579e8a3aa621ab581ff575935 #4.1.1
+        with:
+          name: ${{ env.PACKAGE_NAME }}-NuGet
+
+      - name: Install-credential-handler
+        run: iex "& { $(irm https://aka.ms/install-artifacts-credprovider.ps1) } -AddNetfx"
+
+      - name: Push Package to Azure Artifacts
+        run: |
+         $artifact = (Get-ChildItem -Path $_ -Name -Include *.nupkg)
+         $arguments = @{
+           EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
+           NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+         }
+
+         $artifact | ForEach-Object {
+             $arguments.PackageFile = $_
+             ./build-config.ps1 Push @arguments
+          }
+
+  docker-publish:
+    name: Publish to Docker Hub
+    runs-on: ubuntu-latest
+    needs:
+      - publish-package
+    steps:
+      - name: Wait 20s
+        # Give Azure Artifacts caching a moment to catch up
+        run: sleep 20
+
+      - name: Prepare Tags
+        id: prepare-tags
+        run: |
+          REF="${{ env.REF }}"
+          PACKAGEVERSION=${REF}
+
+          if [[ $PACKAGEVERSION =~ "alpha" ]]
+          then
+            # Pre-releases get the tag "pre"
+            DMSTAGS="${{ env.IMAGE_NAME }}:pre"
+          else
+            # Releases get the version, plus shortened form for minor release.
+            # We are not using shortened form for major or using "latest"
+            # because they are too imprecise.
+            MINOR=`echo ${PACKAGEVERSION} | awk -F"." '{print $1"."$2}'`
+            DMSTAGS="${{ env.IMAGE_NAME }}:${PACKAGEVERSION},${{ env.IMAGE_NAME }}:${MINOR}"
+          fi
+
+          SEMVERSION=${PACKAGEVERSION}  # strip off the leading 'v'
+          echo "DMSTAGS=$DMSTAGS" >> $GITHUB_OUTPUT
+          echo "VERSION=$SEMVERSION" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226  # v3.0.0
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d  # v3.0.0
+        with:
+          username: ${{ env.DOCKER_USERNAME }}
+          password: ${{ env.DOCKER_HUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Configuration Service image
+        id: metadataconfigurationservice
+        uses: docker/metadata-action@96383f45573cb7f253c731d3b3ab81c87ef81934  # v5.0.0
+        with:
+          images: ${{ env.IMAGE_NAME }}
+
+      - name: Build and push CS image
+        uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09  # v5.0.0
+        with:
+          context: "{{defaultContext}}:src/config"
+          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:pre
+          cache-to: type=inline
+          build-args: VERSION=${{ steps.prepare-tags.outputs.VERSION }}
+          file: Nuget.Dockerfile
+          tags: ${{ steps.prepare-tags.outputs.DMSTAGS }}
+          labels: ${{ steps.metadataconfigurationservice.outputs.labels }}
+          push: true
