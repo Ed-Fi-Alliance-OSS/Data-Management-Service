@@ -227,7 +227,8 @@ public class ApplicationModuleTests
                     "EducationOrganizationIds[0]": [
                       "'Education Organization Ids' must be greater than '0'."
                     ]
-                  }
+                  },
+                  "errors": []
                 }
                 """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
             );
@@ -548,7 +549,8 @@ public class ApplicationModuleTests
                     "VendorId": [
                       "Reference 'VendorId' does not exist."
                     ]
-                  }
+                  },
+                  "errors": []
                 }
                 """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
             );
@@ -595,7 +597,8 @@ public class ApplicationModuleTests
                     "VendorId": [
                       "Reference 'VendorId' does not exist."
                     ]
-                  }
+                  },
+                  "errors": []
                 }
                 """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
             );

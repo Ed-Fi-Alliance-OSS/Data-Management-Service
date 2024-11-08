@@ -389,7 +389,8 @@ public class RegisterEndpointTests
               "title": "Bad Gateway",
               "status": 502,
               "correlationId": "{correlationId}",
-              "validationErrors": {}
+              "validationErrors": {},
+              "errors": []
             }
             """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
         );
@@ -564,7 +565,8 @@ public class TokenEndpointTests
               "title": "Bad Gateway",
               "status": 502,
               "correlationId": "{correlationId}",
-              "validationErrors": {}
+              "validationErrors": {}, 
+              "errors": []
             }
             """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
         );

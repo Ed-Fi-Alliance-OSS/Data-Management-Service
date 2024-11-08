@@ -12,6 +12,7 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
 using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.Extensions.Options;
+using static EdFi.DmsConfigurationService.Backend.IdentityProviderError;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -103,7 +104,6 @@ public class IdentityModule : IEndpointModule
     {
         await validator.GuardAsync(model);
 
-        string response = string.Empty;
         var tokenResult = await tokenManager.GetAccessTokenAsync(
             [
                 new KeyValuePair<string, string>("client_id", model.ClientId!),
@@ -111,26 +111,28 @@ public class IdentityModule : IEndpointModule
             ]
         );
 
-        if (tokenResult is TokenResult.Success tokenSuccess)
+        return tokenResult switch
         {
-            response = tokenSuccess.Token;
-            var tokenResponse = JsonSerializer.Deserialize<TokenResponse>(response);
-            return Results.Ok(tokenResponse);
-        }
-
-        if (tokenResult is TokenResult.FailureIdentityProvider failureIdentityProvider)
-        {
-            return failureIdentityProvider.IdentityProviderError switch
-            {
-                IdentityProviderError.Unauthorized => Results.Unauthorized(),
-                IdentityProviderError.Forbidden => Results.Forbid(),
-                _ => FailureResults.BadGateway(
-                    failureIdentityProvider.IdentityProviderError.FailureMessage,
-                    httpContext.TraceIdentifier
-                ),
-            };
-        }
-
-        return FailureResults.Unknown(httpContext.TraceIdentifier);
+            TokenResult.Success tokenSuccess => Results.Ok(
+                JsonSerializer.Deserialize<TokenResponse>(tokenSuccess.Token)
+            ),
+            TokenResult.FailureIdentityProvider failureIdentityProvider =>
+                failureIdentityProvider.IdentityProviderError switch
+                {
+                    Unauthorized unauthorized => FailureResults.Unauthorized(
+                        unauthorized.FailureMessage,
+                        httpContext.TraceIdentifier
+                    ),
+                    Forbidden forbidden => FailureResults.Forbidden(
+                        forbidden.FailureMessage,
+                        httpContext.TraceIdentifier
+                    ),
+                    _ => FailureResults.BadGateway(
+                        failureIdentityProvider.IdentityProviderError.FailureMessage,
+                        httpContext.TraceIdentifier
+                    ),
+                },
+            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
+        };
     }
 }

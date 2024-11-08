@@ -221,7 +221,8 @@ public class VendorModuleTests
                     "NamespacePrefixes": [
                       "Each NamespacePrefix length must be 128 characters or fewer."
                     ]
-                  }
+                  }, 
+                  "errors": []
                 }
                 """.Replace("{correlationId}", actualPostResponse!["correlationId"]!.GetValue<string>())
             );
@@ -248,7 +249,8 @@ public class VendorModuleTests
                     "NamespacePrefixes": [
                       "Each NamespacePrefix length must be 128 characters or fewer."
                     ]
-                  }
+                  }, 
+                  "errors": []
                 }
                 """.Replace("{correlationId}", actualPutResponse!["correlationId"]!.GetValue<string>())
             );

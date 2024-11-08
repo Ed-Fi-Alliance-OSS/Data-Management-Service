@@ -3,10 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FluentValidation.Results;
+using Npgsql.Internal;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
@@ -16,6 +18,8 @@ internal static class FailureResponse
         new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     private static readonly string _typePrefix = "urn:ed-fi:api";
+    private static readonly string _unauthorizedType = $"{_typePrefix}:security:authentication";
+    private static readonly string _forbiddenType = $"{_typePrefix}:security:authorization";
     private static readonly string _badRequestTypePrefix = $"{_typePrefix}:bad-request";
     private static readonly string _notFoundTypePrefix = $"{_typePrefix}:not-found";
     private static readonly string _badGatewayTypePrefix = $"{_typePrefix}:bad-gateway";
@@ -27,7 +31,8 @@ internal static class FailureResponse
         string title,
         int status,
         string correlationId,
-        Dictionary<string, string[]>? validationErrors = null
+        Dictionary<string, string[]>? validationErrors = null,
+        string[]? errors = null
     )
     {
         return new JsonObject
@@ -41,8 +46,32 @@ internal static class FailureResponse
                 validationErrors != null
                     ? JsonSerializer.SerializeToNode(validationErrors, _serializerOptions)
                     : new JsonObject(),
+            ["errors"] =
+                errors != null ? JsonSerializer.SerializeToNode(errors, _serializerOptions) : new JsonArray(),
         };
     }
+
+    public static JsonNode ForUnauthorized(string title, string detail, string correlationId) =>
+        CreateBaseJsonObject(
+            detail: detail,
+            type: _unauthorizedType,
+            title: title,
+            status: 401,
+            correlationId: correlationId,
+            validationErrors: [],
+            errors: []
+        );
+
+    public static JsonNode ForForbidden(string title, string detail, string correlationId) =>
+        CreateBaseJsonObject(
+            detail: detail,
+            type: _forbiddenType,
+            title: title,
+            status: 403,
+            correlationId: correlationId,
+            validationErrors: [],
+            errors: []
+        );
 
     public static JsonNode ForBadRequest(string detail, string correlationId) =>
         CreateBaseJsonObject(

@@ -21,4 +21,20 @@ internal static class FailureResults
     {
         return Results.Json(FailureResponse.ForBadGateway(detail, correlationId), statusCode: 502);
     }
+
+    public static IResult Unauthorized(string detail, string correlationId)
+    {
+        return Results.Json(
+            FailureResponse.ForUnauthorized("Authentication Failed", detail, correlationId),
+            statusCode: 401
+        );
+    }
+
+    public static IResult Forbidden(string detail, string correlationId)
+    {
+        return Results.Json(
+            FailureResponse.ForForbidden("Authorization Failed", detail, correlationId),
+            statusCode: 403
+        );
+    }
 }

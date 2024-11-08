@@ -149,12 +149,9 @@ public class VendorModule : IEndpointModule
         return getResult switch
         {
             VendorApplicationsResult.Success success => Results.Ok(success.ApplicationResponses),
-            VendorApplicationsResult.FailureNotExists => Results.Json(
-                FailureResponse.ForNotFound(
-                    $"Vendor {id} not found. It may have been recently deleted.",
-                    httpContext.TraceIdentifier
-                ),
-                statusCode: (int)HttpStatusCode.NotFound
+            VendorApplicationsResult.FailureNotExists => FailureResults.NotFound(
+                $"Vendor {id} not found. It may have been recently deleted.",
+                httpContext.TraceIdentifier
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
