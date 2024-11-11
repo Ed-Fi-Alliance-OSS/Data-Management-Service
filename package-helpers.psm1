@@ -88,7 +88,7 @@ function Invoke-Promote {
     $parameters | Out-Host
 
     if ($PSCmdlet.ShouldProcess($PackagesURL)) {
-        $response = Invoke-RestMethod @parameters -UseBasicParsing
+        $response = Invoke-WebRequest @parameters -UseBasicParsing
         $response | ConvertTo-Json -Depth 10 | Out-Host
     }
 }
