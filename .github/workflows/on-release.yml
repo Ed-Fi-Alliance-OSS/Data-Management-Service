@@ -71,10 +71,10 @@ jobs:
           $arguments = @{
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
             Username    = "${{ env.ARTIFACTS_USERNAME }}"
-            ViewId        = "release"
-            ReleaseRef  = "${{ github.ref_name }}"
+            ViewId      = "release"
+            ReleaseRef  = "v0.3.0"
             Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
           }
 
           Import-Module ./package-helpers.psm1
-          Invoke-Promote @arguments -WhatIf
+          Invoke-Promote @arguments
