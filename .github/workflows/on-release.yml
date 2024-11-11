@@ -50,7 +50,7 @@ jobs:
             $release_list | ForEach-Object {
                 if ($_.tag_name -like "Pre-Release-*" -and $_.prerelease) {
                     "Deleting pre-release $($_.tag_name)" | Write-Output
-                    Invoke-RestMethod -Method Delete -Uri $_.url -Headers $gh_headers
+                    # Invoke-RestMethod -Method Delete -Uri $_.url -Headers $gh_headers
                 }
             }
 
@@ -76,4 +76,4 @@ jobs:
           }
 
           Import-Module ./package-helpers.psm1
-          Invoke-Promote @arguments
+          Invoke-Promote @arguments -WhatIf

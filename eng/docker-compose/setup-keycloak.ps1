@@ -107,7 +107,7 @@ function Create_Realm() {
     # Create the new realm
     try
     {
-        $CreateRealmResponse = Invoke-RestMethod -Uri "$KeycloakServer/admin/realms" `
+        Invoke-RestMethod -Uri "$KeycloakServer/admin/realms" `
             -Method Post `
             -Headers @{ Authorization = "Bearer $access_token" } `
             -ContentType "application/json" `
@@ -209,7 +209,7 @@ function Create_ClientScope([string] $scopeName)
             protocol = "openid-connect"
         } | ConvertTo-Json
 
-        $clientScopeCreationResponse = Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/client-scopes" `
+        Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/client-scopes" `
             -Method Post `
             -Headers @{ Authorization = "Bearer $access_token" } `
             -Body $clientScopePayload `
@@ -315,7 +315,7 @@ function Create_Client()
         publicClient = $false
     }
     # Create a new client
-    $CreateClientResponse = Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/clients" `
+    Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/clients" `
         -Method Post `
         -Headers @{ Authorization = "Bearer $access_token" } `
         -ContentType "application/json" `
@@ -329,7 +329,7 @@ function Create_Client()
 
 # Keycloak health check
 try {
-    $healthCheckResponse = Invoke-RestMethod -Method Get `
+    Invoke-RestMethod -Method Get `
         -Uri "$KeycloakServer/realms/master" `
         -TimeoutSec 5
     Write-Output "Keycloak is running."

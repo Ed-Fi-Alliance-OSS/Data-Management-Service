@@ -31,6 +31,7 @@ Promotes a package in Azure Artifacts to a view, e.g. pre-release or release.
 #>
 function Invoke-Promote {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'False positive')]
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param(
         # NuGet Packages API URL
         [Parameter(Mandatory = $true)]
@@ -61,32 +62,22 @@ function Invoke-Promote {
     $package = "EdFi.DataManagementService"
     $version = $ReleaseRef -replace "v", ""
 
-    $body = @{
-        data      = @{
-            viewId = $ViewId
-        }
-        operation = 0
-        packages  = @(
-            @{
-                id = $package
-                version = $version
-            }
-        )
-    } | ConvertTo-Json
+    $PackagesURL = "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_apis/packaging/feeds/EdFi/nuget/packages/$package/versions/$version/views/$ViewId?api-version=7.1"
 
     $parameters = @{
         Method      = "POST"
         ContentType = "application/json"
-        Credential  = New-Object -TypeName PSCredential -ArgumentList $Username, $Password
+        Credential  = [PSCredential]::new($Username, $Password)
         URI         = $PackagesURL
-        Body        = $body
     }
 
     Write-Output "Web request parameters:"
     $parameters | Out-Host
 
-    $response = Invoke-WebRequest @parameters -UseBasicParsing
-    $response | ConvertTo-Json -Depth 10 | Out-Host
+    if ($PSCmdlet.ShouldProcess($PackagesURL)) {
+        $response = Invoke-RestMethod @parameters -UseBasicParsing
+        $response | ConvertTo-Json -Depth 10 | Out-Host
+    }
 }
 
 Export-ModuleMember -Function Get-VersionNumber, Invoke-Promote
