@@ -51,7 +51,7 @@ param(
     # current package number is configured in the build automation tool and
     # passed to this script.
     [string]
-    $DmsConfigurationServiceVersion = "0.1",
+    $DmsCSVersion = "0.1",
 
     # .NET project build configuration, defaults to "Debug". Options are: Debug, Release.
     [string]
