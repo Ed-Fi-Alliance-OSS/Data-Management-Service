@@ -8,37 +8,36 @@ using EdFi.DataManagementService.Core.ApiSchema.Extensions;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 
-namespace EdFi.DataManagementService.Core.Middleware
+namespace EdFi.DataManagementService.Core.Middleware;
+
+/// <summary>
+/// For boolean and numeric properties that were submitted as strings, i.e. surrounded with double quotes,
+/// this middleware tries to coerce those back to their proper type.
+/// </summary>
+internal class CoerceFromStringsMiddleware(ILogger logger) : IPipelineStep
 {
-    /// <summary>
-    /// For boolean and numeric properties that were submitted as strings, i.e. surrounded with double quotes,
-    /// this middleware tries to coerce those back to their proper type.
-    /// </summary>
-    internal class CoerceFromStringsMiddleware(ILogger logger) : IPipelineStep
+    public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        public async Task Execute(PipelineContext context, Func<Task> next)
+        logger.LogDebug("Entering CoerceFromStringsMiddleware - {TraceId}", context.FrontendRequest.TraceId);
+
+        foreach (string path in context.ResourceSchema.BooleanJsonPaths.Select(path => path.Value))
         {
-            logger.LogDebug("Entering CoerceFromStringsMiddleware - {TraceId}", context.FrontendRequest.TraceId);
-
-            foreach (string path in context.ResourceSchema.BooleanJsonPaths.Select(path => path.Value))
+            IEnumerable<JsonNode?> jsonNodes = context.ParsedBody.SelectNodesFromArrayPath(path, logger);
+            foreach (JsonNode? jsonNode in jsonNodes)
             {
-                IEnumerable<JsonNode?> jsonNodes = context.ParsedBody.SelectNodesFromArrayPath(path, logger);
-                foreach (JsonNode? jsonNode in jsonNodes)
-                {
-                    jsonNode?.TryCoerceStringToBoolean();
-                }
+                jsonNode?.TryCoerceStringToBoolean();
             }
-
-            foreach (string path in context.ResourceSchema.NumericJsonPaths.Select(path => path.Value))
-            {
-                IEnumerable<JsonNode?> jsonNodes = context.ParsedBody.SelectNodesFromArrayPath(path, logger);
-                foreach (JsonNode? jsonNode in jsonNodes)
-                {
-                    jsonNode?.TryCoerceStringToNumber();
-                }
-            }
-
-            await next();
         }
+
+        foreach (string path in context.ResourceSchema.NumericJsonPaths.Select(path => path.Value))
+        {
+            IEnumerable<JsonNode?> jsonNodes = context.ParsedBody.SelectNodesFromArrayPath(path, logger);
+            foreach (JsonNode? jsonNode in jsonNodes)
+            {
+                jsonNode?.TryCoerceStringToNumber();
+            }
+        }
+
+        await next();
     }
 }

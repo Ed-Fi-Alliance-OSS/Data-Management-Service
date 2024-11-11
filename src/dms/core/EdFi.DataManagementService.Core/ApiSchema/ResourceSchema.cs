@@ -190,6 +190,23 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
         });
 
     /// <summary>
+    /// An ordered list of the JsonPaths that are of type dateTime, for use in type coercion
+    /// </summary>
+    public IEnumerable<JsonPath> DateTimeJsonPaths => _dateTimeJsonPaths.Value;
+
+    private readonly Lazy<IEnumerable<JsonPath>> _dateTimeJsonPaths =
+        new(() =>
+        {
+            return _resourceSchemaNode["dateTimeJsonPaths"]
+                       ?.AsArray()
+                       .GetValues<string>()
+                       .Select(x => new JsonPath(x))
+                   ?? throw new InvalidOperationException(
+                       "Expected dateTimeJsonPaths to be on ResourceSchema, invalid ApiSchema"
+                   );
+        });
+
+    /// <summary>
     /// An ordered list of the JsonPaths that are of type boolean, for use in type coercion
     /// </summary>
     public IEnumerable<JsonPath> NumericJsonPaths => _numericJsonPaths.Value;
