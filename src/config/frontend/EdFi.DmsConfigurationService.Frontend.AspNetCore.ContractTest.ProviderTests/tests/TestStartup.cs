@@ -31,6 +31,11 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.ContractTest.Provider
             services.AddSingleton<IEndpointModule, HealthModule>();
             services.AddSingleton<IClientRepository, FakeClientRepository>();
             services.AddTransient<IValidateOptions<IdentitySettings>, IdentitySettingsValidator>();
+
+            services.Configure<IdentitySettings>(opts =>
+                    {
+                        opts.AllowRegistration = true;
+                    });
         }
 
         public static void Configure(IApplicationBuilder app)

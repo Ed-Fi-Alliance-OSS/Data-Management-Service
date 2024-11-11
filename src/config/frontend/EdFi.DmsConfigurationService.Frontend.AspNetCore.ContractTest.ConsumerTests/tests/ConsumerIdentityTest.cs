@@ -167,6 +167,34 @@ public class ConsumerRegisterTest
             content.Should().NotBeNull();
         });
     }
+
+    [Test]
+    public async Task When_allow_registration_is_disabled()
+    {
+        pact.UponReceiving("A register request when registration is disabled")
+            .WithRequest(HttpMethod.Post, "/connect/register")
+                .WithJsonBody(new
+                {
+                    clientid = "CSClient2",
+                    clientsecret = "test123@Puiu",
+                    displayname = "CSClient2@cs.com"
+                })
+                .WithHeader("Content-Type", "application/json")
+            .WillRespond()
+                .WithStatus(HttpStatusCode.Forbidden)
+                .WithHeader("Content-Type", "application/json");
+
+        await pact.VerifyAsync(async ctx =>
+        {
+            var client = new HttpClient();
+
+            // Act
+            var requestBody = new { clientid = "CSClient2", clientsecret = "test123@Puiu", displayname = "CSClient2@cs.com" };
+            var response = await client.PostAsJsonAsync($"{ctx.MockServerUri}connect/register", requestBody);
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        });
+    }
 }
 
 

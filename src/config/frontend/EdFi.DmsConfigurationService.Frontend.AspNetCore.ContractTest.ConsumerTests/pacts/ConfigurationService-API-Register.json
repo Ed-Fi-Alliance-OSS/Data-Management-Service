@@ -4,6 +4,27 @@
   },
   "interactions": [
     {
+      "description": "A register request when registration is disabled",
+      "request": {
+        "body": {
+          "clientid": "CSClient2",
+          "clientsecret": "test123@Puiu",
+          "displayname": "CSClient2@cs.com"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "method": "POST",
+        "path": "/connect/register"
+      },
+      "response": {
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "status": 404
+      }
+    },
+    {
       "description": "A request for an access token with a valid credentials",
       "request": {
         "body": {
