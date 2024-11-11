@@ -31,6 +31,7 @@ Promotes a package in Azure Artifacts to a view, e.g. pre-release or release.
 #>
 function Invoke-Promote {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'False positive')]
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param(
         # NuGet Packages API URL
         [Parameter(Mandatory = $true)]
@@ -70,6 +71,7 @@ function Invoke-Promote {
             @{
                 id = $package
                 version = $version
+                protocolType = "NuGet"
             }
         )
     } | ConvertTo-Json
@@ -78,15 +80,17 @@ function Invoke-Promote {
         Method      = "POST"
         ContentType = "application/json"
         Credential  = New-Object -TypeName PSCredential -ArgumentList $Username, $Password
-        URI         = $PackagesURL
-        Body        = $body
+        URI         =  "$PackagesURL/nuget/packagesBatch?api-version=5.0-preview.1"
+        Body        =  $body
     }
 
     Write-Output "Web request parameters:"
     $parameters | Out-Host
 
-    $response = Invoke-WebRequest @parameters -UseBasicParsing
-    $response | ConvertTo-Json -Depth 10 | Out-Host
+    if ($PSCmdlet.ShouldProcess($PackagesURL)) {
+        $response = Invoke-WebRequest @parameters -UseBasicParsing
+        $response | ConvertTo-Json -Depth 10 | Out-Host
+    }
 }
 
 Export-ModuleMember -Function Get-VersionNumber, Invoke-Promote
