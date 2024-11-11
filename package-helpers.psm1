@@ -62,13 +62,26 @@ function Invoke-Promote {
     $package = "EdFi.DataManagementService"
     $version = $ReleaseRef -replace "v", ""
 
-    $PackagesURL = "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_apis/packaging/feeds/EdFi/nuget/packages/$package/versions/$version/views/$ViewId?api-version=7.1"
+    $body = @{
+        data      = @{
+            viewId = $ViewId
+        }
+        operation = 0
+        packages  = @(
+            @{
+                id = $package
+                version = $version
+                protocolType = "NuGet"
+            }
+        )
+    } | ConvertTo-Json
 
     $parameters = @{
         Method      = "POST"
         ContentType = "application/json"
-        Credential  = [PSCredential]::new($Username, $Password)
-        URI         = $PackagesURL
+        Credential  = New-Object -TypeName PSCredential -ArgumentList $Username, $Password
+        URI         =  "$PackagesURL/nuget/packagesBatch?api-version=5.0-preview.1"
+        Body        =  $body
     }
 
     Write-Output "Web request parameters:"
