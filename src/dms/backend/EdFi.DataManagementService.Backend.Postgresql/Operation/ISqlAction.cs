@@ -102,14 +102,6 @@ public interface ISqlAction
         TraceId traceId
     );
 
-    public Task<int> DeleteReferencesByDocumentUuid(
-        int parentDocumentPartitionKey,
-        Guid parentDocumentUuidGuid,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        TraceId traceId
-    );
-
     public Task<int> DeleteDocumentByDocumentUuid(
         PartitionKey documentPartitionKey,
         DocumentUuid documentUuid,

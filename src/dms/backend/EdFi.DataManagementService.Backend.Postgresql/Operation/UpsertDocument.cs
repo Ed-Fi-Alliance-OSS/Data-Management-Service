@@ -186,15 +186,6 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             || descriptorReferenceIds.ReferentialIds.Length > 0
         )
         {
-            // First clear out all the existing references, as they may have changed
-            await _sqlAction.DeleteReferencesByDocumentUuid(
-                documentPartitionKey,
-                documentUuid,
-                connection,
-                transaction,
-                traceId
-            );
-
             Guid[] invalidReferentialIds = await _sqlAction.InsertReferences(
                 new(
                     ParentDocumentPartitionKey: documentPartitionKey,

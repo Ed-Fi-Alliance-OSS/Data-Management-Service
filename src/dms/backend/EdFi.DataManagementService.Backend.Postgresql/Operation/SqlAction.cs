@@ -460,37 +460,6 @@ public class SqlAction() : ISqlAction
     }
 
     /// <summary>
-    /// Delete associated Reference records for a given DocumentUuid, returning the number of rows affected
-    /// </summary>
-    public async Task<int> DeleteReferencesByDocumentUuid(
-        int parentDocumentPartitionKey,
-        Guid parentDocumentUuidGuid,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        TraceId traceId
-    )
-    {
-        await using NpgsqlCommand command =
-            new(
-                @"DELETE from dms.Reference r
-                  USING dms.Document d
-                  WHERE d.Id = r.ParentDocumentId AND d.DocumentPartitionKey = r.ParentDocumentPartitionKey
-                  AND d.DocumentPartitionKey = $1 AND d.DocumentUuid = $2;",
-                connection,
-                transaction
-            )
-            {
-                Parameters =
-                {
-                    new() { Value = parentDocumentPartitionKey },
-                    new() { Value = parentDocumentUuidGuid },
-                },
-            };
-        await command.PrepareAsync();
-        return await command.ExecuteNonQueryAsync();
-    }
-
-    /// <summary>
     /// Delete a document for a given documentUuid and returns the number of rows affected.
     /// Delete cascades to Aliases and References tables
     /// </summary>

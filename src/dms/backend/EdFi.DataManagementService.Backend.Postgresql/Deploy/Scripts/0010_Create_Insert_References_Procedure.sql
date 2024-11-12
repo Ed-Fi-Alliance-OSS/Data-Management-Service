@@ -16,6 +16,12 @@ $$
 DECLARE
     constraintErrorName text;
 BEGIN
+
+    -- First clear out all the existing references, as they may have changed
+    DELETE from dms.Reference r
+    USING unnest(parentDocumentIds, parentDocumentPartitionKeys) as d (Id, DocumentPartitionKey)
+    WHERE d.Id = r.ParentDocumentId AND d.DocumentPartitionKey = r.ParentDocumentPartitionKey;
+
     INSERT INTO dms.Reference (
         ParentDocumentId,
         ParentDocumentPartitionKey,
