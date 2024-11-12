@@ -50,8 +50,10 @@ public interface ISqlAction
         TraceId traceId
     );
 
-    public Task<long> InsertDocument(
+    public Task<long> InsertDocumentAndAlias(
         Document document,
+        int referentialPartitionKey,
+        Guid referentialId,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         TraceId traceId
