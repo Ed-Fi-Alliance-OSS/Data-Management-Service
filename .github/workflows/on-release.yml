@@ -51,7 +51,7 @@ jobs:
             $release_list | ForEach-Object {
                 if ($_.tag_name -like "Pre-Release-*" -and $_.prerelease) {
                     "Deleting pre-release $($_.tag_name)" | Write-Output
-                    # Invoke-RestMethod -Method Delete -Uri $_.url -Headers $gh_headers
+                    Invoke-RestMethod -Method Delete -Uri $_.url -Headers $gh_headers
                 }
             }
 
@@ -72,7 +72,7 @@ jobs:
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
             Username    = "${{ env.ARTIFACTS_USERNAME }}"
             ViewId      = "release"
-            ReleaseRef  = "v0.3.0"
+            ReleaseRef  = "${{ github.ref_name }}"
             Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
           }
 
