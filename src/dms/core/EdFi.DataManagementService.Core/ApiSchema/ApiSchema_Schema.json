@@ -52,6 +52,7 @@
                     },
                     "additionalProperties": false
                 },
+                "compatibleDsRange": true,
                 "description": {
                     "type": "string"
                 },

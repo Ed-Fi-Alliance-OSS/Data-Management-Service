@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -293,6 +294,30 @@ internal static class JsonHelperExtensions
                 {
                     jsonNode.ReplaceWith(longValue);
                 }
+            }
+        }
+    }
+
+    public static void TryCoerceDateToDateTime(this JsonNode jsonNode)
+    {
+        var jsonValue = jsonNode.AsValue();
+        if (jsonValue.GetValueKind() == JsonValueKind.String)
+        {
+            string stringValue = jsonValue.GetValue<string>();
+            if (
+                DateOnly.TryParse(
+                    stringValue,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out DateOnly dateValue
+                )
+            )
+            {
+                jsonNode.ReplaceWith(
+                    dateValue
+                        .ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)
+                        .ToString("yyyy-MM-ddTHH:mm:sszzz", CultureInfo.InvariantCulture)
+                );
             }
         }
     }

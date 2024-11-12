@@ -299,12 +299,8 @@ Feature: Data strictness
                   """
              Then it should respond with 400
 
-        @API-255 @ignore
-        # Currently the DMS is doing what an API _should_ do (require a time), but the ODS/API does NOT
-        # require a time. Changing to require a time would be a breaking change, so we can't do that
-        # in the DMS, at least not with Data Standard < 6.
-        # DMS-396
-        Scenario: 18 Enforce presence of time in a POST request with a datetime property
+        @API-255
+        Scenario: 18 Accept missing time in a POST request with a datetime property
             Given a POST request is made to "/ed-fi/assessments" with
                   """
                   {
@@ -353,3 +349,21 @@ Feature: Data strictness
                   }
                   """
              Then it should respond with 201
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                      "id": "{id}",
+                      "assessmentReference": {
+                          "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f2",
+                          "namespace": "uri://ed-fi.org/Assessment/Assessment.xml"
+                      },
+                      "schoolYearTypeReference": {
+                          "schoolYear": 2022
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "604906"
+                      },
+                      "studentAssessmentIdentifier": "/Qhqqe/gI4p3RguP68ZEDArGHM64FKnCg/RLHG8c",
+                      "administrationDate": "2021-09-28T00:00:00+00:00"
+                  }
+                  """
