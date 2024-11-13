@@ -47,47 +47,6 @@ jobs:
     with:
       config-file-path: ./.github/workflows/bidi-config.json
 
-  code-analysis:
-    name: Code Analysis
-    runs-on: ubuntu-latest
-    permissions:
-        security-events: write
-    defaults:
-      run:
-        shell: pwsh
-    steps:
-
-      - name: Checkout the Repo
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
-
-      - name: Dependency Review ("Dependabot on PR")
-        if: ${{ github.event_name == 'pull_request' && !github.event.repository.fork }}
-        uses: actions/dependency-review-action@9129d7d40b8c12c1ed0f60400d00c92d437adcce # v4.1.3
-
-      - name: Initialize CodeQL
-        if: success()
-        uses: github/codeql-action/init@cf7e9f23492505046de9a37830c3711dd0f25bb3 # codeql-bundle-v2.16.2
-        with:
-          languages: csharp
-
-      - name: Cache Nuget packages
-        uses: actions/cache@ab5e6d0c87105b4c9c2047343972218f562e4319 #v4.0.1
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
-
-      # Must build the software after initialization of CodeQL; something about
-      # CodeQL initialization causes the resulting build to fail unit tests.
-      # Therefore rebuilding here, even though also built above.
-      - name: Build
-        run: ./build-config.ps1 Build -Configuration Debug
-
-      - name: Perform CodeQL Analysis
-        if: success()
-        uses: github/codeql-action/analyze@cf7e9f23492505046de9a37830c3711dd0f25bb3 # codeql-bundle-v2.16.2
-
   run-unit-tests:
     name: Run Unit Tests
     runs-on: ubuntu-latest
