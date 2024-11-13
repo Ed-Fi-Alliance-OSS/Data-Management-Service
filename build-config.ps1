@@ -72,7 +72,7 @@ param(
 
     # Full path of a package file to push to the NuGet feed. Optional, only
     # applies with the Push command. If not set, then the script looks for a
-    # NuGet package corresponding to the provided $DmsConfigurationServiceVersion and $BuildCounter.
+    # NuGet package corresponding to the provided $DmsCSVersion and $BuildCounter.
     [string]
     $PackageFile,
 
@@ -106,7 +106,7 @@ function Restore {
 
 function SetDMSAssemblyInfo {
     Invoke-Execute {
-        $assembly_version = $DmsConfigurationServiceVersion
+        $assembly_version = $DmsCSVersion
 
         Invoke-RegenerateFile "$solutionRoot/Directory.Build.props" @"
 <Project>
@@ -226,7 +226,13 @@ function RunNuGetPack {
     # NU5100 is the warning about DLLs outside of a "lib" folder. We're
     # deliberately using that pattern, therefore we bypass the
     # warning.
-    dotnet pack $ProjectPath --no-build --no-restore --output $PSScriptRoot -p:NuspecFile=$nuspecPath -p:NuspecProperties="version=$PackageVersion;year=$copyrightYear" /p:NoWarn=NU5100
+    dotnet pack $ProjectPath `
+        --no-build `
+        --no-restore `
+        --output $PSScriptRoot `
+        -p:NuspecFile=$nuspecPath `
+        -p:NuspecProperties="version=$PackageVersion;year=$copyrightYear" `
+        /p:NoWarn=NU5100
 }
 
 function BuildPackage {
@@ -234,7 +240,7 @@ function BuildPackage {
     $projectPath = "$mainPath/$projectName.csproj"
     $nugetSpecPath = "$mainPath/publish/$projectName.nuspec"
 
-    RunNuGetPack -ProjectPath $projectPath -PackageVersion $DmsConfigurationServiceVersion $nugetSpecPath
+    RunNuGetPack -ProjectPath $projectPath -PackageVersion $DmsCSVersion $nugetSpecPath
 }
 
 function Invoke-Build {
@@ -250,7 +256,7 @@ function Invoke-SetAssemblyInfo {
 }
 
 function Invoke-Publish {
-    Write-Output "Building Version ($DmsConfigurationServiceVersion)"
+    Write-Output "Building Version ($DmsCSVersion)"
 
     Invoke-Step { PublishApi }
 }
@@ -295,7 +301,7 @@ function PushPackage {
         }
 
         if (-not $PackageFile) {
-            $PackageFile = "$PSScriptRoot/$packageName.$DmsConfigurationServiceVersion.nupkg"
+            $PackageFile = "$PSScriptRoot/$packageName.$DmsCSVersion.nupkg"
         }
 
         if ($DryRun) {
@@ -314,7 +320,7 @@ function Invoke-PushPackage {
 }
 
 $dockerTagBase = "local"
-$dockerTagDMS = "$($dockerTagBase)/edfi-dms-configuration-service"
+$dockerTagDMS = "$($dockerTagBase)/dms-configuration-service"
 
 function DockerBuild {
     Push-Location src/config/

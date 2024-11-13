@@ -13,6 +13,10 @@ Builds a pre-release version number based on the last tag in the commit history
 and the number of commits since then.
 #>
 function Get-VersionNumber {
+    param (
+        [string]
+        $projectPrefix = "dms"
+    )
 
     $prefix = "v"
 
@@ -21,8 +25,16 @@ function Get-VersionNumber {
 
     $version = $(&minver -t $prefix)
 
+    Write-Output "The Version is"
+    Write-Output $version
+
     "dms-v=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-    "dms-semver=$($version -Replace $prefix)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+    $dmsSemver = "$projectPrefix-v$($version)"
+    "dms-semver=$dmsSemver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+    Write-Output "dms-v is set to: $version"
+    Write-Output "dms-semver is set to: $dmsSemver"
 }
 
 <#
@@ -31,7 +43,6 @@ Promotes a package in Azure Artifacts to a view, e.g. pre-release or release.
 #>
 function Invoke-Promote {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'False positive')]
-    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param(
         # NuGet Packages API URL
         [Parameter(Mandatory = $true)]
@@ -55,11 +66,14 @@ function Invoke-Promote {
 
         # Git ref (short) for the release tag ex: v1.3.5
         [Parameter(Mandatory = $true)]
-        $ReleaseRef
+        $ReleaseRef,
+
+        # Name of the Package
+        [Parameter(Mandatory = $true)]
+        [String]
+        $PackageName
     )
 
-
-    $package = "EdFi.DataManagementService"
     $version = $ReleaseRef -replace "v", ""
 
     $body = @{
@@ -69,9 +83,8 @@ function Invoke-Promote {
         operation = 0
         packages  = @(
             @{
-                id = $package
+                id = $PackageName
                 version = $version
-                protocolType = "NuGet"
             }
         )
     } | ConvertTo-Json
@@ -80,17 +93,15 @@ function Invoke-Promote {
         Method      = "POST"
         ContentType = "application/json"
         Credential  = New-Object -TypeName PSCredential -ArgumentList $Username, $Password
-        URI         =  "$PackagesURL/nuget/packagesBatch?api-version=5.0-preview.1"
-        Body        =  $body
+        URI         = $PackagesURL
+        Body        = $body
     }
 
     Write-Output "Web request parameters:"
     $parameters | Out-Host
 
-    if ($PSCmdlet.ShouldProcess($PackagesURL)) {
-        $response = Invoke-WebRequest @parameters -UseBasicParsing
-        $response | ConvertTo-Json -Depth 10 | Out-Host
-    }
+    $response = Invoke-WebRequest @parameters -UseBasicParsing
+    $response | ConvertTo-Json -Depth 10 | Out-Host
 }
 
 Export-ModuleMember -Function Get-VersionNumber, Invoke-Promote

@@ -9,7 +9,7 @@ on:
     branches:
       - main
     tags:
-      - "dms-v*.*.*"
+      - "v*.*.*"
     paths:
       - "src/dms/**"
 
@@ -40,12 +40,12 @@ jobs:
         id: versions
         run: |
           Import-Module ./package-helpers.psm1
-          Get-VersionNumber
+          Get-VersionNumber -projectPrefix "dms"
 
       - name: Create Dms API Pre-Release
         run: |
           $version = "${{ steps.versions.outputs.dms-semver }}"
-          $tag = $version -replace "v","dms-pre-"
+          $tag = $version -replace "dms-v","dms-pre-"
 
           $body = @{
             tag_name = "$tag"

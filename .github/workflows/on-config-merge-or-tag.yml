@@ -9,7 +9,7 @@ on:
     branches:
       - main
     tags:
-      - "cs-v*.*.*"
+      - "v*.*.*"
     paths:
       - "src/config/**"
 
@@ -40,12 +40,12 @@ jobs:
         id: versions
         run: |
           Import-Module ./package-helpers.psm1
-          Get-VersionNumber
+          Get-VersionNumber -projectPrefix "cs"
 
       - name: Create CS API Pre-Release
         run: |
           $version = "${{ steps.versions.outputs.dms-semver }}"
-          $tag = $version -replace "v","cs-pre-"
+          $tag = $version -replace "cs-v","cs-pre-"
 
           $body = @{
             tag_name = "$tag"

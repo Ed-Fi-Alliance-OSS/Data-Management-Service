@@ -23,8 +23,26 @@ env:
 permissions: read-all
 
 jobs:
+  check_tag:
+    runs-on: ubuntu-latest
+    outputs:
+      valid_tag: ${{ steps.check.outputs.valid_tag }}
+    steps:
+      - name: Check tag prefix
+        id: check
+        run: |
+          if [[ "${{ github.event.release.tag_name }}" == cs-* ]]; then
+            echo "Tag is valid."
+            echo "valid_tag=true" >> $GITHUB_OUTPUT
+          else
+            echo "Tag is not valid."
+            echo "valid_tag=false" >> $GITHUB_OUTPUT
+          fi
+
   pack:
     name: Build and Pack
+    needs: check_tag
+    if: needs.check_tag.outputs.valid_tag == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -42,11 +60,11 @@ jobs:
         id: versions
         run: |
           Import-Module ./package-helpers.psm1
-          Get-VersionNumber
+          Get-VersionNumber -projectPrefix "cs"
 
       - name: Publish .NET Assemblies
         run: |
-          $packageVersion = "${{ steps.versions.outputs.dms-semver }}"
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "cs-v", ""
 
           ./build-config.ps1 -Command BuildAndPublish `
               -Configuration Release `
@@ -65,7 +83,6 @@ jobs:
         run: |
           "hash-code=$(sha256sum *.nupkg | base64 -w0)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-
       - name: Upload Packages as Artifacts
         if: success()
         uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
@@ -77,6 +94,7 @@ jobs:
 
   sbom-create:
     name: Create SBOM
+    if: needs.check_tag.outputs.valid_tag == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -135,6 +153,7 @@ jobs:
 
   sbom-attach:
     name: Attach SBOM file
+    if: needs.check_tag.outputs.valid_tag == 'true'
     runs-on: ubuntu-latest
     needs:
       - sbom-create
@@ -181,6 +200,7 @@ jobs:
 
   provenance-create:
     name: Create Provenance
+    if: needs.check_tag.outputs.valid_tag == 'true'
     needs: pack
     permissions:
       actions: read
@@ -196,6 +216,7 @@ jobs:
 
   publish-package:
     name: Publish NuGet Package
+    if: needs.check_tag.outputs.valid_tag == 'true'
     needs: pack
     runs-on: ubuntu-latest
     defaults:
@@ -214,19 +235,20 @@ jobs:
 
       - name: Push Package to Azure Artifacts
         run: |
-         $artifact = (Get-ChildItem -Path $_ -Name -Include *.nupkg)
-         $arguments = @{
-           EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-           NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
-         }
-
-         $artifact | ForEach-Object {
-             $arguments.PackageFile = $_
-             ./build-config.ps1 Push @arguments
+          $artifact = (Get-ChildItem -Path $_ -Name -Include *.nupkg)
+          $arguments = @{
+            EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
+            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
           }
+
+          $artifact | ForEach-Object {
+              $arguments.PackageFile = $_
+              ./build-config.ps1 Push @arguments
+           }
 
   docker-publish:
     name: Publish to Docker Hub
+    if: needs.check_tag.outputs.valid_tag == 'true'
     runs-on: ubuntu-latest
     needs:
       - publish-package
@@ -258,22 +280,22 @@ jobs:
           echo "VERSION=$SEMVERSION" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226  # v3.0.0
+        uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226 # v3.0.0
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d  # v3.0.0
+        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
         with:
           username: ${{ env.DOCKER_USERNAME }}
           password: ${{ env.DOCKER_HUB_TOKEN }}
 
       - name: Extract metadata (tags, labels) for Configuration Service image
         id: metadataconfigurationservice
-        uses: docker/metadata-action@96383f45573cb7f253c731d3b3ab81c87ef81934  # v5.0.0
+        uses: docker/metadata-action@96383f45573cb7f253c731d3b3ab81c87ef81934 # v5.0.0
         with:
           images: ${{ env.IMAGE_NAME }}
 
       - name: Build and push CS image
-        uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09  # v5.0.0
+        uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09 # v5.0.0
         with:
           context: "{{defaultContext}}:src/config"
           cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:pre
