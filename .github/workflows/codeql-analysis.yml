@@ -8,12 +8,18 @@ name: "CodeQL"
 on:
   push:
     branches: [ "main" ]
-    paths-ignore:
-      - '.github/workflows/*.yml'
+    paths:
+      - "src/**/*.cs"
+      - "src/**/*.csproj"
+      - "src/**/Directory.Packages.props"
   pull_request:
     branches: [ "main" ]
-    paths-ignore:
-      - '.github/workflows/*.yml'
+    paths:
+      - "src/**/*.cs"
+      - "src/**/*.csproj"
+      - "src/**/Directory.Packages.props"
+
+permissions: read-all
 
 jobs:
   code-analysis:
