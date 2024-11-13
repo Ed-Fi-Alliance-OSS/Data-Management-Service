@@ -61,6 +61,6 @@
     <PackageVersion Include="Reqnroll" Version="2.1.0" />
     <PackageVersion Include="Reqnroll.NUnit" Version="2.1.0" />
     <PackageVersion Include="Testcontainers" Version="3.10.0" />
-	<PackageVersion Include="PactNet" Version="4.5.0" />
+	<PackageVersion Include="PactNet" Version="5.0.0" />
   </ItemGroup>
 </Project>
