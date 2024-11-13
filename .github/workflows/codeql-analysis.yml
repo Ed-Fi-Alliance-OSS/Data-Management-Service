@@ -8,8 +8,12 @@ name: "CodeQL"
 on:
   push:
     branches: [ "main" ]
+    paths-ignore:
+      - '.github/workflows/*.yml'
   pull_request:
     branches: [ "main" ]
+    paths-ignore:
+      - '.github/workflows/*.yml'
 
 jobs:
   code-analysis:
