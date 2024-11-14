@@ -9,15 +9,21 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
 
 public class TokenRequest
 {
-    public string? ClientId { get; set; }
-    public string? ClientSecret { get; set; }
+    public string client_id { get; set; } = "";
+
+    public string client_secret { get; set; } = "";
+
+    public string grant_type { get; set; } = "";
+
+    public string scope { get; set; } = "";
 
     public class Validator : AbstractValidator<TokenRequest>
     {
         public Validator()
         {
-            RuleFor(m => m.ClientId).NotEmpty();
-            RuleFor(m => m.ClientSecret).NotEmpty();
+            RuleFor(m => m.client_id).NotEmpty();
+            RuleFor(m => m.client_secret).NotEmpty();
+            RuleFor(m => m.grant_type).NotEmpty();
         }
     }
 }

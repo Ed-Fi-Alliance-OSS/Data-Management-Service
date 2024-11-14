@@ -5,4 +5,11 @@
 
 namespace EdFi.DmsConfigurationService.Backend.Keycloak;
 
-public record KeycloakContext(string Url, string Realm, string ClientId, string ClientSecret, string RoleClaimType, string ServiceRole);
+public record KeycloakContext(
+    string Url,
+    string Realm,
+    string ClientId,
+    string ClientSecret,
+    string RoleClaimType,
+    string ServiceRole
+);

@@ -7,6 +7,7 @@ using EdFi.DmsConfigurationService.Backend.Repositories;
 using Flurl.Http;
 using Keycloak.Net;
 using Keycloak.Net.Models.Clients;
+using Keycloak.Net.Models.ClientScopes;
 using Keycloak.Net.Models.Roles;
 using Microsoft.Extensions.Logging;
 
@@ -32,6 +33,7 @@ public class ClientRepository(KeycloakContext keycloakContext, ILogger<ClientRep
         try
         {
             var realmRoles = await _keycloakClient.GetRolesAsync(_realm);
+            var realmScopes = await _keycloakClient.GetClientScopesAsync(_realm);
 
             Client client =
                 new()
@@ -48,6 +50,22 @@ public class ClientRepository(KeycloakContext keycloakContext, ILogger<ClientRep
             Role? clientRole = realmRoles.FirstOrDefault(x =>
                 x.Name.Equals(keycloakContext.ServiceRole, StringComparison.InvariantCultureIgnoreCase)
             );
+
+            ClientScope? clientScope = realmScopes.FirstOrDefault(x =>
+                x.Name.Equals("scp:edfi_dmscs/full_access")
+            );
+
+            if (clientScope is null)
+            {
+                await _keycloakClient.CreateClientScopeAsync(
+                    _realm,
+                    new ClientScope()
+                    {
+                        Id = "scp:edfi_dmscs/full_access",
+                        Name = "scp:edfi_dmscs/full_access",
+                    }
+                );
+            }
 
             string? createdClientUuid = await _keycloakClient.CreateClientAndRetrieveClientIdAsync(
                 _realm,
@@ -68,6 +86,7 @@ public class ClientRepository(KeycloakContext keycloakContext, ILogger<ClientRep
                         serviceAccountUser.Id,
                         [clientRole]
                     );
+
                     return new ClientCreateResult.Success(Guid.Parse(createdClientUuid));
                 }
                 else
