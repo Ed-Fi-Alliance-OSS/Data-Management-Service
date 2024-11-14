@@ -8,6 +8,7 @@ on:
   release:
     types:
       - released
+  workflow_dispatch:
 
 env:
   ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
