@@ -8,6 +8,7 @@ using Flurl.Http;
 using Keycloak.Net;
 using Keycloak.Net.Models.Clients;
 using Keycloak.Net.Models.ClientScopes;
+using Keycloak.Net.Models.ProtocolMappers;
 using Keycloak.Net.Models.Roles;
 using Microsoft.Extensions.Logging;
 
@@ -51,6 +52,16 @@ public class ClientRepository(KeycloakContext keycloakContext, ILogger<ClientRep
                 x.Name.Equals(keycloakContext.ServiceRole, StringComparison.InvariantCultureIgnoreCase)
             );
 
+            if (clientRole is null)
+            {
+                await _keycloakClient.CreateRoleAsync(
+                    _realm,
+                    new Role() { Name = keycloakContext.ServiceRole }
+                );
+
+                clientRole = await _keycloakClient.GetRoleByNameAsync(_realm, keycloakContext.ServiceRole);
+            }
+
             ClientScope? clientScope = realmScopes.FirstOrDefault(x =>
                 x.Name.Equals("scp:edfi_dmscs/full_access")
             );
@@ -61,8 +72,9 @@ public class ClientRepository(KeycloakContext keycloakContext, ILogger<ClientRep
                     _realm,
                     new ClientScope()
                     {
-                        Id = "scp:edfi_dmscs/full_access",
                         Name = "scp:edfi_dmscs/full_access",
+                        Description = "",
+                        Protocol = "openid-connect",
                     }
                 );
             }
