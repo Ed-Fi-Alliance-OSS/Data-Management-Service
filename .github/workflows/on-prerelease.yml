@@ -57,7 +57,7 @@ jobs:
 
       - name: Create DMS NuGet Package
         run: |
-          $packageVersion = "${{ steps.versions.outputs.dms-semver }}"
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
 
           ./build-dms.ps1 -Command Package `
               -DMSVersion $packageVersion `
@@ -100,7 +100,7 @@ jobs:
       - name: Generate DMS Software Bill of Materials (SBOM)
         run: |
           $packageName = "${{ env.DMS_PACKAGE_NAME }}"
-          $version = "${{ needs.pack.outputs.dms-version }}"
+          $version = "${{ needs.pack-dms.outputs.dms-version }}"
 
           Get-ChildItem -Include "$packageName.*.nupkg" -Recurse | ForEach-Object { $_.FullName } > buildfilelist.txt
 
@@ -150,7 +150,7 @@ jobs:
         with:
           name: "${{ env.DMS_PACKAGE_NAME }}-SBOM"
           path: ${{ env.MANIFEST_FILE }}
-          sha256: "${{ needs.sbom-create.outputs.sbom-hash-code }}"
+          sha256: "${{ needs.sbom-create-dms.outputs.sbom-hash-code }}"
 
       - name: Attach DMS to release
         shell: pwsh
@@ -190,7 +190,7 @@ jobs:
       contents: write
     uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
     with:
-      base64-subjects: ${{ needs.pack.outputs.hash-code }}
+      base64-subjects: ${{ needs.pack-dms.outputs.hash-code }}
       provenance-name: dmsApi.intoto.jsonl
       upload-assets: true
       # TODO: remove this after this issue is resolved: https://github.com/slsa-framework/slsa-github-generator/issues/876
@@ -319,7 +319,7 @@ jobs:
 
       - name: Create Config NuGet Package
         run: |
-          $packageVersion = "${{ steps.versions.outputs.dms-semver }}"
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "cs-v", ""
 
           ./build-config.ps1 -Command Package `
               -DmsCSVersion $packageVersion `
@@ -362,7 +362,7 @@ jobs:
       - name: Generate Config Software Bill of Materials (SBOM)
         run: |
           $packageName = "${{ env.CS_PACKAGE_NAME }}"
-          $version = "${{ needs.pack.outputs.dms-version }}"
+          $version = "${{ needs.pack-cs.outputs.dms-version }}"
 
           Get-ChildItem -Include "$packageName.*.nupkg" -Recurse | ForEach-Object { $_.FullName } > buildfilelist.txt
 
@@ -412,7 +412,7 @@ jobs:
         with:
           name: "${{ env.CS_PACKAGE_NAME }}-SBOM"
           path: ${{ env.MANIFEST_FILE }}
-          sha256: "${{ needs.sbom-create.outputs.sbom-hash-code }}"
+          sha256: "${{ needs.sbom-create-cs.outputs.sbom-hash-code }}"
 
       - name: Attach Config to release
         shell: pwsh
@@ -452,7 +452,7 @@ jobs:
       contents: write
     uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
     with:
-      base64-subjects: ${{ needs.pack.outputs.hash-code }}
+      base64-subjects: ${{ needs.pack-cs.outputs.hash-code }}
       provenance-name: dmsCSApi.intoto.jsonl
       upload-assets: true
       # TODO: remove this after this issue is resolved: https://github.com/slsa-framework/slsa-github-generator/issues/876
