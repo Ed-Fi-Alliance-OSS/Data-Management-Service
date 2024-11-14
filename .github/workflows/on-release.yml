@@ -8,7 +8,6 @@ on:
   release:
     types:
       - released
-  workflow_dispatch:
 
 env:
   ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
@@ -65,7 +64,22 @@ jobs:
       - name: Checkout the repo
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
 
-      - name: Promote Package
+      - name: Promote DataManagementService Package
+        shell: pwsh
+        run: |
+          $arguments = @{
+            PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
+            Username    = "${{ env.ARTIFACTS_USERNAME }}"
+            ViewId        = "release"
+            ReleaseRef  = "${{ github.ref_name }}"
+            Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
+            PackageName = "EdFi.DataManagementService"
+          }
+
+          Import-Module ./package-helpers.psm1
+          Invoke-Promote @arguments
+
+      - name: Promote DmsConfigurationService Package
         shell: pwsh
         run: |
           $arguments = @{
@@ -74,6 +88,7 @@ jobs:
             ViewId      = "release"
             ReleaseRef  = "${{ github.ref_name }}"
             Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
+            PackageName = "EdFi.DmsConfigurationService"
           }
 
           Import-Module ./package-helpers.psm1
