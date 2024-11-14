@@ -171,14 +171,6 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                         || descriptorReferenceIds.ReferentialIds.Length > 0
                     )
                     {
-                        await _sqlAction.DeleteReferencesByDocumentUuid(
-                            documentPartitionKey.Value,
-                            updateRequest.DocumentUuid.Value,
-                            connection,
-                            transaction,
-                            traceId
-                        );
-
                         Guid[] invalidReferentialIds = await _sqlAction.InsertReferences(
                             new(
                                 ParentDocumentPartitionKey: documentPartitionKey.Value,

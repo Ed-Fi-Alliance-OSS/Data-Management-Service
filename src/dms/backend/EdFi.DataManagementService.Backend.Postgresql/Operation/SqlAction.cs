@@ -207,17 +207,25 @@ public class SqlAction() : ISqlAction
     /// <summary>
     /// Insert a single Document into the database and return the Id of the new document
     /// </summary>
-    public async Task<long> InsertDocument(
+    public async Task<long> InsertDocumentAndAlias(
         Document document,
+        int referentialPartitionKey,
+        Guid referentialId,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         TraceId traceId
     )
     {
         await using var command = new NpgsqlCommand(
-            @"INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, IsDescriptor, ProjectName, EdfiDoc, LastModifiedTraceId)
+            @"
+            WITH Documents AS (
+            INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, IsDescriptor, ProjectName, EdfiDoc, LastModifiedTraceId)
               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-              RETURNING Id;",
+              RETURNING Id
+            )
+            INSERT INTO dms.Alias (ReferentialPartitionKey, ReferentialId, DocumentId, DocumentPartitionKey)
+              SELECT $9, $10, Id, $1 FROM Documents RETURNING DocumentId;
+            ",
             connection,
             transaction
         )
@@ -232,6 +240,8 @@ public class SqlAction() : ISqlAction
                 new() { Value = document.ProjectName },
                 new() { Value = document.EdfiDoc },
                 new() { Value = traceId.Value },
+                new() { Value = referentialPartitionKey },
+                new() { Value = referentialId }
             },
         };
 
@@ -434,7 +444,7 @@ public class SqlAction() : ISqlAction
                 new() { Value = parentDocumentIds },
                 new() { Value = parentDocumentPartitionKeys },
                 new() { Value = bulkReferences.ReferentialIds },
-                new() { Value = bulkReferences.ReferentialPartitionKeys },
+                new() { Value = bulkReferences.ReferentialPartitionKeys }
             },
         };
         await command.PrepareAsync();
@@ -447,37 +457,6 @@ public class SqlAction() : ISqlAction
         }
 
         return result.ToArray();
-    }
-
-    /// <summary>
-    /// Delete associated Reference records for a given DocumentUuid, returning the number of rows affected
-    /// </summary>
-    public async Task<int> DeleteReferencesByDocumentUuid(
-        int parentDocumentPartitionKey,
-        Guid parentDocumentUuidGuid,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        TraceId traceId
-    )
-    {
-        await using NpgsqlCommand command =
-            new(
-                @"DELETE from dms.Reference r
-                  USING dms.Document d
-                  WHERE d.Id = r.ParentDocumentId AND d.DocumentPartitionKey = r.ParentDocumentPartitionKey
-                  AND d.DocumentPartitionKey = $1 AND d.DocumentUuid = $2;",
-                connection,
-                transaction
-            )
-            {
-                Parameters =
-                {
-                    new() { Value = parentDocumentPartitionKey },
-                    new() { Value = parentDocumentUuidGuid },
-                },
-            };
-        await command.PrepareAsync();
-        return await command.ExecuteNonQueryAsync();
     }
 
     /// <summary>

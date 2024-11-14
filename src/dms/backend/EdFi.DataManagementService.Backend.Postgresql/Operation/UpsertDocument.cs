@@ -67,7 +67,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
 
         // First insert into Documents
         upsertRequest.EdfiDoc["id"] = upsertRequest.DocumentUuid.Value;
-        newDocumentId = await _sqlAction.InsertDocument(
+        newDocumentId = await _sqlAction.InsertDocumentAndAlias(
             new(
                 DocumentPartitionKey: documentPartitionKey,
                 DocumentUuid: upsertRequest.DocumentUuid.Value,
@@ -77,19 +77,8 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 ProjectName: upsertRequest.ResourceInfo.ProjectName.Value,
                 EdfiDoc: JsonSerializer.Deserialize<JsonElement>(upsertRequest.EdfiDoc)
             ),
-            connection,
-            transaction,
-            traceId
-        );
-
-        // Next insert into Aliases
-        await _sqlAction.InsertAlias(
-            new(
-                DocumentPartitionKey: documentPartitionKey,
-                DocumentId: newDocumentId,
-                ReferentialId: upsertRequest.DocumentInfo.ReferentialId.Value,
-                ReferentialPartitionKey: PartitionKeyFor(upsertRequest.DocumentInfo.ReferentialId).Value
-            ),
+            PartitionKeyFor(upsertRequest.DocumentInfo.ReferentialId).Value,
+            upsertRequest.DocumentInfo.ReferentialId.Value,
             connection,
             transaction,
             traceId
@@ -197,15 +186,6 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             || descriptorReferenceIds.ReferentialIds.Length > 0
         )
         {
-            // First clear out all the existing references, as they may have changed
-            await _sqlAction.DeleteReferencesByDocumentUuid(
-                documentPartitionKey,
-                documentUuid,
-                connection,
-                transaction,
-                traceId
-            );
-
             Guid[] invalidReferentialIds = await _sqlAction.InsertReferences(
                 new(
                     ParentDocumentPartitionKey: documentPartitionKey,
