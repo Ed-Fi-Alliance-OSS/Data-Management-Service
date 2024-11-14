@@ -60,7 +60,11 @@ param (
 
     # Token life span
     [int]
-    $TokenLifespan = 1800
+    $TokenLifespan = 1800,
+
+    # Set client as realm admin
+    [Switch]
+    $SetClientAsRealmAdmin
 
 )
 
@@ -165,6 +169,39 @@ function Get_Role([string] $roleName)
     }
 }
 
+function Get_Realm_Management_ClientId()
+{
+    $realmManagementClient = Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/clients?clientId=realm-management" `
+    -Method Get `
+    -Headers @{ Authorization = "Bearer $access_token" }
+
+    $RealmManagementClientId = $realmManagementClient[0].id
+
+    return $RealmManagementClientId
+}
+
+function Get_Realm_Admin_Role([string] $roleName)
+{
+    try {
+
+        $RealmManagementClientId = Get_Realm_Management_ClientId
+        $realmAdminRole = Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/clients/$RealmManagementClientId/roles/$roleName" `
+        -Method Get `
+        -Headers @{ Authorization = "Bearer $access_token" }
+
+        return $realmAdminRole
+
+    } catch {
+        if ($_.Exception.Response.StatusCode.Value__ -eq 404) {
+            return $null
+        }
+        else{
+            Write-Error $_.Exception.Response
+        }
+    }
+}
+
+
 function Create_Role([string] $roleName)
 {
     $existingRole = Get_Role $roleName
@@ -238,6 +275,30 @@ function Assign_RealmRole([object] $role, [string] $ClientId)
     -ContentType "application/json"
 
     Write-Output "Role '$NewClientRole' assigned as a service account role to client '$NewClientName'."
+}
+
+function Assign_Realm_Admin_Role([object] $role, [string] $ClientId)
+{
+    # Assign the realm role to the client’s service account
+    # Get the service account user ID for the client
+    $serviceAccountUser = Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/clients/$ClientId/service-account-user" `
+    -Method Get `
+    -Headers @{ Authorization = "Bearer $access_token" }
+
+    $ServiceAccountUserId = $serviceAccountUser.id
+
+    $roleAssignmentPayload = @($role) | ConvertTo-Json
+    $rolesArray = "[ $roleAssignmentPayload ]"
+
+    $rmClientId = Get_Realm_Management_ClientId
+
+    Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/users/$ServiceAccountUserId/role-mappings/clients/$rmClientId" `
+    -Method Post `
+    -Headers @{ Authorization = "Bearer $access_token" } `
+    -Body $rolesArray `
+    -ContentType "application/json"
+
+    Write-Output "Role 'realm-admin' assigned as a service account role to client '$NewClientName'."
 }
 
 function Add_Role_To_Token([string] $ClientId)
@@ -366,6 +427,11 @@ else{
     $clientRole = Get_Role $NewClientRole
     Assign_RealmRole $clientRole $clientId
     Add_Role_To_Token $clientId
+    if($SetClientAsRealmAdmin)
+    {
+        $realmAdminRole = Get_Realm_Admin_Role "realm-admin"
+        Assign_Realm_Admin_Role $realmAdminRole $clientId
+    }
     $clientScope = Get_ClientScope $ClientScopeName
     Add_Scope $clientScope.id
     Add_Cutom_Claim $clientId
