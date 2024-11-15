@@ -438,8 +438,16 @@ public class TokenEndpointTests
         using var client = factory.CreateClient();
 
         // Act
-        var requestContent = new { clientid = "CSClient1", clientsecret = "test123@Puiu" };
-        var response = await client.PostAsJsonAsync("/connect/token", requestContent);
+        var requestContent = new FormUrlEncodedContent(
+            new[]
+            {
+                new KeyValuePair<string, string>("client_id", "CSClient1"),
+                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
+                new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                new KeyValuePair<string, string>("scope", "scp:edfi_dms_configuration_service/full_access"),
+            }
+        );
+        var response = await client.PostAsync("/connect/token", requestContent);
         string content = await response.Content.ReadAsStringAsync();
 
         // Assert
@@ -467,15 +475,23 @@ public class TokenEndpointTests
         using var client = factory.CreateClient();
 
         // Act
-        var requestContent = new { clientid = "", clientsecret = "" };
-        var response = await client.PostAsJsonAsync("/connect/token", requestContent);
+        var requestContent = new FormUrlEncodedContent(
+            new[]
+            {
+                new KeyValuePair<string, string>("client_id", ""),
+                new KeyValuePair<string, string>("client_secret", ""),
+                new KeyValuePair<string, string>("grant_type", ""),
+                new KeyValuePair<string, string>("scope", ""),
+            }
+        );
+        var response = await client.PostAsync("/connect/token", requestContent);
         string content = await response.Content.ReadAsStringAsync();
         content = System.Text.RegularExpressions.Regex.Unescape(content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        content.Should().Contain("'Client Id' must not be empty.");
-        content.Should().Contain("'Client Secret' must not be empty.");
+        content.Should().Contain("'client_id' must not be empty.");
+        content.Should().Contain("'client_secret' must not be empty.");
     }
 
     [Test]
@@ -509,8 +525,16 @@ public class TokenEndpointTests
         using var client = factory.CreateClient();
 
         // Act
-        var requestContent = new { clientid = "CSClient3", clientsecret = "test123@Puiu" };
-        var response = await client.PostAsJsonAsync("/connect/token", requestContent);
+        var requestContent = new FormUrlEncodedContent(
+            new[]
+            {
+                new KeyValuePair<string, string>("client_id", "CSClient1"),
+                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
+                new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                new KeyValuePair<string, string>("scope", "scp:edfi_dms_configuration_service/full_access"),
+            }
+        );
+        var response = await client.PostAsync("/connect/token", requestContent);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
@@ -550,8 +574,16 @@ public class TokenEndpointTests
         using var client = factory.CreateClient();
 
         //Act
-        var requestContent = new { clientid = "CSClient3", clientsecret = "test123@Puiu" };
-        var response = await client.PostAsJsonAsync("/connect/token", requestContent);
+        var requestContent = new FormUrlEncodedContent(
+            new[]
+            {
+                new KeyValuePair<string, string>("client_id", "CSClient1"),
+                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
+                new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                new KeyValuePair<string, string>("scope", "scp:edfi_dms_configuration_service/full_access"),
+            }
+        );
+        var response = await client.PostAsync("/connect/token", requestContent);
         string content = await response.Content.ReadAsStringAsync();
 
         // Assert
@@ -605,8 +637,16 @@ public class TokenEndpointTests
         using var client = factory.CreateClient();
 
         //Act
-        var requestContent = new { clientid = "CSClient3", clientsecret = "test123@Puiu" };
-        var response = await client.PostAsJsonAsync("/connect/token", requestContent);
+        var requestContent = new FormUrlEncodedContent(
+            new[]
+            {
+                new KeyValuePair<string, string>("client_id", "CSClient1"),
+                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
+                new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                new KeyValuePair<string, string>("scope", "scp:edfi_dms_configuration_service/full_access"),
+            }
+        );
+        var response = await client.PostAsync("/connect/token", requestContent);
         string content = await response.Content.ReadAsStringAsync();
 
         // Assert
@@ -646,8 +686,16 @@ public class TokenEndpointTests
         using var client = factory.CreateClient();
 
         //Act
-        var requestContent = new { clientid = "CSClient3", clientsecret = "test123@Puiu" };
-        var response = await client.PostAsJsonAsync("/connect/token", requestContent);
+        var requestContent = new FormUrlEncodedContent(
+            new[]
+            {
+                new KeyValuePair<string, string>("client_id", "CSClient1"),
+                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
+                new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                new KeyValuePair<string, string>("scope", "scp:edfi_dms_configuration_service/full_access"),
+            }
+        );
+        var response = await client.PostAsync("/connect/token", requestContent);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -681,8 +729,16 @@ public class TokenEndpointTests
         using var client = factory.CreateClient();
 
         //Act
-        var requestContent = new { clientid = "CSClient3", clientsecret = "test123@Puiu" };
-        var response = await client.PostAsJsonAsync("/connect/token", requestContent);
+        var requestContent = new FormUrlEncodedContent(
+            new[]
+            {
+                new KeyValuePair<string, string>("client_id", "CSClient1"),
+                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
+                new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                new KeyValuePair<string, string>("scope", "scp:edfi_dms_configuration_service/full_access"),
+            }
+        );
+        var response = await client.PostAsync("/connect/token", requestContent);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
