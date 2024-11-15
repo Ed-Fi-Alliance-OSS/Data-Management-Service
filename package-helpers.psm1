@@ -13,6 +13,10 @@ Builds a pre-release version number based on the last tag in the commit history
 and the number of commits since then.
 #>
 function Get-VersionNumber {
+    param (
+        [string]
+        $projectPrefix = "dms"
+    )
 
     $prefix = "v"
 
@@ -22,7 +26,12 @@ function Get-VersionNumber {
     $version = $(&minver -t $prefix)
 
     "dms-v=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-    "dms-semver=$($version -Replace $prefix)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+    $dmsSemver = "$projectPrefix-v$($version)"
+    "dms-semver=$dmsSemver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+    Write-Output "dms-v is set to: $version"
+    Write-Output "dms-semver is set to: $dmsSemver"
 }
 
 <#
@@ -55,11 +64,14 @@ function Invoke-Promote {
 
         # Git ref (short) for the release tag ex: v1.3.5
         [Parameter(Mandatory = $true)]
-        $ReleaseRef
+        $ReleaseRef,
+
+        # Name of the Package
+        [Parameter(Mandatory = $true)]
+        [String]
+        $PackageName
     )
 
-
-    $package = "EdFi.DataManagementService"
     $version = $ReleaseRef -replace "v", ""
 
     $body = @{
@@ -69,9 +81,8 @@ function Invoke-Promote {
         operation = 0
         packages  = @(
             @{
-                id = $package
+                id = $PackageName
                 version = $version
-                protocolType = "NuGet"
             }
         )
     } | ConvertTo-Json
@@ -80,8 +91,8 @@ function Invoke-Promote {
         Method      = "POST"
         ContentType = "application/json"
         Credential  = New-Object -TypeName PSCredential -ArgumentList $Username, $Password
-        URI         =  "$PackagesURL/nuget/packagesBatch?api-version=5.0-preview.1"
-        Body        =  $body
+        URI         = "$PackagesURL/nuget/packagesBatch?api-version=5.0-preview.1"
+        Body        = $body
     }
 
     Write-Output "Web request parameters:"

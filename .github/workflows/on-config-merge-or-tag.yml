@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-name: On DMS Merge to Main or Releasable Tag
+name: On Config Merge to Main or Releasable Tag
 on:
   push:
     branches:
@@ -11,7 +11,7 @@ on:
     tags:
       - "v*.*.*"
     paths:
-      - "src/dms/**"
+      - "src/config/**"
 
 env:
   API_URL: https://api.github.com/repos/${{ github.repository }}
@@ -40,12 +40,12 @@ jobs:
         id: versions
         run: |
           Import-Module ./package-helpers.psm1
-          Get-VersionNumber -projectPrefix "dms"
+          Get-VersionNumber -projectPrefix "cs"
 
-      - name: Create Dms API Pre-Release
+      - name: Create CS API Pre-Release
         run: |
           $version = "${{ steps.versions.outputs.dms-semver }}"
-          $tag = $version -replace "dms-v","dms-pre-"
+          $tag = $version -replace "cs-v","cs-pre-"
 
           $body = @{
             tag_name = "$tag"
