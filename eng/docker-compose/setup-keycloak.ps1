@@ -68,15 +68,14 @@ param (
 
 )
 
-function Get_Access_Token()
-{
+function Get_Access_Token() {
     $TokenResponse = Invoke-RestMethod -Uri "$KeycloakServer/realms/$AdminRealm/protocol/openid-connect/token" `
-    -Method Post `
-    -ContentType "application/x-www-form-urlencoded" `
-    -Body @{
-        client_id = $AdminClientId
-        username = $AdminUsername
-        password = $AdminPassword
+        -Method Post `
+        -ContentType "application/x-www-form-urlencoded" `
+        -Body @{
+        client_id  = $AdminClientId
+        username   = $AdminUsername
+        password   = $AdminPassword
         grant_type = "password"
     }
     return $TokenResponse.access_token
@@ -90,11 +89,13 @@ function Check_RealmExists () {
             -Headers @{ Authorization = "Bearer $access_token" } `
             -ErrorAction Stop
         return $true
-    } catch {
+    }
+    catch {
         # The realm does not exist
         if ($_.Exception.Response.StatusCode.Value__ -eq 404) {
             return $false
-        } else {
+        }
+        else {
             throw $_.Exception.Response
         }
     }
@@ -103,107 +104,103 @@ function Check_RealmExists () {
 function Create_Realm() {
     # Define the new realm configuration
     $RealmData = @{
-        id = $Realm
-        realm = $Realm
+        id          = $Realm
+        realm       = $Realm
         displayName = $Realm
-        enabled = $true
+        enabled     = $true
     }
     # Create the new realm
-    try
-    {
+    try {
         Invoke-RestMethod -Uri "$KeycloakServer/admin/realms" `
             -Method Post `
             -Headers @{ Authorization = "Bearer $access_token" } `
             -ContentType "application/json" `
             -Body ($RealmData | ConvertTo-Json -Depth 10)
 
-            $realmSettingsPayload = @{
-                accessTokenLifespan = $TokenLifespan
-            } | ConvertTo-Json
+        $realmSettingsPayload = @{
+            accessTokenLifespan = $TokenLifespan
+        } | ConvertTo-Json
 
-            Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm" `
-                -Method Put `
-                -Headers @{ "Authorization" = "Bearer $access_token" } `
-                -Body $realmSettingsPayload `
-                -ContentType "application/json"
+        Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm" `
+            -Method Put `
+            -Headers @{ "Authorization" = "Bearer $access_token" } `
+            -Body $realmSettingsPayload `
+            -ContentType "application/json"
 
         Write-Output "Realm created successfully: $Realm"
     }
-    catch
-    {
+    catch {
         Write-Error $_.Exception.Response
     }
 }
 
-function Get_Client ()
-{
-    try{
+function Get_Client () {
+    try {
         $existingClient = Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/clients?clientId=$NewClientId" `
-        -Method Get `
-        -Headers  @{ Authorization = "Bearer $access_token" }
+            -Method Get `
+            -Headers  @{ Authorization = "Bearer $access_token" }
         return $existingClient
-    } catch {
+    }
+    catch {
         if ($_.Exception.Response.StatusCode.Value__ -eq 404) {
             return $null
         }
-        else{
+        else {
             Write-Error $_.Exception.Response
         }
     }
 }
 
-function Get_Role([string] $roleName)
-{
+function Get_Role([string] $roleName) {
     try {
         $existingRole = Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/roles/$roleName" `
-        -Method Get `
-        -Headers @{ Authorization = "Bearer $access_token" }
+            -Method Get `
+            -Headers @{ Authorization = "Bearer $access_token" }
         return $existingRole
-    } catch {
+    }
+    catch {
         if ($_.Exception.Response.StatusCode.Value__ -eq 404) {
             return $null
         }
-        else{
+        else {
             Write-Error $_.Exception.Response
         }
     }
 }
 
-function Get_Realm_Management_ClientId()
-{
+function Get_Realm_Management_ClientId() {
     $realmManagementClient = Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/clients?clientId=realm-management" `
-    -Method Get `
-    -Headers @{ Authorization = "Bearer $access_token" }
+        -Method Get `
+        -Headers @{ Authorization = "Bearer $access_token" }
 
     $RealmManagementClientId = $realmManagementClient[0].id
 
     return $RealmManagementClientId
 }
 
-function Get_Realm_Admin_Role([string] $roleName)
-{
+function Get_Realm_Admin_Role([string] $roleName) {
     try {
 
         $RealmManagementClientId = Get_Realm_Management_ClientId
         $realmAdminRole = Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/clients/$RealmManagementClientId/roles/$roleName" `
-        -Method Get `
-        -Headers @{ Authorization = "Bearer $access_token" }
+            -Method Get `
+            -Headers @{ Authorization = "Bearer $access_token" }
 
         return $realmAdminRole
 
-    } catch {
+    }
+    catch {
         if ($_.Exception.Response.StatusCode.Value__ -eq 404) {
             return $null
         }
-        else{
+        else {
             Write-Error $_.Exception.Response
         }
     }
 }
 
 
-function Create_Role([string] $roleName)
-{
+function Create_Role([string] $roleName) {
     $existingRole = Get_Role $roleName
     if (-not $existingRole) {
         # Create the realm role
@@ -217,32 +214,32 @@ function Create_Role([string] $roleName)
             -Body $rolePayload `
             -ContentType "application/json"
         Write-Output "Role $roleName crearted successfully."
-    } else {
-       Write-Output "Role $roleName already exists."
+    }
+    else {
+        Write-Output "Role $roleName already exists."
     }
 }
 
-function Get_ClientScope([string] $scopeName)
-{
+function Get_ClientScope([string] $scopeName) {
     $existingClientScopes = Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/client-scopes" `
-    -Method Get `
-    -Headers @{ Authorization = "Bearer $access_token" }
+        -Method Get `
+        -Headers @{ Authorization = "Bearer $access_token" }
 
     $clientScope = $existingClientScopes | Where-Object { $_.name -eq $scopeName }
 
     return $clientScope
 }
 
-function Create_ClientScope([string] $scopeName)
-{
+function Create_ClientScope([string] $scopeName) {
     $existingClientScope = Get_ClientScope $scopeName
 
     if ($existingClientScope) {
         Write-Output "Client scope '$scopeName' already exists."
-    } else {
+    }
+    else {
         # Create the client scope
         $clientScopePayload = @{
-            name = $scopeName
+            name     = $scopeName
             protocol = "openid-connect"
         } | ConvertTo-Json
 
@@ -255,13 +252,12 @@ function Create_ClientScope([string] $scopeName)
     }
 }
 
-function Assign_RealmRole([object] $role, [string] $ClientId)
-{
+function Assign_RealmRole([object] $role, [string] $ClientId) {
     # Assign the realm role to the client’s service account
     # Get the service account user ID for the client
     $serviceAccountUser = Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/clients/$ClientId/service-account-user" `
-    -Method Get `
-    -Headers @{ Authorization = "Bearer $access_token" }
+        -Method Get `
+        -Headers @{ Authorization = "Bearer $access_token" }
 
     $ServiceAccountUserId = $serviceAccountUser.id
 
@@ -269,21 +265,20 @@ function Assign_RealmRole([object] $role, [string] $ClientId)
     $rolesArray = "[ $roleAssignmentPayload ]"
 
     Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/users/$ServiceAccountUserId/role-mappings/realm" `
-    -Method Post `
-    -Headers @{ Authorization = "Bearer $access_token" } `
-    -Body $rolesArray `
-    -ContentType "application/json"
+        -Method Post `
+        -Headers @{ Authorization = "Bearer $access_token" } `
+        -Body $rolesArray `
+        -ContentType "application/json"
 
     Write-Output "Role '$NewClientRole' assigned as a service account role to client '$NewClientName'."
 }
 
-function Assign_Realm_Admin_Role([object] $role, [string] $ClientId)
-{
+function Assign_Realm_Admin_Role([object] $role, [string] $ClientId) {
     # Assign the realm role to the client’s service account
     # Get the service account user ID for the client
     $serviceAccountUser = Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/clients/$ClientId/service-account-user" `
-    -Method Get `
-    -Headers @{ Authorization = "Bearer $access_token" }
+        -Method Get `
+        -Headers @{ Authorization = "Bearer $access_token" }
 
     $ServiceAccountUserId = $serviceAccountUser.id
 
@@ -293,64 +288,61 @@ function Assign_Realm_Admin_Role([object] $role, [string] $ClientId)
     $rmClientId = Get_Realm_Management_ClientId
 
     Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/users/$ServiceAccountUserId/role-mappings/clients/$rmClientId" `
-    -Method Post `
-    -Headers @{ Authorization = "Bearer $access_token" } `
-    -Body $rolesArray `
-    -ContentType "application/json"
+        -Method Post `
+        -Headers @{ Authorization = "Bearer $access_token" } `
+        -Body $rolesArray `
+        -ContentType "application/json"
 
     Write-Output "Role 'realm-admin' assigned as a service account role to client '$NewClientName'."
 }
 
-function Add_Role_To_Token([string] $ClientId)
-{
+function Add_Role_To_Token([string] $ClientId) {
     # Add ProtocolMapper to include the role in the token
     $protocolMapperPayload = @{
-        name = "Dms service role mapper"
-        protocol = "openid-connect"
+        name           = "Dms service role mapper"
+        protocol       = "openid-connect"
         protocolMapper = "oidc-usermodel-realm-role-mapper"
-        config = @{
-            "claim.name" = "http://schemas\.microsoft\.com/ws/2008/06/identity/claims/role"
-            "jsonType.label" = "String"
+        config         = @{
+            "claim.name"           = "http://schemas\.microsoft\.com/ws/2008/06/identity/claims/role"
+            "jsonType.label"       = "String"
             "userinfo.token.claim" = "true"
-            "id.token.claim" = "true"
-            "access.token.claim" = "true"
-            "multivalued" = "true"
+            "id.token.claim"       = "true"
+            "access.token.claim"   = "true"
+            "multivalued"          = "true"
         }
     } | ConvertTo-Json
 
     Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/clients/$ClientId/protocol-mappers/models" `
-    -Method Post `
-    -Headers @{ Authorization = "Bearer $access_token" } `
-    -Body $protocolMapperPayload `
-    -ContentType "application/json"
+        -Method Post `
+        -Headers @{ Authorization = "Bearer $access_token" } `
+        -Body $protocolMapperPayload `
+        -ContentType "application/json"
 
     Write-Output "ProtocolMapper added to client '$NewClientName' to map '$NewClientRole' in tokens."
 }
 
-function Add_Scope([string] $scopeId)
-{
-     # Assign the client scope to the client
-     Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/clients/$ClientId/default-client-scopes/$scopeId" `
-     -Method Put `
-     -Headers @{ "Authorization" = "Bearer $access_token" } `
-     -ContentType "application/json"
+function Add_Scope([string] $scopeId) {
+    # Assign the client scope to the client
+    Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/clients/$ClientId/default-client-scopes/$scopeId" `
+        -Method Put `
+        -Headers @{ "Authorization" = "Bearer $access_token" } `
+        -ContentType "application/json"
 
-     Write-Output "Claim set scope added to client '$NewClientName'."
+    Write-Output "Claim set scope added to client '$NewClientName'."
 }
 
-function Add_Cutom_Claim([string] $ClientId)
-{
-     # Add custom claim for "namespacePrefixes"
-     $customClaimProtocolMapperPayload = @{
-        name = $ClaimName
-        protocol = "openid-connect"
+function Add_Cutom_Claim([string] $ClientId) {
+    # Add custom claim for "namespacePrefixes"
+    $customClaimProtocolMapperPayload = @{
+        name           = $ClaimName
+        protocol       = "openid-connect"
         protocolMapper = "oidc-hardcoded-claim-mapper"
-        config = @{
-            "claim.name" = $ClaimName
-            "claim.value" = $ClaimValue
-            "jsonType.label" = "String"
-            "id.token.claim" = "true"
-            "access.token.claim" = "true"
+        config         = @{
+            "claim.name"           = $ClaimName
+            "claim.value"          = $ClaimValue
+            "jsonType.label"       = "String"
+            "id.token.claim"       = "true"
+            "access.token.claim"   = "true"
             "userinfo.token.claim" = "true"
         }
     } | ConvertTo-Json
@@ -364,16 +356,15 @@ function Add_Cutom_Claim([string] $ClientId)
     Write-Output "Custom claim added to client '$NewClientName'."
 }
 
-function Create_Client()
-{
+function Create_Client() {
     # Define the new client configuration
     $ClientData = @{
-        clientId     = $NewClientId
-        name         = $NewClientName
-        secret       = $NewClientSecret
-        protocol     = "openid-connect"
+        clientId               = $NewClientId
+        name                   = $NewClientName
+        secret                 = $NewClientSecret
+        protocol               = "openid-connect"
         serviceAccountsEnabled = $true
-        publicClient = $false
+        publicClient           = $false
     }
     # Create a new client
     Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/clients" `
@@ -394,7 +385,8 @@ try {
         -Uri "$KeycloakServer/realms/master" `
         -TimeoutSec 5
     Write-Output "Keycloak is running."
-} catch {
+}
+catch {
     Write-Error "Keycloak is not running. Please start Keycloak and try again."
     exit
 }
@@ -403,36 +395,36 @@ try {
 $access_token = Get_Access_Token
 
 # Create Realm
-if( -not (Check_RealmExists)){
+if ( -not (Check_RealmExists)) {
     Create_Realm
 }
-else{
+else {
     Write-Output "Realm already exists: $Realm"
 }
 
-# Create a required role
-Create_Role $NewClientRole
-
-# Create custom scope
-Create_ClientScope $ClientScopeName
-
 # Check and create client
 $client = Get_Client
-if($client){
-     Write-Warning "Client '$NewClientId' already exists. Please provide new client id."
+if ($client) {
+    Write-Warning "Client '$NewClientId' already exists. Please provide new client id."
 }
-else{
+else {
     $client = Create_Client
     $clientId = $client.id
-    $clientRole = Get_Role $NewClientRole
-    Assign_RealmRole $clientRole $clientId
-    Add_Role_To_Token $clientId
-    if($SetClientAsRealmAdmin)
-    {
+
+    if ($SetClientAsRealmAdmin) {
         $realmAdminRole = Get_Realm_Admin_Role "realm-admin"
         Assign_Realm_Admin_Role $realmAdminRole $clientId
     }
-    $clientScope = Get_ClientScope $ClientScopeName
-    Add_Scope $clientScope.id
-    Add_Cutom_Claim $clientId
+    else {
+        # Create a required role
+        Create_Role $NewClientRole
+        # Create custom scope
+        Create_ClientScope $ClientScopeName
+        $clientRole = Get_Role $NewClientRole
+        Assign_RealmRole $clientRole $clientId
+        Add_Role_To_Token $clientId
+        $clientScope = Get_ClientScope $ClientScopeName
+        Add_Scope $clientScope.id
+        Add_Cutom_Claim $clientId
+    }
 }

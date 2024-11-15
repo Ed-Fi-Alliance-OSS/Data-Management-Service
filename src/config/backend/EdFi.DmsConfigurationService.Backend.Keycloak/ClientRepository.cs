@@ -8,7 +8,6 @@ using Flurl.Http;
 using Keycloak.Net;
 using Keycloak.Net.Models.Clients;
 using Keycloak.Net.Models.ClientScopes;
-using Keycloak.Net.Models.ProtocolMappers;
 using Keycloak.Net.Models.Roles;
 using Microsoft.Extensions.Logging;
 
@@ -33,9 +32,6 @@ public class ClientRepository(KeycloakContext keycloakContext, ILogger<ClientRep
     {
         try
         {
-            var realmRoles = await _keycloakClient.GetRolesAsync(_realm);
-            var realmScopes = await _keycloakClient.GetClientScopesAsync(_realm);
-
             Client client =
                 new()
                 {
@@ -44,10 +40,12 @@ public class ClientRepository(KeycloakContext keycloakContext, ILogger<ClientRep
                     Secret = clientSecret,
                     Name = displayName,
                     ServiceAccountsEnabled = true,
+                    DefaultClientScopes = [keycloakContext.FullAccessScope],
                     ProtocolMappers = ConfigServiceProtocolMapper(),
                 };
 
             // Read service role from the realm
+            var realmRoles = await _keycloakClient.GetRolesAsync(_realm);
             Role? clientRole = realmRoles.FirstOrDefault(x =>
                 x.Name.Equals(keycloakContext.ServiceRole, StringComparison.InvariantCultureIgnoreCase)
             );
@@ -62,8 +60,9 @@ public class ClientRepository(KeycloakContext keycloakContext, ILogger<ClientRep
                 clientRole = await _keycloakClient.GetRoleByNameAsync(_realm, keycloakContext.ServiceRole);
             }
 
-            ClientScope? clientScope = realmScopes.FirstOrDefault(x =>
-                x.Name.Equals("scp:edfi_dmscs/full_access")
+            var clientScopes = await _keycloakClient.GetClientScopesAsync(_realm);
+            ClientScope? clientScope = clientScopes.FirstOrDefault(x =>
+                x.Name.Equals(keycloakContext.FullAccessScope)
             );
 
             if (clientScope is null)
@@ -72,9 +71,9 @@ public class ClientRepository(KeycloakContext keycloakContext, ILogger<ClientRep
                     _realm,
                     new ClientScope()
                     {
-                        Name = "scp:edfi_dmscs/full_access",
-                        Description = "",
+                        Name = keycloakContext.FullAccessScope,
                         Protocol = "openid-connect",
+                        Attributes = new Attributes() { IncludeInTokenScope = "true" },
                     }
                 );
             }

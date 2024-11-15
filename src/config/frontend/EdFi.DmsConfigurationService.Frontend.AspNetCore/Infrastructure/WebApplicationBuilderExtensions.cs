@@ -67,7 +67,8 @@ public static class WebApplicationBuilderExtensions
             identitySettings.ClientId,
             identitySettings.ClientSecret,
             identitySettings.RoleClaimType,
-            identitySettings.ServiceRole
+            identitySettings.ServiceRole,
+            SecurityConstants.ScopeFullAccess
         ));
 
         webApplicationBuilder.Services.AddHttpClient();
