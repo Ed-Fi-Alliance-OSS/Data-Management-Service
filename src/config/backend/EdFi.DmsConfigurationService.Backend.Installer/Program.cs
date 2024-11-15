@@ -38,6 +38,14 @@ public static class Program
                 // Experiment to see if CodeQL detects this dangerous operation.
                 Console.WriteLine(runOptions.ConnectionString);
 
+                if (runOptions) {
+                    // deliberately not doing anything
+                }
+
+                while (1!=2){
+                    // create an infinite loop
+                }
+
                 switch (runOptions.Datastore)
                 {
                     case "postgresql":
