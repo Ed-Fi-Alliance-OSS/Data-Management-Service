@@ -1,0 +1,127 @@
+services:
+  zookeeper:
+    hostname: dms-zookeeper1
+    container_name: dms-zookeeper1
+    image: debezium/zookeeper:2.7.0.Final@sha256:47d988f5db17fc3493de683e456cfb8dc8cafcaae4d36d3885c778e9a39d62eb
+    # Unlikely to need ability to connect directly into Zookeeper
+    # ports:
+    #   - 2181:2181
+    #   - 2888:2888
+    #   - 3888:3888
+    volumes:
+      - zookeeper-logs:/zookeeper/logs
+      - zookeeper-data:/zookeeper/data
+      - zookeeper-txns:/zookeeper/txns
+      - zookeeper-conf:/zookeeper/conf
+
+  kafka:
+    hostname: dms-kafka1
+    container_name: dms-kafka1
+    image: debezium/kafka:2.7.0.Final@sha256:6b233b44f29522f8ce6018e4c95dae8be7688c82183d95da348a95bcedc6fcc6
+    ports:
+      - ${KAFKA_PORT:-9092}:9092
+    links:
+      - zookeeper
+    environment:
+      - ZOOKEEPER_CONNECT=dms-zookeeper1:2181
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://dms-kafka1:9092
+    volumes:
+      - kafka-data:/kafka/data
+      - kafka-logs:/kafka/logs
+
+  kafka-postgresql-source:
+    hostname: kafka-postgresql-source
+    container_name: kafka-postgresql-source
+    image: edfialliance/ed-fi-kafka-connect:pre
+    ports:
+      - ${CONNECT_SOURCE_PORT:-8083}:8083
+    links:
+      - kafka
+      - zookeeper
+    environment:
+      BOOTSTRAP_SERVERS: dms-kafka1:9092
+      GROUP_ID: 1
+      CONFIG_STORAGE_TOPIC: debezium_source_config
+      OFFSET_STORAGE_TOPIC: debezium_source_offset
+      STATUS_STORAGE_TOPIC: debezium_source_status
+    volumes:
+      - kafka-postgresql-source-logs:/kafka/logs
+      - kafka-postgresql-source-config:/kafka/config
+
+  kafka-elasticsearch-sink:
+    hostname: kafka-elasticsearch-sink
+    container_name: kafka-elasticsearch-sink
+    image: edfialliance/ed-fi-kafka-connect:pre
+    ports:
+      - ${CONNECT_SINK_PORT:-8084}:8083
+    links:
+      - kafka
+      - zookeeper
+    environment:
+      BOOTSTRAP_SERVERS: dms-kafka1:9092
+      GROUP_ID: 2
+      CONFIG_STORAGE_TOPIC: debezium_sink_config
+      OFFSET_STORAGE_TOPIC: debezium_sink_offset
+      STATUS_STORAGE_TOPIC: debezium_sink_status
+    volumes:
+      - kafka-elasticsearch-sink-logs:/kafka/logs
+      - kafka-elasticsearch-sink-config:/kafka/config
+      - ./esfiles:/kafka/connect/confluentinc-kafka-connect-elasticsearch-14.1.2
+
+   # Kafka UI https://docs.kafka-ui.provectus.io/
+  kafka-ui:
+    container_name: kafka-ui
+    image: provectuslabs/kafka-ui:latest
+    ports:
+      - ${KAFKA_UI_PORT:-8088}:8080
+    depends_on:
+      - kafka
+    links:
+      - kafka
+      - kafka-postgresql-source
+      - kafka-elasticsearch-sink
+    environment:
+      DYNAMIC_CONFIG_ENABLED: 'true'
+      KAFKA_CLUSTERS_0_NAME: kafka1
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.5.1
+    container_name: dms-elasticsearch
+    hostname: dms-elasticsearch
+    environment:
+      discovery.type: single-node
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+      ELASTIC_PASSWORD: "abcdefgh1!"
+      xpack.security.enabled: false
+      xpack.security.transport.ssl.enabled: false
+      xpack.security.http.ssl.enabled: false
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.5.1
+    environment:
+      ELASTICSEARCH_HOSTS: http://dms-elasticsearch:9200
+      ELASTICSEARCH_USERNAME: admin
+      ELASTICSEARCH_PASSWORD: "abcdefgh1!"
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+
+volumes:
+  zookeeper-logs:
+  zookeeper-data:
+  zookeeper-txns:
+  zookeeper-conf:
+  kafka-data:
+  kafka-logs:
+  kafka-postgresql-source-logs:
+  kafka-postgresql-source-config:
+  kafka-elasticsearch-sink-logs:
+  kafka-elasticsearch-sink-config:
+  esdata:
