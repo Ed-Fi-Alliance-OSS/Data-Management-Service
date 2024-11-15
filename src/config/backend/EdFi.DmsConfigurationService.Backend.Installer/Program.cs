@@ -35,6 +35,9 @@ public static class Program
         _parseResult
             .WithParsed(runOptions =>
             {
+                // Experiment to see if CodeQL detects this dangerous operation.
+                Console.WriteLine(runOptions.ConnectionString);
+
                 switch (runOptions.Datastore)
                 {
                     case "postgresql":
