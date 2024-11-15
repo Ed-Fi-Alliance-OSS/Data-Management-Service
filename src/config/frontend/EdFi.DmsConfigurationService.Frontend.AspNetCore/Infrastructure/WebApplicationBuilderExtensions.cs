@@ -92,7 +92,7 @@ public static class WebApplicationBuilderExtensions
                     options.RequireHttpsMetadata = identitySettings.RequireHttpsMetadata;
                     options.TokenValidationParameters = new TokenValidationParameters
                     {
-                        ValidateAudience = true,
+                        ValidateAudience = false,
                         ValidateIssuer = true,
                         RoleClaimType = identitySettings.RoleClaimType,
                     };
