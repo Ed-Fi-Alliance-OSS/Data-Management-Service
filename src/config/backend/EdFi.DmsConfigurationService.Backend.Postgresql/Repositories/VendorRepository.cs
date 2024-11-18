@@ -64,7 +64,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             {
                 var sql = """
                     SELECT Id, Company, ContactName, ContactEmailAddress, NamespacePrefix
-                    FROM (SELECT * FROM dmscs.Vendor LIMIT @Limit OFFSET @Offset) AS v LEFT OUTER JOIN dmscs.VendorNamespacePrefix p ON v.Id = p.VendorId;
+                    FROM (SELECT * FROM dmscs.Vendor ORDER BY Id LIMIT @Limit OFFSET @Offset) AS v 
+                    LEFT OUTER JOIN dmscs.VendorNamespacePrefix p ON v.Id = p.VendorId;
                     """;
                 var vendors = await connection.QueryAsync<VendorResponse, string, VendorResponse>(
                     sql,

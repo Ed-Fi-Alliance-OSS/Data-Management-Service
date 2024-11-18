@@ -89,7 +89,7 @@ public class ApplicationRepository(
         {
             string sql = """
                 SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName, e.EducationOrganizationId
-                FROM (SELECT * FROM dmscs.Application LIMIT @Limit OFFSET @Offset) AS a
+                FROM (SELECT * FROM dmscs.Application ORDER BY Id LIMIT @Limit OFFSET @Offset) AS a
                 LEFT OUTER JOIN dmscs.ApplicationEducationOrganization e ON a.Id = e.ApplicationId
                 ORDER BY a.ApplicationName;
                 """;
