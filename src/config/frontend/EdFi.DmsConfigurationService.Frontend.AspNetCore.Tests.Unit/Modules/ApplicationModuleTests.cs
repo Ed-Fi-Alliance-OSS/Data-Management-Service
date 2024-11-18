@@ -151,7 +151,7 @@ public class ApplicationModuleTests
                 )
             );
 
-            var getResponse = await client.GetAsync("/v2/applications");
+            var getResponse = await client.GetAsync("/v2/applications?offset=0&limit=25");
             var getByIdResponse = await client.GetAsync("/v2/applications/1");
             var updateResponse = await client.PutAsync(
                 "/v2/applications/1",
@@ -366,7 +366,7 @@ public class ApplicationModuleTests
                     "application/json"
                 )
             );
-            var getResponse = await client.GetAsync("/v2/applications");
+            var getResponse = await client.GetAsync("/v2/applications?offset=0&limit=25");
             var getByIdResponse = await client.GetAsync("/v2/applications/1");
             var updateResponse = await client.PutAsync(
                 "/v2/applications/1",
@@ -451,7 +451,7 @@ public class ApplicationModuleTests
                 )
             );
 
-            var getResponse = await client.GetAsync("/v2/applications");
+            var getResponse = await client.GetAsync("/v2/applications?offset=0&limit=25");
             var getByIdResponse = await client.GetAsync("/v2/applications/1");
             var updateResponse = await client.PostAsync(
                 "/v2/applications",

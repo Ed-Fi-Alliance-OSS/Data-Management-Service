@@ -129,7 +129,7 @@ public class VendorModuleTests
                     "application/json"
                 )
             );
-            var getResponse = await client.GetAsync("/v2/vendors");
+            var getResponse = await client.GetAsync("/v2/vendors?offset=0&limit=25");
             var getByIdResponse = await client.GetAsync("/v2/vendors/1");
             var updateResponse = await client.PutAsync(
                 "/v2/vendors/1",
@@ -418,7 +418,7 @@ public class VendorModuleTests
                     "application/json"
                 )
             );
-            var getResponse = await client.GetAsync("/v2/vendors");
+            var getResponse = await client.GetAsync("/v2/vendors?offset=0&limit=25");
             var getByIdResponse = await client.GetAsync("/v2/vendors/1");
             var updateResponse = await client.PutAsync(
                 "/v2/vendors/1",
@@ -489,7 +489,7 @@ public class VendorModuleTests
                     "application/json"
                 )
             );
-            var getResponse = await client.GetAsync("/v2/vendors");
+            var getResponse = await client.GetAsync("/v2/vendors?offset=0&limit=25");
             var getByIdResponse = await client.GetAsync("/v2/vendors/1");
             var updateResponse = await client.PutAsync(
                 "/v2/vendors/1",
