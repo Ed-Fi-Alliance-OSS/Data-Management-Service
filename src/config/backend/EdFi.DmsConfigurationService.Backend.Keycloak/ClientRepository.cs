@@ -40,7 +40,7 @@ public class ClientRepository(KeycloakContext keycloakContext, ILogger<ClientRep
                     Secret = clientSecret,
                     Name = displayName,
                     ServiceAccountsEnabled = true,
-                    DefaultClientScopes = [keycloakContext.FullAccessScope],
+                    OptionalClientScopes = [keycloakContext.FullAccessScope],
                     ProtocolMappers = ConfigServiceProtocolMapper(),
                 };
 
