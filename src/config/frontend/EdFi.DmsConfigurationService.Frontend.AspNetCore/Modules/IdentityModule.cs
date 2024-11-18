@@ -11,6 +11,7 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
 using FluentValidation;
 using FluentValidation.Results;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using static EdFi.DmsConfigurationService.Backend.IdentityProviderError;
 
@@ -21,7 +22,7 @@ public class IdentityModule : IEndpointModule
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPost("/connect/register", RegisterClient);
-        endpoints.MapPost("/connect/token", GetClientAccessToken);
+        endpoints.MapPost("/connect/token", GetClientAccessToken).DisableAntiforgery();
     }
 
     private async Task<IResult> RegisterClient(
@@ -97,7 +98,7 @@ public class IdentityModule : IEndpointModule
 
     private static async Task<IResult> GetClientAccessToken(
         TokenRequest.Validator validator,
-        TokenRequest model,
+        [FromForm] TokenRequest model,
         ITokenManager tokenManager,
         HttpContext httpContext
     )
@@ -106,8 +107,10 @@ public class IdentityModule : IEndpointModule
 
         var tokenResult = await tokenManager.GetAccessTokenAsync(
             [
-                new KeyValuePair<string, string>("client_id", model.ClientId!),
-                new KeyValuePair<string, string>("client_secret", model.ClientSecret!),
+                new KeyValuePair<string, string>("client_id", model.client_id),
+                new KeyValuePair<string, string>("client_secret", model.client_secret),
+                new KeyValuePair<string, string>("grant_type", model.grant_type),
+                new KeyValuePair<string, string>("scope", model.scope),
             ]
         );
 

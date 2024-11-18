@@ -7,6 +7,8 @@ using EdFi.DmsConfigurationService.Backend.Repositories;
 using Flurl.Http;
 using Keycloak.Net;
 using Keycloak.Net.Models.Clients;
+using Keycloak.Net.Models.ClientScopes;
+using Keycloak.Net.Models.ProtocolMappers;
 using Keycloak.Net.Models.Roles;
 using Microsoft.Extensions.Logging;
 
@@ -31,8 +33,6 @@ public class ClientRepository(KeycloakContext keycloakContext, ILogger<ClientRep
     {
         try
         {
-            var realmRoles = await _keycloakClient.GetRolesAsync(_realm);
-
             Client client =
                 new()
                 {
@@ -41,13 +41,57 @@ public class ClientRepository(KeycloakContext keycloakContext, ILogger<ClientRep
                     Secret = clientSecret,
                     Name = displayName,
                     ServiceAccountsEnabled = true,
+                    DefaultClientScopes = [keycloakContext.Scope],
                     ProtocolMappers = ConfigServiceProtocolMapper(),
                 };
 
             // Read service role from the realm
+            var realmRoles = await _keycloakClient.GetRolesAsync(_realm);
             Role? clientRole = realmRoles.FirstOrDefault(x =>
                 x.Name.Equals(keycloakContext.ServiceRole, StringComparison.InvariantCultureIgnoreCase)
             );
+
+            if (clientRole is null)
+            {
+                await _keycloakClient.CreateRoleAsync(
+                    _realm,
+                    new Role() { Name = keycloakContext.ServiceRole }
+                );
+
+                clientRole = await _keycloakClient.GetRoleByNameAsync(_realm, keycloakContext.ServiceRole);
+            }
+
+            var clientScopes = await _keycloakClient.GetClientScopesAsync(_realm);
+            ClientScope? clientScope = clientScopes.FirstOrDefault(x => x.Name.Equals(keycloakContext.Scope));
+
+            if (clientScope is null)
+            {
+                await _keycloakClient.CreateClientScopeAsync(
+                    _realm,
+                    new ClientScope()
+                    {
+                        Name = keycloakContext.Scope,
+                        Protocol = "openid-connect",
+                        ProtocolMappers = new List<ProtocolMapper>(
+                            [
+                                new ProtocolMapper()
+                                {
+                                    Name = "audience resolve",
+                                    Protocol = "openid-connect",
+                                    _ProtocolMapper = "oidc-audience-resolve-mapper",
+                                    ConsentRequired = false,
+                                    Config = new Dictionary<string, string>
+                                    {
+                                        { "introspection.token.claim", "true" },
+                                        { "access.token.claim", "true" },
+                                    },
+                                },
+                            ]
+                        ),
+                        Attributes = new Attributes() { IncludeInTokenScope = "true" },
+                    }
+                );
+            }
 
             string? createdClientUuid = await _keycloakClient.CreateClientAndRetrieveClientIdAsync(
                 _realm,
@@ -68,6 +112,7 @@ public class ClientRepository(KeycloakContext keycloakContext, ILogger<ClientRep
                         serviceAccountUser.Id,
                         [clientRole]
                     );
+
                     return new ClientCreateResult.Success(Guid.Parse(createdClientUuid));
                 }
                 else

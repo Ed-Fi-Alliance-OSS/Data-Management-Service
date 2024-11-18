@@ -152,13 +152,23 @@ $parameters = @{
     # Configuration service client, then use "config-service-app"
     NewClientId = "test-client"                # Client id (default: test-client)
     NewClientName = "test-client"              # Client name (default: Test client)
-    NewClientSecret = "s3creT@09"              # Client id (default: s3creT@09)
+    NewClientSecret = "s3creT@09"              # Client secret (default: s3creT@09)
     ClientScopeName = "sis-vendor"             # Scope name (default: sis-vendor) We are including the 
     # claim set name as a scope in the token. This can be customized to any claim set name (e.g., 'Ed-Fi-Sandbox').
     # Please note that the claim name cannot contain spaces; use a hyphen (-) instead.
     TokenLifespan  = 1800                      # Token life span (default: 1800)
 }
+
 # To set up the Keycloak with Realm and client 
 ./setup-keycloak.ps1  @parameters
 
+# Optionally use the $SetClientAsRealmAdmin switch to assign realm admin role to the new client. 
+# This is required for DMS Configuration Service. 
+$parameters = @{
+    NewClientRole = "config-service-ap"         # Defined in Configuration Service appsettings
+    NewClientId = "DmsConfigurationService"     # Defined in Configuration Service appsettings
+    NewClientName = "DmsConfigurationService"   
+    NewClientSecret = "s3creT@09"               # Must match Configuration Service appsettings. Use appsettings.developer.json
+}
+./setup-keycloak.ps1  @parameters -SetClientAsRealmAdmin
 ```

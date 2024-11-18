@@ -17,7 +17,6 @@ public class TokenManager(KeycloakContext keycloakContext, ILogger<TokenManager>
             using var client = new HttpClient();
 
             var contentList = credentials.ToList();
-            contentList.AddRange([new KeyValuePair<string, string>("grant_type", "client_credentials")]);
 
             var content = new FormUrlEncodedContent(contentList);
             string path =

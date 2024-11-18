@@ -67,7 +67,8 @@ public static class WebApplicationBuilderExtensions
             identitySettings.ClientId,
             identitySettings.ClientSecret,
             identitySettings.RoleClaimType,
-            identitySettings.ServiceRole
+            identitySettings.ServiceRole,
+            identitySettings.Scope
         ));
 
         webApplicationBuilder.Services.AddHttpClient();
@@ -137,6 +138,7 @@ public static class WebApplicationBuilderExtensions
                 RequireHttpsMetadata = config.GetValue<bool>("IdentitySettings:RequireHttpsMetadata"),
                 Audience = config.GetValue<string>("IdentitySettings:Audience")!,
                 RoleClaimType = config.GetValue<string>("IdentitySettings:RoleClaimType")!,
+                Scope = config.GetValue<string>("IdentitySettings:Scope")!,
                 ServiceRole = config.GetValue<string>("IdentitySettings:ServiceRole")!,
             };
         }
