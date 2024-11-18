@@ -8,6 +8,7 @@ using Flurl.Http;
 using Keycloak.Net;
 using Keycloak.Net.Models.Clients;
 using Keycloak.Net.Models.ClientScopes;
+using Keycloak.Net.Models.ProtocolMappers;
 using Keycloak.Net.Models.Roles;
 using Microsoft.Extensions.Logging;
 
@@ -40,7 +41,7 @@ public class ClientRepository(KeycloakContext keycloakContext, ILogger<ClientRep
                     Secret = clientSecret,
                     Name = displayName,
                     ServiceAccountsEnabled = true,
-                    OptionalClientScopes = [keycloakContext.FullAccessScope],
+                    DefaultClientScopes = [keycloakContext.FullAccessScope],
                     ProtocolMappers = ConfigServiceProtocolMapper(),
                 };
 
@@ -73,6 +74,22 @@ public class ClientRepository(KeycloakContext keycloakContext, ILogger<ClientRep
                     {
                         Name = keycloakContext.FullAccessScope,
                         Protocol = "openid-connect",
+                        ProtocolMappers = new List<ProtocolMapper>(
+                            [
+                                new ProtocolMapper()
+                                {
+                                    Name = "audience resolve",
+                                    Protocol = "openid-connect",
+                                    _ProtocolMapper = "oidc-audience-resolve-mapper",
+                                    ConsentRequired = false,
+                                    Config = new Dictionary<string, string>
+                                    {
+                                        { "introspection.token.claim", "true" },
+                                        { "access.token.claim", "true" },
+                                    },
+                                },
+                            ]
+                        ),
                         Attributes = new Attributes() { IncludeInTokenScope = "true" },
                     }
                 );
