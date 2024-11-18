@@ -12,5 +12,5 @@ public record KeycloakContext(
     string ClientSecret,
     string RoleClaimType,
     string ServiceRole,
-    string FullAccessScope
+    string Scope
 );

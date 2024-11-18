@@ -8,5 +8,4 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 public static class SecurityConstants
 {
     public const string ServicePolicy = "ServicePolicy";
-    public const string ScopeFullAccess = "scp:edfi_dms_configuration_service/full_access";
 }

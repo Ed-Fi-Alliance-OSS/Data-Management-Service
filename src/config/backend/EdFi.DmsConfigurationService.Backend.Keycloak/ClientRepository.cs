@@ -41,7 +41,7 @@ public class ClientRepository(KeycloakContext keycloakContext, ILogger<ClientRep
                     Secret = clientSecret,
                     Name = displayName,
                     ServiceAccountsEnabled = true,
-                    DefaultClientScopes = [keycloakContext.FullAccessScope],
+                    DefaultClientScopes = [keycloakContext.Scope],
                     ProtocolMappers = ConfigServiceProtocolMapper(),
                 };
 
@@ -62,9 +62,7 @@ public class ClientRepository(KeycloakContext keycloakContext, ILogger<ClientRep
             }
 
             var clientScopes = await _keycloakClient.GetClientScopesAsync(_realm);
-            ClientScope? clientScope = clientScopes.FirstOrDefault(x =>
-                x.Name.Equals(keycloakContext.FullAccessScope)
-            );
+            ClientScope? clientScope = clientScopes.FirstOrDefault(x => x.Name.Equals(keycloakContext.Scope));
 
             if (clientScope is null)
             {
@@ -72,7 +70,7 @@ public class ClientRepository(KeycloakContext keycloakContext, ILogger<ClientRep
                     _realm,
                     new ClientScope()
                     {
-                        Name = keycloakContext.FullAccessScope,
+                        Name = keycloakContext.Scope,
                         Protocol = "openid-connect",
                         ProtocolMappers = new List<ProtocolMapper>(
                             [
