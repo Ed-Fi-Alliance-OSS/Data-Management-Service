@@ -91,39 +91,42 @@ public static class WebApplicationBuilderExtensions
 
         var metadataAddress = $"{identitySettings.Authority}/.well-known/openid-configuration";
 
-        webAppBuilder
-            .Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-            .AddJwtBearer(
-                JwtBearerDefaults.AuthenticationScheme,
-                options =>
-                {
-                    options.MetadataAddress = metadataAddress;
-                    options.Authority = identitySettings.Authority;
-                    options.Audience = identitySettings.Audience;
-                    options.RequireHttpsMetadata = identitySettings.RequireHttpsMetadata;
-                    options.TokenValidationParameters = new TokenValidationParameters
+        if (identitySettings.EnforceAuthorization)
+        {
+            webAppBuilder
+                .Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+                .AddJwtBearer(
+                    JwtBearerDefaults.AuthenticationScheme,
+                    options =>
                     {
-                        ValidateAudience = true,
-                        ValidateIssuer = false,
-                        RoleClaimType = identitySettings.RoleClaimType,
-                    };
-
-                    options.Events = new JwtBearerEvents
-                    {
-                        OnAuthenticationFailed = context =>
+                        options.MetadataAddress = metadataAddress;
+                        options.Authority = identitySettings.Authority;
+                        options.Audience = identitySettings.Audience;
+                        options.RequireHttpsMetadata = identitySettings.RequireHttpsMetadata;
+                        options.TokenValidationParameters = new TokenValidationParameters
                         {
-                            Console.WriteLine($"Authentication failed: {context.Exception.Message}");
-                            return Task.CompletedTask;
-                        },
-                    };
-                }
+                            ValidateAudience = true,
+                            ValidateIssuer = false,
+                            RoleClaimType = identitySettings.RoleClaimType,
+                        };
+
+                        options.Events = new JwtBearerEvents
+                        {
+                            OnAuthenticationFailed = context =>
+                            {
+                                Console.WriteLine($"Authentication failed: {context.Exception.Message}");
+                                return Task.CompletedTask;
+                            },
+                        };
+                    }
+                );
+            webAppBuilder.Services.AddAuthorization(options =>
+                options.AddPolicy(
+                    SecurityConstants.ServicePolicy,
+                    policy => policy.RequireClaim(ClaimTypes.Role, identitySettings.ServiceRole)
+                )
             );
-        webAppBuilder.Services.AddAuthorization(options =>
-            options.AddPolicy(
-               SecurityConstants.ServicePolicy,
-                policy => policy.RequireClaim(ClaimTypes.Role, identitySettings.ServiceRole)
-            )
-        );
+        }
 
         IdentitySettings ReadSettings()
         {
