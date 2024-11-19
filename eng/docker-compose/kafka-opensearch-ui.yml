@@ -15,6 +15,8 @@ services:
       DYNAMIC_CONFIG_ENABLED: 'true'
       KAFKA_CLUSTERS_0_NAME: kafka1
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    networks:
+      - dms
 
   opensearch-dashboards:
     image: opensearchproject/opensearch-dashboards:2.15.0@sha256:b7c26c60bfafcbb90c538316570b84bab85f5dc82339aa7feefc3014274c689e
@@ -28,3 +30,9 @@ services:
        # disables security dashboards plugin in OpenSearch Dashboards, otherwise will have TLS errors
       DISABLE_SECURITY_DASHBOARDS_PLUGIN: true
     restart: unless-stopped
+    networks:
+      - dms
+
+networks:
+  dms:
+    external: true

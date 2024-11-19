@@ -32,7 +32,11 @@ param (
     # Search engine type ("OpenSearch" or "ElasticSearch")
     [string]
     [ValidateSet("OpenSearch", "ElasticSearch")]
-    $SearchEngine = "OpenSearch"
+    $SearchEngine = "OpenSearch",
+
+    # Enable the DMS Configuration Service
+    [Switch]
+    $EnableConfig
 )
 
 $files = @(
@@ -60,6 +64,10 @@ if ($EnforceAuthorization) {
     $files += @("-f", "keycloak.yml")
 }
 
+if ($EnableConfig) {
+    $files += @("-f", "local-config.yml")
+}
+
 if ($d) {
     if ($v) {
         Write-Output "Shutting down with volume delete"
@@ -71,6 +79,8 @@ if ($d) {
     }
 }
 else {
+    docker network create dms
+
     $upArgs = @(
         "--detach"
     )
