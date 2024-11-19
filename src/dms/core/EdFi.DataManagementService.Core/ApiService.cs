@@ -33,6 +33,7 @@ internal class ApiService(
     IQueryHandler _queryHandler,
     IMatchingDocumentUuidsValidator matchingDocumentUuidsValidator,
     IEqualityConstraintValidator _equalityConstraintValidator,
+    IDescriptorValidator _descriptorValidator,
     ILogger<ApiService> _logger,
     IOptions<AppSettings> _appSettings,
     [FromKeyedServices("backendResiliencePipeline")] ResiliencePipeline _resiliencePipeline
@@ -73,6 +74,7 @@ internal class ApiService(
             steps.AddRange(
                 [
                     new ValidateDocumentMiddleware(_logger, _documentValidator),
+                    new ValidateDescriptorMiddleware(_logger, _descriptorValidator),
                     new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
                     new BuildResourceInfoMiddleware(
                         _logger,
@@ -172,6 +174,7 @@ internal class ApiService(
             steps.AddRange(
                 [
                     new ValidateDocumentMiddleware(_logger, _documentValidator),
+                    new ValidateDescriptorMiddleware(_logger, _descriptorValidator),
                     new ValidateMatchingDocumentUuidsMiddleware(_logger, matchingDocumentUuidsValidator),
                     new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
                     new BuildResourceInfoMiddleware(

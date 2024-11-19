@@ -44,6 +44,7 @@ public class APISchemaFileTests
                 new SuccessDocumentStoreRepository(NullLogger<SuccessDocumentStoreRepository>.Instance),
                 new MatchingDocumentUuidsValidator(),
                 new EqualityConstraintValidator(),
+                new DescriptorValidator(),
                 NullLogger<ApiService>.Instance,
                 Options.Create(new AppSettings { AllowIdentityUpdateOverrides = "" }),
                 ResiliencePipeline.Empty
