@@ -19,7 +19,6 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
-using static EdFi.DataManagementService.Core.DmsCoreServiceExtensions;
 using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
@@ -72,14 +71,14 @@ public static class WebApplicationBuilderExtensions
 
         Serilog.ILogger ConfigureLogging()
         {
-            var logger = new LoggerConfiguration()
+            var configureLogging = new LoggerConfiguration()
                 .ReadFrom.Configuration(webAppBuilder.Configuration)
                 .Enrich.FromLogContext()
                 .CreateLogger();
             webAppBuilder.Logging.ClearProviders();
-            webAppBuilder.Logging.AddSerilog(logger);
+            webAppBuilder.Logging.AddSerilog(configureLogging);
 
-            return logger;
+            return configureLogging;
         }
 
         // For Security(Keycloak)
@@ -89,10 +88,11 @@ public static class WebApplicationBuilderExtensions
         webAppBuilder.Services.Configure<IdentitySettings>(settings);
         webAppBuilder.Services.AddHttpClient();
 
-        var metadataAddress = $"{identitySettings.Authority}/.well-known/openid-configuration";
 
         if (identitySettings.EnforceAuthorization)
         {
+            string metadataAddress = $"{identitySettings.Authority}/.well-known/openid-configuration";
+
             webAppBuilder
                 .Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 .AddJwtBearer(
@@ -203,7 +203,7 @@ public static class WebApplicationBuilderExtensions
             limiterOptions.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
                 RateLimitPartition.GetFixedWindowLimiter(
                     partitionKey: httpContext.Request.Headers.Host.ToString(),
-                    factory: partition => new FixedWindowRateLimiterOptions
+                    factory: _ => new FixedWindowRateLimiterOptions
                     {
                         PermitLimit = rateLimitOptions.PermitLimit,
                         QueueLimit = rateLimitOptions.QueueLimit,
