@@ -1,9 +1,9 @@
 {
   "name":"elasticsearch-sink",
   "config": {
-    "connector.class": "io.confluent.connect.elasticsearch.ElasticsearchSinkConnector",
+    "connector.class": "io.aiven.connect.elasticsearch.ElasticsearchSinkConnector",
     "topics": "edfi.dms.document",
-    "type_name": "_doc",
+    "type.name": "_doc",
 
     "connection.url": "http://dms-elasticsearch:9200",
     "connection.username": "admin",

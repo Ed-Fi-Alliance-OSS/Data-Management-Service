@@ -66,7 +66,6 @@ services:
     volumes:
       - kafka-elasticsearch-sink-logs:/kafka/logs
       - kafka-elasticsearch-sink-config:/kafka/config
-      - ./esfiles:/kafka/connect/confluentinc-kafka-connect-elasticsearch-14.1.2
 
    # Kafka UI https://docs.kafka-ui.provectus.io/
   kafka-ui:
