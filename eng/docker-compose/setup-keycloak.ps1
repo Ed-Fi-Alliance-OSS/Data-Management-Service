@@ -31,11 +31,11 @@ param (
 
     # Client Id
     [string]
-    $NewClientId = "test-client",
+    $NewClientId = "DmsConfigurationService",
 
     # Client Name
     [string]
-    $NewClientName = "Test Client",
+    $NewClientName = "DMS Configuration Service",
 
     # Client Secret -Client secret must contain at least one lowercase letter, one uppercase letter,
     # one number, and one special character, and must be 8 to 12 characters long.
@@ -44,11 +44,15 @@ param (
 
     # DMS specific client role
     [string]
-    $NewClientRole = "dms-client",
+    $DmsClientRole = "dms-client",
 
-    # Scope name should match the ClaimSet name
+    # Role name for Config Service accounts
     [string]
-    $ClientScopeName = "sis-vendor",
+    $ConfigServiceRole = "config-service-app",
+
+    # Admin API's client scope
+    [string]
+    $ClientScopeName = "edfi_admin_api/full_access",
 
     # Name of the hardcoded claim
     [string]
@@ -60,12 +64,7 @@ param (
 
     # Token life span
     [int]
-    $TokenLifespan = 1800,
-
-    # Set client as realm admin
-    [Switch]
-    $SetClientAsRealmAdmin
-
+    $TokenLifespan = 1800
 )
 
 function Get_Access_Token() {
@@ -270,7 +269,7 @@ function Assign_RealmRole([object] $role, [string] $ClientId) {
         -Body $rolesArray `
         -ContentType "application/json"
 
-    Write-Output "Role '$NewClientRole' assigned as a service account role to client '$NewClientName'."
+    Write-Output "Role '$DmsClientRole' assigned as a service account role to client '$NewClientName'."
 }
 
 function Assign_Realm_Admin_Role([object] $role, [string] $ClientId) {
@@ -318,7 +317,7 @@ function Add_Role_To_Token([string] $ClientId) {
         -Body $protocolMapperPayload `
         -ContentType "application/json"
 
-    Write-Output "ProtocolMapper added to client '$NewClientName' to map '$NewClientRole' in tokens."
+    Write-Output "ProtocolMapper added to client '$NewClientName' to map '$DmsClientRole' in tokens."
 }
 
 function Add_Scope([string] $scopeId) {
@@ -410,21 +409,19 @@ if ($client) {
 else {
     $client = Create_Client
     $clientId = $client.id
+    $realmAdminRole = Get_Realm_Admin_Role "realm-admin"
 
-    if ($SetClientAsRealmAdmin) {
-        $realmAdminRole = Get_Realm_Admin_Role "realm-admin"
-        Assign_Realm_Admin_Role $realmAdminRole $clientId
-    }
-    else {
-        # Create a required role
-        Create_Role $NewClientRole
-        # Create custom scope
-        Create_ClientScope $ClientScopeName
-        $clientRole = Get_Role $NewClientRole
-        Assign_RealmRole $clientRole $clientId
-        Add_Role_To_Token $clientId
-        $clientScope = Get_ClientScope $ClientScopeName
-        Add_Scope $clientScope.id
-        Add_Cutom_Claim $clientId
-    }
+
+    # Create a required role
+    Create_Role $DmsClientRole
+    Create_role $ConfigServiceRole
+    # Create custom scope
+    Create_ClientScope $ClientScopeName
+    $clientRole = Get_Role $ConfigServiceRole
+    Assign_RealmRole $clientRole $clientId
+    Assign_Realm_Admin_Role $realmAdminRole $clientId
+    Add_Role_To_Token $clientId
+    $clientScope = Get_ClientScope $ClientScopeName
+    Add_Scope $clientScope.id
+    Add_Cutom_Claim $clientId
 }
