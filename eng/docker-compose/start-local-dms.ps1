@@ -34,7 +34,7 @@ $files = @(
     "-f",
     "postgresql.yml",
     "-f",
-    "kafka-elasticsearch.yml",
+    "kafka-opensearch.yml",
     "-f",
     "local-dms.yml"
 )

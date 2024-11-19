@@ -46,7 +46,7 @@ $sinkPort = $envFile["CONNECT_SINK_PORT"]
 $sourceBase = "http://localhost:$sourcePort/connectors"
 $sinkBase = "http://localhost:$sinkPort/connectors"
 $sourceUrl = "$sourceBase/postgresql-source"
-$sinkUrl = "$sinkBase/elasticsearch-sink"
+$sinkUrl = "$sinkBase/opensearch-sink"
 
 # Source connector
 if (IsReady($sourceBase)) {
@@ -95,7 +95,7 @@ if (IsReady($sinkBase)) {
     }
 
     try {
-        $sinkBody = Get-Content "./elasticsearch_connector.json"
+        $sinkBody = Get-Content "./opensearch_connector.json"
         $sinkBody = $sinkBody.Replace("abcdefgh1!", $envFile["OPENSEARCH_ADMIN_PASSWORD"])
 
         Write-Output "Installing sink connector configuration"
