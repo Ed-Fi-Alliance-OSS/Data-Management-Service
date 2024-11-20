@@ -108,12 +108,11 @@ public class ApplicationModule : IEndpointModule
 
     private static async Task<IResult> GetAll(
         IApplicationRepository applicationRepository,
+        [AsParameters] PagingQuery query,
         HttpContext httpContext
     )
     {
-        ApplicationQueryResult getResult = await applicationRepository.QueryApplication(
-            new PagingQuery() { Limit = 9999, Offset = 0 }
-        );
+        ApplicationQueryResult getResult = await applicationRepository.QueryApplication(query);
         return getResult switch
         {
             ApplicationQueryResult.Success success => Results.Ok(success.ApplicationResponses),
