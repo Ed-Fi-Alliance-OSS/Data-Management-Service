@@ -25,7 +25,7 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
     {
         logger.LogDebug(
             "Entering DuplicateReferencesMiddleware - {TraceId}",
-            context.FrontendRequest.TraceId
+            context.FrontendRequest.TraceId.Value
         );
 
         var validationErrors = new Dictionary<string, string[]>();
@@ -78,7 +78,7 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
 
         if (validationErrors.Any())
         {
-            logger.LogDebug("Duplicated reference Id - {TraceId}", context.FrontendRequest.TraceId);
+            logger.LogDebug("Duplicated reference Id - {TraceId}", context.FrontendRequest.TraceId.Value);
 
             context.FrontendResponse = new FrontendResponse(
                 StatusCode: 400,

@@ -20,7 +20,10 @@ internal class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _d
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        _logger.LogDebug("Entering ValidateDocumentMiddleware- {TraceId}", context.FrontendRequest.TraceId);
+        _logger.LogDebug(
+            "Entering ValidateDocumentMiddleware- {TraceId}",
+            context.FrontendRequest.TraceId.Value
+        );
 
         var (errors, validationErrors) = _documentValidator.Validate(context);
 
@@ -55,7 +58,7 @@ internal class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _d
                 "'{Status}'.'{EndpointName}' - {TraceId}",
                 "400",
                 context.PathComponents.EndpointName,
-                context.FrontendRequest.TraceId
+                context.FrontendRequest.TraceId.Value
             );
 
             context.FrontendResponse = new FrontendResponse(

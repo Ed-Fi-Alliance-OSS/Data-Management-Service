@@ -30,7 +30,7 @@ namespace EdFi.DataManagementService.Core.Middleware
         {
             _logger.LogDebug(
                 "Entering RejectResourceIdentifierMiddleware - {TraceId}",
-                context.FrontendRequest.TraceId
+                context.FrontendRequest.TraceId.Value
             );
             if (context.FrontendRequest.Body != null)
             {

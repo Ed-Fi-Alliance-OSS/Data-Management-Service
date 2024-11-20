@@ -115,7 +115,10 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
 
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        _logger.LogDebug("Entering ValidateQueryMiddleware - {TraceId}", context.FrontendRequest.TraceId);
+        _logger.LogDebug(
+            "Entering ValidateQueryMiddleware - {TraceId}",
+            context.FrontendRequest.TraceId.Value
+        );
 
         List<string> errors = SetPaginationParametersOn(context);
 
@@ -132,7 +135,7 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
                 "'{Status}'.'{EndpointName}' - {TraceId}",
                 "400",
                 context.PathComponents.EndpointName,
-                context.FrontendRequest.TraceId
+                context.FrontendRequest.TraceId.Value
             );
 
             context.FrontendResponse = new FrontendResponse(StatusCode: 400, Body: failureResponse, []);
@@ -257,7 +260,10 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
 
         if (validationErrors.Count != 0)
         {
-            _logger.LogDebug("Query parameter format error - {TraceId}", context.FrontendRequest.TraceId);
+            _logger.LogDebug(
+                "Query parameter format error - {TraceId}",
+                context.FrontendRequest.TraceId.Value
+            );
 
             context.FrontendResponse = new FrontendResponse(
                 StatusCode: 400,

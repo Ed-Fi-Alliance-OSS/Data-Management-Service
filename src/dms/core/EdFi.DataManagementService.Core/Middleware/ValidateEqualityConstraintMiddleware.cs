@@ -26,7 +26,7 @@ internal class ValidateEqualityConstraintMiddleware(
     {
         _logger.LogDebug(
             "Entering ValidateEqualityConstraintMiddleware- {TraceId}",
-            context.FrontendRequest.TraceId
+            context.FrontendRequest.TraceId.Value
         );
 
         Dictionary<string, string[]> validationErrors = _equalityConstraintValidator.Validate(
@@ -51,7 +51,7 @@ internal class ValidateEqualityConstraintMiddleware(
                 "'{Status}'.'{EndpointName}' - {TraceId}",
                 "400",
                 context.PathComponents.EndpointName,
-                context.FrontendRequest.TraceId
+                context.FrontendRequest.TraceId.Value
             );
 
             context.FrontendResponse = new FrontendResponse(

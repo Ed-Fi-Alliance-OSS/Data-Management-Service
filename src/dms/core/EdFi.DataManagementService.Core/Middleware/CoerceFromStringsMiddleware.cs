@@ -18,7 +18,10 @@ internal class CoerceFromStringsMiddleware(ILogger logger) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        logger.LogDebug("Entering CoerceFromStringsMiddleware - {TraceId}", context.FrontendRequest.TraceId);
+        logger.LogDebug(
+            "Entering CoerceFromStringsMiddleware - {TraceId}",
+            context.FrontendRequest.TraceId.Value
+        );
 
         foreach (string path in context.ResourceSchema.BooleanJsonPaths.Select(path => path.Value))
         {

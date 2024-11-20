@@ -52,7 +52,7 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
 
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        _logger.LogDebug("Entering ParsePathMiddleware - {TraceId}", context.FrontendRequest.TraceId);
+        _logger.LogDebug("Entering ParsePathMiddleware - {TraceId}", context.FrontendRequest.TraceId.Value);
 
         PathInfo? pathInfo = PathInfoFrom(context.FrontendRequest.Path);
 
@@ -60,7 +60,7 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
         {
             _logger.LogDebug(
                 "ParsePathMiddleware: Not a valid path - {TraceId}",
-                context.FrontendRequest.TraceId
+                context.FrontendRequest.TraceId.Value
             );
             context.FrontendResponse = new FrontendResponse(
                 StatusCode: 404,
@@ -78,7 +78,7 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
         {
             _logger.LogDebug(
                 "ParsePathMiddleware: Not a valid document UUID - {TraceId}",
-                context.FrontendRequest.TraceId
+                context.FrontendRequest.TraceId.Value
             );
 
             context.FrontendResponse = new FrontendResponse(
@@ -102,17 +102,29 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
         {
             case RequestMethod.DELETE when pathInfo.DocumentUuid == null:
                 {
-                    NotAllowed(["Resource collections cannot be deleted. To delete a specific item, use DELETE and include the 'id' in the route."]);
+                    NotAllowed(
+                        [
+                            "Resource collections cannot be deleted. To delete a specific item, use DELETE and include the 'id' in the route.",
+                    ]
+                    );
                     return;
                 }
             case RequestMethod.PUT when pathInfo.DocumentUuid == null:
                 {
-                    NotAllowed(["Resource collections cannot be replaced. To 'upsert' an item in the collection, use POST. To update a specific item, use PUT and include the 'id' in the route."]);
+                    NotAllowed(
+                        [
+                            "Resource collections cannot be replaced. To 'upsert' an item in the collection, use POST. To update a specific item, use PUT and include the 'id' in the route.",
+                    ]
+                    );
                     return;
                 }
             case RequestMethod.POST when pathInfo.DocumentUuid != null:
                 {
-                    NotAllowed(["Resource items can only be updated using PUT. To 'upsert' an item in the resource collection using POST, remove the 'id' from the route."]);
+                    NotAllowed(
+                        [
+                            "Resource items can only be updated using PUT. To 'upsert' an item in the resource collection using POST, remove the 'id' from the route.",
+                    ]
+                    );
                     return;
                 }
         }
@@ -131,13 +143,14 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
 
         void NotAllowed(string[] errors)
         {
-            _logger.LogDebug("ParsePathMiddleware: Missing document UUID on request method {Method}", context.Method);
+            _logger.LogDebug(
+                "ParsePathMiddleware: Missing document UUID on request method {Method} - {TraceId}",
+                context.Method,
+                context.FrontendRequest.TraceId.Value
+            );
             context.FrontendResponse = new FrontendResponse(
                 StatusCode: 405,
-                Body: FailureResponse.ForMethodNotAllowed(
-                    errors,
-                    traceId: context.FrontendRequest.TraceId
-                ),
+                Body: FailureResponse.ForMethodNotAllowed(errors, traceId: context.FrontendRequest.TraceId),
                 Headers: [],
                 ContentType: "application/json; charset=utf-8"
             );

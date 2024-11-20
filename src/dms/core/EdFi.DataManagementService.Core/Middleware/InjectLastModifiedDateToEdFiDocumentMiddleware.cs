@@ -14,7 +14,7 @@ namespace EdFi.DataManagementService.Core.Middleware
         {
             _logger.LogDebug(
                 "Entering InjectPropertiesToEdFiDocumentMiddleware - {TraceId}",
-                context.FrontendRequest.TraceId
+                context.FrontendRequest.TraceId.Value
             );
 
             DateTimeOffset utcNow = DateTimeOffset.UtcNow;

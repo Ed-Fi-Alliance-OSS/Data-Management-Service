@@ -24,7 +24,7 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
     {
         logger.LogDebug(
             "Entering DuplicatePropertiesMiddleware - {TraceId}",
-            context.FrontendRequest.TraceId
+            context.FrontendRequest.TraceId.Value
         );
 
         if (context.FrontendRequest.Body != null)
@@ -68,10 +68,10 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
 
                 var validationErrors = new Dictionary<string, string[]>
                 {
-                    { $"{propertyName}", new[] { "An item with the same key has already been added." } }
+                    { $"{propertyName}", new[] { "An item with the same key has already been added." } },
                 };
 
-                logger.LogDebug(ae, "Duplicate key found - {TraceId}", context.FrontendRequest.TraceId);
+                logger.LogDebug(ae, "Duplicate key found - {TraceId}", context.FrontendRequest.TraceId.Value);
 
                 context.FrontendResponse = new FrontendResponse(
                     StatusCode: 400,
@@ -90,7 +90,7 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
                 logger.LogDebug(
                     e,
                     "Unable to evaluate the request body - {TraceId}",
-                    context.FrontendRequest.TraceId
+                    context.FrontendRequest.TraceId.Value
                 );
                 return;
             }
