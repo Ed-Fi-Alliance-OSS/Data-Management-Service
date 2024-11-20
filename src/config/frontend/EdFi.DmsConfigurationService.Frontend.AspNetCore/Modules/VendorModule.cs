@@ -49,11 +49,13 @@ public class VendorModule : IEndpointModule
         };
     }
 
-    private static async Task<IResult> GetAll(IVendorRepository repository, HttpContext httpContext)
+    private static async Task<IResult> GetAll(
+        IVendorRepository repository,
+        [AsParameters] PagingQuery query,
+        HttpContext httpContext
+    )
     {
-        VendorQueryResult getResult = await repository.QueryVendor(
-            new PagingQuery() { Limit = 9999, Offset = 0 }
-        );
+        VendorQueryResult getResult = await repository.QueryVendor(query);
         return getResult switch
         {
             VendorQueryResult.Success success => Results.Ok(success.VendorResponses),
