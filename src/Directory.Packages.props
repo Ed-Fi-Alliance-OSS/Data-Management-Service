@@ -37,7 +37,7 @@
     <PackageVersion Include="SonarAnalyzer.CSharp" Version="9.32.0.97167" />
     <PackageVersion Include="JsonSchema.Net" Version="7.2.2" />
     <PackageVersion Include="JsonPath.Net" Version="1.1.6" />
-    <PackageVersion Include="FluentValidation" Version="11.10.0" />
+    <PackageVersion Include="FluentValidation" Version="11.11.0" />
     <PackageVersion Include="FluentValidation.AspNetCore" Version="11.3.0" />
   </ItemGroup>
   <!-- Testing Packages -->

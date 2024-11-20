@@ -3,8 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.DataModel.Action;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
-using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 

@@ -5,7 +5,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
+namespace EdFi.DmsConfigurationService.DataModel.Action;
 
 public class AdminAction
 {

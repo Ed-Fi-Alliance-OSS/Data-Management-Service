@@ -6,9 +6,11 @@
 using System.Text.Json;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
+using EdFi.DmsConfigurationService.DataModel.Register;
+using EdFi.DmsConfigurationService.DataModel.Token;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
-using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
 using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.AspNetCore.Mvc;

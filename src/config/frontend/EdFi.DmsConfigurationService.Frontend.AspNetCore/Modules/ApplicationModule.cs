@@ -7,8 +7,8 @@ using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Application;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
-using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model.Validator;
 using FluentValidation;
 using FluentValidation.Results;
 
@@ -29,8 +29,8 @@ public class ApplicationModule : IEndpointModule
     }
 
     private async Task<IResult> InsertApplication(
-        ApplicationInsertCommandValidator validator,
         ApplicationInsertCommand command,
+        ApplicationInsertCommand.Validator validator,
         HttpContext httpContext,
         IApplicationRepository applicationRepository,
         IClientRepository clientRepository,
@@ -141,7 +141,7 @@ public class ApplicationModule : IEndpointModule
 
     private static async Task<IResult> Update(
         long id,
-        ApplicationUpdateCommandValidator validator,
+        ApplicationUpdateCommand.Validator validator,
         ApplicationUpdateCommand command,
         HttpContext httpContext,
         IApplicationRepository repository
