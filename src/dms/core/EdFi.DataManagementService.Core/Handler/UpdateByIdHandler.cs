@@ -29,7 +29,7 @@ internal class UpdateByIdHandler(
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        _logger.LogDebug("Entering UpdateByIdHandler - {TraceId}", context.FrontendRequest.TraceId);
+        _logger.LogDebug("Entering UpdateByIdHandler - {TraceId}", context.FrontendRequest.TraceId.Value);
         Trace.Assert(context.ParsedBody != null, "Unexpected null Body on Frontend Request from PUT");
 
         var updateCascadeHandler = new UpdateCascadeHandler(_apiSchemaProvider, _logger);
@@ -50,7 +50,7 @@ internal class UpdateByIdHandler(
         _logger.LogDebug(
             "Document store UpdateDocumentById returned {UpdateResult}- {TraceId}",
             updateResult.GetType().FullName,
-            context.FrontendRequest.TraceId
+            context.FrontendRequest.TraceId.Value
         );
 
         context.FrontendResponse = updateResult switch

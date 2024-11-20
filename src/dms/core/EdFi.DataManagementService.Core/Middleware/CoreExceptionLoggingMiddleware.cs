@@ -19,20 +19,24 @@ internal class CoreExceptionLoggingMiddleware(ILogger _logger) : IPipelineStep
     {
         try
         {
-            _logger.LogDebug("Entering CoreExceptionLoggingMiddleware - {TraceId}", context.FrontendRequest.TraceId);
+            _logger.LogDebug(
+                "Entering CoreExceptionLoggingMiddleware - {TraceId}",
+                context.FrontendRequest.TraceId.Value
+            );
             await next();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unknown Error - {TraceId}", context.FrontendRequest.TraceId);
+            _logger.LogError(ex, "Unknown Error - {TraceId}", context.FrontendRequest.TraceId.Value);
 
             // Replace the frontend response (if any) with a 500 error
             context.FrontendResponse = new FrontendResponse(
                 StatusCode: 500,
                 Body: new JsonObject
                 {
-                    ["message"] = "The server encountered an unexpected condition that prevented it from fulfilling the request.",
-                    ["traceId"] = context.FrontendRequest.TraceId.Value
+                    ["message"] =
+                        "The server encountered an unexpected condition that prevented it from fulfilling the request.",
+                    ["traceId"] = context.FrontendRequest.TraceId.Value,
                 },
                 Headers: []
             );

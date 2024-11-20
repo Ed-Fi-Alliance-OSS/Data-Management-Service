@@ -3,8 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Core.ApiSchema.Extensions;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema.Extensions;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 
@@ -14,7 +14,10 @@ internal class CoerceDateTimesMiddleware(ILogger logger) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        logger.LogDebug("Entering CoerceDateTimesMiddleware - {TraceId}", context.FrontendRequest.TraceId);
+        logger.LogDebug(
+            "Entering CoerceDateTimesMiddleware - {TraceId}",
+            context.FrontendRequest.TraceId.Value
+        );
 
         foreach (string path in context.ResourceSchema.DateTimeJsonPaths.Select(path => path.Value))
         {

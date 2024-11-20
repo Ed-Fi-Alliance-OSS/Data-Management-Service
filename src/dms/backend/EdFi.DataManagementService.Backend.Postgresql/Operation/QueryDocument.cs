@@ -26,7 +26,7 @@ public class QueryDocument(ISqlAction _sqlAction, ILogger<QueryDocument> _logger
         NpgsqlTransaction transaction
     )
     {
-        _logger.LogDebug("Entering QueryDocument.QueryDocuments - {TraceId}", queryRequest.TraceId);
+        _logger.LogDebug("Entering QueryDocument.QueryDocuments - {TraceId}", queryRequest.TraceId.Value);
         try
         {
             string resourceName = queryRequest.ResourceInfo.ResourceName.Value;
@@ -51,16 +51,16 @@ public class QueryDocument(ISqlAction _sqlAction, ILogger<QueryDocument> _logger
         }
         catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.DeadlockDetected)
         {
-            _logger.LogDebug(
-                pe,
-                "Transaction deadlock on query - {TraceId}",
-                queryRequest.TraceId
-            );
+            _logger.LogDebug(pe, "Transaction deadlock on query - {TraceId}", queryRequest.TraceId.Value);
             return new QueryResult.QueryFailureRetryable();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "QueryDocument.QueryDocuments failure - {TraceId}", queryRequest.TraceId);
+            _logger.LogError(
+                ex,
+                "QueryDocument.QueryDocuments failure - {TraceId}",
+                queryRequest.TraceId.Value
+            );
             return new QueryResult.UnknownFailure("Unknown Failure");
         }
     }

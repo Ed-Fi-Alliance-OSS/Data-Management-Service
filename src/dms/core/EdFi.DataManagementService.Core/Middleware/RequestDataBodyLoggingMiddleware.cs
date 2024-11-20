@@ -20,7 +20,7 @@ internal class RequestDataBodyLoggingMiddleware(ILogger _logger, bool _maskReque
         {
             _logger.LogDebug(
                 "Entering RequestDataBodyLoggingMiddleware - {TraceId}",
-                context.FrontendRequest.TraceId
+                context.FrontendRequest.TraceId.Value
             );
 
             string body = UtilityService.MinifyRegex().Replace(context.FrontendRequest.Body, "$1");
@@ -32,7 +32,7 @@ internal class RequestDataBodyLoggingMiddleware(ILogger _logger, bool _maskReque
                     context.Method,
                     context.FrontendRequest.Path,
                     body,
-                    context.FrontendRequest.TraceId
+                    context.FrontendRequest.TraceId.Value
                 );
             }
             else
@@ -42,7 +42,7 @@ internal class RequestDataBodyLoggingMiddleware(ILogger _logger, bool _maskReque
                     context.Method,
                     context.FrontendRequest.Path,
                     MaskRequestBody(body, _logger),
-                    context.FrontendRequest.TraceId
+                    context.FrontendRequest.TraceId.Value
                 );
             }
         }

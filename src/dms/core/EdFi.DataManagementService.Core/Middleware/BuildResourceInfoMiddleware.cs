@@ -11,18 +11,23 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// <summary>
 /// Builds the ResourceInfo to pass to the backends
 /// </summary>
-internal class BuildResourceInfoMiddleware(ILogger _logger, List<string> _allowIdentityUpdateOverrides) : IPipelineStep
+internal class BuildResourceInfoMiddleware(ILogger _logger, List<string> _allowIdentityUpdateOverrides)
+    : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        _logger.LogDebug("Entering BuildResourceInfoMiddleware - {TraceId}", context.FrontendRequest.TraceId);
+        _logger.LogDebug(
+            "Entering BuildResourceInfoMiddleware - {TraceId}",
+            context.FrontendRequest.TraceId.Value
+        );
 
         context.ResourceInfo = new(
             ProjectName: context.ProjectSchema.ProjectName,
             ResourceVersion: context.ProjectSchema.ResourceVersion,
             ResourceName: context.ResourceSchema.ResourceName,
             IsDescriptor: context.ResourceSchema.IsDescriptor,
-            AllowIdentityUpdates: context.ResourceSchema.AllowIdentityUpdates || _allowIdentityUpdateOverrides.Contains(context.ResourceSchema.ResourceName.Value)
+            AllowIdentityUpdates: context.ResourceSchema.AllowIdentityUpdates
+                || _allowIdentityUpdateOverrides.Contains(context.ResourceSchema.ResourceName.Value)
         );
 
         await next();

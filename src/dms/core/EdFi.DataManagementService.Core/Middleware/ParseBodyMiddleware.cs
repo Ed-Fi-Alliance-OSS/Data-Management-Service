@@ -48,7 +48,10 @@ namespace EdFi.DataManagementService.Core.Middleware
 
         public async Task Execute(PipelineContext context, Func<Task> next)
         {
-            _logger.LogDebug("Entering ParseBodyMiddleware - {TraceId}", context.FrontendRequest.TraceId);
+            _logger.LogDebug(
+                "Entering ParseBodyMiddleware - {TraceId}",
+                context.FrontendRequest.TraceId.Value
+            );
 
             try
             {
@@ -76,7 +79,7 @@ namespace EdFi.DataManagementService.Core.Middleware
                 _logger.LogDebug(
                     ex,
                     "Unable to parse the request body as JSON - {TraceId}",
-                    context.FrontendRequest.TraceId
+                    context.FrontendRequest.TraceId.Value
                 );
 
                 context.FrontendResponse = new FrontendResponse(

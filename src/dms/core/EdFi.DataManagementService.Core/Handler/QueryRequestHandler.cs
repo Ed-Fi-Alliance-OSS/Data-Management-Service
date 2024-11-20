@@ -14,50 +14,53 @@ using static EdFi.DataManagementService.Core.Handler.Utility;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
-internal class QueryRequestHandler(IQueryHandler _queryHandler, ILogger _logger, ResiliencePipeline _resiliencePipeline) : IPipelineStep
+internal class QueryRequestHandler(
+    IQueryHandler _queryHandler,
+    ILogger _logger,
+    ResiliencePipeline _resiliencePipeline
+) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        _logger.LogDebug("Entering QueryRequestHandler - {TraceId}", context.FrontendRequest.TraceId);
+        _logger.LogDebug("Entering QueryRequestHandler - {TraceId}", context.FrontendRequest.TraceId.Value);
 
-        var queryResult = await _resiliencePipeline.ExecuteAsync(async t => await _queryHandler.QueryDocuments(
-            new QueryRequest(
-                ResourceInfo: context.ResourceInfo,
-                QueryElements: context.QueryElements,
-                PaginationParameters: context.PaginationParameters,
-                TraceId: context.FrontendRequest.TraceId
+        var queryResult = await _resiliencePipeline.ExecuteAsync(async t =>
+            await _queryHandler.QueryDocuments(
+                new QueryRequest(
+                    ResourceInfo: context.ResourceInfo,
+                    QueryElements: context.QueryElements,
+                    PaginationParameters: context.PaginationParameters,
+                    TraceId: context.FrontendRequest.TraceId
+                )
             )
-        ));
+        );
 
         _logger.LogDebug(
             "QueryHandler returned {QueryResult}- {TraceId}",
             queryResult.GetType().FullName,
-            context.FrontendRequest.TraceId
+            context.FrontendRequest.TraceId.Value
         );
 
         context.FrontendResponse = queryResult switch
         {
-            QuerySuccess success
-                => new FrontendResponse(
-                    StatusCode: 200,
-                    Body: success.EdfiDocs,
-                    Headers: context.PaginationParameters.TotalCount
-                        ? new() { { "Total-Count", (success.TotalCount ?? 0).ToString() } }
-                        : []
-                ),
+            QuerySuccess success => new FrontendResponse(
+                StatusCode: 200,
+                Body: success.EdfiDocs,
+                Headers: context.PaginationParameters.TotalCount
+                    ? new() { { "Total-Count", (success.TotalCount ?? 0).ToString() } }
+                    : []
+            ),
             QueryFailureInvalidQuery => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
-            UnknownFailure failure
-                => new FrontendResponse(
-                    StatusCode: 500,
-                    Body: ToJsonError(failure.FailureMessage, context.FrontendRequest.TraceId),
-                    Headers: []
-                ),
-            _
-                => new(
-                    StatusCode: 500,
-                    Body: ToJsonError("Unknown QueryResult", context.FrontendRequest.TraceId),
-                    Headers: []
-                )
+            UnknownFailure failure => new FrontendResponse(
+                StatusCode: 500,
+                Body: ToJsonError(failure.FailureMessage, context.FrontendRequest.TraceId),
+                Headers: []
+            ),
+            _ => new(
+                StatusCode: 500,
+                Body: ToJsonError("Unknown QueryResult", context.FrontendRequest.TraceId),
+                Headers: []
+            ),
         };
     }
 }

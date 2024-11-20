@@ -28,7 +28,7 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
         NpgsqlTransaction transaction
     )
     {
-        _logger.LogDebug("Entering DeleteDocumentById.DeleteById - {TraceId}", deleteRequest.TraceId);
+        _logger.LogDebug("Entering DeleteDocumentById.DeleteById - {TraceId}", deleteRequest.TraceId.Value);
         var documentPartitionKey = PartitionKeyFor(deleteRequest.DocumentUuid);
 
         try
@@ -51,7 +51,7 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
                 case 0:
                     _logger.LogInformation(
                         "Failure: Record to delete does not exist - {TraceId}",
-                        deleteRequest.TraceId
+                        deleteRequest.TraceId.Value
                     );
                     return new DeleteResult.DeleteFailureNotExists();
                 default:
@@ -59,19 +59,27 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
                         "DeleteDocumentById rows affected was '{RowsAffected}' for {DocumentUuid} - {TraceId}",
                         rowsAffectedOnDocumentDelete,
                         deleteRequest.DocumentUuid,
-                        deleteRequest.TraceId
+                        deleteRequest.TraceId.Value
                     );
                     return new DeleteResult.UnknownFailure("Unknown Failure");
             }
         }
         catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.SerializationFailure)
         {
-            _logger.LogDebug(pe, "Transaction conflict on DeleteById - {TraceId}", deleteRequest.TraceId);
+            _logger.LogDebug(
+                pe,
+                "Transaction conflict on DeleteById - {TraceId}",
+                deleteRequest.TraceId.Value
+            );
             return new DeleteResult.DeleteFailureWriteConflict();
         }
         catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.DeadlockDetected)
         {
-            _logger.LogDebug(pe, "Transaction deadlock on DeleteById - {TraceId}", deleteRequest.TraceId);
+            _logger.LogDebug(
+                pe,
+                "Transaction deadlock on DeleteById - {TraceId}",
+                deleteRequest.TraceId.Value
+            );
             return new DeleteResult.DeleteFailureWriteConflict();
         }
         catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.ForeignKeyViolation)
@@ -86,12 +94,12 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
                 transaction,
                 deleteRequest.TraceId
             );
-            _logger.LogDebug(pe, "Foreign key violation on Delete - {TraceId}", deleteRequest.TraceId);
+            _logger.LogDebug(pe, "Foreign key violation on Delete - {TraceId}", deleteRequest.TraceId.Value);
             return new DeleteResult.DeleteFailureReference(referencingDocumentNames.ToArray());
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "DeleteById failure - {TraceId}", deleteRequest.TraceId);
+            _logger.LogError(ex, "DeleteById failure - {TraceId}", deleteRequest.TraceId.Value);
             return new DeleteResult.UnknownFailure("Unknown Failure");
         }
     }
