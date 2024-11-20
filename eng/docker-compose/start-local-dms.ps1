@@ -27,17 +27,28 @@ param (
 
     # Enforce Authorization
     [Switch]
-    $EnforceAuthorization
+    $EnforceAuthorization,
+
+    # Search engine type ("OpenSearch" or "ElasticSearch")
+    [string]
+    [ValidateSet("OpenSearch", "ElasticSearch")]
+    $SearchEngine = "OpenSearch"
 )
 
 $files = @(
     "-f",
     "postgresql.yml",
     "-f",
-    "kafka-opensearch.yml",
-    "-f",
     "local-dms.yml"
 )
+
+if($SearchEngine -eq "ElasticSearch")
+{
+    $files += @("-f", "kafka-elasticsearch.yml")
+}
+else {
+    $files += @("-f", "kafka-opensearch.yml")
+}
 
 if ($EnforceAuthorization) {
     $files += @("-f", "keycloak.yml")
@@ -78,5 +89,5 @@ else {
     }
 
     Start-Sleep 20
-    ./setup-connectors.ps1 $EnvironmentFile
+    ./setup-connectors.ps1 $EnvironmentFile $SearchEngine
 }
