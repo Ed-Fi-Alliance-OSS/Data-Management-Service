@@ -30,7 +30,7 @@ public class PostgresqlDocumentStoreRepository(
     {
         _logger.LogDebug(
             "Entering PostgresqlDocumentStoreRepository.UpsertDocument - {TraceId}",
-            upsertRequest.TraceId
+            upsertRequest.TraceId.Value
         );
 
         try
@@ -59,7 +59,11 @@ public class PostgresqlDocumentStoreRepository(
         }
         catch (Exception ex)
         {
-            _logger.LogCritical(ex, "Uncaught UpsertDocument failure - {TraceId}", upsertRequest.TraceId);
+            _logger.LogCritical(
+                ex,
+                "Uncaught UpsertDocument failure - {TraceId}",
+                upsertRequest.TraceId.Value
+            );
             return new UpsertResult.UnknownFailure("Unknown Failure");
         }
     }
@@ -68,7 +72,7 @@ public class PostgresqlDocumentStoreRepository(
     {
         _logger.LogDebug(
             "Entering PostgresqlDocumentStoreRepository.GetDocumentById - {TraceId}",
-            getRequest.TraceId
+            getRequest.TraceId.Value
         );
 
         try
@@ -91,7 +95,7 @@ public class PostgresqlDocumentStoreRepository(
         }
         catch (Exception ex)
         {
-            _logger.LogCritical(ex, "Uncaught GetDocumentById failure - {TraceId}", getRequest.TraceId);
+            _logger.LogCritical(ex, "Uncaught GetDocumentById failure - {TraceId}", getRequest.TraceId.Value);
             return new GetResult.UnknownFailure("Unknown Failure");
         }
     }
@@ -100,7 +104,7 @@ public class PostgresqlDocumentStoreRepository(
     {
         _logger.LogDebug(
             "Entering PostgresqlDocumentStoreRepository.UpdateDocumentById - {TraceId}",
-            updateRequest.TraceId
+            updateRequest.TraceId.Value
         );
 
         try
@@ -128,7 +132,11 @@ public class PostgresqlDocumentStoreRepository(
         }
         catch (Exception ex)
         {
-            _logger.LogCritical(ex, "Uncaught UpdateDocumentById failure - {TraceId}", updateRequest.TraceId);
+            _logger.LogCritical(
+                ex,
+                "Uncaught UpdateDocumentById failure - {TraceId}",
+                updateRequest.TraceId.Value
+            );
             return new UpdateResult.UnknownFailure("Unknown Failure");
         }
     }
@@ -137,7 +145,7 @@ public class PostgresqlDocumentStoreRepository(
     {
         _logger.LogDebug(
             "Entering PostgresqlDocumentStoreRepository.DeleteDocumentById  - {TraceId}",
-            deleteRequest.TraceId
+            deleteRequest.TraceId.Value
         );
 
         try
@@ -163,7 +171,11 @@ public class PostgresqlDocumentStoreRepository(
         }
         catch (Exception ex)
         {
-            _logger.LogCritical(ex, "Uncaught DeleteDocumentById failure - {TraceId}", deleteRequest.TraceId);
+            _logger.LogCritical(
+                ex,
+                "Uncaught DeleteDocumentById failure - {TraceId}",
+                deleteRequest.TraceId.Value
+            );
             return new DeleteResult.UnknownFailure("Unknown Failure");
         }
     }
@@ -172,7 +184,7 @@ public class PostgresqlDocumentStoreRepository(
     {
         _logger.LogDebug(
             "Entering PostgresqlDocumentStoreRepository.QueryDocuments - {TraceId}",
-            queryRequest.TraceId
+            queryRequest.TraceId.Value
         );
 
         try
@@ -195,7 +207,11 @@ public class PostgresqlDocumentStoreRepository(
         }
         catch (Exception ex)
         {
-            _logger.LogCritical(ex, "Uncaught QueryDocuments failure - {TraceId}", queryRequest.TraceId);
+            _logger.LogCritical(
+                ex,
+                "Uncaught QueryDocuments failure - {TraceId}",
+                queryRequest.TraceId.Value
+            );
             return new QueryResult.UnknownFailure("Unknown Failure");
         }
     }

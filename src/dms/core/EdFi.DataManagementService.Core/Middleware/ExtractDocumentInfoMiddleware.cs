@@ -23,7 +23,7 @@ internal class ExtractDocumentInfoMiddleware(ILogger _logger) : IPipelineStep
     {
         _logger.LogDebug(
             "Entering ExtractDocumentInfoMiddleware - {TraceId}",
-            context.FrontendRequest.TraceId
+            context.FrontendRequest.TraceId.Value
         );
 
         Trace.Assert(context.ParsedBody != null, "Body was null, pipeline config invalid");
@@ -34,14 +34,8 @@ internal class ExtractDocumentInfoMiddleware(ILogger _logger) : IPipelineStep
         );
 
         context.DocumentInfo = new(
-            DocumentReferences: context.ResourceSchema.ExtractReferences(
-                context.ParsedBody,
-                _logger
-            ),
-            DescriptorReferences: context.ResourceSchema.ExtractDescriptors(
-                context.ParsedBody,
-                _logger
-            ),
+            DocumentReferences: context.ResourceSchema.ExtractReferences(context.ParsedBody, _logger),
+            DescriptorReferences: context.ResourceSchema.ExtractDescriptors(context.ParsedBody, _logger),
             DocumentIdentity: documentIdentity,
             ReferentialId: ReferentialIdFrom(context.ResourceInfo, documentIdentity),
             SuperclassIdentity: superclassIdentity

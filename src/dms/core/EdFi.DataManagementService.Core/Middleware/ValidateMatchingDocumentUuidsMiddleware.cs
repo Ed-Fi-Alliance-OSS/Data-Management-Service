@@ -21,7 +21,7 @@ namespace EdFi.DataManagementService.Core.Middleware
         {
             _logger.LogDebug(
                 "Entering ValidateMatchingDocumentUuidsMiddleware- {TraceId}",
-                context.FrontendRequest.TraceId
+                context.FrontendRequest.TraceId.Value
             );
 
             var isValid = _validator.Validate(context);
@@ -43,7 +43,7 @@ namespace EdFi.DataManagementService.Core.Middleware
                     "'{Status}'.'{EndpointName}' - {TraceId}",
                     "400",
                     context.PathComponents.EndpointName,
-                    context.FrontendRequest.TraceId
+                    context.FrontendRequest.TraceId.Value
                 );
 
                 context.FrontendResponse = new FrontendResponse(

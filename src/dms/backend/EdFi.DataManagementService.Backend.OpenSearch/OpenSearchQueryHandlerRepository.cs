@@ -19,7 +19,7 @@ public class OpenSearchQueryHandlerRepository(
     {
         logger.LogDebug(
             "Entering OpenSearchQueryHandlerRepository.QueryDocuments - {TraceId}",
-            queryRequest.TraceId
+            queryRequest.TraceId.Value
         );
 
         try
@@ -30,7 +30,7 @@ public class OpenSearchQueryHandlerRepository(
         }
         catch (Exception ex)
         {
-            logger.LogCritical(ex, "Uncaught QueryDocuments failure - {TraceId}", queryRequest.TraceId);
+            logger.LogCritical(ex, "Uncaught QueryDocuments failure - {TraceId}", queryRequest.TraceId.Value);
             return new QueryResult.UnknownFailure("Unknown Failure");
         }
     }

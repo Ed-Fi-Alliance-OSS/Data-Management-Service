@@ -72,7 +72,7 @@ public static partial class QueryOpenSearch
         ILogger logger
     )
     {
-        logger.LogDebug("Entering QueryOpenSearch.Query - {TraceId}", queryRequest.TraceId);
+        logger.LogDebug("Entering QueryOpenSearch.Query - {TraceId}", queryRequest.TraceId.Value);
 
         try
         {
@@ -91,28 +91,30 @@ public static partial class QueryOpenSearch
                             ["match_phrase"] = new JsonObject
                             {
                                 [$@"edfidoc.{QueryFieldFrom(queryElement.DocumentPaths[0])}"] =
-                                    queryElement.Value
-                            }
+                                    queryElement.Value,
+                            },
                         }
                     );
                 }
                 else
                 {
                     // If more than one document path, it's an OR
-                    JsonObject[] possibleTerms = queryElement.DocumentPaths.Select(
-                        documentPath => new JsonObject
+                    JsonObject[] possibleTerms = queryElement
+                        .DocumentPaths.Select(documentPath => new JsonObject
                         {
                             ["match_phrase"] = new JsonObject
                             {
-                                [$@"edfidoc.{QueryFieldFrom(documentPath)}"] = queryElement.Value
-                            }
-                        }
-                    ).ToArray();
+                                [$@"edfidoc.{QueryFieldFrom(documentPath)}"] = queryElement.Value,
+                            },
+                        })
+                        .ToArray();
 
-                    terms.Add(new JsonObject
-                    {
-                        ["bool"] = new JsonObject { ["should"] = new JsonArray(possibleTerms) }
-                    });
+                    terms.Add(
+                        new JsonObject
+                        {
+                            ["bool"] = new JsonObject { ["should"] = new JsonArray(possibleTerms) },
+                        }
+                    );
                 }
             }
 
@@ -120,7 +122,7 @@ public static partial class QueryOpenSearch
                 new()
                 {
                     ["query"] = new JsonObject { ["bool"] = new JsonObject { ["must"] = terms } },
-                    ["sort"] = SortDirective()
+                    ["sort"] = SortDirective(),
                 };
 
             // Add in PaginationParameters if any
@@ -159,7 +161,7 @@ public static partial class QueryOpenSearch
         }
         catch (Exception ex)
         {
-            logger.LogCritical(ex, "Uncaught Query failure - {TraceId}", queryRequest.TraceId);
+            logger.LogCritical(ex, "Uncaught Query failure - {TraceId}", queryRequest.TraceId.Value);
             return new QueryResult.UnknownFailure("Unknown Failure");
         }
     }

@@ -68,7 +68,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
         TraceId traceId
     )
     {
-        _logger.LogDebug("Entering UpdateDocumentById.UpdateById - {TraceId}", updateRequest.TraceId);
+        _logger.LogDebug("Entering UpdateDocumentById.UpdateById - {TraceId}", updateRequest.TraceId.Value);
         var documentPartitionKey = PartitionKeyFor(updateRequest.DocumentUuid);
 
         DocumentReferenceIds documentReferenceIds = DocumentReferenceIdsFrom(
@@ -103,7 +103,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 if (updateRequest.ResourceInfo.AllowIdentityUpdates)
                 {
                     // Identity update is allowed
-                    _logger.LogInformation("Updating Identity - {TraceId}", updateRequest.TraceId);
+                    _logger.LogInformation("Updating Identity - {TraceId}", updateRequest.TraceId.Value);
 
                     int aliasRowsAffected = await _sqlAction.UpdateAliasReferentialIdByDocumentUuid(
                         PartitionKeyFor(updateRequest.DocumentInfo.ReferentialId).Value,
@@ -119,7 +119,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                     {
                         _logger.LogInformation(
                             "Failure: Alias record to update does not exist - {TraceId}",
-                            updateRequest.TraceId
+                            updateRequest.TraceId.Value
                         );
                         return new UpdateResult.UpdateFailureNotExists();
                     }
@@ -129,7 +129,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                     // Identity update not allowed
                     _logger.LogInformation(
                         "Failure: Identity does not match on update - {TraceId}",
-                        updateRequest.TraceId
+                        updateRequest.TraceId.Value
                     );
                     return new UpdateResult.UpdateFailureImmutableIdentity(
                         $"Identifying values for the {updateRequest.ResourceInfo.ResourceName.Value} resource cannot be changed. Delete and recreate the resource item instead."
@@ -193,7 +193,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                         {
                             _logger.LogDebug(
                                 "Foreign key violation on Update - {TraceId}",
-                                updateRequest.TraceId
+                                updateRequest.TraceId.Value
                             );
                             return ReportReferenceFailure(updateRequest.DocumentInfo, invalidReferentialIds);
                         }
@@ -281,7 +281,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 case 0:
                     _logger.LogInformation(
                         "Failure: Record to update does not exist - {TraceId}",
-                        updateRequest.TraceId
+                        updateRequest.TraceId.Value
                     );
                     return new UpdateResult.UpdateFailureNotExists();
                 default:
@@ -289,24 +289,36 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                         "UpdateDocumentById rows affected was '{RowsAffected}' for {DocumentUuid} - Should never happen - {TraceId}",
                         rowsAffected,
                         updateRequest.DocumentUuid,
-                        updateRequest.TraceId
+                        updateRequest.TraceId.Value
                     );
                     return new UpdateResult.UnknownFailure("Unknown Failure");
             }
         }
         catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.SerializationFailure)
         {
-            _logger.LogDebug(pe, "Transaction conflict on UpdateById - {TraceId}", updateRequest.TraceId);
+            _logger.LogDebug(
+                pe,
+                "Transaction conflict on UpdateById - {TraceId}",
+                updateRequest.TraceId.Value
+            );
             return new UpdateResult.UpdateFailureWriteConflict();
         }
         catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.DeadlockDetected)
         {
-            _logger.LogDebug(pe, "Transaction deadlock on UpdateById - {TraceId}", updateRequest.TraceId);
+            _logger.LogDebug(
+                pe,
+                "Transaction deadlock on UpdateById - {TraceId}",
+                updateRequest.TraceId.Value
+            );
             return new UpdateResult.UpdateFailureWriteConflict();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failure on Documents table update - {TraceId}", updateRequest.TraceId);
+            _logger.LogError(
+                ex,
+                "Failure on Documents table update - {TraceId}",
+                updateRequest.TraceId.Value
+            );
             return new UpdateResult.UnknownFailure("Update failure");
         }
     }

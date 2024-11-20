@@ -38,7 +38,7 @@ internal class ApiSchemaValidationMiddleware(
     {
         _logger.LogDebug(
             "Entering ApiSchemaValidationMiddleware- {TraceId}",
-            context.FrontendRequest.TraceId
+            context.FrontendRequest.TraceId.Value
         );
 
         if (SchemaValidationFailures.Any())

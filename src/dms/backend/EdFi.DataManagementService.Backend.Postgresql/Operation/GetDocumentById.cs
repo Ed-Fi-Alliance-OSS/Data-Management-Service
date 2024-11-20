@@ -35,7 +35,7 @@ public class GetDocumentById(ISqlAction _sqlAction, ILogger<GetDocumentById> _lo
         NpgsqlTransaction transaction
     )
     {
-        _logger.LogDebug("Entering GetDocumentById.GetById - {TraceId}", getRequest.TraceId);
+        _logger.LogDebug("Entering GetDocumentById.GetById - {TraceId}", getRequest.TraceId.Value);
 
         try
         {
@@ -62,12 +62,12 @@ public class GetDocumentById(ISqlAction _sqlAction, ILogger<GetDocumentById> _lo
         }
         catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.DeadlockDetected)
         {
-            _logger.LogDebug(pe, "Transaction deadlock on query - {TraceId}", getRequest.TraceId);
+            _logger.LogDebug(pe, "Transaction deadlock on query - {TraceId}", getRequest.TraceId.Value);
             return new GetResult.GetFailureRetryable();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "GetDocumentById failure - {TraceId}", getRequest.TraceId);
+            _logger.LogError(ex, "GetDocumentById failure - {TraceId}", getRequest.TraceId.Value);
             return new GetResult.UnknownFailure("Unknown Failure");
         }
     }

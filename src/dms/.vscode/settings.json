@@ -73,4 +73,8 @@
             "css", "json", "xml", "config", "plaintext", "markdown", "batch"
         ]
     },
+    "cSpell.words": [
+        "Retryable",
+        "sszzz"
+    ],
 }

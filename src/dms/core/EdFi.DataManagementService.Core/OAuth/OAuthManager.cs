@@ -27,7 +27,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         TraceId traceId
     )
     {
-        _logger.LogInformation("GetAccessTokenAsync - {TraceId}", traceId);
+        _logger.LogInformation("GetAccessTokenAsync - {TraceId}", traceId.Value);
 
         if (!authHeaderString.Contains("basic", StringComparison.InvariantCultureIgnoreCase))
         {
@@ -50,7 +50,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         // In case of 5xx Error, pass 503 Service unavailable to client, otherwise forward response directly to client.
         try
         {
-            _logger.LogInformation("Forwarding token request to upstream service - {TraceId}", traceId);
+            _logger.LogInformation("Forwarding token request to upstream service - {TraceId}", traceId.Value);
             var response = await httpClient.SendAsync(upstreamRequest);
 
             switch (response.StatusCode)
@@ -74,7 +74,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error from upstream identity service - {TraceId}", traceId);
+            _logger.LogError(ex, "Error from upstream identity service - {TraceId}", traceId.Value);
             return GenerateProblemDetailResponse(
                 HttpStatusCode.BadGateway,
                 FailureResponse.ForGatewayError(traceId)

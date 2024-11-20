@@ -17,20 +17,25 @@ namespace EdFi.DataManagementService.Core.Handler;
 /// <summary>
 /// Handles a get by id request that has made it through the middleware pipeline steps.
 /// </summary>
-internal class GetByIdHandler(IDocumentStoreRepository _documentStoreRepository, ILogger _logger, ResiliencePipeline _resiliencePipeline)
-    : IPipelineStep
+internal class GetByIdHandler(
+    IDocumentStoreRepository _documentStoreRepository,
+    ILogger _logger,
+    ResiliencePipeline _resiliencePipeline
+) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        _logger.LogDebug("Entering GetByIdHandler - {TraceId}", context.FrontendRequest.TraceId);
+        _logger.LogDebug("Entering GetByIdHandler - {TraceId}", context.FrontendRequest.TraceId.Value);
 
-        var getResult = await _resiliencePipeline.ExecuteAsync(async t => await _documentStoreRepository.GetDocumentById(
-            new GetRequest(
-                DocumentUuid: context.PathComponents.DocumentUuid,
-                ResourceInfo: context.ResourceInfo,
-                TraceId: context.FrontendRequest.TraceId
+        var getResult = await _resiliencePipeline.ExecuteAsync(async t =>
+            await _documentStoreRepository.GetDocumentById(
+                new GetRequest(
+                    DocumentUuid: context.PathComponents.DocumentUuid,
+                    ResourceInfo: context.ResourceInfo,
+                    TraceId: context.FrontendRequest.TraceId
+                )
             )
-        ));
+        );
 
         _logger.LogDebug(
             "Document store GetDocumentById returned {GetResult}- {TraceId}",
@@ -40,21 +45,18 @@ internal class GetByIdHandler(IDocumentStoreRepository _documentStoreRepository,
 
         context.FrontendResponse = getResult switch
         {
-            GetSuccess success
-                => new FrontendResponse(StatusCode: 200, Body: success.EdfiDoc, Headers: []),
+            GetSuccess success => new FrontendResponse(StatusCode: 200, Body: success.EdfiDoc, Headers: []),
             GetFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
-            UnknownFailure failure
-                => new FrontendResponse(
-                    StatusCode: 500,
-                    Body: ToJsonError(failure.FailureMessage, context.FrontendRequest.TraceId),
-                    Headers: []
-                ),
-            _
-                => new(
-                    StatusCode: 500,
-                    Body: ToJsonError("Unknown GetResult", context.FrontendRequest.TraceId),
-                    Headers: []
-                )
+            UnknownFailure failure => new FrontendResponse(
+                StatusCode: 500,
+                Body: ToJsonError(failure.FailureMessage, context.FrontendRequest.TraceId),
+                Headers: []
+            ),
+            _ => new(
+                StatusCode: 500,
+                Body: ToJsonError("Unknown GetResult", context.FrontendRequest.TraceId),
+                Headers: []
+            ),
         };
     }
 }

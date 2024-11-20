@@ -18,7 +18,10 @@ internal class ValidateEndpointMiddleware(ILogger _logger) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        _logger.LogDebug("Entering ValidateEndpointMiddleware - {TraceId}", context.FrontendRequest.TraceId);
+        _logger.LogDebug(
+            "Entering ValidateEndpointMiddleware - {TraceId}",
+            context.FrontendRequest.TraceId.Value
+        );
 
         JsonNode? projectSchemaNode = context.ApiSchemaDocument.FindProjectSchemaNode(
             context.PathComponents.ProjectNamespace
@@ -28,7 +31,7 @@ internal class ValidateEndpointMiddleware(ILogger _logger) : IPipelineStep
             _logger.LogDebug(
                 "Invalid resource project namespace in '{EndpointName}' - {TraceId}",
                 context.PathComponents.EndpointName,
-                context.FrontendRequest.TraceId
+                context.FrontendRequest.TraceId.Value
             );
             context.FrontendResponse = new FrontendResponse(
                 StatusCode: 404,
@@ -49,7 +52,7 @@ internal class ValidateEndpointMiddleware(ILogger _logger) : IPipelineStep
             _logger.LogDebug(
                 "Invalid resource name in '{EndpointName}' - {TraceId}",
                 context.PathComponents.EndpointName,
-                context.FrontendRequest.TraceId
+                context.FrontendRequest.TraceId.Value
             );
             context.FrontendResponse = new FrontendResponse(
                 StatusCode: 404,

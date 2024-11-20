@@ -109,7 +109,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             _logger.LogInformation(
                 pe,
                 "Failure: alias identity already exists - {TraceId}",
-                upsertRequest.TraceId
+                upsertRequest.TraceId.Value
             );
 
             return new UpsertResult.UpsertFailureIdentityConflict(
@@ -148,13 +148,13 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             {
                 _logger.LogDebug(
                     "Foreign key violation on Upsert as Insert - {TraceId}",
-                    upsertRequest.TraceId
+                    upsertRequest.TraceId.Value
                 );
                 return ReportReferenceFailure(upsertRequest.DocumentInfo, invalidReferentialIds);
             }
         }
 
-        _logger.LogDebug("Upsert success as insert - {TraceId}", upsertRequest.TraceId);
+        _logger.LogDebug("Upsert success as insert - {TraceId}", upsertRequest.TraceId.Value);
         return new UpsertResult.InsertSuccess(upsertRequest.DocumentUuid);
     }
 
@@ -206,13 +206,13 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             {
                 _logger.LogDebug(
                     "Foreign key violation on Upsert as Update - {TraceId}",
-                    upsertRequest.TraceId
+                    upsertRequest.TraceId.Value
                 );
                 return ReportReferenceFailure(upsertRequest.DocumentInfo, invalidReferentialIds);
             }
         }
 
-        _logger.LogDebug("Upsert success as update - {TraceId}", upsertRequest.TraceId);
+        _logger.LogDebug("Upsert success as update - {TraceId}", upsertRequest.TraceId.Value);
         return new UpsertResult.UpdateSuccess(new(documentUuid));
     }
 
@@ -228,7 +228,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
         TraceId traceId
     )
     {
-        _logger.LogDebug("Entering UpsertDocument.Upsert - {TraceId}", upsertRequest.TraceId);
+        _logger.LogDebug("Entering UpsertDocument.Upsert - {TraceId}", upsertRequest.TraceId.Value);
 
         DocumentReferenceIds documentReferenceIds = DocumentReferenceIdsFrom(
             upsertRequest.DocumentInfo.DocumentReferences
@@ -257,7 +257,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 _logger.LogDebug(
                     pe,
                     "Transaction conflict on Documents table read - {TraceId}",
-                    upsertRequest.TraceId
+                    upsertRequest.TraceId.Value
                 );
                 return new UpsertResult.UpsertFailureWriteConflict();
             }
@@ -266,7 +266,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 _logger.LogDebug(
                     pe,
                     "Transaction deadlock on Documents table read - {TraceId}",
-                    upsertRequest.TraceId
+                    upsertRequest.TraceId.Value
                 );
                 return new UpsertResult.UpsertFailureWriteConflict();
             }
@@ -302,17 +302,21 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
         }
         catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.SerializationFailure)
         {
-            _logger.LogDebug(pe, "Transaction conflict on Upsert - {TraceId}", upsertRequest.TraceId);
+            _logger.LogDebug(pe, "Transaction conflict on Upsert - {TraceId}", upsertRequest.TraceId.Value);
             return new UpsertResult.UpsertFailureWriteConflict();
         }
         catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.DeadlockDetected)
         {
-            _logger.LogDebug(pe, "Transaction deadlock on Upsert - {TraceId}", upsertRequest.TraceId);
+            _logger.LogDebug(pe, "Transaction deadlock on Upsert - {TraceId}", upsertRequest.TraceId.Value);
             return new UpsertResult.UpsertFailureWriteConflict();
         }
         catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.UniqueViolation)
         {
-            _logger.LogInformation(pe, "Failure: identity already exists - {TraceId}", upsertRequest.TraceId);
+            _logger.LogInformation(
+                pe,
+                "Failure: identity already exists - {TraceId}",
+                upsertRequest.TraceId.Value
+            );
             return new UpsertResult.UpsertFailureIdentityConflict(
                 upsertRequest.ResourceInfo.ResourceName,
                 upsertRequest.DocumentInfo.DocumentIdentity.DocumentIdentityElements.Select(
@@ -325,7 +329,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Upsert failure - {TraceId}", upsertRequest.TraceId);
+            _logger.LogError(ex, "Upsert failure - {TraceId}", upsertRequest.TraceId.Value);
             return new UpsertResult.UnknownFailure("Unknown Failure");
         }
     }

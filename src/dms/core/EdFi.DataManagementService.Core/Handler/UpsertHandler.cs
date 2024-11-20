@@ -30,7 +30,7 @@ internal class UpsertHandler(
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        _logger.LogDebug("Entering UpsertHandler - {TraceId}", context.FrontendRequest.TraceId);
+        _logger.LogDebug("Entering UpsertHandler - {TraceId}", context.FrontendRequest.TraceId.Value);
 
         var upsertResult = await _resiliencePipeline.ExecuteAsync(async t =>
         {
@@ -54,7 +54,7 @@ internal class UpsertHandler(
         _logger.LogDebug(
             "Document store UpsertDocument returned {UpsertResult}- {TraceId}",
             upsertResult.GetType().FullName,
-            context.FrontendRequest.TraceId
+            context.FrontendRequest.TraceId.Value
         );
 
         context.FrontendResponse = upsertResult switch
