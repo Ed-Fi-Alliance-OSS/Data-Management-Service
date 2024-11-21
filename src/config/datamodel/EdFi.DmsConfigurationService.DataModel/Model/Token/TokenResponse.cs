@@ -5,7 +5,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace EdFi.DmsConfigurationService.DataModel.Token;
+namespace EdFi.DmsConfigurationService.DataModel.Model.Token;
 
 public class TokenResponse
 {

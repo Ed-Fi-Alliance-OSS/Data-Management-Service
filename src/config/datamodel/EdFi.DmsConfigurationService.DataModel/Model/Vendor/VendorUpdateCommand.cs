@@ -5,22 +5,19 @@
 
 using FluentValidation;
 
-namespace EdFi.DmsConfigurationService.DataModel.Vendor;
+namespace EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 
-public class VendorInsertCommand
+public class VendorUpdateCommand : VendorInsertCommand
 {
-    public string Company { get; set; } = "";
-    public string ContactName { get; set; } = "";
-    public string ContactEmailAddress { get; set; } = "";
-    public string NamespacePrefixes { get; set; } = "";
+    public long Id { get; set; }
 
-    public class Validator : AbstractValidator<VendorInsertCommand>
+    public new class Validator : AbstractValidator<VendorUpdateCommand>
     {
         public Validator()
         {
             RuleFor(v => v.Company).NotEmpty().MaximumLength(256);
-            RuleFor(v => v.ContactName).NotEmpty().MaximumLength(128);
-            RuleFor(v => v.ContactEmailAddress).NotEmpty().EmailAddress().MaximumLength(320);
+            RuleFor(v => v.ContactName).MaximumLength(128);
+            RuleFor(v => v.ContactEmailAddress).EmailAddress().MaximumLength(320);
             RuleFor(v => v.NamespacePrefixes)
                 .NotEmpty()
                 .Must(s =>

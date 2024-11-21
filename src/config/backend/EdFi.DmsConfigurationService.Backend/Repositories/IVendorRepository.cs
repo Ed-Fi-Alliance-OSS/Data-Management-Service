@@ -4,8 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.DataModel;
-using EdFi.DmsConfigurationService.DataModel.Application;
-using EdFi.DmsConfigurationService.DataModel.Vendor;
+using EdFi.DmsConfigurationService.DataModel.Model.Application;
+using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 
 namespace EdFi.DmsConfigurationService.Backend.Repositories;
 

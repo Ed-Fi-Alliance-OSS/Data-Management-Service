@@ -5,21 +5,19 @@
 
 using FluentValidation;
 
-namespace EdFi.DmsConfigurationService.DataModel.Application;
+namespace EdFi.DmsConfigurationService.DataModel.Model.Application;
 
-public class ApplicationUpdateCommand
+public class ApplicationInsertCommand
 {
-    public long Id { get; set; }
-    public required string ApplicationName { get; set; }
+    public string ApplicationName { get; set; } = "";
     public long VendorId { get; set; }
-    public required string ClaimSetName { get; set; }
+    public string ClaimSetName { get; set; } = "";
     public long[] EducationOrganizationIds { get; set; } = [];
 
-    public class Validator : AbstractValidator<ApplicationUpdateCommand>
+    public class Validator : AbstractValidator<ApplicationInsertCommand>
     {
         public Validator()
         {
-            RuleFor(a => a.Id).GreaterThan(0);
             RuleFor(a => a.ApplicationName).NotEmpty().MaximumLength(256);
             RuleFor(a => a.ClaimSetName).NotEmpty().MaximumLength(256);
             RuleForEach(a => a.EducationOrganizationIds).NotNull().GreaterThan(0);

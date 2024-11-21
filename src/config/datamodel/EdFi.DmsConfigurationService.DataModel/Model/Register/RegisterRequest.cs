@@ -6,7 +6,7 @@
 using System.Text.RegularExpressions;
 using FluentValidation;
 
-namespace EdFi.DmsConfigurationService.DataModel.Register;
+namespace EdFi.DmsConfigurationService.DataModel.Model.Register;
 
 public class RegisterRequest
 {

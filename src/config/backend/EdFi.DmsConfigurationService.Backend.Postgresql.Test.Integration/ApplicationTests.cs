@@ -6,8 +6,8 @@
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
-using EdFi.DmsConfigurationService.DataModel.Application;
-using EdFi.DmsConfigurationService.DataModel.Vendor;
+using EdFi.DmsConfigurationService.DataModel.Model.Application;
+using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 

@@ -7,7 +7,7 @@ using System.Net;
 using System.Security.Claims;
 using System.Text.Json;
 using EdFi.DmsConfigurationService.DataModel;
-using EdFi.DmsConfigurationService.DataModel.Action;
+using EdFi.DmsConfigurationService.DataModel.Model.Action;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
