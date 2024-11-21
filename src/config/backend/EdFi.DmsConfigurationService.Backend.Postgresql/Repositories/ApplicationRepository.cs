@@ -73,7 +73,7 @@ public class ApplicationRepository(
             await transaction.RollbackAsync();
             return new ApplicationInsertResult.FailureVendorNotFound();
         }
-        catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("uq_ClaimSetName"))
+        catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("uq_claimsetname"))
         {
             logger.LogWarning(ex, "ClaimSetName must be unique");
             await transaction.RollbackAsync();
@@ -217,7 +217,7 @@ public class ApplicationRepository(
             await transaction.RollbackAsync();
             return new ApplicationUpdateResult.FailureVendorNotFound();
         }
-        catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("uq_ClaimSetName"))
+        catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("uq_claimsetname"))
         {
             logger.LogWarning(ex, "ClaimSetName must be unique");
             await transaction.RollbackAsync();
