@@ -22,9 +22,9 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DmsConfigurationServic
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "datamodel", "datamodel", "{F90FF019-91D3-462E-94A4-96B52681DB16}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DmsConfigurationService.DataModel", "datamodel\EdFi.DmsConfigurationService.DataModel\EdFi.DmsConfigurationService.DataModel.csproj", "{E97DCC9F-C27F-497D-94FE-3DD39038C38B}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DmsConfigurationService.DataModel", "datamodel\EdFi.DmsConfigurationService.DataModel\EdFi.DmsConfigurationService.DataModel.csproj", "{E97DCC9F-C27F-497D-94FE-3DD39038C38B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration", "backend\EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration\EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration.csproj", "{EE23DFFB-C61D-48FE-B821-2442D67D7AF9}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration", "backend\EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration\EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration.csproj", "{EE23DFFB-C61D-48FE-B821-2442D67D7AF9}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

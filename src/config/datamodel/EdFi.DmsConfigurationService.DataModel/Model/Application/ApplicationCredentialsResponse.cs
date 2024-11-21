@@ -3,10 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-namespace EdFi.DmsConfigurationService.DataModel.Application;
+namespace EdFi.DmsConfigurationService.DataModel.Model.Application;
 
-public class ApiClientInsertCommand
+public class ApplicationCredentialsResponse
 {
-    public required string ClientId { get; set; }
-    public required Guid ClientUuid { get; set; }
+    public long Id { get; set; }
+    public required string Key { get; set; }
+    public required string Secret { get; set; }
 }

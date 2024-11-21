@@ -11,6 +11,7 @@ using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Postgresql;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using FluentValidation;
 using FluentValidation.AspNetCore;
@@ -34,6 +35,10 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder
             .Services.AddExceptionHandler<GlobalExceptionHandler>()
             .AddValidatorsFromAssembly(executingAssembly)
+            .AddValidatorsFromAssembly(
+                Assembly.Load("Edfi.DmsConfigurationService.DataModel"),
+                ServiceLifetime.Transient
+            )
             .AddFluentValidationAutoValidation();
 
         ValidatorOptions.Global.DisplayNameResolver = (type, memberInfo, expression) =>

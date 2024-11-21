@@ -5,7 +5,7 @@
 
 using FluentValidation;
 
-namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
+namespace EdFi.DmsConfigurationService.DataModel.Infrastructure;
 
 public static class ValidatorExtensions
 {
