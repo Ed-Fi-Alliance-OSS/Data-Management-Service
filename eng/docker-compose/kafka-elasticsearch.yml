@@ -48,9 +48,9 @@ services:
       - kafka-postgresql-source-logs:/kafka/logs
       - kafka-postgresql-source-config:/kafka/config
 
-  kafka-opensearch-sink:
-    hostname: kafka-opensearch-sink
-    container_name: kafka-opensearch-sink
+  kafka-elasticsearch-sink:
+    hostname: kafka-elasticsearch-sink
+    container_name: kafka-elasticsearch-sink
     image: edfialliance/ed-fi-kafka-connect:pre
     ports:
       - ${CONNECT_SINK_PORT:-8084}:8083
@@ -64,46 +64,25 @@ services:
       OFFSET_STORAGE_TOPIC: debezium_sink_offset
       STATUS_STORAGE_TOPIC: debezium_sink_status
     volumes:
-      - kafka-opensearch-sink-logs:/kafka/logs
-      - kafka-opensearch-sink-config:/kafka/config
+      - kafka-elasticsearch-sink-logs:/kafka/logs
+      - kafka-elasticsearch-sink-config:/kafka/config
 
-  opensearch:
-    image: opensearchproject/opensearch:2.15.0@sha256:1963b3ece46dfe1a17cd633fb2e9cea22bd20753a295f39c2f513ce0070cad42
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.5.1
     container_name: dms-search
     hostname: dms-search
     environment:
-      OPENSEARCH_INITIAL_ADMIN_PASSWORD: "abcdefgh1!"
-      OPENSEARCH_ADMIN_PASSWORD: "abcdefgh1!"
-      cluster.name: opensearch-cluster
-       # along with the memlock settings below, disables swapping
-      bootstrap.memory_lock: true
-      # minimum and maximum Java heap size, recommend setting both to 50% of system RAM
-      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
       discovery.type: single-node
-      # DISABLING TLS SECURITY:
-      # disables execution of install_demo_configuration.sh bundled with security plugin, which installs demo certificates and security configurations to OpenSearch
-      DISABLE_INSTALL_DEMO_CONFIG: true
-      # disables security plugin entirely in OpenSearch by setting plugins.security.disabled: true in opensearch.yml
-      DISABLE_SECURITY_PLUGIN: true
-    mem_limit: 2g
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-      nofile:
-        soft: 65536 # maximum number of open files for the OpenSearch user, set to at least 65536 on modern systems
-        hard: 65536
-    volumes:
-      - opensearch-data1:/usr/share/opensearch/data
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+      ELASTIC_PASSWORD: ${ELASTICSEARCH_ADMIN_PASSWORD:-abcdefgh1!}
+      xpack.security.enabled: false
+      xpack.security.transport.ssl.enabled: false
+      xpack.security.http.ssl.enabled: false
     ports:
-      - ${OPENSEARCH_HTTP_PORT:-9200}:9200
-      - ${OPENSEARCH_ANALYZER_PORT:-9600}:9600 # required for Performance Analyzer
-    restart: unless-stopped
-    healthcheck:
-      test: curl -s http://localhost:9200/_cat/health >/dev/null || exit 1
-      interval: 30s
-      timeout: 10s
-      retries: 50
+      - "${ELASTICSEARCH_HTTP_PORT:-9200}:9200"
+      - "${ELASTICSEARCH_ANALYZER_PORT:-9300}:9300"
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
 
 volumes:
   zookeeper-logs:
@@ -114,6 +93,6 @@ volumes:
   kafka-logs:
   kafka-postgresql-source-logs:
   kafka-postgresql-source-config:
-  kafka-opensearch-sink-logs:
-  kafka-opensearch-sink-config:
-  opensearch-data1:
+  kafka-elasticsearch-sink-logs:
+  kafka-elasticsearch-sink-config:
+  esdata:

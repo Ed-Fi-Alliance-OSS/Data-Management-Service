@@ -21,30 +21,43 @@ param (
     [Switch]
     $r,
 
-    # Enable KafkaUI and OpenSearch Dashboard
+    # Enable KafkaUI and OpenSearch or ElasticSearch Dashboard
     [Switch]
-    $EnableOpenSearchUI,
+    $EnableSearchEngineUI,
 
     # Enforce Authorization
     [Switch]
-    $EnforceAuthorization
+    $EnforceAuthorization,
+
+    # Search engine type ("OpenSearch" or "ElasticSearch")
+    [string]
+    [ValidateSet("OpenSearch", "ElasticSearch")]
+    $SearchEngine = "OpenSearch"
 )
 
 $files = @(
     "-f",
     "postgresql.yml",
     "-f",
-    "kafka-opensearch.yml",
-    "-f",
     "local-dms.yml"
 )
 
-if ($EnforceAuthorization) {
-    $files += @("-f", "keycloak.yml")
+if($SearchEngine -eq "ElasticSearch")
+{
+    $files += @("-f", "kafka-elasticsearch.yml")
+    if ($EnableSearchEngineUI) {
+        $files += @("-f", "kafka-elasticsearch-ui.yml")
+    }
+}
+else {
+    $files += @("-f", "kafka-opensearch.yml")
+    if ($EnableSearchEngineUI) {
+        $files += @("-f", "kafka-opensearch-ui.yml")
+    }
 }
 
-if ($EnableOpenSearchUI) {
-    $files += @("-f", "kafka-opensearch-ui.yml")
+if ($EnforceAuthorization) {
+    $files += @("-f", "keycloak.yml")
 }
 
 if ($d) {
@@ -78,5 +91,5 @@ else {
     }
 
     Start-Sleep 20
-    ./setup-connectors.ps1 $EnvironmentFile
+    ./setup-connectors.ps1 $EnvironmentFile $SearchEngine
 }
