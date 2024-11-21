@@ -4,14 +4,15 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
-using Microsoft.AspNetCore.Mvc.Testing;
-using NUnit.Framework;
-using FluentAssertions;
 using System.Security.Claims;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.DependencyInjection;
+using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
+using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using NUnit.Framework;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 
@@ -28,12 +29,19 @@ public class SecuredModuleTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                    .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(AuthenticationConstants.AuthenticationSchema, options => { });
+                    collection
+                        .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
+                        .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                            AuthenticationConstants.AuthenticationSchema,
+                            options => { }
+                        );
 
-                    collection.AddAuthorization(options => options.AddPolicy(SecurityConstants.ServicePolicy,
-                    policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)));
-
+                    collection.AddAuthorization(options =>
+                        options.AddPolicy(
+                            SecurityConstants.ServicePolicy,
+                            policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
+                        )
+                    );
                 }
             );
         });
@@ -58,12 +66,19 @@ public class SecuredModuleTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                    .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(AuthenticationConstants.AuthenticationSchema, options => { });
+                    collection
+                        .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
+                        .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                            AuthenticationConstants.AuthenticationSchema,
+                            options => { }
+                        );
 
-                    collection.AddAuthorization(options => options.AddPolicy(SecurityConstants.ServicePolicy,
-                    policy => policy.RequireClaim(ClaimTypes.Role, "invalid-role")));
-
+                    collection.AddAuthorization(options =>
+                        options.AddPolicy(
+                            SecurityConstants.ServicePolicy,
+                            policy => policy.RequireClaim(ClaimTypes.Role, "invalid-role")
+                        )
+                    );
                 }
             );
         });

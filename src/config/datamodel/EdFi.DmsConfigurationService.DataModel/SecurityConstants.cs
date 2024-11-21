@@ -3,9 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-namespace EdFi.DmsConfigurationService.DataModel.Vendor;
+namespace EdFi.DmsConfigurationService.DataModel;
 
-public class VendorUpdateCommand : VendorInsertCommand
+public static class SecurityConstants
 {
-    public long Id { get; set; }
+    public const string ServicePolicy = "ServicePolicy";
 }

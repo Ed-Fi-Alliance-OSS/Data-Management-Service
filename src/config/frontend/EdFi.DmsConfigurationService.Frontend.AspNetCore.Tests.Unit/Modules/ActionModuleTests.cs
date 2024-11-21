@@ -4,15 +4,16 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Security.Claims;
+using System.Text.Json;
+using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.DataModel.Model.Action;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
-using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
-using System.Security.Claims;
-using System.Text.Json;
 using NUnit.Framework;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
@@ -28,11 +29,32 @@ public class RegisterActionEndpointTests
         [SetUp]
         public void Setup()
         {
-            _mockActionResponse = [
-                new AdminAction { Id = 1, Name = "Create", Uri = "uri://ed-fi.org/api/actions/create" },
-                new AdminAction { Id = 2, Name = "Read", Uri = "uri://ed-fi.org/api/actions/read" },
-                new AdminAction { Id = 3, Name = "Update", Uri = "uri://ed-fi.org/api/actions/update" },
-                new AdminAction { Id = 4, Name = "Delete", Uri = "uri://ed-fi.org/api/actions/delete" }
+            _mockActionResponse =
+            [
+                new AdminAction
+                {
+                    Id = 1,
+                    Name = "Create",
+                    Uri = "uri://ed-fi.org/api/actions/create",
+                },
+                new AdminAction
+                {
+                    Id = 2,
+                    Name = "Read",
+                    Uri = "uri://ed-fi.org/api/actions/read",
+                },
+                new AdminAction
+                {
+                    Id = 3,
+                    Name = "Update",
+                    Uri = "uri://ed-fi.org/api/actions/update",
+                },
+                new AdminAction
+                {
+                    Id = 4,
+                    Name = "Delete",
+                    Uri = "uri://ed-fi.org/api/actions/delete",
+                },
             ];
         }
 
@@ -46,11 +68,19 @@ public class RegisterActionEndpointTests
                 builder.ConfigureServices(
                     (collection) =>
                     {
-                        collection.AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                        .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(AuthenticationConstants.AuthenticationSchema, _ => { });
+                        collection
+                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
+                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                                AuthenticationConstants.AuthenticationSchema,
+                                _ => { }
+                            );
 
-                        collection.AddAuthorization(options => options.AddPolicy(SecurityConstants.ServicePolicy,
-                        policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)));
+                        collection.AddAuthorization(options =>
+                            options.AddPolicy(
+                                SecurityConstants.ServicePolicy,
+                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
+                            )
+                        );
                     }
                 );
             });
@@ -94,11 +124,19 @@ public class RegisterActionEndpointTests
                 builder.ConfigureServices(
                     (collection) =>
                     {
-                        collection.AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                        .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(AuthenticationConstants.AuthenticationSchema, _ => { });
+                        collection
+                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
+                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                                AuthenticationConstants.AuthenticationSchema,
+                                _ => { }
+                            );
 
-                        collection.AddAuthorization(options => options.AddPolicy(SecurityConstants.ServicePolicy,
-                        policy => policy.RequireClaim(ClaimTypes.Role, "invalid-role")));
+                        collection.AddAuthorization(options =>
+                            options.AddPolicy(
+                                SecurityConstants.ServicePolicy,
+                                policy => policy.RequireClaim(ClaimTypes.Role, "invalid-role")
+                            )
+                        );
                     }
                 );
             });
@@ -117,6 +155,4 @@ public class RegisterActionEndpointTests
             _response!.Dispose();
         }
     }
-
 };
-

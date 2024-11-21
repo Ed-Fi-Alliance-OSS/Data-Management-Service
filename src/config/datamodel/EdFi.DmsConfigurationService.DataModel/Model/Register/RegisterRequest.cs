@@ -4,10 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.RegularExpressions;
-using EdFi.DmsConfigurationService.Backend.Repositories;
 using FluentValidation;
 
-namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
+namespace EdFi.DmsConfigurationService.DataModel.Model.Register;
 
 public class RegisterRequest
 {
@@ -17,12 +16,8 @@ public class RegisterRequest
 
     public class Validator : AbstractValidator<RegisterRequest>
     {
-        private readonly IClientRepository _clientRepository;
-
-        public Validator(IClientRepository clientRepository)
+        public Validator()
         {
-            _clientRepository = clientRepository;
-
             RuleFor(m => m.ClientId).NotEmpty();
             RuleFor(m => m.ClientSecret).NotEmpty();
             RuleFor(m => m.ClientSecret)
