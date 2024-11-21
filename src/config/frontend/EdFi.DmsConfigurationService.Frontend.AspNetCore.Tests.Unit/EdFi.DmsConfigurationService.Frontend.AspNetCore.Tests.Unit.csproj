@@ -11,7 +11,6 @@
   <ItemGroup>
     <PackageReference Include="FakeItEasy" />
     <PackageReference Include="FluentAssertions" />
-    <PackageReference Include="FluentValidation" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle">
       <PrivateAssets>all</PrivateAssets>

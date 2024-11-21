@@ -73,6 +73,12 @@ public class ApplicationRepository(
             await transaction.RollbackAsync();
             return new ApplicationInsertResult.FailureVendorNotFound();
         }
+        catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("uq_claimsetname"))
+        {
+            logger.LogWarning(ex, "ClaimSetName must be unique");
+            await transaction.RollbackAsync();
+            return new ApplicationInsertResult.FailureDuplicateClaimSetName();
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Insert application failure");
@@ -184,6 +190,11 @@ public class ApplicationRepository(
 
             int affectedRows = await connection.ExecuteAsync(sql, command);
 
+            if (affectedRows == 0)
+            {
+                return new ApplicationUpdateResult.FailureNotExists();
+            }
+
             sql = "DELETE FROM dmscs.ApplicationEducationOrganization WHERE ApplicationId = @ApplicationId";
             await connection.ExecuteAsync(sql, new { ApplicationId = command.Id });
 
@@ -201,15 +212,19 @@ public class ApplicationRepository(
             await connection.ExecuteAsync(sql, educationOrganizations);
             await transaction.CommitAsync();
 
-            return affectedRows > 0
-                ? new ApplicationUpdateResult.Success()
-                : new ApplicationUpdateResult.FailureNotExists();
+            return new ApplicationUpdateResult.Success();
         }
         catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_vendor"))
         {
             logger.LogWarning(ex, "Update application failure: Vendor not found");
             await transaction.RollbackAsync();
             return new ApplicationUpdateResult.FailureVendorNotFound();
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("uq_claimsetname"))
+        {
+            logger.LogWarning(ex, "ClaimSetName must be unique");
+            await transaction.RollbackAsync();
+            return new ApplicationUpdateResult.FailureDuplicateClaimSetName();
         }
         catch (Exception ex)
         {

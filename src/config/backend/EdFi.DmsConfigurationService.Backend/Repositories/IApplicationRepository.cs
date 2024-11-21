@@ -35,6 +35,11 @@ public record ApplicationInsertResult
     public record FailureVendorNotFound() : ApplicationInsertResult();
 
     /// <summary>
+    /// Duplicate ClaimSetName
+    /// </summary>
+    public record FailureDuplicateClaimSetName() : ApplicationInsertResult();
+
+    /// <summary>
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : ApplicationInsertResult();
@@ -88,6 +93,11 @@ public record ApplicationUpdateResult
     /// Referenced vendor not found exception thrown and caught
     /// </summary>
     public record FailureVendorNotFound() : ApplicationUpdateResult();
+
+    /// <summary>
+    /// Duplicate ClaimSetName
+    /// </summary>
+    public record FailureDuplicateClaimSetName() : ApplicationUpdateResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught

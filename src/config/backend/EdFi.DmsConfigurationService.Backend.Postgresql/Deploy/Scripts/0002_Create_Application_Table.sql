@@ -26,3 +26,8 @@ CREATE TABLE dmscs.ApplicationEducationOrganization (
 COMMENT ON TABLE dmscs.ApplicationEducationOrganization IS 'Relationship of applications with educational organizations';
 COMMENT ON COLUMN dmscs.ApplicationEducationOrganization.ApplicationId IS 'Application id';
 COMMENT ON COLUMN dmscs.ApplicationEducationOrganization.EducationOrganizationId IS 'Education organization id';
+
+ALTER TABLE dmscs.Application
+ADD CONSTRAINT uq_ClaimSetName UNIQUE (ClaimSetName);
+
+CREATE UNIQUE INDEX idx_ClaimSetName ON dmscs.Application (ClaimSetName);
