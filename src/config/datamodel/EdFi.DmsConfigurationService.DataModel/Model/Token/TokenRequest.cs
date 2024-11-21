@@ -5,7 +5,7 @@
 
 using FluentValidation;
 
-namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
+namespace EdFi.DmsConfigurationService.DataModel.Model.Token;
 
 public class TokenRequest
 {

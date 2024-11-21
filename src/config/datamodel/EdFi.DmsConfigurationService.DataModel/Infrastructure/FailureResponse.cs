@@ -3,16 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Diagnostics;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FluentValidation.Results;
-using Npgsql.Internal;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
-internal static class FailureResponse
+public static class FailureResponse
 {
     private static readonly JsonSerializerOptions _serializerOptions =
         new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };

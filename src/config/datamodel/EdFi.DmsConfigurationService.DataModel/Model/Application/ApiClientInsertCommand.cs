@@ -3,9 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
+namespace EdFi.DmsConfigurationService.DataModel.Model.Application;
 
-public static class SecurityConstants
+public class ApiClientInsertCommand
 {
-    public const string ServicePolicy = "ServicePolicy";
+    public required string ClientId { get; set; }
+    public required Guid ClientUuid { get; set; }
 }

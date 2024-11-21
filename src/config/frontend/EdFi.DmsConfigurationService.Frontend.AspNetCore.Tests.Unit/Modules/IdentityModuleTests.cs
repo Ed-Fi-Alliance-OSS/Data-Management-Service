@@ -8,8 +8,9 @@ using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Model.Register;
+using EdFi.DmsConfigurationService.DataModel.Model.Token;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
-using EdFi.DmsConfigurationService.Frontend.AspNetCore.Model;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
@@ -52,7 +53,7 @@ public class RegisterEndpointTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((_) => new RegisterRequest.Validator(_clientRepository!));
+                    collection.AddTransient((_) => new RegisterRequest.Validator());
                     collection.AddTransient((_) => _clientRepository!);
                 }
             );
@@ -84,7 +85,7 @@ public class RegisterEndpointTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((_) => new RegisterRequest.Validator(_clientRepository!));
+                    collection.AddTransient((_) => new RegisterRequest.Validator());
                     collection.AddTransient((_) => _clientRepository!);
                 }
             );
@@ -125,7 +126,7 @@ public class RegisterEndpointTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((_) => new RegisterRequest.Validator(_clientRepository!));
+                    collection.AddTransient((_) => new RegisterRequest.Validator());
                     collection.AddTransient((_) => _clientRepository!);
                 }
             );
@@ -168,7 +169,7 @@ public class RegisterEndpointTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((_) => new RegisterRequest.Validator(_clientRepository!));
+                    collection.AddTransient((_) => new RegisterRequest.Validator());
                     collection.AddTransient((_) => _clientRepository!);
                 }
             );
@@ -207,7 +208,7 @@ public class RegisterEndpointTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((_) => new RegisterRequest.Validator(_clientRepository!));
+                    collection.AddTransient((_) => new RegisterRequest.Validator());
                     collection.AddTransient((_) => _clientRepository!);
                 }
             );
@@ -246,7 +247,7 @@ public class RegisterEndpointTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((_) => new RegisterRequest.Validator(_clientRepository!));
+                    collection.AddTransient((_) => new RegisterRequest.Validator());
                     collection.AddTransient((_) => _clientRepository!);
                 }
             );
@@ -284,7 +285,7 @@ public class RegisterEndpointTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((_) => new RegisterRequest.Validator(_clientRepository!));
+                    collection.AddTransient((_) => new RegisterRequest.Validator());
                     collection.AddTransient((_) => _clientRepository!);
                 }
             );
@@ -322,7 +323,7 @@ public class RegisterEndpointTests
                     {
                         opts.AllowRegistration = false;
                     });
-                    collection.AddTransient((_) => new RegisterRequest.Validator(_clientRepository!));
+                    collection.AddTransient((_) => new RegisterRequest.Validator());
                     collection.AddTransient((_) => _clientRepository!);
                 }
             );
@@ -361,7 +362,7 @@ public class RegisterEndpointTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((_) => new RegisterRequest.Validator(_clientRepository!));
+                    collection.AddTransient((_) => new RegisterRequest.Validator());
                     collection.AddTransient((_) => _clientRepository!);
                 }
             );
