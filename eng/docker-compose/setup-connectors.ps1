@@ -3,7 +3,12 @@
 param (
     # Environment file
     [string]
-    $EnvironmentFile = "./.env"
+    $EnvironmentFile = "./.env",
+
+    # Search engine type ("OpenSearch" or "ElasticSearch")
+    [string]
+    [ValidateSet("OpenSearch", "ElasticSearch")]
+    $SearchEngine = "OpenSearch"
 )
 
 function IsReady([string] $Url) {
@@ -47,6 +52,17 @@ $sourceBase = "http://localhost:$sourcePort/connectors"
 $sinkBase = "http://localhost:$sinkPort/connectors"
 $sourceUrl = "$sourceBase/postgresql-source"
 $sinkUrl = "$sinkBase/opensearch-sink"
+
+$connectorConfig = "opensearch_connector.json"
+$AdminPassword = $envFile["OPENSEARCH_ADMIN_PASSWORD"]
+
+# Search engine check
+if($SearchEngine -eq "ElasticSearch")
+{
+    $sinkUrl = "$sinkBase/elasticsearch-sink"
+    $connectorConfig = "elasticsearch_connector.json"
+    $AdminPassword = $envFile["ELASTICSEARCH_ADMIN_PASSWORD"]
+}
 
 # Source connector
 if (IsReady($sourceBase)) {
@@ -95,8 +111,8 @@ if (IsReady($sinkBase)) {
     }
 
     try {
-        $sinkBody = Get-Content "./opensearch_connector.json"
-        $sinkBody = $sinkBody.Replace("abcdefgh1!", $envFile["OPENSEARCH_ADMIN_PASSWORD"])
+        $sinkBody = Get-Content "./$connectorConfig"
+        $sinkBody = $sinkBody.Replace("abcdefgh1!", $AdminPassword)
 
         Write-Output "Installing sink connector configuration"
         Invoke-RestMethod -Method Post -uri $sinkBase -ContentType "application/json" -Body $sinkBody

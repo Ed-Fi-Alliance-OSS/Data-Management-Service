@@ -1,17 +1,15 @@
 {
-  "name":"opensearch-sink",
+  "name":"elasticsearch-sink",
   "config": {
-    "connector.class": "io.aiven.kafka.connect.opensearch.OpensearchSinkConnector",
+    "connector.class": "io.aiven.connect.elasticsearch.ElasticsearchSinkConnector",
     "topics": "edfi.dms.document",
-    "type_name": "_doc",
+    "type.name": "_doc",
 
     "connection.url": "http://dms-search:9200",
     "connection.username": "admin",
     "connection.password": "abcdefgh1!",
 
     "max.in.flight.requests":"1",
-
-    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
 
     "value.converter": "org.apache.kafka.connect.json.JsonConverter",
     "value.converter.schemas.enable": "false",
@@ -29,7 +27,7 @@
     "behavior.on.version.conflict": "ignore",
     "behavior.on.null.values": "delete",
     "drop.invalid.message": "true",
-    "index.write.method": "upsert"
-
+    "index.write.method": "upsert",
+    "flush.synchronously": "true"
   }
 }

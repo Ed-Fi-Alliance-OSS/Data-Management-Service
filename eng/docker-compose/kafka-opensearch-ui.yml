@@ -24,7 +24,7 @@ services:
     expose:
       - ${OPENSEARCH_DASHBOARD_PORT:-5601}
     environment:
-      OPENSEARCH_HOSTS: '["http://dms-opensearch:9200"]'
+      OPENSEARCH_HOSTS: '["http://dms-search:9200"]'
        # disables security dashboards plugin in OpenSearch Dashboards, otherwise will have TLS errors
       DISABLE_SECURITY_DASHBOARDS_PLUGIN: true
     restart: unless-stopped
