@@ -23,6 +23,8 @@ start up different configurations:
 4. `local-dms.yml` runs the DMS from local source code.
 5. `published-dms.yml` runs the latest DMS `pre` tag as published to Docker Hub.
 6. `keycloak.yml` runs KeyCloak (identity provider).
+7. `kafka-elasticsearch.yml` covers Kafka, Zookeeper, ElasticSearch
+8. `kafka-elasticsearch-ui` covers KafkaUI, ElasticSearch(Kibana) Dashboard
 
 Before running these, create a `.env` file. The `.env.example` is a good
 starting point.
@@ -32,6 +34,20 @@ configurations into the two Kafka Connector images. The file
 `setup-connectors.ps1` will do this for you. Warning: you need to wait a few
 seconds after starting the services before you can install connector
 configurations.
+
+You can specify the search engine type to set the appropriate Kafka connector
+configurations. Valid values are `OpenSearch` and `ElasticSearch`. The default value
+is `OpenSearch`.
+
+```pwsh
+# To install OpenSearch Kafka connector configurations
+./setup-connectors.ps1 -SearchEngine "OpenSearch"
+```
+
+```pwsh
+# To install ElasticSearch Kafka connector configurations
+./setup-connectors.ps1 -SearchEngine "ElasticSearch"
+```
 
 > [!WARNING]
 > The script `setup-connectors.ps1` first attempts to delete connectors that are
