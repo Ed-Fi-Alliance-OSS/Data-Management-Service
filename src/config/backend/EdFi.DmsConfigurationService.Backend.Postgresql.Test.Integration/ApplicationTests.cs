@@ -131,7 +131,7 @@ public class ApplicationTests : DatabaseTest
         }
 
         [Test]
-        public async Task Should_get_a_failuere_duplicate_claim_set_name()
+        public async Task Should_get_a_failure_duplicate_claim_set_name()
         {
             IVendorRepository vendorRepository = new VendorRepository(
                 Configuration.DatabaseOptions,
@@ -150,7 +150,7 @@ public class ApplicationTests : DatabaseTest
             vendorResult.Should().BeOfType<VendorInsertResult.Success>();
             _vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
 
-            ApplicationInsertCommand _application1 = new()
+            ApplicationInsertCommand application1 = new()
             {
                 ApplicationName = "Test Application",
                 VendorId = _vendorId,
@@ -159,12 +159,12 @@ public class ApplicationTests : DatabaseTest
             };
 
             var insertResult1 = await _applicationRepository.InsertApplication(
-                _application1,
+                application1,
                 new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
             );
             insertResult1.Should().BeOfType<ApplicationInsertResult.Success>();
 
-            ApplicationInsertCommand _application2 = new()
+            ApplicationInsertCommand application2 = new()
             {
                 ApplicationName = "Test Application 2",
                 VendorId = _vendorId,
@@ -173,7 +173,7 @@ public class ApplicationTests : DatabaseTest
             };
 
             var insertResult2 = await _applicationRepository.InsertApplication(
-                _application2,
+                application2,
                 new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
             );
             insertResult2.Should().BeOfType<ApplicationInsertResult.FailureDuplicateClaimSetName>();
@@ -203,7 +203,7 @@ public class ApplicationTests : DatabaseTest
             vendorResult.Should().BeOfType<VendorInsertResult.Success>();
             _vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
 
-            ApplicationInsertCommand _application = new()
+            ApplicationInsertCommand application = new()
             {
                 ApplicationName = "Test Application",
                 VendorId = _vendorId,
@@ -212,7 +212,7 @@ public class ApplicationTests : DatabaseTest
             };
 
             var insertResult = await _applicationRepository.InsertApplication(
-                _application,
+                application,
                 new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
             );
             insertResult.Should().BeOfType<ApplicationInsertResult.Success>();
@@ -251,7 +251,7 @@ public class ApplicationTests : DatabaseTest
             vendorResult.Should().BeOfType<VendorInsertResult.Success>();
             _vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
 
-            ApplicationInsertCommand _application1 = new()
+            ApplicationInsertCommand application1 = new()
             {
                 ApplicationName = "Test Application",
                 VendorId = _vendorId,
@@ -260,12 +260,12 @@ public class ApplicationTests : DatabaseTest
             };
 
             var insertResult1 = await _applicationRepository.InsertApplication(
-                _application1,
+                application1,
                 new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
             );
             insertResult1.Should().BeOfType<ApplicationInsertResult.Success>();
 
-            ApplicationInsertCommand _application2 = new()
+            ApplicationInsertCommand application2 = new()
             {
                 ApplicationName = "Test Application 2",
                 VendorId = _vendorId,
@@ -274,7 +274,7 @@ public class ApplicationTests : DatabaseTest
             };
 
             var insertResult2 = await _applicationRepository.InsertApplication(
-                _application2,
+                application2,
                 new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
             );
             insertResult2.Should().BeOfType<ApplicationInsertResult.Success>();
@@ -297,7 +297,7 @@ public class ApplicationTests : DatabaseTest
     [TestFixture]
     public class UpdateTests : ApplicationTests
     {
-        private long _id = 0;
+        private long _id;
 
         [SetUp]
         public async Task SetUp()
@@ -337,7 +337,7 @@ public class ApplicationTests : DatabaseTest
             command.ApplicationName = "Update Application Name";
             command.EducationOrganizationIds = [1, 2];
 
-            var VendorUpdateResult = await _applicationRepository.UpdateApplication(
+            var vendorUpdateResult = await _applicationRepository.UpdateApplication(
                 new ApplicationUpdateCommand()
                 {
                     Id = _id,
@@ -347,7 +347,7 @@ public class ApplicationTests : DatabaseTest
                     VendorId = command.VendorId,
                 }
             );
-            VendorUpdateResult.Should().BeOfType<ApplicationUpdateResult.Success>();
+            vendorUpdateResult.Should().BeOfType<ApplicationUpdateResult.Success>();
         }
 
         [Test]
