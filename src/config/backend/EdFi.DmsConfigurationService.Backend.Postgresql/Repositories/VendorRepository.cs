@@ -154,6 +154,11 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             {
                 var affectedRows = await connection.ExecuteAsync(sql, command);
 
+                if (affectedRows == 0)
+                {
+                    return new VendorUpdateResult.FailureNotExists();
+                }
+
                 sql = "DELETE FROM dmscs.VendorNamespacePrefix WHERE VendorId = @VendorId";
                 await connection.ExecuteAsync(sql, new { VendorId = command.Id });
 
@@ -172,9 +177,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                 await connection.ExecuteAsync(sql, namespacePrefixes);
                 await transaction.CommitAsync();
 
-                return affectedRows > 0
-                    ? new VendorUpdateResult.Success()
-                    : new VendorUpdateResult.FailureNotExists();
+                return new VendorUpdateResult.Success();
             }
             catch (Exception ex)
             {

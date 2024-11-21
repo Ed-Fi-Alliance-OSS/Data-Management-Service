@@ -190,6 +190,11 @@ public class ApplicationRepository(
 
             int affectedRows = await connection.ExecuteAsync(sql, command);
 
+            if (affectedRows == 0)
+            {
+                return new ApplicationUpdateResult.FailureNotExists();
+            }
+
             sql = "DELETE FROM dmscs.ApplicationEducationOrganization WHERE ApplicationId = @ApplicationId";
             await connection.ExecuteAsync(sql, new { ApplicationId = command.Id });
 
@@ -207,9 +212,7 @@ public class ApplicationRepository(
             await connection.ExecuteAsync(sql, educationOrganizations);
             await transaction.CommitAsync();
 
-            return affectedRows > 0
-                ? new ApplicationUpdateResult.Success()
-                : new ApplicationUpdateResult.FailureNotExists();
+            return new ApplicationUpdateResult.Success();
         }
         catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_vendor"))
         {
