@@ -69,8 +69,8 @@ services:
 
   opensearch:
     image: opensearchproject/opensearch:2.15.0@sha256:1963b3ece46dfe1a17cd633fb2e9cea22bd20753a295f39c2f513ce0070cad42
-    container_name: dms-opensearch
-    hostname: dms-opensearch
+    container_name: dms-search
+    hostname: dms-search
     environment:
       OPENSEARCH_INITIAL_ADMIN_PASSWORD: "abcdefgh1!"
       OPENSEARCH_ADMIN_PASSWORD: "abcdefgh1!"

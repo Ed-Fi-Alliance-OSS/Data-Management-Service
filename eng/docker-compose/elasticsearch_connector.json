@@ -5,7 +5,7 @@
     "topics": "edfi.dms.document",
     "type.name": "_doc",
 
-    "connection.url": "http://dms-elasticsearch:9200",
+    "connection.url": "http://dms-search:9200",
     "connection.username": "admin",
     "connection.password": "abcdefgh1!",
 

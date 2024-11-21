@@ -69,12 +69,24 @@ also append `-v`. Examples:
 ./start-local-dms.ps1 -d -v
 ```
 
-You can set up the Kafka UI and OpenSearch Dashboard containers for testing by
-passing the -EnableOpenSearchUI option.
+You can set up the Kafka UI and OpenSearch or ElasticSearch Dashboard containers
+for testing by passing the -EnableSearchEngineUI option.
 
 ```pwsh
-# Start everything with Kafka UI and OpenSearch Dashboard
-./start-local-dms.ps1 -EnableOpenSearchUI
+# Start everything with Kafka UI and OpenSearch or ElasticSearch Dashboard
+./start-local-dms.ps1 -EnableSearchEngineUI
+```
+
+Search engine type. Valid values are `OpenSearch`, `ElasticSearch`. Default: `OpenSearch`
+
+```pwsh
+# To setup OpenSearch search engine
+./start-local-dms.ps1 -SearchEngine "OpenSearch"
+```
+
+```pwsh
+# To setup ElasticSearch search engine
+./start-local-dms.ps1 -SearchEngine "ElasticSearch"
 ```
 
 ```pwsh

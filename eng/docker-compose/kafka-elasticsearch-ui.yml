@@ -1,0 +1,28 @@
+services:
+  # Kafka UI https://docs.kafka-ui.provectus.io/
+  kafka-ui:
+    container_name: kafka-ui
+    image: provectuslabs/kafka-ui:latest
+    ports:
+      - ${KAFKA_UI_PORT:-8088}:8080
+    depends_on:
+      - kafka
+    links:
+      - kafka
+      - kafka-postgresql-source
+      - kafka-elasticsearch-sink
+    environment:
+      DYNAMIC_CONFIG_ENABLED: 'true'
+      KAFKA_CLUSTERS_0_NAME: kafka1
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+
+  kibana:
+      image: docker.elastic.co/kibana/kibana:8.5.1
+      environment:
+        ELASTICSEARCH_HOSTS: http://dms-search:9200
+        ELASTICSEARCH_USERNAME: ${ELASTICSEARCH_ADMIN_USERNAME:-admin}
+        ELASTICSEARCH_PASSWORD: ${ELASTICSEARCH_ADMIN_PASSWORD:-abcdefgh1!}
+      ports:
+        - "${ELASTICSEARCH_DASHBOARD_PORT:-5601}:5601"
+      depends_on:
+        - elasticsearch

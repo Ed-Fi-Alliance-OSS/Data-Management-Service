@@ -21,9 +21,9 @@ param (
     [Switch]
     $r,
 
-    # Enable KafkaUI and OpenSearch Dashboard
+    # Enable KafkaUI and OpenSearch or ElasticSearch Dashboard
     [Switch]
-    $EnableOpenSearchUI,
+    $EnableSearchEngineUI,
 
     # Enforce Authorization
     [Switch]
@@ -45,17 +45,19 @@ $files = @(
 if($SearchEngine -eq "ElasticSearch")
 {
     $files += @("-f", "kafka-elasticsearch.yml")
+    if ($EnableSearchEngineUI) {
+        $files += @("-f", "kafka-elasticsearch-ui.yml")
+    }
 }
 else {
     $files += @("-f", "kafka-opensearch.yml")
+    if ($EnableSearchEngineUI) {
+        $files += @("-f", "kafka-opensearch-ui.yml")
+    }
 }
 
 if ($EnforceAuthorization) {
     $files += @("-f", "keycloak.yml")
-}
-
-if ($EnableOpenSearchUI) {
-    $files += @("-f", "kafka-opensearch-ui.yml")
 }
 
 if ($d) {
