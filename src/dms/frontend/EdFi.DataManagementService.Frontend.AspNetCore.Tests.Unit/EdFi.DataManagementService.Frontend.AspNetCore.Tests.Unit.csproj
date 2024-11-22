@@ -43,4 +43,8 @@
     <ProjectReference Include="..\EdFi.DataManagementService.Frontend.AspNetCore\EdFi.DataManagementService.Frontend.AspNetCore.csproj" />
   </ItemGroup>
 
+  <PropertyGroup>
+    <WarningsNotAsErrors>NU1901;NU1902;NU1903;NU1904</WarningsNotAsErrors>
+  </PropertyGroup>
+
 </Project>
