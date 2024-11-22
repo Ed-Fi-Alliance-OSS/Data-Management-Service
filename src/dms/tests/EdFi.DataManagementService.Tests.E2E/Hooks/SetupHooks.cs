@@ -16,19 +16,23 @@ public static class SetupHooks
     [BeforeTestRun]
     public static async Task BeforeTestRun()
     {
-        if (AppSettings.UseTestContainers)
+        if (!AppSettings.UseTestContainers)
         {
-            if (AppSettings.OpenSearchEnabled)
-            {
-                _containerSetup = new OpenSearchContainerSetup();
-            }
-            else
-            {
-                _containerSetup = new ContainerSetup();
-            }
-
-            await _containerSetup.StartContainers();
+            return;
         }
+
+        if (!AppSettings.OpenSearchEnabled && !AppSettings.ElasticsearchEnabled)
+        {
+            _containerSetup = new ContainerSetup();
+        }
+        else
+        {
+            _containerSetup = AppSettings.ElasticsearchEnabled
+                ? new ElasticsearchContainerSetup()
+                : new OpenSearchContainerSetup();
+        }
+
+        await _containerSetup.StartContainers();
     }
 
     [BeforeFeature]
@@ -60,7 +64,7 @@ public static class SetupHooks
         if (AppSettings.UseTestContainers)
         {
             await _containerSetup!.ApiLogs(logger);
-            await _containerSetup!.ResetData();
+            await _containerSetup.ResetData();
         }
     }
 

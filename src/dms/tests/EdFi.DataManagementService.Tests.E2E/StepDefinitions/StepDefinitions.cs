@@ -28,7 +28,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private string _location = string.Empty;
         private string _dependentId = string.Empty;
         private string _referencedResourceId = string.Empty;
-        private readonly bool _openSearchEnabled = AppSettings.OpenSearchEnabled;
+        private readonly bool _openSearchEnabled = AppSettings.OpenSearchEnabled || AppSettings.ElasticsearchEnabled;
 
         #region Given
 

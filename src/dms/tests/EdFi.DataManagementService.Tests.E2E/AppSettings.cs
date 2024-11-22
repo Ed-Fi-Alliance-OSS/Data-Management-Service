@@ -21,5 +21,12 @@ namespace EdFi.DataManagementService.Tests.E2E
                 "opensearch",
                 StringComparison.InvariantCultureIgnoreCase
             );
+
+        public static bool ElasticsearchEnabled =>
+            !string.IsNullOrEmpty(_configuration["QueryHandler"])
+            && _configuration["QueryHandler"]!.Equals(
+                "elasticsearch",
+                StringComparison.InvariantCultureIgnoreCase
+            );
     }
 }
