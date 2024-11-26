@@ -11,6 +11,7 @@ public interface IOAuthManager
 {
     public Task<HttpResponseMessage> GetAccessTokenAsync(
         IHttpClientWrapper httpClient,
+        string grantType,
         string authHeaderString,
         string upstreamUri,
         TraceId traceId
