@@ -116,7 +116,7 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
         {
             string fullDateTimeString = dateValue
                     .ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)
-                    .ToString("yyyy-MM-ddTHH:mm:sszzz", CultureInfo.InvariantCulture);
+                    .ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
 
             return new QueryElementAndType(
                 QueryFieldName: clientQueryTerm.Key,
