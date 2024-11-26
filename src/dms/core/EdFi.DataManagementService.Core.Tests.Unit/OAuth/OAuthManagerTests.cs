@@ -231,7 +231,7 @@ public class OAuthManagerTests
     "error_description": "Invalid client or Invalid client credentials"
 }
 """
-                );
+                , GrantType);
             }
 
             [Test]
@@ -282,7 +282,7 @@ public class OAuthManagerTests
             [SetUp]
             public async Task SetUp()
             {
-                await Act(AuthHeader, HttpStatusCode.BadRequest, "{}");
+                await Act(AuthHeader, HttpStatusCode.BadRequest, "{}", GrantType);
             }
 
             [Test]
