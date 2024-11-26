@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.External.Model;
@@ -104,6 +105,24 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
         if (matchingQueryField == null)
         {
             return null;
+        }
+
+        if (matchingQueryField.DocumentPathsWithType[0].Type == "date-time" && DateOnly.TryParse(
+                clientQueryTerm.Value,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out DateOnly dateValue
+            ))
+        {
+            string fullDateTimeString = dateValue
+                    .ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)
+                    .ToString("yyyy-MM-ddTHH:mm:sszzz", CultureInfo.InvariantCulture);
+
+            return new QueryElementAndType(
+                QueryFieldName: clientQueryTerm.Key,
+                DocumentPathsAndTypes: matchingQueryField.DocumentPathsWithType,
+                Value: fullDateTimeString
+            );
         }
 
         return new QueryElementAndType(
