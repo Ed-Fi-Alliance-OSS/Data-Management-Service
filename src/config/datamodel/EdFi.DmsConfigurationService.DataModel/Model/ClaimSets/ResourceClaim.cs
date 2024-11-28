@@ -23,6 +23,8 @@ public class ResourceClaim
     public ResourceClaim()
     {
         Children = [];
+        DefaultAuthorizationStrategiesForCRUD = [];
+        AuthorizationStrategyOverridesForCRUD = [];
     }
 }
 
@@ -34,5 +36,7 @@ public class ResourceClaimAction
 
 public class ClaimSetResourceClaimActionAuthStrategies
 {
-    public IList<AuthorizationStrategy?> AuthorizationStrategies { get; set; } = [];
+    public int? ActionId { get; set; }
+    public string? ActionName { get; set; }
+    public IEnumerable<AuthorizationStrategy>? AuthorizationStrategies { get; set; }
 }

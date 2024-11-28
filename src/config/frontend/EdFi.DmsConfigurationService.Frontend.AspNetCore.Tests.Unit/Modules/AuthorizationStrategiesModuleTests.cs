@@ -88,7 +88,12 @@ public class AuthorizationStrategiesModuleTests
             // Act
             _response = await client.GetAsync("/authorizationStrategies");
             var responseString = await _response.Content.ReadAsStringAsync();
-            var content = JsonSerializer.Deserialize<AuthorizationStrategy[]>(responseString);
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            };
+
+            var content = JsonSerializer.Deserialize<List<AuthorizationStrategy>>(responseString, options);
 
             // Assert
             _response!.StatusCode.Should().Be(HttpStatusCode.OK);

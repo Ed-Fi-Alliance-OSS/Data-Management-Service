@@ -10,7 +10,12 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 
 public class ResourceClaimValidator
 {
-    private static List<string>? _duplicateResources = [];
+    private static List<string>? _duplicateResources;
+
+    public ResourceClaimValidator()
+    {
+        _duplicateResources = [];
+    }
 
     public void Validate<T>(List<string> dbActions,
         List<string?> dbAuthStrategies, ResourceClaim resourceClaim, List<ResourceClaim> existingResourceClaims,
@@ -38,7 +43,6 @@ public class ResourceClaimValidator
             {
                 return;
             }
-
             _duplicateResources.Add(resourceClaim.Name);
             context.AddFailure(propertyName, "Only unique resource claims can be added. The following is a duplicate resource: '{ResourceClaimName}'.");
         }
@@ -111,7 +115,7 @@ public class ResourceClaimValidator
             var atleastAnActionEnabled = resourceClaimActions.Exists(x => x.Enabled);
             if (!atleastAnActionEnabled)
             {
-                context.AddFailure(propertyName, "A resource must have at least one action associated with it to be added.");
+                context.AddFailure(propertyName, "A resource must have at least one action associated with it to be added. Resource name: '{ResourceClaimName}'");
             }
             else
             {
@@ -121,21 +125,21 @@ public class ResourceClaimValidator
                               .ToList();
                 foreach (var duplicate in duplicates)
                 {
-                    context.AddFailure(propertyName, $"{duplicate} action is duplicated.");
+                    context.AddFailure(propertyName, $"{duplicate} action is duplicated. Resource name: '{{ResourceClaimName}}'");
                 }
                 foreach (var action in resourceClaimActions.Select(x => x.Name))
                 {
                     if (!dbActions.Exists(actionName => actionName != null &&
                         actionName.Equals(action, StringComparison.InvariantCultureIgnoreCase)))
                     {
-                        context.AddFailure(propertyName, $"{action} is not a valid action.");
+                        context.AddFailure(propertyName, $"{action} is not a valid action. Resource name: '{{ResourceClaimName}}'");
                     }
                 }
             }
         }
         else
         {
-            context.AddFailure(propertyName, $"Actions can not be empty.");
+            context.AddFailure(propertyName, $"Actions can not be empty. Resource name: '{{ResourceClaimName}}'");
         }
     }
 }
