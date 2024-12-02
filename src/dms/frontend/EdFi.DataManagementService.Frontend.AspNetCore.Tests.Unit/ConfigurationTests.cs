@@ -7,6 +7,7 @@ using System.Net;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
@@ -167,18 +168,14 @@ public class ConfigurationTests
             : Given_A_Configuration_With_Invalid_Identity_Settings
         {
             [Test]
-            public async Task When_authorization_enabled_and_no_authority()
+            public void When_authorization_enabled_and_no_authority()
             {
-                // Arrange
-                using var client = _factoryWithAuthorization!.CreateClient();
-
                 // Act
-                var response = await client.GetAsync("/");
-                var content = await response.Content.ReadAsStringAsync();
+                Func<HttpClient> createClient = () => _factoryWithAuthorization!.CreateClient();
 
                 // Assert
-                response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-                content.Should().Be(string.Empty);
+                createClient.Should().Throw<OptionsValidationException>()
+                    .WithMessage("Missing required IdentitySettings value: Authority");
             }
         }
         [TestFixture]
