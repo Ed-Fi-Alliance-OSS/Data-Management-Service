@@ -26,9 +26,6 @@ app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapRouteEndpoints();
-
-app.MapGet("/", () => "DMS Configuration Service");
-
 app.Run();
 
 /// <summary>
