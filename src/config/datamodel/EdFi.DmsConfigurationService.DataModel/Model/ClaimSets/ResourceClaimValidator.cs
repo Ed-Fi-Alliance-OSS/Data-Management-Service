@@ -18,7 +18,7 @@ public class ResourceClaimValidator
     }
 
     public void Validate<T>(List<string> dbActions,
-        List<string?> dbAuthStrategies, ResourceClaim resourceClaim, List<ResourceClaim> existingResourceClaims,
+        List<string> dbAuthStrategies, ResourceClaim resourceClaim, List<ResourceClaim> existingResourceClaims,
         ValidationContext<T> context, string? claimSetName)
     {
         context.MessageFormatter.AppendArgument("ClaimSetName", claimSetName);
@@ -49,7 +49,7 @@ public class ResourceClaimValidator
     }
 
     private void ValidateChildren<T>(List<string> dbActions,
-        List<string?> dbAuthStrategies, ResourceClaim resourceClaim,
+        List<string> dbAuthStrategies, ResourceClaim resourceClaim,
         ValidationContext<T> context, string? claimSetName, string propertyName)
     {
         if (resourceClaim.Children.Any())
@@ -61,7 +61,7 @@ public class ResourceClaimValidator
         }
     }
 
-    private static void ValidateAuthStrategiesOverride<T>(List<string?> dbAuthStrategies,
+    private static void ValidateAuthStrategiesOverride<T>(List<string> dbAuthStrategies,
         ResourceClaim resourceClaim, ValidationContext<T> context, string propertyName)
     {
         if (resourceClaim.AuthorizationStrategyOverridesForCRUD != null && resourceClaim.AuthorizationStrategyOverridesForCRUD.Any())
@@ -83,7 +83,7 @@ public class ResourceClaimValidator
         }
     }
 
-    private static void ValidateAuthStrategies<T>(List<string?> dbAuthStrategies,
+    private static void ValidateAuthStrategies<T>(List<string> dbAuthStrategies,
         ResourceClaim resourceClaim, ValidationContext<T> context, string propertyName)
     {
         if (resourceClaim.DefaultAuthorizationStrategiesForCRUD != null && resourceClaim.DefaultAuthorizationStrategiesForCRUD.Any())
