@@ -3,19 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Data;
 using FluentValidation;
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 
 public class ResourceClaimValidator
 {
-    private static List<string>? _duplicateResources;
-
-    public ResourceClaimValidator()
-    {
-        _duplicateResources = [];
-    }
+    private readonly List<string> _duplicateResources = [];
 
     public void Validate<T>(List<string> dbActions,
         List<string> dbAuthStrategies, ResourceClaim resourceClaim, List<ResourceClaim> existingResourceClaims,
@@ -31,10 +25,10 @@ public class ResourceClaimValidator
 
         ValidateAuthStrategies(dbAuthStrategies, resourceClaim, context, propertyName);
         ValidateAuthStrategiesOverride(dbAuthStrategies, resourceClaim, context, propertyName);
-        ValidateChildren(dbActions, dbAuthStrategies, resourceClaim, context, claimSetName, propertyName);
+        ValidateChildren(dbActions, dbAuthStrategies, resourceClaim, context, claimSetName);
     }
 
-    private static void ValidateDuplicateResourceClaim<T>(ResourceClaim resourceClaim, List<ResourceClaim> existingResourceClaims, ValidationContext<T> context, string propertyName)
+    private void ValidateDuplicateResourceClaim<T>(ResourceClaim resourceClaim, List<ResourceClaim> existingResourceClaims, ValidationContext<T> context, string propertyName)
     {
         if (existingResourceClaims.Count(x => x.Name == resourceClaim.Name) > 1)
         {
@@ -50,9 +44,9 @@ public class ResourceClaimValidator
 
     private void ValidateChildren<T>(List<string> dbActions,
         List<string> dbAuthStrategies, ResourceClaim resourceClaim,
-        ValidationContext<T> context, string? claimSetName, string propertyName)
+        ValidationContext<T> context, string? claimSetName)
     {
-        if (resourceClaim.Children.Any())
+        if (resourceClaim.Children.Count != 0)
         {
             foreach (var child in resourceClaim.Children)
             {
@@ -64,7 +58,7 @@ public class ResourceClaimValidator
     private static void ValidateAuthStrategiesOverride<T>(List<string> dbAuthStrategies,
         ResourceClaim resourceClaim, ValidationContext<T> context, string propertyName)
     {
-        if (resourceClaim.AuthorizationStrategyOverridesForCRUD != null && resourceClaim.AuthorizationStrategyOverridesForCRUD.Any())
+        if (resourceClaim.AuthorizationStrategyOverridesForCRUD.Count != 0)
         {
             foreach (var authStrategyOverrideWithAction in resourceClaim.AuthorizationStrategyOverridesForCRUD)
             {
@@ -86,7 +80,7 @@ public class ResourceClaimValidator
     private static void ValidateAuthStrategies<T>(List<string> dbAuthStrategies,
         ResourceClaim resourceClaim, ValidationContext<T> context, string propertyName)
     {
-        if (resourceClaim.DefaultAuthorizationStrategiesForCRUD != null && resourceClaim.DefaultAuthorizationStrategiesForCRUD.Any())
+        if (resourceClaim.DefaultAuthorizationStrategiesForCRUD.Count != 0)
         {
             foreach (var defaultASWithAction in resourceClaim.DefaultAuthorizationStrategiesForCRUD)
             {
@@ -97,7 +91,7 @@ public class ResourceClaimValidator
 
                 foreach (var defaultAS in defaultASWithAction.AuthorizationStrategies)
                 {
-                    if (defaultAS?.AuthStrategyName != null && !dbAuthStrategies.Contains(defaultAS.AuthStrategyName))
+                    if (defaultAS.AuthStrategyName != null && !dbAuthStrategies.Contains(defaultAS.AuthStrategyName))
                     {
                         context.MessageFormatter.AppendArgument("AuthStrategyName", defaultAS.AuthStrategyName);
                         context.AddFailure(propertyName, "This resource claim contains an authorization strategy which is not in the system. Claimset Name: '{ClaimSetName}' Resource name: '{ResourceClaimName}' Authorization strategy: '{AuthStrategyName}'.");
@@ -110,10 +104,9 @@ public class ResourceClaimValidator
     private static void ValidateCRUD<T>(List<ResourceClaimAction>? resourceClaimActions,
         List<string> dbActions, ValidationContext<T> context, string propertyName)
     {
-        if (resourceClaimActions != null && resourceClaimActions.Any())
+        if (resourceClaimActions != null && resourceClaimActions.Count != 0)
         {
-            var atleastAnActionEnabled = resourceClaimActions.Exists(x => x.Enabled);
-            if (!atleastAnActionEnabled)
+            if (!resourceClaimActions.Exists(x => x.Enabled))
             {
                 context.AddFailure(propertyName, "A resource must have at least one action associated with it to be added. Resource name: '{ResourceClaimName}'");
             }
@@ -129,7 +122,7 @@ public class ResourceClaimValidator
                 }
                 foreach (var action in resourceClaimActions.Select(x => x.Name))
                 {
-                    if (!dbActions.Exists(actionName => actionName != null &&
+                    if (!dbActions.Exists(actionName =>
                         actionName.Equals(action, StringComparison.InvariantCultureIgnoreCase)))
                     {
                         context.AddFailure(propertyName, $"{action} is not a valid action. Resource name: '{{ResourceClaimName}}'");

@@ -228,6 +228,54 @@ public class ResourceClaimValidatorTests
         }
 
         [Test]
+        public async Task Given_duplicate_resource_claims_on_different_levels()
+        {
+            // Arrange
+            var existingResourceClaims = new List<ResourceClaim>
+            {
+                new() {
+                    Name = "resourceClaim1",
+                    Actions = [ new ResourceClaimAction{Enabled = true, Name="Create"}],
+                    DefaultAuthorizationStrategiesForCRUD = [
+                        new() { AuthorizationStrategies = [
+                        new() { AuthStrategyId = 1,
+                        AuthStrategyName = "AuthStrategy1",
+                        DisplayName = "AuthStrategy1" } ] }  ],
+                    Children =
+                    [
+                        new() {
+                        Name = "resourceClaim2",
+                        Actions = [ new ResourceClaimAction{Enabled = true, Name="Create"}],
+                        DefaultAuthorizationStrategiesForCRUD = [
+                            new() { AuthorizationStrategies = [
+                            new() { AuthStrategyId = 1,
+                            AuthStrategyName = "AuthStrategy1",
+                            DisplayName = "AuthStrategy1" } ] }  ]
+                        }
+                    ]
+                },
+                  new() {
+                        Name = "resourceClaim2",
+                        Actions = [ new ResourceClaimAction{Enabled = true, Name="Create"}],
+                        DefaultAuthorizationStrategiesForCRUD = [
+                            new() { AuthorizationStrategies = [
+                            new() { AuthStrategyId = 1,
+                            AuthStrategyName = "AuthStrategy1",
+                            DisplayName = "AuthStrategy1" } ] }  ]
+                        }
+             };
+
+            var request = new FakeRequest { Name = "TestClaimset", ResourceClaims = existingResourceClaims };
+            var validator = new Validator(_actions, _authStrategies);
+
+            // Act
+            var validationResult = await validator.ValidateAsync(request);
+
+            // Assert
+            validationResult.IsValid.Should().BeTrue();
+        }
+
+        [Test]
         public async Task Given_an_invalid_auth_strategy_on_child_resource_claim()
         {
             // Arrange
