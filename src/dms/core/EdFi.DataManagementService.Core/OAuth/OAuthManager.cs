@@ -22,6 +22,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
 
     public async Task<HttpResponseMessage> GetAccessTokenAsync(
         IHttpClientWrapper httpClient,
+        string grantType,
         string authHeaderString,
         string upstreamUri,
         TraceId traceId
@@ -37,12 +38,19 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             );
         }
 
+        if (!grantType.Equals("client_credentials", StringComparison.InvariantCultureIgnoreCase))
+        {
+            return GenerateProblemDetailResponse(
+                HttpStatusCode.BadRequest,
+                FailureResponse.ForBadRequest("Unsupported grant type", traceId, [], [])
+            );
+        }
+
         HttpRequestMessage upstreamRequest = new(HttpMethod.Post, upstreamUri);
         upstreamRequest.Headers.Add("Authorization", authHeaderString);
 
-        // TODO(DMS-408): Replace hard-coded with forwarded request body.
         upstreamRequest.Content = new StringContent(
-            "grant_type=client_credentials",
+            $"grant_type={grantType}",
             Encoding.UTF8,
             "application/x-www-form-urlencoded"
         );

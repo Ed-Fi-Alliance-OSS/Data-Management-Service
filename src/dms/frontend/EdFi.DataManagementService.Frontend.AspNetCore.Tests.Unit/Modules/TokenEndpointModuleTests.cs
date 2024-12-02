@@ -21,8 +21,21 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 [TestFixture]
 public class TokenEndpointModuleTests
 {
+    public static HttpRequestMessage ProxyRequest(string requestContent, string contentType)
+    {
+        var proxyRequest = new HttpRequestMessage(HttpMethod.Post, "/oauth/token");
+        var encodedCredentials = Convert.ToBase64String(Encoding.UTF8.GetBytes("clientId:clientSecret"));
+        proxyRequest.Headers.Add("Authorization", $"Basic {encodedCredentials}");
+        proxyRequest!.Content = new StringContent(
+            requestContent,
+            Encoding.UTF8,
+            contentType
+        );
+        return proxyRequest;
+    }
+
     [TestFixture]
-    public class When_Posting_To_The_Internal_Token_Endpoint
+    public class When_Posting_To_The_Internal_Token_Endpoint_With_Json_Content : TokenEndpointModuleTests
     {
         private JsonNode? _jsonContent;
         private HttpResponseMessage? _response;
@@ -46,6 +59,7 @@ public class TokenEndpointModuleTests
                             A<IHttpClientWrapper>.Ignored,
                             A<string>.Ignored,
                             A<string>.Ignored,
+                            A<string>.Ignored,
                             A<TraceId>.Ignored
                         )
                 )
@@ -61,18 +75,83 @@ public class TokenEndpointModuleTests
                     }
                 );
             });
-
             using var client = factory.CreateClient();
-            var proxyRequest = new HttpRequestMessage(HttpMethod.Post, "/oauth/token");
-            var encodedCredentials = Convert.ToBase64String(Encoding.UTF8.GetBytes("clientId:clientSecret"));
-            proxyRequest.Headers.Add("Authorization", $"Basic {encodedCredentials}");
+            var requestContent = """{"grant_type":"client_credentials"}""";
+            var proxyRequest = ProxyRequest(requestContent, "application/json");
 
             // Act
-            proxyRequest!.Content = new StringContent(
-                """{"grant_type"="client_credentials"}""",
-                Encoding.UTF8,
-                "application/json"
-            );
+            _response = client.SendAsync(proxyRequest).GetAwaiter().GetResult();
+            var content = _response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            _jsonContent = JsonNode.Parse(content) ?? throw new Exception("JSON parsing failed");
+        }
+
+        [TearDown]
+        public void TearDownAttribute()
+        {
+            _response?.Dispose();
+        }
+
+        [Test]
+        public void Then_it_returns_the_upstream_response_code()
+        {
+            _response!.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public void Then_it_returns_the_upstream_response_body()
+        {
+            _jsonContent?["access_token"]?.ToString().Should().Be("fake_access_token");
+            _jsonContent?["expires_in"]?.Should().Be(300);
+            _jsonContent?["token_type"]?.ToString().Should().Be("bearer");
+        }
+    }
+
+    [TestFixture]
+    public class When_Posting_To_The_Internal_Token_Endpoint_With_Form_Content : TokenEndpointModuleTests
+    {
+        private JsonNode? _jsonContent;
+        private HttpResponseMessage? _response;
+
+        [SetUp]
+        public void SetUp()
+        {
+            // Arrange
+            var oAuthManager = A.Fake<IOAuthManager>();
+            var json =
+                """{"status_code":200, "body":{"token":"fake_access_token","token_type":"bearer","expires_in":300}}""";
+            JsonNode _fake_responseJson = JsonNode.Parse(json)!;
+            var _fake_response_200 = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(_fake_responseJson.ToString(), Encoding.UTF8, "application/json"),
+            };
+
+            A.CallTo(
+                    () =>
+                        oAuthManager.GetAccessTokenAsync(
+                            A<IHttpClientWrapper>.Ignored,
+                            A<string>.Ignored,
+                            A<string>.Ignored,
+                            A<string>.Ignored,
+                            A<TraceId>.Ignored
+                        )
+                )
+                .Returns(_fake_response_200);
+
+            using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(
+                    (collection) =>
+                    {
+                        collection.AddTransient((x) => oAuthManager);
+                    }
+                );
+            });
+            using var client = factory.CreateClient();
+            var requestContent = "grant_type=client_credentials";
+            var proxyRequest = ProxyRequest(requestContent, "application/x-www-form-urlencoded");
+
+            // Act
             _response = client.SendAsync(proxyRequest).GetAwaiter().GetResult();
             var content = _response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
             _jsonContent = JsonNode.Parse(content) ?? throw new Exception("JSON parsing failed");
