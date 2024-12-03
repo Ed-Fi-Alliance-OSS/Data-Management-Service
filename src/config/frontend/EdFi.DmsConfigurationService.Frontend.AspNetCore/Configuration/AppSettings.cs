@@ -11,6 +11,7 @@ public class AppSettings
 {
     public bool DeployDatabaseOnStartup { get; set; }
     public required string Datastore { get; set; }
+    public required string IdentityProvider { get; set; }
 }
 
 public class AppSettingsValidator : IValidateOptions<AppSettings>
@@ -29,6 +30,19 @@ public class AppSettingsValidator : IValidateOptions<AppSettings>
         {
             return ValidateOptionsResult.Fail(
                 "AppSettings value Datastore must be one of: postgresql, mssql"
+            );
+        }
+
+        if (string.IsNullOrWhiteSpace(options.IdentityProvider))
+        {
+            return ValidateOptionsResult.Fail("Missing required AppSettings value: IdentityProvider");
+        }
+
+        // We only support keycloak for now
+        if (!options.IdentityProvider.Equals("keycloak", StringComparison.CurrentCultureIgnoreCase))
+        {
+            return ValidateOptionsResult.Fail(
+                "AppSettings value IdentityProvider must be one of: keycloak"
             );
         }
 

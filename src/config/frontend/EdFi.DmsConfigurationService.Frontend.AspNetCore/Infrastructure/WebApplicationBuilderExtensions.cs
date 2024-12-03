@@ -45,10 +45,6 @@ public static class WebApplicationBuilderExtensions
             memberInfo
                 ?.GetCustomAttribute<System.ComponentModel.DataAnnotations.DisplayAttribute>()
                 ?.GetName();
-        webApplicationBuilder.Services.AddSingleton<
-            IValidateOptions<IdentitySettings>,
-            IdentitySettingsValidator
-        >();
 
         // Read Database configuration from appSettings
         webApplicationBuilder
@@ -58,33 +54,62 @@ public static class WebApplicationBuilderExtensions
             .AddSingleton<IValidateOptions<DatabaseOptions>, DatabaseOptionsValidator>();
         ;
         ConfigureDatastore(webApplicationBuilder, logger);
-
-        // For Security(Keycloak)
-        IConfiguration config = webApplicationBuilder.Configuration;
-        var settings = config.GetSection("IdentitySettings");
-        var identitySettings = ReadSettings();
-
-        webApplicationBuilder.Services.Configure<IdentitySettings>(settings);
-
-        webApplicationBuilder.Services.AddScoped(x => new KeycloakContext(
-            identitySettings.IdentityServer,
-            identitySettings.Realm,
-            identitySettings.ClientId,
-            identitySettings.ClientSecret,
-            identitySettings.RoleClaimType,
-            identitySettings.ServiceRole,
-            identitySettings.Scope
-        ));
+        ConfigureIdentityProvider(webApplicationBuilder, logger);
 
         webApplicationBuilder.Services.AddHttpClient();
 
-        webApplicationBuilder.Services.AddTransient<IClientRepository, ClientRepository>();
         webApplicationBuilder.Services.AddTransient<IApplicationRepository, ApplicationRepository>();
         webApplicationBuilder.Services.AddTransient<IVendorRepository, VendorRepository>();
-        webApplicationBuilder.Services.AddTransient<ITokenManager, TokenManager>();
         webApplicationBuilder.Services.AddTransient<IClaimSetRepository, ClaimSetRepository>();
 
-        var metadataAddress = $"{identitySettings.Authority}/.well-known/openid-configuration";
+        Serilog.ILogger ConfigureLogging()
+        {
+            var logger = new LoggerConfiguration()
+                .ReadFrom.Configuration(webApplicationBuilder.Configuration)
+                .Enrich.FromLogContext()
+                .CreateLogger();
+            webApplicationBuilder.Logging.ClearProviders();
+            webApplicationBuilder.Logging.AddSerilog(logger);
+
+            return logger;
+        }
+    }
+
+    private static void ConfigureDatastore(WebApplicationBuilder webAppBuilder, Serilog.ILogger logger)
+    {
+        if (
+            string.Equals(
+                webAppBuilder.Configuration.GetSection("AppSettings:Datastore").Value,
+                "postgresql",
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
+        {
+            logger.Information("Injecting PostgreSQL as the primary backend datastore");
+            webAppBuilder.Services.AddPostgresqlDatastore(
+                webAppBuilder.Configuration.GetSection("ConnectionStrings:DatabaseConnection").Value
+                    ?? string.Empty
+            );
+            webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Postgresql.Deploy.DatabaseDeploy>();
+        }
+        else
+        {
+            logger.Information("Injecting MSSQL as the primary backend datastore");
+            webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Mssql.Deploy.DatabaseDeploy>();
+        }
+    }
+
+    private static void ConfigureIdentityProvider(WebApplicationBuilder webApplicationBuilder, Serilog.ILogger logger)
+    {
+        IConfiguration config = webApplicationBuilder.Configuration;
+        var identitySettings = config.GetSection("IdentitySettings").Get<IdentitySettings>();
+        if (identitySettings == null)
+        {
+            logger.Error("Error reading IdentitySettings");
+            throw new InvalidOperationException("Unable to read IdentitySettings from appsettings");
+        }
+        webApplicationBuilder.Services.Configure<IdentitySettings>(config.GetSection("IdentitySettings"))
+            .AddSingleton<IValidateOptions<IdentitySettings>, IdentitySettingsValidator>();
 
         webApplicationBuilder
             .Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -92,7 +117,7 @@ public static class WebApplicationBuilderExtensions
                 JwtBearerDefaults.AuthenticationScheme,
                 options =>
                 {
-                    options.MetadataAddress = metadataAddress;
+                    options.MetadataAddress = $"{identitySettings.Authority}/.well-known/openid-configuration";
                     options.Authority = identitySettings.Authority;
                     options.Audience = identitySettings.Audience;
                     options.RequireHttpsMetadata = identitySettings.RequireHttpsMetadata;
@@ -120,57 +145,30 @@ public static class WebApplicationBuilderExtensions
             )
         );
 
-        Serilog.ILogger ConfigureLogging()
-        {
-            var logger = new LoggerConfiguration()
-                .ReadFrom.Configuration(webApplicationBuilder.Configuration)
-                .Enrich.FromLogContext()
-                .CreateLogger();
-            webApplicationBuilder.Logging.ClearProviders();
-            webApplicationBuilder.Logging.AddSerilog(logger);
-
-            return logger;
-        }
-
-        IdentitySettings ReadSettings()
-        {
-            return new IdentitySettings
-            {
-                Authority = config.GetValue<string>("IdentitySettings:Authority")!,
-                IdentityServer = config.GetValue<string>("IdentitySettings:IdentityServer")!,
-                Realm = config.GetValue<string>("IdentitySettings:Realm")!,
-                ClientId = config.GetValue<string>("IdentitySettings:ClientId")!,
-                ClientSecret = config.GetValue<string>("IdentitySettings:ClientSecret")!,
-                RequireHttpsMetadata = config.GetValue<bool>("IdentitySettings:RequireHttpsMetadata"),
-                Audience = config.GetValue<string>("IdentitySettings:Audience")!,
-                RoleClaimType = config.GetValue<string>("IdentitySettings:RoleClaimType")!,
-                Scope = config.GetValue<string>("IdentitySettings:Scope")!,
-                ServiceRole = config.GetValue<string>("IdentitySettings:ServiceRole")!,
-            };
-        }
-    }
-
-    private static void ConfigureDatastore(WebApplicationBuilder webAppBuilder, Serilog.ILogger logger)
-    {
         if (
             string.Equals(
-                webAppBuilder.Configuration.GetSection("AppSettings:Datastore").Value,
-                "postgresql",
+                webApplicationBuilder.Configuration.GetSection("AppSettings:IdentityProvider").Value,
+                "keycloak",
                 StringComparison.OrdinalIgnoreCase
             )
         )
         {
-            logger.Information("Injecting PostgreSQL as the primary backend datastore");
-            webAppBuilder.Services.AddPostgresqlDatastore(
-                webAppBuilder.Configuration.GetSection("ConnectionStrings:DatabaseConnection").Value
-                    ?? string.Empty
-            );
-            webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Postgresql.Deploy.DatabaseDeploy>();
-        }
-        else
-        {
-            logger.Information("Injecting MSSQL as the primary backend datastore");
-            webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Mssql.Deploy.DatabaseDeploy>();
+            var keycloakSettings = config.GetSection("KeycloakSettings").Get<KeycloakSettings>();
+            if (keycloakSettings == null)
+            {
+                logger.Error("Error reading KeycloakSettings");
+                throw new InvalidOperationException("Unable to read KeycloakSettings from appsettings");
+            }
+            webApplicationBuilder.Services.Configure<KeycloakSettings>(config.GetSection("KeycloakSettings"))
+                .AddSingleton<IValidateOptions<KeycloakSettings>, KeycloakSettingsValidator>();
+
+            webApplicationBuilder.Services.AddKeycloakServices(keycloakSettings.Url,
+                keycloakSettings.Realm,
+                identitySettings.ClientId,
+                identitySettings.ClientSecret,
+                identitySettings.RoleClaimType,
+                identitySettings.ServiceRole,
+                identitySettings.Scope);
         }
     }
 }
