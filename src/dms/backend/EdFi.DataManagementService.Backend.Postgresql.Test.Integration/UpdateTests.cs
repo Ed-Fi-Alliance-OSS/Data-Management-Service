@@ -833,7 +833,7 @@ public class UpdateTests : DatabaseTest
                 );
 
             (getResult! as GetResult.GetSuccess)!.LastModifiedDate.Should().NotBe(_courseOfferingInsertDateTime);
-            _courseOfferingLastModifiedDate.Should().Be(DateTime.ParseExact("2024-10-29T14:54:49+00:00", "yyyy-MM-ddTHH:mm:sszzz", DateTimeFormatInfo.InvariantInfo));
+            _courseOfferingLastModifiedDate.Should().Be(DateTime.ParseExact("2024-10-29T14:54:49Z", "yyyy-MM-ddTHH:mm:ssZ", DateTimeFormatInfo.InvariantInfo));
             (getResult! as GetResult.GetSuccess)!.EdfiDoc["_lastModifiedDate"]!.GetValue<DateTime>().Should().NotBe(_courseOfferingLastModifiedDate);
         }
 

@@ -316,7 +316,7 @@ internal static class JsonHelperExtensions
                 jsonNode.ReplaceWith(
                     dateValue
                         .ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)
-                        .ToString("yyyy-MM-ddTHH:mm:sszzz", CultureInfo.InvariantCulture)
+                        .ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)
                 );
             }
         }

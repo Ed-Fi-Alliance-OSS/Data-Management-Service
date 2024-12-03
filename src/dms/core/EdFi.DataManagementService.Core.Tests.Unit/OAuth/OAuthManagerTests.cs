@@ -29,12 +29,14 @@ public class OAuthManagerTests
 
         private readonly TraceId TraceId = new("trace-id");
 
-        public async Task Act(string authHeader)
+        private const string GrantType = "client_credentials";
+
+        public async Task Act(string authHeader, string grantType = GrantType)
         {
-            await Act(authHeader, HttpStatusCode.OK, "{}");
+            await Act(authHeader, HttpStatusCode.OK, "{}", grantType);
         }
 
-        public async Task Act(string authHeader, HttpStatusCode responseCode, string responseMessage)
+        public async Task Act(string authHeader, HttpStatusCode responseCode, string responseMessage, string grantType = "")
         {
             // Arrange
             var fakeResponse = A.Fake<HttpResponseMessage>();
@@ -46,7 +48,7 @@ public class OAuthManagerTests
             var system = new OAuthManager(_logger);
 
             // Act
-            _response = await system.GetAccessTokenAsync(_httpClient, authHeader, DestinationUri, TraceId);
+            _response = await system.GetAccessTokenAsync(_httpClient, grantType, authHeader, DestinationUri, TraceId);
         }
 
         public async Task ActWithException(string message)
@@ -60,6 +62,7 @@ public class OAuthManagerTests
             // Act
             _response = await system.GetAccessTokenAsync(
                 _httpClient,
+                GrantType,
                 "basic 123:abc",
                 DestinationUri,
                 TraceId
@@ -228,7 +231,7 @@ public class OAuthManagerTests
     "error_description": "Invalid client or Invalid client credentials"
 }
 """
-                );
+                , GrantType);
             }
 
             [Test]
@@ -279,7 +282,7 @@ public class OAuthManagerTests
             [SetUp]
             public async Task SetUp()
             {
-                await Act(AuthHeader, HttpStatusCode.BadRequest, "{}");
+                await Act(AuthHeader, HttpStatusCode.BadRequest, "{}", GrantType);
             }
 
             [Test]
@@ -354,6 +357,40 @@ public class OAuthManagerTests
 
             // This is a rare case where it would be nice to check that the log
             // has been accessed - but extension methods cannot be verified.
+        }
+
+        [TestFixture]
+        public class Given_An_Invalid_Grant_Type : When_Getting_An_Access_Token
+        {
+            [SetUp]
+            public async Task SetUp()
+            {
+                string authHeader = "basic abc:123";
+                await Act(authHeader, "invalid_grant_type");
+            }
+
+            [Test]
+            public void Then_It_Responds_With_BadRequest()
+            {
+                _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            }
+
+            [Test]
+            public void Then_The_Response_ContentType_Is_Problem_JSON()
+            {
+                _response
+                    .Content.Headers.ContentType!.MediaType.Should()
+                    .NotBeNull()
+                    .And.Be("application/problem+json");
+            }
+
+            [Test]
+            public async Task Then_The_Response_Content_Mentions_Malformed_Header()
+            {
+                var content = await _response.Content.ReadAsStringAsync();
+                content.Should().NotBeNull();
+                content!.Should().Contain("\"detail\": \"Unsupported grant type\"");
+            }
         }
     }
 }

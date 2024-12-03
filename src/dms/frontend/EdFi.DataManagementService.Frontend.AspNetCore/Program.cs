@@ -6,7 +6,6 @@
 using EdFi.DataManagementService.Backend.Deploy;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
-using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 
 // Disable reload to work around .NET file watcher bug on Linux. See:
@@ -34,8 +33,13 @@ if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
     app.UseRateLimiter();
 }
 
-app.UseAuthentication();
-app.UseAuthorization();
+
+if (app.Services.GetRequiredService<IOptions<IdentitySettings>>().Value.EnforceAuthorization)
+{
+    app.UseAuthentication();
+    app.UseAuthorization();
+}
+
 app.MapRouteEndpoints();
 
 app.MapHealthChecks("/health");

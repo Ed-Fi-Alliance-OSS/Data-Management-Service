@@ -8,6 +8,15 @@ Feature: Query String handling for GET requests for Resource Queries
               And the system has these "academicweeks"
                   | weekIdentifier | beginDate  | endDate    | totalInstructionalDays | schoolReference |
                   | Week One       | 2024-05-15 | 2024-05-22 | 2                      | {"schoolId": 2} |
+              And the system has these "students"
+                  | studentUniqueId | firstName | lastSurname | birthDate  |
+                  | unique          | Jane      | Doe         | 2012-01-20 |
+              And the system has these "assessments"
+                  | assessmentIdentifier                 | namespace      | assessmentCategoryDescriptor                                | assessmentTitle   | assessmentVersion | maxRawScore | revisionDate | academicSubjects                                                                                   |
+                  | 01774fa3-06f1-47fe-8801-c8b1e65057f2 | Assessment.xml | uri://ed-fi.org/AssessmentCategoryDescriptor#Benchmark test | 3rd Grade Reading | 2021              | 10          | 2021-09-19   | [{"academicSubjectDescriptor": "uri://ed-fi.org/AcademicSubjectDescriptor#English Language Arts"}] |
+              And the system has these "studentAssessments"
+                  | studentReference                | assessmentReference                                                                              | administrationDate     | studentAssessmentIdentifier |
+                  | { "studentUniqueId": "unique" } | {"assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f2", "namespace": "Assessment.xml" } | "2021-09-28T00:10:00Z" | studentAssessmentIdentifier |
 
         @API-124
         Scenario: 01 Ensure clients can GET information when querying by valid date
@@ -225,4 +234,66 @@ Feature: Query String handling for GET requests for Resource Queries
                       "endDate": "2024-05-22",
                       "totalInstructionalDays": 2
                   }]
+                  """
+
+        Scenario: 13 Ensure clients get empty array when querying datetime with no time component and no midnight match
+             When a GET request is made to "/ed-fi/studentAssessments?administrationDate=2021-09-28"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  []
+                  """
+
+        Scenario: 14 Ensure clients get correct results when querying datetime with time component
+             When a GET request is made to "/ed-fi/studentAssessments?administrationDate=2021-09-28T00:10:00Z"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [
+                    {
+                        "studentAssessmentIdentifier": "studentAssessmentIdentifier",
+                            "assessmentReference": {
+                                "namespace": "Assessment.xml",
+                                "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f2"
+                        },
+                        "administrationDate": "2021-09-28T00:10:00Z",
+                        "id": "{id}",
+                        "studentReference": {
+                            "studentUniqueId": "unique"
+                        }
+                    }
+                  ]
+                  """
+
+        @addwait
+        Scenario: 15 Ensure clients get midnight results when querying without a time component
+            Given a POST request is made to "/ed-fi/studentAssessments" with
+                  """
+                    {
+                        "studentReference": { "studentUniqueId": "unique" },
+                        "assessmentReference": {
+                        "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f2",
+                            "namespace": "Assessment.xml"
+                        },
+                        "administrationDate": "2021-09-28T00:00:00Z",
+                        "studentAssessmentIdentifier": "studentAssessmentIdentifier"
+                  }
+                  """
+             When a GET request is made to "/ed-fi/studentAssessments?administrationDate=2021-09-28"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [
+                  {
+                        "studentAssessmentIdentifier": "studentAssessmentIdentifier",
+                            "assessmentReference": {
+                                "namespace": "Assessment.xml",
+                                "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f2"
+                        },
+                        "administrationDate": "2021-09-28T00:00:00Z",
+                        "id": "{id}",
+                        "studentReference": {
+                            "studentUniqueId": "unique"
+                        }
+                    }]
                   """

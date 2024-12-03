@@ -18,7 +18,7 @@ namespace EdFi.DataManagementService.Core.Middleware
             );
 
             DateTimeOffset utcNow = DateTimeOffset.UtcNow;
-            string formattedUtcDateTime = utcNow.ToString("yyyy-MM-ddTHH:mm:sszzz");
+            string formattedUtcDateTime = utcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
             context.ParsedBody["_lastModifiedDate"] = formattedUtcDateTime;
             await next();
         }

@@ -364,6 +364,6 @@ Feature: Data strictness
                           "studentUniqueId": "604906"
                       },
                       "studentAssessmentIdentifier": "/Qhqqe/gI4p3RguP68ZEDArGHM64FKnCg/RLHG8c",
-                      "administrationDate": "2021-09-28T00:00:00+00:00"
+                      "administrationDate": "2021-09-28T00:00:00Z"
                   }
                   """
