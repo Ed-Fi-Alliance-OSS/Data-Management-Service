@@ -33,8 +33,8 @@ public static class KeycloakServiceExtensions
             Scope
         ));
 
-        services.AddTransient<IClientRepository, ClientRepository>();
-        services.AddTransient<ITokenManager, TokenManager>();
+        services.AddTransient<IClientRepository, KeycloakClientRepository>();
+        services.AddTransient<ITokenManager, KeycloakTokenManager>();
 
         return services;
     }
