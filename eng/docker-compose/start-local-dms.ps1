@@ -78,10 +78,10 @@ else {
 
     Write-Output "Starting locally-built DMS"
     if ($EnforceAuthorization) {
-        $env:IDENTITY_ENFORCE_AUTHORIZATION = $true
+        $env:IDENTITY_ENFORCE_AUTHORIZATION = "true"
     }
     else {
-        $env:IDENTITY_ENFORCE_AUTHORIZATION = $false
+        $env:IDENTITY_ENFORCE_AUTHORIZATION = "false"
     }
 
     docker compose $files --env-file $EnvironmentFile up $upArgs
