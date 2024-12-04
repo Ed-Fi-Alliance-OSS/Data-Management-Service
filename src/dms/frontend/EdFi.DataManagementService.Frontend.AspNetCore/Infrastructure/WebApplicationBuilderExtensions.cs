@@ -88,7 +88,6 @@ public static class WebApplicationBuilderExtensions
         webAppBuilder.Services.Configure<IdentitySettings>(settings);
         webAppBuilder.Services.AddHttpClient();
 
-
         if (identitySettings.EnforceAuthorization)
         {
             string metadataAddress = $"{identitySettings.Authority}/.well-known/openid-configuration";
@@ -168,24 +167,27 @@ public static class WebApplicationBuilderExtensions
 
     private static void ConfigureQueryHandler(WebApplicationBuilder webAppBuilder, Serilog.ILogger logger)
     {
-        if (
-            string.Equals(
-                webAppBuilder.Configuration.GetSection("AppSettings:QueryHandler").Value,
-                "postgresql",
-                StringComparison.OrdinalIgnoreCase
-            )
-        )
+        string? queryHandler = webAppBuilder.Configuration.GetSection("AppSettings:QueryHandler").Value;
+
+        if (string.Equals(queryHandler, "postgresql", StringComparison.OrdinalIgnoreCase))
         {
             logger.Information("Injecting PostgreSQL as the backend query handler");
             webAppBuilder.Services.AddPostgresqlQueryHandler();
         }
-        else
+        else if (string.Equals(queryHandler, "opensearch", StringComparison.OrdinalIgnoreCase))
         {
             logger.Information("Injecting OpenSearch as the backend query handler");
             webAppBuilder.Services.AddOpenSearchQueryHandler(
                 webAppBuilder.Configuration.GetSection("ConnectionStrings:OpenSearchUrl").Value
                     ?? string.Empty
             );
+        }
+        else
+        {
+            logger.Information("Injecting ElasticSearch as the backend query handler");
+            webAppBuilder.Services.AddElasticsearchQueryHandler(
+                webAppBuilder.Configuration.GetSection("ConnectionStrings:OpenSearchUrl").Value
+                ?? string.Empty);
         }
     }
 

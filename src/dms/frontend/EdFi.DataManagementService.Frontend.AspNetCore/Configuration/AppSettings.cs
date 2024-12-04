@@ -46,6 +46,7 @@ public class AppSettingsValidator : IValidateOptions<AppSettings>
         if (
             !options.QueryHandler.Equals("postgresql", StringComparison.CurrentCultureIgnoreCase)
             && !options.QueryHandler.Equals("opensearch", StringComparison.CurrentCultureIgnoreCase)
+            && !options.QueryHandler.Equals("elasticsearch", StringComparison.CurrentCultureIgnoreCase)
         )
         {
             return ValidateOptionsResult.Fail(
