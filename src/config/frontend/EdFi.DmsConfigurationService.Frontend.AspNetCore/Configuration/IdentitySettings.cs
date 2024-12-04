@@ -10,10 +10,8 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 public class IdentitySettings
 {
     public required string Authority { get; set; }
-    public required string IdentityServer { get; set; }
     public required string ClientId { get; set; }
     public required string ClientSecret { get; set; }
-    public required string Realm { get; set; }
     public bool RequireHttpsMetadata { get; set; }
     public bool AllowRegistration { get; set; }
     public required string Audience { get; set; }
@@ -30,12 +28,6 @@ public class IdentitySettingsValidator : IValidateOptions<IdentitySettings>
         {
             return ValidateOptionsResult.Fail("Missing required IdentitySettings value: Authority");
         }
-
-        if (string.IsNullOrWhiteSpace(options.IdentityServer))
-        {
-            return ValidateOptionsResult.Fail("Missing required IdentitySettings value: IdentityServer");
-        }
-
         if (string.IsNullOrWhiteSpace(options.ClientId))
         {
             return ValidateOptionsResult.Fail("Missing required IdentitySettings value: ClientId");
@@ -43,10 +35,6 @@ public class IdentitySettingsValidator : IValidateOptions<IdentitySettings>
         if (string.IsNullOrWhiteSpace(options.ClientSecret))
         {
             return ValidateOptionsResult.Fail("Missing required IdentitySettings value: ClientSecret");
-        }
-        if (string.IsNullOrWhiteSpace(options.Realm))
-        {
-            return ValidateOptionsResult.Fail("Missing required IdentitySettings value: Realm");
         }
         if (string.IsNullOrEmpty(options.Audience))
         {
