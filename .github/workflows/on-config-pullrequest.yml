@@ -18,8 +18,6 @@ on:
     branches:
       - main
     paths:
-      - "**/*config*.ps1"
-      - "**/*.psm1"
       - "src/config/**/*.cs"
       - "src/config/**/*.csproj"
       - ".github/**/*config*.yml"
@@ -33,14 +31,6 @@ concurrency:
 permissions: read-all
 
 jobs:
-  run-ps-lint:
-    name: PowerShell Linter
-    uses: Ed-Fi-Alliance-OSS/Ed-Fi-Actions/.github/workflows/powershell-analyzer.yml@main
-    permissions:
-      security-events: write
-      actions: read
-      contents: read
-
   scan-actions-bidi:
     name: Scan Actions, scan all files for BIDI Trojan Attacks
     uses: Ed-Fi-Alliance-OSS/Ed-Fi-Actions/.github/workflows/repository-scanner.yml@main
