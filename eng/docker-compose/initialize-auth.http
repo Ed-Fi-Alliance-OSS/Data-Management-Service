@@ -1,0 +1,59 @@
+@dmsPort=8080
+@configPort=8081
+
+@sysAdminId=sysadmin
+@sysAdminSecret=SdfH)98&Jk
+@encodedSysAdminSecret=SdfH%2998%26Jk
+
+#
+# Create a new system administrator and create a token
+#
+
+### FAILING
+# Specification says this should be x-www-form-urlencoded, but currently only accepting JSON
+# POST http://localhost:{{configPort}}/connect/register
+# Content-Type: application/x-www-form-urlencoded
+
+# ClientId=sys_admin
+# &ClientSecret=SdfH)98&Jk
+# &DisplayName=System+Administrator
+
+###
+POST http://localhost:{{configPort}}/connect/register
+Content-Type: application/json
+
+{
+    "ClientId": "{{sysAdminId}}",
+    "ClientSecret": "{{sysAdminSecret}}",
+    "DisplayName": "System Administrator"
+}
+
+# VALIDATION on register is weak
+
+###
+# @name login
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{sysAdminId}}
+&client_secret={{encodedSysAdminSecret}}
+&grant_type=client_credentials
+&scope=scp:edfi_dms_configuration_service/full_access
+
+# we may need to change to edfi_admin_api to match the specification
+# Might be nice to better parse keycloak error response before creating problem+json response
+###
+@authToken = {{login.response.body.access_token}}
+
+#
+# Create vendor, application, and new DMS client credentials
+#
+
+###
+POST http://localhost:{{configPort}}/v2/vendors
+Content-Type: application/json
+Authorization: bearer {{authToken}}
+
+{
+
+}
