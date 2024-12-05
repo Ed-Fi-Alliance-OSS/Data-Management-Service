@@ -34,6 +34,7 @@ services:
       DMS_CONFIG_IDENTITY_ROLE_CLAIM_TYPE: ${DMS_CONFIG_IDENTITY_ROLE_CLAIM_TYPE:-http://schemas\\.microsoft\\.com/ws/2008/06/identity/claims/role}
       DMS_CONFIG_IDENTITY_SCOPE: ${DMS_CONFIG_IDENTITY_SCOPE:-scp:edfi_dms_configuration_service/full_access}
       DMS_CONFIG_LOG_LEVEL: ${DMS_CONFIG_LOG_LEVEL:-Information}
+      DMS_CONFIG_DEPLOY_DATABASE: ${DMS_CONFIG_DEPLOY_DATABASE:-true}
     networks:
       - dms
 
