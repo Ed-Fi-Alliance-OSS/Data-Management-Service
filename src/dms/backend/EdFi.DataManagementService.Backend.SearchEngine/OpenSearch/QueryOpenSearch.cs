@@ -12,7 +12,7 @@ using Microsoft.Extensions.Logging;
 using OpenSearch.Client;
 using OpenSearch.Net;
 
-namespace EdFi.DataManagementService.Backend.SearchEngine;
+namespace EdFi.DataManagementService.Backend.SearchEngine.OpenSearch;
 
 /// <summary>
 /// Queries OpenSearch for documents. Example query DSL usage:

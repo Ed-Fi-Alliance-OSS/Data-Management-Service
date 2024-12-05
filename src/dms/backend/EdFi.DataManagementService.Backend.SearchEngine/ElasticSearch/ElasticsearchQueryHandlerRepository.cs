@@ -24,7 +24,7 @@ public class ElasticsearchQueryHandlerRepository(
 
         try
         {
-            QueryResult result = await QueryElasticsearch.QueryDocuments(elasticsearchClient, queryRequest, logger);
+            QueryResult result = await ElasticSearch.QueryElasticsearch.QueryDocuments(elasticsearchClient, queryRequest, logger);
 
             return result;
         }
