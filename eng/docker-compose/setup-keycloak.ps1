@@ -212,7 +212,7 @@ function Create_Role([string] $roleName) {
             -Headers @{ Authorization = "Bearer $access_token" } `
             -Body $rolePayload `
             -ContentType "application/json"
-        Write-Output "Role $roleName crearted successfully."
+        Write-Output "Role $roleName created successfully."
     }
     else {
         Write-Output "Role $roleName already exists."
