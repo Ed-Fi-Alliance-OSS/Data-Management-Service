@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+services:
+  config:
+    build:
+      context: ../../../src/config/
+      additional_contexts:
+        parentdir: ../../../src/
+    hostname: config
+    ports:
+      - 8087:8080
+    restart: unless-stopped
+    healthcheck:
+      test: curl -s http://localhost:8087/health >/dev/null || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 50
+    environment:
+      ASPNETCORE_HTTP_PORTS: ${ASPNETCORE_HTTP_PORTS:-8087}
+      NEED_DATABASE_SETUP: ${NEED_DATABASE_SETUP:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
+      CONFIG_DATASTORE: ${CONFIG_DATASTORE:-postgresql}
+      DATABASE_CONNECTION_STRING: ${DATABASE_CONNECTION_STRING:-host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};}
+      # "DATABASE_CONNECTION_STRING_ADMIN_ADMIN" can have alternate credentials with elevated permissions for creating database objects
+      DATABASE_CONNECTION_STRING_ADMIN: ${DATABASE_CONNECTION_STRING_ADMIN:-host=config-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};}
+      IDENTITY_SERVICE_ROLE: ${IDENTITY_SERVICE_ROLE:-config-service-app}
+      IDENTITY_AUTHORITY: ${IDENTITY_AUTHORITY:-http://config-keycloak:8080/realms/edfi}
+      IDENTITY_AUDIENCE: ${IDENTITY_AUDIENCE:-account}
+      IDENTITY_REQUIRE_HTTPS_METADATA: ${IDENTITY_REQUIRE_HTTPS_METADATA:-false}
+      IDENTITY_ROLE_CLAIM_TYPE: ${IDENTITY_ROLE_CLAIM_TYPE:-http://schemas\\.microsoft\\.com/ws/2008/06/identity/claims/role}
+      IDENTITY_CLIENT_ID: ${IDENTITY_CLIENT_ID:-test-client}
+      IDENTITY_CLIENT_SECRET: ${IDENTITY_CLIENT_SECRET:-s3creT@09}
+      IDENTITY_SCOPE: ${IDENTITY_SCOPE:-scp:edfi_dms_configuration_service/full_access}

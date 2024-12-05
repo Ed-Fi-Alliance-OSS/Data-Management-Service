@@ -1,0 +1,3 @@
+#!/bin/sh
+
+psql -U $POSTGRES_USER -c "CREATE DATABASE ${POSTGRES_DB_NAME};"
