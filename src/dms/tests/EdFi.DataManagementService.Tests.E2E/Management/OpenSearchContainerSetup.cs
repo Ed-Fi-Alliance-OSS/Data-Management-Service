@@ -21,7 +21,7 @@ public class OpenSearchContainerSetup : ContainerSetupBase
 
     public override string ApiUrl()
     {
-        return "http://localhost:8080/";
+        return "http://localhost:5198/";
     }
 
     public override async Task ResetData()
@@ -35,9 +35,17 @@ public class OpenSearchContainerSetup : ContainerSetupBase
         OpenSearchClient openSearchClient = new();
         var indices = await openSearchClient.Cat.IndicesAsync();
 
-        foreach (var index in indices.Records.Where(x => x.Index.Contains("ed-fi")))
+        foreach (var index in indices.Records.Where(x => x.Index.Contains("ed-fi$")))
         {
             await openSearchClient.Indices.DeleteAsync(index.Index);
+
+            // Recreate the index with default or custom settings if needed
+            await openSearchClient.Indices.CreateAsync(index.Index, c => c
+                .Settings(s => s
+                    .NumberOfShards(1)
+                    .NumberOfReplicas(1)
+                )
+            );
         }
     }
 }
