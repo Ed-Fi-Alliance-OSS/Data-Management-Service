@@ -10,7 +10,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using Elastic.Clients.Elasticsearch;
 using Microsoft.Extensions.Logging;
 
-namespace EdFi.DataManagementService.Backend.OpenSearch;
+namespace EdFi.DataManagementService.Backend.SearchEngine;
 
 public static partial class QueryElasticsearch
 {

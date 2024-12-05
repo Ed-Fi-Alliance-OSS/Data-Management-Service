@@ -5,26 +5,26 @@
 
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
+using Elastic.Clients.Elasticsearch;
 using Microsoft.Extensions.Logging;
-using OpenSearch.Client;
 
-namespace EdFi.DataManagementService.Backend.OpenSearch;
+namespace EdFi.DataManagementService.Backend.SearchEngine.elasticsearch;
 
-public class OpenSearchQueryHandlerRepository(
-    IOpenSearchClient openSearchClient,
-    ILogger<OpenSearchQueryHandlerRepository> logger
+public class ElasticsearchQueryHandlerRepository(
+    ElasticsearchClient elasticsearchClient,
+    ILogger<ElasticsearchQueryHandlerRepository> logger
 ) : IQueryHandler
 {
     public async Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
     {
         logger.LogDebug(
-            "Entering OpenSearchQueryHandlerRepository.QueryDocuments - {TraceId}",
+            "Entering ElasticsearchQueryHandlerRepository.QueryDocuments - {TraceId}",
             queryRequest.TraceId.Value
         );
 
         try
         {
-            QueryResult result = await QueryOpenSearch.QueryDocuments(openSearchClient, queryRequest, logger);
+            QueryResult result = await QueryElasticsearch.QueryDocuments(elasticsearchClient, queryRequest, logger);
 
             return result;
         }

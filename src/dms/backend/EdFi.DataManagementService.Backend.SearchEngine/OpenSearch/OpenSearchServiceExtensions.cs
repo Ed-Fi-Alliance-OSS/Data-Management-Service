@@ -7,7 +7,7 @@ using EdFi.DataManagementService.Core.External.Interface;
 using Microsoft.Extensions.DependencyInjection;
 using OpenSearch.Client;
 
-namespace EdFi.DataManagementService.Backend.OpenSearch;
+namespace EdFi.DataManagementService.Backend.SearchEngine.OpenSearch;
 
 /// <summary>
 /// The Backend OpenSearch service extensions to be registered to a Frontend DI container

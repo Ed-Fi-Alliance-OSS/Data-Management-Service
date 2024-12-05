@@ -7,7 +7,7 @@ using EdFi.DataManagementService.Core.External.Interface;
 using Elastic.Clients.Elasticsearch;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace EdFi.DataManagementService.Backend.OpenSearch;
+namespace EdFi.DataManagementService.Backend.SearchEngine.elasticsearch;
 
 /// <summary>
 /// The Backend ElasticSearch service extensions to be registered to a Frontend DI container
@@ -23,7 +23,7 @@ public static class ElasticsearchServiceExtensions
         string connectionUrl
     )
     {
-        services.AddSingleton<ElasticsearchClient>(
+        services.AddSingleton(
             _ =>
             {
                 var settings = new ElasticsearchClientSettings(new Uri(connectionUrl));

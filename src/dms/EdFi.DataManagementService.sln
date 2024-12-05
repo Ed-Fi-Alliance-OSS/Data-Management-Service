@@ -40,7 +40,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.Backend.Postgresql.Test.Integration", "backend\EdFi.DataManagementService.Backend.Postgresql.Test.Integration\EdFi.DataManagementService.Backend.Postgresql.Test.Integration.csproj", "{6D113284-09A9-4B4B-A6E9-91211BFE6377}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.Backend.OpenSearch", "backend\EdFi.DataManagementService.Backend.OpenSearch\EdFi.DataManagementService.Backend.OpenSearch.csproj", "{083E5FF8-8D13-40F2-AEF3-719B10A2FE66}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.Backend.SearchEngine", "backend\EdFi.DataManagementService.Backend.SearchEngine\EdFi.DataManagementService.Backend.SearchEngine.csproj", "{083E5FF8-8D13-40F2-AEF3-719B10A2FE66}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

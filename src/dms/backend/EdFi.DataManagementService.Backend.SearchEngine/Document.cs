@@ -5,7 +5,7 @@
 
 using System.Text.Json;
 
-namespace EdFi.DataManagementService.Backend.OpenSearch;
+namespace EdFi.DataManagementService.Backend.SearchEngine;
 
 /// <summary>
 /// A document from OpenSearch
