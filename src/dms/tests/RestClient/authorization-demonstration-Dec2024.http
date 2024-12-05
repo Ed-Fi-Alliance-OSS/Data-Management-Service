@@ -168,8 +168,6 @@ Authorization: bearer {{dmsToken}}
 GET {{dataApi}}/ed-fi/educationOrganizationCategoryDescriptors
 Authorization: bearer {{dmsToken}}
 
-# ... above currently fails with 500 on Stephen's setup. DMS-449.
-
 ### Update the descriptor
 PUT {{descriptorLocation}}
 Authorization: bearer {{dmsToken}}
