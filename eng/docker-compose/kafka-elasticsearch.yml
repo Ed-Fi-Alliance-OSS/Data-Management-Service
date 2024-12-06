@@ -13,6 +13,8 @@ services:
       - zookeeper-data:/zookeeper/data
       - zookeeper-txns:/zookeeper/txns
       - zookeeper-conf:/zookeeper/conf
+    networks:
+      - dms
 
   kafka:
     hostname: dms-kafka1
@@ -28,6 +30,8 @@ services:
     volumes:
       - kafka-data:/kafka/data
       - kafka-logs:/kafka/logs
+    networks:
+      - dms
 
   kafka-postgresql-source:
     hostname: kafka-postgresql-source
@@ -47,6 +51,8 @@ services:
     volumes:
       - kafka-postgresql-source-logs:/kafka/logs
       - kafka-postgresql-source-config:/kafka/config
+    networks:
+      - dms
 
   kafka-elasticsearch-sink:
     hostname: kafka-elasticsearch-sink
@@ -66,6 +72,8 @@ services:
     volumes:
       - kafka-elasticsearch-sink-logs:/kafka/logs
       - kafka-elasticsearch-sink-config:/kafka/config
+    networks:
+      - dms
 
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.5.1
@@ -96,3 +104,7 @@ volumes:
   kafka-elasticsearch-sink-logs:
   kafka-elasticsearch-sink-config:
   esdata:
+
+networks:
+  dms:
+    external: true
