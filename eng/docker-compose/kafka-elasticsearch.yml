@@ -91,6 +91,8 @@ services:
       - "${ELASTICSEARCH_ANALYZER_PORT:-9300}:9300"
     volumes:
       - esdata:/usr/share/elasticsearch/data
+    networks:
+      - dms
 
 volumes:
   zookeeper-logs:
