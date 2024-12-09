@@ -34,9 +34,3 @@ public class ResourceClaimAction
     public bool Enabled { get; set; }
 }
 
-public class ClaimSetResourceClaimActionAuthStrategies
-{
-    public int? ActionId { get; set; }
-    public string? ActionName { get; set; }
-    public IEnumerable<AuthorizationStrategy>? AuthorizationStrategies { get; set; }
-}
