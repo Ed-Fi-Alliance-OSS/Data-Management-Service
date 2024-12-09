@@ -14,7 +14,7 @@ public class IdentitySettings
     public bool EnforceAuthorization { get; set; }
     public required string Audience { get; set; }
     public required string RoleClaimType { get; set; }
-    public required string ServiceRole { get; set; }
+    public required string ClientRole { get; set; }
 }
 
 public class IdentitySettingsValidator : IValidateOptions<IdentitySettings>
@@ -35,9 +35,9 @@ public class IdentitySettingsValidator : IValidateOptions<IdentitySettings>
             {
                 return ValidateOptionsResult.Fail("Missing required IdentitySettings value: RoleClaimType");
             }
-            if (string.IsNullOrEmpty(options.ServiceRole))
+            if (string.IsNullOrEmpty(options.ClientRole))
             {
-                return ValidateOptionsResult.Fail("Missing required IdentitySettings value: ServiceRole");
+                return ValidateOptionsResult.Fail("Missing required IdentitySettings value: ClientRole");
             }
         }
         return ValidateOptionsResult.Success;

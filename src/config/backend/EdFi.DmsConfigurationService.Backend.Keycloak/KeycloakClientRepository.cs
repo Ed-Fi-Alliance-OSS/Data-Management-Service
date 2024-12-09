@@ -14,51 +14,49 @@ using Microsoft.Extensions.Logging;
 
 namespace EdFi.DmsConfigurationService.Backend.Keycloak;
 
-public class KeycloakClientRepository(KeycloakContext keycloakContext, ILogger<KeycloakClientRepository> logger)
-    : IClientRepository
+public class KeycloakClientRepository(
+    KeycloakContext keycloakContext,
+    ILogger<KeycloakClientRepository> logger
+) : IClientRepository
 {
-    private readonly KeycloakClient _keycloakClient =
-        new(
-            keycloakContext.Url,
-            keycloakContext.ClientSecret,
-            new KeycloakOptions(adminClientId: keycloakContext.ClientId)
-        );
+    private readonly KeycloakClient _keycloakClient = new(
+        keycloakContext.Url,
+        keycloakContext.ClientSecret,
+        new KeycloakOptions(adminClientId: keycloakContext.ClientId)
+    );
     private readonly string _realm = keycloakContext.Realm;
 
     public async Task<ClientCreateResult> CreateClientAsync(
         string clientId,
         string clientSecret,
+        string role,
         string displayName
     )
     {
         try
         {
-            Client client =
-                new()
-                {
-                    ClientId = clientId,
-                    Enabled = true,
-                    Secret = clientSecret,
-                    Name = displayName,
-                    ServiceAccountsEnabled = true,
-                    DefaultClientScopes = [keycloakContext.Scope],
-                    ProtocolMappers = ConfigServiceProtocolMapper(),
-                };
+            Client client = new()
+            {
+                ClientId = clientId,
+                Enabled = true,
+                Secret = clientSecret,
+                Name = displayName,
+                ServiceAccountsEnabled = true,
+                DefaultClientScopes = [keycloakContext.Scope],
+                ProtocolMappers = ConfigServiceProtocolMapper(),
+            };
 
-            // Read service role from the realm
+            // Read role from the realm
             var realmRoles = await _keycloakClient.GetRolesAsync(_realm);
             Role? clientRole = realmRoles.FirstOrDefault(x =>
-                x.Name.Equals(keycloakContext.ServiceRole, StringComparison.InvariantCultureIgnoreCase)
+                x.Name.Equals(role, StringComparison.InvariantCultureIgnoreCase)
             );
 
             if (clientRole is null)
             {
-                await _keycloakClient.CreateRoleAsync(
-                    _realm,
-                    new Role() { Name = keycloakContext.ServiceRole }
-                );
+                await _keycloakClient.CreateRoleAsync(_realm, new Role() { Name = role });
 
-                clientRole = await _keycloakClient.GetRoleByNameAsync(_realm, keycloakContext.ServiceRole);
+                clientRole = await _keycloakClient.GetRoleByNameAsync(_realm, role);
             }
 
             var clientScopes = await _keycloakClient.GetClientScopesAsync(_realm);
@@ -117,9 +115,7 @@ public class KeycloakClientRepository(KeycloakContext keycloakContext, ILogger<K
                 }
                 else
                 {
-                    return new ClientCreateResult.FailureUnknown(
-                        $"Role {keycloakContext.ServiceRole} not found."
-                    );
+                    return new ClientCreateResult.FailureUnknown($"Role {role} not found.");
                 }
             }
 

@@ -46,8 +46,7 @@ $files = @(
     "local-dms.yml"
 )
 
-if($SearchEngine -eq "ElasticSearch")
-{
+if ($SearchEngine -eq "ElasticSearch") {
     $files += @("-f", "kafka-elasticsearch.yml")
     if ($EnableSearchEngineUI) {
         $files += @("-f", "kafka-elasticsearch-ui.yml")

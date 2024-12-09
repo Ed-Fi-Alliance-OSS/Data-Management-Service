@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace EdFi.DmsConfigurationService.Backend.Keycloak;
 
 /// <summary>
-/// Service extensions to register keycloak access points 
+/// Service extensions to register keycloak access points
 /// </summary>
 public static class KeycloakServiceExtensions
 {
@@ -20,8 +20,8 @@ public static class KeycloakServiceExtensions
         string ClientId,
         string ClientSecret,
         string RoleClaimType,
-        string ServiceRole,
-        string Scope)
+        string Scope
+    )
     {
         services.AddScoped(x => new KeycloakContext(
             Url,
@@ -29,7 +29,6 @@ public static class KeycloakServiceExtensions
             ClientId,
             ClientSecret,
             RoleClaimType,
-            ServiceRole,
             Scope
         ));
 

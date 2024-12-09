@@ -52,7 +52,8 @@ Keycloak locally using docker-compose.
 7. Update DMS Configuration Service IdentitySettings section on appsettings.json:
 
    ```js
-    ServiceRole: "config-service-app" (Service realm role created earlier)
+    ConfigServiceRole: "config-service-app" (Service realm role created earlier)
+    ClientRole: "dms-client",
     Authority: "http://your-keycloak-url:port/realms/<your-realm>"
     IdentityServer: "http://your-keycloak-url:port"
     Realm: "edfi"(your realm)
@@ -313,7 +314,8 @@ Please refer "Creating a Configuration Service Client" section above
 
         ```js
             "EnforceAuthorization": true,
-            "ServiceRole": "dms-client",
+            "ConfigServiceRole": "config-service-app",
+            "ClientRole": "dms-client",
             "Authority": "http://your-keycloak-url:port/realms/<your-realm>",
             "Audience": "account",
             "RequireHttpsMetadata": false,
