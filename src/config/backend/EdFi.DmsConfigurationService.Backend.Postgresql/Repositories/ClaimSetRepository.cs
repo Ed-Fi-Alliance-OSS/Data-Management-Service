@@ -77,4 +77,14 @@ public class ClaimSetRepository : IClaimSetRepository
         };
         return authStrategies;
     }
+
+    public ImportClaimSetResponse ImportClaimSet(ImportClaimSetCommand command)
+    {
+        ImportClaimSetResponse response = new()
+        {
+            Name = command.Name,
+            ResourceClaims = command.ResourceClaims
+        };
+        return response;
+    }
 }

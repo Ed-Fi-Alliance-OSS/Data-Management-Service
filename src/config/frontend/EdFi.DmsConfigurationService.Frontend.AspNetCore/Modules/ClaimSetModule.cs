@@ -3,14 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Net;
 using EdFi.DmsConfigurationService.Backend.Repositories;
-using EdFi.DmsConfigurationService.DataModel;
-using EdFi.DmsConfigurationService.DataModel.Infrastructure;
-using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
+using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
-using FluentValidation;
-using FluentValidation.Results;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -33,10 +28,21 @@ public class ClaimSet : IEndpointModule
     /// Import the provided ClaimSet
     /// </summary>
     /// <returns></returns>
-    private static IResult ImportClaimSet()
+    private static IResult ImportClaimSet(HttpContext httpContext, ImportClaimSetRequest request, IClaimSetRepository claimSetRepository)
     {
-        // Check injected body of httpContext
-        // SecurityRepository.InsertClaimSet(InsetClaimSetCommand)
+
+        ClaimSetResourceClaim claim1 = new()
+        {
+            Name = "TestResourceClaim",
+            Id = '1',
+        };
+
+        ImportClaimSetCommand importClaimSetCommand = new()
+        {
+            Name = "Test",
+            ResourceClaims = [claim1]
+        };
+        claimSetRepository.ImportClaimSet(importClaimSetCommand);
         return Results.Created();
     }
 
@@ -48,7 +54,7 @@ public class ClaimSet : IEndpointModule
     private static IResult CopyClaimSet(long id)
     {
         // Check injected body of httpContext
-        // SecurityRepository.InsertClaimSetById(id, InsetClaimSetCommand)
+        // claimSetRepository.CopyClaimSet(id, CopyClaimSet)
         return Results.Created();
     }
 
@@ -78,7 +84,7 @@ public class ClaimSet : IEndpointModule
     {
         // Verify there is an id here.
         // Verify that ?verbose=true query param
-        // SecurityRepository.GetClaimSetById(id, isVerbose)
+        // claimSetRepository.GetClaimSetById(id, isVerbose)
         return Results.Ok();
     }
 
@@ -90,7 +96,7 @@ public class ClaimSet : IEndpointModule
     {
         // Verify there is an id here.
         // Verify that ?verbose=true
-        // SecurityRepository.GetAllClaimSets(id, isVerbose)
+        // claimSetRepository.GetAllClaimSets(id, isVerbose)
         return Results.Ok();
     }
 
@@ -101,7 +107,7 @@ public class ClaimSet : IEndpointModule
     private static IResult ExportClaimSetById(long id)
     {
         // Verify there is an id here.
-        // SecurityRepository.ExportClaimSetById(id)
+        // claimSetRepository.ExportClaimSetById(id)
         return Results.Ok();
     }
 }

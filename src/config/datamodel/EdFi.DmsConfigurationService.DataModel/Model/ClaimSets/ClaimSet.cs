@@ -19,10 +19,10 @@ public class ClaimSetResourceClaim
 {
     public required int Id { get; set; }
     public required string? Name { get; set; }
-    public required List<ClaimSetResourceClaim>? Children { get; set; }
-    public required List<ResourceClaimAction>? Actions { get; set; }
-    public required List<ClaimSetResourceClaimActionAuthStrategies>? DefaultAuthorizationsStrategiesForCRUD { get; set; }
-    public required List<ClaimSetResourceClaimActionAuthStrategies>? AuthorizationStrategyOverridesForCRUD { get; set; }
+    public List<ClaimSetResourceClaim>? Children { get; set; }
+    public List<ResourceClaimAction>? Actions { get; set; }
+    public List<ClaimSetResourceClaimActionAuthStrategies>? DefaultAuthorizationsStrategiesForCRUD { get; set; }
+    public List<ClaimSetResourceClaimActionAuthStrategies>? AuthorizationStrategyOverridesForCRUD { get; set; }
 
 }
 

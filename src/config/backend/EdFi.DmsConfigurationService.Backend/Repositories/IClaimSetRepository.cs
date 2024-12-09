@@ -4,10 +4,12 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
+using EdFi.DmsConfigurationService.DataModel.Model.Token;
 
 namespace EdFi.DmsConfigurationService.Backend.Repositories;
 
 public interface IClaimSetRepository
 {
     IEnumerable<AuthorizationStrategy> GetAuthorizationStrategies();
+    ImportClaimSetResponse ImportClaimSet(ImportClaimSetCommand command);
 }
