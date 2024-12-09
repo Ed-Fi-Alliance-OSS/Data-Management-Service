@@ -446,7 +446,7 @@ public class TokenEndpointTests
                 new KeyValuePair<string, string>("client_id", "CSClient1"),
                 new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
                 new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("scope", "scp:edfi_dms_configuration_service/full_access"),
+                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
             }
         );
         var response = await client.PostAsync("/connect/token", requestContent);
@@ -533,7 +533,7 @@ public class TokenEndpointTests
                 new KeyValuePair<string, string>("client_id", "CSClient1"),
                 new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
                 new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("scope", "scp:edfi_dms_configuration_service/full_access"),
+                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
             }
         );
         var response = await client.PostAsync("/connect/token", requestContent);
@@ -582,7 +582,7 @@ public class TokenEndpointTests
                 new KeyValuePair<string, string>("client_id", "CSClient1"),
                 new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
                 new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("scope", "scp:edfi_dms_configuration_service/full_access"),
+                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
             }
         );
         var response = await client.PostAsync("/connect/token", requestContent);
@@ -599,7 +599,7 @@ public class TokenEndpointTests
               "title": "Bad Gateway",
               "status": 502,
               "correlationId": "{correlationId}",
-              "validationErrors": {}, 
+              "validationErrors": {},
               "errors": []
             }
             """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
@@ -645,7 +645,7 @@ public class TokenEndpointTests
                 new KeyValuePair<string, string>("client_id", "CSClient1"),
                 new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
                 new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("scope", "scp:edfi_dms_configuration_service/full_access"),
+                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
             }
         );
         var response = await client.PostAsync("/connect/token", requestContent);
@@ -694,7 +694,7 @@ public class TokenEndpointTests
                 new KeyValuePair<string, string>("client_id", "CSClient1"),
                 new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
                 new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("scope", "scp:edfi_dms_configuration_service/full_access"),
+                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
             }
         );
         var response = await client.PostAsync("/connect/token", requestContent);
@@ -737,7 +737,7 @@ public class TokenEndpointTests
                 new KeyValuePair<string, string>("client_id", "CSClient1"),
                 new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
                 new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("scope", "scp:edfi_dms_configuration_service/full_access"),
+                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
             }
         );
         var response = await client.PostAsync("/connect/token", requestContent);
