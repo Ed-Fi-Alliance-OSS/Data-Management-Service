@@ -255,7 +255,7 @@ jobs:
             DMSTAGS="${{ env.IMAGE_NAME }}:${PACKAGEVERSION},${{ env.IMAGE_NAME }}:${MINOR}"
           fi
 
-          SEMVERSION=${PACKAGEVERSION}  # strip off the leading 'v'
+          SEMVERSION=${PACKAGEVERSION:5}  # strip off the leading 'dms-v'
           echo "DMSTAGS=$DMSTAGS" >> $GITHUB_OUTPUT
           echo "VERSION=$SEMVERSION" >> $GITHUB_OUTPUT
 
@@ -517,7 +517,7 @@ jobs:
             DMSTAGS="${{ env.IMAGE_NAME }}:${PACKAGEVERSION},${{ env.IMAGE_NAME }}:${MINOR}"
           fi
 
-          SEMVERSION=${PACKAGEVERSION}  # strip off the leading 'v'
+          SEMVERSION=${PACKAGEVERSION:4}  # strip off the leading 'cs-v'
           echo "DMSTAGS=$DMSTAGS" >> $GITHUB_OUTPUT
           echo "VERSION=$SEMVERSION" >> $GITHUB_OUTPUT
 
@@ -539,7 +539,7 @@ jobs:
       - name: Build and push Config image
         uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09  # v5.0.0
         with:
-          context: "{{defaultContext}}:src/cs"
+          context: "{{defaultContext}}:src/config"
           cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:pre
           cache-to: type=inline
           build-args: VERSION=${{ steps.prepare-tags.outputs.VERSION }}
