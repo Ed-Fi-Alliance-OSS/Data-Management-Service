@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+name: "PowerShell"
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "**/*.ps1"
+      - "**/*.psm1"
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "**/*.ps1"
+      - "**/*.psm1"
+
+permissions: read-all
+
+jobs:
+ run-ps-lint:
+    name: PowerShell Linter
+    uses: Ed-Fi-Alliance-OSS/Ed-Fi-Actions/.github/workflows/powershell-analyzer.yml@main
+    permissions:
+      security-events: write
+      actions: read
+      contents: read

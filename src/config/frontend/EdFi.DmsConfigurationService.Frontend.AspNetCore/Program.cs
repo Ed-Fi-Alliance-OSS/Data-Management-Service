@@ -5,6 +5,7 @@
 
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Deploy;
+using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
@@ -37,7 +38,18 @@ bool ReportInvalidConfiguration(WebApplication app)
     try
     {
         // Accessing IOptions<T> forces validation
+        _ = app.Services.GetRequiredService<IOptions<AppSettings>>().Value;
         _ = app.Services.GetRequiredService<IOptions<IdentitySettings>>().Value;
+        if (
+            string.Equals(
+                app.Configuration.GetSection("AppSettings:IdentityProvider").Value,
+                "keycloak",
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
+        {
+            _ = app.Services.GetRequiredService<IOptions<KeycloakSettings>>().Value;
+        }
     }
     catch (OptionsValidationException ex)
     {

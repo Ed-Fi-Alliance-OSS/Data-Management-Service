@@ -47,6 +47,8 @@ if ($d) {
     }
 }
 else {
+    docker network create dms
+
     Write-Output "Starting published DMS"
     docker compose $files --env-file $EnvironmentFile up -d
 

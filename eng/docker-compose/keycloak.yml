@@ -17,6 +17,12 @@ services:
       - ${KEYCLOAK_PORT:-8065}:8080
     volumes:
       - dms-keycloak:/var/lib/keycloak/data
+    networks:
+      - dms
 
 volumes:
   dms-keycloak:
+
+networks:
+  dms:
+    external: true

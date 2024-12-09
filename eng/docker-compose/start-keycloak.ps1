@@ -34,6 +34,8 @@ if ($d) {
     }
 }
 else {
+    docker network create dms
+
     Write-Output "Starting Keycloak"
     docker compose -p dms-keycloak $files --env-file $EnvironmentFile up -d
 }

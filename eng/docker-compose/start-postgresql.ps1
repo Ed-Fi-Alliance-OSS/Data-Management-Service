@@ -34,6 +34,8 @@ if ($d) {
     }
 }
 else {
+    docker network create dms
+
     Write-Output "Starting PostgreSQL"
     docker compose $files --env-file $EnvironmentFile up -d
 }

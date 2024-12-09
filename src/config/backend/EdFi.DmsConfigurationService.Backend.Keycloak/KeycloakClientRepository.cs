@@ -14,7 +14,7 @@ using Microsoft.Extensions.Logging;
 
 namespace EdFi.DmsConfigurationService.Backend.Keycloak;
 
-public class ClientRepository(KeycloakContext keycloakContext, ILogger<ClientRepository> logger)
+public class KeycloakClientRepository(KeycloakContext keycloakContext, ILogger<KeycloakClientRepository> logger)
     : IClientRepository
 {
     private readonly KeycloakClient _keycloakClient =

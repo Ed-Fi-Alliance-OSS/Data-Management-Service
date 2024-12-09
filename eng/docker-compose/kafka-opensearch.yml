@@ -13,6 +13,8 @@ services:
       - zookeeper-data:/zookeeper/data
       - zookeeper-txns:/zookeeper/txns
       - zookeeper-conf:/zookeeper/conf
+    networks:
+      - dms
 
   kafka:
     hostname: dms-kafka1
@@ -28,6 +30,8 @@ services:
     volumes:
       - kafka-data:/kafka/data
       - kafka-logs:/kafka/logs
+    networks:
+      - dms
 
   kafka-postgresql-source:
     hostname: kafka-postgresql-source
@@ -47,6 +51,8 @@ services:
     volumes:
       - kafka-postgresql-source-logs:/kafka/logs
       - kafka-postgresql-source-config:/kafka/config
+    networks:
+      - dms
 
   kafka-opensearch-sink:
     hostname: kafka-opensearch-sink
@@ -66,6 +72,8 @@ services:
     volumes:
       - kafka-opensearch-sink-logs:/kafka/logs
       - kafka-opensearch-sink-config:/kafka/config
+    networks:
+      - dms
 
   opensearch:
     image: opensearchproject/opensearch:2.15.0@sha256:1963b3ece46dfe1a17cd633fb2e9cea22bd20753a295f39c2f513ce0070cad42
@@ -104,6 +112,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 50
+    networks:
+      - dms
 
 volumes:
   zookeeper-logs:
@@ -117,3 +127,7 @@ volumes:
   kafka-opensearch-sink-logs:
   kafka-opensearch-sink-config:
   opensearch-data1:
+
+networks:
+  dms:
+    external: true

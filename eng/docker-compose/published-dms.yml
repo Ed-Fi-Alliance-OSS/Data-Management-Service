@@ -17,10 +17,12 @@ services:
       retries: 50
     environment:
       ASPNETCORE_HTTP_PORTS: ${ASPNETCORE_HTTP_PORTS:-8080}
-      OAUTH_TOKEN_ENDPOINT: ${OAUTH_TOKEN_ENDPOINT:-http://host.docker.internal:8080/oauth/token}
+      OAUTH_TOKEN_ENDPOINT: ${OAUTH_TOKEN_ENDPOINT:-http://localhost:8045/realms/edfi/protocol/openid-connect/token}
       NEED_DATABASE_SETUP: ${NEED_DATABASE_SETUP:-true}
       BYPASS_STRING_COERCION: ${BYPASS_STRING_COERCION:-false}
       LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
+      # Mask incoming HTTP POST and PUT request body structures in DEBUG logging
+      MASK_REQUEST_BODY_IN_LOGS: ${MASK_REQUEST_BODY_IN_LOGS:-true}
       # The default correlation id header is deliberately blank on the following line
       CORRELATION_ID_HEADER: ${CORRELATION_ID_HEADER:-}
       DMS_DATASTORE: ${DMS_DATASTORE:-postgresql}
@@ -33,4 +35,16 @@ services:
       SAMPLING_DURATION_SECONDS: ${SAMPLING_DURATION_SECONDS:-10}
       MINIMUM_THROUGHPUT: ${MINIMUM_THROUGHPUT:-2}
       BREAK_DURATION_SECONDS: ${BREAK_DURATION_SECONDS:-30}
-      OPENSEARCH_URL: ${OPENSEARCH_URL:-http://dms-search:9200}
+      OPENSEARCH_URL: ${OPENSEARCH_URL:-http://dms-opensearch:9200}
+      IDENTITY_ENFORCE_AUTHORIZATION: ${IDENTITY_ENFORCE_AUTHORIZATION:-false}
+      IDENTITY_SERVICE_ROLE: ${IDENTITY_SERVICE_ROLE:-dms-client}
+      IDENTITY_AUTHORITY: ${IDENTITY_AUTHORITY:-http://dms-keycloak:8080/realms/dms}
+      IDENTITY_AUDIENCE: ${IDENTITY_AUDIENCE:-account}
+      IDENTITY_REQUIRE_HTTPS_METADATA: ${IDENTITY_REQUIRE_HTTPS_METADATA:-false}
+      IDENTITY_ROLE_CLAIM_TYPE: ${IDENTITY_ROLE_CLAIM_TYPE:-http://schemas\\.microsoft\\.com/ws/2008/06/identity/claims/role}
+    networks:
+      - dms
+
+networks:
+  dms:
+    external: true

@@ -36,73 +36,10 @@ Keycloak locally using docker-compose.
 
     ![Default realm page](./images/image-14.png)
 
-## Creating a New Realm
-
- 1. In the top-left corner, select the dropdown labeled `master` (or whatever
-    the default realm is called).
-
-    ![Create realm](./images/image-4.png)
-
- 2. Click "Create Realm" to create a new one.
-
- 3. Enter a unique Realm Name (e.g., edfi) and click "Enabled", then click
-    "Create".
-
-    ![Realm setup](./images/image-5.png)
-
- 4. Now home screen will show the newly created realm
-
-    ![Created edfi realm](./images/image-6.png)
-
-## Configuring service specific realm roles
-
- 1. From the left menu, select Realm roles.
- 2. Click Create role
- 3. Enter a Role Name (`config-service-app`) and Description
- 4. Click Save
-
-## Creating a Configuration Service Client
+## Scripted Keycloak Setup
 
 > [!NOTE]
-> Make sure you are in edfi realm
-
-1. From the left menu, select Clients.
-2. Click Create client to add a new client.
-
-    ![Create new client](./images/image-7.png)
-
-3. In General settings, make sure to select OpenID Connect for Client type and
-   enter the Client ID (`DmsConfigurationService`). This will be the identifier
-   for your application.
-
-    ![Client general settings](./images/image-8.png)
-
-4. In Capability config, enable `Client authentication`, `Authorization`, in
-   Authentication Flow section select `Standard flow` and `Direct access grants`
-
-    ![Client capability settings](./images/image-9.png)
-
-5. In Login settings, enter the Root URL of your application (e.g.,
-   <http://localhost:5126>)
-
-    ![Client login settings](./images/image-10.png)
-
-6. Click Save
-
-    ![Client successfully created](./images/image-11.png)
-
-7. Once the client is created, you will be directed to the `Client details` page,
-   where you can view the client information.
-
-8. Assigning the 'realm admin' role to the created client
-   (`DmsConfigurationService`) is a necessary step. In the `Client details`
-   page, go to the `Service account roles` tab, click Assign role, select 'realm
-   admin', and then click Assign. This will authorize the client to manage the
-   realm.
-
-    ![Service accounts roles tab](./images/image-15.png)
-
-    ![Realm admin role assignment](./images/image-16.png)
+> See [Manual Keycloak Setup](#appendix-manual-keycloak-setup) below if you are interested in the instructions for setting up Keycloak via the user interface.
 
 ## Time to update Configuration Service appsettings
 
@@ -148,7 +85,90 @@ Keycloak locally using docker-compose.
     }
     ```
 
-## DMS client setup in Keycloak
+## Shutting down the Keycloak container
+
+If you want to shut down the container you can use the -d parameter and if you
+want to remove the volume, add the -v parameter.
+
+```pwsh
+# Stop keykloack, keeping volume
+./start-keycloak.ps1 - d
+
+# Stop keykloack and delete volume
+./start-keycloak.ps1 -d -v
+```
+
+## Appendix: Manual Keycloak Setup
+
+### Creating a New Realm
+
+ 1. In the top-left corner, select the dropdown labeled `master` (or whatever
+    the default realm is called).
+
+    ![Create realm](./images/image-4.png)
+
+ 2. Click "Create Realm" to create a new one.
+
+ 3. Enter a unique Realm Name (e.g., edfi) and click "Enabled", then click
+    "Create".
+
+    ![Realm setup](./images/image-5.png)
+
+ 4. Now home screen will show the newly created realm
+
+    ![Created edfi realm](./images/image-6.png)
+
+### Configuring service specific realm roles
+
+ 1. From the left menu, select Realm roles.
+ 2. Click Create role
+ 3. Enter a Role Name (`config-service-app`) and Description
+ 4. Click Save
+
+### Creating a Configuration Service Client
+
+> [!NOTE]
+> Make sure you are in edfi realm
+
+1. From the left menu, select Clients.
+2. Click Create client to add a new client.
+
+    ![Create new client](./images/image-7.png)
+
+3. In General settings, make sure to select OpenID Connect for Client type and
+   enter the Client ID (`DmsConfigurationService`). This will be the identifier
+   for your application.
+
+    ![Client general settings](./images/image-8.png)
+
+4. In Capability config, enable `Client authentication`, `Authorization`, in
+   Authentication Flow section select `Standard flow` and `Direct access grants`
+
+    ![Client capability settings](./images/image-9.png)
+
+5. In Login settings, enter the Root URL of your application (e.g.,
+   <http://localhost:5126>)
+
+    ![Client login settings](./images/image-10.png)
+
+6. Click Save
+
+    ![Client successfully created](./images/image-11.png)
+
+7. Once the client is created, you will be directed to the `Client details` page,
+   where you can view the client information.
+
+8. Assigning the 'realm admin' role to the created client
+   (`DmsConfigurationService`) is a necessary step. In the `Client details`
+   page, go to the `Service account roles` tab, click Assign role, select 'realm
+   admin', and then click Assign. This will authorize the client to manage the
+   realm.
+
+    ![Service accounts roles tab](./images/image-15.png)
+
+    ![Realm admin role assignment](./images/image-16.png)
+
+### DMS client setup in Keycloak
 
 Please refer "Creating a Configuration Service Client" section above
 
@@ -299,16 +319,3 @@ Please refer "Creating a Configuration Service Client" section above
             "RequireHttpsMetadata": false,
             "RoleClaimType": "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
         ```
-  
-## Shutting down the Keycloak container
-
-If you want to shut down the container you can use the -d parameter and if you
-want to remove the volume, add the -v parameter.
-
-```pwsh
-# Stop keykloack, keeping volume
-./start-keycloak.ps1 - d
-
-# Stop keykloack and delete volume
-./start-keycloak.ps1 -d -v
-```

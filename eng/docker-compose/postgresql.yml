@@ -19,6 +19,12 @@ services:
     volumes:
       - dms-postgresql:/var/lib/postgresql/data
       - ./postgresql-init.sh:/docker-entrypoint-initdb.d/postgresql-init.sh
+    networks:
+      - dms
 
 volumes:
   dms-postgresql:
+
+networks:
+  dms:
+    external: true

@@ -45,3 +45,9 @@ services:
       IDENTITY_AUDIENCE: ${IDENTITY_AUDIENCE:-account}
       IDENTITY_REQUIRE_HTTPS_METADATA: ${IDENTITY_REQUIRE_HTTPS_METADATA:-false}
       IDENTITY_ROLE_CLAIM_TYPE: ${IDENTITY_ROLE_CLAIM_TYPE:-http://schemas\\.microsoft\\.com/ws/2008/06/identity/claims/role}
+    networks:
+      - dms
+
+networks:
+  dms:
+    external: true
