@@ -34,6 +34,7 @@ public class RegisterEndpointTests
                     _clientRepository.CreateClientAsync(
                         A<string>.Ignored,
                         A<string>.Ignored,
+                        A<string>.Ignored,
                         A<string>.Ignored
                     )
             )

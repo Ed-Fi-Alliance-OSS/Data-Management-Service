@@ -99,7 +99,10 @@ public static class WebApplicationBuilderExtensions
         }
     }
 
-    private static void ConfigureIdentityProvider(WebApplicationBuilder webApplicationBuilder, Serilog.ILogger logger)
+    private static void ConfigureIdentityProvider(
+        WebApplicationBuilder webApplicationBuilder,
+        Serilog.ILogger logger
+    )
     {
         IConfiguration config = webApplicationBuilder.Configuration;
         var identitySettings = config.GetSection("IdentitySettings").Get<IdentitySettings>();
@@ -108,7 +111,8 @@ public static class WebApplicationBuilderExtensions
             logger.Error("Error reading IdentitySettings");
             throw new InvalidOperationException("Unable to read IdentitySettings from appsettings");
         }
-        webApplicationBuilder.Services.Configure<IdentitySettings>(config.GetSection("IdentitySettings"))
+        webApplicationBuilder
+            .Services.Configure<IdentitySettings>(config.GetSection("IdentitySettings"))
             .AddSingleton<IValidateOptions<IdentitySettings>, IdentitySettingsValidator>();
 
         webApplicationBuilder
@@ -117,7 +121,8 @@ public static class WebApplicationBuilderExtensions
                 JwtBearerDefaults.AuthenticationScheme,
                 options =>
                 {
-                    options.MetadataAddress = $"{identitySettings.Authority}/.well-known/openid-configuration";
+                    options.MetadataAddress =
+                        $"{identitySettings.Authority}/.well-known/openid-configuration";
                     options.Authority = identitySettings.Authority;
                     options.Audience = identitySettings.Audience;
                     options.RequireHttpsMetadata = identitySettings.RequireHttpsMetadata;
@@ -141,7 +146,7 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder.Services.AddAuthorization(options =>
             options.AddPolicy(
                 SecurityConstants.ServicePolicy,
-                policy => policy.RequireClaim(ClaimTypes.Role, identitySettings.ServiceRole)
+                policy => policy.RequireClaim(ClaimTypes.Role, identitySettings.ConfigServiceRole)
             )
         );
 
@@ -159,16 +164,18 @@ public static class WebApplicationBuilderExtensions
                 logger.Error("Error reading KeycloakSettings");
                 throw new InvalidOperationException("Unable to read KeycloakSettings from appsettings");
             }
-            webApplicationBuilder.Services.Configure<KeycloakSettings>(config.GetSection("KeycloakSettings"))
+            webApplicationBuilder
+                .Services.Configure<KeycloakSettings>(config.GetSection("KeycloakSettings"))
                 .AddSingleton<IValidateOptions<KeycloakSettings>, KeycloakSettingsValidator>();
 
-            webApplicationBuilder.Services.AddKeycloakServices(keycloakSettings.Url,
+            webApplicationBuilder.Services.AddKeycloakServices(
+                keycloakSettings.Url,
                 keycloakSettings.Realm,
                 identitySettings.ClientId,
                 identitySettings.ClientSecret,
                 identitySettings.RoleClaimType,
-                identitySettings.ServiceRole,
-                identitySettings.Scope);
+                identitySettings.Scope
+            );
         }
     }
 }

@@ -8,9 +8,11 @@ using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FluentValidation;
 using FluentValidation.Results;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -34,6 +36,7 @@ public class ApplicationModule : IEndpointModule
         HttpContext httpContext,
         IApplicationRepository applicationRepository,
         IClientRepository clientRepository,
+        IOptions<IdentitySettings> identitySettings,
         ILogger<ApplicationModule> logger
     )
     {
@@ -49,6 +52,7 @@ public class ApplicationModule : IEndpointModule
         var clientCreateResult = await clientRepository.CreateClientAsync(
             clientId,
             clientSecret,
+            identitySettings.Value.ClientRole,
             command.ApplicationName
         );
 
@@ -98,7 +102,10 @@ public class ApplicationModule : IEndpointModule
                         throw new ValidationException(
                             new[]
                             {
-                                new ValidationFailure("ClaimSetName", $"A claim set with this name already exists in the database. Please enter a unique name."),
+                                new ValidationFailure(
+                                    "ClaimSetName",
+                                    $"A claim set with this name already exists in the database. Please enter a unique name."
+                                ),
                             }
                         );
                     case ApplicationInsertResult.FailureUnknown failure:
@@ -169,7 +176,13 @@ public class ApplicationModule : IEndpointModule
         if (applicationUpdateResult is ApplicationUpdateResult.FailureDuplicateClaimSetName)
         {
             throw new ValidationException(
-                new[] { new ValidationFailure("ClaimSetName", $"A claim set with this name already exists in the database. Please enter a unique name.") }
+                new[]
+                {
+                    new ValidationFailure(
+                        "ClaimSetName",
+                        $"A claim set with this name already exists in the database. Please enter a unique name."
+                    ),
+                }
             );
         }
 

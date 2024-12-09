@@ -120,6 +120,7 @@ public class ApplicationModuleTests
                         _clientRepository.CreateClientAsync(
                             A<string>.Ignored,
                             A<string>.Ignored,
+                            A<string>.Ignored,
                             A<string>.Ignored
                         )
                 )
@@ -311,6 +312,7 @@ public class ApplicationModuleTests
                         _clientRepository.CreateClientAsync(
                             A<string>.Ignored,
                             A<string>.Ignored,
+                            A<string>.Ignored,
                             A<string>.Ignored
                         )
                 )
@@ -490,6 +492,7 @@ public class ApplicationModuleTests
                         _clientRepository.CreateClientAsync(
                             A<string>.Ignored,
                             A<string>.Ignored,
+                            A<string>.Ignored,
                             A<string>.Ignored
                         )
                 )
@@ -617,6 +620,7 @@ public class ApplicationModuleTests
                         _clientRepository.CreateClientAsync(
                             A<string>.Ignored,
                             A<string>.Ignored,
+                            A<string>.Ignored,
                             A<string>.Ignored
                         )
                 )
@@ -693,7 +697,6 @@ public class ApplicationModuleTests
 
             A.CallTo(() => _applicationRepository.UpdateApplication(A<ApplicationUpdateCommand>.Ignored))
                 .Returns(new ApplicationUpdateResult.FailureDuplicateClaimSetName());
-
 
             //Act
             var updateResponse = await client.PutAsync(

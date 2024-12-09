@@ -10,6 +10,7 @@ public interface IClientRepository
     public Task<ClientCreateResult> CreateClientAsync(
         string clientId,
         string clientSecret,
+        string role,
         string displayName
     );
 
