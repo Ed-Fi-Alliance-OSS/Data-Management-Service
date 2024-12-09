@@ -255,7 +255,7 @@ jobs:
             DMSTAGS="${{ env.IMAGE_NAME }}:${PACKAGEVERSION},${{ env.IMAGE_NAME }}:${MINOR}"
           fi
 
-          SEMVERSION=${PACKAGEVERSION:5}  # strip off the leading 'dms-v'
+          SEMVERSION=${PACKAGEVERSION:8}  # strip off the leading 'dms-pre-'
           echo "DMSTAGS=$DMSTAGS" >> $GITHUB_OUTPUT
           echo "VERSION=$SEMVERSION" >> $GITHUB_OUTPUT
 
@@ -517,7 +517,7 @@ jobs:
             DMSTAGS="${{ env.IMAGE_NAME }}:${PACKAGEVERSION},${{ env.IMAGE_NAME }}:${MINOR}"
           fi
 
-          SEMVERSION=${PACKAGEVERSION:4}  # strip off the leading 'cs-v'
+          SEMVERSION=${PACKAGEVERSION:7}  # strip off the leading 'cs-pre-'
           echo "DMSTAGS=$DMSTAGS" >> $GITHUB_OUTPUT
           echo "VERSION=$SEMVERSION" >> $GITHUB_OUTPUT
 
