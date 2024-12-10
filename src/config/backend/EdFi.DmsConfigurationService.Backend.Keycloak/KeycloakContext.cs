@@ -11,6 +11,5 @@ public record KeycloakContext(
     string ClientId,
     string ClientSecret,
     string RoleClaimType,
-    string ServiceRole,
     string Scope
 );
