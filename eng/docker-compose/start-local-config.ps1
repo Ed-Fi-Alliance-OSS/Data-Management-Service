@@ -60,5 +60,3 @@ else {
     Start-Sleep 20
     ./setup-keycloak.ps1
 }
-
-
