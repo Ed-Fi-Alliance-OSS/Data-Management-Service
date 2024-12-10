@@ -238,9 +238,19 @@ function Create_ClientScope([string] $scopeName) {
     else {
         # Create the client scope
         $clientScopePayload = @{
-            name     = $scopeName
-            protocol = "openid-connect"
-        } | ConvertTo-Json
+            name            = $scopeName
+            protocol        = "openid-connect"
+            protocolMappers = @(@{
+                    name            = $scopeName
+                    protocol        = "openid-connect"
+                    protocolMapper  = "oidc-audience-resolve-mapper"
+                    consentRequired = "false"
+                    config          = @{
+                        "introspection.token.claim" = "true"
+                        "access.token.claim"        = "true"
+                    }
+                })
+        } | ConvertTo-Json -Depth 3
 
         Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/client-scopes" `
             -Method Post `
