@@ -8,7 +8,7 @@ using FluentValidation;
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 
-public  class ClaimSetInsertCommand
+public class ClaimSetInsertCommand
 {
     public required string ClaimSetName { get; set; }
     public required bool IsSystemReserved { get; set; }

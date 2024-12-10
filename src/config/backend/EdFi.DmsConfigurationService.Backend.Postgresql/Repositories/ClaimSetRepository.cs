@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
-
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
@@ -110,11 +109,18 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         {
             string sql = """
                    INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved, ResourceClaims)
-                   VALUES(@ClaimSetName, @IsSystemReserved, @ResourceClaims)
+                   VALUES(@ClaimSetName, @IsSystemReserved, @ResourceClaims::jsonb)
                    RETURNING Id;
                 """;
 
-            long id = await connection.ExecuteScalarAsync<long>(sql, command);
+            var parameters = new
+            {
+                command.ClaimSetName,
+                command.IsSystemReserved,
+                ResourceClaims = command.ResourceClaims.ToString(),
+            };
+
+            long id = await connection.ExecuteScalarAsync<long>(sql, parameters);
             await transaction.CommitAsync();
 
             return new ClaimSetInsertResult.Success(id);
@@ -133,24 +139,25 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         try
         {
             string sql = """
-                SELECT Id, ClaimSetName, IsSystemReserved, ResourceClaims FROM dmscs.ClaimSet
+                SELECT Id, ClaimSetName, IsSystemReserved, ResourceClaims::TEXT AS ResourceClaims
+                FROM dmscs.ClaimSet
                 ORDER BY Id
                 LIMIT @Limit OFFSET @Offset;
                 """;
 
-            var claimSets = await connection.QueryAsync<dynamic>(sql, param: query);
+            var claimSets = await connection.QueryAsync(sql, param: query);
 
-            var claimSetResponses = claimSets
-                .Select(result => new ClaimSetResponse
+            var returnClaimSets = claimSets
+                .Select(row => new ClaimSetResponse
                 {
-                    Id = result.Id,
-                    ClaimSetName = result.ClaimSetName,
-                    IsSystemReserved = result.IsSystemReserved,
-                    ResourceClaims = JsonDocument.Parse(result.ResourceClaims).RootElement,
+                    Id = (long)row.id,
+                    ClaimSetName = (string)row.claimsetname,
+                    IsSystemReserved = (bool)row.issystemreserved,
+                    ResourceClaims = JsonDocument.Parse((string)row.resourceclaims).RootElement,
                 })
                 .ToList();
 
-            return new ClaimSetQueryResult.Success(claimSetResponses);
+            return new ClaimSetQueryResult.Success(returnClaimSets);
         }
         catch (Exception ex)
         {
@@ -165,26 +172,24 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         try
         {
             string sql = """
-                         SELECT Id, ClaimSetName, IsSystemReserved, ResourceClaims FROM dmscs.ClaimSet
-                         WHERE Id = @Id
-                         """;
+                SELECT Id, ClaimSetName, IsSystemReserved, ResourceClaims FROM dmscs.ClaimSet
+                WHERE Id = @Id
+                """;
 
-            var claimSets = await connection.QueryAsync<dynamic>(sql, param: new {Id = id});
+            var claimSets = await connection.QueryAsync<dynamic>(sql, param: new { Id = id });
 
             if (!claimSets.Any())
             {
                 return new ClaimSetGetResult.FailureNotFound();
             }
 
-            var returnClaimSet= claimSets
-                .Select(result => new ClaimSetResponse
-                {
-                    Id = result.Id,
-                    ClaimSetName = result.ClaimSetName,
-                    IsSystemReserved = result.IsSystemReserved,
-                    ResourceClaims = JsonDocument.Parse(result.ResourceClaims).RootElement,
-                });
-
+            var returnClaimSet = claimSets.Select(result => new ClaimSetResponse
+            {
+                Id = result.id,
+                ClaimSetName = result.claimsetname,
+                IsSystemReserved = result.issystemreserved,
+                ResourceClaims = JsonDocument.Parse(result.resourceclaims).RootElement,
+            });
 
             return new ClaimSetGetResult.Success(returnClaimSet.Single());
         }
@@ -197,17 +202,26 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
 
     public async Task<ClaimSetUpdateResult> UpdateClaimSet(ClaimSetUpdateCommand command)
     {
-        string sql = """
-                  UPDATE dmscs.ClaimSet
-                  SET ClaimSetName=@ClaimSetName, IsSystemReserved=@IsSystemReserved, ResourceClaims=@ResourceClaims
-                  WHERE Id = @Id;
-                  """;
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         await connection.OpenAsync();
         await using var transaction = await connection.BeginTransactionAsync();
         try
         {
-            int affectedRows = await connection.ExecuteAsync(sql, command);
+            string sql = """
+                UPDATE dmscs.ClaimSet
+                SET ClaimSetName=@ClaimSetName, IsSystemReserved=@IsSystemReserved, ResourceClaims=@ResourceClaims::jsonb
+                WHERE Id = @Id;
+                """;
+
+            var parameters = new
+            {
+                command.Id,
+                command.ClaimSetName,
+                command.IsSystemReserved,
+                ResourceClaims = JsonSerializer.Serialize(command.ResourceClaims)
+            };
+
+            int affectedRows = await connection.ExecuteAsync(sql, parameters);
 
             if (affectedRows == 0)
             {
@@ -231,8 +245,8 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         try
         {
             string sql = """
-                         DELETE FROM dmscs.ClaimSet WHERE Id = @Id
-                         """;
+                DELETE FROM dmscs.ClaimSet WHERE Id = @Id
+                """;
             int affectedRows = await connection.ExecuteAsync(sql, new { Id = id });
 
             return affectedRows > 0

@@ -18,11 +18,11 @@ public class ClaimSetModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/v2/claimSets/", InsertClaimSet).RequireAuthorizationWithPolicy();
+        endpoints.MapPost("/v2/claimSets/", InsertClaimSet).RequireAuthorizationWithPolicy();
         endpoints.MapGet("/v2/claimSets/", GetAll).RequireAuthorizationWithPolicy();
-        endpoints.MapGet("/v2/claimSets/", GetById).RequireAuthorizationWithPolicy();
-        endpoints.MapGet("/v2/claimSets/", Update).RequireAuthorizationWithPolicy();
-        endpoints.MapGet("/v2/claimSets/", Delete).RequireAuthorizationWithPolicy();
+        endpoints.MapGet($"/v2/claimSets/{{id}}", GetById).RequireAuthorizationWithPolicy();
+        endpoints.MapPut($"/v2/claimSets/{{id}}", Update).RequireAuthorizationWithPolicy();
+        endpoints.MapDelete($"/v2/claimSets/{{id}}", Delete).RequireAuthorizationWithPolicy();
     }
 
     private static async Task<IResult> InsertClaimSet(
