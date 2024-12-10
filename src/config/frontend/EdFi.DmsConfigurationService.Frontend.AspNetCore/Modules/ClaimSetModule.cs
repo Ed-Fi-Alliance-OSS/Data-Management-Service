@@ -23,6 +23,7 @@ public class ClaimSetModule : IEndpointModule
         endpoints.MapGet($"/v2/claimSets/{{id}}", GetById).RequireAuthorizationWithPolicy();
         endpoints.MapPut($"/v2/claimSets/{{id}}", Update).RequireAuthorizationWithPolicy();
         endpoints.MapDelete($"/v2/claimSets/{{id}}", Delete).RequireAuthorizationWithPolicy();
+        endpoints.MapPost("/v2/claimSets/copy", Copy).RequireAuthorizationWithPolicy();
     }
 
     private static async Task<IResult> InsertClaimSet(
@@ -132,6 +133,29 @@ public class ClaimSetModule : IEndpointModule
                     httpContext.TraceIdentifier
                 ),
                 statusCode: (int)HttpStatusCode.NotFound
+            ),
+            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
+        };
+    }
+
+    private static async Task<IResult> Copy(
+        ClaimSetCopyCommand entity,
+        ClaimSetCopyCommand.Validator validator,
+        HttpContext httpContext,
+        IClaimSetRepository repository
+    )
+    {
+        await validator.GuardAsync(entity);
+
+        var result = await repository.Copy(entity);
+
+        var request = httpContext.Request;
+
+        return result switch
+        {
+            ClaimSetCopyResult.Success success => Results.Created(
+                $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
+                null
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };

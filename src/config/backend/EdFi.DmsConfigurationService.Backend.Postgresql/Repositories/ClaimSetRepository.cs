@@ -218,7 +218,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                 command.Id,
                 command.ClaimSetName,
                 command.IsSystemReserved,
-                ResourceClaims = JsonSerializer.Serialize(command.ResourceClaims)
+                ResourceClaims = JsonSerializer.Serialize(command.ResourceClaims),
             };
 
             int affectedRows = await connection.ExecuteAsync(sql, parameters);
@@ -257,6 +257,71 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         {
             logger.LogError(ex, "Delete claim set failure");
             return new ClaimSetDeleteResult.FailureUnknown(ex.Message);
+        }
+    }
+
+    public Task<ClaimSetGetResult> Export(long id)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task<ClaimSetInsertResult> Import(ClaimSetInsertCommand command)
+    {
+        throw new NotImplementedException();
+    }
+
+    public async Task<ClaimSetCopyResult> Copy(ClaimSetCopyCommand command)
+    {
+        await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+        await connection.OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        try
+        {
+            string selectSql = """
+                SELECT ClaimSetName, IsSystemReserved, ResourceClaims::TEXT AS ResourceClaims
+                FROM dmscs.ClaimSet
+                WHERE Id = @OriginalId;
+                """;
+
+            var originalClaimSet = await connection.QuerySingleOrDefaultAsync(
+                selectSql,
+                new { command.OriginalId },
+                transaction
+            );
+
+            if (originalClaimSet == null)
+            {
+                return new ClaimSetCopyResult.FailureNotExists();
+            }
+
+            var resourceClaimsJson = JsonDocument.Parse((string)originalClaimSet.resourceclaims).RootElement;
+
+            string insertSql = """
+                INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved, ResourceClaims)
+                VALUES (@ClaimSetName, @IsSystemReserved, @ResourceClaims::jsonb)
+                RETURNING Id;
+                """;
+
+            long newId = await connection.ExecuteScalarAsync<long>(
+                insertSql,
+                new
+                {
+                    ClaimSetName = command.Name,
+                    IsSystemReserved = (bool)originalClaimSet.issystemreserved,
+                    ResourceClaims = resourceClaimsJson.GetRawText(),
+                },
+                transaction
+            );
+
+            await transaction.CommitAsync();
+
+            return new ClaimSetCopyResult.Success(newId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Copy claim set failure");
+            await transaction.RollbackAsync();
+            return new ClaimSetCopyResult.FailureUnknown(ex.Message);
         }
     }
 }
