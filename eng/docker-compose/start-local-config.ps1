@@ -42,7 +42,11 @@ if ($d) {
     }
 }
 else {
-    #docker network create dms
+
+    $existingNetwork = docker network ls --filter name="dms" -q
+    if (! $existingNetwork) {
+        docker network create dms
+    }
 
     $upArgs = @(
         "--detach"
