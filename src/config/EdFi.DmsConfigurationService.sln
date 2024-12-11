@@ -26,6 +26,10 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DmsConfigurationServic
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration", "backend\EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration\EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration.csproj", "{EE23DFFB-C61D-48FE-B821-2442D67D7AF9}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{C3055527-CED8-4831-8ED4-CCB03E353281}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DmsConfigurationService.Tests.E2E", "tests\EdFi.DmsConfigurationService.Tests.E2E\EdFi.DmsConfigurationService.Tests.E2E.csproj", "{334D8F2D-4D9D-4B8B-8F56-3F8EA7FDC218}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -68,6 +72,10 @@ Global
 		{EE23DFFB-C61D-48FE-B821-2442D67D7AF9}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{EE23DFFB-C61D-48FE-B821-2442D67D7AF9}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{EE23DFFB-C61D-48FE-B821-2442D67D7AF9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{334D8F2D-4D9D-4B8B-8F56-3F8EA7FDC218}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{334D8F2D-4D9D-4B8B-8F56-3F8EA7FDC218}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{334D8F2D-4D9D-4B8B-8F56-3F8EA7FDC218}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{334D8F2D-4D9D-4B8B-8F56-3F8EA7FDC218}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -82,6 +90,7 @@ Global
 		{5F62ACE6-B44A-40AE-B5EC-AF2BBA9FF1E3} = {82B01A63-4B8A-4965-9806-001128050FB5}
 		{E97DCC9F-C27F-497D-94FE-3DD39038C38B} = {F90FF019-91D3-462E-94A4-96B52681DB16}
 		{EE23DFFB-C61D-48FE-B821-2442D67D7AF9} = {82B01A63-4B8A-4965-9806-001128050FB5}
+		{334D8F2D-4D9D-4B8B-8F56-3F8EA7FDC218} = {C3055527-CED8-4831-8ED4-CCB03E353281}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {BB22426B-6AA8-4C58-9557-376F107B547B}

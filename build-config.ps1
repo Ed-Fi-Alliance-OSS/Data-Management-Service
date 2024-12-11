@@ -206,7 +206,15 @@ function RunE2E {
 }
 
 function E2ETests {
-    Invoke-Step { DockerBuild }
+    Invoke-Execute {
+        try {
+            Push-Location eng/docker-compose/
+            ./start-local-config.ps1 -EnvironmentFile "./.env.config.e2e"
+        }
+        finally {
+            Pop-Location
+        }
+    }
     Invoke-Step { RunE2E }
 }
 
