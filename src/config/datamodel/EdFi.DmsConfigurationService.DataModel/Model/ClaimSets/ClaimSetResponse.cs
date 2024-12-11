@@ -12,5 +12,12 @@ public class ClaimSetResponse
     public long Id { get; set; }
     public required string ClaimSetName { get; set; }
     public required bool IsSystemReserved { get; set; }
-    public required JsonElement ResourceClaims { get; set; }
+    public JsonElement? ResourceClaims { get; set; }
+}
+
+public class ClaimSetResponseReduced
+{
+    public long Id { get; set; }
+    public required string ClaimSetName { get; set; }
+    public required bool IsSystemReserved { get; set; }
 }

@@ -11,6 +11,7 @@ using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FluentValidation;
 using FluentValidation.Results;
+using Microsoft.AspNetCore.Mvc;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -26,25 +27,6 @@ public class ClaimSetModule : IEndpointModule
         endpoints.MapDelete($"/v2/claimSets/{{id}}", Delete).RequireAuthorizationWithPolicy();
         endpoints.MapPost("/v2/claimSets/copy", Copy).RequireAuthorizationWithPolicy();
         endpoints.MapPost("/v2/claimSets/import", Import).RequireAuthorizationWithPolicy();
-    }
-
-    private static async Task<IResult> Import(ClaimSetImportCommand entity,
-        ClaimSetImportCommand.Validator validator,
-        HttpContext httpContext,
-        IClaimSetRepository repository)
-    {
-        await validator.GuardAsync(entity);
-        var insertResult = await repository.Import(entity);
-
-        var request = httpContext.Request;
-        return insertResult switch
-        {
-            ClaimSetImportResult.Success success => Results.Created(
-                $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
-                null
-            ),
-            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
-        };
     }
 
     private static async Task<IResult> InsertClaimSet(
@@ -71,10 +53,11 @@ public class ClaimSetModule : IEndpointModule
     private static async Task<IResult> GetAll(
         IClaimSetRepository repository,
         [AsParameters] PagingQuery query,
-        HttpContext httpContext
+        HttpContext httpContext,
+        [FromQuery] bool verbose = false
     )
     {
-        ClaimSetQueryResult result = await repository.QueryClaimSet(query);
+        ClaimSetQueryResult result = await repository.QueryClaimSet(query, verbose);
         return result switch
         {
             ClaimSetQueryResult.Success success => Results.Ok(success.ClaimSetResponses),
@@ -86,10 +69,11 @@ public class ClaimSetModule : IEndpointModule
         long id,
         HttpContext httpContext,
         IClaimSetRepository repository,
-        ILogger<ClaimSetModule> logger
+        ILogger<ClaimSetModule> logger,
+        [FromQuery] bool verbose = false
     )
     {
-        ClaimSetGetResult result = await repository.GetClaimSet(id);
+        ClaimSetGetResult result = await repository.GetClaimSet(id, verbose);
         return result switch
         {
             ClaimSetGetResult.Success success => Results.Ok(success.ClaimSetResponse),
@@ -197,6 +181,27 @@ public class ClaimSetModule : IEndpointModule
         return result switch
         {
             ClaimSetCopyResult.Success success => Results.Created(
+                $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
+                null
+            ),
+            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
+        };
+    }
+
+    private static async Task<IResult> Import(
+        ClaimSetImportCommand entity,
+        ClaimSetImportCommand.Validator validator,
+        HttpContext httpContext,
+        IClaimSetRepository repository
+    )
+    {
+        await validator.GuardAsync(entity);
+        var insertResult = await repository.Import(entity);
+
+        var request = httpContext.Request;
+        return insertResult switch
+        {
+            ClaimSetImportResult.Success success => Results.Created(
                 $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
                 null
             ),

@@ -117,7 +117,9 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
             {
                 command.ClaimSetName,
                 command.IsSystemReserved,
-                ResourceClaims = command.ResourceClaims.ToString(),
+                ResourceClaims = command.ResourceClaims.ValueKind != JsonValueKind.Undefined
+                    ? command.ResourceClaims.ToString()
+                    : "{}",
             };
 
             long id = await connection.ExecuteScalarAsync<long>(sql, parameters);
@@ -133,31 +135,46 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         }
     }
 
-    public async Task<ClaimSetQueryResult> QueryClaimSet(PagingQuery query)
+    public async Task<ClaimSetQueryResult> QueryClaimSet(PagingQuery query, bool verbose)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            string sql = """
-                SELECT Id, ClaimSetName, IsSystemReserved, ResourceClaims::TEXT AS ResourceClaims
+            string baseSql = """
+                SELECT Id, ClaimSetName, IsSystemReserved {0}
                 FROM dmscs.ClaimSet
                 ORDER BY Id
                 LIMIT @Limit OFFSET @Offset;
                 """;
 
+            string resourceClaimsColumn = verbose ? ", ResourceClaims::TEXT AS ResourceClaims" : "";
+            string sql = string.Format(baseSql, resourceClaimsColumn);
+
             var claimSets = await connection.QueryAsync(sql, param: query);
 
-            var returnClaimSets = claimSets
-                .Select(row => new ClaimSetResponse
+            if (verbose)
+            {
+                var verboseResponses = claimSets
+                    .Select(row => new ClaimSetResponse
+                    {
+                        Id = row.id,
+                        ClaimSetName = row.claimsetname,
+                        IsSystemReserved = row.issystemreserved,
+                        ResourceClaims = JsonDocument.Parse(row.resourceclaims).RootElement,
+                    })
+                    .ToList();
+                return new ClaimSetQueryResult.Success(verboseResponses);
+            }
+
+            var reducedResponses = claimSets
+                .Select(row => new ClaimSetResponseReduced
                 {
-                    Id = (long)row.id,
-                    ClaimSetName = (string)row.claimsetname,
-                    IsSystemReserved = (bool)row.issystemreserved,
-                    ResourceClaims = JsonDocument.Parse((string)row.resourceclaims).RootElement,
+                    Id = row.id,
+                    ClaimSetName = row.claimsetname,
+                    IsSystemReserved = row.issystemreserved,
                 })
                 .ToList();
-
-            return new ClaimSetQueryResult.Success(returnClaimSets);
+            return new ClaimSetQueryResult.Success(reducedResponses);
         }
         catch (Exception ex)
         {
@@ -166,15 +183,19 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         }
     }
 
-    public async Task<ClaimSetGetResult> GetClaimSet(long id)
+    public async Task<ClaimSetGetResult> GetClaimSet(long id, bool verbose)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            string sql = """
-                SELECT Id, ClaimSetName, IsSystemReserved, ResourceClaims FROM dmscs.ClaimSet
+            string baseSql = """
+                SELECT Id, ClaimSetName, IsSystemReserved {0} 
+                FROM dmscs.ClaimSet
                 WHERE Id = @Id
                 """;
+
+            string resourceClaimsColumn = verbose ? ", ResourceClaims" : "";
+            string sql = string.Format(baseSql, resourceClaimsColumn);
 
             var claimSets = await connection.QueryAsync<dynamic>(sql, param: new { Id = id });
 
@@ -183,15 +204,27 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                 return new ClaimSetGetResult.FailureNotFound();
             }
 
-            var returnClaimSet = claimSets.Select(result => new ClaimSetResponse
+            if (verbose)
+            {
+                var returnClaimSet = claimSets.Select(result => new ClaimSetResponse
+                {
+                    Id = result.id,
+                    ClaimSetName = result.claimsetname,
+                    IsSystemReserved = result.issystemreserved,
+                    ResourceClaims = verbose ? JsonDocument.Parse(result.resourceclaims).RootElement : null,
+                });
+
+                return new ClaimSetGetResult.Success(returnClaimSet.Single());
+            }
+            var returnClaimSetReduced = claimSets.Select(result => new ClaimSetResponseReduced
             {
                 Id = result.id,
                 ClaimSetName = result.claimsetname,
-                IsSystemReserved = result.issystemreserved,
-                ResourceClaims = JsonDocument.Parse(result.resourceclaims).RootElement,
+                IsSystemReserved = result.issystemreserved
             });
 
-            return new ClaimSetGetResult.Success(returnClaimSet.Single());
+            return new ClaimSetGetResult.Success(returnClaimSetReduced.Single());
+
         }
         catch (Exception ex)
         {
