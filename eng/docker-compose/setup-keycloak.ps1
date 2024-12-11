@@ -238,9 +238,19 @@ function Create_ClientScope([string] $scopeName) {
     else {
         # Create the client scope
         $clientScopePayload = @{
-            name     = $scopeName
-            protocol = "openid-connect"
-        } | ConvertTo-Json
+            name            = $scopeName
+            protocol        = "openid-connect"
+            protocolMappers = @(@{
+                    name            = $scopeName
+                    protocol        = "openid-connect"
+                    protocolMapper  = "oidc-audience-resolve-mapper"
+                    consentRequired = "false"
+                    config          = @{
+                        "introspection.token.claim" = "true"
+                        "access.token.claim"        = "true"
+                    }
+                })
+        } | ConvertTo-Json -Depth 3
 
         Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm/client-scopes" `
             -Method Post `
@@ -269,7 +279,7 @@ function Assign_RealmRole([object] $role, [string] $ClientId) {
         -Body $rolesArray `
         -ContentType "application/json"
 
-    Write-Output "Role '$DmsClientRole' assigned as a service account role to client '$NewClientName'."
+    Write-Output "Role '$role' assigned as a service account role to clientId '$ClientId'."
 }
 
 function Assign_Realm_Admin_Role([object] $role, [string] $ClientId) {
@@ -292,7 +302,7 @@ function Assign_Realm_Admin_Role([object] $role, [string] $ClientId) {
         -Body $rolesArray `
         -ContentType "application/json"
 
-    Write-Output "Role 'realm-admin' assigned as a service account role to client '$NewClientName'."
+    Write-Output "Role 'realm-admin' assigned as a service account role to clientId '$ClientId'."
 }
 
 function Add_Role_To_Token([string] $ClientId) {

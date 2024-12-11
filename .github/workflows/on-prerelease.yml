@@ -17,6 +17,7 @@ env:
   DMS_PACKAGE_NAME: "EdFi.DataManagementService"
   CS_PACKAGE_NAME: "EdFi.DmsConfigurationService"
   IMAGE_NAME: ${{ vars.IMAGE_NAME }}
+  CONFIG_IMAGE_NAME: "edfialliance/dms-configuration-service"
   DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME }}
   DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
   REF: ${{ github.ref_name }}
@@ -508,13 +509,13 @@ jobs:
           if [[ $PACKAGEVERSION =~ "alpha" ]]
           then
             # Pre-releases get the tag "pre"
-            DMSTAGS="${{ env.IMAGE_NAME }}:pre"
+            DMSTAGS="${{ env.CONFIG_IMAGE_NAME }}:pre"
           else
             # Releases get the version, plus shortened form for minor release.
             # We are not using shortened form for major or using "latest"
             # because they are too imprecise.
             MINOR=`echo ${PACKAGEVERSION} | awk -F"." '{print $1"."$2}'`
-            DMSTAGS="${{ env.IMAGE_NAME }}:${PACKAGEVERSION},${{ env.IMAGE_NAME }}:${MINOR}"
+            DMSTAGS="${{ env.CONFIG_IMAGE_NAME }}:${PACKAGEVERSION},${{ env.CONFIG_IMAGE_NAME }}:${MINOR}"
           fi
 
           SEMVERSION=${PACKAGEVERSION:7}  # strip off the leading 'cs-pre-'
@@ -534,13 +535,13 @@ jobs:
         id: metadatamanagementservice
         uses: docker/metadata-action@96383f45573cb7f253c731d3b3ab81c87ef81934 # v5.0.0
         with:
-          images: ${{ env.IMAGE_NAME }}
+          images: ${{ env.CONFIG_IMAGE_NAME }}
 
       - name: Build and push Config image
         uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09  # v5.0.0
         with:
           context: "{{defaultContext}}:src/config"
-          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:pre
+          cache-from: type=registry,ref=${{ env.CONFIG_IMAGE_NAME }}:pre
           cache-to: type=inline
           build-args: VERSION=${{ steps.prepare-tags.outputs.VERSION }}
           file: Nuget.Dockerfile

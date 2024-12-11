@@ -56,6 +56,7 @@ public class IdentityModule : IEndpointModule
                         var result = await clientRepository.CreateClientAsync(
                             model.ClientId!,
                             model.ClientSecret!,
+                            identitySettings.Value.ConfigServiceRole,
                             model.DisplayName!
                         );
                         return result switch

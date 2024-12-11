@@ -34,7 +34,7 @@ Content-Type: application/x-www-form-urlencoded
 client_id={{sysAdminId}}
 &client_secret={{encodedSysAdminSecret}}
 &grant_type=client_credentials
-&scope=scp:edfi_dms_configuration_service/full_access
+&scope=edfi_admin_api/full_access
 
 ###
 @configToken={{configTokenRequest.response.body.access_token}}

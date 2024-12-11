@@ -84,7 +84,12 @@ public static class WebApplicationBuilderExtensions
         // For Security(Keycloak)
         IConfiguration config = webAppBuilder.Configuration;
         var settings = config.GetSection("IdentitySettings");
-        var identitySettings = ReadSettings();
+        var identitySettings = config.GetSection("IdentitySettings").Get<IdentitySettings>();
+        if (identitySettings == null)
+        {
+            logger.Error("Error reading IdentitySettings");
+            throw new InvalidOperationException("Unable to read IdentitySettings from appsettings");
+        }
         webAppBuilder.Services.Configure<IdentitySettings>(settings);
         webAppBuilder.Services.AddHttpClient();
 
@@ -123,22 +128,9 @@ public static class WebApplicationBuilderExtensions
             webAppBuilder.Services.AddAuthorization(options =>
                 options.AddPolicy(
                     SecurityConstants.ServicePolicy,
-                    policy => policy.RequireClaim(ClaimTypes.Role, identitySettings.ServiceRole)
+                    policy => policy.RequireClaim(ClaimTypes.Role, identitySettings.ClientRole)
                 )
             );
-        }
-
-        IdentitySettings ReadSettings()
-        {
-            return new IdentitySettings
-            {
-                EnforceAuthorization = config.GetValue<bool>("IdentitySettings:EnforceAuthorization"),
-                Authority = config.GetValue<string>("IdentitySettings:Authority")!,
-                RequireHttpsMetadata = config.GetValue<bool>("IdentitySettings:RequireHttpsMetadata"),
-                Audience = config.GetValue<string>("IdentitySettings:Audience")!,
-                RoleClaimType = config.GetValue<string>("IdentitySettings:RoleClaimType")!,
-                ServiceRole = config.GetValue<string>("IdentitySettings:ServiceRole")!,
-            };
         }
     }
 
