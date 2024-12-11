@@ -5,31 +5,30 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using EdFi.DmsConfigurationService.Tests.E2E.Management;
+using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Tests.E2E.Extensions;
+using EdFi.DmsConfigurationService.Tests.E2E.Management;
 using FluentAssertions;
 using Microsoft.Playwright;
 using Reqnroll;
 using static EdFi.DmsConfigurationService.Tests.E2E.Management.JsonComparer;
-using System.Text.RegularExpressions;
 
 namespace EdFi.DmsConfigurationService.Tests.E2E.StepDefinitions;
 
 [Binding]
-public partial class StepDefinitions(
-       PlaywrightContext _playwrightContext
-   )
+public partial class StepDefinitions(PlaywrightContext _playwrightContext)
 {
     private IAPIResponse _apiResponse = null!;
     private string _token = string.Empty;
     private string _id = string.Empty;
     private string _location = string.Empty;
 
-    private IDictionary<string, string> _authHeaders => new Dictionary<string, string>
-            {
-                { "Content-Type", "application/json" },
-                { "Authorization", $"Bearer {_token}" }
-            };
+    private IDictionary<string, string> _authHeaders =>
+        new Dictionary<string, string>
+        {
+            { "Content-Type", "application/json" },
+            { "Authorization", $"Bearer {_token}" },
+        };
 
     #region Given
     [Given("valid credentials")]
@@ -40,22 +39,21 @@ public partial class StepDefinitions(
             { "client_id", "DmsConfigurationService" },
             { "client_secret", "s3creT@09" },
             { "grant_type", "client_credentials" },
-            { "scope", "edfi_admin_api/full_access" }
+            { "scope", "edfi_admin_api/full_access" },
         };
         var content = new FormUrlEncodedContent(urlEncodedData);
         APIRequestContextOptions? options = new()
         {
             Headers = new Dictionary<string, string>
             {
-                { "Content-Type", "application/x-www-form-urlencoded" }
+                { "Content-Type", "application/x-www-form-urlencoded" },
             },
-            Data = content.ReadAsStringAsync().Result
+            Data = content.ReadAsStringAsync().Result,
         };
         if (_playwrightContext.ApiRequestContext != null)
         {
             _apiResponse = await _playwrightContext.ApiRequestContext!.PostAsync("/connect/token", options);
         }
-
     }
 
     [Given("token received")]
@@ -92,10 +90,7 @@ public partial class StepDefinitions(
 
             response
                 .Status.Should()
-                .BeOneOf(
-                    OkCreated,
-                    $"POST request for {entityType} failed:\n{response.TextAsync().Result}"
-                );
+                .BeOneOf(OkCreated, $"POST request for {entityType} failed:\n{response.TextAsync().Result}");
         }
 
         return _apiResponses;
@@ -110,7 +105,10 @@ public partial class StepDefinitions(
     {
         url = url.Replace("{id}", _id);
         body = body.Replace("{id}", _id);
-        _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(url, new() { Data = body, Headers = _authHeaders })!;
+        _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
+            url,
+            new() { Data = body, Headers = _authHeaders }
+        )!;
 
         extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
     }
@@ -119,7 +117,10 @@ public partial class StepDefinitions(
     public async Task WhenAGETRequestIsMadeTo(string url)
     {
         url = url.Replace("{id}", _id);
-        _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(url, new() { Headers = _authHeaders })!;
+        _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
+            url,
+            new() { Headers = _authHeaders }
+        )!;
     }
 
     [When("a POST request is made to {string} with")]
@@ -128,7 +129,7 @@ public partial class StepDefinitions(
         APIRequestContextOptions? options = new()
         {
             Headers = _authHeaders,
-            Data = body
+            Data = body.Replace("{id}", _id),
         };
         _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, options)!;
         _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
@@ -138,7 +139,10 @@ public partial class StepDefinitions(
     public async Task WhenADELETERequestIsMadeTo(string url)
     {
         url = url.Replace("{id}", _id);
-        _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(url, new() { Headers = _authHeaders })!;
+        _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(
+            url,
+            new() { Headers = _authHeaders }
+        )!;
     }
 
     private string extractDataFromResponseAndReturnIdIfAvailable(IAPIResponse apiResponse)
@@ -180,15 +184,13 @@ public partial class StepDefinitions(
 
             if (expectedValue.Contains("{id}"))
             {
-                _apiResponse
-                    .Headers[header.Key]
-                    .Should()
-                    .EndWith(expectedValue.Replace("{id}", _id));
+                _apiResponse.Headers[header.Key].Should().EndWith(expectedValue.Replace("{id}", _id));
             }
             else
             {
-                string? key = _apiResponse.Headers.Keys
-                    .FirstOrDefault(k => k.Equals(header.Key, StringComparison.OrdinalIgnoreCase));
+                string? key = _apiResponse.Headers.Keys.FirstOrDefault(k =>
+                    k.Equals(header.Key, StringComparison.OrdinalIgnoreCase)
+                );
 
                 if (key != null)
                 {
@@ -204,7 +206,10 @@ public partial class StepDefinitions(
         body = body.Replace("{id}", _id);
         JsonNode bodyJson = JsonNode.Parse(body)!;
 
-        _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(_location, new() { Headers = _authHeaders })!;
+        _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
+            _location,
+            new() { Headers = _authHeaders }
+        )!;
 
         string responseJsonString = await _apiResponse.TextAsync();
         JsonDocument responseJsonDoc = JsonDocument.Parse(responseJsonString);
@@ -258,9 +263,7 @@ public partial class StepDefinitions(
         {
             var responseAsArray =
                 responseJson.AsArray()
-                ?? throw new AssertionException(
-                    "Expected a JSON array response, but it was not an array."
-                );
+                ?? throw new AssertionException("Expected a JSON array response, but it was not an array.");
             if (responseAsArray.Count == 0)
             {
                 return body;
