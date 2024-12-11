@@ -22,6 +22,8 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
     private string _token = string.Empty;
     private string _id = string.Empty;
     private string _location = string.Empty;
+    private string _clientKey = string.Empty;
+    private string _clientSecret = string.Empty;
 
     private IDictionary<string, string> _authHeaders =>
         new Dictionary<string, string>
@@ -233,6 +235,20 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
     public async Task ThenTheResponseBodyIs(string expectedBody)
     {
         await ResponseBodyIs(expectedBody);
+    }
+
+    [Then("the response body has key and secret")]
+    public async Task ThenTheResponseBodyHasKeyAndSecret()
+    {
+        string responseJsonString = await _apiResponse.TextAsync();
+        JsonDocument responseJsonDoc = JsonDocument.Parse(responseJsonString);
+        JsonNode responseJson = JsonNode.Parse(responseJsonDoc.RootElement.ToString())!;
+        responseJson["id"].Should().NotBeNull();
+        responseJson["key"].Should().NotBeNull();
+        responseJson["secret"].Should().NotBeNull();
+
+        _clientKey = responseJson["key"]!.GetValue<string>();
+        _clientSecret = responseJson["secret"]!.GetValue<string>();
     }
 
     private async Task ResponseBodyIs(string expectedBody)
