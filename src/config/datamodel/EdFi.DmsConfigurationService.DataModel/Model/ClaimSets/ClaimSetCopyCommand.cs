@@ -9,7 +9,7 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 
 public class ClaimSetCopyCommand
 {
-    public int OriginalId { get; set; }
+    public long OriginalId { get; set; }
     public required string Name { get; set; }
 
     public class Validator : AbstractValidator<ClaimSetCopyCommand>
