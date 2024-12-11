@@ -21,9 +21,11 @@ public class ClaimSetModule : IEndpointModule
         endpoints.MapPost("/v2/claimSets/", InsertClaimSet).RequireAuthorizationWithPolicy();
         endpoints.MapGet("/v2/claimSets/", GetAll).RequireAuthorizationWithPolicy();
         endpoints.MapGet($"/v2/claimSets/{{id}}", GetById).RequireAuthorizationWithPolicy();
+        endpoints.MapGet($"/v2/claimSets/{{id}}/export", Export).RequireAuthorizationWithPolicy();
         endpoints.MapPut($"/v2/claimSets/{{id}}", Update).RequireAuthorizationWithPolicy();
         endpoints.MapDelete($"/v2/claimSets/{{id}}", Delete).RequireAuthorizationWithPolicy();
         endpoints.MapPost("/v2/claimSets/copy", Copy).RequireAuthorizationWithPolicy();
+        endpoints.MapPost("/v2/claimSets/import", InsertClaimSet).RequireAuthorizationWithPolicy();
     }
 
     private static async Task<IResult> InsertClaimSet(
@@ -128,6 +130,28 @@ public class ClaimSetModule : IEndpointModule
         {
             ClaimSetDeleteResult.Success => Results.NoContent(),
             ClaimSetDeleteResult.FailureNotExists => Results.Json(
+                FailureResponse.ForNotFound(
+                    $"ClaimSet {id} not found. It may have been recently deleted.",
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.NotFound
+            ),
+            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
+        };
+    }
+
+    private static async Task<IResult> Export(
+        long id,
+        HttpContext httpContext,
+        IClaimSetRepository repository,
+        ILogger<ClaimSetModule> logger
+    )
+    {
+        ClaimSetExportResult result = await repository.Export(id);
+        return result switch
+        {
+            ClaimSetExportResult.Success success => Results.Ok(success.ClaimSetExportResponse),
+            ClaimSetExportResult.FailureNotFound => Results.Json(
                 FailureResponse.ForNotFound(
                     $"ClaimSet {id} not found. It may have been recently deleted.",
                     httpContext.TraceIdentifier

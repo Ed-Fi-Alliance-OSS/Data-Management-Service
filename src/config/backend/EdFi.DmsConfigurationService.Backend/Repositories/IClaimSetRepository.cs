@@ -16,8 +16,8 @@ public interface IClaimSetRepository
     Task<ClaimSetGetResult> GetClaimSet(long id);
     Task<ClaimSetUpdateResult> UpdateClaimSet(ClaimSetUpdateCommand command);
     Task<ClaimSetDeleteResult> DeleteClaimSet(long id);
-    Task<ClaimSetGetResult> Export(long id);
-    Task<ClaimSetInsertResult> Import(ClaimSetInsertCommand command);
+    Task<ClaimSetExportResult> Export(long id);
+    Task<ClaimSetInsertResult> Import(ClaimSetImportCommand command);
     Task<ClaimSetCopyResult> Copy(ClaimSetCopyCommand command);
 }
 
@@ -99,6 +99,23 @@ public record ClaimSetDeleteResult
     public record FailureUnknown(string FailureMessage) : ClaimSetDeleteResult();
 }
 
+public record ClaimSetExportResult
+{
+    /// <summary>
+    /// Successfully retrieved ClaimSet
+    /// </summary>
+    public record Success(ClaimSetExportResponse ClaimSetExportResponse) : ClaimSetExportResult();
+
+    /// <summary>
+    /// ClaimSet does not exist in the datastore
+    /// </summary>
+    public record FailureNotFound() : ClaimSetExportResult();
+
+    /// <summary>
+    /// Unexpected exception thrown and caught
+    /// </summary>
+    public record FailureUnknown(string FailureMessage) : ClaimSetExportResult();
+}
 public record ClaimSetCopyResult
 {
     /// <summary>

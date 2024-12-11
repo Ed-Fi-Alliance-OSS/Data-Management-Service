@@ -96,7 +96,7 @@ public static class FailureResponse
         string correlationId
     ) =>
         CreateBaseJsonObject(
-            detail: "",
+            detail: "Data validation failed. See 'validationErrors' for details.",
             type: $"{_badRequestTypePrefix}:data-validation-failed",
             title: "Data Validation Failed",
             status: 400,

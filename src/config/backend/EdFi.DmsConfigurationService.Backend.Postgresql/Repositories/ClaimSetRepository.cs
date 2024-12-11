@@ -260,12 +260,41 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         }
     }
 
-    public Task<ClaimSetGetResult> Export(long id)
+    public async Task<ClaimSetExportResult> Export(long id)
     {
-        throw new NotImplementedException();
+        await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+        try
+        {
+            string sql = """
+                         SELECT Id, ClaimSetName, IsSystemReserved, ResourceClaims FROM dmscs.ClaimSet
+                         WHERE Id = @Id
+                         """;
+            var claimSets = await connection.QueryAsync<dynamic>(sql, param: new { Id = id });
+
+            if (!claimSets.Any())
+            {
+                return new ClaimSetExportResult.FailureNotFound();
+            }
+
+            var returnClaimSet = claimSets.Select(result => new ClaimSetExportResponse
+            {
+                Id = result.id,
+                ClaimSetName = result.claimsetname,
+                _IsSystemReserved = result.issystemreserved,
+                _Applications = [],
+                ResourceClaims = JsonDocument.Parse(result.resourceclaims).RootElement,
+            });
+
+            return new ClaimSetExportResult.Success(returnClaimSet.Single());
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Get claim set failure");
+            return new ClaimSetExportResult.FailureUnknown(ex.Message);
+        }
     }
 
-    public Task<ClaimSetInsertResult> Import(ClaimSetInsertCommand command)
+    public Task<ClaimSetInsertResult> Import(ClaimSetImportCommand command)
     {
         throw new NotImplementedException();
     }
