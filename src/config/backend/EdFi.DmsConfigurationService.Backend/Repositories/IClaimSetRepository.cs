@@ -17,7 +17,7 @@ public interface IClaimSetRepository
     Task<ClaimSetUpdateResult> UpdateClaimSet(ClaimSetUpdateCommand command);
     Task<ClaimSetDeleteResult> DeleteClaimSet(long id);
     Task<ClaimSetExportResult> Export(long id);
-    Task<ClaimSetInsertResult> Import(ClaimSetImportCommand command);
+    Task<ClaimSetImportResult> Import(ClaimSetImportCommand command);
     Task<ClaimSetCopyResult> Copy(ClaimSetCopyCommand command);
 }
 
@@ -132,4 +132,18 @@ public record ClaimSetCopyResult
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : ClaimSetCopyResult();
+}
+
+public record ClaimSetImportResult
+{
+    /// <summary>
+    /// Successful insert.
+    /// </summary>
+    /// <param name="Id">The Id of the inserted record.</param>
+    public record Success(long Id) : ClaimSetImportResult();
+
+    /// <summary>
+    /// Unexpected exception thrown and caught
+    /// </summary>
+    public record FailureUnknown(string FailureMessage) : ClaimSetImportResult();
 }

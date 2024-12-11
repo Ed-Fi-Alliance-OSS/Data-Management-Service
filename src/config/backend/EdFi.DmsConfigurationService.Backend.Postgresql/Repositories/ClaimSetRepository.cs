@@ -266,9 +266,9 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         try
         {
             string sql = """
-                         SELECT Id, ClaimSetName, IsSystemReserved, ResourceClaims FROM dmscs.ClaimSet
-                         WHERE Id = @Id
-                         """;
+                SELECT Id, ClaimSetName, IsSystemReserved, ResourceClaims FROM dmscs.ClaimSet
+                WHERE Id = @Id
+                """;
             var claimSets = await connection.QueryAsync<dynamic>(sql, param: new { Id = id });
 
             if (!claimSets.Any())
@@ -294,9 +294,38 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         }
     }
 
-    public Task<ClaimSetInsertResult> Import(ClaimSetImportCommand command)
+    public async Task<ClaimSetImportResult> Import(ClaimSetImportCommand command)
     {
-        throw new NotImplementedException();
+        await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+        await connection.OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+
+        try
+        {
+            string sql = """
+                   INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved, ResourceClaims)
+                   VALUES(@ClaimSetName, @IsSystemReserved, @ResourceClaims::jsonb)
+                   RETURNING Id;
+                """;
+
+            var parameters = new
+            {
+                command.ClaimSetName,
+                command.IsSystemReserved,
+                ResourceClaims = command.ResourceClaims.ToString(),
+            };
+
+            long id = await connection.ExecuteScalarAsync<long>(sql, parameters);
+            await transaction.CommitAsync();
+
+            return new ClaimSetImportResult.Success(id);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Insert claim set failure");
+            await transaction.RollbackAsync();
+            return new ClaimSetImportResult.FailureUnknown(ex.Message);
+        }
     }
 
     public async Task<ClaimSetCopyResult> Copy(ClaimSetCopyCommand command)

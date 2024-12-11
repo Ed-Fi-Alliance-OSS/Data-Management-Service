@@ -11,22 +11,14 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 public class ClaimSetInsertCommand
 {
     public required string ClaimSetName { get; set; }
-    public required bool IsSystemReserved { get; set; }
-    public required JsonElement ResourceClaims { get; set; }
+    public bool IsSystemReserved { get; set; }
+    public JsonElement ResourceClaims { get; set; }
 
     public class Validator : AbstractValidator<ClaimSetInsertCommand>
     {
         public Validator()
         {
             RuleFor(c => c.ClaimSetName).NotEmpty().MaximumLength(256);
-            RuleFor(c => c.IsSystemReserved).NotEmpty();
-            RuleFor(c => c.ResourceClaims)
-                .NotNull()
-                .Must(rc => rc.ValueKind != JsonValueKind.Undefined && rc.ValueKind != JsonValueKind.Null)
-                .WithMessage("ResourceClaims cannot be null or undefined.");
-            RuleFor(c => c.ResourceClaims)
-                .Must(rc => rc.ValueKind == JsonValueKind.Object && rc.EnumerateObject().Any())
-                .WithMessage("ResourceClaims must be a valid JSON object with at least one property.");
         }
     }
 }

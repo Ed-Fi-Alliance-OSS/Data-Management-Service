@@ -25,7 +25,26 @@ public class ClaimSetModule : IEndpointModule
         endpoints.MapPut($"/v2/claimSets/{{id}}", Update).RequireAuthorizationWithPolicy();
         endpoints.MapDelete($"/v2/claimSets/{{id}}", Delete).RequireAuthorizationWithPolicy();
         endpoints.MapPost("/v2/claimSets/copy", Copy).RequireAuthorizationWithPolicy();
-        endpoints.MapPost("/v2/claimSets/import", InsertClaimSet).RequireAuthorizationWithPolicy();
+        endpoints.MapPost("/v2/claimSets/import", Import).RequireAuthorizationWithPolicy();
+    }
+
+    private static async Task<IResult> Import(ClaimSetImportCommand entity,
+        ClaimSetImportCommand.Validator validator,
+        HttpContext httpContext,
+        IClaimSetRepository repository)
+    {
+        await validator.GuardAsync(entity);
+        var insertResult = await repository.Import(entity);
+
+        var request = httpContext.Request;
+        return insertResult switch
+        {
+            ClaimSetImportResult.Success success => Results.Created(
+                $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
+                null
+            ),
+            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
+        };
     }
 
     private static async Task<IResult> InsertClaimSet(
