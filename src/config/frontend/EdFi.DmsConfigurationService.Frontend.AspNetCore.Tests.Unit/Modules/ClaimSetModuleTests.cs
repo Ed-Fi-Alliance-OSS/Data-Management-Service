@@ -7,6 +7,7 @@ using System.Net;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
+using System.Text.Unicode;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
@@ -102,6 +103,34 @@ public class ClaimSetModuleTests
 
             A.CallTo(() => _claimSetRepository.DeleteClaimSet(A<long>.Ignored))
                 .Returns(new ClaimSetDeleteResult.Success());
+
+            A.CallTo(() => _claimSetRepository.Copy(A<ClaimSetCopyCommand>.Ignored))
+                .Returns(new ClaimSetCopyResult.Success(1));
+
+            A.CallTo(() => _claimSetRepository.Export(A<long>.Ignored))
+                .Returns(
+                    new ClaimSetExportResult.Success(
+                        new ClaimSetExportResponse()
+                        {
+                            Id = 1,
+                            ClaimSetName = "ClaimSet with ResourceClaims",
+                            _IsSystemReserved = true,
+                            _Applications = [],
+                            ResourceClaims = JsonDocument
+                                .Parse(
+                                    """
+                                        {
+                                            "Resource": "Value"
+                                        }
+                                    """
+                                )
+                                .RootElement,
+                        }
+                    )
+                );
+
+            A.CallTo(() => _claimSetRepository.Import(A<ClaimSetImportCommand>.Ignored))
+                .Returns(new ClaimSetImportResult.Success(2));
         }
 
         [Test]
@@ -144,6 +173,34 @@ public class ClaimSetModuleTests
                 )
             );
             var deleteResponse = await client.DeleteAsync("/v2/claimSets/1");
+            var copyResponse = await client.PostAsync(
+                "/v2/claimSets/copy",
+                new StringContent(
+                    """
+                    {
+                        "originalId" : 1,
+                        "name": "Test Copy" 
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+            var exportResponse = await client.GetAsync("/v2/claimSets/1/export");
+            var importResponse = await client.PostAsync(
+                "/v2/claimSets/import",
+                new StringContent(
+                    """
+                    {
+                        "claimSetName" : "Testing Import for ClaimSet",
+                        "isSystemReserved": true,
+                        "resourceClaims" : {"resource":"Value"}
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+                );
 
             //Assert
             addResponse.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -152,6 +209,18 @@ public class ClaimSetModuleTests
             getByIdResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            copyResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+            exportResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            importResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         }
     }
+
+    [TestFixture]
+    public class FailureValidationTests : ClaimSetModuleTests { }
+
+    [TestFixture]
+    public class FailureNotFoundTests : ClaimSetModuleTests { }
+
+    [TestFixture]
+    public class FailureUnknownTests : ClaimSetModuleTests { }
 }
