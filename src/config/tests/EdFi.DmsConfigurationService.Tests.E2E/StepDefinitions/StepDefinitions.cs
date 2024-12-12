@@ -82,7 +82,7 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
         {
             var dataUrl = $"{baseUrl}/{entityType}";
 
-            string body = row.Parse();
+            string body = row.Parse().Replace("_id", _id);
 
             var response = await _playwrightContext.ApiRequestContext?.PostAsync(
                 dataUrl,
@@ -126,6 +126,7 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
     }
 
     [When("a POST request is made to {string} with")]
+    [Given("a POST request is made to {string} with")]
     public async Task WhenSendingAPOSTRequestToWithBody(string url, string body)
     {
         APIRequestContextOptions? options = new()
@@ -269,47 +270,55 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
             .BeTrue($"Expected:\n{expectedBodyJson}\n\nActual:\n{responseJson}");
     }
 
-    // Use Regex to find all occurrences of {id} in the body
-    private static readonly Regex _findIds = new(@"\{id\}");
-
     private string ReplacePlaceholders(string body, JsonNode responseJson)
     {
-        string replacedBody = "";
-        if (body.TrimStart().StartsWith('['))
+        var replacements = new Dictionary<string, Regex>()
         {
-            var responseAsArray =
-                responseJson.AsArray()
-                ?? throw new AssertionException("Expected a JSON array response, but it was not an array.");
-            if (responseAsArray.Count == 0)
+            { "id", new(@"\{id\}") },
+            { "vendorId", new(@"\{vendorId\}") },
+        };
+
+        string replacedBody = body;
+        foreach (var replacement in replacements)
+        {
+            if (replacedBody.TrimStart().StartsWith('['))
             {
-                return body;
+                var responseAsArray =
+                    responseJson.AsArray()
+                    ?? throw new AssertionException(
+                        "Expected a JSON array response, but it was not an array."
+                    );
+                if (responseAsArray.Count == 0)
+                {
+                    return replacedBody;
+                }
+
+                int index = 0;
+
+                replacedBody = replacement.Value.Replace(
+                    replacedBody,
+                    match =>
+                    {
+                        var idValue = responseJson[index]?[replacement.Key]?.ToString();
+                        index++;
+                        return idValue ?? match.ToString();
+                    }
+                );
             }
-
-            int index = 0;
-
-            replacedBody = _findIds.Replace(
-                body,
-                match =>
-                {
-                    var idValue = responseJson[index]?["id"]?.ToString();
-                    index++;
-                    return idValue ?? match.ToString();
-                }
-            );
+            else
+            {
+                replacedBody = replacement.Value.Replace(
+                    replacedBody,
+                    match =>
+                    {
+                        var idValue = responseJson[replacement.Key]?.ToString();
+                        return idValue ?? match.ToString();
+                    }
+                );
+            }
+            replacedBody = replacedBody.Replace("{BASE_URL}/", _playwrightContext.ApiUrl);
         }
-        else
-        {
-            replacedBody = _findIds.Replace(
-                body,
-                match =>
-                {
-                    var idValue = responseJson["id"]?.ToString();
 
-                    return idValue ?? match.ToString();
-                }
-            );
-        }
-        replacedBody = replacedBody.Replace("{BASE_URL}/", _playwrightContext.ApiUrl);
         return replacedBody;
     }
 }
