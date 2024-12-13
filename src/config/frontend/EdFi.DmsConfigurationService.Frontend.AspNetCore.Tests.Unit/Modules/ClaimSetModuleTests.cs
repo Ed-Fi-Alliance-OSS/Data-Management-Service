@@ -233,7 +233,6 @@ public class ClaimSetModuleTests
             string invalidImportBody = """
                 {
                     "name" : "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
-                    "isSystemReserved": true,
                     "resourceClaims" : []
                 }
                 """;
@@ -298,7 +297,6 @@ public class ClaimSetModuleTests
                     "Name": [
                       "The length of 'Name' must be 256 characters or fewer. You entered 300 characters."
                     ],
-                    "IsSystemReserved":["'Is System Reserved' must not be empty."],
                     "ResourceClaims":["ResourceClaims must be a valid JSON object with at least one property."]
                   },
                   "errors": []
@@ -373,7 +371,6 @@ public class ClaimSetModuleTests
                     {
                         "id": 2,
                         "name": "Test 11",
-                        "isSystemReserved" : true,
                         "resourceClaims": {"resource":"Value"}
                     }
                     """,
@@ -426,7 +423,6 @@ public class ClaimSetModuleTests
                     {
                         "id": 1,
                         "name": "Test 11",
-                        "isSystemReserved" : true,
                         "resourceClaims": {"resource":"Value"}
                     }
                     """,
@@ -520,7 +516,6 @@ public class ClaimSetModuleTests
                     {
                         "id": 1,
                         "name": "Test 11",
-                        "isSystemReserved" : true,
                         "resourceClaims": {"resource":"Value"}
                     }
                     """,
@@ -549,7 +544,6 @@ public class ClaimSetModuleTests
                     """
                     {
                         "name" : "Testing Import for ClaimSet",
-                        "isSystemReserved": true,
                         "resourceClaims" : {"resource":"Value"}
                     }
                     """,

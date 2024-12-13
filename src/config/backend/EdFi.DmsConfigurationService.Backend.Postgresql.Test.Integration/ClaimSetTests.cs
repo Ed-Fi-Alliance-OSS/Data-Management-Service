@@ -209,7 +209,6 @@ public class ClaimSetTests : DatabaseTest
             ClaimSetImportCommand claimSet = new()
             {
                 Name = "Test Import ClaimSet",
-                IsSystemReserved = true,
                 ResourceClaims = resourceClaims,
             };
 

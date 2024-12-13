@@ -116,7 +116,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
             var parameters = new
             {
                 ClaimSetName = command.Name,
-                command.IsSystemReserved,
+                IsSystemReserved = false,
                 ResourceClaims = command.ResourceClaims.ValueKind != JsonValueKind.Undefined
                     ? command.ResourceClaims.ToString()
                     : "{}",
@@ -259,7 +259,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
             {
                 command.Id,
                 ClaimSetName = command.Name,
-                command.IsSystemReserved,
+                IsSystemReserved = false,
                 ResourceClaims = JsonSerializer.Serialize(command.ResourceClaims),
             };
 
@@ -356,7 +356,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
             var parameters = new
             {
                 ClaimSetName = command.Name,
-                command.IsSystemReserved,
+                IsSystemReserved = false,
                 ResourceClaims = command.ResourceClaims.ToString(),
             };
 

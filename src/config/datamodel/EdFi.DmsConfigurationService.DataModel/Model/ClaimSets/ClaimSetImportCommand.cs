@@ -11,7 +11,6 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 public class ClaimSetImportCommand
 {
     public required string Name { get; set; }
-    public required bool IsSystemReserved { get; set; }
     public required JsonElement ResourceClaims { get; set; }
 
     public class Validator : AbstractValidator<ClaimSetImportCommand>
@@ -19,7 +18,6 @@ public class ClaimSetImportCommand
         public Validator()
         {
             RuleFor(c => c.Name).NotEmpty().MaximumLength(256);
-            RuleFor(c => c.IsSystemReserved).NotEmpty();
             RuleFor(c => c.ResourceClaims)
                 .NotNull()
                 .Must(rc => rc.ValueKind != JsonValueKind.Undefined && rc.ValueKind != JsonValueKind.Null)
