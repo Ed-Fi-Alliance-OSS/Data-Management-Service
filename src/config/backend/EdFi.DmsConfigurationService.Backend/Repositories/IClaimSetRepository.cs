@@ -116,6 +116,7 @@ public record ClaimSetExportResult
     /// </summary>
     public record FailureUnknown(string FailureMessage) : ClaimSetExportResult();
 }
+
 public record ClaimSetCopyResult
 {
     /// <summary>

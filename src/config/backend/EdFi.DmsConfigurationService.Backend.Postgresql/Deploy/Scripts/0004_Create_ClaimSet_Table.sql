@@ -23,4 +23,4 @@ COMMENT ON COLUMN dmscs.claimset.IsSystemReserved
     IS 'Is system reserved';
 
 COMMENT ON COLUMN dmscs.claimset.ResourceClaims
-    IS 'Contains the Resource Claims information in json format.';
+    IS 'Contains a collection of Resource Claims in json format.';

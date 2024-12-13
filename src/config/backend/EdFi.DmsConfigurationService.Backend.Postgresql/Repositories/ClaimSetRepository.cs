@@ -141,9 +141,12 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         try
         {
             string baseSql = """
-                SELECT Id, ClaimSetName, IsSystemReserved {0}
-                FROM dmscs.ClaimSet
-                ORDER BY Id
+                SELECT c.Id, c.ClaimSetName, c.IsSystemReserved 
+                    ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName)) 
+                        FROM dmscs.application a WHERE a.ClaimSetName = c.ClaimSetName ) as applications
+                    {0}
+                FROM dmscs.ClaimSet c
+                ORDER BY c.Id
                 LIMIT @Limit OFFSET @Offset;
                 """;
 
@@ -160,6 +163,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                         Id = row.id,
                         Name = row.claimsetname,
                         IsSystemReserved = row.issystemreserved,
+                        _applications = JsonDocument.Parse(row.applications?.ToString() ?? "{}").RootElement,
                         ResourceClaims = JsonDocument.Parse(row.resourceclaims).RootElement,
                     })
                     .ToList();
@@ -172,6 +176,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                     Id = row.id,
                     Name = row.claimsetname,
                     IsSystemReserved = row.issystemreserved,
+                    _applications = JsonDocument.Parse(row.applications?.ToString() ?? "{}").RootElement,
                 })
                 .ToList();
             return new ClaimSetQueryResult.Success(reducedResponses);
@@ -189,9 +194,12 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         try
         {
             string baseSql = """
-                SELECT Id, ClaimSetName, IsSystemReserved {0} 
-                FROM dmscs.ClaimSet
-                WHERE Id = @Id
+                SELECT c.Id, c.ClaimSetName, c.IsSystemReserved 
+                    ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName)) 
+                        FROM dmscs.application a WHERE a.ClaimSetName = c.ClaimSetName ) as applications
+                    {0} 
+                FROM dmscs.ClaimSet c
+                WHERE c.Id = @Id
                 """;
 
             string resourceClaimsColumn = verbose ? ", ResourceClaims" : "";
@@ -211,6 +219,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                     Id = result.id,
                     Name = result.claimsetname,
                     IsSystemReserved = result.issystemreserved,
+                    _applications = JsonDocument.Parse(result.applications?.ToString() ?? "{}").RootElement,
                     ResourceClaims = verbose ? JsonDocument.Parse(result.resourceclaims).RootElement : null,
                 });
 
@@ -220,11 +229,11 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
             {
                 Id = result.id,
                 Name = result.claimsetname,
-                IsSystemReserved = result.issystemreserved
+                IsSystemReserved = result.issystemreserved,
+                _applications = JsonDocument.Parse(result.applications?.ToString() ?? "{}").RootElement,
             });
 
             return new ClaimSetGetResult.Success(returnClaimSetReduced.Single());
-
         }
         catch (Exception ex)
         {
