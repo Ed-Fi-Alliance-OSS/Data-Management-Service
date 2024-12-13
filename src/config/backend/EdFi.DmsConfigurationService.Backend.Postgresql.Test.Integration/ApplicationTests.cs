@@ -129,55 +129,6 @@ public class ApplicationTests : DatabaseTest
             );
             insertResult.Should().BeOfType<ApplicationInsertResult.FailureVendorNotFound>();
         }
-
-        [Test]
-        public async Task Should_get_a_failure_duplicate_claim_set_name()
-        {
-            IVendorRepository vendorRepository = new VendorRepository(
-                Configuration.DatabaseOptions,
-                NullLogger<VendorRepository>.Instance
-            );
-
-            VendorInsertCommand vendor = new()
-            {
-                Company = "Test Company",
-                ContactEmailAddress = "test@test.com",
-                ContactName = "Fake Name",
-                NamespacePrefixes = "",
-            };
-
-            var vendorResult = await vendorRepository.InsertVendor(vendor);
-            vendorResult.Should().BeOfType<VendorInsertResult.Success>();
-            _vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
-
-            ApplicationInsertCommand application1 = new()
-            {
-                ApplicationName = "Test Application",
-                VendorId = _vendorId,
-                ClaimSetName = "Test Claim set",
-                EducationOrganizationIds = [],
-            };
-
-            var insertResult1 = await _applicationRepository.InsertApplication(
-                application1,
-                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
-            );
-            insertResult1.Should().BeOfType<ApplicationInsertResult.Success>();
-
-            ApplicationInsertCommand application2 = new()
-            {
-                ApplicationName = "Test Application 2",
-                VendorId = _vendorId,
-                ClaimSetName = "Test Claim set",
-                EducationOrganizationIds = [],
-            };
-
-            var insertResult2 = await _applicationRepository.InsertApplication(
-                application2,
-                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
-            );
-            insertResult2.Should().BeOfType<ApplicationInsertResult.FailureDuplicateClaimSetName>();
-        }
     }
 
     [TestFixture]
@@ -229,68 +180,6 @@ public class ApplicationTests : DatabaseTest
 
             var applicationUpdateResult = await _applicationRepository.UpdateApplication(applicationUpdate);
             applicationUpdateResult.Should().BeOfType<ApplicationUpdateResult.FailureVendorNotFound>();
-        }
-
-        [Test]
-        public async Task Should_get_and_failure_duplicate_claim_set_name()
-        {
-            IVendorRepository vendorRepository = new VendorRepository(
-                Configuration.DatabaseOptions,
-                NullLogger<VendorRepository>.Instance
-            );
-
-            VendorInsertCommand vendor = new()
-            {
-                Company = "Test Company",
-                ContactEmailAddress = "test@test.com",
-                ContactName = "Fake Name",
-                NamespacePrefixes = "",
-            };
-
-            var vendorResult = await vendorRepository.InsertVendor(vendor);
-            vendorResult.Should().BeOfType<VendorInsertResult.Success>();
-            _vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
-
-            ApplicationInsertCommand application1 = new()
-            {
-                ApplicationName = "Test Application",
-                VendorId = _vendorId,
-                ClaimSetName = "Test Claim set",
-                EducationOrganizationIds = [],
-            };
-
-            var insertResult1 = await _applicationRepository.InsertApplication(
-                application1,
-                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
-            );
-            insertResult1.Should().BeOfType<ApplicationInsertResult.Success>();
-
-            ApplicationInsertCommand application2 = new()
-            {
-                ApplicationName = "Test Application 2",
-                VendorId = _vendorId,
-                ClaimSetName = "Test Claim set 2",
-                EducationOrganizationIds = [],
-            };
-
-            var insertResult2 = await _applicationRepository.InsertApplication(
-                application2,
-                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
-            );
-            insertResult2.Should().BeOfType<ApplicationInsertResult.Success>();
-            long appId2 = ((ApplicationInsertResult.Success)insertResult2).Id;
-
-            ApplicationUpdateCommand applicationUpdate = new()
-            {
-                Id = appId2,
-                ApplicationName = "Test Application 2",
-                VendorId = _vendorId,
-                ClaimSetName = "Test Claim set",
-                EducationOrganizationIds = [],
-            };
-
-            var applicationUpdateResult = await _applicationRepository.UpdateApplication(applicationUpdate);
-            applicationUpdateResult.Should().BeOfType<ApplicationUpdateResult.FailureDuplicateClaimSetName>();
         }
     }
 

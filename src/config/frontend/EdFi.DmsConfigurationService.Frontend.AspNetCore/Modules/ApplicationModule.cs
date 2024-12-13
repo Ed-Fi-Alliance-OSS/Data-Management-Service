@@ -97,17 +97,6 @@ public class ApplicationModule : IEndpointModule
                                 new ValidationFailure("VendorId", $"Reference 'VendorId' does not exist."),
                             }
                         );
-                    case ApplicationInsertResult.FailureDuplicateClaimSetName:
-                        await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
-                        throw new ValidationException(
-                            new[]
-                            {
-                                new ValidationFailure(
-                                    "ClaimSetName",
-                                    $"A claim set with this name already exists in the database. Please enter a unique name."
-                                ),
-                            }
-                        );
                     case ApplicationInsertResult.FailureUnknown failure:
                         logger.LogError("Failure creating client {failure}", failure);
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
@@ -170,19 +159,6 @@ public class ApplicationModule : IEndpointModule
         {
             throw new ValidationException(
                 new[] { new ValidationFailure("VendorId", $"Reference 'VendorId' does not exist.") }
-            );
-        }
-
-        if (applicationUpdateResult is ApplicationUpdateResult.FailureDuplicateClaimSetName)
-        {
-            throw new ValidationException(
-                new[]
-                {
-                    new ValidationFailure(
-                        "ClaimSetName",
-                        $"A claim set with this name already exists in the database. Please enter a unique name."
-                    ),
-                }
             );
         }
 
