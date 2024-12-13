@@ -302,4 +302,43 @@ Feature: Vendors endpoints
                   }
                   """
 
+        Scenario: 16 Verify vendor applications endpoint
+            Given vendor created
+                  """
+                    {
+                        "company": "Scenario 16",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": "Test"
+                    }
+                  """
+             When a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Demo application",
+                   "claimSetName": "Claim 06",
+                   "educationOrganizationIds": [1, 2, 3]
+                  }
+                  """
+             Then it should respond with 201
+             When a GET request is made to "/v2/vendors/{vendorId}/applications"
+             Then it should respond with 200
+              And the response body is
+                  """
+                     [
+                        {
+                            "id": {id},
+                            "applicationName": "Demo application",
+                            "vendorId": {vendorId},
+                            "claimSetName": "Claim 06",
+                            "educationOrganizationIds": [
+                                1,
+                                2,
+                                3
+                        ]
+                    }
+                  ]
+                  """
+
 

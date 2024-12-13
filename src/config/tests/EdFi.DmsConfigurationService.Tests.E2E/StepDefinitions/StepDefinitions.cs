@@ -126,7 +126,7 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
     [When("a GET request is made to {string}")]
     public async Task WhenAGETRequestIsMadeTo(string url)
     {
-        url = url.Replace("{id}", _id);
+        url = url.Replace("{id}", _id).Replace("{vendorId}", _vendorId);
         _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
             url,
             new() { Headers = _authHeaders }

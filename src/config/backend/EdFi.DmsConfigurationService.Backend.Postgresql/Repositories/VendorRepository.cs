@@ -248,10 +248,6 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                         }
                         else
                         {
-                            if (educationOrganizationId != null)
-                            {
-                                application.EducationOrganizationIds.Add(educationOrganizationId.Value);
-                            }
                             response.Add(application.Id, application);
                         }
 
