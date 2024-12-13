@@ -13,7 +13,7 @@ Feature: Applications endpoints
                     }
                   """
 
-        Scenario: 00 Ensure clients can GET applications
+        Scenario: 01 Ensure clients can GET applications
             Given the system has these "applications"
                   | vendorId  | applicationName | claimSetName |
                   | _vendorId | application01   | claim01      |
@@ -41,7 +41,7 @@ Feature: Applications endpoints
                       }]
                   """
 
-        Scenario: 01 Ensure clients can POST and GET application
+        Scenario: 02 Ensure clients can POST and GET application
              When a POST request is made to "/v2/applications" with
                   """
                   {
@@ -70,7 +70,7 @@ Feature: Applications endpoints
                   }
                   """
 
-        Scenario: 02 Ensure clients can reset application credentials
+        Scenario: 03 Ensure clients can reset application credentials
              When a POST request is made to "/v2/applications" with
                   """
                   {
@@ -94,7 +94,7 @@ Feature: Applications endpoints
              Then it should respond with 200
               And the response body has key and secret
 
-        Scenario: 03 Ensure clients can PUT and GET application
+        Scenario: 04 Ensure clients can PUT and GET application
              When a POST request is made to "/v2/applications" with
                   """
                   {
@@ -115,26 +115,26 @@ Feature: Applications endpoints
                   """
              Then it should respond with 204
 
-        Scenario: 04 Ensure clients can DELETE an application
+        Scenario: 05 Ensure clients can DELETE an application
              When a POST request is made to "/v2/applications" with
                   """
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Delete application",
-                   "claimSetName": "Claim Scenario 04"
+                   "claimSetName": "Claim Scenario 05"
                   }
                   """
              Then it should respond with 201
              When a DELETE request is made to "/v2/applications/{id}"
              Then it should respond with 204
 
-        Scenario: 05 Verify error handling when trying to get an item that has already been deleted
+        Scenario: 06 Verify error handling when trying to get an item that has already been deleted
              When a POST request is made to "/v2/applications" with
                   """
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Delete application",
-                   "claimSetName": "Claim Scenario 04"
+                   "claimSetName": "Claim Scenario 06"
                   }
                   """
              Then it should respond with 201
@@ -143,13 +143,13 @@ Feature: Applications endpoints
              When a GET request is made to "/v2/applications/{id}"
              Then it should respond with 404
 
-        Scenario: 06 Verify error handling when trying to update an item that has already been deleted
+        Scenario: 07 Verify error handling when trying to update an item that has already been deleted
              When a POST request is made to "/v2/applications" with
                   """
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Delete application",
-                   "claimSetName": "Claim Scenario 04"
+                   "claimSetName": "Claim Scenario 07"
                   }
                   """
              Then it should respond with 201
@@ -161,18 +161,18 @@ Feature: Applications endpoints
                       "id": {id},
                       "vendorId": {vendorId},
                       "applicationName": "Delete application update",
-                      "claimSetName": "Claim Scenario 04"
+                      "claimSetName": "Claim Scenario 07"
                   }
                   """
              Then it should respond with 404
 
-        Scenario: 07 Verify error handling when trying to delete an item that has already been deleted
+        Scenario: 08 Verify error handling when trying to delete an item that has already been deleted
              When a POST request is made to "/v2/applications" with
                   """
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Delete application",
-                   "claimSetName": "Claim Scenario 04"
+                   "claimSetName": "Claim Scenario 08"
                   }
                   """
              Then it should respond with 201
@@ -181,15 +181,15 @@ Feature: Applications endpoints
              When a DELETE request is made to "/v2/applications/{id}"
              Then it should respond with 404
 
-        Scenario: 08 Verify error handling when trying to get an application using a invalid id
+        Scenario: 09 Verify error handling when trying to get an application using a invalid id
              When a GET request is made to "/v2/applications/a"
              Then it should respond with 400
 
-        Scenario: 09 Verify error handling when trying to delete an application using a invalid id
+        Scenario: 10 Verify error handling when trying to delete an application using a invalid id
              When a DELETE request is made to "/v2/applications/b"
              Then it should respond with 400
 
-        Scenario: 10 Verify error handling when trying to update an application using a invalid id
+        Scenario: 11 Verify error handling when trying to update an application using a invalid id
              When a PUT request is made to "/v2/applications/c" with
                   """
                   {
@@ -200,3 +200,113 @@ Feature: Applications endpoints
                   """
              Then it should respond with 400
 
+        Scenario: 12 Verify validation invalid vendor
+             When a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": 9999,
+                   "applicationName": "Demo application",
+                   "claimSetName": "Claim 999",
+                   "educationOrganizationIds": [1, 2, 3]
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": "0HN8RI9E3O45G:00000004",
+                    "validationErrors": {
+                    "VendorId": [
+                      "Reference 'VendorId' does not exist."
+                    ]
+                  },
+                  "errors": []
+                  }
+                  """
+
+        Scenario: 13 Verify validation invalid applicationName
+             When a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": 9999,
+                   "applicationName": "",
+                   "claimSetName": "Claim 999",
+                   "educationOrganizationIds": [1, 2, 3]
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": "0HN8RI9E3O45G:00000004",
+                    "validationErrors": {
+                    "ApplicationName": [
+                      "'Application Name' must not be empty."
+                    ]
+                  },
+                  "errors": []
+                  }
+                  """
+
+        Scenario: 14 Verify validation invalid claimsetName
+             When a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": 9999,
+                   "applicationName": "Test 1234",
+                   "claimSetName": "",
+                   "educationOrganizationIds": [1, 2, 3]
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": "0HN8RI9E3O45G:00000004",
+                    "validationErrors": {
+                    "ClaimSetName": [
+                      "'Claim Set Name' must not be empty."
+                    ]
+                  },
+                  "errors": []
+                  }
+                  """
+
+        Scenario: 15 Verify validation invalid EducationOrganizationId
+             When a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": 9999,
+                   "applicationName": "Demo application",
+                   "claimSetName": "Claim 999",
+                   "educationOrganizationIds": [0]
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "validationErrors": {
+                      "EducationOrganizationIds[0]": [
+                      "'Education Organization Ids' must be greater than '0'."
+                     ]
+                    },
+                   "errors": []
+                  }
+                  """
