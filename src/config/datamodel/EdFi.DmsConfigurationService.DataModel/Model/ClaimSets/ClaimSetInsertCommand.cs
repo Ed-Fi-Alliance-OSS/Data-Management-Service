@@ -10,7 +10,7 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 
 public class ClaimSetInsertCommand
 {
-    public required string ClaimSetName { get; set; }
+    public required string Name { get; set; }
     public bool IsSystemReserved { get; set; } = false;
     public JsonElement ResourceClaims { get; set; } = JsonDocument.Parse("{}").RootElement;
 
@@ -18,7 +18,7 @@ public class ClaimSetInsertCommand
     {
         public Validator()
         {
-            RuleFor(c => c.ClaimSetName).NotEmpty().MaximumLength(256);
+            RuleFor(c => c.Name).NotEmpty().MaximumLength(256);
         }
     }
 }

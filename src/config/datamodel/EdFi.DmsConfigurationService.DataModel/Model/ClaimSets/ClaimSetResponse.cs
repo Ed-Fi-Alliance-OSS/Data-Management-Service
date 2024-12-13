@@ -10,7 +10,7 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 public class ClaimSetResponse
 {
     public long Id { get; set; }
-    public required string ClaimSetName { get; set; }
+    public required string Name { get; set; }
     public required bool IsSystemReserved { get; set; }
     public JsonElement? ResourceClaims { get; set; }
 }
@@ -18,6 +18,6 @@ public class ClaimSetResponse
 public class ClaimSetResponseReduced
 {
     public long Id { get; set; }
-    public required string ClaimSetName { get; set; }
+    public required string Name { get; set; }
     public required bool IsSystemReserved { get; set; }
 }

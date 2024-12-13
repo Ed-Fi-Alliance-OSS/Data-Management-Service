@@ -115,7 +115,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
 
             var parameters = new
             {
-                command.ClaimSetName,
+                ClaimSetName = command.Name,
                 command.IsSystemReserved,
                 ResourceClaims = command.ResourceClaims.ValueKind != JsonValueKind.Undefined
                     ? command.ResourceClaims.ToString()
@@ -158,7 +158,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                     .Select(row => new ClaimSetResponse
                     {
                         Id = row.id,
-                        ClaimSetName = row.claimsetname,
+                        Name = row.claimsetname,
                         IsSystemReserved = row.issystemreserved,
                         ResourceClaims = JsonDocument.Parse(row.resourceclaims).RootElement,
                     })
@@ -170,7 +170,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                 .Select(row => new ClaimSetResponseReduced
                 {
                     Id = row.id,
-                    ClaimSetName = row.claimsetname,
+                    Name = row.claimsetname,
                     IsSystemReserved = row.issystemreserved,
                 })
                 .ToList();
@@ -209,7 +209,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                 var returnClaimSet = claimSets.Select(result => new ClaimSetResponse
                 {
                     Id = result.id,
-                    ClaimSetName = result.claimsetname,
+                    Name = result.claimsetname,
                     IsSystemReserved = result.issystemreserved,
                     ResourceClaims = verbose ? JsonDocument.Parse(result.resourceclaims).RootElement : null,
                 });
@@ -219,7 +219,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
             var returnClaimSetReduced = claimSets.Select(result => new ClaimSetResponseReduced
             {
                 Id = result.id,
-                ClaimSetName = result.claimsetname,
+                Name = result.claimsetname,
                 IsSystemReserved = result.issystemreserved
             });
 
@@ -249,7 +249,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
             var parameters = new
             {
                 command.Id,
-                command.ClaimSetName,
+                ClaimSetName = command.Name,
                 command.IsSystemReserved,
                 ResourceClaims = JsonSerializer.Serialize(command.ResourceClaims),
             };
@@ -312,7 +312,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
             var returnClaimSet = claimSets.Select(result => new ClaimSetExportResponse
             {
                 Id = result.id,
-                ClaimSetName = result.claimsetname,
+                Name = result.claimsetname,
                 _IsSystemReserved = result.issystemreserved,
                 _Applications = [],
                 ResourceClaims = JsonDocument.Parse(result.resourceclaims).RootElement,
@@ -343,7 +343,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
 
             var parameters = new
             {
-                command.ClaimSetName,
+                ClaimSetName = command.Name,
                 command.IsSystemReserved,
                 ResourceClaims = command.ResourceClaims.ToString(),
             };

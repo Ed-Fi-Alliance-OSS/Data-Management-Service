@@ -8,7 +8,6 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.Unicode;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
@@ -68,13 +67,7 @@ public class ClaimSetModuleTests
             A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored, false))
                 .Returns(
                     new ClaimSetQueryResult.Success(
-                        [
-                            new ClaimSetResponseReduced()
-                            {
-                                ClaimSetName = "Test ClaimSet",
-                                IsSystemReserved = false,
-                            },
-                        ]
+                        [new ClaimSetResponseReduced() { Name = "Test ClaimSet", IsSystemReserved = false }]
                     )
                 );
 
@@ -84,7 +77,7 @@ public class ClaimSetModuleTests
                         new ClaimSetResponse()
                         {
                             Id = 1,
-                            ClaimSetName = "ClaimSet with ResourceClaims",
+                            Name = "ClaimSet with ResourceClaims",
                             IsSystemReserved = true,
                             ResourceClaims = JsonDocument
                                 .Parse(
@@ -114,7 +107,7 @@ public class ClaimSetModuleTests
                         new ClaimSetExportResponse()
                         {
                             Id = 1,
-                            ClaimSetName = "ClaimSet with ResourceClaims",
+                            Name = "ClaimSet with ResourceClaims",
                             _IsSystemReserved = true,
                             _Applications = [],
                             ResourceClaims = JsonDocument
@@ -147,7 +140,7 @@ public class ClaimSetModuleTests
                 new StringContent(
                     """
                     {
-                        "claimSetName":"Testing POST for ClaimSet",
+                        "name":"Testing POST for ClaimSet",
                         "resourceClaims": {"resource":"Value"}
                     }
                     """,
@@ -164,7 +157,7 @@ public class ClaimSetModuleTests
                     """
                     {
                         "id": 1,
-                        "claimSetName": "Test 11",
+                        "name": "Test 11",
                         "isSystemReserved" : true,
                         "resourceClaims": {"resource":"Value"}
                     }
@@ -193,7 +186,7 @@ public class ClaimSetModuleTests
                 new StringContent(
                     """
                     {
-                        "claimSetName" : "Testing Import for ClaimSet",
+                        "name" : "Testing Import for ClaimSet",
                         "isSystemReserved": true,
                         "resourceClaims" : {"resource":"Value"}
                     }
@@ -227,19 +220,19 @@ public class ClaimSetModuleTests
 
             string invalidInsertBody = """
                 {
-                   "claimSetName" : "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
+                   "name" : "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
                 }
                 """;
             string invalidPutBody = """
                 {
                     "id": 1,
-                    "claimSetName" : "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
+                    "name" : "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
                 }
                 """;
 
             string invalidImportBody = """
                 {
-                    "claimSetName" : "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
+                    "name" : "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
                     "isSystemReserved": true,
                     "resourceClaims" : []
                 }
@@ -283,8 +276,8 @@ public class ClaimSetModuleTests
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
-                    "ClaimSetName": [
-                      "The length of 'Claim Set Name' must be 256 characters or fewer. You entered 300 characters."
+                    "Name": [
+                      "The length of 'Name' must be 256 characters or fewer. You entered 300 characters."
                     ]
                   },
                   "errors": []
@@ -302,8 +295,8 @@ public class ClaimSetModuleTests
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
-                    "ClaimSetName": [
-                      "The length of 'Claim Set Name' must be 256 characters or fewer. You entered 300 characters."
+                    "Name": [
+                      "The length of 'Name' must be 256 characters or fewer. You entered 300 characters."
                     ],
                     "IsSystemReserved":["'Is System Reserved' must not be empty."],
                     "ResourceClaims":["ResourceClaims must be a valid JSON object with at least one property."]
@@ -323,8 +316,8 @@ public class ClaimSetModuleTests
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
-                    "ClaimSetName": [
-                      "The length of 'Claim Set Name' must be 256 characters or fewer. You entered 300 characters."
+                    "Name": [
+                      "The length of 'Name' must be 256 characters or fewer. You entered 300 characters."
                     ],
                     "ResourceClaims":["ResourceClaims must be a valid JSON object with at least one property."]
                   },
@@ -379,7 +372,7 @@ public class ClaimSetModuleTests
                     """
                     {
                         "id": 2,
-                        "claimSetName": "Test 11",
+                        "name": "Test 11",
                         "isSystemReserved" : true,
                         "resourceClaims": {"resource":"Value"}
                     }
@@ -432,7 +425,7 @@ public class ClaimSetModuleTests
                     """
                     {
                         "id": 1,
-                        "claimSetName": "Test 11",
+                        "name": "Test 11",
                         "isSystemReserved" : true,
                         "resourceClaims": {"resource":"Value"}
                     }
@@ -509,7 +502,7 @@ public class ClaimSetModuleTests
                 new StringContent(
                     """
                     {
-                        "claimSetName":"Testing POST for ClaimSet",
+                        "name":"Testing POST for ClaimSet",
                         "resourceClaims": {"resource":"Value"}
                     }
                     """,
@@ -526,7 +519,7 @@ public class ClaimSetModuleTests
                     """
                     {
                         "id": 1,
-                        "claimSetName": "Test 11",
+                        "name": "Test 11",
                         "isSystemReserved" : true,
                         "resourceClaims": {"resource":"Value"}
                     }
@@ -555,7 +548,7 @@ public class ClaimSetModuleTests
                 new StringContent(
                     """
                     {
-                        "claimSetName" : "Testing Import for ClaimSet",
+                        "name" : "Testing Import for ClaimSet",
                         "isSystemReserved": true,
                         "resourceClaims" : {"resource":"Value"}
                     }

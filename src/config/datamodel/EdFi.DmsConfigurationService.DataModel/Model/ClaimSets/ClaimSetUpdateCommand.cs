@@ -16,7 +16,7 @@ public class ClaimSetUpdateCommand : ClaimSetInsertCommand
     {
         public Validator()
         {
-            RuleFor(c => c.ClaimSetName).NotEmpty().MaximumLength(256);
+            RuleFor(c => c.Name).NotEmpty().MaximumLength(256);
             RuleFor(c => c.IsSystemReserved).NotEmpty();
             RuleFor(c => c.ResourceClaims)
                 .NotNull()
