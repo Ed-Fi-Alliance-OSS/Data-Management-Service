@@ -163,7 +163,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                         Id = row.id,
                         Name = row.claimsetname,
                         IsSystemReserved = row.issystemreserved,
-                        _applications = JsonDocument.Parse(row.applications?.ToString() ?? "{}").RootElement,
+                        Applications = JsonDocument.Parse(row.applications?.ToString() ?? "{}").RootElement,
                         ResourceClaims = JsonDocument.Parse(row.resourceclaims).RootElement,
                     })
                     .ToList();
@@ -176,7 +176,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                     Id = row.id,
                     Name = row.claimsetname,
                     IsSystemReserved = row.issystemreserved,
-                    _applications = JsonDocument.Parse(row.applications?.ToString() ?? "{}").RootElement,
+                    Applications = JsonDocument.Parse(row.applications?.ToString() ?? "{}").RootElement,
                 })
                 .ToList();
             return new ClaimSetQueryResult.Success(reducedResponses);
@@ -219,7 +219,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                     Id = result.id,
                     Name = result.claimsetname,
                     IsSystemReserved = result.issystemreserved,
-                    _applications = JsonDocument.Parse(result.applications?.ToString() ?? "{}").RootElement,
+                    Applications = JsonDocument.Parse(result.applications?.ToString() ?? "{}").RootElement,
                     ResourceClaims = verbose ? JsonDocument.Parse(result.resourceclaims).RootElement : null,
                 });
 
@@ -230,7 +230,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                 Id = result.id,
                 Name = result.claimsetname,
                 IsSystemReserved = result.issystemreserved,
-                _applications = JsonDocument.Parse(result.applications?.ToString() ?? "{}").RootElement,
+                Applications = JsonDocument.Parse(result.applications?.ToString() ?? "{}").RootElement,
             });
 
             return new ClaimSetGetResult.Success(returnClaimSetReduced.Single());
@@ -325,8 +325,8 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
             {
                 Id = result.id,
                 Name = result.claimsetname,
-                _IsSystemReserved = result.issystemreserved,
-                _applications = JsonDocument.Parse(result.applications?.ToString() ?? "{}").RootElement,
+                IsSystemReserved = result.issystemreserved,
+                Applications = JsonDocument.Parse(result.applications?.ToString() ?? "{}").RootElement,
                 ResourceClaims = JsonDocument.Parse(result.resourceclaims).RootElement,
             });
 

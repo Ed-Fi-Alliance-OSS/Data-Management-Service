@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 
@@ -11,8 +12,10 @@ public class ClaimSetExportResponse
 {
     public long Id { get; set; }
     public required string Name { get; set; }
-    public required bool _IsSystemReserved { get; set; }
-    public JsonElement? _applications { get; set; }
+    [JsonPropertyName("_isSystemReserved")]
+    public required bool IsSystemReserved { get; set; }
+    [JsonPropertyName("_applications")]
+    public JsonElement? Applications { get; set; }
     public required JsonElement ResourceClaims { get; set; }
 }
 
