@@ -20,10 +20,9 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
 {
     private IAPIResponse _apiResponse = null!;
     private string _token = string.Empty;
+    private string _vendorId = string.Empty;
     private string _id = string.Empty;
     private string _location = string.Empty;
-    private string _clientKey = string.Empty;
-    private string _clientSecret = string.Empty;
 
     private IDictionary<string, string> _authHeaders =>
         new Dictionary<string, string>
@@ -68,6 +67,14 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
         }
     }
 
+    [Given("vendor created")]
+    public async Task VendorCreated(string body)
+    {
+        APIRequestContextOptions? options = new() { Headers = _authHeaders, Data = body };
+        _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync("/v2/vendors", options)!;
+        _vendorId = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
+    }
+
     [Given("the system has these {string}")]
     public async Task GivenTheSystemHasThese(string entityType, DataTable dataTable)
     {
@@ -82,7 +89,7 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
         {
             var dataUrl = $"{baseUrl}/{entityType}";
 
-            string body = row.Parse().Replace("_id", _id);
+            string body = row.Parse().Replace("_vendorId", _vendorId);
 
             var response = await _playwrightContext.ApiRequestContext?.PostAsync(
                 dataUrl,
@@ -106,7 +113,7 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
     public async Task WhenAPUTRequestIsMadeToWith(string url, string body)
     {
         url = url.Replace("{id}", _id);
-        body = body.Replace("{id}", _id);
+        body = body.Replace("{id}", _id).Replace("{vendorId}", _vendorId);
         _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
             url,
             new() { Data = body, Headers = _authHeaders }
@@ -126,13 +133,12 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
     }
 
     [When("a POST request is made to {string} with")]
-    [Given("a POST request is made to {string} with")]
     public async Task WhenSendingAPOSTRequestToWithBody(string url, string body)
     {
         APIRequestContextOptions? options = new()
         {
             Headers = _authHeaders,
-            Data = body.Replace("{id}", _id),
+            Data = body.Replace("{id}", _id).Replace("{vendorId}", _vendorId),
         };
         _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, options)!;
         _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
@@ -204,21 +210,13 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
     }
 
     [Then("the record can be retrieved with a GET request")]
-    public async Task ThenTheRecordCanBeRetrievedWithAGETRequest(string body)
+    public async Task ThenTheRecordCanBeRetrievedWithAGETRequest(string expectedBody)
     {
-        body = body.Replace("{id}", _id);
-        JsonNode bodyJson = JsonNode.Parse(body)!;
-
         _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
             _location,
             new() { Headers = _authHeaders }
         )!;
-
-        string responseJsonString = await _apiResponse.TextAsync();
-        JsonDocument responseJsonDoc = JsonDocument.Parse(responseJsonString);
-        JsonNode responseJson = JsonNode.Parse(responseJsonDoc.RootElement.ToString())!;
-
-        AreEqual(bodyJson, responseJson).Should().BeTrue();
+        await ResponseBodyIs(expectedBody);
     }
 
     private static bool AreEqual(JsonNode expectedBodyJson, JsonNode responseJson)
@@ -247,9 +245,6 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
         responseJson["id"].Should().NotBeNull();
         responseJson["key"].Should().NotBeNull();
         responseJson["secret"].Should().NotBeNull();
-
-        _clientKey = responseJson["key"]!.GetValue<string>();
-        _clientSecret = responseJson["secret"]!.GetValue<string>();
     }
 
     private async Task ResponseBodyIs(string expectedBody)
@@ -276,6 +271,8 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
         {
             { "id", new(@"\{id\}") },
             { "vendorId", new(@"\{vendorId\}") },
+            { "key", new(@"\{key\}") },
+            { "secret", new(@"\{secret\}") },
         };
 
         string replacedBody = body;
