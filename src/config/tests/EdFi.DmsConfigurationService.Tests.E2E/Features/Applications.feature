@@ -17,10 +17,10 @@ Feature: Applications endpoints
             Given the system has these "applications"
                   | vendorId  | applicationName | claimSetName |
                   | _vendorId | application01   | claim01      |
-                  | _vendorId | application02   | claim02      |
-                  | _vendorId | application03   | claim03      |
-                  | _vendorId | application04   | claim04      |
-                  | _vendorId | application05   | claim05      |
+                  | _vendorId | application02   | claim01      |
+                  | _vendorId | application03   | claim01      |
+                  | _vendorId | application04   | claim01      |
+                  | _vendorId | application05   | claim01      |
              When a GET request is made to "/v2/applications?offset=0&limit=2"
              Then it should respond with 200
               And the response body is
@@ -35,7 +35,7 @@ Feature: Applications endpoints
                       {
                           "id": {id},
                           "applicationName": "application02",
-                          "claimSetName": "claim02",
+                          "claimSetName": "claim01",
                           "vendorId": {vendorId},
                           "educationOrganizationIds": []
                       }]
@@ -54,28 +54,28 @@ Feature: Applications endpoints
                       {
                           "id": {id},
                           "applicationName": "application02",
-                          "claimSetName": "claim02",
+                          "claimSetName": "claim01",
                           "vendorId": {vendorId},
                           "educationOrganizationIds": []
                       },
                       {
                           "id": {id},
                           "applicationName": "application03",
-                          "claimSetName": "claim03",
+                          "claimSetName": "claim01",
                           "vendorId": {vendorId},
                           "educationOrganizationIds": []
                       },
                       {
                           "id": {id},
                           "applicationName": "application04",
-                          "claimSetName": "claim04",
+                          "claimSetName": "claim01",
                           "vendorId": {vendorId},
                           "educationOrganizationIds": []
                       },
                       {
                           "id": {id},
                           "applicationName": "application05",
-                          "claimSetName": "claim05",
+                          "claimSetName": "claim01",
                           "vendorId": {vendorId},
                           "educationOrganizationIds": []
                       }]
