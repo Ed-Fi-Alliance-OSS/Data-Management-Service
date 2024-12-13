@@ -23,13 +23,13 @@ public class IdentityModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost("/connect/register", RegisterClient);
+        endpoints.MapPost("/connect/register", RegisterClient).DisableAntiforgery();
         endpoints.MapPost("/connect/token", GetClientAccessToken).DisableAntiforgery();
     }
 
     private async Task<IResult> RegisterClient(
         RegisterRequest.Validator validator,
-        RegisterRequest model,
+        [FromForm] RegisterRequest model,
         IClientRepository clientRepository,
         IOptions<IdentitySettings> identitySettings,
         HttpContext httpContext
@@ -61,9 +61,8 @@ public class IdentityModule : IEndpointModule
                         );
                         return result switch
                         {
-                            ClientCreateResult.Success => Results.Ok(
-                                $"Registered client {model.ClientId} successfully."
-                            ),
+                            ClientCreateResult.Success => Results.Json(
+                                $"Registered client {model.ClientId} successfully."),
                             ClientCreateResult.FailureIdentityProvider failureIdentityProvider =>
                                 FailureResults.BadGateway(
                                     failureIdentityProvider.IdentityProviderError.FailureMessage,
