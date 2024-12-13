@@ -12,12 +12,7 @@ public class ClaimSetExportResponse
     public long Id { get; set; }
     public required string Name { get; set; }
     public required bool _IsSystemReserved { get; set; }
-    public required List<ClaimSetApplication> _Applications { get; set; }
+    public JsonElement? _applications { get; set; }
     public required JsonElement ResourceClaims { get; set; }
 }
 
-public class ClaimSetApplication
-{
-    public string? ApplicationName { get; set; }
-
-}

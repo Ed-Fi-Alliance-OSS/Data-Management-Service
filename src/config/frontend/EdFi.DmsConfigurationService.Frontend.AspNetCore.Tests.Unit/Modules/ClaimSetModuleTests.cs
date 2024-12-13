@@ -110,7 +110,6 @@ public class ClaimSetModuleTests
                             Id = 1,
                             Name = "ClaimSet with ResourceClaims",
                             _IsSystemReserved = true,
-                            _Applications = [],
                             ResourceClaims = JsonDocument
                                 .Parse(
                                     """

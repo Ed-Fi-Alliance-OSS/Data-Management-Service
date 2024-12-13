@@ -308,8 +308,11 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         try
         {
             string sql = """
-                SELECT Id, ClaimSetName, IsSystemReserved, ResourceClaims FROM dmscs.ClaimSet
-                WHERE Id = @Id
+                SELECT c.Id, c.ClaimSetName, c.IsSystemReserved, c.ResourceClaims
+                    ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName)) 
+                        FROM dmscs.application a WHERE a.ClaimSetName = c.ClaimSetName ) as applications
+                FROM dmscs.ClaimSet c
+                WHERE c.Id = @Id
                 """;
             var claimSets = await connection.QueryAsync<dynamic>(sql, param: new { Id = id });
 
@@ -323,7 +326,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                 Id = result.id,
                 Name = result.claimsetname,
                 _IsSystemReserved = result.issystemreserved,
-                _Applications = [],
+                _applications = JsonDocument.Parse(result.applications?.ToString() ?? "{}").RootElement,
                 ResourceClaims = JsonDocument.Parse(result.resourceclaims).RootElement,
             });
 
