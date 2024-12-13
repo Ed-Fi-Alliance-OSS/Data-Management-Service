@@ -7,6 +7,7 @@ using System.Net;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Unicode;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
@@ -134,7 +135,7 @@ public class ClaimSetModuleTests
         }
 
         [Test]
-        public async Task Should_return_proper_success_responses()
+        public async Task Should_return_success_responses()
         {
             //Arrange
             using var client = SetUpClient();
@@ -200,7 +201,7 @@ public class ClaimSetModuleTests
                     Encoding.UTF8,
                     "application/json"
                 )
-                );
+            );
 
             //Assert
             addResponse.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -216,11 +217,363 @@ public class ClaimSetModuleTests
     }
 
     [TestFixture]
-    public class FailureValidationTests : ClaimSetModuleTests { }
+    public class FailureValidationTests : ClaimSetModuleTests
+    {
+        [Test]
+        public async Task Should_return_bad_request()
+        {
+            //Arrange
+            using var client = SetUpClient();
+
+            string invalidInsertBody = """
+                {
+                   "claimSetName" : "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
+                }
+                """;
+            string invalidPutBody = """
+                {
+                    "id": 1,
+                    "claimSetName" : "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
+                }
+                """;
+
+            string invalidImportBody = """
+                {
+                    "claimSetName" : "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
+                    "isSystemReserved": true,
+                    "resourceClaims" : []
+                }
+                """;
+
+            string invalidCopyBody = """
+                {
+                    "originalId" : 1,
+                    "name" : "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
+                }
+                """;
+
+            //Act
+            var addResponse = await client.PostAsync(
+                "/v2/claimSets",
+                new StringContent(invalidInsertBody, Encoding.UTF8, "application/json")
+            );
+
+            var updateResponse = await client.PutAsync(
+                "/v2/claimSets/1",
+                new StringContent(invalidPutBody, Encoding.UTF8, "application/json")
+            );
+
+            var importResponse = await client.PostAsync(
+                "/v2/claimSets/import",
+                new StringContent(invalidImportBody, Encoding.UTF8, "application/json")
+            );
+
+            var copyResponse = await client.PostAsync(
+                "/v2/claimSets/copy",
+                new StringContent(invalidCopyBody, Encoding.UTF8, "application/json")
+            );
+
+            var actualPostResponse = JsonNode.Parse(await addResponse.Content.ReadAsStringAsync());
+            var expectedPostResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "ClaimSetName": [
+                      "The length of 'Claim Set Name' must be 256 characters or fewer. You entered 300 characters."
+                    ]
+                  },
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualPostResponse!["correlationId"]!.GetValue<string>())
+            );
+
+            var actualPutResponse = JsonNode.Parse(await updateResponse.Content.ReadAsStringAsync());
+            var expectedPutResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "ClaimSetName": [
+                      "The length of 'Claim Set Name' must be 256 characters or fewer. You entered 300 characters."
+                    ],
+                    "IsSystemReserved":["'Is System Reserved' must not be empty."],
+                    "ResourceClaims":["ResourceClaims must be a valid JSON object with at least one property."]
+                  },
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualPutResponse!["correlationId"]!.GetValue<string>())
+            );
+
+            var actualImportResponse = JsonNode.Parse(await importResponse.Content.ReadAsStringAsync());
+            var expectedImportResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "ClaimSetName": [
+                      "The length of 'Claim Set Name' must be 256 characters or fewer. You entered 300 characters."
+                    ],
+                    "ResourceClaims":["ResourceClaims must be a valid JSON object with at least one property."]
+                  },
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualImportResponse!["correlationId"]!.GetValue<string>())
+            );
+
+            var actualCopyResponse = JsonNode.Parse(await copyResponse.Content.ReadAsStringAsync());
+            var expectedCopyResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "Name": [
+                      "The length of 'Name' must be 256 characters or fewer. You entered 300 characters."
+                    ]
+                  },
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualCopyResponse!["correlationId"]!.GetValue<string>())
+            );
+
+            //Assert
+            addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            JsonNode.DeepEquals(actualPostResponse, expectedPostResponse).Should().Be(true);
+
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            JsonNode.DeepEquals(actualPutResponse, expectedPutResponse).Should().Be(true);
+
+            importResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            JsonNode.DeepEquals(actualImportResponse, expectedImportResponse).Should().Be(true);
+
+            copyResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            JsonNode.DeepEquals(actualCopyResponse, expectedCopyResponse).Should().Be(true);
+        }
+
+        [Test]
+        public async Task Should_return_bad_request_mismatch_id()
+        {
+            //Arrange
+            using var client = SetUpClient();
+
+            //Act
+            var updateResponse = await client.PutAsync(
+                "/v2/claimSets/1",
+                new StringContent(
+                    """
+                    {
+                        "id": 2,
+                        "claimSetName": "Test 11",
+                        "isSystemReserved" : true,
+                        "resourceClaims": {"resource":"Value"}
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            //Assert
+            string updateResponseContent = await updateResponse.Content.ReadAsStringAsync();
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            updateResponseContent.Should().Contain("Request body id must match the id in the url.");
+        }
+    }
 
     [TestFixture]
-    public class FailureNotFoundTests : ClaimSetModuleTests { }
+    public class FailureNotFoundTests : ClaimSetModuleTests
+    {
+        [SetUp]
+        public void Setup()
+        {
+            A.CallTo(() => _claimSetRepository.GetClaimSet(A<long>.Ignored, false))
+                .Returns(new ClaimSetGetResult.FailureNotFound());
+
+            A.CallTo(() => _claimSetRepository.UpdateClaimSet(A<ClaimSetUpdateCommand>.Ignored))
+                .Returns(new ClaimSetUpdateResult.FailureNotFound());
+
+            A.CallTo(() => _claimSetRepository.DeleteClaimSet(A<long>.Ignored))
+                .Returns(new ClaimSetDeleteResult.FailureNotFound());
+
+            A.CallTo(() => _claimSetRepository.Export(A<long>.Ignored))
+                .Returns(new ClaimSetExportResult.FailureNotFound());
+
+            A.CallTo(() => _claimSetRepository.Copy(A<ClaimSetCopyCommand>.Ignored))
+                .Returns(new ClaimSetCopyResult.FailureNotFound());
+        }
+
+        [Test]
+        public async Task Should_return_not_found_responses()
+        {
+            //Arrange
+            using var client = SetUpClient();
+
+            //Act
+            var getByIdResponse = await client.GetAsync("/v2/claimSets/99");
+            var updateResponse = await client.PutAsync(
+                "/v2/claimSets/1",
+                new StringContent(
+                    """
+                    {
+                        "id": 1,
+                        "claimSetName": "Test 11",
+                        "isSystemReserved" : true,
+                        "resourceClaims": {"resource":"Value"}
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+            var deleteResponse = await client.DeleteAsync("/v2/claimSets/1");
+            var copyResponse = await client.PostAsync(
+                "/v2/claimSets/copy",
+                new StringContent(
+                    """
+                    {
+                        "originalId" : 1,
+                        "name": "Test Copy"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+            var exportResponse = await client.GetAsync("/v2/claimSets/1/export");
+
+            //Assert
+            getByIdResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            deleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            copyResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            exportResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+    }
 
     [TestFixture]
-    public class FailureUnknownTests : ClaimSetModuleTests { }
+    public class FailureUnknownTests : ClaimSetModuleTests
+    {
+        [SetUp]
+        public void SetUp()
+        {
+            A.CallTo(() => _claimSetRepository.InsertClaimSet(A<ClaimSetInsertCommand>.Ignored))
+                .Returns(new ClaimSetInsertResult.FailureUnknown(""));
+
+            A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored, false))
+                .Returns(new ClaimSetQueryResult.FailureUnknown(""));
+
+            A.CallTo(() => _claimSetRepository.GetClaimSet(A<long>.Ignored, false))
+                .Returns(new ClaimSetGetResult.FailureUnknown(""));
+
+            A.CallTo(() => _claimSetRepository.UpdateClaimSet(A<ClaimSetUpdateCommand>.Ignored))
+                .Returns(new ClaimSetUpdateResult.FailureUnknown(""));
+
+            A.CallTo(() => _claimSetRepository.DeleteClaimSet(A<long>.Ignored))
+                .Returns(new ClaimSetDeleteResult.FailureUnknown(""));
+
+            A.CallTo(() => _claimSetRepository.Copy(A<ClaimSetCopyCommand>.Ignored))
+                .Returns(new ClaimSetCopyResult.FailureUnknown(""));
+
+            A.CallTo(() => _claimSetRepository.Export(A<long>.Ignored))
+                .Returns(new ClaimSetExportResult.FailureUnknown(""));
+
+            A.CallTo(() => _claimSetRepository.Import(A<ClaimSetImportCommand>.Ignored))
+                .Returns(new ClaimSetImportResult.FailureUnknown(""));
+        }
+
+        [Test]
+        public async Task Should_return_internal_server_error_response()
+        {
+            //Arrange
+            using var client = SetUpClient();
+
+            //Act
+            var addResponse = await client.PostAsync(
+                "/v2/claimSets",
+                new StringContent(
+                    """
+                    {
+                        "claimSetName":"Testing POST for ClaimSet",
+                        "resourceClaims": {"resource":"Value"}
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            var getResponse = await client.GetAsync("/v2/claimSets?offset=0&limit=25");
+            var getByIdResponse = await client.GetAsync("/v2/claimSets/1");
+            var updateResponse = await client.PutAsync(
+                "/v2/claimSets/1",
+                new StringContent(
+                    """
+                    {
+                        "id": 1,
+                        "claimSetName": "Test 11",
+                        "isSystemReserved" : true,
+                        "resourceClaims": {"resource":"Value"}
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+            var deleteResponse = await client.DeleteAsync("/v2/claimSets/1");
+            var copyResponse = await client.PostAsync(
+                "/v2/claimSets/copy",
+                new StringContent(
+                    """
+                    {
+                        "originalId" : 1,
+                        "name": "Test Copy"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+            var exportResponse = await client.GetAsync("/v2/claimSets/1/export");
+            var importResponse = await client.PostAsync(
+                "/v2/claimSets/import",
+                new StringContent(
+                    """
+                    {
+                        "claimSetName" : "Testing Import for ClaimSet",
+                        "isSystemReserved": true,
+                        "resourceClaims" : {"resource":"Value"}
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            //Assert
+            addResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            getResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            getByIdResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            deleteResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            copyResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            exportResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            importResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        }
+    }
 }

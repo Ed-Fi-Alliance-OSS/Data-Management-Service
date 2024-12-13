@@ -258,7 +258,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
 
             if (affectedRows == 0)
             {
-                return new ClaimSetUpdateResult.FailureNotExists();
+                return new ClaimSetUpdateResult.FailureNotFound();
             }
             await transaction.CommitAsync();
 
@@ -284,7 +284,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
 
             return affectedRows > 0
                 ? new ClaimSetDeleteResult.Success()
-                : new ClaimSetDeleteResult.FailureNotExists();
+                : new ClaimSetDeleteResult.FailureNotFound();
         }
         catch (Exception ex)
         {
@@ -382,7 +382,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
 
             if (originalClaimSet == null)
             {
-                return new ClaimSetCopyResult.FailureNotExists();
+                return new ClaimSetCopyResult.FailureNotFound();
             }
 
             var resourceClaimsJson = JsonDocument.Parse((string)originalClaimSet.resourceclaims).RootElement;

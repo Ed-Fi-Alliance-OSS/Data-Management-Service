@@ -76,7 +76,7 @@ public record ClaimSetUpdateResult
     /// <summary>
     /// ClaimSet id not found
     /// </summary>
-    public record FailureNotExists() : ClaimSetUpdateResult();
+    public record FailureNotFound() : ClaimSetUpdateResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught
@@ -91,7 +91,7 @@ public record ClaimSetDeleteResult
     /// <summary>
     /// ClaimSet id not found
     /// </summary>
-    public record FailureNotExists() : ClaimSetDeleteResult();
+    public record FailureNotFound() : ClaimSetDeleteResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught
@@ -126,7 +126,7 @@ public record ClaimSetCopyResult
     /// <summary>
     /// ClaimSet id not found
     /// </summary>
-    public record FailureNotExists() : ClaimSetCopyResult();
+    public record FailureNotFound() : ClaimSetCopyResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught

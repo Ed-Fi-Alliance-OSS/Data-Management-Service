@@ -16,7 +16,7 @@ public class ClaimSetCopyCommand
     {
         public Validator()
         {
-            RuleFor(c => c.Name).NotEmpty().MaximumLength(255);
+            RuleFor(c => c.Name).NotEmpty().MaximumLength(256);
         }
     }
 }

@@ -110,7 +110,7 @@ public class ClaimSetModule : IEndpointModule
         return result switch
         {
             ClaimSetUpdateResult.Success => Results.NoContent(),
-            ClaimSetUpdateResult.FailureNotExists => Results.Json(
+            ClaimSetUpdateResult.FailureNotFound => Results.Json(
                 FailureResponse.ForNotFound(
                     $"ClaimSet {id} not found. It may have been recently deleted.",
                     httpContext.TraceIdentifier
@@ -132,7 +132,7 @@ public class ClaimSetModule : IEndpointModule
         return result switch
         {
             ClaimSetDeleteResult.Success => Results.NoContent(),
-            ClaimSetDeleteResult.FailureNotExists => Results.Json(
+            ClaimSetDeleteResult.FailureNotFound => Results.Json(
                 FailureResponse.ForNotFound(
                     $"ClaimSet {id} not found. It may have been recently deleted.",
                     httpContext.TraceIdentifier
@@ -183,6 +183,13 @@ public class ClaimSetModule : IEndpointModule
             ClaimSetCopyResult.Success success => Results.Created(
                 $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
                 null
+            ),
+            ClaimSetCopyResult.FailureNotFound => Results.Json(
+                FailureResponse.ForNotFound(
+                    $"OriginalId {entity.OriginalId} not found. It may have been recently deleted.",
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.NotFound
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
