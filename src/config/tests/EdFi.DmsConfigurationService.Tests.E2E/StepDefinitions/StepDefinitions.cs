@@ -113,7 +113,8 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
     public async Task WhenAPUTRequestIsMadeToWith(string url, string body)
     {
         url = url.Replace("{id}", _id);
-        body = body.Replace("{id}", _id).Replace("{vendorId}", _vendorId);
+        body = ReplacePlaceholdersInRequest(body);
+
         _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
             url,
             new() { Data = body, Headers = _authHeaders }
@@ -138,7 +139,7 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
         APIRequestContextOptions? options = new()
         {
             Headers = _authHeaders,
-            Data = body.Replace("{id}", _id).Replace("{vendorId}", _vendorId),
+            Data = ReplacePlaceholdersInRequest(body),
         };
         _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, options)!;
         _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
@@ -254,7 +255,7 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
         JsonDocument responseJsonDoc = JsonDocument.Parse(responseJsonString);
         JsonNode responseJson = JsonNode.Parse(responseJsonDoc.RootElement.ToString())!;
 
-        expectedBody = ReplacePlaceholders(expectedBody, responseJson);
+        expectedBody = ReplacePlaceholdersInResponse(expectedBody, responseJson);
         JsonNode expectedBodyJson = JsonNode.Parse(expectedBody)!;
 
         (responseJson as JsonObject)?.Remove("correlationId");
@@ -265,7 +266,7 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
             .BeTrue($"Expected:\n{expectedBodyJson}\n\nActual:\n{responseJson}");
     }
 
-    private string ReplacePlaceholders(string body, JsonNode responseJson)
+    private string ReplacePlaceholdersInResponse(string body, JsonNode responseJson)
     {
         var replacements = new Dictionary<string, Regex>()
         {
@@ -317,5 +318,10 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
         }
 
         return replacedBody;
+    }
+
+    private string ReplacePlaceholdersInRequest(string body)
+    {
+        return body.Replace("{id}", _id).Replace("{vendorId}", _vendorId);
     }
 }

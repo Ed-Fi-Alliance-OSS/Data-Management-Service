@@ -6,6 +6,7 @@
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -27,14 +28,13 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
             [SetUp]
             public async Task Setup()
             {
-                VendorInsertCommand vendor =
-                    new()
-                    {
-                        Company = "Test Company",
-                        ContactEmailAddress = "test@test.com",
-                        ContactName = "Fake Name",
-                        NamespacePrefixes = "FakePrefix1,FakePrefix2",
-                    };
+                VendorInsertCommand vendor = new()
+                {
+                    Company = "Test Company",
+                    ContactEmailAddress = "test@test.com",
+                    ContactName = "Fake Name",
+                    NamespacePrefixes = "FakePrefix1,FakePrefix2",
+                };
 
                 var result = await _repository.InsertVendor(vendor);
                 result.Should().BeOfType<VendorInsertResult.Success>();

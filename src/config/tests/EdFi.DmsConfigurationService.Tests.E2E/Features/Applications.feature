@@ -40,6 +40,46 @@ Feature: Applications endpoints
                           "educationOrganizationIds": []
                       }]
                   """
+             When a GET request is made to "/v2/applications"
+             Then it should respond with 200
+              And the response body is
+                  """
+                      [{
+                          "id": {id},
+                          "applicationName": "application01",
+                          "claimSetName": "claim01",
+                          "vendorId": {vendorId},
+                          "educationOrganizationIds": []
+                      },
+                      {
+                          "id": {id},
+                          "applicationName": "application02",
+                          "claimSetName": "claim02",
+                          "vendorId": {vendorId},
+                          "educationOrganizationIds": []
+                      },
+                      {
+                          "id": {id},
+                          "applicationName": "application03",
+                          "claimSetName": "claim03",
+                          "vendorId": {vendorId},
+                          "educationOrganizationIds": []
+                      },
+                      {
+                          "id": {id},
+                          "applicationName": "application04",
+                          "claimSetName": "claim04",
+                          "vendorId": {vendorId},
+                          "educationOrganizationIds": []
+                      },
+                      {
+                          "id": {id},
+                          "applicationName": "application05",
+                          "claimSetName": "claim05",
+                          "vendorId": {vendorId},
+                          "educationOrganizationIds": []
+                      }]
+                  """
 
         Scenario: 02 Ensure clients can POST and GET application
              When a POST request is made to "/v2/applications" with
