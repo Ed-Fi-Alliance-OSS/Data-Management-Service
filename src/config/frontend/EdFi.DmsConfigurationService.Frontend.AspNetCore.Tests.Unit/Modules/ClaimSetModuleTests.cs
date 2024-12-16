@@ -10,6 +10,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using FakeItEasy;
 using FluentAssertions;
@@ -19,7 +20,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
-using static System.Net.Mime.MediaTypeNames;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 
