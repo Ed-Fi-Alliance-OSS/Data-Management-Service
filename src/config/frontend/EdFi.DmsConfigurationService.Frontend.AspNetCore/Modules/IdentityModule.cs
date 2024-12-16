@@ -62,7 +62,7 @@ public class IdentityModule : IEndpointModule
                         return result switch
                         {
                             ClientCreateResult.Success => Results.Json(
-                                $"Registered client {model.ClientId} successfully."),
+                               new { Title = $"Registered client {model.ClientId} successfully.", Status = 200 }),
                             ClientCreateResult.FailureIdentityProvider failureIdentityProvider =>
                                 FailureResults.BadGateway(
                                     failureIdentityProvider.IdentityProviderError.FailureMessage,
