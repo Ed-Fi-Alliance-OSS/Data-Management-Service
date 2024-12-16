@@ -40,14 +40,17 @@ jobs:
   run-unit-tests:
     name: Run Unit Tests
     runs-on: ubuntu-latest
-    container:
-      image: mcr.microsoft.com/dotnet/sdk:8.0
     defaults:
       run:
         shell: pwsh
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@607fce577a46308457984d59e4954e075820f10a # v3.0.3
+        with:
+          dotnet-version: '8.0.x'
 
       - name: Build
         run: ./build-dms.ps1 Build -Configuration Debug
@@ -84,8 +87,6 @@ jobs:
   run-integration-tests:
     name: Run Integration Tests
     runs-on: ubuntu-latest
-    container:
-      image: mcr.microsoft.com/dotnet/sdk:8.0
     defaults:
       run:
         shell: pwsh
@@ -104,6 +105,11 @@ jobs:
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@607fce577a46308457984d59e4954e075820f10a # v3.0.3
+        with:
+          dotnet-version: '8.0.x'
 
       - name: Build
         run: ./build-dms.ps1 Build -Configuration Debug
@@ -125,14 +131,17 @@ jobs:
     name: Run E2E Tests
     needs: run-unit-tests
     runs-on: ubuntu-latest
-    container:
-      image: mcr.microsoft.com/dotnet/sdk:8.0
     defaults:
       run:
         shell: pwsh
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@607fce577a46308457984d59e4954e075820f10a # v3.0.3
+        with:
+          dotnet-version: '8.0.x'
 
       - name: Run OpenSearch End to End Tests
         if: success()
