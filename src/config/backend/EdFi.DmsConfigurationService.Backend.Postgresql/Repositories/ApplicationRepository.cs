@@ -6,6 +6,7 @@
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -93,11 +94,14 @@ public class ApplicationRepository(
                 LEFT OUTER JOIN dmscs.ApplicationEducationOrganization e ON a.Id = e.ApplicationId
                 ORDER BY a.ApplicationName;
                 """;
-            var applications = await connection.QueryAsync<ApplicationResponse, long, ApplicationResponse>(
+            var applications = await connection.QueryAsync<ApplicationResponse, long?, ApplicationResponse>(
                 sql,
                 (application, educationOrganizationId) =>
                 {
-                    application.EducationOrganizationIds.Add(educationOrganizationId);
+                    if (educationOrganizationId != null)
+                    {
+                        application.EducationOrganizationIds.Add(educationOrganizationId.Value);
+                    }
                     return application;
                 },
                 param: query,
@@ -109,8 +113,7 @@ public class ApplicationRepository(
                 .Select(g =>
                 {
                     var grouped = g.First();
-                    grouped.EducationOrganizationIds = g.Select(e => e.EducationOrganizationIds.Single())
-                        .ToList();
+                    grouped.EducationOrganizationIds = g.SelectMany(a => a.EducationOrganizationIds).ToList();
                     return grouped;
                 })
                 .ToList();
@@ -136,11 +139,14 @@ public class ApplicationRepository(
                 LEFT OUTER JOIN dmscs.ApplicationEducationOrganization e ON a.Id = e.ApplicationId
                 WHERE a.Id = @Id;
                 """;
-            var applications = await connection.QueryAsync<ApplicationResponse, long, ApplicationResponse>(
+            var applications = await connection.QueryAsync<ApplicationResponse, long?, ApplicationResponse>(
                 sql,
                 (application, educationOrganizationId) =>
                 {
-                    application.EducationOrganizationIds.Add(educationOrganizationId);
+                    if (educationOrganizationId != null)
+                    {
+                        application.EducationOrganizationIds.Add(educationOrganizationId.Value);
+                    }
                     return application;
                 },
                 param: new { Id = id },
@@ -152,8 +158,7 @@ public class ApplicationRepository(
                 .Select(g =>
                 {
                     var grouped = g.First();
-                    grouped.EducationOrganizationIds = g.Select(e => e.EducationOrganizationIds.Single())
-                        .ToList();
+                    grouped.EducationOrganizationIds = g.SelectMany(a => a.EducationOrganizationIds).ToList();
                     return grouped;
                 })
                 .SingleOrDefault();

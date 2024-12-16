@@ -6,6 +6,7 @@
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using Microsoft.Extensions.Logging;
@@ -247,10 +248,6 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                         }
                         else
                         {
-                            if (educationOrganizationId != null)
-                            {
-                                application.EducationOrganizationIds.Add(educationOrganizationId.Value);
-                            }
                             response.Add(application.Id, application);
                         }
 
