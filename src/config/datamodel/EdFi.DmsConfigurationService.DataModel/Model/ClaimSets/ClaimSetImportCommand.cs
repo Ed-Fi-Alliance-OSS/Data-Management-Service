@@ -18,6 +18,13 @@ public class ClaimSetImportCommand
         public Validator()
         {
             RuleFor(c => c.Name).NotEmpty().MaximumLength(256);
+            RuleFor(c => c.ResourceClaims)
+                .NotNull()
+                .Must(rc => rc.ValueKind != JsonValueKind.Undefined && rc.ValueKind != JsonValueKind.Null)
+                .WithMessage("ResourceClaims cannot be null or undefined.");
+            RuleFor(c => c.ResourceClaims)
+                .Must(rc => rc.ValueKind == JsonValueKind.Object && rc.EnumerateObject().Any())
+                .WithMessage("ResourceClaims must be a valid JSON object with at least one property.");
         }
     }
 }
