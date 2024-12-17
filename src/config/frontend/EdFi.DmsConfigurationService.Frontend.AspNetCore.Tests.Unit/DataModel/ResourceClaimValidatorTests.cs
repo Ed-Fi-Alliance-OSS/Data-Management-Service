@@ -15,7 +15,13 @@ public class ResourceClaimValidatorTests
     [TestFixture]
     public class When_Validating_ResourceClaims
     {
-        public List<string> _authStrategies = ["AuthStrategy1", "AuthStrategy2", "AuthStrategy3", "AuthStrategy4"];
+        public List<string> _authStrategies =
+        [
+            "AuthStrategy1",
+            "AuthStrategy2",
+            "AuthStrategy3",
+            "AuthStrategy4",
+        ];
         public List<string> _actions = ["Create", "Read", "Update", "Delete"];
 
         public class FakeRequest
@@ -28,19 +34,28 @@ public class ResourceClaimValidatorTests
         {
             public Validator(List<string> actions, List<string> authStrategies)
             {
-                RuleFor(m => m).Custom((claimSet, context) =>
-                {
-                    var resourceClaimValidator = new ResourceClaimValidator();
-
-                    if (claimSet.ResourceClaims != null && claimSet.ResourceClaims.Count != 0)
-                    {
-                        foreach (var resourceClaim in claimSet.ResourceClaims)
+                RuleFor(m => m)
+                    .Custom(
+                        (claimSet, context) =>
                         {
-                            resourceClaimValidator.Validate(actions, authStrategies,
-                                resourceClaim, claimSet.ResourceClaims, context, claimSet.Name);
+                            var resourceClaimValidator = new ResourceClaimValidator();
+
+                            if (claimSet.ResourceClaims != null && claimSet.ResourceClaims.Count != 0)
+                            {
+                                foreach (var resourceClaim in claimSet.ResourceClaims)
+                                {
+                                    resourceClaimValidator.Validate(
+                                        actions,
+                                        authStrategies,
+                                        resourceClaim,
+                                        claimSet.ResourceClaims,
+                                        context,
+                                        claimSet.Name
+                                    );
+                                }
+                            }
                         }
-                    }
-                });
+                    );
             }
         }
 
@@ -50,25 +65,47 @@ public class ResourceClaimValidatorTests
             // Arrange
             var existingResourceClaims = new List<ResourceClaim>
             {
-                new() {
+                new()
+                {
                     Name = "resourceClaim1",
-                    Actions = [ new ResourceClaimAction{Enabled = true, Name="Create"}],
-                    DefaultAuthorizationStrategiesForCRUD = [
-                        new() { AuthorizationStrategies = new List<AuthorizationStrategy>{
-                        new() { AuthStrategyId = 1,
-                        AuthStrategyName = "AuthStrategy1",
-                        DisplayName = "AuthStrategy1" } } }  ]
+                    Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
+                    DefaultAuthorizationStrategiesForCRUD =
+                    [
+                        new()
+                        {
+                            AuthorizationStrategies = new List<AuthorizationStrategy>
+                            {
+                                new()
+                                {
+                                    AuthStrategyId = 1,
+                                    AuthStrategyName = "AuthStrategy1",
+                                    DisplayName = "AuthStrategy1",
+                                },
+                            },
+                        },
+                    ],
                 },
-                 new() {
+                new()
+                {
                     Name = "resourceClaim2",
-                    Actions = [ new ResourceClaimAction{Enabled = true, Name="Create"}],
-                    DefaultAuthorizationStrategiesForCRUD = [
-                        new() { AuthorizationStrategies = new List<AuthorizationStrategy>{
-                        new() { AuthStrategyId = 1,
-                        AuthStrategyName = "AuthStrategy1",
-                        DisplayName = "AuthStrategy1" } } }  ]
-                }
-             };
+                    Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
+                    DefaultAuthorizationStrategiesForCRUD =
+                    [
+                        new()
+                        {
+                            AuthorizationStrategies = new List<AuthorizationStrategy>
+                            {
+                                new()
+                                {
+                                    AuthStrategyId = 1,
+                                    AuthStrategyName = "AuthStrategy1",
+                                    DisplayName = "AuthStrategy1",
+                                },
+                            },
+                        },
+                    ],
+                },
+            };
 
             var request = new FakeRequest { Name = "TestClaimset", ResourceClaims = existingResourceClaims };
             var validator = new Validator(_actions, _authStrategies);
@@ -86,25 +123,47 @@ public class ResourceClaimValidatorTests
             // Arrange
             var existingResourceClaims = new List<ResourceClaim>
             {
-                new() {
+                new()
+                {
                     Name = "resourceClaim1",
-                    Actions = [ new ResourceClaimAction{Enabled = true, Name="Create"}],
-                    DefaultAuthorizationStrategiesForCRUD = [
-                        new() { AuthorizationStrategies = [
-                        new() { AuthStrategyId = 1,
-                        AuthStrategyName = "AuthStrategy1",
-                        DisplayName = "AuthStrategy1" } ] }  ]
+                    Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
+                    DefaultAuthorizationStrategiesForCRUD =
+                    [
+                        new()
+                        {
+                            AuthorizationStrategies =
+                            [
+                                new()
+                                {
+                                    AuthStrategyId = 1,
+                                    AuthStrategyName = "AuthStrategy1",
+                                    DisplayName = "AuthStrategy1",
+                                },
+                            ],
+                        },
+                    ],
                 },
-                 new() {
+                new()
+                {
                     Name = "resourceClaim1",
-                    Actions = [ new ResourceClaimAction{Enabled = true, Name="Create"}],
-                    DefaultAuthorizationStrategiesForCRUD = [
-                        new() { AuthorizationStrategies = [
-                        new() { AuthStrategyId = 1,
-                        AuthStrategyName = "AuthStrategy1",
-                        DisplayName = "AuthStrategy1" } ] }  ]
-                }
-             };
+                    Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
+                    DefaultAuthorizationStrategiesForCRUD =
+                    [
+                        new()
+                        {
+                            AuthorizationStrategies =
+                            [
+                                new()
+                                {
+                                    AuthStrategyId = 1,
+                                    AuthStrategyName = "AuthStrategy1",
+                                    DisplayName = "AuthStrategy1",
+                                },
+                            ],
+                        },
+                    ],
+                },
+            };
 
             var request = new FakeRequest { Name = "TestClaimset", ResourceClaims = existingResourceClaims };
             var validator = new Validator(_actions, _authStrategies);
@@ -115,7 +174,12 @@ public class ResourceClaimValidatorTests
             // Assert
             validationResult.IsValid.Should().BeFalse();
             validationResult.Errors.Count.Should().Be(1);
-            validationResult.Errors[0].ErrorMessage.Should().Contain("Only unique resource claims can be added. The following is a duplicate resource: 'resourceClaim1'.");
+            validationResult
+                .Errors[0]
+                .ErrorMessage.Should()
+                .Contain(
+                    "Only unique resource claims can be added. The following is a duplicate resource: 'resourceClaim1'."
+                );
         }
 
         [Test]
@@ -124,16 +188,27 @@ public class ResourceClaimValidatorTests
             // Arrange
             var existingResourceClaims = new List<ResourceClaim>
             {
-                new() {
+                new()
+                {
                     Name = "resourceClaim1",
-                    Actions = [ new ResourceClaimAction{Enabled = true, Name="ActionNotExists"}],
-                    DefaultAuthorizationStrategiesForCRUD = [
-                        new() { AuthorizationStrategies = [
-                        new() { AuthStrategyId = 1,
-                        AuthStrategyName = "AuthStrategy1",
-                        DisplayName = "AuthStrategy1" } ] }  ]
-                }
-             };
+                    Actions = [new ResourceClaimAction { Enabled = true, Name = "ActionNotExists" }],
+                    DefaultAuthorizationStrategiesForCRUD =
+                    [
+                        new()
+                        {
+                            AuthorizationStrategies =
+                            [
+                                new()
+                                {
+                                    AuthStrategyId = 1,
+                                    AuthStrategyName = "AuthStrategy1",
+                                    DisplayName = "AuthStrategy1",
+                                },
+                            ],
+                        },
+                    ],
+                },
+            };
 
             var request = new FakeRequest { Name = "TestClaimset", ResourceClaims = existingResourceClaims };
             var validator = new Validator(_actions, _authStrategies);
@@ -144,7 +219,10 @@ public class ResourceClaimValidatorTests
             // Assert
             validationResult.IsValid.Should().BeFalse();
             validationResult.Errors.Count.Should().Be(1);
-            validationResult.Errors[0].ErrorMessage.Should().Contain("ActionNotExists is not a valid action. Resource name: 'resourceClaim1'");
+            validationResult
+                .Errors[0]
+                .ErrorMessage.Should()
+                .Contain("ActionNotExists is not a valid action. Resource name: 'resourceClaim1'");
         }
 
         [Test]
@@ -153,16 +231,27 @@ public class ResourceClaimValidatorTests
             // Arrange
             var existingResourceClaims = new List<ResourceClaim>
             {
-                new() {
+                new()
+                {
                     Name = "resourceClaim1",
-                    Actions = [ new ResourceClaimAction{Enabled = true, Name="Create"}],
-                    DefaultAuthorizationStrategiesForCRUD = [
-                        new() { AuthorizationStrategies = [
-                        new() { AuthStrategyId = 1,
-                        AuthStrategyName = "InvalidAuthStrategy",
-                        DisplayName = "InvalidAuthStrategy" } ] }  ]
-                }
-             };
+                    Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
+                    DefaultAuthorizationStrategiesForCRUD =
+                    [
+                        new()
+                        {
+                            AuthorizationStrategies =
+                            [
+                                new()
+                                {
+                                    AuthStrategyId = 1,
+                                    AuthStrategyName = "InvalidAuthStrategy",
+                                    DisplayName = "InvalidAuthStrategy",
+                                },
+                            ],
+                        },
+                    ],
+                },
+            };
 
             var request = new FakeRequest { Name = "TestClaimset", ResourceClaims = existingResourceClaims };
             var validator = new Validator(_actions, _authStrategies);
@@ -173,8 +262,12 @@ public class ResourceClaimValidatorTests
             // Assert
             validationResult.IsValid.Should().BeFalse();
             validationResult.Errors.Count.Should().Be(1);
-            validationResult.Errors[0].ErrorMessage
-                .Should().Contain("This resource claim contains an authorization strategy which is not in the system. Claimset Name: 'TestClaimset' Resource name: 'resourceClaim1' Authorization strategy: 'InvalidAuthStrategy'.");
+            validationResult
+                .Errors[0]
+                .ErrorMessage.Should()
+                .Contain(
+                    "This resource claim contains an authorization strategy which is not in the system. Claimset Name: 'TestClaimset' Resource name: 'resourceClaim1' Authorization strategy: 'InvalidAuthStrategy'."
+                );
         }
 
         [Test]
@@ -183,37 +276,70 @@ public class ResourceClaimValidatorTests
             // Arrange
             var existingResourceClaims = new List<ResourceClaim>
             {
-                new() {
+                new()
+                {
                     Name = "resourceClaim1",
-                    Actions = [ new ResourceClaimAction{Enabled = true, Name="Create"}],
-                    DefaultAuthorizationStrategiesForCRUD = [
-                        new() { AuthorizationStrategies = [
-                        new() { AuthStrategyId = 1,
-                        AuthStrategyName = "AuthStrategy1",
-                        DisplayName = "AuthStrategy1" } ] }  ],
+                    Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
+                    DefaultAuthorizationStrategiesForCRUD =
+                    [
+                        new()
+                        {
+                            AuthorizationStrategies =
+                            [
+                                new()
+                                {
+                                    AuthStrategyId = 1,
+                                    AuthStrategyName = "AuthStrategy1",
+                                    DisplayName = "AuthStrategy1",
+                                },
+                            ],
+                        },
+                    ],
                     Children =
                     [
-                        new() {
-                        Name = "childResourceClaim1",
-                        Actions = [ new ResourceClaimAction{Enabled = true, Name="Create"}],
-                        DefaultAuthorizationStrategiesForCRUD = [
-                            new() { AuthorizationStrategies = [
-                            new() { AuthStrategyId = 1,
-                            AuthStrategyName = "AuthStrategy1",
-                            DisplayName = "AuthStrategy1" } ] }  ]
+                        new()
+                        {
+                            Name = "childResourceClaim1",
+                            Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
+                            DefaultAuthorizationStrategiesForCRUD =
+                            [
+                                new()
+                                {
+                                    AuthorizationStrategies =
+                                    [
+                                        new()
+                                        {
+                                            AuthStrategyId = 1,
+                                            AuthStrategyName = "AuthStrategy1",
+                                            DisplayName = "AuthStrategy1",
+                                        },
+                                    ],
+                                },
+                            ],
                         },
-                        new() {
-                        Name = "childResourceClaim1",
-                        Actions = [ new ResourceClaimAction{Enabled = true, Name="Create"}],
-                        DefaultAuthorizationStrategiesForCRUD = [
-                            new() { AuthorizationStrategies = [
-                            new() { AuthStrategyId = 1,
-                            AuthStrategyName = "AuthStrategy1",
-                            DisplayName = "AuthStrategy1" } ] }  ]
-                        }
-                    ]
-                }
-             };
+                        new()
+                        {
+                            Name = "childResourceClaim1",
+                            Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
+                            DefaultAuthorizationStrategiesForCRUD =
+                            [
+                                new()
+                                {
+                                    AuthorizationStrategies =
+                                    [
+                                        new()
+                                        {
+                                            AuthStrategyId = 1,
+                                            AuthStrategyName = "AuthStrategy1",
+                                            DisplayName = "AuthStrategy1",
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            };
 
             var request = new FakeRequest { Name = "TestClaimset", ResourceClaims = existingResourceClaims };
             var validator = new Validator(_actions, _authStrategies);
@@ -224,7 +350,12 @@ public class ResourceClaimValidatorTests
             // Assert
             validationResult.IsValid.Should().BeFalse();
             validationResult.Errors.Count.Should().Be(1);
-            validationResult.Errors[0].ErrorMessage.Should().Contain("Only unique resource claims can be added. The following is a duplicate resource: 'childResourceClaim1'.");
+            validationResult
+                .Errors[0]
+                .ErrorMessage.Should()
+                .Contain(
+                    "Only unique resource claims can be added. The following is a duplicate resource: 'childResourceClaim1'."
+                );
         }
 
         [Test]
@@ -233,37 +364,70 @@ public class ResourceClaimValidatorTests
             // Arrange
             var existingResourceClaims = new List<ResourceClaim>
             {
-                new() {
+                new()
+                {
                     Name = "resourceClaim1",
-                    Actions = [ new ResourceClaimAction{Enabled = true, Name="Create"}],
-                    DefaultAuthorizationStrategiesForCRUD = [
-                        new() { AuthorizationStrategies = [
-                        new() { AuthStrategyId = 1,
-                        AuthStrategyName = "AuthStrategy1",
-                        DisplayName = "AuthStrategy1" } ] }  ],
+                    Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
+                    DefaultAuthorizationStrategiesForCRUD =
+                    [
+                        new()
+                        {
+                            AuthorizationStrategies =
+                            [
+                                new()
+                                {
+                                    AuthStrategyId = 1,
+                                    AuthStrategyName = "AuthStrategy1",
+                                    DisplayName = "AuthStrategy1",
+                                },
+                            ],
+                        },
+                    ],
                     Children =
                     [
-                        new() {
-                        Name = "resourceClaim2",
-                        Actions = [ new ResourceClaimAction{Enabled = true, Name="Create"}],
-                        DefaultAuthorizationStrategiesForCRUD = [
-                            new() { AuthorizationStrategies = [
-                            new() { AuthStrategyId = 1,
-                            AuthStrategyName = "AuthStrategy1",
-                            DisplayName = "AuthStrategy1" } ] }  ]
-                        }
-                    ]
+                        new()
+                        {
+                            Name = "resourceClaim2",
+                            Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
+                            DefaultAuthorizationStrategiesForCRUD =
+                            [
+                                new()
+                                {
+                                    AuthorizationStrategies =
+                                    [
+                                        new()
+                                        {
+                                            AuthStrategyId = 1,
+                                            AuthStrategyName = "AuthStrategy1",
+                                            DisplayName = "AuthStrategy1",
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
                 },
-                  new() {
-                        Name = "resourceClaim2",
-                        Actions = [ new ResourceClaimAction{Enabled = true, Name="Create"}],
-                        DefaultAuthorizationStrategiesForCRUD = [
-                            new() { AuthorizationStrategies = [
-                            new() { AuthStrategyId = 1,
-                            AuthStrategyName = "AuthStrategy1",
-                            DisplayName = "AuthStrategy1" } ] }  ]
-                        }
-             };
+                new()
+                {
+                    Name = "resourceClaim2",
+                    Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
+                    DefaultAuthorizationStrategiesForCRUD =
+                    [
+                        new()
+                        {
+                            AuthorizationStrategies =
+                            [
+                                new()
+                                {
+                                    AuthStrategyId = 1,
+                                    AuthStrategyName = "AuthStrategy1",
+                                    DisplayName = "AuthStrategy1",
+                                },
+                            ],
+                        },
+                    ],
+                },
+            };
 
             var request = new FakeRequest { Name = "TestClaimset", ResourceClaims = existingResourceClaims };
             var validator = new Validator(_actions, _authStrategies);
@@ -281,28 +445,50 @@ public class ResourceClaimValidatorTests
             // Arrange
             var existingResourceClaims = new List<ResourceClaim>
             {
-                new() {
+                new()
+                {
                     Name = "resourceClaim1",
-                    Actions = [ new ResourceClaimAction{Enabled = true, Name="Create"}],
-                    DefaultAuthorizationStrategiesForCRUD = [
-                        new() { AuthorizationStrategies = [
-                        new() { AuthStrategyId = 1,
-                        AuthStrategyName = "AuthStrategy1",
-                        DisplayName = "AuthStrategy1" } ] }  ],
+                    Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
+                    DefaultAuthorizationStrategiesForCRUD =
+                    [
+                        new()
+                        {
+                            AuthorizationStrategies =
+                            [
+                                new()
+                                {
+                                    AuthStrategyId = 1,
+                                    AuthStrategyName = "AuthStrategy1",
+                                    DisplayName = "AuthStrategy1",
+                                },
+                            ],
+                        },
+                    ],
                     Children =
                     [
-                        new() {
-                        Name = "childResourceClaim1",
-                        Actions = [ new ResourceClaimAction{Enabled = true, Name="Create"}],
-                        DefaultAuthorizationStrategiesForCRUD = [
-                            new() { AuthorizationStrategies = [
-                            new() { AuthStrategyId = 1,
-                            AuthStrategyName = "InvalidAuthStrategy",
-                            DisplayName = "InvalidAuthStrategy" } ] }  ]
-                        }
-                    ]
-                }
-             };
+                        new()
+                        {
+                            Name = "childResourceClaim1",
+                            Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
+                            DefaultAuthorizationStrategiesForCRUD =
+                            [
+                                new()
+                                {
+                                    AuthorizationStrategies =
+                                    [
+                                        new()
+                                        {
+                                            AuthStrategyId = 1,
+                                            AuthStrategyName = "InvalidAuthStrategy",
+                                            DisplayName = "InvalidAuthStrategy",
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            };
 
             var request = new FakeRequest { Name = "TestClaimset", ResourceClaims = existingResourceClaims };
             var validator = new Validator(_actions, _authStrategies);
@@ -313,8 +499,12 @@ public class ResourceClaimValidatorTests
             // Assert
             validationResult.IsValid.Should().BeFalse();
             validationResult.Errors.Count.Should().Be(1);
-            validationResult.Errors[0].ErrorMessage
-                .Should().Contain("This resource claim contains an authorization strategy which is not in the system. Claimset Name: 'TestClaimset' Resource name: 'childResourceClaim1' Authorization strategy: 'InvalidAuthStrategy'.");
+            validationResult
+                .Errors[0]
+                .ErrorMessage.Should()
+                .Contain(
+                    "This resource claim contains an authorization strategy which is not in the system. Claimset Name: 'TestClaimset' Resource name: 'childResourceClaim1' Authorization strategy: 'InvalidAuthStrategy'."
+                );
         }
     }
 };

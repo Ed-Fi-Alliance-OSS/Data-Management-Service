@@ -15,7 +15,7 @@ public class ResourceClaimValidator
         List<string> dbAuthStrategies, ResourceClaim resourceClaim, List<ResourceClaim> existingResourceClaims,
         ValidationContext<T> context, string? claimSetName)
     {
-        context.MessageFormatter.AppendArgument("ClaimSetName", claimSetName);
+        context.MessageFormatter.AppendArgument("Name", claimSetName);
         context.MessageFormatter.AppendArgument("ResourceClaimName", resourceClaim.Name);
 
         var propertyName = "ResourceClaims";
@@ -69,7 +69,7 @@ public class ResourceClaimValidator
                         if (authStrategyOverride?.AuthStrategyName != null && !dbAuthStrategies.Contains(authStrategyOverride.AuthStrategyName))
                         {
                             context.MessageFormatter.AppendArgument("AuthStrategyName", authStrategyOverride.AuthStrategyName);
-                            context.AddFailure(propertyName, "This resource claim contains an authorization strategy which is not in the system. Claimset Name: '{ClaimSetName}' Resource name: '{ResourceClaimName}' Authorization strategy: '{AuthStrategyName}'.");
+                            context.AddFailure(propertyName, "This resource claim contains an authorization strategy which is not in the system. Claimset Name: '{Name}' Resource name: '{ResourceClaimName}' Authorization strategy: '{AuthStrategyName}'.");
                         }
                     }
                 }
@@ -94,7 +94,7 @@ public class ResourceClaimValidator
                     if (defaultAS.AuthStrategyName != null && !dbAuthStrategies.Contains(defaultAS.AuthStrategyName))
                     {
                         context.MessageFormatter.AppendArgument("AuthStrategyName", defaultAS.AuthStrategyName);
-                        context.AddFailure(propertyName, "This resource claim contains an authorization strategy which is not in the system. Claimset Name: '{ClaimSetName}' Resource name: '{ResourceClaimName}' Authorization strategy: '{AuthStrategyName}'.");
+                        context.AddFailure(propertyName, "This resource claim contains an authorization strategy which is not in the system. Claimset Name: '{Name}' Resource name: '{ResourceClaimName}' Authorization strategy: '{AuthStrategyName}'.");
                     }
                 }
             }

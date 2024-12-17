@@ -204,7 +204,7 @@ public class VendorModuleTests
             var expectedPostResponse = JsonNode.Parse(
                 """
                 {
-                  "detail": "",
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
                   "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                   "title": "Data Validation Failed",
                   "status": 400,
@@ -232,7 +232,7 @@ public class VendorModuleTests
             var expectedPutResponse = JsonNode.Parse(
                 """
                 {
-                  "detail": "",
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
                   "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                   "title": "Data Validation Failed",
                   "status": 400,

@@ -254,7 +254,7 @@ Feature: Applications endpoints
               And the response body is
                   """
                   {
-                    "detail": "",
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
                     "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
@@ -282,7 +282,7 @@ Feature: Applications endpoints
               And the response body is
                   """
                   {
-                    "detail": "",
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
                     "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
@@ -310,7 +310,7 @@ Feature: Applications endpoints
               And the response body is
                   """
                   {
-                    "detail": "",
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
                     "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,
@@ -338,7 +338,7 @@ Feature: Applications endpoints
               And the response body is
                   """
                   {
-                    "detail": "",
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
                     "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                     "title": "Data Validation Failed",
                     "status": 400,

@@ -214,7 +214,7 @@ public class ApplicationModuleTests
             var expectedResponse = JsonNode.Parse(
                 """
                 {
-                  "detail": "",
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
                   "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                   "title": "Data Validation Failed",
                   "status": 400,
@@ -544,7 +544,7 @@ public class ApplicationModuleTests
             var expectedResponse = JsonNode.Parse(
                 """
                 {
-                  "detail": "",
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
                   "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                   "title": "Data Validation Failed",
                   "status": 400,
@@ -592,7 +592,7 @@ public class ApplicationModuleTests
             var expectedResponse = JsonNode.Parse(
                 """
                 {
-                  "detail": "",
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
                   "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                   "title": "Data Validation Failed",
                   "status": 400,
