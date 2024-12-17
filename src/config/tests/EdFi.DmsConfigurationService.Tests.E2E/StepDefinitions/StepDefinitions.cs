@@ -5,31 +5,31 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using EdFi.DmsConfigurationService.Tests.E2E.Management;
+using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Tests.E2E.Extensions;
+using EdFi.DmsConfigurationService.Tests.E2E.Management;
 using FluentAssertions;
 using Microsoft.Playwright;
 using Reqnroll;
 using static EdFi.DmsConfigurationService.Tests.E2E.Management.JsonComparer;
-using System.Text.RegularExpressions;
 
 namespace EdFi.DmsConfigurationService.Tests.E2E.StepDefinitions;
 
 [Binding]
-public partial class StepDefinitions(
-       PlaywrightContext _playwrightContext
-   )
+public partial class StepDefinitions(PlaywrightContext _playwrightContext)
 {
     private IAPIResponse _apiResponse = null!;
     private string _token = string.Empty;
+    private string _vendorId = string.Empty;
     private string _id = string.Empty;
     private string _location = string.Empty;
 
-    private IDictionary<string, string> _authHeaders => new Dictionary<string, string>
-            {
-                { "Content-Type", "application/json" },
-                { "Authorization", $"Bearer {_token}" }
-            };
+    private IDictionary<string, string> _authHeaders =>
+        new Dictionary<string, string>
+        {
+            { "Content-Type", "application/json" },
+            { "Authorization", $"Bearer {_token}" },
+        };
 
     #region Given
     [Given("valid credentials")]
@@ -40,22 +40,21 @@ public partial class StepDefinitions(
             { "client_id", "DmsConfigurationService" },
             { "client_secret", "s3creT@09" },
             { "grant_type", "client_credentials" },
-            { "scope", "edfi_admin_api/full_access" }
+            { "scope", "edfi_admin_api/full_access" },
         };
         var content = new FormUrlEncodedContent(urlEncodedData);
         APIRequestContextOptions? options = new()
         {
             Headers = new Dictionary<string, string>
             {
-                { "Content-Type", "application/x-www-form-urlencoded" }
+                { "Content-Type", "application/x-www-form-urlencoded" },
             },
-            Data = content.ReadAsStringAsync().Result
+            Data = content.ReadAsStringAsync().Result,
         };
         if (_playwrightContext.ApiRequestContext != null)
         {
             _apiResponse = await _playwrightContext.ApiRequestContext!.PostAsync("/connect/token", options);
         }
-
     }
 
     [Given("token received")]
@@ -66,6 +65,14 @@ public partial class StepDefinitions(
         {
             _token = accessToken.ToString();
         }
+    }
+
+    [Given("vendor created")]
+    public async Task VendorCreated(string body)
+    {
+        APIRequestContextOptions? options = new() { Headers = _authHeaders, Data = body };
+        _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync("/v2/vendors", options)!;
+        _vendorId = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
     }
 
     [Given("the system has these {string}")]
@@ -82,7 +89,7 @@ public partial class StepDefinitions(
         {
             var dataUrl = $"{baseUrl}/{entityType}";
 
-            string body = row.Parse();
+            string body = row.Parse().Replace("_vendorId", _vendorId);
 
             var response = await _playwrightContext.ApiRequestContext?.PostAsync(
                 dataUrl,
@@ -92,10 +99,7 @@ public partial class StepDefinitions(
 
             response
                 .Status.Should()
-                .BeOneOf(
-                    OkCreated,
-                    $"POST request for {entityType} failed:\n{response.TextAsync().Result}"
-                );
+                .BeOneOf(OkCreated, $"POST request for {entityType} failed:\n{response.TextAsync().Result}");
         }
 
         return _apiResponses;
@@ -109,8 +113,12 @@ public partial class StepDefinitions(
     public async Task WhenAPUTRequestIsMadeToWith(string url, string body)
     {
         url = url.Replace("{id}", _id);
-        body = body.Replace("{id}", _id);
-        _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(url, new() { Data = body, Headers = _authHeaders })!;
+        body = ReplacePlaceholdersInRequest(body);
+
+        _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
+            url,
+            new() { Data = body, Headers = _authHeaders }
+        )!;
 
         extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
     }
@@ -118,8 +126,11 @@ public partial class StepDefinitions(
     [When("a GET request is made to {string}")]
     public async Task WhenAGETRequestIsMadeTo(string url)
     {
-        url = url.Replace("{id}", _id);
-        _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(url, new() { Headers = _authHeaders })!;
+        url = url.Replace("{id}", _id).Replace("{vendorId}", _vendorId);
+        _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
+            url,
+            new() { Headers = _authHeaders }
+        )!;
     }
 
     [When("a POST request is made to {string} with")]
@@ -128,7 +139,7 @@ public partial class StepDefinitions(
         APIRequestContextOptions? options = new()
         {
             Headers = _authHeaders,
-            Data = body
+            Data = ReplacePlaceholdersInRequest(body),
         };
         _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, options)!;
         _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
@@ -138,7 +149,10 @@ public partial class StepDefinitions(
     public async Task WhenADELETERequestIsMadeTo(string url)
     {
         url = url.Replace("{id}", _id);
-        _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(url, new() { Headers = _authHeaders })!;
+        _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(
+            url,
+            new() { Headers = _authHeaders }
+        )!;
     }
 
     private string extractDataFromResponseAndReturnIdIfAvailable(IAPIResponse apiResponse)
@@ -180,15 +194,13 @@ public partial class StepDefinitions(
 
             if (expectedValue.Contains("{id}"))
             {
-                _apiResponse
-                    .Headers[header.Key]
-                    .Should()
-                    .EndWith(expectedValue.Replace("{id}", _id));
+                _apiResponse.Headers[header.Key].Should().EndWith(expectedValue.Replace("{id}", _id));
             }
             else
             {
-                string? key = _apiResponse.Headers.Keys
-                    .FirstOrDefault(k => k.Equals(header.Key, StringComparison.OrdinalIgnoreCase));
+                string? key = _apiResponse.Headers.Keys.FirstOrDefault(k =>
+                    k.Equals(header.Key, StringComparison.OrdinalIgnoreCase)
+                );
 
                 if (key != null)
                 {
@@ -199,18 +211,13 @@ public partial class StepDefinitions(
     }
 
     [Then("the record can be retrieved with a GET request")]
-    public async Task ThenTheRecordCanBeRetrievedWithAGETRequest(string body)
+    public async Task ThenTheRecordCanBeRetrievedWithAGETRequest(string expectedBody)
     {
-        body = body.Replace("{id}", _id);
-        JsonNode bodyJson = JsonNode.Parse(body)!;
-
-        _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(_location, new() { Headers = _authHeaders })!;
-
-        string responseJsonString = await _apiResponse.TextAsync();
-        JsonDocument responseJsonDoc = JsonDocument.Parse(responseJsonString);
-        JsonNode responseJson = JsonNode.Parse(responseJsonDoc.RootElement.ToString())!;
-
-        AreEqual(bodyJson, responseJson).Should().BeTrue();
+        _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
+            _location,
+            new() { Headers = _authHeaders }
+        )!;
+        await ResponseBodyIs(expectedBody);
     }
 
     private static bool AreEqual(JsonNode expectedBodyJson, JsonNode responseJson)
@@ -230,6 +237,17 @@ public partial class StepDefinitions(
         await ResponseBodyIs(expectedBody);
     }
 
+    [Then("the response body has key and secret")]
+    public async Task ThenTheResponseBodyHasKeyAndSecret()
+    {
+        string responseJsonString = await _apiResponse.TextAsync();
+        JsonDocument responseJsonDoc = JsonDocument.Parse(responseJsonString);
+        JsonNode responseJson = JsonNode.Parse(responseJsonDoc.RootElement.ToString())!;
+        responseJson["id"].Should().NotBeNull();
+        responseJson["key"].Should().NotBeNull();
+        responseJson["secret"].Should().NotBeNull();
+    }
+
     private async Task ResponseBodyIs(string expectedBody)
     {
         // Parse the API response to JsonNode
@@ -237,7 +255,7 @@ public partial class StepDefinitions(
         JsonDocument responseJsonDoc = JsonDocument.Parse(responseJsonString);
         JsonNode responseJson = JsonNode.Parse(responseJsonDoc.RootElement.ToString())!;
 
-        expectedBody = ReplacePlaceholders(expectedBody, responseJson);
+        expectedBody = ReplacePlaceholdersInResponse(expectedBody, responseJson);
         JsonNode expectedBodyJson = JsonNode.Parse(expectedBody)!;
 
         (responseJson as JsonObject)?.Remove("correlationId");
@@ -248,49 +266,62 @@ public partial class StepDefinitions(
             .BeTrue($"Expected:\n{expectedBodyJson}\n\nActual:\n{responseJson}");
     }
 
-    // Use Regex to find all occurrences of {id} in the body
-    private static readonly Regex _findIds = new(@"\{id\}");
-
-    private string ReplacePlaceholders(string body, JsonNode responseJson)
+    private string ReplacePlaceholdersInResponse(string body, JsonNode responseJson)
     {
-        string replacedBody = "";
-        if (body.TrimStart().StartsWith('['))
+        var replacements = new Dictionary<string, Regex>()
         {
-            var responseAsArray =
-                responseJson.AsArray()
-                ?? throw new AssertionException(
-                    "Expected a JSON array response, but it was not an array."
-                );
-            if (responseAsArray.Count == 0)
+            { "id", new(@"\{id\}") },
+            { "vendorId", new(@"\{vendorId\}") },
+            { "key", new(@"\{key\}") },
+            { "secret", new(@"\{secret\}") },
+        };
+
+        string replacedBody = body;
+        foreach (var replacement in replacements)
+        {
+            if (replacedBody.TrimStart().StartsWith('['))
             {
-                return body;
+                var responseAsArray =
+                    responseJson.AsArray()
+                    ?? throw new AssertionException(
+                        "Expected a JSON array response, but it was not an array."
+                    );
+                if (responseAsArray.Count == 0)
+                {
+                    return replacedBody;
+                }
+
+                int index = 0;
+
+                replacedBody = replacement.Value.Replace(
+                    replacedBody,
+                    match =>
+                    {
+                        var idValue = responseJson[index]?[replacement.Key]?.ToString();
+                        index++;
+                        return idValue ?? match.ToString();
+                    }
+                );
             }
-
-            int index = 0;
-
-            replacedBody = _findIds.Replace(
-                body,
-                match =>
-                {
-                    var idValue = responseJson[index]?["id"]?.ToString();
-                    index++;
-                    return idValue ?? match.ToString();
-                }
-            );
+            else
+            {
+                replacedBody = replacement.Value.Replace(
+                    replacedBody,
+                    match =>
+                    {
+                        var idValue = responseJson[replacement.Key]?.ToString();
+                        return idValue ?? match.ToString();
+                    }
+                );
+            }
+            replacedBody = replacedBody.Replace("{BASE_URL}/", _playwrightContext.ApiUrl);
         }
-        else
-        {
-            replacedBody = _findIds.Replace(
-                body,
-                match =>
-                {
-                    var idValue = responseJson["id"]?.ToString();
 
-                    return idValue ?? match.ToString();
-                }
-            );
-        }
-        replacedBody = replacedBody.Replace("{BASE_URL}/", _playwrightContext.ApiUrl);
         return replacedBody;
+    }
+
+    private string ReplacePlaceholdersInRequest(string body)
+    {
+        return body.Replace("{id}", _id).Replace("{vendorId}", _vendorId);
     }
 }

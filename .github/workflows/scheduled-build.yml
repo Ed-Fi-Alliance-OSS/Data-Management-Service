@@ -22,6 +22,11 @@ jobs:
       - name: Checkout the repo
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
 
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@607fce577a46308457984d59e4954e075820f10a # v3.0.3
+        with:
+          dotnet-version: '8.0.x'
+
       - name: Cache Nuget packages
         uses: actions/cache@ab5e6d0c87105b4c9c2047343972218f562e4319 #v4.0.1
         with:
