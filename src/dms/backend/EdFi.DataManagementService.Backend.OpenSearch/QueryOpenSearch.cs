@@ -118,15 +118,13 @@ public static partial class QueryOpenSearch
                 }
             }
 
-            JsonObject query =
-                new()
-                {
-                    ["query"] = new JsonObject { ["bool"] = new JsonObject { ["must"] = terms } },
-                    ["sort"] = SortDirective(),
-                };
+            JsonObject query = new()
+            {
+                ["query"] = new JsonObject { ["bool"] = new JsonObject { ["must"] = terms } },
+                ["sort"] = SortDirective(),
+            };
 
             // Add in PaginationParameters if any
-
             if (queryRequest.PaginationParameters.Limit != null)
             {
                 query.Add(new("size", queryRequest.PaginationParameters.Limit));
@@ -142,22 +140,32 @@ public static partial class QueryOpenSearch
                 d => d.Body(query.ToJsonString())
             );
 
-            JsonNode hits = JsonSerializer.Deserialize<JsonNode>(response.Body)!["hits"]!;
-
-            if (hits is null)
+            if (response.Success)
             {
-                return new QueryResult.QuerySuccess(new JsonArray(), 0);
+                JsonNode hits = JsonSerializer.Deserialize<JsonNode>(response.Body)!["hits"]!;
+
+                if (hits is null)
+                {
+                    return new QueryResult.QuerySuccess(new JsonArray(), 0);
+                }
+
+                int totalCount = hits!["total"]!["value"]!.GetValue<int>();
+
+                JsonNode[] documents = hits!["hits"]!
+                    .AsArray()
+                    // DeepClone() so they can be placed in a new JsonArray
+                    .Select(node => node!["_source"]!["edfidoc"]!.DeepClone())!
+                    .ToArray()!;
+
+                return new QueryResult.QuerySuccess(new JsonArray(documents), totalCount);
             }
 
-            int totalCount = hits!["total"]!["value"]!.GetValue<int>();
-
-            JsonNode[] documents = hits!["hits"]!
-                .AsArray()
-                // DeepClone() so they can be placed in a new JsonArray
-                .Select(node => node!["_source"]!["edfidoc"]!.DeepClone())!
-                .ToArray()!;
-
-            return new QueryResult.QuerySuccess(new JsonArray(documents), totalCount);
+            logger.LogCritical(
+                "Unsuccessful OpenSearch Response - {TraceId} - {DebugInformation}",
+                queryRequest.TraceId.Value,
+                response.DebugInformation
+            );
+            return new QueryResult.UnknownFailure("Unknown Failure");
         }
         catch (Exception ex)
         {
