@@ -35,6 +35,11 @@ jobs:
       - name: Checkout the Repo
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
 
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@607fce577a46308457984d59e4954e075820f10a # v3.0.3
+        with:
+          dotnet-version: '8.0.x'
+
       - name: Dependency Review ("Dependabot on PR")
         if: ${{ github.event_name == 'pull_request' && !github.event.repository.fork }}
         uses: actions/dependency-review-action@9129d7d40b8c12c1ed0f60400d00c92d437adcce # v4.1.3
