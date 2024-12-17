@@ -129,7 +129,10 @@ public static class WebApplicationBuilderExtensions
                     options.TokenValidationParameters = new TokenValidationParameters
                     {
                         ValidateAudience = true,
+                        ValidAudience = identitySettings.Audience,
                         ValidateIssuer = true,
+                        ValidIssuer = identitySettings.Authority,
+                        ValidateLifetime = true,
                         RoleClaimType = identitySettings.RoleClaimType,
                     };
 

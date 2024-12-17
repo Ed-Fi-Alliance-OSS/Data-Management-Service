@@ -93,7 +93,6 @@ public static class WebApplicationBuilderExtensions
         webAppBuilder.Services.Configure<IdentitySettings>(settings);
         webAppBuilder.Services.AddHttpClient();
 
-
         if (identitySettings.EnforceAuthorization)
         {
             string metadataAddress = $"{identitySettings.Authority}/.well-known/openid-configuration";
@@ -111,7 +110,10 @@ public static class WebApplicationBuilderExtensions
                         options.TokenValidationParameters = new TokenValidationParameters
                         {
                             ValidateAudience = true,
-                            ValidateIssuer = false,
+                            ValidAudience = identitySettings.Audience,
+                            ValidateIssuer = true,
+                            ValidIssuer = identitySettings.Authority,
+                            ValidateLifetime = true,
                             RoleClaimType = identitySettings.RoleClaimType,
                         };
 
