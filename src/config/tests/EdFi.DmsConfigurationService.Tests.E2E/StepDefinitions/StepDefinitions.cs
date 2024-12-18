@@ -145,6 +145,28 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
         _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
     }
 
+    [When("a Form URL Encoded POST request is made to {string} with")]
+    public async Task WhenAFormUrlPostIsMade(string url, DataTable formData)
+    {
+        Dictionary<string, string> formDataDictionary = formData.Rows.ToDictionary(
+            x => x["key"].ToString(),
+            y => y["value"].ToString()
+        );
+        var content = new FormUrlEncodedContent(formDataDictionary);
+        APIRequestContextOptions? options = new()
+        {
+            Headers = new Dictionary<string, string>
+            {
+                { "Content-Type", "application/x-www-form-urlencoded" },
+            },
+            Data = content.ReadAsStringAsync().Result,
+        };
+        if (_playwrightContext.ApiRequestContext != null)
+        {
+            _apiResponse = await _playwrightContext.ApiRequestContext!.PostAsync(url, options);
+        }
+    }
+
     [When("a DELETE request is made to {string}")]
     public async Task WhenADELETERequestIsMadeTo(string url)
     {

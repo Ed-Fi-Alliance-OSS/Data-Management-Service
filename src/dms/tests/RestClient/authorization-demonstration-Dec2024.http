@@ -18,13 +18,12 @@
 
 ### Create the system administrator credentials
 POST http://localhost:{{configPort}}/connect/register
-Content-Type: application/json
+Content-Type: application/x-www-form-urlencoded
 
-{
-    "ClientId": "{{sysAdminId}}",
-    "ClientSecret": "{{sysAdminSecret}}",
-    "DisplayName": "System Administrator"
-}
+ClientId={{sysAdminId}}
+&ClientSecret={{encodedSysAdminSecret}}
+&DisplayName=System Administrator
+
 
 ### Create a token
 # @name configTokenRequest
