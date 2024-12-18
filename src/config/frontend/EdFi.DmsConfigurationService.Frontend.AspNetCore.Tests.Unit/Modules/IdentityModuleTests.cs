@@ -236,14 +236,18 @@ public class RegisterEndpointTests
     }
 
     [Test]
-    public async Task When_provider_has_invalid_real()
+    public async Task When_provider_has_invalid_realm()
     {
         // Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             _clientRepository = A.Fake<IClientRepository>();
 
-            var error = new IdentityProviderError.NotFound("Invalid realm.");
+            var error = new IdentityProviderError.NotFound(
+                """
+                { "error":"Realm does not exist","error_description":"For more on this error consult the server log at the debug level."}
+                """
+            );
 
             A.CallTo(() => _clientRepository.GetAllClientsAsync())
                 .Returns(new ClientClientsResult.FailureIdentityProvider(error));
@@ -269,10 +273,25 @@ public class RegisterEndpointTests
         );
         var response = await client.PostAsync("/connect/register", requestContent);
         string content = await response.Content.ReadAsStringAsync();
-
+        var actualResponse = JsonNode.Parse(content);
+        var expectedResponse = JsonNode.Parse(
+            """
+            {
+              "detail": "The request could not be processed. See 'errors' for details.",
+              "type": "urn:ed-fi:api:bad-gateway",
+              "title": "Bad Gateway",
+              "status": 502,
+              "correlationId": "{correlationId}",
+              "validationErrors": {},
+              "errors": [
+               "Realm does not exist. For more on this error consult the server log at the debug level."
+            ]
+            }
+            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+        );
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
-        content.Should().Contain("Invalid realm");
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
     }
 
     [Test]
@@ -395,13 +414,15 @@ public class RegisterEndpointTests
         var expectedResponse = JsonNode.Parse(
             """
             {
-              "detail": "No connection could be made because the target machine actively refused it.",
+              "detail": "The request could not be processed. See 'errors' for details.",
               "type": "urn:ed-fi:api:bad-gateway",
               "title": "Bad Gateway",
               "status": 502,
               "correlationId": "{correlationId}",
               "validationErrors": {},
-              "errors": []
+              "errors": [
+                "No connection could be made because the target machine actively refused it."
+            ]
             }
             """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
         );
@@ -603,13 +624,15 @@ public class TokenEndpointTests
         var expectedResponse = JsonNode.Parse(
             """
             {
-              "detail": "No connection could be made because the target machine actively refused it.",
+              "detail": "The request could not be processed. See 'errors' for details.",
               "type": "urn:ed-fi:api:bad-gateway",
               "title": "Bad Gateway",
               "status": 502,
               "correlationId": "{correlationId}",
               "validationErrors": {},
-              "errors": []
+              "errors": [
+                "No connection could be made because the target machine actively refused it."
+            ]
             }
             """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
         );
@@ -632,7 +655,11 @@ public class TokenEndpointTests
                 )
                 .Returns(
                     new TokenResult.FailureIdentityProvider(
-                        new IdentityProviderError.NotFound("Invalid realm")
+                        new IdentityProviderError.NotFound(
+                            """
+                            { "error":"Realm does not exist","error_description":"For more on this error consult the server log at the debug level."}
+                            """
+                        )
                     )
                 );
 
@@ -660,9 +687,25 @@ public class TokenEndpointTests
         var response = await client.PostAsync("/connect/token", requestContent);
         string content = await response.Content.ReadAsStringAsync();
 
+        var actualResponse = JsonNode.Parse(content);
+        var expectedResponse = JsonNode.Parse(
+            """
+            {
+              "detail": "The request could not be processed. See 'errors' for details.",
+              "type": "urn:ed-fi:api:bad-gateway",
+              "title": "Bad Gateway",
+              "status": 502,
+              "correlationId": "{correlationId}",
+              "validationErrors": {},
+              "errors": [
+               "Realm does not exist. For more on this error consult the server log at the debug level."
+            ]
+            }
+            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+        );
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
-        content.Should().Contain("Invalid realm");
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
     }
 
     [Test]
@@ -698,13 +741,12 @@ public class TokenEndpointTests
 
         //Act
         var requestContent = new FormUrlEncodedContent(
-            new[]
-            {
+            [
                 new KeyValuePair<string, string>("client_id", "CSClient1"),
                 new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
                 new KeyValuePair<string, string>("grant_type", "client_credentials"),
                 new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-            }
+            ]
         );
         var response = await client.PostAsync("/connect/token", requestContent);
 
@@ -726,7 +768,15 @@ public class TokenEndpointTests
                             A<IEnumerable<KeyValuePair<string, string>>>.Ignored
                         )
                 )
-                .Returns(new TokenResult.FailureIdentityProvider(new IdentityProviderError.Unauthorized("")));
+                .Returns(
+                    new TokenResult.FailureIdentityProvider(
+                        new IdentityProviderError.Unauthorized(
+                            """
+                            {"error":"invalid_client","error_description":"Invalid client or Invalid client credentials"}
+                            """
+                        )
+                    )
+                );
 
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -750,8 +800,27 @@ public class TokenEndpointTests
             }
         );
         var response = await client.PostAsync("/connect/token", requestContent);
+        string content = await response.Content.ReadAsStringAsync();
+
+        var actualResponse = JsonNode.Parse(content);
+        var expectedResponse = JsonNode.Parse(
+            """
+            {
+              "detail": "The request could not be processed. See 'errors' for details.",
+              "type": "urn:ed-fi:api:security:authentication",
+              "title": "Authentication Failed",
+              "status": 401,
+              "correlationId": "{correlationId}",
+              "validationErrors": {},
+              "errors": [
+               "invalid_client. Invalid client or Invalid client credentials"
+            ]
+            }
+            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+        );
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
     }
 }
