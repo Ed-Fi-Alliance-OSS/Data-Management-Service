@@ -203,6 +203,7 @@ public class ClaimSetModule : IEndpointModule
     )
     {
         await validator.GuardAsync(entity);
+
         var insertResult = await repository.Import(entity);
 
         var request = httpContext.Request;

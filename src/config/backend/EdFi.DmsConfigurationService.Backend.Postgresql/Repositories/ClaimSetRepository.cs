@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Model;
@@ -353,11 +354,17 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                    RETURNING Id;
                 """;
 
+            string resourceClaimsJson = JsonSerializer.Serialize(command.ResourceClaims, new JsonSerializerOptions
+            {
+                WriteIndented = false,
+                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+            });
+
             var parameters = new
             {
                 ClaimSetName = command.Name,
                 IsSystemReserved = false,
-                ResourceClaims = command.ResourceClaims.ToString(),
+                ResourceClaims = resourceClaimsJson,
             };
 
             long id = await connection.ExecuteScalarAsync<long>(sql, parameters);
