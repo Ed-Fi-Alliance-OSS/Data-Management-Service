@@ -6,6 +6,7 @@
 using System.Net;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using Microsoft.AspNetCore.Diagnostics;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
