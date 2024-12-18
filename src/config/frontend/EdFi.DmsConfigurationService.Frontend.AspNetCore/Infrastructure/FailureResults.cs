@@ -3,13 +3,17 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
+using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
 internal static class FailureResults
 {
+    private static readonly string _errorDetail =
+        "The request could not be processed. See 'errors' for details.";
+    private static readonly string _errorContentType = "application/problem+json";
+
     public static IResult Unknown(string correlationId)
     {
         return Results.Json(FailureResponse.ForUnknown(correlationId), statusCode: 500);
@@ -22,62 +26,59 @@ internal static class FailureResults
 
     public static IResult BadGateway(string detail, string correlationId)
     {
-        var (errorDetail, errors) = ConvertIdentityError(detail);
+        var errors = GetIdentityErrorDetails(detail);
         return Results.Json(
-            FailureResponse.ForBadGateway(errorDetail, correlationId, errors),
+            FailureResponse.ForBadGateway(_errorDetail, correlationId, errors),
+            contentType: _errorContentType,
             statusCode: 502
         );
     }
 
     public static IResult Unauthorized(string detail, string correlationId)
     {
-        var (errorDetail, errors) = ConvertIdentityError(detail);
+        var errors = GetIdentityErrorDetails(detail, "Unauthorized");
         return Results.Json(
-            FailureResponse.ForUnauthorized("Authentication Failed", errorDetail, correlationId, errors),
+            FailureResponse.ForUnauthorized("Authentication Failed", _errorDetail, correlationId, errors),
+            contentType: _errorContentType,
             statusCode: 401
         );
     }
 
     public static IResult Forbidden(string detail, string correlationId)
     {
-        var (errorDetail, errors) = ConvertIdentityError(detail);
+        var errors = GetIdentityErrorDetails(detail, "Forbidden");
         return Results.Json(
-            FailureResponse.ForForbidden("Authorization Failed", errorDetail, correlationId, errors),
+            FailureResponse.ForForbidden("Authorization Failed", _errorDetail, correlationId, errors),
+            contentType: _errorContentType,
             statusCode: 403
         );
     }
 
-    private static (string, string[]?) ConvertIdentityError(string detail)
+    // Attempts to read `{ "error": "...", "error_description": "..."}` from the response
+    // body, with sensible fallback mechanism if the response is in a different format.
+    private static string[]? GetIdentityErrorDetails(string detail, string title = "")
     {
-        var errorDetail = detail;
-        string[]? errors = null;
-
-        if (IsIdentityErrorJson(detail))
+        if (string.IsNullOrEmpty(detail))
         {
-            var errorResponse = JsonSerializer.Deserialize<ErrorResponse>(detail);
-            if (errorResponse != null)
-            {
-                errorDetail = errorResponse.error;
-                errors = [errorResponse.error_description];
-            }
+            return null;
         }
 
-        return (errorDetail, errors);
-    }
+        string error = title;
+        string errorDescription = detail;
 
-    private static bool IsIdentityErrorJson(string json)
-    {
         try
         {
-            using JsonDocument document = JsonDocument.Parse(json);
-            var root = document.RootElement;
-            return root.TryGetProperty("error", out _) && root.TryGetProperty("error_description", out _);
+            if (JsonNode.Parse(detail) is JsonNode parsed && parsed is JsonObject obj)
+            {
+                error = obj["error"]?.ToString() ?? error;
+                errorDescription = obj["error_description"]?.ToString() ?? errorDescription;
+            }
         }
-        catch (JsonException)
+        catch
         {
-            return false;
+            // Ignoring parsing errors, returning the default formatted message.
         }
+        error = !string.IsNullOrEmpty(error) ? $"{error}. " : "";
+        return [$"{error}{errorDescription}"];
     }
-
-    public record ErrorResponse(string error, string error_description);
 }
