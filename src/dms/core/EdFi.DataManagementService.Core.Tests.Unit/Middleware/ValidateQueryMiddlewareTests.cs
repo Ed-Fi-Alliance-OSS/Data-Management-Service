@@ -20,9 +20,11 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [TestFixture]
 public class ValidateQueryMiddlewareTests
 {
+    private static readonly int _maxPageSize = 500;
+
     internal static IPipelineStep Middleware()
     {
-        return new ValidateQueryMiddleware(NullLogger.Instance);
+        return new ValidateQueryMiddleware(NullLogger.Instance, _maxPageSize);
     }
 
     [TestFixture]
@@ -40,13 +42,12 @@ public class ValidateQueryMiddlewareTests
                 { "totalCount", "100" },
             };
 
-            FrontendRequest frontendRequest =
-                new(
-                    Path: "/ed-fi/schools",
-                    Body: null,
-                    QueryParameters: queryParameters,
-                    TraceId: new TraceId("")
-                );
+            FrontendRequest frontendRequest = new(
+                Path: "/ed-fi/schools",
+                Body: null,
+                QueryParameters: queryParameters,
+                TraceId: new TraceId("")
+            );
             _context = new(frontendRequest, RequestMethod.GET);
             await Middleware().Execute(_context, NullNext);
         }
@@ -81,7 +82,7 @@ public class ValidateQueryMiddlewareTests
             _context
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
-                .Contain("Limit must be a numeric value greater than or equal to 0.");
+                .Contain($"Limit must be omitted or set to a numeric value between 0 and {_maxPageSize}.");
         }
 
         [Test]
@@ -91,6 +92,56 @@ public class ValidateQueryMiddlewareTests
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
                 .Contain("TotalCount must be a boolean value.");
+        }
+    }
+
+    [TestFixture]
+    public class Given_Pipeline_Context_With_Greater_Limit_Value : ValidateQueryMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var queryParameters = new Dictionary<string, string>
+            {
+                { "offset", "0" },
+                { "limit", "800" },
+                { "totalCount", "100" },
+            };
+
+            FrontendRequest frontendRequest = new(
+                Path: "/ed-fi/schools",
+                Body: null,
+                QueryParameters: queryParameters,
+                TraceId: new TraceId("")
+            );
+            _context = new(frontendRequest, RequestMethod.GET);
+            await Middleware().Execute(_context, NullNext);
+        }
+
+        [Test]
+        public void It_should_send_bad_request()
+        {
+            _context?.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_should_be_errors()
+        {
+            _context
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("The request could not be processed.");
+        }
+
+        [Test]
+        public void It_should_be_limit_errors()
+        {
+            _context
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain($"Limit must be omitted or set to a numeric value between 0 and {_maxPageSize}.");
         }
     }
 
@@ -124,16 +175,15 @@ public class ValidateQueryMiddlewareTests
             RequestMethod method
         )
         {
-            PipelineContext docRefContext =
-                new(frontendRequest, method)
-                {
-                    ApiSchemaDocument = NewApiSchemaDocument(),
-                    PathComponents = new(
-                        ProjectNamespace: new("ed-fi"),
-                        EndpointName: new("academicWeeks"),
-                        DocumentUuid: No.DocumentUuid
-                    ),
-                };
+            PipelineContext docRefContext = new(frontendRequest, method)
+            {
+                ApiSchemaDocument = NewApiSchemaDocument(),
+                PathComponents = new(
+                    ProjectNamespace: new("ed-fi"),
+                    EndpointName: new("academicWeeks"),
+                    DocumentUuid: No.DocumentUuid
+                ),
+            };
             docRefContext.ProjectSchema = new ProjectSchema(
                 docRefContext.ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
                 NullLogger.Instance
@@ -167,13 +217,12 @@ public class ValidateQueryMiddlewareTests
                 { "classStartTime", "44:80:99.123" },
             };
 
-            FrontendRequest frontendRequest =
-                new(
-                    Path: "/ed-fi/academicWeeks",
-                    Body: null,
-                    QueryParameters: queryParameters,
-                    TraceId: new TraceId("")
-                );
+            FrontendRequest frontendRequest = new(
+                Path: "/ed-fi/academicWeeks",
+                Body: null,
+                QueryParameters: queryParameters,
+                TraceId: new TraceId("")
+            );
 
             _context = NewPipelineContext(frontendRequest, RequestMethod.GET);
 
@@ -271,16 +320,15 @@ public class ValidateQueryMiddlewareTests
             RequestMethod method
         )
         {
-            PipelineContext docRefContext =
-                new(frontendRequest, method)
-                {
-                    ApiSchemaDocument = NewApiSchemaDocument(),
-                    PathComponents = new(
-                        ProjectNamespace: new("ed-fi"),
-                        EndpointName: new("academicWeeks"),
-                        DocumentUuid: No.DocumentUuid
-                    ),
-                };
+            PipelineContext docRefContext = new(frontendRequest, method)
+            {
+                ApiSchemaDocument = NewApiSchemaDocument(),
+                PathComponents = new(
+                    ProjectNamespace: new("ed-fi"),
+                    EndpointName: new("academicWeeks"),
+                    DocumentUuid: No.DocumentUuid
+                ),
+            };
             docRefContext.ProjectSchema = new ProjectSchema(
                 docRefContext.ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
                 NullLogger.Instance
@@ -314,13 +362,12 @@ public class ValidateQueryMiddlewareTests
                 { "classStartTime", "10:30:00" },
             };
 
-            FrontendRequest frontendRequest =
-                new(
-                    Path: "/ed-fi/academicWeeks",
-                    Body: null,
-                    QueryParameters: queryParameters,
-                    TraceId: new TraceId("")
-                );
+            FrontendRequest frontendRequest = new(
+                Path: "/ed-fi/academicWeeks",
+                Body: null,
+                QueryParameters: queryParameters,
+                TraceId: new TraceId("")
+            );
 
             _context = NewPipelineContext(frontendRequest, RequestMethod.GET);
 
@@ -359,16 +406,15 @@ public class ValidateQueryMiddlewareTests
             RequestMethod method
         )
         {
-            PipelineContext docRefContext =
-                new(frontendRequest, method)
-                {
-                    ApiSchemaDocument = NewApiSchemaDocument(),
-                    PathComponents = new(
-                        ProjectNamespace: new("ed-fi"),
-                        EndpointName: new("academicWeeks"),
-                        DocumentUuid: No.DocumentUuid
-                    ),
-                };
+            PipelineContext docRefContext = new(frontendRequest, method)
+            {
+                ApiSchemaDocument = NewApiSchemaDocument(),
+                PathComponents = new(
+                    ProjectNamespace: new("ed-fi"),
+                    EndpointName: new("academicWeeks"),
+                    DocumentUuid: No.DocumentUuid
+                ),
+            };
             docRefContext.ProjectSchema = new ProjectSchema(
                 docRefContext.ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
                 NullLogger.Instance
@@ -392,18 +438,14 @@ public class ValidateQueryMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            var queryParameters = new Dictionary<string, string>
-            {
-                { "isRequired", "false" }
-            };
+            var queryParameters = new Dictionary<string, string> { { "isRequired", "false" } };
 
-            FrontendRequest frontendRequest =
-                new(
-                    Path: "/ed-fi/academicWeeks",
-                    Body: null,
-                    QueryParameters: queryParameters,
-                    TraceId: new TraceId("")
-                );
+            FrontendRequest frontendRequest = new(
+                Path: "/ed-fi/academicWeeks",
+                Body: null,
+                QueryParameters: queryParameters,
+                TraceId: new TraceId("")
+            );
 
             _context = NewPipelineContext(frontendRequest, RequestMethod.GET);
 
@@ -418,7 +460,8 @@ public class ValidateQueryMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_Pipeline_Context_With_Valid_Type_Query_DateTime_Parameter : ValidateQueryMiddlewareTests
+    public class Given_Pipeline_Context_With_Valid_Type_Query_DateTime_Parameter
+        : ValidateQueryMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -442,16 +485,15 @@ public class ValidateQueryMiddlewareTests
             RequestMethod method
         )
         {
-            PipelineContext docRefContext =
-                new(frontendRequest, method)
-                {
-                    ApiSchemaDocument = NewApiSchemaDocument(),
-                    PathComponents = new(
-                        ProjectNamespace: new("ed-fi"),
-                        EndpointName: new("academicWeeks"),
-                        DocumentUuid: No.DocumentUuid
-                    ),
-                };
+            PipelineContext docRefContext = new(frontendRequest, method)
+            {
+                ApiSchemaDocument = NewApiSchemaDocument(),
+                PathComponents = new(
+                    ProjectNamespace: new("ed-fi"),
+                    EndpointName: new("academicWeeks"),
+                    DocumentUuid: No.DocumentUuid
+                ),
+            };
             docRefContext.ProjectSchema = new ProjectSchema(
                 docRefContext.ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
                 NullLogger.Instance
@@ -477,16 +519,15 @@ public class ValidateQueryMiddlewareTests
         {
             var queryParameters = new Dictionary<string, string>
             {
-                { "beginDate", "2025-12-30 22:33:55.000" }
+                { "beginDate", "2025-12-30 22:33:55.000" },
             };
 
-            FrontendRequest frontendRequest =
-                new(
-                    Path: "/ed-fi/academicWeeks",
-                    Body: null,
-                    QueryParameters: queryParameters,
-                    TraceId: new TraceId("")
-                );
+            FrontendRequest frontendRequest = new(
+                Path: "/ed-fi/academicWeeks",
+                Body: null,
+                QueryParameters: queryParameters,
+                TraceId: new TraceId("")
+            );
 
             _context = NewPipelineContext(frontendRequest, RequestMethod.GET);
 
