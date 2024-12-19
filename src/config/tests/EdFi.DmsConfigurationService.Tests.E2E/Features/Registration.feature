@@ -1,8 +1,8 @@
 Feature: Registration endpoints
+# Most of these scenarios can only be run once. If run again, they will fail because the client is already registered in Keycloak.
         Scenario: 00 Verify register new client
-        # This scenario can only be run once. If it is run again, it will fail because the client is already registered in keycloak.
              When a Form URL Encoded POST request is made to "/connect/register" with
-                  | key          | value    |
+                  | Key          | Value    |
                   | ClientId     | E2E      |
                   | ClientSecret | Secr3t:) |
                   | DisplayName  | E2E      |
@@ -17,10 +17,23 @@ Feature: Registration endpoints
 
         Scenario: 01 Verify already registered clients return 400
              When a Form URL Encoded POST request is made to "/connect/register" with
-                  | key          | value                     |
-                  | ClientId     | DmsConfigurationService   |
-                  | ClientSecret | Secr3t:)                  |
-                  | DisplayName  | DMS Configuration Service |
+                  | Key          | Value    |
+                  | ClientId     | E2E01    |
+                  | ClientSecret | Secr3t:) |
+                  | DisplayName  | E2E      |
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                    "title": "Registered client E2E01 successfully.",
+                    "status": 200
+                  }
+                  """
+             When a Form URL Encoded POST request is made to "/connect/register" with
+                  | Key          | Value    |
+                  | ClientId     | E2E01    |
+                  | ClientSecret | Secr3t:) |
+                  | DisplayName  | E2E      |
              Then it should respond with 400
               And the response body is
                   """
@@ -40,7 +53,7 @@ Feature: Registration endpoints
 
         Scenario: 02 Verify password requirements
              When a Form URL Encoded POST request is made to "/connect/register" with
-                  | key          | value                     |
+                  | Key          | Value                     |
                   | ClientId     | DmsConfigurationService   |
                   | ClientSecret | weak                      |
                   | DisplayName  | DMS Configuration Service |
@@ -63,7 +76,7 @@ Feature: Registration endpoints
 
         Scenario: 03 Verify empty post failure
              When a Form URL Encoded POST request is made to "/connect/register" with
-                  | key | value |
+                  | Key | Value |
              Then it should respond with 400
               And the response body is
                   """
@@ -86,3 +99,51 @@ Feature: Registration endpoints
                     "errors": []
                     }
                   """
+        Scenario: 04 Verify token creation with registered client
+             When a Form URL Encoded POST request is made to "/connect/register" with
+                  | Key          | Value    |
+                  | ClientId     | E2E04    |
+                  | ClientSecret | Secr3t:) |
+                  | DisplayName  | E2E      |
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                    "title": "Registered client E2E04 successfully.",
+                    "status": 200
+                  }
+                  """
+             When a Form URL Encoded POST request is made to "/connect/token" with
+                  | Key           | Value                      |
+                  | client_id     | E2E04                      |
+                  | client_secret | Secr3t:)                   |
+                  | grant_type    | client_credentials         |
+                  | scope         | edfi_admin_api/full_access |
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                    "access_token": "{access_token}",
+                    "expires_in": 1800,
+                    "token_type": "Bearer"
+                  }
+                  """
+             When a Form URL Encoded POST request is made to "/connect/token" with
+                  | Key           | Value                      |
+                  | client_id     | E2E04                      |
+                  | client_secret | wrong                      |
+                  | grant_type    | client_credentials         |
+                  | scope         | edfi_admin_api/full_access |
+             Then it should respond with 401
+              And the response body is
+                  """
+                  {
+                    "detail":"{\"error\":\"unauthorized_client\",\"error_description\":\"Invalid client or Invalid client credentials\"}",
+                    "type":"urn:ed-fi:api:security:authentication",
+                    "title":"Authentication Failed",
+                    "status":401,
+                    "validationErrors":{},
+                    "errors":[]
+                  }
+                  """
+

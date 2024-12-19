@@ -149,8 +149,8 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
     public async Task WhenAFormUrlPostIsMade(string url, DataTable formData)
     {
         Dictionary<string, string> formDataDictionary = formData.Rows.ToDictionary(
-            x => x["key"].ToString(),
-            y => y["value"].ToString()
+            x => x["Key"].ToString(),
+            y => y["Value"].ToString()
         );
         var content = new FormUrlEncodedContent(formDataDictionary);
         APIRequestContextOptions? options = new()
@@ -296,6 +296,7 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
             { "vendorId", new(@"\{vendorId\}") },
             { "key", new(@"\{key\}") },
             { "secret", new(@"\{secret\}") },
+            { "access_token", new(@"\{access_token\}") },
         };
 
         string replacedBody = body;
