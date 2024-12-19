@@ -12,6 +12,7 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.AspNetCore.Mvc;
+using Action = EdFi.DmsConfigurationService.DataModel.Model.Action.Action;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -204,6 +205,31 @@ public class ClaimSetModule : IEndpointModule
     {
         await validator.GuardAsync(entity);
 
+        foreach (var resourceClaim in entity.ResourceClaims)
+        {
+            bool validActions = ValidActions(repository, (IEnumerable<Action>?)resourceClaim.Actions);
+            if (validActions)
+            {
+                throw new ValidationException(
+                    new[] { new ValidationFailure("Actions", "Action Name must be unique.") }
+                );
+            }
+
+            foreach (var strategies in resourceClaim.DefaultAuthorizationStrategiesForCRUD)
+            {
+                if (strategies != null)
+                {
+                    bool validStrategies = ValidStrategy(repository, strategies.AuthorizationStrategies);
+                    if (validStrategies)
+                    {
+                        throw new ValidationException(
+                            new[] { new ValidationFailure("AuthStrategyName", "AuthStrategyName must be unique.") }
+                        );
+                    }
+                }
+            }
+        }
+
         var insertResult = await repository.Import(entity);
 
         var request = httpContext.Request;
@@ -215,5 +241,32 @@ public class ClaimSetModule : IEndpointModule
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
+    }
+
+    private static bool ValidActions(IClaimSetRepository repository, IEnumerable<Action>? actions)
+    {
+        if (actions == null || !actions.Any())
+        {
+            return true;
+        }
+        var validActionNames = repository.GetActions().Select(a => a.Name).ToHashSet();
+        return actions.All(a => validActionNames.Contains(a.Name));
+    }
+
+    private static bool ValidStrategy(
+        IClaimSetRepository repository,
+        IEnumerable<AuthorizationStrategy>? strategies
+    )
+    {
+        if (strategies == null || !strategies.Any())
+        {
+            return true;
+        }
+
+        var validStrategyNames = repository
+            .GetAuthorizationStrategies()
+            .Select(s => s.AuthStrategyName)
+            .ToHashSet();
+        return strategies.All(s => validStrategyNames.Contains(s.AuthStrategyName));
     }
 }

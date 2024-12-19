@@ -15,6 +15,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
+using Action = EdFi.DmsConfigurationService.DataModel.Model.Action.Action;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 
@@ -23,7 +24,7 @@ public class RegisterActionEndpointTests
     [TestFixture]
     public class When_Making_Action_Request
     {
-        private AdminAction[] _mockActionResponse = null!;
+        private Action[] _mockActionResponse = null!;
         private HttpResponseMessage? _response;
 
         [SetUp]
@@ -31,25 +32,25 @@ public class RegisterActionEndpointTests
         {
             _mockActionResponse =
             [
-                new AdminAction
+                new Action
                 {
                     Id = 1,
                     Name = "Create",
                     Uri = "uri://ed-fi.org/api/actions/create",
                 },
-                new AdminAction
+                new Action
                 {
                     Id = 2,
                     Name = "Read",
                     Uri = "uri://ed-fi.org/api/actions/read",
                 },
-                new AdminAction
+                new Action
                 {
                     Id = 3,
                     Name = "Update",
                     Uri = "uri://ed-fi.org/api/actions/update",
                 },
-                new AdminAction
+                new Action
                 {
                     Id = 4,
                     Name = "Delete",
@@ -89,7 +90,7 @@ public class RegisterActionEndpointTests
             // Act
             _response = await client.GetAsync("/actions");
             var responseString = await _response.Content.ReadAsStringAsync();
-            var content = JsonSerializer.Deserialize<AdminAction[]>(responseString);
+            var content = JsonSerializer.Deserialize<Action[]>(responseString);
 
             // Assert
             _response!.StatusCode.Should().Be(HttpStatusCode.OK);

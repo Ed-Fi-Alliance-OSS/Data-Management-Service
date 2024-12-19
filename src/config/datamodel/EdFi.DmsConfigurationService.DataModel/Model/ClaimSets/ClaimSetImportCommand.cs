@@ -21,10 +21,22 @@ public class ClaimSetImportCommand
             RuleFor(c => c.ResourceClaims)
                 .NotEmpty()
                 .WithMessage("At least one ResourceClaim is required.")
+                .Must(BeUniqueNames)
+                .WithMessage("ResourceClaim names must be unique.")
                 .ForEach(resourceClaimRule =>
                 {
                     resourceClaimRule.SetValidator(new ResourceClaimValidate());
                 });
+        }
+
+        private static bool BeUniqueNames(List<ResourceClaim>? resourceClaims)
+        {
+            if (resourceClaims == null || !resourceClaims.Any())
+            {
+                return true;
+            }
+
+            return resourceClaims.Select(rc => rc.Name).Distinct().Count() == resourceClaims.Count;
         }
     }
 }
@@ -46,33 +58,35 @@ public class ResourceClaimValidate : AbstractValidator<ResourceClaim>
             });
 
         RuleFor(rc => rc.Children)
-            .Must(BeValidChildren)
+            .Must(children => BeValidChildren(children))
             .WithMessage("Invalid or circular reference in Children.");
     }
 
-    private static bool BeValidChildren(List<ResourceClaim>? children)
+    private static bool BeValidChildren(
+        IEnumerable<ResourceClaim>? children,
+        HashSet<string>? visitedNames = null
+    )
     {
-        if (children == null || !children.Any())
+        visitedNames ??= new HashSet<string>();
+
+        if (children == null)
         {
             return true;
         }
 
         foreach (var child in children)
         {
-            if (string.IsNullOrEmpty(child.Name) || child.Name.Length > 256)
+            if (!visitedNames.Add(child.Name!))
             {
                 return false;
             }
 
-            if (child.Actions == null || !child.Actions.Any())
+            if (!BeValidChildren(child.Children, visitedNames))
             {
                 return false;
             }
 
-            if (!BeValidChildren(child.Children))
-            {
-                return false;
-            }
+            visitedNames.Remove(child.Name!);
         }
 
         return true;
