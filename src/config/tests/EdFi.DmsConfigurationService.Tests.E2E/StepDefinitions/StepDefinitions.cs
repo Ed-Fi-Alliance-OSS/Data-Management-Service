@@ -16,7 +16,7 @@ using static EdFi.DmsConfigurationService.Tests.E2E.Management.JsonComparer;
 namespace EdFi.DmsConfigurationService.Tests.E2E.StepDefinitions;
 
 [Binding]
-public partial class StepDefinitions(PlaywrightContext _playwrightContext)
+public partial class StepDefinitions(PlaywrightContext playwrightContext, ScenarioContext scenarioContext)
 {
     private IAPIResponse _apiResponse = null!;
     private string _token = string.Empty;
@@ -30,6 +30,12 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
             { "Content-Type", "application/json" },
             { "Authorization", $"Bearer {_token}" },
         };
+
+    [BeforeScenario]
+    public void BeforeScenario()
+    {
+        scenarioContext["ScenarioRunId"] = Guid.NewGuid().ToString();
+    }
 
     #region Given
     [Given("valid credentials")]
@@ -51,9 +57,9 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
             },
             Data = content.ReadAsStringAsync().Result,
         };
-        if (_playwrightContext.ApiRequestContext != null)
+        if (playwrightContext.ApiRequestContext != null)
         {
-            _apiResponse = await _playwrightContext.ApiRequestContext!.PostAsync("/connect/token", options);
+            _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync("/connect/token", options);
         }
     }
 
@@ -71,7 +77,7 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
     public async Task VendorCreated(string body)
     {
         APIRequestContextOptions? options = new() { Headers = _authHeaders, Data = body };
-        _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync("/v2/vendors", options)!;
+        _apiResponse = await playwrightContext.ApiRequestContext?.PostAsync("/v2/vendors", options)!;
         _vendorId = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
     }
 
@@ -89,9 +95,11 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
         {
             var dataUrl = $"{baseUrl}/{entityType}";
 
-            string body = row.Parse().Replace("_vendorId", _vendorId);
+            string body = row.Parse()
+                .Replace("_vendorId", _vendorId)
+                .Replace("_scenarioRunId", scenarioContext["ScenarioRunId"].ToString());
 
-            var response = await _playwrightContext.ApiRequestContext?.PostAsync(
+            var response = await playwrightContext.ApiRequestContext?.PostAsync(
                 dataUrl,
                 new() { Data = body, Headers = _authHeaders }
             )!;
@@ -115,7 +123,7 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
         url = url.Replace("{id}", _id);
         body = ReplacePlaceholdersInRequest(body);
 
-        _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
+        _apiResponse = await playwrightContext.ApiRequestContext?.PutAsync(
             url,
             new() { Data = body, Headers = _authHeaders }
         )!;
@@ -127,7 +135,7 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
     public async Task WhenAGETRequestIsMadeTo(string url)
     {
         url = url.Replace("{id}", _id).Replace("{vendorId}", _vendorId);
-        _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
+        _apiResponse = await playwrightContext.ApiRequestContext?.GetAsync(
             url,
             new() { Headers = _authHeaders }
         )!;
@@ -141,7 +149,7 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
             Headers = _authHeaders,
             Data = ReplacePlaceholdersInRequest(body),
         };
-        _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, options)!;
+        _apiResponse = await playwrightContext.ApiRequestContext?.PostAsync(url, options)!;
         _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
     }
 
@@ -150,7 +158,7 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
     {
         Dictionary<string, string> formDataDictionary = formData.Rows.ToDictionary(
             x => x["Key"].ToString(),
-            y => y["Value"].ToString()
+            y => y["Value"].ToString().Replace("_scenarioRunId", scenarioContext["ScenarioRunId"].ToString())
         );
         var content = new FormUrlEncodedContent(formDataDictionary);
         APIRequestContextOptions? options = new()
@@ -161,9 +169,9 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
             },
             Data = content.ReadAsStringAsync().Result,
         };
-        if (_playwrightContext.ApiRequestContext != null)
+        if (playwrightContext.ApiRequestContext != null)
         {
-            _apiResponse = await _playwrightContext.ApiRequestContext!.PostAsync(url, options);
+            _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync(url, options);
         }
     }
 
@@ -171,7 +179,7 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
     public async Task WhenADELETERequestIsMadeTo(string url)
     {
         url = url.Replace("{id}", _id);
-        _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(
+        _apiResponse = await playwrightContext.ApiRequestContext?.DeleteAsync(
             url,
             new() { Headers = _authHeaders }
         )!;
@@ -235,7 +243,7 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
     [Then("the record can be retrieved with a GET request")]
     public async Task ThenTheRecordCanBeRetrievedWithAGETRequest(string expectedBody)
     {
-        _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
+        _apiResponse = await playwrightContext.ApiRequestContext?.GetAsync(
             _location,
             new() { Headers = _authHeaders }
         )!;
@@ -299,7 +307,7 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
             { "access_token", new(@"\{access_token\}") },
         };
 
-        string replacedBody = body;
+        string replacedBody = body.Replace("{scenarioRunId}", scenarioContext["ScenarioRunId"].ToString());
         foreach (var replacement in replacements)
         {
             if (replacedBody.TrimStart().StartsWith('['))
@@ -337,7 +345,7 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
                     }
                 );
             }
-            replacedBody = replacedBody.Replace("{BASE_URL}/", _playwrightContext.ApiUrl);
+            replacedBody = replacedBody.Replace("{BASE_URL}/", playwrightContext.ApiUrl);
         }
 
         return replacedBody;
@@ -345,6 +353,8 @@ public partial class StepDefinitions(PlaywrightContext _playwrightContext)
 
     private string ReplacePlaceholdersInRequest(string body)
     {
-        return body.Replace("{id}", _id).Replace("{vendorId}", _vendorId);
+        return body.Replace("{id}", _id)
+            .Replace("{vendorId}", _vendorId)
+            .Replace("{scenarioRunId}", scenarioContext["ScenarioRunId"].ToString());
     }
 }
