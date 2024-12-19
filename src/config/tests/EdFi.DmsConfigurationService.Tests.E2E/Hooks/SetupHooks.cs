@@ -33,7 +33,9 @@ public static class SetupHooks
             using var conn = new NpgsqlConnection(hostConnectionString);
             await conn.OpenAsync();
 
+            await DeleteData("dmscs.Application");
             await DeleteData("dmscs.Vendor");
+
             async Task DeleteData(string tableName)
             {
                 var deleteRefCmd = new NpgsqlCommand($"DELETE FROM {tableName};", conn);

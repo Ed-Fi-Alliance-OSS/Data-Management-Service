@@ -128,6 +128,21 @@ Feature: Connect endpoints
                     "token_type": "Bearer"
                   }
                   """
+
+       Scenario: 05 Verify token creation with invalid client_secret value
+             When a Form URL Encoded POST request is made to "/connect/register" with
+                  | Key          | Value          |
+                  | ClientId     | _scenarioRunId |
+                  | ClientSecret | Secr3t:)       |
+                  | DisplayName  | _scenarioRunId |
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                    "title": "Registered client {scenarioRunId} successfully.",
+                    "status": 200
+                  }
+                  """
              When a Form URL Encoded POST request is made to "/connect/token" with
                   | Key           | Value                      |
                   | client_id     | _scenarioRunId             |
@@ -138,12 +153,49 @@ Feature: Connect endpoints
               And the response body is
                   """
                   {
-                    "detail":"{\"error\":\"unauthorized_client\",\"error_description\":\"Invalid client or Invalid client credentials\"}",
+                    "detail": "The request could not be processed. See 'errors' for details.",
                     "type":"urn:ed-fi:api:security:authentication",
                     "title":"Authentication Failed",
                     "status":401,
                     "validationErrors":{},
-                    "errors":[]
+                     "errors": [
+                        "unauthorized_client. Invalid client or Invalid client credentials"
+                        ]
+                  }
+                  """
+
+     Scenario: 06 Verify token creation with invalid client_id value
+             When a Form URL Encoded POST request is made to "/connect/register" with
+                  | Key          | Value          |
+                  | ClientId     | _scenarioRunId |
+                  | ClientSecret | Secr3t:)       |
+                  | DisplayName  | _scenarioRunId |
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                    "title": "Registered client {scenarioRunId} successfully.",
+                    "status": 200
+                  }
+                  """
+             When a Form URL Encoded POST request is made to "/connect/token" with
+                  | Key           | Value                      |
+                  | client_id     | wrong                      |
+                  | client_secret | Secr3t:)                   |
+                  | grant_type    | client_credentials         |
+                  | scope         | edfi_admin_api/full_access |
+             Then it should respond with 401
+              And the response body is
+                  """
+                  {
+                    "detail": "The request could not be processed. See 'errors' for details.",
+                    "type":"urn:ed-fi:api:security:authentication",
+                    "title":"Authentication Failed",
+                    "status":401,
+                    "validationErrors":{},
+                     "errors": [
+                        "invalid_client. Invalid client or Invalid client credentials"
+                        ]
                   }
                   """
 
