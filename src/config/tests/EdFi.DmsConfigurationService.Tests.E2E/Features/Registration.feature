@@ -1,5 +1,5 @@
 Feature: Registration endpoints
-# Most of these scenarios can only be run once. If run again, they will fail because the client is already registered in Keycloak.
+
         Scenario: 00 Verify register new client
              When a Form URL Encoded POST request is made to "/connect/register" with
                   | Key          | Value          |

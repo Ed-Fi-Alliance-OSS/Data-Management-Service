@@ -20,9 +20,8 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
 {
     private IAPIResponse _apiResponse = null!;
     private string _token = string.Empty;
-    private string _vendorId = string.Empty;
-    private string _id = string.Empty;
     private string _location = string.Empty;
+    private readonly Dictionary<string, string> _ids = new();
 
     private IDictionary<string, string> _authHeaders =>
         new Dictionary<string, string>
@@ -34,6 +33,11 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     [BeforeScenario]
     public void BeforeScenario()
     {
+        // This gives us a random string to use in scenarios
+        // For example, keycloak clients are not deleted between
+        // feature runs even though the database is truncated
+        // so we use a random string for new keycloak clients to
+        // avoid keycloak errors.
         scenarioContext["ScenarioRunId"] = Guid.NewGuid().ToString();
     }
 
@@ -73,14 +77,6 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         }
     }
 
-    [Given("vendor created")]
-    public async Task VendorCreated(string body)
-    {
-        APIRequestContextOptions? options = new() { Headers = _authHeaders, Data = body };
-        _apiResponse = await playwrightContext.ApiRequestContext?.PostAsync("/v2/vendors", options)!;
-        _vendorId = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
-    }
-
     [Given("the system has these {string}")]
     public async Task GivenTheSystemHasThese(string entityType, DataTable dataTable)
     {
@@ -95,9 +91,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         {
             var dataUrl = $"{baseUrl}/{entityType}";
 
-            string body = row.Parse()
-                .Replace("_vendorId", _vendorId)
-                .Replace("_scenarioRunId", scenarioContext["ScenarioRunId"].ToString());
+            string body = ReplaceIds(row.Parse());
 
             var response = await playwrightContext.ApiRequestContext?.PostAsync(
                 dataUrl,
@@ -120,21 +114,21 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     [When("a PUT request is made to {string} with")]
     public async Task WhenAPUTRequestIsMadeToWith(string url, string body)
     {
-        url = url.Replace("{id}", _id);
-        body = ReplacePlaceholdersInRequest(body);
+        url = ReplaceIds(url);
+        body = ReplaceIds(body);
 
         _apiResponse = await playwrightContext.ApiRequestContext?.PutAsync(
             url,
             new() { Data = body, Headers = _authHeaders }
         )!;
 
-        extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
+        ExtractIdFromHeader(_apiResponse);
     }
 
     [When("a GET request is made to {string}")]
     public async Task WhenAGETRequestIsMadeTo(string url)
     {
-        url = url.Replace("{id}", _id).Replace("{vendorId}", _vendorId);
+        url = ReplaceIds(url);
         _apiResponse = await playwrightContext.ApiRequestContext?.GetAsync(
             url,
             new() { Headers = _authHeaders }
@@ -142,15 +136,12 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     }
 
     [When("a POST request is made to {string} with")]
+    [Given("a POST request is made to {string} with")]
     public async Task WhenSendingAPOSTRequestToWithBody(string url, string body)
     {
-        APIRequestContextOptions? options = new()
-        {
-            Headers = _authHeaders,
-            Data = ReplacePlaceholdersInRequest(body),
-        };
+        APIRequestContextOptions? options = new() { Headers = _authHeaders, Data = ReplaceIds(body) };
         _apiResponse = await playwrightContext.ApiRequestContext?.PostAsync(url, options)!;
-        _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
+        ExtractIdFromHeader(_apiResponse);
     }
 
     [When("a Form URL Encoded POST request is made to {string} with")]
@@ -158,7 +149,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     {
         Dictionary<string, string> formDataDictionary = formData.Rows.ToDictionary(
             x => x["Key"].ToString(),
-            y => y["Value"].ToString().Replace("_scenarioRunId", scenarioContext["ScenarioRunId"].ToString())
+            y => ReplaceIds(y["Value"].ToString())
         );
         var content = new FormUrlEncodedContent(formDataDictionary);
         APIRequestContextOptions? options = new()
@@ -178,33 +169,25 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     [When("a DELETE request is made to {string}")]
     public async Task WhenADELETERequestIsMadeTo(string url)
     {
-        url = url.Replace("{id}", _id);
+        url = ReplaceIds(url);
         _apiResponse = await playwrightContext.ApiRequestContext?.DeleteAsync(
             url,
             new() { Headers = _authHeaders }
         )!;
     }
 
-    private string extractDataFromResponseAndReturnIdIfAvailable(IAPIResponse apiResponse)
+    private void ExtractIdFromHeader(IAPIResponse apiResponse)
     {
         if (apiResponse.Headers.TryGetValue("location", out string? value))
         {
-            _location = value;
-#pragma warning disable S6608 // Prefer indexing instead of "Enumerable" methods on types implementing "IList"
-            return _location.Split('/').Last();
-#pragma warning restore S6608 // Prefer indexing instead of "Enumerable" methods on types implementing "IList"
-        }
-        if (apiResponse.Status == 400)
-        {
-            // This is here to help step through debugging when there is an
-            // unexpected error while doing background setup, in which case
-            // it is difficult to ever see the error details.
-#pragma warning disable S1481 // Unused local variables should be removed
-            var errorOnPostOrPutRequest = _apiResponse.TextAsync().Result;
-#pragma warning restore S1481 // Unused local variables should be removed
-        }
+            _location = value; //eg `http://localhost:8081/v2/vendors/57`
+            var segments = _location.Split('/');
+            var id = segments[^1]; // eg 57
+            var resource = segments[^2]; // eg 'vendors'
+            var identifier = resource[0..^1] + "Id"; // eg 'vendorId'
 
-        return string.Empty;
+            _ids[identifier] = id;
+        }
     }
 
     [Then("it should respond with {int}")]
@@ -220,22 +203,15 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         var value = JsonNode.Parse(headers)!;
         foreach (var header in value.AsObject())
         {
-            var expectedValue = header.Value!.ToString();
+            var expectedValue = ReplaceIds(header.Value!.ToString());
 
-            if (expectedValue.Contains("{id}"))
-            {
-                _apiResponse.Headers[header.Key].Should().EndWith(expectedValue.Replace("{id}", _id));
-            }
-            else
-            {
-                string? key = _apiResponse.Headers.Keys.FirstOrDefault(k =>
-                    k.Equals(header.Key, StringComparison.OrdinalIgnoreCase)
-                );
+            string? key = _apiResponse.Headers.Keys.FirstOrDefault(k =>
+                k.Equals(header.Key, StringComparison.OrdinalIgnoreCase)
+            );
 
-                if (key != null)
-                {
-                    _apiResponse.Headers[key].Should().Contain(expectedValue);
-                }
+            if (key != null)
+            {
+                _apiResponse.Headers[key].Should().Contain(expectedValue);
             }
         }
     }
@@ -307,7 +283,8 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
             { "access_token", new(@"\{access_token\}") },
         };
 
-        string replacedBody = body.Replace("{scenarioRunId}", scenarioContext["ScenarioRunId"].ToString());
+        string replacedBody = ReplaceIds(body)
+            .Replace("{scenarioRunId}", scenarioContext["ScenarioRunId"].ToString());
         foreach (var replacement in replacements)
         {
             if (replacedBody.TrimStart().StartsWith('['))
@@ -351,10 +328,17 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         return replacedBody;
     }
 
-    private string ReplacePlaceholdersInRequest(string body)
+    private string ReplaceIds(string str)
     {
-        return body.Replace("{id}", _id)
-            .Replace("{vendorId}", _vendorId)
-            .Replace("{scenarioRunId}", scenarioContext["ScenarioRunId"].ToString());
+        foreach (var key in _ids.Keys)
+        {
+            // Replace both formats {resourceId} and _resourceId
+            str = str.Replace($"{{{key}}}", _ids[key]).Replace($"_{key}", _ids[key]);
+        }
+
+        str = str.Replace("{scenarioRunId}", scenarioContext["ScenarioRunId"].ToString())
+            .Replace("_scenarioRunId", scenarioContext["ScenarioRunId"].ToString());
+
+        return str;
     }
 }
