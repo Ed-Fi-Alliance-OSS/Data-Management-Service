@@ -3,7 +3,7 @@ Feature: Applications endpoints
         Background:
             Given valid credentials
               And token received
-              And vendor created
+              And a POST request is made to "/v2/vendors" with
                   """
                     {
                         "company": "Test Vendor 0",
@@ -95,14 +95,14 @@ Feature: Applications endpoints
               And the response headers include
                   """
                     {
-                        "location": "/v2/applications/{id}"
+                        "location": "/v2/applications/{applicationId}"
                     }
                   """
               And the response body has key and secret
               And the record can be retrieved with a GET request
                   """
                   {
-                    "id": {id},
+                    "id": {applicationId},
                     "applicationName": "Demo application",
                     "vendorId": {vendorId},
                     "claimSetName": "Claim 06",
@@ -123,11 +123,11 @@ Feature: Applications endpoints
               And the response headers include
                   """
                     {
-                        "location": "/v2/applications/{id}"
+                        "location": "/v2/applications/{applicationId}"
                     }
                   """
               And the response body has key and secret
-             When a PUT request is made to "/v2/applications/{id}/reset-credential" with
+             When a PUT request is made to "/v2/applications/{applicationId}/reset-credential" with
                   """
                   {}
                   """
@@ -144,10 +144,10 @@ Feature: Applications endpoints
                   }
                   """
              Then it should respond with 201
-             When a PUT request is made to "/v2/applications/{id}" with
+             When a PUT request is made to "/v2/applications/{applicationId}" with
                   """
                       {
-                      "id": {id},
+                      "id": {applicationId},
                       "vendorId": {vendorId},
                       "applicationName": "Demo application Update",
                       "claimSetName": "Claim Scenario 03 Update"
@@ -165,7 +165,7 @@ Feature: Applications endpoints
                   }
                   """
              Then it should respond with 201
-             When a DELETE request is made to "/v2/applications/{id}"
+             When a DELETE request is made to "/v2/applications/{applicationId}"
              Then it should respond with 204
 
         Scenario: 06 Verify error handling when trying to get an item that has already been deleted
@@ -178,9 +178,9 @@ Feature: Applications endpoints
                   }
                   """
              Then it should respond with 201
-             When a DELETE request is made to "/v2/applications/{id}"
+             When a DELETE request is made to "/v2/applications/{applicationId}"
              Then it should respond with 204
-             When a GET request is made to "/v2/applications/{id}"
+             When a GET request is made to "/v2/applications/{applicationId}"
              Then it should respond with 404
 
         Scenario: 07 Verify error handling when trying to update an item that has already been deleted
@@ -193,12 +193,12 @@ Feature: Applications endpoints
                   }
                   """
              Then it should respond with 201
-             When a DELETE request is made to "/v2/applications/{id}"
+             When a DELETE request is made to "/v2/applications/{applicationId}"
              Then it should respond with 204
-             When a PUT request is made to "/v2/applications/{id}" with
+             When a PUT request is made to "/v2/applications/{applicationId}" with
                   """
                   {
-                      "id": {id},
+                      "id": {applicationId},
                       "vendorId": {vendorId},
                       "applicationName": "Delete application update",
                       "claimSetName": "Claim Scenario 07"
@@ -216,9 +216,9 @@ Feature: Applications endpoints
                   }
                   """
              Then it should respond with 201
-             When a DELETE request is made to "/v2/applications/{id}"
+             When a DELETE request is made to "/v2/applications/{applicationId}"
              Then it should respond with 204
-             When a DELETE request is made to "/v2/applications/{id}"
+             When a DELETE request is made to "/v2/applications/{applicationId}"
              Then it should respond with 404
 
         Scenario: 09 Verify error handling when trying to get an application using a invalid id

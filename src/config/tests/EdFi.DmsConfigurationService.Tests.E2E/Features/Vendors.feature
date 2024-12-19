@@ -46,7 +46,7 @@ Feature: Vendors endpoints
               And the response headers include
                   """
                     {
-                        "location": "/v2/vendors/{id}"
+                        "location": "/v2/vendors/{vendorId}"
                     }
                   """
               And the record can be retrieved with a GET request
@@ -71,7 +71,7 @@ Feature: Vendors endpoints
                     }
                   """
              Then it should respond with 201
-             When a GET request is made to "/v2/vendors/{id}"
+             When a GET request is made to "/v2/vendors/{vendorId}"
              Then it should respond with 200
               And the response body is
                   """
@@ -95,10 +95,10 @@ Feature: Vendors endpoints
                     }
                   """
              Then it should respond with 201
-             When a PUT request is made to "/v2/vendors/{id}" with
+             When a PUT request is made to "/v2/vendors/{vendorId}" with
                   """
                   {
-                      "id": {id},
+                      "id": {vendorId},
                       "company": "Test 18 updated",
                       "contactName": "Test",
                       "contactEmailAddress": "test@gmail.com",
@@ -128,7 +128,7 @@ Feature: Vendors endpoints
                     }
                   """
              Then it should respond with 201
-             When a DELETE request is made to "/v2/vendors/{id}"
+             When a DELETE request is made to "/v2/vendors/{vendorId}"
              Then it should respond with 204
 
         Scenario: 06 Verify error handling when trying to get an item that has already been deleted
@@ -142,9 +142,9 @@ Feature: Vendors endpoints
                     }
                   """
              Then it should respond with 201
-             When a DELETE request is made to "/v2/vendors/{id}"
+             When a DELETE request is made to "/v2/vendors/{vendorId}"
              Then it should respond with 204
-             When a GET request is made to "/v2/vendors/{id}"
+             When a GET request is made to "/v2/vendors/{vendorId}"
              Then it should respond with 404
 
         Scenario: 07 Verify error handling when trying to update an item that has already been deleted
@@ -158,12 +158,12 @@ Feature: Vendors endpoints
                     }
                   """
              Then it should respond with 201
-             When a DELETE request is made to "/v2/vendors/{id}"
+             When a DELETE request is made to "/v2/vendors/{vendorId}"
              Then it should respond with 204
-             When a PUT request is made to "/v2/vendors/{id}" with
+             When a PUT request is made to "/v2/vendors/{vendorId}" with
                   """
                   {
-                      "id": {id},
+                      "id": {vendorId},
                       "company": "Test 21 updated",
                       "contactName": "Test",
                       "contactEmailAddress": "test@gmail.com",
@@ -183,9 +183,9 @@ Feature: Vendors endpoints
                     }
                   """
              Then it should respond with 201
-             When a DELETE request is made to "/v2/vendors/{id}"
+             When a DELETE request is made to "/v2/vendors/{vendorId}"
              Then it should respond with 204
-             When a DELETE request is made to "/v2/vendors/{id}"
+             When a DELETE request is made to "/v2/vendors/{vendorId}"
              Then it should respond with 404
 
         Scenario: 09 Verify error handling when trying to get a vendor using a invalid id
@@ -303,7 +303,7 @@ Feature: Vendors endpoints
                   """
 
         Scenario: 16 Verify vendor applications endpoint
-            Given vendor created
+            Given a POST request is made to "/v2/vendors" with
                   """
                     {
                         "company": "Scenario 16",
