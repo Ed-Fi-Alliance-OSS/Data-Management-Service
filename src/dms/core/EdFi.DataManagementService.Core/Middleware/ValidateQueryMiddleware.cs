@@ -15,7 +15,7 @@ using static EdFi.DataManagementService.Core.Response.FailureResponse;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
-internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
+internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : IPipelineStep
 {
     private static readonly string[] _disallowedQueryFields = ["limit", "offset", "totalCount"];
 
@@ -23,7 +23,7 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
     /// Finds and sets PaginationParameters on the context by parsing the client request.
     /// Returns any errors found for those parameters.
     /// </summary>
-    private static List<string> SetPaginationParametersOn(PipelineContext context)
+    private static List<string> SetPaginationParametersOn(PipelineContext context, int maxPageSize)
     {
         int? offset = null;
         int? limit = null;
@@ -52,9 +52,10 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
             if (
                 !int.TryParse(context.FrontendRequest.QueryParameters["limit"], out int limitVal)
                 || limitVal < 0
+                || limitVal > maxPageSize
             )
             {
-                errors.Add("Limit must be a numeric value greater than or equal to 0.");
+                errors.Add($"Limit must be omitted or set to a numeric value between 0 and {maxPageSize}.");
             }
             else
             {
@@ -107,16 +108,19 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
             return null;
         }
 
-        if (matchingQueryField.DocumentPathsWithType[0].Type == "date-time" && DateOnly.TryParse(
+        if (
+            matchingQueryField.DocumentPathsWithType[0].Type == "date-time"
+            && DateOnly.TryParse(
                 clientQueryTerm.Value,
                 CultureInfo.InvariantCulture,
                 DateTimeStyles.None,
                 out DateOnly dateValue
-            ))
+            )
+        )
         {
             string fullDateTimeString = dateValue
-                    .ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)
-                    .ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
+                .ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)
+                .ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
 
             return new QueryElementAndType(
                 QueryFieldName: clientQueryTerm.Key,
@@ -139,7 +143,7 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
             context.FrontendRequest.TraceId.Value
         );
 
-        List<string> errors = SetPaginationParametersOn(context);
+        List<string> errors = SetPaginationParametersOn(context, _maximumPageSize);
 
         if (errors.Count > 0)
         {
@@ -203,8 +207,8 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
                     if (
                         DateTime.TryParse(
                             queryFieldValue,
-                            System.Globalization.CultureInfo.InvariantCulture,
-                            System.Globalization.DateTimeStyles.None,
+                            CultureInfo.InvariantCulture,
+                            DateTimeStyles.None,
                             out var dateTime
                         )
                     )
@@ -221,8 +225,8 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
                     if (
                         !DateTime.TryParse(
                             queryFieldValue,
-                            System.Globalization.CultureInfo.InvariantCulture,
-                            System.Globalization.DateTimeStyles.None,
+                            CultureInfo.InvariantCulture,
+                            DateTimeStyles.None,
                             out _
                         )
                     )
@@ -250,8 +254,8 @@ internal class ValidateQueryMiddleware(ILogger _logger) : IPipelineStep
                         !DateTime.TryParseExact(
                             queryFieldValue,
                             "HH:mm:ss",
-                            System.Globalization.CultureInfo.InvariantCulture,
-                            System.Globalization.DateTimeStyles.None,
+                            CultureInfo.InvariantCulture,
+                            DateTimeStyles.None,
                             out _
                         )
                     )
