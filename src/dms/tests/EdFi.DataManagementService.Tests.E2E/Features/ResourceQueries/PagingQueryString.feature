@@ -135,3 +135,25 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                   | '5; select * from users' |
                   | '0)'                     |
                   | '1%27'                   |
+
+    Scenario Outline: 13 Ensure clients can not GET information when filtering by out of tange limit values
+             When a GET request is made to "/ed-fi/schools?offset=0&limit=<value>"
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                        "detail": "The request could not be processed. See 'errors' for details.",
+                        "type": "urn:ed-fi:api:bad-request",
+                        "title": "Bad Request",
+                        "status": 400,
+                        "correlationId": null,
+                        "validationErrors": {},
+                        "errors": [
+                            "Limit must be omitted or set to a numeric value between 0 and 500."
+                        ]
+                    }
+                  """
+         Examples:
+                  | value                    |
+                  | -1                       |
+                  | 900                      |
