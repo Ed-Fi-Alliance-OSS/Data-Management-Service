@@ -1,4 +1,4 @@
-Feature: Registration endpoints
+Feature: Connect endpoints
 
         Scenario: 00 Verify register new client
              When a Form URL Encoded POST request is made to "/connect/register" with
