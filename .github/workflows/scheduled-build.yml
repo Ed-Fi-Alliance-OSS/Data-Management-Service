@@ -49,6 +49,10 @@ jobs:
         id: unit_test_step
         run: ./build-dms.ps1 UnitTest -Configuration Debug
 
+      - name: Run OpenSearch End to End Tests
+        if: success()
+        run: ./build-dms.ps1 E2ETest -EnableOpenSearch
+
       - name: Notify Slack on success
         if: success()
         uses: slackapi/slack-github-action@70cd7be8e40a46e8b0eced40b0de447bdb42f68e #v1.26.0
