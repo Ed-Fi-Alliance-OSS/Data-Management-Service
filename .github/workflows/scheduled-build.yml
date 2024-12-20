@@ -49,13 +49,13 @@ jobs:
         id: unit_test_step
         run: ./build-dms.ps1 UnitTest -Configuration Debug
 
-      - name: Run OpenSearch End to End Tests
-        if: success()
-        run: ./build-dms.ps1 E2ETest -EnableOpenSearch
-
       - name: Run ElasticSearch End to End Tests
         if: success()
         run: ./build-dms.ps1 E2ETest -EnableElasticSearch
+
+      - name: Run OpenSearch End to End Tests
+        if: success()
+        run: ./build-dms.ps1 E2ETest -EnableOpenSearch
 
       - name: Notify Slack on success
         if: success()
