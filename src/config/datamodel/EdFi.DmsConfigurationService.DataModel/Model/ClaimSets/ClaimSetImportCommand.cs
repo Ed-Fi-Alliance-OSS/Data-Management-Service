@@ -14,91 +14,44 @@ public class ClaimSetImportCommand
 
     public class Validator : AbstractValidator<ClaimSetImportCommand>
     {
-        public Validator()
-        {
-            RuleFor(c => c.Name).NotEmpty().MaximumLength(256);
+        private readonly List<string> _dbActions;
+        private readonly List<string> _dbAuthStrategies;
+        private readonly ResourceClaimValidator _resourceClaimValidator;
 
-            RuleFor(c => c.ResourceClaims)
+        public Validator(List<string> dbActions, List<string> dbAuthStrategies)
+        {
+            _dbActions = dbActions;
+            _dbAuthStrategies = dbAuthStrategies;
+            _resourceClaimValidator = new ResourceClaimValidator();
+
+            RuleFor(c => c.Name)
                 .NotEmpty()
-                .WithMessage("At least one ResourceClaim is required.")
-                .Must(BeUniqueNames)
-                .WithMessage("ResourceClaim names must be unique.")
-                .ForEach(resourceClaimRule =>
-                {
-                    resourceClaimRule.SetValidator(new ResourceClaimValidate());
-                });
+                .WithMessage("ClaimSet Name is required.")
+                .MaximumLength(256)
+                .WithMessage("ClaimSet Name cannot exceed 256 characters.");
+
+            RuleForEach(c => c.ResourceClaims)
+                .Custom(
+                    (resourceClaim, context) =>
+                    {
+                        var parentContext = context;
+                        var instance = parentContext.InstanceToValidate;
+
+                        if (instance == null)
+                        {
+                            return;
+                        }
+
+                        _resourceClaimValidator.Validate(
+                            _dbActions,
+                            _dbAuthStrategies,
+                            resourceClaim,
+                            instance.ResourceClaims,
+                            parentContext,
+                            instance.Name
+                        );
+                    }
+                );
         }
-
-        private static bool BeUniqueNames(List<ResourceClaim>? resourceClaims)
-        {
-            if (resourceClaims == null || !resourceClaims.Any())
-            {
-                return true;
-            }
-
-            return resourceClaims.Select(rc => rc.Name).Distinct().Count() == resourceClaims.Count;
-        }
-    }
-}
-
-public class ResourceClaimValidate : AbstractValidator<ResourceClaim>
-{
-    public ResourceClaimValidate()
-    {
-        RuleFor(rc => rc.Name).NotEmpty().MaximumLength(256);
-
-        RuleFor(rc => rc.ParentName).MaximumLength(256);
-
-        RuleFor(rc => rc.Actions)
-            .NotEmpty()
-            .WithMessage("Actions are required.")
-            .ForEach(actionRule =>
-            {
-                actionRule.SetValidator(new ResourceClaimActionValidator());
-            });
-
-        RuleFor(rc => rc.Children)
-            .Must(children => BeValidChildren(children))
-            .WithMessage("Invalid or circular reference in Children.");
-    }
-
-    private static bool BeValidChildren(
-        IEnumerable<ResourceClaim>? children,
-        HashSet<string>? visitedNames = null
-    )
-    {
-        visitedNames ??= new HashSet<string>();
-
-        if (children == null)
-        {
-            return true;
-        }
-
-        foreach (var child in children)
-        {
-            if (!visitedNames.Add(child.Name!))
-            {
-                return false;
-            }
-
-            if (!BeValidChildren(child.Children, visitedNames))
-            {
-                return false;
-            }
-
-            visitedNames.Remove(child.Name!);
-        }
-
-        return true;
-    }
-}
-
-public class ResourceClaimActionValidator : AbstractValidator<ResourceClaimAction>
-{
-    public ResourceClaimActionValidator()
-    {
-        RuleFor(action => action.Name).NotEmpty().MaximumLength(128);
-
-        RuleFor(action => action.Enabled).NotNull();
     }
 }

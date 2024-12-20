@@ -12,7 +12,6 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.AspNetCore.Mvc;
-using Action = EdFi.DmsConfigurationService.DataModel.Model.Action.Action;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -198,37 +197,18 @@ public class ClaimSetModule : IEndpointModule
 
     private static async Task<IResult> Import(
         ClaimSetImportCommand entity,
-        ClaimSetImportCommand.Validator validator,
         HttpContext httpContext,
         IClaimSetRepository repository
     )
     {
+        List<string> actions = repository.GetActions().Select(a => a.Name).ToList();
+        List<string> authStrategies = repository
+            .GetAuthorizationStrategies()
+            .Select(a => a.AuthStrategyName)
+            .ToList();
+
+        var validator = new ClaimSetImportCommand.Validator(actions, authStrategies);
         await validator.GuardAsync(entity);
-
-        foreach (var resourceClaim in entity.ResourceClaims)
-        {
-            bool validActions = ValidActions(repository, (IEnumerable<Action>?)resourceClaim.Actions);
-            if (validActions)
-            {
-                throw new ValidationException(
-                    new[] { new ValidationFailure("Actions", "Action Name must be unique.") }
-                );
-            }
-
-            foreach (var strategies in resourceClaim.DefaultAuthorizationStrategiesForCRUD)
-            {
-                if (strategies != null)
-                {
-                    bool validStrategies = ValidStrategy(repository, strategies.AuthorizationStrategies);
-                    if (validStrategies)
-                    {
-                        throw new ValidationException(
-                            new[] { new ValidationFailure("AuthStrategyName", "AuthStrategyName must be unique.") }
-                        );
-                    }
-                }
-            }
-        }
 
         var insertResult = await repository.Import(entity);
 
@@ -243,30 +223,4 @@ public class ClaimSetModule : IEndpointModule
         };
     }
 
-    private static bool ValidActions(IClaimSetRepository repository, IEnumerable<Action>? actions)
-    {
-        if (actions == null || !actions.Any())
-        {
-            return true;
-        }
-        var validActionNames = repository.GetActions().Select(a => a.Name).ToHashSet();
-        return actions.All(a => validActionNames.Contains(a.Name));
-    }
-
-    private static bool ValidStrategy(
-        IClaimSetRepository repository,
-        IEnumerable<AuthorizationStrategy>? strategies
-    )
-    {
-        if (strategies == null || !strategies.Any())
-        {
-            return true;
-        }
-
-        var validStrategyNames = repository
-            .GetAuthorizationStrategies()
-            .Select(s => s.AuthStrategyName)
-            .ToHashSet();
-        return strategies.All(s => validStrategyNames.Contains(s.AuthStrategyName));
-    }
 }

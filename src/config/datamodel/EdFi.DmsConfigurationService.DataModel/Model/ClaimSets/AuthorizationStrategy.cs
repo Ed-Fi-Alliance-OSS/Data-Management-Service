@@ -9,7 +9,7 @@ public class AuthorizationStrategy
 {
     public int AuthStrategyId { get; set; }
 
-    public string? AuthStrategyName { get; set; }
+    public required string AuthStrategyName { get; set; }
 
     public string? DisplayName { get; set; }
 
