@@ -25,5 +25,10 @@ namespace EdFi.DataManagementService.Core.Configuration
         /// instead of the published package.
         /// </summary>
         public bool UseLocalApiSchemaJson { get; set; }
+
+        /// <summary>
+        /// Indicates the maximum number of items that should be returned in the results
+        /// </summary>
+        public int MaximumPageSize { get; set; }
     }
 }
