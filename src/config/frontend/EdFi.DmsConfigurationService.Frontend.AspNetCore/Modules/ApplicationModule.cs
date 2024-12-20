@@ -54,7 +54,8 @@ public class ApplicationModule : IEndpointModule
             clientId,
             clientSecret,
             identitySettings.Value.ClientRole,
-            command.ApplicationName
+            command.ApplicationName,
+            command.ClaimSetName
         );
 
         switch (clientCreateResult)
