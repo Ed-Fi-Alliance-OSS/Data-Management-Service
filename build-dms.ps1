@@ -252,6 +252,7 @@ function E2ETests {
         Invoke-Execute {
             try {
                 Push-Location eng/docker-compose/
+                ./start-local-dms.ps1 -d -v
                 ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e"
             }
             finally {
@@ -263,6 +264,7 @@ function E2ETests {
         Invoke-Execute {
             try {
                 Push-Location eng/docker-compose/
+                ./start-local-dms.ps1 -d -v
                 ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "ElasticSearch"
             }
             finally {
