@@ -197,12 +197,14 @@ public class ClaimSetModule : IEndpointModule
 
     private static async Task<IResult> Import(
         ClaimSetImportCommand entity,
-        ClaimSetImportCommand.Validator validator,
         HttpContext httpContext,
-        IClaimSetRepository repository
+        IClaimSetRepository repository,
+        IClaimSetDataProvider provider
     )
     {
+        var validator = new ClaimSetImportCommand.Validator(provider);
         await validator.GuardAsync(entity);
+
         var insertResult = await repository.Import(entity);
 
         var request = httpContext.Request;

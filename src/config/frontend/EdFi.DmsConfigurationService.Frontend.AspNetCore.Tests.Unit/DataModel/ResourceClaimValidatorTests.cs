@@ -266,7 +266,7 @@ public class ResourceClaimValidatorTests
                 .Errors[0]
                 .ErrorMessage.Should()
                 .Contain(
-                    "This resource claim contains an authorization strategy which is not in the system. Claimset Name: 'TestClaimset' Resource name: 'resourceClaim1' Authorization strategy: 'InvalidAuthStrategy'."
+                    "This resource claim contains an authorization strategy which is not in the system. ClaimSet Name: 'TestClaimset' Resource name: 'resourceClaim1' Authorization strategy: 'InvalidAuthStrategy'."
                 );
         }
 
@@ -503,7 +503,7 @@ public class ResourceClaimValidatorTests
                 .Errors[0]
                 .ErrorMessage.Should()
                 .Contain(
-                    "This resource claim contains an authorization strategy which is not in the system. Claimset Name: 'TestClaimset' Resource name: 'childResourceClaim1' Authorization strategy: 'InvalidAuthStrategy'."
+                    "This resource claim contains an authorization strategy which is not in the system. ClaimSet Name: 'TestClaimset' Resource name: 'childResourceClaim1' Authorization strategy: 'InvalidAuthStrategy'."
                 );
         }
     }

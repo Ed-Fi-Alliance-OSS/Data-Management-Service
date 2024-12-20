@@ -5,11 +5,13 @@
 
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
+using Action = EdFi.DmsConfigurationService.DataModel.Model.Action.Action;
 
 namespace EdFi.DmsConfigurationService.Backend.Repositories;
 
 public interface IClaimSetRepository
 {
+    IEnumerable<Action> GetActions();
     IEnumerable<AuthorizationStrategy> GetAuthorizationStrategies();
     Task<ClaimSetInsertResult> InsertClaimSet(ClaimSetInsertCommand command);
     Task<ClaimSetQueryResult> QueryClaimSet(PagingQuery query, bool verbose);

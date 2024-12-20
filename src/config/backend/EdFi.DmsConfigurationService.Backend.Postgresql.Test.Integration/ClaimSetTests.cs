@@ -199,12 +199,29 @@ public class ClaimSetTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            string resourceClaimsJson = """
+            var resourceClaims = new List<ResourceClaim>
+            {
+                new()
                 {
-                    "Resource": "Value"
+                    Name = "resourceClaim1",
+                    Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
+                    DefaultAuthorizationStrategiesForCRUD =
+                    [
+                        new()
+                        {
+                            AuthorizationStrategies = new List<AuthorizationStrategy>
+                            {
+                                new()
+                                {
+                                    AuthStrategyId = 1,
+                                    AuthStrategyName = "AuthStrategy1",
+                                    DisplayName = "AuthStrategy1",
+                                },
+                            },
+                        },
+                    ],
                 }
-                """;
-            JsonElement resourceClaims = JsonDocument.Parse(resourceClaimsJson).RootElement;
+            };
 
             ClaimSetImportCommand claimSet = new()
             {

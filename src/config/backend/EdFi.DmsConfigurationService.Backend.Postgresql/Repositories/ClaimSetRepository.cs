@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Model;
@@ -11,12 +12,46 @@ using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using Action = EdFi.DmsConfigurationService.DataModel.Model.Action.Action;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 
 public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogger<ClaimSetRepository> logger)
     : IClaimSetRepository
 {
+    public IEnumerable<Action> GetActions()
+    {
+        var actions = new Action[]
+        {
+            new()
+            {
+                Id = 1,
+                Name = "Create",
+                Uri = "uri://ed-fi.org/api/actions/create",
+            },
+            new()
+            {
+                Id = 2,
+                Name = "Read",
+                Uri = "uri://ed-fi.org/api/actions/read",
+            },
+            new()
+            {
+                Id = 3,
+                Name = "Update",
+                Uri = "uri://ed-fi.org/api/actions/update",
+            },
+            new()
+            {
+                Id = 4,
+                Name = "Delete",
+                Uri = "uri://ed-fi.org/api/actions/delete",
+            },
+        };
+
+        return actions;
+    }
+
     public IEnumerable<AuthorizationStrategy> GetAuthorizationStrategies()
     {
         var authStrategies = new AuthorizationStrategy[]
@@ -353,11 +388,20 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                    RETURNING Id;
                 """;
 
+            string resourceClaimsJson = JsonSerializer.Serialize(
+                command.ResourceClaims,
+                new JsonSerializerOptions
+                {
+                    WriteIndented = false,
+                    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+                }
+            );
+
             var parameters = new
             {
                 ClaimSetName = command.Name,
                 IsSystemReserved = false,
-                ResourceClaims = command.ResourceClaims.ToString(),
+                ResourceClaims = resourceClaimsJson,
             };
 
             long id = await connection.ExecuteScalarAsync<long>(sql, parameters);
