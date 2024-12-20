@@ -57,7 +57,8 @@ public class IdentityModule : IEndpointModule
                             model.ClientId!,
                             model.ClientSecret!,
                             identitySettings.Value.ConfigServiceRole,
-                            model.DisplayName!
+                            model.DisplayName!,
+                            identitySettings.Value.Scope
                         );
                         return result switch
                         {

@@ -11,7 +11,8 @@ public interface IClientRepository
         string clientId,
         string clientSecret,
         string role,
-        string displayName
+        string displayName,
+        string scope
     );
 
     public Task<ClientClientsResult> GetAllClientsAsync();
