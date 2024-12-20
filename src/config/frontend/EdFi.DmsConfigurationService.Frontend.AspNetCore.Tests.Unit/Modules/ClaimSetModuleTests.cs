@@ -20,6 +20,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
+using Action = EdFi.DmsConfigurationService.DataModel.Model.Action.Action;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 
@@ -27,6 +28,7 @@ public class ClaimSetModuleTests
 {
     private readonly IClaimSetRepository _claimSetRepository = A.Fake<IClaimSetRepository>();
     private readonly HttpContext _httpContext = A.Fake<HttpContext>();
+    private readonly IClaimSetDataProvider _dataProvider = A.Fake<IClaimSetDataProvider>();
 
     private HttpClient SetUpClient()
     {
@@ -49,7 +51,10 @@ public class ClaimSetModuleTests
                             policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
                         )
                     );
-                    collection.AddTransient((_) => _httpContext).AddTransient((_) => _claimSetRepository);
+                    collection
+                        .AddTransient((_) => _httpContext)
+                        .AddTransient((_) => _claimSetRepository)
+                        .AddTransient((_) => _dataProvider);
                 }
             );
         });
@@ -125,6 +130,9 @@ public class ClaimSetModuleTests
 
             A.CallTo(() => _claimSetRepository.Import(A<ClaimSetImportCommand>.Ignored))
                 .Returns(new ClaimSetImportResult.Success(2));
+
+            A.CallTo(() => _dataProvider.GetActions())
+                .Returns(["Create", "Read", "Update", "Delete"]);
         }
 
         [Test]
@@ -140,8 +148,7 @@ public class ClaimSetModuleTests
                 new StringContent(
                     """
                     {
-                        "name":"Testing POST for ClaimSet",
-                        "resourceClaims": {"resource":"Value"}
+                        "name":"Testing POST for ClaimSet"
                     }
                     """,
                     Encoding.UTF8,
@@ -158,7 +165,6 @@ public class ClaimSetModuleTests
                     {
                         "id": 1,
                         "name": "Test 11",
-                        "isSystemReserved" : true,
                         "resourceClaims": {"resource":"Value"}
                     }
                     """,
@@ -187,8 +193,17 @@ public class ClaimSetModuleTests
                     """
                     {
                         "name" : "Testing Import for ClaimSet",
-                        "isSystemReserved": true,
-                        "resourceClaims" : {"resource":"Value"}
+                        "resourceClaims" : [
+                            {
+                                "name": "Test ResourceClaim",
+                                "actions": [
+                                  {
+                                    "name": "Create",
+                                    "enabled": true
+                                  }
+                                ]
+                            }
+                        ]
                     }
                     """,
                     Encoding.UTF8,
@@ -218,6 +233,9 @@ public class ClaimSetModuleTests
             //Arrange
             using var client = SetUpClient();
 
+            A.CallTo(() => _dataProvider.GetActions())
+                .Returns(["Create", "Read", "Update", "Delete"]);
+
             string invalidInsertBody = """
                 {
                    "name" : "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
@@ -233,7 +251,17 @@ public class ClaimSetModuleTests
             string invalidImportBody = """
                 {
                     "name" : "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
-                    "resourceClaims" : []
+                    "resourceClaims" : [
+                    {
+                        "name": "Test ResourceClaim",
+                        "actions": [
+                          {
+                            "name": "Create",
+                            "enabled": true
+                          }
+                        ]
+                    }
+                ]
                 }
                 """;
 
@@ -315,9 +343,8 @@ public class ClaimSetModuleTests
                   "correlationId": "{correlationId}",
                   "validationErrors": {
                     "Name": [
-                      "The length of 'Name' must be 256 characters or fewer. You entered 300 characters."
-                    ],
-                    "ResourceClaims":["ResourceClaims must be a valid JSON object with at least one property."]
+                      "ClaimSet Name cannot exceed 256 characters."
+                    ]
                   },
                   "errors": []
                 }
@@ -484,6 +511,9 @@ public class ClaimSetModuleTests
 
             A.CallTo(() => _claimSetRepository.Import(A<ClaimSetImportCommand>.Ignored))
                 .Returns(new ClaimSetImportResult.FailureUnknown(""));
+
+            A.CallTo(() => _dataProvider.GetActions())
+                .Returns(["Create", "Read", "Update", "Delete"]);
         }
 
         [Test]
@@ -498,8 +528,7 @@ public class ClaimSetModuleTests
                 new StringContent(
                     """
                     {
-                        "name":"Testing POST for ClaimSet",
-                        "resourceClaims": {"resource":"Value"}
+                        "name":"Testing POST for ClaimSet"
                     }
                     """,
                     Encoding.UTF8,
@@ -544,7 +573,17 @@ public class ClaimSetModuleTests
                     """
                     {
                         "name" : "Testing Import for ClaimSet",
-                        "resourceClaims" : {"resource":"Value"}
+                        "resourceClaims" : [
+                        {
+                            "name": "Test ResourceClaim",
+                            "actions": [
+                              {
+                                "name": "Create",
+                                "enabled": true
+                              }
+                            ]
+                        }
+                    ]
                     }
                     """,
                     Encoding.UTF8,

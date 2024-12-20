@@ -20,8 +20,8 @@ public class ClaimSetImportCommand
             var resourceClaimValidator = new ResourceClaimValidator();
             IClaimSetDataProvider dataProvider = claimSetDataProvider;
 
-            var dbActions = dataProvider.GetActions();
-            var dbAuthStrategies = dataProvider.GetAuthorizationStrategies();
+            List<string> dbActions = dataProvider.GetActions();
+            List<string> dbAuthStrategies = dataProvider.GetAuthorizationStrategies();
 
             RuleFor(c => c.Name)
                 .NotEmpty()

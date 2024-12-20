@@ -7,8 +7,6 @@ using System.Net;
 using System.Security.Claims;
 using System.Text.Json;
 using EdFi.DmsConfigurationService.DataModel;
-using EdFi.DmsConfigurationService.DataModel.Model.Action;
-using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
@@ -89,8 +87,8 @@ public class RegisterActionEndpointTests
 
             // Act
             _response = await client.GetAsync("/actions");
-            var responseString = await _response.Content.ReadAsStringAsync();
-            var content = JsonSerializer.Deserialize<Action[]>(responseString);
+            string responseString = await _response.Content.ReadAsStringAsync();
+            var content = JsonSerializer.Deserialize<List<Action>>(responseString);
 
             // Assert
             _response!.StatusCode.Should().Be(HttpStatusCode.OK);
