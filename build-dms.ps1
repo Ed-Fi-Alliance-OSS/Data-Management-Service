@@ -82,7 +82,11 @@ param(
 
     # Only required with E2E testing.
     [switch]
-    $EnableOpenSearch
+    $EnableOpenSearch,
+
+    # Only required with E2E testing.
+    [switch]
+    $EnableElasticSearch
 )
 
 $solutionRoot = "$PSScriptRoot/src/dms"
@@ -163,7 +167,7 @@ function SetQueryHandler {
 
     $appSettingsPath = Join-Path -Path $E2EDirectory -ChildPath "appsettings.json"
     $json = Get-Content $appSettingsPath -Raw | ConvertFrom-Json
-    if ($EnableOpenSearch) {
+    if ($EnableOpenSearch -or $EnableElasticSearch) {
         $json.QueryHandler = "opensearch"
     }
     else {
@@ -255,6 +259,17 @@ function E2ETests {
             }
         }
     }
+    elseif ($EnableElasticSearch) {
+        Invoke-Execute {
+            try {
+                Push-Location eng/docker-compose/
+                ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "ElasticSearch"
+            }
+            finally {
+                Pop-Location
+            }
+        }
+    }
     else {
         Invoke-Step { DockerRun }
     }
@@ -327,13 +342,16 @@ function Invoke-TestExecution {
         $Filter,
 
         [switch]
-        $EnableOpenSearch
+        $EnableOpenSearch,
+
+        [switch]
+        $EnableElasticSearch
     )
     switch ($Filter) {
-        E2ETests { Invoke-Step { E2ETests -EnableOpenSearch:$EnableOpenSearch } }
+        E2ETests { Invoke-Step { E2ETests -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch } }
         UnitTests { Invoke-Step { UnitTests } }
         IntegrationTests { Invoke-Step { IntegrationTests } }
-        Default { "Unknow Test Type" }
+        Default { "Unknown Test Type" }
     }
 }
 
@@ -411,7 +429,7 @@ Invoke-Main {
             Invoke-Publish
         }
         UnitTest { Invoke-TestExecution UnitTests }
-        E2ETest { Invoke-TestExecution E2ETests -EnableOpenSearch:$EnableOpenSearch }
+        E2ETest { Invoke-TestExecution E2ETests -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch }
         IntegrationTest { Invoke-TestExecution IntegrationTests }
         Coverage { Invoke-Coverage }
         Package { Invoke-BuildPackage }
