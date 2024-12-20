@@ -14,15 +14,14 @@ public class ClaimSetImportCommand
 
     public class Validator : AbstractValidator<ClaimSetImportCommand>
     {
-        private readonly List<string> _dbActions;
-        private readonly List<string> _dbAuthStrategies;
-        private readonly ResourceClaimValidator _resourceClaimValidator;
-
-        public Validator(List<string> dbActions, List<string> dbAuthStrategies)
+        // IClaimSetDataProvider grants access to the repository to obtain actions and AuthStrategies
+        public Validator(IClaimSetDataProvider claimSetDataProvider)
         {
-            _dbActions = dbActions;
-            _dbAuthStrategies = dbAuthStrategies;
-            _resourceClaimValidator = new ResourceClaimValidator();
+            var resourceClaimValidator = new ResourceClaimValidator();
+            IClaimSetDataProvider dataProvider = claimSetDataProvider;
+
+            var dbActions = dataProvider.GetActions();
+            var dbAuthStrategies = dataProvider.GetAuthorizationStrategies();
 
             RuleFor(c => c.Name)
                 .NotEmpty()
@@ -42,9 +41,9 @@ public class ClaimSetImportCommand
                             return;
                         }
 
-                        _resourceClaimValidator.Validate(
-                            _dbActions,
-                            _dbAuthStrategies,
+                        resourceClaimValidator.Validate(
+                            dbActions,
+                            dbAuthStrategies,
                             resourceClaim,
                             instance.ResourceClaims,
                             parentContext,

@@ -198,16 +198,11 @@ public class ClaimSetModule : IEndpointModule
     private static async Task<IResult> Import(
         ClaimSetImportCommand entity,
         HttpContext httpContext,
-        IClaimSetRepository repository
+        IClaimSetRepository repository,
+        IClaimSetDataProvider provider
     )
     {
-        List<string> actions = repository.GetActions().Select(a => a.Name).ToList();
-        List<string> authStrategies = repository
-            .GetAuthorizationStrategies()
-            .Select(a => a.AuthStrategyName)
-            .ToList();
-
-        var validator = new ClaimSetImportCommand.Validator(actions, authStrategies);
+        var validator = new ClaimSetImportCommand.Validator(provider);
         await validator.GuardAsync(entity);
 
         var insertResult = await repository.Import(entity);
@@ -222,5 +217,4 @@ public class ClaimSetModule : IEndpointModule
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
-
 }
