@@ -87,7 +87,7 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Demo application",
-                   "claimSetName": "Claim 06",
+                   "claimSetName": "Claim06",
                    "educationOrganizationIds": [1, 2, 3]
                   }
                   """
@@ -105,7 +105,7 @@ Feature: Applications endpoints
                     "id": {applicationId},
                     "applicationName": "Demo application",
                     "vendorId": {vendorId},
-                    "claimSetName": "Claim 06",
+                    "claimSetName": "Claim06",
                     "educationOrganizationIds": [1, 2, 3]
                   }
                   """
@@ -116,7 +116,7 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Test Scenario 02",
-                   "claimSetName": "Test Scenario 02"
+                   "claimSetName": "TestScenario02"
                   }
                   """
              Then it should respond with 201
@@ -140,7 +140,7 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Demo application",
-                   "claimSetName": "Claim Scenario 03"
+                   "claimSetName": "ClaimScenario03"
                   }
                   """
              Then it should respond with 201
@@ -150,7 +150,7 @@ Feature: Applications endpoints
                       "id": {applicationId},
                       "vendorId": {vendorId},
                       "applicationName": "Demo application Update",
-                      "claimSetName": "Claim Scenario 03 Update"
+                      "claimSetName": "ClaimScenario03Update"
                       }
                   """
              Then it should respond with 204
@@ -161,7 +161,7 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Delete application",
-                   "claimSetName": "Claim Scenario 05"
+                   "claimSetName": "ClaimScenario05"
                   }
                   """
              Then it should respond with 201
@@ -174,7 +174,7 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Delete application",
-                   "claimSetName": "Claim Scenario 06"
+                   "claimSetName": "ClaimScenario06"
                   }
                   """
              Then it should respond with 201
@@ -189,7 +189,7 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Delete application",
-                   "claimSetName": "Claim Scenario 07"
+                   "claimSetName": "ClaimScenario07"
                   }
                   """
              Then it should respond with 201
@@ -201,7 +201,7 @@ Feature: Applications endpoints
                       "id": {applicationId},
                       "vendorId": {vendorId},
                       "applicationName": "Delete application update",
-                      "claimSetName": "Claim Scenario 07"
+                      "claimSetName": "ClaimScenario07"
                   }
                   """
              Then it should respond with 404
@@ -212,7 +212,7 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Delete application",
-                   "claimSetName": "Claim Scenario 08"
+                   "claimSetName": "ClaimScenario08"
                   }
                   """
              Then it should respond with 201
@@ -235,7 +235,7 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Delete application",
-                   "claimSetName": "Claim Scenario 04"
+                   "claimSetName": "ClaimScenario04"
                   }
                   """
              Then it should respond with 400
@@ -246,7 +246,7 @@ Feature: Applications endpoints
                   {
                    "vendorId": 9999,
                    "applicationName": "Demo application",
-                   "claimSetName": "Claim 999",
+                   "claimSetName": "Claim999",
                    "educationOrganizationIds": [1, 2, 3]
                   }
                   """
@@ -274,7 +274,7 @@ Feature: Applications endpoints
                   {
                    "vendorId": 9999,
                    "applicationName": "",
-                   "claimSetName": "Claim 999",
+                   "claimSetName": "Claim999",
                    "educationOrganizationIds": [1, 2, 3]
                   }
                   """
@@ -330,7 +330,7 @@ Feature: Applications endpoints
                   {
                    "vendorId": 9999,
                    "applicationName": "Demo application",
-                   "claimSetName": "Claim 999",
+                   "claimSetName": "Claim999",
                    "educationOrganizationIds": [0]
                   }
                   """
