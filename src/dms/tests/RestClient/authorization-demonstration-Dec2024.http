@@ -75,7 +75,7 @@ Authorization: bearer {{configToken}}
 {
     "vendorId": {{vendorId}},
     "applicationName": "Demo application",
-    "claimSetName": "SIS Vendor"
+    "claimSetName": "SIS-Vendor"
 }
 
 ###
@@ -104,7 +104,7 @@ Authorization: bearer {{configToken}}
 {
     "vendorId": {{vendorId}},
     "applicationName": "Delete me",
-    "claimSetName": "Delete me"
+    "claimSetName": "Delete-me"
 }
 
 ###
