@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Model;
@@ -64,6 +63,15 @@ public class ClaimSetTests : DatabaseTest
 
             var reducedResponse = (ClaimSetResponseReduced)claimSetFromDb;
             reducedResponse.Name.Should().Be("Test ClaimSet");
+        }
+
+        [Test]
+        public async Task Should_get_duplicate_failure()
+        {
+            ClaimSetInsertCommand claimSetDup = new() { Name = "Test ClaimSet" };
+
+            var resultDup = await _repository.InsertClaimSet(claimSetDup);
+            resultDup.Should().BeOfType<ClaimSetInsertResult.FailureDuplicateClaimSetName>();
         }
     }
 
@@ -220,7 +228,7 @@ public class ClaimSetTests : DatabaseTest
                             },
                         },
                     ],
-                }
+                },
             };
 
             ClaimSetImportCommand claimSet = new()
@@ -256,6 +264,43 @@ public class ClaimSetTests : DatabaseTest
             var response = (ClaimSetResponse)claimSetFromDb;
             response.Name.Should().Be("Test Import ClaimSet");
             response.ResourceClaims.Should().NotBeNull();
+        }
+
+        [Test]
+        public async Task Should_get_duplicate_failure()
+        {
+            var resourceClaims = new List<ResourceClaim>
+            {
+                new()
+                {
+                    Name = "resourceClaim1",
+                    Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
+                    DefaultAuthorizationStrategiesForCRUD =
+                    [
+                        new()
+                        {
+                            AuthorizationStrategies = new List<AuthorizationStrategy>
+                            {
+                                new()
+                                {
+                                    AuthStrategyId = 1,
+                                    AuthStrategyName = "AuthStrategy1",
+                                    DisplayName = "AuthStrategy1",
+                                },
+                            },
+                        },
+                    ],
+                },
+            };
+
+            ClaimSetImportCommand claimSetDup = new()
+            {
+                Name = "Test Import ClaimSet",
+                ResourceClaims = resourceClaims,
+            };
+
+            var resultDup = await _repository.Import(claimSetDup);
+            resultDup.Should().BeOfType<ClaimSetImportResult.FailureDuplicateClaimSetName>();
         }
     }
 

@@ -16,6 +16,6 @@ public class ClaimSetUpdateCommand : IClaimSetCommand
     public class Validator(IClaimSetDataProvider claimSetDataProvider)
         : ClaimSetCommandValidator<ClaimSetUpdateCommand>(
             claimSetDataProvider,
-            isResourceClaimsOptional: true
+            isResourceClaimsOptional: false
         );
 }

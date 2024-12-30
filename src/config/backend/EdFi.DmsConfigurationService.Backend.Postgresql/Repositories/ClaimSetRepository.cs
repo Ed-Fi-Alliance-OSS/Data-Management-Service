@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Model;
@@ -148,26 +147,23 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                    RETURNING Id;
                 """;
 
-            string resourceClaimsJson = JsonSerializer.Serialize(
-                command.ResourceClaims,
-                new JsonSerializerOptions
-                {
-                    WriteIndented = false,
-                    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-                }
-            );
-
             var parameters = new
             {
                 ClaimSetName = command.Name,
                 IsSystemReserved = false,
-                ResourceClaims = resourceClaimsJson,
+                ResourceClaims = JsonSerializer.Serialize(command.ResourceClaims),
             };
 
             long id = await connection.ExecuteScalarAsync<long>(sql, parameters);
             await transaction.CommitAsync();
 
             return new ClaimSetInsertResult.Success(id);
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("uq_claimsetname"))
+        {
+            logger.LogWarning(ex, "ClaimSetName must be unique");
+            await transaction.RollbackAsync();
+            return new ClaimSetInsertResult.FailureDuplicateClaimSetName();
         }
         catch (Exception ex)
         {
@@ -395,26 +391,23 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                    RETURNING Id;
                 """;
 
-            string resourceClaimsJson = JsonSerializer.Serialize(
-                command.ResourceClaims,
-                new JsonSerializerOptions
-                {
-                    WriteIndented = false,
-                    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-                }
-            );
-
             var parameters = new
             {
                 ClaimSetName = command.Name,
                 IsSystemReserved = false,
-                ResourceClaims = resourceClaimsJson,
+                ResourceClaims = JsonSerializer.Serialize(command.ResourceClaims),
             };
 
             long id = await connection.ExecuteScalarAsync<long>(sql, parameters);
             await transaction.CommitAsync();
 
             return new ClaimSetImportResult.Success(id);
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("uq_claimsetname"))
+        {
+            logger.LogWarning(ex, "ClaimSetName must be unique");
+            await transaction.RollbackAsync();
+            return new ClaimSetImportResult.FailureDuplicateClaimSetName();
         }
         catch (Exception ex)
         {

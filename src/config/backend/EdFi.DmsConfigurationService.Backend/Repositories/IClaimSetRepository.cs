@@ -35,6 +35,11 @@ public record ClaimSetInsertResult
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : ClaimSetInsertResult();
+
+    /// <summary>
+    /// ClaimSetName must be unique
+    /// </summary>
+    public record FailureDuplicateClaimSetName() : ClaimSetInsertResult();
 }
 
 public record ClaimSetQueryResult
@@ -149,4 +154,9 @@ public record ClaimSetImportResult
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : ClaimSetImportResult();
+
+    /// <summary>
+    /// ClaimSetName must be unique
+    /// </summary>
+    public record FailureDuplicateClaimSetName() : ClaimSetImportResult();
 }
