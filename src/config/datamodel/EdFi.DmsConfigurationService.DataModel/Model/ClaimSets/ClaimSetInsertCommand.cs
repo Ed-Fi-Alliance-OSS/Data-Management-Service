@@ -3,21 +3,16 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
-using FluentValidation;
-
 namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 
-public class ClaimSetInsertCommand
+public class ClaimSetInsertCommand : IClaimSetCommand
 {
     public required string Name { get; set; }
-    public JsonElement ResourceClaims { get; set; } = JsonDocument.Parse("{}").RootElement;
+    public List<ResourceClaim>? ResourceClaims { get; set; }
 
-    public class Validator : AbstractValidator<ClaimSetInsertCommand>
-    {
-        public Validator()
-        {
-            RuleFor(c => c.Name).NotEmpty().MaximumLength(256);
-        }
-    }
+    public class Validator(IClaimSetDataProvider claimSetDataProvider)
+        : ClaimSetCommandValidator<ClaimSetInsertCommand>(
+            claimSetDataProvider,
+            isResourceClaimsOptional: true
+        );
 }

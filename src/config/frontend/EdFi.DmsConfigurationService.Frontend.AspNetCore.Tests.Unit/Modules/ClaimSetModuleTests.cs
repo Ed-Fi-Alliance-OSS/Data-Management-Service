@@ -131,8 +131,7 @@ public class ClaimSetModuleTests
             A.CallTo(() => _claimSetRepository.Import(A<ClaimSetImportCommand>.Ignored))
                 .Returns(new ClaimSetImportResult.Success(2));
 
-            A.CallTo(() => _dataProvider.GetActions())
-                .Returns(["Create", "Read", "Update", "Delete"]);
+            A.CallTo(() => _dataProvider.GetActions()).Returns(["Create", "Read", "Update", "Delete"]);
         }
 
         [Test]
@@ -165,7 +164,17 @@ public class ClaimSetModuleTests
                     {
                         "id": 1,
                         "name": "Test 11",
-                        "resourceClaims": {"resource":"Value"}
+                        "resourceClaims": [
+                         {
+                            "name": "Test ResourceClaim",
+                            "actions": [
+                              {
+                                "name": "Create",
+                                "enabled": true
+                              }
+                            ]
+                            }
+                        ]
                     }
                     """,
                     Encoding.UTF8,
@@ -233,8 +242,7 @@ public class ClaimSetModuleTests
             //Arrange
             using var client = SetUpClient();
 
-            A.CallTo(() => _dataProvider.GetActions())
-                .Returns(["Create", "Read", "Update", "Delete"]);
+            A.CallTo(() => _dataProvider.GetActions()).Returns(["Create", "Read", "Update", "Delete"]);
 
             string invalidInsertBody = """
                 {
@@ -304,7 +312,7 @@ public class ClaimSetModuleTests
                   "correlationId": "{correlationId}",
                   "validationErrors": {
                     "Name": [
-                      "The length of 'Name' must be 256 characters or fewer. You entered 300 characters."
+                      "The claim set name must be less than 256 characters."
                     ]
                   },
                   "errors": []
@@ -323,9 +331,8 @@ public class ClaimSetModuleTests
                   "correlationId": "{correlationId}",
                   "validationErrors": {
                     "Name": [
-                      "The length of 'Name' must be 256 characters or fewer. You entered 300 characters."
-                    ],
-                    "ResourceClaims":["ResourceClaims must be a valid JSON object with at least one property."]
+                      "The claim set name must be less than 256 characters."
+                    ]
                   },
                   "errors": []
                 }
@@ -343,7 +350,7 @@ public class ClaimSetModuleTests
                   "correlationId": "{correlationId}",
                   "validationErrors": {
                     "Name": [
-                      "ClaimSet Name cannot exceed 256 characters."
+                      "The claim set name must be less than 256 characters."
                     ]
                   },
                   "errors": []
@@ -398,7 +405,17 @@ public class ClaimSetModuleTests
                     {
                         "id": 2,
                         "name": "Test 11",
-                        "resourceClaims": {"resource":"Value"}
+                        "resourceClaims": [
+                            {
+                                "name": "Test ResourceClaim",
+                                "actions": [
+                                  {
+                                    "name": "Create",
+                                    "enabled": true
+                                  }
+                                ]
+                            }
+                        ]
                     }
                     """,
                     Encoding.UTF8,
@@ -433,6 +450,8 @@ public class ClaimSetModuleTests
 
             A.CallTo(() => _claimSetRepository.Copy(A<ClaimSetCopyCommand>.Ignored))
                 .Returns(new ClaimSetCopyResult.FailureNotFound());
+
+            A.CallTo(() => _dataProvider.GetActions()).Returns(["Create", "Read", "Update", "Delete"]);
         }
 
         [Test]
@@ -450,7 +469,17 @@ public class ClaimSetModuleTests
                     {
                         "id": 1,
                         "name": "Test 11",
-                        "resourceClaims": {"resource":"Value"}
+                        "resourceClaims": [
+                             {
+                                "name": "Test ResourceClaim",
+                                "actions": [
+                                  {
+                                    "name": "Create",
+                                    "enabled": true
+                                  }
+                                ]
+                                }
+                            ]
                     }
                     """,
                     Encoding.UTF8,
@@ -512,8 +541,7 @@ public class ClaimSetModuleTests
             A.CallTo(() => _claimSetRepository.Import(A<ClaimSetImportCommand>.Ignored))
                 .Returns(new ClaimSetImportResult.FailureUnknown(""));
 
-            A.CallTo(() => _dataProvider.GetActions())
-                .Returns(["Create", "Read", "Update", "Delete"]);
+            A.CallTo(() => _dataProvider.GetActions()).Returns(["Create", "Read", "Update", "Delete"]);
         }
 
         [Test]
@@ -545,7 +573,17 @@ public class ClaimSetModuleTests
                     {
                         "id": 1,
                         "name": "Test 11",
-                        "resourceClaims": {"resource":"Value"}
+                        "resourceClaims": [
+                         {
+                            "name": "Test ResourceClaim",
+                            "actions": [
+                              {
+                                "name": "Create",
+                                "enabled": true
+                              }
+                            ]
+                            }
+                        ]
                     }
                     """,
                     Encoding.UTF8,

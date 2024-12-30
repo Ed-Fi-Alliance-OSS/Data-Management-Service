@@ -64,7 +64,6 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder.Services.AddTransient<IClaimSetDataProvider, ClaimSetDataProvider>();
         webApplicationBuilder.Services.AddTransient<IClaimSetRepository, ClaimSetRepository>();
 
-
         Serilog.ILogger ConfigureLogging()
         {
             var logger = new LoggerConfiguration()

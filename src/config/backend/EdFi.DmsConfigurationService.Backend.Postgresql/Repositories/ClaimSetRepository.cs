@@ -148,13 +148,20 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                    RETURNING Id;
                 """;
 
+            string resourceClaimsJson = JsonSerializer.Serialize(
+                command.ResourceClaims,
+                new JsonSerializerOptions
+                {
+                    WriteIndented = false,
+                    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+                }
+            );
+
             var parameters = new
             {
                 ClaimSetName = command.Name,
                 IsSystemReserved = false,
-                ResourceClaims = command.ResourceClaims.ValueKind != JsonValueKind.Undefined
-                    ? command.ResourceClaims.ToString()
-                    : "{}",
+                ResourceClaims = resourceClaimsJson,
             };
 
             long id = await connection.ExecuteScalarAsync<long>(sql, parameters);
