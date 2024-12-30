@@ -8,12 +8,14 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using FluentValidation.Results;
 
-namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
+namespace EdFi.DmsConfigurationService.DataModel.Infrastructure;
 
 public static class FailureResponse
 {
-    private static readonly JsonSerializerOptions _serializerOptions =
-        new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+    private static readonly JsonSerializerOptions _serializerOptions = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
 
     private static readonly string _typePrefix = "urn:ed-fi:api";
     private static readonly string _unauthorizedType = $"{_typePrefix}:security:authentication";
@@ -49,26 +51,34 @@ public static class FailureResponse
         };
     }
 
-    public static JsonNode ForUnauthorized(string title, string detail, string correlationId) =>
+    public static JsonNode ForUnauthorized(
+        string title,
+        string detail,
+        string correlationId,
+        string[]? errors = null
+    ) =>
         CreateBaseJsonObject(
             detail: detail,
             type: _unauthorizedType,
             title: title,
             status: 401,
             correlationId: correlationId,
-            validationErrors: [],
-            errors: []
+            errors: errors
         );
 
-    public static JsonNode ForForbidden(string title, string detail, string correlationId) =>
+    public static JsonNode ForForbidden(
+        string title,
+        string detail,
+        string correlationId,
+        string[]? errors = null
+    ) =>
         CreateBaseJsonObject(
             detail: detail,
             type: _forbiddenType,
             title: title,
             status: 403,
             correlationId: correlationId,
-            validationErrors: [],
-            errors: []
+            errors: errors
         );
 
     public static JsonNode ForBadRequest(string detail, string correlationId) =>
@@ -106,14 +116,14 @@ public static class FailureResponse
                 .ToDictionary(g => g.Key, g => g.Select(x => x.ErrorMessage).ToArray())
         );
 
-    public static JsonNode ForBadGateway(string detail, string correlationId) =>
+    public static JsonNode ForBadGateway(string detail, string correlationId, string[]? errors = null) =>
         CreateBaseJsonObject(
             detail: detail,
             type: _badGatewayTypePrefix,
             title: "Bad Gateway",
             status: 502,
             correlationId: correlationId,
-            validationErrors: []
+            errors: errors
         );
 
     public static JsonNode ForUnknown(string correlationId) =>
@@ -123,6 +133,6 @@ public static class FailureResponse
             title: "Internal Server Error",
             status: 500,
             correlationId: correlationId,
-            validationErrors: []
+            errors: []
         );
 }
