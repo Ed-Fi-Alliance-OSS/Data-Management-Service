@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Model;
@@ -133,6 +134,18 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         return authStrategies;
     }
 
+    private static string SerializeResourceClaim(List<ResourceClaim>? resourceClaims)
+    {
+        return JsonSerializer.Serialize(
+            resourceClaims,
+            new JsonSerializerOptions
+            {
+                WriteIndented = false,
+                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            }
+        );
+    }
+
     public async Task<ClaimSetInsertResult> InsertClaimSet(ClaimSetInsertCommand command)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
@@ -151,7 +164,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
             {
                 ClaimSetName = command.Name,
                 IsSystemReserved = false,
-                ResourceClaims = JsonSerializer.Serialize(command.ResourceClaims),
+                ResourceClaims = SerializeResourceClaim(command.ResourceClaims),
             };
 
             long id = await connection.ExecuteScalarAsync<long>(sql, parameters);
@@ -298,7 +311,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                 command.Id,
                 ClaimSetName = command.Name,
                 IsSystemReserved = false,
-                ResourceClaims = JsonSerializer.Serialize(command.ResourceClaims),
+                ResourceClaims = SerializeResourceClaim(command.ResourceClaims),
             };
 
             int affectedRows = await connection.ExecuteAsync(sql, parameters);
@@ -395,7 +408,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
             {
                 ClaimSetName = command.Name,
                 IsSystemReserved = false,
-                ResourceClaims = JsonSerializer.Serialize(command.ResourceClaims),
+                ResourceClaims = SerializeResourceClaim(command.ResourceClaims),
             };
 
             long id = await connection.ExecuteScalarAsync<long>(sql, parameters);
