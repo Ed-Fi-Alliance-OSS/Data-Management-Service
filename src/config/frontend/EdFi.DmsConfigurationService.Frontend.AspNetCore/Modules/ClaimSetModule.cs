@@ -228,8 +228,14 @@ public class ClaimSetModule : IEndpointModule
                 null
             ),
             ClaimSetImportResult.FailureDuplicateClaimSetName => Results.Json(
-                FailureResponse.ForBadRequest(
-                    "A claim set with this name already exists in the database. Please enter a unique name.",
+                FailureResponse.ForDataValidation(
+                    new[]
+                    {
+                        new ValidationFailure(
+                            "Name",
+                            "A claim set with this name already exists in the database. Please enter a unique name."
+                        ),
+                    },
                     httpContext.TraceIdentifier
                 ),
                 statusCode: (int)HttpStatusCode.BadRequest

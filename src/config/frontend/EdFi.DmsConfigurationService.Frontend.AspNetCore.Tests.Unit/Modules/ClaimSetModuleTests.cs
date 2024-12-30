@@ -20,7 +20,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
-using Action = EdFi.DmsConfigurationService.DataModel.Model.Action.Action;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 
@@ -639,6 +638,110 @@ public class ClaimSetModuleTests
             copyResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             exportResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             importResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        }
+    }
+
+    [TestFixture]
+    public class FailureDuplicateClaimSetNameTests : ClaimSetModuleTests
+    {
+        [SetUp]
+        public void SetUp()
+        {
+            A.CallTo(() => _claimSetRepository.InsertClaimSet(A<ClaimSetInsertCommand>.Ignored))
+                .Returns(new ClaimSetInsertResult.FailureDuplicateClaimSetName());
+
+            A.CallTo(() => _claimSetRepository.Import(A<ClaimSetImportCommand>.Ignored))
+                .Returns(new ClaimSetImportResult.FailureDuplicateClaimSetName());
+
+            A.CallTo(() => _dataProvider.GetActions()).Returns(["Create", "Read", "Update", "Delete"]);
+        }
+
+        [Test]
+        public async Task Should_return_duplicate_claimSetName_error_message_on_insert()
+        {
+            //Arrange
+            using var client = SetUpClient();
+
+            //Act
+            var addResponse = await client.PostAsync(
+                "/v2/claimSets",
+                new StringContent(
+                    """
+                    {
+                        "name":"Testing POST for ClaimSet"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            string importBody = """
+                {
+                    "name" : "Test Duplicate",
+                    "resourceClaims" : [
+                    {
+                        "name": "Test ResourceClaim",
+                        "actions": [
+                          {
+                            "name": "Create",
+                            "enabled": true
+                          }
+                        ]
+                    }
+                ]
+                }
+                """;
+
+            var actualPostResponse = JsonNode.Parse(await addResponse.Content.ReadAsStringAsync());
+            var expectedPostResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "Name": [
+                      "A claim set with this name already exists in the database. Please enter a unique name."
+                    ]
+                  },
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualPostResponse!["correlationId"]!.GetValue<string>())
+            );
+
+            var importResponse = await client.PostAsync(
+                "/v2/claimSets/import",
+                new StringContent(importBody, Encoding.UTF8, "application/json")
+            );
+
+            var actualImportResponse = JsonNode.Parse(await importResponse.Content.ReadAsStringAsync());
+            var expectedImportResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "Name": [
+                      "A claim set with this name already exists in the database. Please enter a unique name."
+                    ]
+                  },
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualImportResponse!["correlationId"]!.GetValue<string>())
+            );
+
+            //Assert
+            addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            JsonNode.DeepEquals(actualPostResponse, expectedPostResponse).Should().Be(true);
+
+            importResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            JsonNode.DeepEquals(actualImportResponse, expectedImportResponse).Should().Be(true);
         }
     }
 }
