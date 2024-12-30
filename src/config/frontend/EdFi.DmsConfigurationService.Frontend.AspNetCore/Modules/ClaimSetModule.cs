@@ -46,6 +46,19 @@ public class ClaimSetModule : IEndpointModule
                 $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
                 null
             ),
+            ClaimSetInsertResult.FailureDuplicateClaimSetName => Results.Json(
+                FailureResponse.ForDataValidation(
+                    new[]
+                    {
+                        new ValidationFailure(
+                            "Name",
+                            "A claim set with this name already exists in the database. Please enter a unique name."
+                        ),
+                    },
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.BadRequest
+            ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
@@ -213,6 +226,13 @@ public class ClaimSetModule : IEndpointModule
             ClaimSetImportResult.Success success => Results.Created(
                 $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
                 null
+            ),
+            ClaimSetImportResult.FailureDuplicateClaimSetName => Results.Json(
+                FailureResponse.ForBadRequest(
+                    "A claim set with this name already exists in the database. Please enter a unique name.",
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.BadRequest
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };

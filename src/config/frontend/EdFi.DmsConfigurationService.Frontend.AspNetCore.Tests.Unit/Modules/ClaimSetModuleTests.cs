@@ -332,7 +332,8 @@ public class ClaimSetModuleTests
                   "validationErrors": {
                     "Name": [
                       "The claim set name must be less than 256 characters."
-                    ]
+                    ],
+                    "ResourceClaims":["Resource claims are required."]
                   },
                   "errors": []
                 }
