@@ -10,6 +10,7 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 public class ResourceClaim
 {
     public int Id { get; set; }
+    [JsonIgnore]
     public int ParentId { get; set; }
     public string? ParentName { get; set; }
     public string? Name { get; set; }

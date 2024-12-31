@@ -6,18 +6,17 @@ CREATE TABLE IF NOT EXISTS dmscs.ClaimSet
     IsSystemReserved BOOLEAN NOT NULL,
 	  ResourceClaims JSONB NOT NULL,
     CONSTRAINT claimset_pkey PRIMARY KEY (id)
-)
+);
 
-TABLESPACE pg_default;
+ALTER TABLE dmscs.ClaimSet ADD CONSTRAINT uq_ClaimSetName UNIQUE (ClaimSetName);
 
-ALTER TABLE IF EXISTS dmscs.claimset
-    OWNER to postgres;
+CREATE UNIQUE INDEX idx_ClaimSetName ON dmscs.ClaimSet (ClaimSetName);
 
 COMMENT ON COLUMN dmscs.claimset.id
     IS 'ClaimSet id';
 
 COMMENT ON COLUMN dmscs.claimset.ClaimSetName
-    IS 'Claim set name';
+    IS 'Claim set name and must be unique';
 
 COMMENT ON COLUMN dmscs.claimset.IsSystemReserved
     IS 'Is system reserved';

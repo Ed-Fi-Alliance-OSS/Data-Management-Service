@@ -3,7 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DmsConfigurationService.DataModel.Model.Action;
+using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
@@ -15,36 +15,10 @@ public class ActionsModule : IEndpointModule
         endpoints.MapGet("/actions", GetUserActions).RequireAuthorizationWithPolicy();
     }
 
-    public IResult GetUserActions(HttpContext httpContext)
+    private static IResult GetUserActions(IClaimSetRepository repository)
     {
-        var response = new AdminAction[]
-        {
-            new AdminAction
-            {
-                Id = 1,
-                Name = "Create",
-                Uri = "uri://ed-fi.org/api/actions/create",
-            },
-            new AdminAction
-            {
-                Id = 2,
-                Name = "Read",
-                Uri = "uri://ed-fi.org/api/actions/read",
-            },
-            new AdminAction
-            {
-                Id = 3,
-                Name = "Update",
-                Uri = "uri://ed-fi.org/api/actions/update",
-            },
-            new AdminAction
-            {
-                Id = 4,
-                Name = "Delete",
-                Uri = "uri://ed-fi.org/api/actions/delete",
-            },
-        };
+        var actionList = repository.GetActions();
 
-        return Results.Ok(response);
+        return Results.Ok(actionList);
     }
 }
