@@ -5,13 +5,8 @@
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 
-public class AuthorizationStrategy
+public interface IClaimSetDataProvider
 {
-    public int AuthStrategyId { get; set; }
-
-    public required string AuthStrategyName { get; set; }
-
-    public string? DisplayName { get; set; }
-
-    public bool IsInheritedFromParent { get; set; }
+    List<string> GetActions();
+    List<string> GetAuthorizationStrategies();
 }

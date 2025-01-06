@@ -46,6 +46,19 @@ public class ClaimSetModule : IEndpointModule
                 $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
                 null
             ),
+            ClaimSetInsertResult.FailureDuplicateClaimSetName => Results.Json(
+                FailureResponse.ForDataValidation(
+                    new[]
+                    {
+                        new ValidationFailure(
+                            "Name",
+                            "A claim set with this name already exists in the database. Please enter a unique name."
+                        ),
+                    },
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.BadRequest
+            ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
@@ -197,12 +210,14 @@ public class ClaimSetModule : IEndpointModule
 
     private static async Task<IResult> Import(
         ClaimSetImportCommand entity,
-        ClaimSetImportCommand.Validator validator,
         HttpContext httpContext,
-        IClaimSetRepository repository
+        IClaimSetRepository repository,
+        IClaimSetDataProvider provider
     )
     {
+        var validator = new ClaimSetImportCommand.Validator(provider);
         await validator.GuardAsync(entity);
+
         var insertResult = await repository.Import(entity);
 
         var request = httpContext.Request;
@@ -211,6 +226,19 @@ public class ClaimSetModule : IEndpointModule
             ClaimSetImportResult.Success success => Results.Created(
                 $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
                 null
+            ),
+            ClaimSetImportResult.FailureDuplicateClaimSetName => Results.Json(
+                FailureResponse.ForDataValidation(
+                    new[]
+                    {
+                        new ValidationFailure(
+                            "Name",
+                            "A claim set with this name already exists in the database. Please enter a unique name."
+                        ),
+                    },
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.BadRequest
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };

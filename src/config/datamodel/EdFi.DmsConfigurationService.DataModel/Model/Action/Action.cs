@@ -7,19 +7,12 @@ using System.Text.Json.Serialization;
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.Action;
 
-public class AdminAction
+public class Action
 {
     [JsonPropertyName("id")]
     public required int Id { get; set; }
-
     [JsonPropertyName("name")]
     public required string Name { get; set; }
-
     [JsonPropertyName("uri")]
     public required string Uri { get; set; }
-}
-
-public class ActionResponse
-{
-    public required AdminAction[] AdminActions;
 }

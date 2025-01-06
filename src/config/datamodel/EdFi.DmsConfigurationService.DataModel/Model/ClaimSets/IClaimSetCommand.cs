@@ -4,14 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
-
-public class AuthorizationStrategy
+public interface IClaimSetCommand
 {
-    public int AuthStrategyId { get; set; }
-
-    public required string AuthStrategyName { get; set; }
-
-    public string? DisplayName { get; set; }
-
-    public bool IsInheritedFromParent { get; set; }
+    string Name { get; }
+    List<ResourceClaim>? ResourceClaims { get; }
 }

@@ -27,6 +27,7 @@ public class ClaimSetModuleTests
 {
     private readonly IClaimSetRepository _claimSetRepository = A.Fake<IClaimSetRepository>();
     private readonly HttpContext _httpContext = A.Fake<HttpContext>();
+    private readonly IClaimSetDataProvider _dataProvider = A.Fake<IClaimSetDataProvider>();
 
     private HttpClient SetUpClient()
     {
@@ -49,7 +50,10 @@ public class ClaimSetModuleTests
                             policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
                         )
                     );
-                    collection.AddTransient((_) => _httpContext).AddTransient((_) => _claimSetRepository);
+                    collection
+                        .AddTransient((_) => _httpContext)
+                        .AddTransient((_) => _claimSetRepository)
+                        .AddTransient((_) => _dataProvider);
                 }
             );
         });
@@ -125,6 +129,8 @@ public class ClaimSetModuleTests
 
             A.CallTo(() => _claimSetRepository.Import(A<ClaimSetImportCommand>.Ignored))
                 .Returns(new ClaimSetImportResult.Success(2));
+
+            A.CallTo(() => _dataProvider.GetActions()).Returns(["Create", "Read", "Update", "Delete"]);
         }
 
         [Test]
@@ -140,8 +146,7 @@ public class ClaimSetModuleTests
                 new StringContent(
                     """
                     {
-                        "name":"Testing POST for ClaimSet",
-                        "resourceClaims": {"resource":"Value"}
+                        "name":"Testing POST for ClaimSet"
                     }
                     """,
                     Encoding.UTF8,
@@ -158,8 +163,17 @@ public class ClaimSetModuleTests
                     {
                         "id": 1,
                         "name": "Test 11",
-                        "isSystemReserved" : true,
-                        "resourceClaims": {"resource":"Value"}
+                        "resourceClaims": [
+                         {
+                            "name": "Test ResourceClaim",
+                            "actions": [
+                              {
+                                "name": "Create",
+                                "enabled": true
+                              }
+                            ]
+                            }
+                        ]
                     }
                     """,
                     Encoding.UTF8,
@@ -187,8 +201,17 @@ public class ClaimSetModuleTests
                     """
                     {
                         "name" : "Testing Import for ClaimSet",
-                        "isSystemReserved": true,
-                        "resourceClaims" : {"resource":"Value"}
+                        "resourceClaims" : [
+                            {
+                                "name": "Test ResourceClaim",
+                                "actions": [
+                                  {
+                                    "name": "Create",
+                                    "enabled": true
+                                  }
+                                ]
+                            }
+                        ]
                     }
                     """,
                     Encoding.UTF8,
@@ -218,6 +241,8 @@ public class ClaimSetModuleTests
             //Arrange
             using var client = SetUpClient();
 
+            A.CallTo(() => _dataProvider.GetActions()).Returns(["Create", "Read", "Update", "Delete"]);
+
             string invalidInsertBody = """
                 {
                    "name" : "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
@@ -233,7 +258,17 @@ public class ClaimSetModuleTests
             string invalidImportBody = """
                 {
                     "name" : "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
-                    "resourceClaims" : []
+                    "resourceClaims" : [
+                    {
+                        "name": "Test ResourceClaim",
+                        "actions": [
+                          {
+                            "name": "Create",
+                            "enabled": true
+                          }
+                        ]
+                    }
+                ]
                 }
                 """;
 
@@ -276,7 +311,7 @@ public class ClaimSetModuleTests
                   "correlationId": "{correlationId}",
                   "validationErrors": {
                     "Name": [
-                      "The length of 'Name' must be 256 characters or fewer. You entered 300 characters."
+                      "The claim set name must be less than 256 characters."
                     ]
                   },
                   "errors": []
@@ -295,9 +330,9 @@ public class ClaimSetModuleTests
                   "correlationId": "{correlationId}",
                   "validationErrors": {
                     "Name": [
-                      "The length of 'Name' must be 256 characters or fewer. You entered 300 characters."
+                      "The claim set name must be less than 256 characters."
                     ],
-                    "ResourceClaims":["ResourceClaims must be a valid JSON object with at least one property."]
+                    "ResourceClaims":["Resource claims are required."]
                   },
                   "errors": []
                 }
@@ -315,9 +350,8 @@ public class ClaimSetModuleTests
                   "correlationId": "{correlationId}",
                   "validationErrors": {
                     "Name": [
-                      "The length of 'Name' must be 256 characters or fewer. You entered 300 characters."
-                    ],
-                    "ResourceClaims":["ResourceClaims must be a valid JSON object with at least one property."]
+                      "The claim set name must be less than 256 characters."
+                    ]
                   },
                   "errors": []
                 }
@@ -371,7 +405,17 @@ public class ClaimSetModuleTests
                     {
                         "id": 2,
                         "name": "Test 11",
-                        "resourceClaims": {"resource":"Value"}
+                        "resourceClaims": [
+                            {
+                                "name": "Test ResourceClaim",
+                                "actions": [
+                                  {
+                                    "name": "Create",
+                                    "enabled": true
+                                  }
+                                ]
+                            }
+                        ]
                     }
                     """,
                     Encoding.UTF8,
@@ -406,6 +450,8 @@ public class ClaimSetModuleTests
 
             A.CallTo(() => _claimSetRepository.Copy(A<ClaimSetCopyCommand>.Ignored))
                 .Returns(new ClaimSetCopyResult.FailureNotFound());
+
+            A.CallTo(() => _dataProvider.GetActions()).Returns(["Create", "Read", "Update", "Delete"]);
         }
 
         [Test]
@@ -423,7 +469,17 @@ public class ClaimSetModuleTests
                     {
                         "id": 1,
                         "name": "Test 11",
-                        "resourceClaims": {"resource":"Value"}
+                        "resourceClaims": [
+                             {
+                                "name": "Test ResourceClaim",
+                                "actions": [
+                                  {
+                                    "name": "Create",
+                                    "enabled": true
+                                  }
+                                ]
+                                }
+                            ]
                     }
                     """,
                     Encoding.UTF8,
@@ -484,6 +540,8 @@ public class ClaimSetModuleTests
 
             A.CallTo(() => _claimSetRepository.Import(A<ClaimSetImportCommand>.Ignored))
                 .Returns(new ClaimSetImportResult.FailureUnknown(""));
+
+            A.CallTo(() => _dataProvider.GetActions()).Returns(["Create", "Read", "Update", "Delete"]);
         }
 
         [Test]
@@ -498,8 +556,7 @@ public class ClaimSetModuleTests
                 new StringContent(
                     """
                     {
-                        "name":"Testing POST for ClaimSet",
-                        "resourceClaims": {"resource":"Value"}
+                        "name":"Testing POST for ClaimSet"
                     }
                     """,
                     Encoding.UTF8,
@@ -516,7 +573,17 @@ public class ClaimSetModuleTests
                     {
                         "id": 1,
                         "name": "Test 11",
-                        "resourceClaims": {"resource":"Value"}
+                        "resourceClaims": [
+                         {
+                            "name": "Test ResourceClaim",
+                            "actions": [
+                              {
+                                "name": "Create",
+                                "enabled": true
+                              }
+                            ]
+                            }
+                        ]
                     }
                     """,
                     Encoding.UTF8,
@@ -544,7 +611,17 @@ public class ClaimSetModuleTests
                     """
                     {
                         "name" : "Testing Import for ClaimSet",
-                        "resourceClaims" : {"resource":"Value"}
+                        "resourceClaims" : [
+                        {
+                            "name": "Test ResourceClaim",
+                            "actions": [
+                              {
+                                "name": "Create",
+                                "enabled": true
+                              }
+                            ]
+                        }
+                    ]
                     }
                     """,
                     Encoding.UTF8,
@@ -561,6 +638,110 @@ public class ClaimSetModuleTests
             copyResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             exportResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             importResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        }
+    }
+
+    [TestFixture]
+    public class FailureDuplicateClaimSetNameTests : ClaimSetModuleTests
+    {
+        [SetUp]
+        public void SetUp()
+        {
+            A.CallTo(() => _claimSetRepository.InsertClaimSet(A<ClaimSetInsertCommand>.Ignored))
+                .Returns(new ClaimSetInsertResult.FailureDuplicateClaimSetName());
+
+            A.CallTo(() => _claimSetRepository.Import(A<ClaimSetImportCommand>.Ignored))
+                .Returns(new ClaimSetImportResult.FailureDuplicateClaimSetName());
+
+            A.CallTo(() => _dataProvider.GetActions()).Returns(["Create", "Read", "Update", "Delete"]);
+        }
+
+        [Test]
+        public async Task Should_return_duplicate_claimSetName_error_message_on_insert()
+        {
+            //Arrange
+            using var client = SetUpClient();
+
+            //Act
+            var addResponse = await client.PostAsync(
+                "/v2/claimSets",
+                new StringContent(
+                    """
+                    {
+                        "name":"Testing POST for ClaimSet"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            string importBody = """
+                {
+                    "name" : "Test Duplicate",
+                    "resourceClaims" : [
+                    {
+                        "name": "Test ResourceClaim",
+                        "actions": [
+                          {
+                            "name": "Create",
+                            "enabled": true
+                          }
+                        ]
+                    }
+                ]
+                }
+                """;
+
+            var actualPostResponse = JsonNode.Parse(await addResponse.Content.ReadAsStringAsync());
+            var expectedPostResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "Name": [
+                      "A claim set with this name already exists in the database. Please enter a unique name."
+                    ]
+                  },
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualPostResponse!["correlationId"]!.GetValue<string>())
+            );
+
+            var importResponse = await client.PostAsync(
+                "/v2/claimSets/import",
+                new StringContent(importBody, Encoding.UTF8, "application/json")
+            );
+
+            var actualImportResponse = JsonNode.Parse(await importResponse.Content.ReadAsStringAsync());
+            var expectedImportResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "Name": [
+                      "A claim set with this name already exists in the database. Please enter a unique name."
+                    ]
+                  },
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualImportResponse!["correlationId"]!.GetValue<string>())
+            );
+
+            //Assert
+            addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            JsonNode.DeepEquals(actualPostResponse, expectedPostResponse).Should().Be(true);
+
+            importResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            JsonNode.DeepEquals(actualImportResponse, expectedImportResponse).Should().Be(true);
         }
     }
 }
