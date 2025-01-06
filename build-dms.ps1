@@ -248,11 +248,22 @@ function RunE2E {
 function E2ETests {
     Invoke-Step { DockerBuild }
 
+    # Clean up all the containers and volumes
+    Invoke-Execute {
+        try {
+            Push-Location eng/docker-compose/
+            ./start-local-dms.ps1 -d -v
+            ./start-local-dms.ps1 -SearchEngine "ElasticSearch" -d -v
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
     if ($EnableOpenSearch) {
         Invoke-Execute {
             try {
                 Push-Location eng/docker-compose/
-                ./start-local-dms.ps1 -d -v
                 ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e"
             }
             finally {
@@ -264,7 +275,6 @@ function E2ETests {
         Invoke-Execute {
             try {
                 Push-Location eng/docker-compose/
-                ./start-local-dms.ps1 -SearchEngine "ElasticSearch" -d -v
                 ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "ElasticSearch"
             }
             finally {

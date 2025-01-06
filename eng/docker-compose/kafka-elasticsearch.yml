@@ -60,6 +60,9 @@ services:
     image: edfialliance/ed-fi-kafka-connect:pre
     ports:
       - ${CONNECT_SINK_PORT:-8084}:8083
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
     links:
       - kafka
       - zookeeper
@@ -93,6 +96,11 @@ services:
       - esdata:/usr/share/elasticsearch/data
     networks:
       - dms
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${ELASTICSEARCH_HTTP_PORT:-9200}"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
 
 volumes:
   zookeeper-logs:
