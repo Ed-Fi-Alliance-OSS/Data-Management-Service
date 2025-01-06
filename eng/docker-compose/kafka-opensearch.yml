@@ -60,6 +60,9 @@ services:
     image: edfialliance/ed-fi-kafka-connect:pre
     ports:
       - ${CONNECT_SINK_PORT:-8084}:8083
+    depends_on:
+      opensearch:
+        condition: service_healthy
     links:
       - kafka
       - zookeeper
