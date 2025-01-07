@@ -203,10 +203,24 @@ public class ApplicationModuleTests
                 }
                 """;
 
+            string invalidClaimSetName = """
+                {
+                   "ApplicationName": "Application101",
+                    "ClaimSetName": "ClaimSet name with white space",
+                    "VendorId":1,
+                    "EducationOrganizationIds": [255901]
+                }
+                """;
+
             //Act
             var addResponse = await client.PostAsync(
                 "/v2/applications",
                 new StringContent(invalidBody, Encoding.UTF8, "application/json")
+            );
+
+            var addResponseForInvalidClaimSetName = await client.PostAsync(
+                "/v2/applications",
+                new StringContent(invalidClaimSetName, Encoding.UTF8, "application/json")
             );
 
             //Assert
@@ -237,6 +251,37 @@ public class ApplicationModuleTests
             );
             addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             JsonNode.DeepEquals(JsonNode.Parse(addResponseContent), expectedResponse).Should().Be(true);
+
+            string addResponseContentForInvalidClaimSetName =
+                await addResponseForInvalidClaimSetName.Content.ReadAsStringAsync();
+            var actualResponseForInvalidClaimSetName = JsonNode.Parse(
+                addResponseContentForInvalidClaimSetName
+            );
+            var expectedResponseForInvalidClaimSetName = JsonNode.Parse(
+                """
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "ClaimSetName": [
+                      "Claim set name must not contain white spaces."
+                    ]
+                  },
+                  "errors": []
+                }
+                """.Replace(
+                    "{correlationId}",
+                    actualResponseForInvalidClaimSetName!["correlationId"]!.GetValue<string>()
+                )
+            );
+            addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            JsonNode
+                .DeepEquals(actualResponseForInvalidClaimSetName, expectedResponseForInvalidClaimSetName)
+                .Should()
+                .Be(true);
         }
     }
 
