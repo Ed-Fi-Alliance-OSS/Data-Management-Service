@@ -5,6 +5,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using Microsoft.Extensions.Logging;
 
@@ -24,7 +25,7 @@ internal class SuccessDocumentStoreRepository(ILogger<SuccessDocumentStoreReposi
             upsertRequest.TraceId
         );
         return await Task.FromResult<UpsertResult>(
-            new UpsertResult.InsertSuccess(upsertRequest.DocumentUuid)
+            new UpsertResult.InsertSuccess(upsertRequest.DocumentUuid, new Etag(""))
         );
     }
 

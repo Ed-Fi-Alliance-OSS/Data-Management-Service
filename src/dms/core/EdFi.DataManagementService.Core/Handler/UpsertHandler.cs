@@ -5,7 +5,6 @@
 
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
-using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
@@ -62,7 +61,10 @@ internal class UpsertHandler(
             InsertSuccess insertSuccess => new FrontendResponse(
                 StatusCode: 201,
                 Body: null,
-                Headers: [],
+                Headers: new Dictionary<string, string>()
+                {
+                    {"Etag", insertSuccess.Etag.Value}
+                },
                 LocationHeaderPath: PathComponents.ToResourcePath(
                     context.PathComponents,
                     insertSuccess.NewDocumentUuid
