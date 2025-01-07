@@ -41,178 +41,168 @@ internal class ApiService(
     /// <summary>
     /// The pipeline steps to satisfy an upsert request
     /// </summary>
-    private readonly Lazy<PipelineProvider> _upsertSteps =
-        new(() =>
+    private readonly Lazy<PipelineProvider> _upsertSteps = new(() =>
+    {
+        var steps = new List<IPipelineStep>();
+        steps.AddRange(
+            [
+                new CoreExceptionLoggingMiddleware(_logger),
+                new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
+                new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
+                new ParsePathMiddleware(_logger),
+                new ParseBodyMiddleware(_logger),
+                new RequestDataBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
+                new DuplicatePropertiesMiddleware(_logger),
+                new ValidateEndpointMiddleware(_logger),
+                new RejectResourceIdentifierMiddleware(_logger),
+                new CoerceDateTimesMiddleware(_logger),
+            ]
+        );
+
+        // CoerceFromStringsMiddleware should be immediately before ValidateDocumentMiddleware
+        if (_appSettings.Value.BypassStringTypeCoercion)
         {
-            var steps = new List<IPipelineStep>();
-            steps.AddRange(
-                [
-                    new CoreExceptionLoggingMiddleware(_logger),
-                    new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
-                    new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
-                    new ParsePathMiddleware(_logger),
-                    new ParseBodyMiddleware(_logger),
-                    new RequestDataBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
-                    new DuplicatePropertiesMiddleware(_logger),
-                    new ValidateEndpointMiddleware(_logger),
-                    new RejectResourceIdentifierMiddleware(_logger),
-                    new CoerceDateTimesMiddleware(_logger),
-                ]
-            );
+            _logger.LogDebug("Bypassing CoerceFromStringsMiddleware");
+        }
+        else
+        {
+            steps.Add(new CoerceFromStringsMiddleware(_logger));
+        }
 
-            // CoerceFromStringsMiddleware should be immediately before ValidateDocumentMiddleware
-            if (_appSettings.Value.BypassStringTypeCoercion)
-            {
-                _logger.LogDebug("Bypassing CoerceFromStringsMiddleware");
-            }
-            else
-            {
-                steps.Add(new CoerceFromStringsMiddleware(_logger));
-            }
+        steps.AddRange(
+            [
+                new ValidateDocumentMiddleware(_logger, _documentValidator),
+                new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
+                new BuildResourceInfoMiddleware(
+                    _logger,
+                    _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
+                ),
+                new ExtractDocumentInfoMiddleware(_logger),
+                new DisallowDuplicateReferencesMiddleware(_logger),
+                new InjectLastModifiedDateToEdFiDocumentMiddleware(_logger),
+                new UpsertHandler(_documentStoreRepository, _logger, _resiliencePipeline, _apiSchemaProvider),
+            ]
+        );
 
-            steps.AddRange(
-                [
-                    new ValidateDocumentMiddleware(_logger, _documentValidator),
-                    new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
-                    new BuildResourceInfoMiddleware(
-                        _logger,
-                        _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
-                    ),
-                    new ExtractDocumentInfoMiddleware(_logger),
-                    new DisallowDuplicateReferencesMiddleware(_logger),
-                    new InjectLastModifiedDateToEdFiDocumentMiddleware(_logger),
-                    new UpsertHandler(
-                        _documentStoreRepository,
-                        _logger,
-                        _resiliencePipeline,
-                        _apiSchemaProvider
-                    ),
-                ]
-            );
-
-            return new PipelineProvider(steps);
-        });
+        return new PipelineProvider(steps);
+    });
 
     /// <summary>
     /// The pipeline steps to satisfy a get by id request
     /// </summary>
-    private readonly Lazy<PipelineProvider> _getByIdSteps =
-        new(
-            () =>
-                new(
-                    [
-                        new CoreExceptionLoggingMiddleware(_logger),
-                        new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
-                        new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
-                        new ParsePathMiddleware(_logger),
-                        new ValidateEndpointMiddleware(_logger),
-                        new BuildResourceInfoMiddleware(
-                            _logger,
-                            _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
-                        ),
-                        new GetByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline),
-                    ]
-                )
-        );
-
-    /// <summary>
-    /// The pipeline steps to satisfy a query request
-    /// </summary>
-    private readonly Lazy<PipelineProvider> _querySteps =
-        new(
-            () =>
-                new(
-                    [
-                        new CoreExceptionLoggingMiddleware(_logger),
-                        new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
-                        new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
-                        new ParsePathMiddleware(_logger),
-                        new ValidateEndpointMiddleware(_logger),
-                        new BuildResourceInfoMiddleware(
-                            _logger,
-                            _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
-                        ),
-                        new ValidateQueryMiddleware(_logger),
-                        new QueryRequestHandler(_queryHandler, _logger, _resiliencePipeline),
-                    ]
-                )
-        );
-
-    /// <summary>
-    /// The pipeline steps to satisfy an update request
-    /// </summary>
-    private readonly Lazy<PipelineProvider> _updateSteps =
-        new(() =>
-        {
-            var steps = new List<IPipelineStep>();
-            steps.AddRange(
+    private readonly Lazy<PipelineProvider> _getByIdSteps = new(
+        () =>
+            new(
                 [
                     new CoreExceptionLoggingMiddleware(_logger),
                     new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
                     new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                     new ParsePathMiddleware(_logger),
-                    new ParseBodyMiddleware(_logger),
-                    new RequestDataBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
-                    new DuplicatePropertiesMiddleware(_logger),
                     new ValidateEndpointMiddleware(_logger),
-                    new CoerceDateTimesMiddleware(_logger),
-                ]
-            );
-
-            // CoerceFromStringsMiddleware should be immediately before ValidateDocumentMiddleware
-            if (_appSettings.Value.BypassStringTypeCoercion)
-            {
-                _logger.LogDebug("Bypassing CoerceFromStringsMiddleware");
-            }
-            else
-            {
-                steps.Add(new CoerceFromStringsMiddleware(_logger));
-            }
-
-            steps.AddRange(
-                [
-                    new ValidateDocumentMiddleware(_logger, _documentValidator),
-                    new ValidateMatchingDocumentUuidsMiddleware(_logger, matchingDocumentUuidsValidator),
-                    new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
                     new BuildResourceInfoMiddleware(
                         _logger,
                         _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                     ),
-                    new ExtractDocumentInfoMiddleware(_logger),
-                    new DisallowDuplicateReferencesMiddleware(_logger),
-                    new InjectLastModifiedDateToEdFiDocumentMiddleware(_logger),
-                    new UpdateByIdHandler(
-                        _documentStoreRepository,
-                        _logger,
-                        _resiliencePipeline,
-                        _apiSchemaProvider
-                    ),
+                    new GetByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline),
                 ]
-            );
-            return new PipelineProvider(steps);
-        });
+            )
+    );
+
+    /// <summary>
+    /// The pipeline steps to satisfy a query request
+    /// </summary>
+    private readonly Lazy<PipelineProvider> _querySteps = new(
+        () =>
+            new(
+                [
+                    new CoreExceptionLoggingMiddleware(_logger),
+                    new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
+                    new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
+                    new ParsePathMiddleware(_logger),
+                    new ValidateEndpointMiddleware(_logger),
+                    new BuildResourceInfoMiddleware(
+                        _logger,
+                        _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
+                    ),
+                    new ValidateQueryMiddleware(_logger, _appSettings.Value.MaximumPageSize),
+                    new QueryRequestHandler(_queryHandler, _logger, _resiliencePipeline),
+                ]
+            )
+    );
+
+    /// <summary>
+    /// The pipeline steps to satisfy an update request
+    /// </summary>
+    private readonly Lazy<PipelineProvider> _updateSteps = new(() =>
+    {
+        var steps = new List<IPipelineStep>();
+        steps.AddRange(
+            [
+                new CoreExceptionLoggingMiddleware(_logger),
+                new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
+                new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
+                new ParsePathMiddleware(_logger),
+                new ParseBodyMiddleware(_logger),
+                new RequestDataBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
+                new DuplicatePropertiesMiddleware(_logger),
+                new ValidateEndpointMiddleware(_logger),
+                new CoerceDateTimesMiddleware(_logger),
+            ]
+        );
+
+        // CoerceFromStringsMiddleware should be immediately before ValidateDocumentMiddleware
+        if (_appSettings.Value.BypassStringTypeCoercion)
+        {
+            _logger.LogDebug("Bypassing CoerceFromStringsMiddleware");
+        }
+        else
+        {
+            steps.Add(new CoerceFromStringsMiddleware(_logger));
+        }
+
+        steps.AddRange(
+            [
+                new ValidateDocumentMiddleware(_logger, _documentValidator),
+                new ValidateMatchingDocumentUuidsMiddleware(_logger, matchingDocumentUuidsValidator),
+                new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
+                new BuildResourceInfoMiddleware(
+                    _logger,
+                    _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
+                ),
+                new ExtractDocumentInfoMiddleware(_logger),
+                new DisallowDuplicateReferencesMiddleware(_logger),
+                new InjectLastModifiedDateToEdFiDocumentMiddleware(_logger),
+                new UpdateByIdHandler(
+                    _documentStoreRepository,
+                    _logger,
+                    _resiliencePipeline,
+                    _apiSchemaProvider
+                ),
+            ]
+        );
+        return new PipelineProvider(steps);
+    });
 
     /// <summary>
     /// The pipeline steps to satisfy a delete by id request
     /// </summary>
-    private readonly Lazy<PipelineProvider> _deleteByIdSteps =
-        new(
-            () =>
-                new(
-                    [
-                        new CoreExceptionLoggingMiddleware(_logger),
-                        new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
-                        new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
-                        new ParsePathMiddleware(_logger),
-                        new ValidateEndpointMiddleware(_logger),
-                        new BuildResourceInfoMiddleware(
-                            _logger,
-                            _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
-                        ),
-                        new DeleteByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline),
-                    ]
-                )
-        );
+    private readonly Lazy<PipelineProvider> _deleteByIdSteps = new(
+        () =>
+            new(
+                [
+                    new CoreExceptionLoggingMiddleware(_logger),
+                    new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
+                    new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
+                    new ParsePathMiddleware(_logger),
+                    new ValidateEndpointMiddleware(_logger),
+                    new BuildResourceInfoMiddleware(
+                        _logger,
+                        _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
+                    ),
+                    new DeleteByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline),
+                ]
+            )
+    );
 
     /// <summary>
     /// DMS entry point for API upsert requests
