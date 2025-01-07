@@ -324,7 +324,35 @@ Feature: Applications endpoints
                   }
                   """
 
-        Scenario: 15 Verify validation invalid EducationOrganizationId
+          Scenario: 15 Verify validation invalid claim set name with white space
+             When a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": 9999,
+                   "applicationName": "Test 1234",
+                   "claimSetName": "Claim set name with white space",
+                   "educationOrganizationIds": [1, 2, 3]
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": "0HN8RI9E3O45G:00000004",
+                    "validationErrors": {
+                    "ClaimSetName": [
+                      "Claim set name must not contain white spaces."
+                    ]
+                  },
+                  "errors": []
+                  }
+                  """
+
+        Scenario: 16 Verify validation invalid EducationOrganizationId
              When a POST request is made to "/v2/applications" with
                   """
                   {
