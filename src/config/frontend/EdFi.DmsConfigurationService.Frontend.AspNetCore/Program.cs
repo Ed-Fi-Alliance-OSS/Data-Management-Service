@@ -15,6 +15,13 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddServices();
 var app = builder.Build();
 
+var pathBase = app.Configuration.GetValue<string>("AppSettings:PathBase");
+if (!string.IsNullOrEmpty(pathBase))
+{
+    app.UsePathBase($"/{pathBase.Trim('/')}");
+    app.UseForwardedHeaders();
+}
+
 app.UseMiddleware<RequestLoggingMiddleware>();
 
 if (!ReportInvalidConfiguration(app))
