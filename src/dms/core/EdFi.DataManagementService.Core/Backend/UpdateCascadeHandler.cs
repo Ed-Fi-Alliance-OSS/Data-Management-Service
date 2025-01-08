@@ -204,6 +204,7 @@ public class UpdateCascadeHandler(IApiSchemaProvider _apiSchemaProvider, ILogger
         DateTimeOffset utcNow = DateTimeOffset.UtcNow;
         string formattedUtcDateTime = utcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
         returnEdFiDoc["_lastModifiedDate"] = formattedUtcDateTime;
+        returnEdFiDoc["_etag"] = formattedUtcDateTime.GetHashCode();
 
         return new UpdateCascadeResult(
             referencingEdFiDoc,
