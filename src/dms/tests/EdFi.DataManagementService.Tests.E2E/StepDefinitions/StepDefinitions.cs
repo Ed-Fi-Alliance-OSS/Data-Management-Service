@@ -462,10 +462,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                         lastModifiedDate.Should().NotBeNull();
                         item.Remove("_lastModifiedDate");
 
+                        var eTag = Etag(item);
+                        eTag.Should().NotBeNull();
                         if (removeEtag)
                         {
-                            var eTag = Etag(item);
-                            eTag.Should().NotBeNull();
                             item.Remove("_etag");
                         }
                     }
@@ -477,10 +477,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 lastModifiedDate.Should().NotBeNull();
                 (responseJson as JsonObject)?.Remove("_lastModifiedDate");
 
+                var eTag = Etag(responseJson);
+                eTag.Should().NotBeNull();
                 if (removeEtag)
                 {
-                    var eTag = Etag(responseJson);
-                    eTag.Should().NotBeNull();
                     (responseJson as JsonObject)?.Remove("_etag");
                 }
             }
