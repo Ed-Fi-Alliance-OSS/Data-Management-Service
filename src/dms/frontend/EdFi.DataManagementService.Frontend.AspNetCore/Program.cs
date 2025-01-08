@@ -19,6 +19,13 @@ builder.AddServices();
 
 var app = builder.Build();
 
+var pathBase = app.Configuration.GetValue<string>("AppSettings:PathBase");
+if (!string.IsNullOrEmpty(pathBase))
+{
+    app.UsePathBase($"/{pathBase.Trim('/')}");
+    app.UseForwardedHeaders();
+}
+
 app.UseMiddleware<LoggingMiddleware>();
 
 if (!ReportInvalidConfiguration(app))
@@ -32,7 +39,6 @@ if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
 {
     app.UseRateLimiter();
 }
-
 
 if (app.Services.GetRequiredService<IOptions<IdentitySettings>>().Value.EnforceAuthorization)
 {
