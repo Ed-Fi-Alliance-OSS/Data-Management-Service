@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware
 {
-    internal class InjectLastModifiedDateToEdFiDocumentMiddleware(ILogger _logger) : IPipelineStep
+    internal class InjectVersionMetadataToEdFiDocumentMiddleware(ILogger _logger) : IPipelineStep
     {
         public async Task Execute(PipelineContext context, Func<Task> next)
         {

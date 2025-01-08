@@ -16,16 +16,16 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
-public class InjectLastModifiedDateToEdFiDocumentMiddlewareTests
+public class InjectVersionMetadataToEdFiDocumentMiddlewareTests
 {
     // Middleware to test
     internal static IPipelineStep Middleware()
     {
-        return new InjectLastModifiedDateToEdFiDocumentMiddleware(NullLogger.Instance);
+        return new InjectVersionMetadataToEdFiDocumentMiddleware(NullLogger.Instance);
     }
 
     [TestFixture]
-    public class Given_Valid_Request_Body : InjectLastModifiedDateToEdFiDocumentMiddlewareTests
+    public class Given_Valid_Request_Body : InjectVersionMetadataToEdFiDocumentMiddlewareTests
     {
         private readonly PipelineContext _context = No.PipelineContext();
         private readonly string _pattern = @"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$";

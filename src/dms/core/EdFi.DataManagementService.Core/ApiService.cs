@@ -79,7 +79,7 @@ internal class ApiService(
                 ),
                 new ExtractDocumentInfoMiddleware(_logger),
                 new DisallowDuplicateReferencesMiddleware(_logger),
-                new InjectLastModifiedDateToEdFiDocumentMiddleware(_logger),
+                new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
                 new UpsertHandler(_documentStoreRepository, _logger, _resiliencePipeline, _apiSchemaProvider),
             ]
         );
@@ -171,7 +171,7 @@ internal class ApiService(
                 ),
                 new ExtractDocumentInfoMiddleware(_logger),
                 new DisallowDuplicateReferencesMiddleware(_logger),
-                new InjectLastModifiedDateToEdFiDocumentMiddleware(_logger),
+                new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
                 new UpdateByIdHandler(
                     _documentStoreRepository,
                     _logger,
