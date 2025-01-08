@@ -420,7 +420,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             if (!IsDiscoveryEndpoint && (_apiResponse.Status == 200 || _apiResponse.Status == 201))
             {
-                CheckAndRemoveModifiedDate(responseJson);
+                CheckAndRemoveMetadata(responseJson);
             }
 
             expectedBody = ReplacePlaceholders(expectedBody, responseJson);
@@ -443,10 +443,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         }
 
         /// <summary>
-        /// LastModifiedDate will be added to the EdFi document programmatically, so the retrieved value cannot be verified.
+        /// LastModifiedDate and ETag will be added to the EdFi document programmatically, so the retrieved value cannot be verified.
         /// This method ensures the property exists in the response and then removes it.
         /// </summary>
-        private static void CheckAndRemoveModifiedDate(JsonNode responseJson)
+        private static void CheckAndRemoveMetadata(JsonNode responseJson)
         {
             if (responseJson is JsonArray jsonArray && jsonArray.Count > 0)
             {
@@ -457,6 +457,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                         var lastModifiedDate = LastModifiedDate(item);
                         lastModifiedDate.Should().NotBeNull();
                         item.Remove("_lastModifiedDate");
+
+                        var eTag = Etag(item);
+                        eTag.Should().NotBeNull();
+                        item.Remove("_etag");
                     }
                 }
             }
@@ -465,6 +469,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 var lastModifiedDate = LastModifiedDate(responseJson);
                 lastModifiedDate.Should().NotBeNull();
                 (responseJson as JsonObject)?.Remove("_lastModifiedDate");
+
+                var eTag = Etag(responseJson);
+                eTag.Should().NotBeNull();
+                (responseJson as JsonObject)?.Remove("_etag");
             }
         }
 
@@ -490,6 +498,19 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             )
             {
                 return lastModifiedDate.GetValue<string?>();
+            }
+            return null;
+        }
+
+        private static string? Etag(JsonNode response)
+        {
+            if (
+                response is JsonObject jsonObject
+                && jsonObject.TryGetPropertyValue("_etag", out JsonNode? etag)
+                && etag != null
+            )
+            {
+                return etag.GetValue<string?>();
             }
             return null;
         }
@@ -610,7 +631,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             JsonDocument responseJsonDoc = JsonDocument.Parse(responseJsonString);
             JsonNode responseJson = JsonNode.Parse(responseJsonDoc.RootElement.ToString())!;
 
-            CheckAndRemoveModifiedDate(responseJson);
+            CheckAndRemoveMetadata(responseJson);
 
             _logger.log.Information(responseJson.ToString());
 
