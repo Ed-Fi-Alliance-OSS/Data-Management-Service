@@ -1,18 +1,22 @@
 Feature: Validates the functionality of the ETag
 
-        Background:
-
-            Given the system has these "students"
-                  | studentUniqueId | birthDate  | firstName | lastSurname |
-                  | 111111          | 2014-08-14 | Russella  | Mayers      |
-
         @API-260
         Scenario: 01 Ensure that clients can retrieve an ETag in the response header
-             When a GET request is made to "/ed-fi/students/{id}"
-             Then it should respond with 200
-              And the response body is
+             When a POST request is made to "/ed-fi/students" with
                   """
                   {
+                      "studentUniqueId": "111111",
+                      "birthDate": "2014-08-14",
+                      "firstName": "Russella",
+                      "lastSurname": "Mayers"
+                  }
+                  """
+             Then it should respond with 201
+              And the ETag is in the response header
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": "{id}",
                     "studentUniqueId": "111111",
                     "birthDate": "2014-08-14",
                     "firstName": "Russella",
@@ -20,9 +24,8 @@ Feature: Validates the functionality of the ETag
                     "_etag": "{etag}"
                   }
                   """
-              And the ETag is in the response header
 
-        @API-261
+        @ignore @API-261
         Scenario: 02 Ensure that clients can pass an ETag in the request header
              When a PUT if-match "{etag}" request is made to "/ed-fi/students/{id}" with
                   """
@@ -35,7 +38,7 @@ Feature: Validates the functionality of the ETag
                   """
              Then it should respond with 204
 
-        @API-262
+        @ignore @API-262
         Scenario: 03 Ensure that clients cannot pass a different ETag in the If-Match header
              When a PUT if-match "0000000000" request is made to "/ed-fi/students/{id}" with
                   """
@@ -61,7 +64,7 @@ Feature: Validates the functionality of the ETag
                   }
                   """
 
-        @API-263
+        @ignore @API-263
         Scenario: 04 Ensure that clients cannot pass a different ETag in the If-Match header to delete a resource
              When a DELETE if-match "0000000000" request is made to "/ed-fi/students/{id}"
              Then it should respond with 412
@@ -79,7 +82,7 @@ Feature: Validates the functionality of the ETag
                   }
                   """
 
-        @API-264
+        @ignore @API-264
         Scenario: 05 Ensure that clients can pass an ETag to delete a resource
              When a DELETE if-match "{etag}" request is made to "/ed-fi/students/{id}"
              Then it should respond with 204

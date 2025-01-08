@@ -26,6 +26,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private IAPIResponse _apiResponse = null!;
         private string _id = string.Empty;
         private string _location = string.Empty;
+        private string _etag = string.Empty;
         private string _dependentId = string.Empty;
         private string _referencedResourceId = string.Empty;
         private readonly bool _openSearchEnabled = AppSettings.OpenSearchEnabled;
@@ -398,8 +399,11 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 """;
             var schema = JsonSchema.FromText(dependenciesSchema);
 
-            EvaluationOptions validatorEvaluationOptions =
-                new() { OutputFormat = OutputFormat.List, RequireFormatValidation = true };
+            EvaluationOptions validatorEvaluationOptions = new()
+            {
+                OutputFormat = OutputFormat.List,
+                RequireFormatValidation = true,
+            };
 
             var evaluation = schema.Evaluate(responseJson, validatorEvaluationOptions);
             evaluation.HasErrors.Should().BeFalse("The response does not adhere to the expected schema.");
@@ -420,7 +424,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             if (!IsDiscoveryEndpoint && (_apiResponse.Status == 200 || _apiResponse.Status == 201))
             {
-                CheckAndRemoveMetadata(responseJson);
+                CheckAndRemoveMetadata(responseJson, true);
             }
 
             expectedBody = ReplacePlaceholders(expectedBody, responseJson);
@@ -446,7 +450,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         /// LastModifiedDate and ETag will be added to the EdFi document programmatically, so the retrieved value cannot be verified.
         /// This method ensures the property exists in the response and then removes it.
         /// </summary>
-        private static void CheckAndRemoveMetadata(JsonNode responseJson)
+        private static void CheckAndRemoveMetadata(JsonNode responseJson, bool removeEtag)
         {
             if (responseJson is JsonArray jsonArray && jsonArray.Count > 0)
             {
@@ -458,9 +462,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                         lastModifiedDate.Should().NotBeNull();
                         item.Remove("_lastModifiedDate");
 
-                        var eTag = Etag(item);
-                        eTag.Should().NotBeNull();
-                        item.Remove("_etag");
+                        if (removeEtag)
+                        {
+                            var eTag = Etag(item);
+                            eTag.Should().NotBeNull();
+                            item.Remove("_etag");
+                        }
                     }
                 }
             }
@@ -470,9 +477,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 lastModifiedDate.Should().NotBeNull();
                 (responseJson as JsonObject)?.Remove("_lastModifiedDate");
 
-                var eTag = Etag(responseJson);
-                eTag.Should().NotBeNull();
-                (responseJson as JsonObject)?.Remove("_etag");
+                if (removeEtag)
+                {
+                    var eTag = Etag(responseJson);
+                    eTag.Should().NotBeNull();
+                    (responseJson as JsonObject)?.Remove("_etag");
+                }
             }
         }
 
@@ -602,15 +612,13 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
                 if (expectedValue.Contains("{id}"))
                 {
-                    _apiResponse
-                        .Headers[header.Key]
-                        .Should()
-                        .EndWith(expectedValue.Replace("{id}", _id));
+                    _apiResponse.Headers[header.Key].Should().EndWith(expectedValue.Replace("{id}", _id));
                 }
                 else
                 {
-                    string? key = _apiResponse.Headers.Keys
-                        .FirstOrDefault(k => k.Equals(header.Key, StringComparison.OrdinalIgnoreCase));
+                    string? key = _apiResponse.Headers.Keys.FirstOrDefault(k =>
+                        k.Equals(header.Key, StringComparison.OrdinalIgnoreCase)
+                    );
 
                     if (key != null)
                     {
@@ -621,24 +629,28 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         }
 
         [Then("the record can be retrieved with a GET request")]
-        public async Task ThenTheRecordCanBeRetrievedWithAGETRequest(string body)
+        public async Task ThenTheRecordCanBeRetrievedWithAGETRequest(string expectedBody)
         {
-            body = body.Replace("{id}", _id).Replace("{dependentId}", _dependentId);
-            JsonNode bodyJson = JsonNode.Parse(body)!;
+            expectedBody = expectedBody
+                .Replace("{id}", _id)
+                .Replace("{dependentId}", _dependentId)
+                .Replace("{etag}", _etag);
+            JsonNode expectedJson = JsonNode.Parse(expectedBody)!;
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(_location)!;
 
             string responseJsonString = await _apiResponse.TextAsync();
             JsonDocument responseJsonDoc = JsonDocument.Parse(responseJsonString);
             JsonNode responseJson = JsonNode.Parse(responseJsonDoc.RootElement.ToString())!;
 
-            CheckAndRemoveMetadata(responseJson);
+            // If we are explicitly looking for etag in our tests, do not remove it from the response
+            CheckAndRemoveMetadata(responseJson, expectedJson["_etag"] == null);
 
             _logger.log.Information(responseJson.ToString());
 
             responseJson = OrderJsonProperties(responseJson);
-            bodyJson = OrderJsonProperties(bodyJson);
+            expectedJson = OrderJsonProperties(expectedJson);
 
-            JsonElement expectedElement = JsonDocument.Parse(bodyJson.ToJsonString()).RootElement;
+            JsonElement expectedElement = JsonDocument.Parse(expectedJson.ToJsonString()).RootElement;
             JsonElement responseElement = JsonDocument.Parse(responseJson.ToJsonString()).RootElement;
 
             bool areEquals = JsonElementEqualityComparer.Instance.Equals(expectedElement, responseElement);
@@ -679,6 +691,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             headers.GetValueOrDefault("total-count").Should().NotBe(count.ToString());
         }
 
+        [Then("the ETag is in the response header")]
+        public void ThenTheEtagIsInTheResponseHeader()
+        {
+            _etag = _apiResponse.Headers["etag"];
+            _etag.Should().NotBeNullOrEmpty();
+        }
         #endregion
 
         private static string AddDataPrefixIfNecessary(string input)

@@ -61,10 +61,7 @@ internal class UpsertHandler(
             InsertSuccess insertSuccess => new FrontendResponse(
                 StatusCode: 201,
                 Body: null,
-                Headers: new Dictionary<string, string>()
-                {
-                    {"Etag", insertSuccess.Etag.Value}
-                },
+                Headers: new Dictionary<string, string>() { { "etag", insertSuccess.Etag.Value } },
                 LocationHeaderPath: PathComponents.ToResourcePath(
                     context.PathComponents,
                     insertSuccess.NewDocumentUuid
