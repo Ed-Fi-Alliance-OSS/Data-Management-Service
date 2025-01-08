@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 
@@ -20,7 +21,7 @@ namespace EdFi.DataManagementService.Core.Middleware
             DateTimeOffset utcNow = DateTimeOffset.UtcNow;
             string formattedUtcDateTime = utcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
             context.ParsedBody["_lastModifiedDate"] = formattedUtcDateTime;
-            context.ParsedBody["_etag"] = formattedUtcDateTime.GetHashCode().ToString();
+            context.ParsedBody["_etag"] = utcNow.DateTime.ToBinary().ToString(CultureInfo.InvariantCulture);
             await next();
         }
     }

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
@@ -204,7 +205,7 @@ public class UpdateCascadeHandler(IApiSchemaProvider _apiSchemaProvider, ILogger
         DateTimeOffset utcNow = DateTimeOffset.UtcNow;
         string formattedUtcDateTime = utcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
         returnEdFiDoc["_lastModifiedDate"] = formattedUtcDateTime;
-        returnEdFiDoc["_etag"] = formattedUtcDateTime.GetHashCode();
+        returnEdFiDoc["_etag"] = utcNow.DateTime.ToBinary().ToString(CultureInfo.InvariantCulture);
 
         return new UpdateCascadeResult(
             referencingEdFiDoc,
