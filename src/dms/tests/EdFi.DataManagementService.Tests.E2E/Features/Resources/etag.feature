@@ -1,4 +1,4 @@
-Feature: Validates the functionality of the ETag
+Feature: ETag validations
 
         @API-260
         Scenario: 01 Ensure that clients can retrieve an ETag in the response header

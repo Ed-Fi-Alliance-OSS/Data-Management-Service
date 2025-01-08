@@ -201,11 +201,14 @@ public class UpdateCascadeHandler(IApiSchemaProvider _apiSchemaProvider, ILogger
             }
         }
 
-        // finally update _lastModifiedDate
+        // finally update _lastModifiedDate and _etag
         DateTimeOffset utcNow = DateTimeOffset.UtcNow;
         string formattedUtcDateTime = utcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
         returnEdFiDoc["_lastModifiedDate"] = formattedUtcDateTime;
-        returnEdFiDoc["_etag"] = utcNow.DateTime.ToBinary().ToString(CultureInfo.InvariantCulture);
+        returnEdFiDoc["_etag"] = DateTime
+            .ParseExact(formattedUtcDateTime, "yyyy-MM-ddTHH:mm:ssZ", DateTimeFormatInfo.InvariantInfo)
+            .ToBinary()
+            .ToString(CultureInfo.InvariantCulture);
 
         return new UpdateCascadeResult(
             referencingEdFiDoc,

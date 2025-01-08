@@ -21,7 +21,10 @@ namespace EdFi.DataManagementService.Core.Middleware
             DateTimeOffset utcNow = DateTimeOffset.UtcNow;
             string formattedUtcDateTime = utcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
             context.ParsedBody["_lastModifiedDate"] = formattedUtcDateTime;
-            context.ParsedBody["_etag"] = utcNow.DateTime.ToBinary().ToString(CultureInfo.InvariantCulture);
+            context.ParsedBody["_etag"] = DateTime
+                .ParseExact(formattedUtcDateTime, "yyyy-MM-ddTHH:mm:ssZ", DateTimeFormatInfo.InvariantInfo)
+                .ToBinary()
+                .ToString(CultureInfo.InvariantCulture);
             await next();
         }
     }
