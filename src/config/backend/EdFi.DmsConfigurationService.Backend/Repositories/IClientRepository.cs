@@ -15,6 +15,8 @@ public interface IClientRepository
         string scope
     );
 
+    public Task<ClientUpdateResult> UpdateClientAsync(string clientUuid, string displayName, string scope);
+
     public Task<ClientClientsResult> GetAllClientsAsync();
 
     public Task<ClientDeleteResult> DeleteClientAsync(string clientUuid);
@@ -47,6 +49,17 @@ public record ClientResetResult
     public record FailureIdentityProvider(IdentityProviderError IdentityProviderError) : ClientResetResult();
 
     public record FailureUnknown(string FailureMessage) : ClientResetResult();
+}
+
+public record ClientUpdateResult
+{
+    public record Success() : ClientUpdateResult;
+
+    public record FailureIdentityProvider(IdentityProviderError IdentityProviderError) : ClientUpdateResult();
+
+    public record FailureUnknown(string FailureMessage) : ClientUpdateResult();
+
+    public record FailureNotFound(string FailureMessage) : ClientUpdateResult();
 }
 
 public record ClientClientsResult

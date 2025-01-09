@@ -12,7 +12,6 @@ using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
-using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
@@ -130,6 +129,16 @@ public class ApplicationModuleTests
 
             A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored))
                 .Returns(new ClientResetResult.Success("SECRET"));
+
+            A.CallTo(
+                    () =>
+                        _clientRepository.UpdateClientAsync(
+                            A<string>.Ignored,
+                            A<string>.Ignored,
+                            A<string>.Ignored
+                        )
+                )
+                .Returns(new ClientUpdateResult.Success());
         }
 
         [Test]
@@ -560,7 +569,17 @@ public class ApplicationModuleTests
                 .Returns(new ApplicationUpdateResult.FailureVendorNotFound());
 
             A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
-                .Returns(new ApplicationApiClientsResult.Success([]));
+                .Returns(new ApplicationApiClientsResult.Success([new ApiClient("111", Guid.NewGuid())]));
+
+            A.CallTo(
+                    () =>
+                        _clientRepository.UpdateClientAsync(
+                            A<string>.Ignored,
+                            A<string>.Ignored,
+                            A<string>.Ignored
+                        )
+                )
+                .Returns(new ClientUpdateResult.Success());
         }
 
         [Test]
