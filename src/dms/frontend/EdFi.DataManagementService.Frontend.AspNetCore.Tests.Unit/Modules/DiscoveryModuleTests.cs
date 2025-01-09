@@ -14,6 +14,7 @@ using FluentAssertions;
 using ImpromptuInterface;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 
@@ -35,7 +36,7 @@ public class DiscoveryModuleTests
             {
                 ProjectName = "Ed-Fi",
                 ProjectVersion = "5.0.0",
-                Description = "Ed-Fi data standard 5.0.0"
+                Description = "Ed-Fi data standard 5.0.0",
             }
         ).ActLike<IDataModelInfo>();
         var apiService = A.Fake<IApiService>();
@@ -63,6 +64,66 @@ public class DiscoveryModuleTests
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         apiDetails.Should().NotBeNull();
         apiDetails?.urls.Count.Should().Be(5);
+        apiDetails?.applicationName.Should().Be("DMS");
+        apiDetails?.dataModels.Should().NotBeNull();
+        apiDetails?.dataModels.Count().Should().Be(1);
+        apiDetails?.dataModels[0].name.Should().Be("Ed-Fi");
+    }
+
+    [Test]
+    public async Task When_PathBase_Provided_Discovery_Endpoint_Returns_Ok_Response()
+    {
+        // Arrange
+        var versionProvider = A.Fake<IVersionProvider>();
+        A.CallTo(() => versionProvider.Version).Returns("1.0");
+        A.CallTo(() => versionProvider.ApplicationName).Returns("DMS");
+
+        IDataModelInfo expectedDataModelInfo = (
+            new
+            {
+                ProjectName = "Ed-Fi",
+                ProjectVersion = "5.0.0",
+                Description = "Ed-Fi data standard 5.0.0",
+            }
+        ).ActLike<IDataModelInfo>();
+        var apiService = A.Fake<IApiService>();
+        A.CallTo(() => apiService.GetDataModelInfo()).Returns([expectedDataModelInfo]);
+
+        var pathBase = "dms-api";
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureAppConfiguration(
+                (context, configuration) =>
+                {
+                    configuration.AddInMemoryCollection(
+                        new Dictionary<string, string?> { ["AppSettings:PathBase"] = pathBase }
+                    );
+                }
+            );
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection.AddTransient((x) => versionProvider);
+                    collection.AddTransient((x) => apiService);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync($"/{pathBase}");
+        var content = await response.Content.ReadAsStringAsync();
+        var apiDetails = JsonSerializer.Deserialize<DiscoveryApiDetails>(content);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        apiDetails.Should().NotBeNull();
+        apiDetails?.urls.Count.Should().Be(5);
+        var dependenciesUrl = apiDetails?.urls.First(x => x.Key.Equals("dependencies"));
+        dependenciesUrl.Should().NotBeNull();
+        dependenciesUrl?.Value.Should().NotBeNull();
+        dependenciesUrl!.Value!.ToString().Should().Contain(pathBase);
         apiDetails?.applicationName.Should().Be("DMS");
         apiDetails?.dataModels.Should().NotBeNull();
         apiDetails?.dataModels.Count().Should().Be(1);
