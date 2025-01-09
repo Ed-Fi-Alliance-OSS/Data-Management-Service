@@ -60,37 +60,7 @@ public class KeycloakClientRepository(
                 clientRole = await _keycloakClient.GetRoleByNameAsync(_realm, role);
             }
 
-            var clientScopes = await _keycloakClient.GetClientScopesAsync(_realm);
-            ClientScope? clientScope = clientScopes.FirstOrDefault(x => x.Name.Equals(scope));
-
-            if (clientScope is null)
-            {
-                await _keycloakClient.CreateClientScopeAsync(
-                    _realm,
-                    new ClientScope()
-                    {
-                        Name = scope,
-                        Protocol = "openid-connect",
-                        ProtocolMappers = new List<ProtocolMapper>(
-                            [
-                                new ProtocolMapper()
-                                {
-                                    Name = "audience resolve",
-                                    Protocol = "openid-connect",
-                                    _ProtocolMapper = "oidc-audience-resolve-mapper",
-                                    ConsentRequired = false,
-                                    Config = new Dictionary<string, string>
-                                    {
-                                        { "introspection.token.claim", "true" },
-                                        { "access.token.claim", "true" },
-                                    },
-                                },
-                            ]
-                        ),
-                        Attributes = new Attributes() { IncludeInTokenScope = "true" },
-                    }
-                );
-            }
+            await CheckAndCreateClientScopeAsync(scope);
 
             string? createdClientUuid = await _keycloakClient.CreateClientAndRetrieveClientIdAsync(
                 _realm,
@@ -213,6 +183,41 @@ public class KeycloakClientRepository(
         }
     }
 
+    private async Task CheckAndCreateClientScopeAsync(string scope)
+    {
+        var clientScopes = await _keycloakClient.GetClientScopesAsync(_realm);
+        ClientScope? clientScope = clientScopes.FirstOrDefault(x => x.Name.Equals(scope));
+
+        if (clientScope is null)
+        {
+            await _keycloakClient.CreateClientScopeAsync(
+                _realm,
+                new ClientScope()
+                {
+                    Name = scope,
+                    Protocol = "openid-connect",
+                    ProtocolMappers = new List<ProtocolMapper>(
+                        [
+                            new ProtocolMapper()
+                            {
+                                Name = "audience resolve",
+                                Protocol = "openid-connect",
+                                _ProtocolMapper = "oidc-audience-resolve-mapper",
+                                ConsentRequired = false,
+                                Config = new Dictionary<string, string>
+                                {
+                                    { "introspection.token.claim", "true" },
+                                    { "access.token.claim", "true" },
+                                },
+                            },
+                        ]
+                    ),
+                    Attributes = new Attributes() { IncludeInTokenScope = "true" },
+                }
+            );
+        }
+    }
+
     private static IdentityProviderError ExceptionToKeycloakError(FlurlHttpException ex)
     {
         return ex.StatusCode switch
@@ -223,5 +228,39 @@ public class KeycloakClientRepository(
             404 => new IdentityProviderError.NotFound(ex.Message),
             _ => new IdentityProviderError("Unknown"),
         };
+    }
+
+    public async Task<ClientUpdateResult> UpdateClientAsync(
+        string clientUuid,
+        string displayName,
+        string scope
+    )
+    {
+        try
+        {
+            var client = await _keycloakClient.GetClientAsync(_realm, clientUuid);
+            if (client != null)
+            {
+                client.Name = displayName;
+                client.DefaultClientScopes = [scope];
+                await CheckAndCreateClientScopeAsync(scope);
+                await _keycloakClient.UpdateClientAsync(_realm, clientUuid, client);
+                return new ClientUpdateResult.Success();
+            }
+            else
+            {
+                return new ClientUpdateResult.FailureNotFound($"Client {clientUuid} not found.");
+            }
+        }
+        catch (FlurlHttpException ex)
+        {
+            logger.LogError(ex, "Update client failure");
+            return new ClientUpdateResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Update client failure");
+            return new ClientUpdateResult.FailureUnknown(ex.Message);
+        }
     }
 }
