@@ -28,7 +28,7 @@ public static class WebApplicationBuilderExtensions
     public static void AddServices(this WebApplicationBuilder webAppBuilder)
     {
         var logger = ConfigureLogging();
-
+        webAppBuilder.Configuration.AddEnvironmentVariables();
         webAppBuilder
             .Services.AddDmsDefaultConfiguration(
                 logger,
