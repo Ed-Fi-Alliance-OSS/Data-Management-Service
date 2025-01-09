@@ -155,10 +155,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
         }
 
         _logger.LogDebug("Upsert success as insert - {TraceId}", upsertRequest.TraceId.Value);
-        return new UpsertResult.InsertSuccess(
-            upsertRequest.DocumentUuid,
-            new Etag(upsertRequest.EdfiDoc["_etag"]?.ToString() ?? "")
-        );
+        return new UpsertResult.InsertSuccess(upsertRequest.DocumentUuid);
     }
 
     public async Task<UpsertResult> AsUpdate(

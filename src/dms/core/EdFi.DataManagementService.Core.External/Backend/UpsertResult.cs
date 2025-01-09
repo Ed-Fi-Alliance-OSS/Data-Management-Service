@@ -16,8 +16,7 @@ public record UpsertResult
     /// A successful upsert request that took the form of an insert
     /// </summary>
     /// <param name="NewDocumentUuid">The DocumentUuid of the new document</param>
-    /// <param name="Etag">The Etag of the new document</param>
-    public record InsertSuccess(DocumentUuid NewDocumentUuid, Etag Etag) : UpsertResult();
+    public record InsertSuccess(DocumentUuid NewDocumentUuid) : UpsertResult();
 
     /// <summary>
     /// A successful upsert request that took the form of an update

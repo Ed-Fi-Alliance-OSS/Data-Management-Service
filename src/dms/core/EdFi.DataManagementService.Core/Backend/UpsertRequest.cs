@@ -42,6 +42,4 @@ internal record UpsertRequest(
     IUpdateCascadeHandler UpdateCascadeHandler
 )
     : UpdateRequest(ResourceInfo, DocumentInfo, EdfiDoc, TraceId, DocumentUuid, UpdateCascadeHandler),
-        IUpsertRequest
-{
-}
+        IUpsertRequest;

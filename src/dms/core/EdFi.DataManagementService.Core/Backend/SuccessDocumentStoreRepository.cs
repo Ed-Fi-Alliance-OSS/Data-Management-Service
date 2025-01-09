@@ -25,7 +25,7 @@ internal class SuccessDocumentStoreRepository(ILogger<SuccessDocumentStoreReposi
             upsertRequest.TraceId
         );
         return await Task.FromResult<UpsertResult>(
-            new UpsertResult.InsertSuccess(upsertRequest.DocumentUuid, new Etag(""))
+            new UpsertResult.InsertSuccess(upsertRequest.DocumentUuid)
         );
     }
 

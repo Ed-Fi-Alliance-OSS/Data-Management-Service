@@ -59,9 +59,9 @@ internal class UpsertHandler(
         context.FrontendResponse = upsertResult switch
         {
             InsertSuccess insertSuccess => new FrontendResponse(
-                StatusCode: 201,
-                Body: null,
-                Headers: new Dictionary<string, string>() { { "etag", insertSuccess.Etag.Value } },
+            StatusCode: 201,
+            Body: null,
+                Headers: new Dictionary<string, string>() { { "etag", context.ParsedBody["_etag"]?.ToString() ?? "" } },
                 LocationHeaderPath: PathComponents.ToResourcePath(
                     context.PathComponents,
                     insertSuccess.NewDocumentUuid
@@ -70,7 +70,7 @@ internal class UpsertHandler(
             UpdateSuccess updateSuccess => new(
                 StatusCode: 200,
                 Body: null,
-                Headers: [],
+                Headers: new Dictionary<string, string>() { { "etag", context.ParsedBody["_etag"]?.ToString() ?? "" } },
                 LocationHeaderPath: PathComponents.ToResourcePath(
                     context.PathComponents,
                     updateSuccess.ExistingDocumentUuid
