@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -58,7 +57,7 @@ public class UpsertHandlerTests
         {
             context.FrontendResponse.StatusCode.Should().Be(200);
             context.FrontendResponse.Body.Should().BeNull();
-            context.FrontendResponse.Headers.Count.Should().Be(0);
+            context.FrontendResponse.Headers.Count.Should().Be(1);
             context.FrontendResponse.LocationHeaderPath.Should().NotBeNullOrEmpty();
         }
     }
