@@ -12,54 +12,98 @@ using Microsoft.Extensions.Options;
 namespace EdFi.DataManagementService.Core.ApiSchema;
 
 /// <summary>
-/// Loads and parses the ApiSchema.json from a file.
+/// Loads and parses ApiSchema file.
 /// </summary>
 internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOptions<AppSettings> appSettings)
     : IApiSchemaProvider
 {
-    private readonly Lazy<JsonNode> _apiSchemaRootNode =
-        new(() =>
+    private readonly Lazy<JsonNode> _coreApiSchemaRootNode = new(() =>
+    {
+        _logger.LogDebug("Entering ApiSchemaFileLoader._coreApiSchemaRootNode");
+
+        string jsonContent;
+
+        if (appSettings.Value.UseLocalApiSchemaJson)
         {
-            _logger.LogDebug("Entering ApiSchemaFileLoader");
+            jsonContent = File.ReadAllText(
+                Path.Combine(
+                    Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? "",
+                    "ApiSchema",
+                    "ds-5.1-api-schema-authoritative.json"
+                )
+            );
+        }
+        else
+        {
+            var assembly =
+                Assembly.GetAssembly(typeof(DataStandard51.ApiSchema.Marker))
+                ?? throw new InvalidOperationException("Could not load the ApiSchema library");
 
-            string jsonContent;
+            var resourceName = assembly
+                .GetManifestResourceNames()
+                .Single(str => str.EndsWith("ApiSchema.json"));
 
-            if (appSettings.Value.UseLocalApiSchemaJson)
-            {
-                jsonContent = File.ReadAllText(
-                    Path.Combine(
-                        Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? "",
-                        "ApiSchema",
-                        "ApiSchema.json"
-                    )
-                );
-            }
-            else
-            {
-                var assembly =
-                    Assembly.GetAssembly(typeof(DataStandard51.ApiSchema.Marker))
-                    ?? throw new InvalidOperationException("Could not load the ApiSchema library");
+            using Stream stream =
+                assembly.GetManifestResourceStream(resourceName)
+                ?? throw new InvalidOperationException("Could not load ApiSchema resource");
+            using StreamReader reader = new(stream);
 
-                var resourceName = assembly
-                    .GetManifestResourceNames()
-                    .Single(str => str.EndsWith("ApiSchema.json"));
+            jsonContent = reader.ReadToEnd();
+        }
 
-                using Stream stream =
-                    assembly.GetManifestResourceStream(resourceName)
-                    ?? throw new InvalidOperationException("Could not load ApiSchema resource");
-                using StreamReader reader = new(stream);
+        JsonNode? rootNodeFromFile = JsonNode.Parse(jsonContent);
+        if (rootNodeFromFile == null)
+        {
+            _logger.LogCritical("Unable to read and parse Api Schema file");
+            throw new InvalidOperationException("Unable to read and parse Api Schema file.");
+        }
+        return rootNodeFromFile;
+    });
 
-                jsonContent = reader.ReadToEnd();
-            }
+    public JsonNode CoreApiSchemaRootNode => _coreApiSchemaRootNode.Value;
 
-            JsonNode? rootNodeFromFile = JsonNode.Parse(jsonContent);
-            if (rootNodeFromFile == null)
-            {
-                _logger.LogCritical("Unable to read and parse Api Schema file");
-                throw new InvalidOperationException("Unable to read and parse Api Schema file.");
-            }
-            return rootNodeFromFile;
-        });
+    private readonly Lazy<JsonNode[]> _extensionApiSchemaRootNodes = new(() =>
+    {
+        _logger.LogDebug("Entering ApiSchemaFileLoader._extensionApiSchemaRootNode");
 
-    public JsonNode ApiSchemaRootNode => _apiSchemaRootNode.Value;
+        string jsonContent;
+
+        if (appSettings.Value.UseLocalApiSchemaJson)
+        {
+            jsonContent = File.ReadAllText(
+                Path.Combine(
+                    Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? "",
+                    "ApiSchema",
+                    "tpdm-api-schema-authoritative.json"
+                )
+            );
+        }
+        else
+        {
+            var assembly =
+                Assembly.GetAssembly(typeof(DataStandard51.ApiSchema.Marker))
+                ?? throw new InvalidOperationException("Could not load the ApiSchema library");
+
+            var resourceName = assembly
+                .GetManifestResourceNames()
+                .Single(str => str.EndsWith("ApiSchema.json"));
+
+            using Stream stream =
+                assembly.GetManifestResourceStream(resourceName)
+                ?? throw new InvalidOperationException("Could not load ApiSchema resource");
+            using StreamReader reader = new(stream);
+
+            jsonContent = reader.ReadToEnd();
+        }
+
+        JsonNode? rootNodeFromFile = JsonNode.Parse(jsonContent);
+        if (rootNodeFromFile == null)
+        {
+            _logger.LogCritical("Unable to read and parse Api Schema file");
+            throw new InvalidOperationException("Unable to read and parse Api Schema file.");
+        }
+        return [rootNodeFromFile];
+    });
+
+    public JsonNode[] ExtensionApiSchemaRootNodes => _extensionApiSchemaRootNodes.Value;
 }

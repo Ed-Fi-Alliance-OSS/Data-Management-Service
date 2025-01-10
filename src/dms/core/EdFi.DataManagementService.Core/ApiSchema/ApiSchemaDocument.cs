@@ -73,15 +73,53 @@ internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
     /// </summary>
     public List<JsonNode> GetAllProjectSchemaNodes()
     {
-        JsonNode schema = _apiSchemaRootNode;
-
-        var projectSchemasNode = schema["projectSchemas"];
-
-        if (projectSchemasNode == null)
-        {
-            throw new InvalidOperationException("Expected ProjectSchmas node to exist.");
-        }
+        JsonNode projectSchemasNode =
+            _apiSchemaRootNode["projectSchemas"]
+            ?? throw new InvalidOperationException("Expected ProjectSchemas node to exist.");
 
         return projectSchemasNode.SelectNodesFromPropertyValues();
+    }
+
+    /// <summary>
+    /// Finds the CoreOpenApiSpecification, if this is a data standard ApiSchemaDocument. Returns null if not found.
+    /// </summary>
+    public JsonNode? FindCoreOpenApiSpecification()
+    {
+        bool isExtensionProject = _apiSchemaRootNode.SelectRequiredNodeFromPathAs<bool>(
+            "$.projectSchemas['ed-fi'].isExtensionProject",
+            _logger
+        );
+
+        if (isExtensionProject)
+        {
+            return null;
+        }
+
+        return _apiSchemaRootNode.SelectRequiredNodeFromPath(
+            "$.projectSchemas['ed-fi'].coreOpenApiSpecification",
+            _logger
+        );
+    }
+
+    /// <summary>
+    /// Finds the OpenApiExtensionFragments, if this is an extension ApiSchemaDocument. Returns null if not found.
+    /// </summary>
+    public JsonNode? FindOpenApiExtensionFragments()
+    {
+        // TODO: Don't hardcode TPDM!
+        bool isExtensionProject = _apiSchemaRootNode.SelectRequiredNodeFromPathAs<bool>(
+            "$.projectSchemas['tpdm'].isExtensionProject",
+            _logger
+        );
+
+        if (!isExtensionProject)
+        {
+            return null;
+        }
+
+        return _apiSchemaRootNode.SelectRequiredNodeFromPath(
+            "$.projectSchemas['tpdm'].openApiExtensionFragments",
+            _logger
+        );
     }
 }

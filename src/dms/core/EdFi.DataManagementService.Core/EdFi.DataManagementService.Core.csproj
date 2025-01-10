@@ -57,4 +57,15 @@
     </None>
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="ApiSchema\ds-5.1-api-schema-authoritative.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="ApiSchema\tpdm-api-schema-authoritative.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>

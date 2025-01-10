@@ -18,7 +18,7 @@ public static class WebApplicationExtensions
             .GetTypes()
             .Where(p => moduleInterface.IsAssignableFrom(p) && p.IsClass);
 
-        var modules = new List<IEndpointModule>();
+        List<IEndpointModule> modules = [];
 
         foreach (var moduleClass in moduleClasses)
         {
