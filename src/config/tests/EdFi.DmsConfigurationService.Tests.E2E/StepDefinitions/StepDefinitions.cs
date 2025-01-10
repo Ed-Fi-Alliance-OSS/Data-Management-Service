@@ -22,6 +22,8 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     private string _token = string.Empty;
     private string _location = string.Empty;
     private readonly Dictionary<string, string> _ids = new();
+    private string _applicationKey = string.Empty;
+    private string _applicationSecret = string.Empty;
 
     private IDictionary<string, string> _authHeaders =>
         new Dictionary<string, string>
@@ -45,12 +47,17 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     [Given("valid credentials")]
     public async Task GivenValidCredentials()
     {
+        await GetClientAccessToken("DmsConfigurationService", "s3creT@09", "edfi_admin_api/full_access");
+    }
+
+    private async Task GetClientAccessToken(string key, string secret, string scope)
+    {
         var urlEncodedData = new Dictionary<string, string>
         {
-            { "client_id", "DmsConfigurationService" },
-            { "client_secret", "s3creT@09" },
+            { "client_id", key },
+            { "client_secret", secret },
             { "grant_type", "client_credentials" },
-            { "scope", "edfi_admin_api/full_access" },
+            { "scope", scope },
         };
         var content = new FormUrlEncodedContent(urlEncodedData);
         APIRequestContextOptions? options = new()
@@ -252,6 +259,29 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         responseJson["id"].Should().NotBeNull();
         responseJson["key"].Should().NotBeNull();
         responseJson["secret"].Should().NotBeNull();
+    }
+
+    [Then("retrieve created key and secret")]
+    public async Task ThenRetrieveKeyAndSecret()
+    {
+        string responseJsonString = await _apiResponse.TextAsync();
+        JsonDocument responseJsonDoc = JsonDocument.Parse(responseJsonString);
+        JsonNode responseJson = JsonNode.Parse(responseJsonDoc.RootElement.ToString())!;
+        responseJson["id"].Should().NotBeNull();
+        responseJson["key"].Should().NotBeNull();
+        _applicationKey = responseJson["key"]!.GetValue<string>();
+        responseJson["secret"].Should().NotBeNull();
+        _applicationSecret = responseJson["secret"]!.GetValue<string>();
+    }
+
+    [Then("token should have updated {string} scope")]
+    public async Task ThenValidateTheScope(string claimset)
+    {
+        await GetClientAccessToken(_applicationKey, _applicationSecret, claimset);
+        await TokenReceived();
+        _token.Should().NotBeNull();
+        var response = JwtTokenValidator.Validate(_token, claimset);
+        response.Should().BeTrue();
     }
 
     private async Task ResponseBodyIs(string expectedBody)

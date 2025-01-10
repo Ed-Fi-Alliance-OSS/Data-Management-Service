@@ -171,8 +171,11 @@ public class ApplicationModule : IEndpointModule
                     );
                     switch (clientUpdateResult)
                     {
-                        case ClientUpdateResult.Success UpdateSuccess:
-                            var applicationUpdateResult = await repository.UpdateApplication(command);
+                        case ClientUpdateResult.Success updateSuccess:
+                            var applicationUpdateResult = await repository.UpdateApplication(
+                                command,
+                                new() { ClientId = client.ClientId, ClientUuid = updateSuccess.ClientUuid }
+                            );
 
                             if (applicationUpdateResult is ApplicationUpdateResult.FailureVendorNotFound)
                             {

@@ -71,7 +71,7 @@ public class ApplicationModuleTests
                     () =>
                         _applicationRepository.InsertApplication(
                             A<ApplicationInsertCommand>.Ignored,
-                            A<ApiClientInsertCommand>.Ignored
+                            A<ApiClientCommand>.Ignored
                         )
                 )
                 .Returns(new ApplicationInsertResult.Success(1));
@@ -106,7 +106,13 @@ public class ApplicationModuleTests
                     )
                 );
 
-            A.CallTo(() => _applicationRepository.UpdateApplication(A<ApplicationUpdateCommand>.Ignored))
+            A.CallTo(
+                    () =>
+                        _applicationRepository.UpdateApplication(
+                            A<ApplicationUpdateCommand>.Ignored,
+                            A<ApiClientCommand>.Ignored
+                        )
+                )
                 .Returns(new ApplicationUpdateResult.Success());
 
             A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
@@ -138,7 +144,7 @@ public class ApplicationModuleTests
                             A<string>.Ignored
                         )
                 )
-                .Returns(new ClientUpdateResult.Success());
+                .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
         }
 
         [Test]
@@ -306,7 +312,13 @@ public class ApplicationModuleTests
             A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
                 .Returns(new ApplicationGetResult.FailureNotFound());
 
-            A.CallTo(() => _applicationRepository.UpdateApplication(A<ApplicationUpdateCommand>.Ignored))
+            A.CallTo(
+                    () =>
+                        _applicationRepository.UpdateApplication(
+                            A<ApplicationUpdateCommand>.Ignored,
+                            A<ApiClientCommand>.Ignored
+                        )
+                )
                 .Returns(new ApplicationUpdateResult.FailureNotExists());
 
             A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
@@ -379,7 +391,7 @@ public class ApplicationModuleTests
                     () =>
                         _applicationRepository.InsertApplication(
                             A<ApplicationInsertCommand>.Ignored,
-                            A<ApiClientInsertCommand>.Ignored
+                            A<ApiClientCommand>.Ignored
                         )
                 )
                 .Returns(new ApplicationInsertResult.FailureUnknown(""));
@@ -393,7 +405,13 @@ public class ApplicationModuleTests
             A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
                 .Returns(new ApplicationGetResult.FailureUnknown(""));
 
-            A.CallTo(() => _applicationRepository.UpdateApplication(A<ApplicationUpdateCommand>.Ignored))
+            A.CallTo(
+                    () =>
+                        _applicationRepository.UpdateApplication(
+                            A<ApplicationUpdateCommand>.Ignored,
+                            A<ApiClientCommand>.Ignored
+                        )
+                )
                 .Returns(new ApplicationUpdateResult.FailureUnknown(""));
 
             A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
@@ -466,7 +484,7 @@ public class ApplicationModuleTests
                     () =>
                         _applicationRepository.InsertApplication(
                             A<ApplicationInsertCommand>.Ignored,
-                            A<ApiClientInsertCommand>.Ignored
+                            A<ApiClientCommand>.Ignored
                         )
                 )
                 .Returns(new ApplicationInsertResult());
@@ -477,7 +495,13 @@ public class ApplicationModuleTests
             A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
                 .Returns(new ApplicationGetResult());
 
-            A.CallTo(() => _applicationRepository.UpdateApplication(A<ApplicationUpdateCommand>.Ignored))
+            A.CallTo(
+                    () =>
+                        _applicationRepository.UpdateApplication(
+                            A<ApplicationUpdateCommand>.Ignored,
+                            A<ApiClientCommand>.Ignored
+                        )
+                )
                 .Returns(new ApplicationUpdateResult());
 
             A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
@@ -560,12 +584,18 @@ public class ApplicationModuleTests
                     () =>
                         _applicationRepository.InsertApplication(
                             A<ApplicationInsertCommand>.Ignored,
-                            A<ApiClientInsertCommand>.Ignored
+                            A<ApiClientCommand>.Ignored
                         )
                 )
                 .Returns(new ApplicationInsertResult.FailureVendorNotFound());
 
-            A.CallTo(() => _applicationRepository.UpdateApplication(A<ApplicationUpdateCommand>.Ignored))
+            A.CallTo(
+                    () =>
+                        _applicationRepository.UpdateApplication(
+                            A<ApplicationUpdateCommand>.Ignored,
+                            A<ApiClientCommand>.Ignored
+                        )
+                )
                 .Returns(new ApplicationUpdateResult.FailureVendorNotFound());
 
             A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
@@ -579,7 +609,7 @@ public class ApplicationModuleTests
                             A<string>.Ignored
                         )
                 )
-                .Returns(new ClientUpdateResult.Success());
+                .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
         }
 
         [Test]
