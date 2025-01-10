@@ -179,7 +179,10 @@ public class ApplicationTests : DatabaseTest
                 EducationOrganizationIds = [],
             };
 
-            var applicationUpdateResult = await _applicationRepository.UpdateApplication(applicationUpdate);
+            var applicationUpdateResult = await _applicationRepository.UpdateApplication(
+                applicationUpdate,
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
             applicationUpdateResult.Should().BeOfType<ApplicationUpdateResult.FailureVendorNotFound>();
         }
     }
@@ -235,7 +238,8 @@ public class ApplicationTests : DatabaseTest
                     ClaimSetName = command.ClaimSetName,
                     EducationOrganizationIds = command.EducationOrganizationIds,
                     VendorId = command.VendorId,
-                }
+                },
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
             );
             vendorUpdateResult.Should().BeOfType<ApplicationUpdateResult.Success>();
         }

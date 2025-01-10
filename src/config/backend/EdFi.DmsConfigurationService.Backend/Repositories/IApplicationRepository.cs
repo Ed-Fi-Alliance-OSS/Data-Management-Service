@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 
@@ -13,11 +12,14 @@ public interface IApplicationRepository
 {
     Task<ApplicationInsertResult> InsertApplication(
         ApplicationInsertCommand command,
-        ApiClientInsertCommand clientCommand
+        ApiClientCommand clientCommand
     );
     Task<ApplicationQueryResult> QueryApplication(PagingQuery query);
     Task<ApplicationGetResult> GetApplication(long id);
-    Task<ApplicationUpdateResult> UpdateApplication(ApplicationUpdateCommand command);
+    Task<ApplicationUpdateResult> UpdateApplication(
+        ApplicationUpdateCommand command,
+        ApiClientCommand clientCommand
+    );
     Task<ApplicationDeleteResult> DeleteApplication(long id);
     Task<ApplicationApiClientsResult> GetApplicationApiClients(long id);
 }

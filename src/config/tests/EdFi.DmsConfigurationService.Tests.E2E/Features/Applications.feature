@@ -385,7 +385,7 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Demo-application",
-                   "claimSetName": "Claim 06",
+                   "claimSetName": "Claim06",
                    "educationOrganizationIds": [1, 2, 3]
                   }
                   """
@@ -403,7 +403,30 @@ Feature: Applications endpoints
                     "id": {applicationId},
                     "applicationName": "Demo-application",
                     "vendorId": {vendorId},
-                    "claimSetName": "Claim 06",
+                    "claimSetName": "Claim06",
                     "educationOrganizationIds": [1, 2, 3]
                   }
                   """
+
+        Scenario: 17 Ensure clients can update the claim set scope
+             When a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Demo application",
+                   "claimSetName": "ClaimScenario03"
+                  }
+                  """
+             Then it should respond with 201
+             Then retrieve created key and secret
+             When a PUT request is made to "/v2/applications/{applicationId}" with
+                  """
+                      {
+                      "id": {applicationId},
+                      "vendorId": {vendorId},
+                      "applicationName": "Demo application Update",
+                      "claimSetName": "ClaimScenario03Update"
+                      }
+                  """
+             Then it should respond with 204
+             Then token should have updated 'ClaimScenario03Update' scope

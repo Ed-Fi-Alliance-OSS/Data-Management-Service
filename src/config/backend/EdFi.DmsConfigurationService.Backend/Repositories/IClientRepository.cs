@@ -53,7 +53,7 @@ public record ClientResetResult
 
 public record ClientUpdateResult
 {
-    public record Success() : ClientUpdateResult;
+    public record Success(Guid ClientUuid) : ClientUpdateResult;
 
     public record FailureIdentityProvider(IdentityProviderError IdentityProviderError) : ClientUpdateResult();
 
