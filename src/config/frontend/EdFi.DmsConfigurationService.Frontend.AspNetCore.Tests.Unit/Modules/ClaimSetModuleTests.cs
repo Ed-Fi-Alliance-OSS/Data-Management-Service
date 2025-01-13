@@ -146,7 +146,7 @@ public class ClaimSetModuleTests
                 new StringContent(
                     """
                     {
-                        "name":"Testing POST for ClaimSet"
+                        "name":"Testing-POST-for-ClaimSet"
                     }
                     """,
                     Encoding.UTF8,
@@ -162,7 +162,7 @@ public class ClaimSetModuleTests
                     """
                     {
                         "id": 1,
-                        "name": "Test 11",
+                        "name": "Test-11",
                         "resourceClaims": [
                          {
                             "name": "Test ResourceClaim",
@@ -187,7 +187,7 @@ public class ClaimSetModuleTests
                     """
                     {
                         "originalId" : 1,
-                        "name": "Test Copy" 
+                        "name": "Test-Copy" 
                     }
                     """,
                     Encoding.UTF8,
@@ -200,7 +200,7 @@ public class ClaimSetModuleTests
                 new StringContent(
                     """
                     {
-                        "name" : "Testing Import for ClaimSet",
+                        "name" : "Testing-Import-for-ClaimSet",
                         "resourceClaims" : [
                             {
                                 "name": "Test ResourceClaim",
@@ -248,6 +248,12 @@ public class ClaimSetModuleTests
                    "name" : "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
                 }
                 """;
+            string claimSetNameWithWhiteSpace = """
+                {
+                   "name" : "ClaimSet name with white space"
+                }
+                """;
+
             string invalidPutBody = """
                 {
                     "id": 1,
@@ -285,6 +291,11 @@ public class ClaimSetModuleTests
                 new StringContent(invalidInsertBody, Encoding.UTF8, "application/json")
             );
 
+            var addResponseWithInvalidName = await client.PostAsync(
+                "/v2/claimSets",
+                new StringContent(claimSetNameWithWhiteSpace, Encoding.UTF8, "application/json")
+            );
+
             var updateResponse = await client.PutAsync(
                 "/v2/claimSets/1",
                 new StringContent(invalidPutBody, Encoding.UTF8, "application/json")
@@ -317,6 +328,30 @@ public class ClaimSetModuleTests
                   "errors": []
                 }
                 """.Replace("{correlationId}", actualPostResponse!["correlationId"]!.GetValue<string>())
+            );
+
+            var actualPostResponseForInvalidName = JsonNode.Parse(
+                await addResponseWithInvalidName.Content.ReadAsStringAsync()
+            );
+            var expectedPostResponseForInvalidName = JsonNode.Parse(
+                """
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "Name": [
+                      "Claim set name must not contain white spaces."
+                    ]
+                  },
+                  "errors": []
+                }
+                """.Replace(
+                    "{correlationId}",
+                    actualPostResponseForInvalidName!["correlationId"]!.GetValue<string>()
+                )
             );
 
             var actualPutResponse = JsonNode.Parse(await updateResponse.Content.ReadAsStringAsync());
@@ -381,6 +416,12 @@ public class ClaimSetModuleTests
             addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             JsonNode.DeepEquals(actualPostResponse, expectedPostResponse).Should().Be(true);
 
+            addResponseWithInvalidName.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            JsonNode
+                .DeepEquals(actualPostResponseForInvalidName, expectedPostResponseForInvalidName)
+                .Should()
+                .Be(true);
+
             updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             JsonNode.DeepEquals(actualPutResponse, expectedPutResponse).Should().Be(true);
 
@@ -396,6 +437,7 @@ public class ClaimSetModuleTests
         {
             //Arrange
             using var client = SetUpClient();
+            A.CallTo(() => _dataProvider.GetActions()).Returns(["Create", "Read", "Update", "Delete"]);
 
             //Act
             var updateResponse = await client.PutAsync(
@@ -404,7 +446,7 @@ public class ClaimSetModuleTests
                     """
                     {
                         "id": 2,
-                        "name": "Test 11",
+                        "name": "Test-11",
                         "resourceClaims": [
                             {
                                 "name": "Test ResourceClaim",
@@ -468,7 +510,7 @@ public class ClaimSetModuleTests
                     """
                     {
                         "id": 1,
-                        "name": "Test 11",
+                        "name": "Test-11",
                         "resourceClaims": [
                              {
                                 "name": "Test ResourceClaim",
@@ -493,7 +535,7 @@ public class ClaimSetModuleTests
                     """
                     {
                         "originalId" : 1,
-                        "name": "Test Copy"
+                        "name": "Test-Copy"
                     }
                     """,
                     Encoding.UTF8,
@@ -556,7 +598,7 @@ public class ClaimSetModuleTests
                 new StringContent(
                     """
                     {
-                        "name":"Testing POST for ClaimSet"
+                        "name":"Testing-POST-for-ClaimSet"
                     }
                     """,
                     Encoding.UTF8,
@@ -572,7 +614,7 @@ public class ClaimSetModuleTests
                     """
                     {
                         "id": 1,
-                        "name": "Test 11",
+                        "name": "Test-11",
                         "resourceClaims": [
                          {
                             "name": "Test ResourceClaim",
@@ -597,7 +639,7 @@ public class ClaimSetModuleTests
                     """
                     {
                         "originalId" : 1,
-                        "name": "Test Copy"
+                        "name": "Test-Copy"
                     }
                     """,
                     Encoding.UTF8,
@@ -610,7 +652,7 @@ public class ClaimSetModuleTests
                 new StringContent(
                     """
                     {
-                        "name" : "Testing Import for ClaimSet",
+                        "name" : "Testing-Import-for-ClaimSet",
                         "resourceClaims" : [
                         {
                             "name": "Test ResourceClaim",
@@ -668,7 +710,7 @@ public class ClaimSetModuleTests
                 new StringContent(
                     """
                     {
-                        "name":"Testing POST for ClaimSet"
+                        "name":"Testing-POST-for-ClaimSet"
                     }
                     """,
                     Encoding.UTF8,
@@ -678,7 +720,7 @@ public class ClaimSetModuleTests
 
             string importBody = """
                 {
-                    "name" : "Test Duplicate",
+                    "name" : "Test-Duplicate",
                     "resourceClaims" : [
                     {
                         "name": "Test ResourceClaim",

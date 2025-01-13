@@ -5,7 +5,6 @@
 
 using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.Repositories;
-using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
@@ -54,7 +53,8 @@ public class ApplicationModule : IEndpointModule
             clientId,
             clientSecret,
             identitySettings.Value.ClientRole,
-            command.ApplicationName
+            command.ApplicationName,
+            command.ClaimSetName
         );
 
         switch (clientCreateResult)
@@ -149,29 +149,89 @@ public class ApplicationModule : IEndpointModule
         ApplicationUpdateCommand.Validator validator,
         ApplicationUpdateCommand command,
         HttpContext httpContext,
-        IApplicationRepository repository
+        IApplicationRepository repository,
+        IClientRepository clientRepository,
+        ILogger<ApplicationModule> logger
     )
     {
         await validator.GuardAsync(command);
+        var apiClientsResult = await repository.GetApplicationApiClients(id);
 
-        var applicationUpdateResult = await repository.UpdateApplication(command);
-
-        if (applicationUpdateResult is ApplicationUpdateResult.FailureVendorNotFound)
+        switch (apiClientsResult)
         {
-            throw new ValidationException(
-                new[] { new ValidationFailure("VendorId", $"Reference 'VendorId' does not exist.") }
-            );
+            case ApplicationApiClientsResult.Success success:
+                var client = success.Clients.FirstOrDefault();
+                if (client != null)
+                {
+                    logger.LogInformation("Updating client {clientId}", client.ClientId);
+                    var clientUpdateResult = await clientRepository.UpdateClientAsync(
+                        client.ClientUuid.ToString(),
+                        command.ApplicationName,
+                        command.ClaimSetName
+                    );
+                    switch (clientUpdateResult)
+                    {
+                        case ClientUpdateResult.Success updateSuccess:
+                            var applicationUpdateResult = await repository.UpdateApplication(
+                                command,
+                                new() { ClientId = client.ClientId, ClientUuid = updateSuccess.ClientUuid }
+                            );
+
+                            if (applicationUpdateResult is ApplicationUpdateResult.FailureVendorNotFound)
+                            {
+                                throw new ValidationException(
+                                    [
+                                        new ValidationFailure(
+                                            "VendorId",
+                                            $"Reference 'VendorId' does not exist."
+                                        ),
+                                    ]
+                                );
+                            }
+
+                            return applicationUpdateResult switch
+                            {
+                                ApplicationUpdateResult.Success updateApplicationSuccess =>
+                                    Results.NoContent(),
+                                ApplicationUpdateResult.FailureNotExists => FailureResults.NotFound(
+                                    "Application not found",
+                                    httpContext.TraceIdentifier
+                                ),
+                                _ => FailureResults.Unknown(httpContext.TraceIdentifier),
+                            };
+
+                        case ClientUpdateResult.FailureIdentityProvider failureIdentityProvider:
+                            logger.LogError(
+                                "Failure updating client: {failureMessage}",
+                                failureIdentityProvider.IdentityProviderError.FailureMessage
+                            );
+                            return FailureResults.BadGateway(
+                                failureIdentityProvider.IdentityProviderError.FailureMessage,
+                                httpContext.TraceIdentifier
+                            );
+                        case ClientUpdateResult.FailureNotFound notFound:
+                            logger.LogError(notFound.FailureMessage);
+                            return FailureResults.Unknown(httpContext.TraceIdentifier);
+                        case ClientUpdateResult.FailureUnknown unknownFailure:
+                            logger.LogError(
+                                "Error updating client {clientId} {clientUuid}: {message}",
+                                client.ClientId,
+                                client.ClientUuid,
+                                unknownFailure.FailureMessage
+                            );
+                            return FailureResults.Unknown(httpContext.TraceIdentifier);
+                    }
+                }
+                else
+                {
+                    return FailureResults.NotFound("ApiClient not found", httpContext.TraceIdentifier);
+                }
+                break;
+            case ApplicationApiClientsResult.FailureUnknown failure:
+                logger.LogError("Error fetching ApiClients: {failure}", failure);
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
-
-        return applicationUpdateResult switch
-        {
-            ApplicationUpdateResult.Success success => Results.NoContent(),
-            ApplicationUpdateResult.FailureNotExists => FailureResults.NotFound(
-                "Application not found",
-                httpContext.TraceIdentifier
-            ),
-            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
-        };
+        return FailureResults.Unknown(httpContext.TraceIdentifier);
     }
 
     private static async Task<IResult> Delete(

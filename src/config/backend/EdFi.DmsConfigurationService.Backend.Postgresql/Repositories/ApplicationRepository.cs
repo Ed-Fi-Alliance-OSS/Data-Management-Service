@@ -21,7 +21,7 @@ public class ApplicationRepository(
 {
     public async Task<ApplicationInsertResult> InsertApplication(
         ApplicationInsertCommand command,
-        ApiClientInsertCommand clientCommand
+        ApiClientCommand clientCommand
     )
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
@@ -174,7 +174,10 @@ public class ApplicationRepository(
         }
     }
 
-    public async Task<ApplicationUpdateResult> UpdateApplication(ApplicationUpdateCommand command)
+    public async Task<ApplicationUpdateResult> UpdateApplication(
+        ApplicationUpdateCommand command,
+        ApiClientCommand clientCommand
+    )
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         await connection.OpenAsync();
@@ -209,6 +212,14 @@ public class ApplicationRepository(
             });
 
             await connection.ExecuteAsync(sql, educationOrganizations);
+
+            string updateApiClientsql = """
+                UPDATE dmscs.ApiClient
+                SET ClientUuid=@ClientUuid WHERE ClientId = @ClientId;
+                """;
+
+            await connection.ExecuteAsync(updateApiClientsql, clientCommand);
+
             await transaction.CommitAsync();
 
             return new ApplicationUpdateResult.Success();

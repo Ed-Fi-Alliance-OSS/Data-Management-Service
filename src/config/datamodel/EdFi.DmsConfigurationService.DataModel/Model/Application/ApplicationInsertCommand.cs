@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.RegularExpressions;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using FluentValidation;
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.Application;
@@ -20,6 +22,10 @@ public class ApplicationInsertCommand
         {
             RuleFor(a => a.ApplicationName).NotEmpty().MaximumLength(256);
             RuleFor(a => a.ClaimSetName).NotEmpty().MaximumLength(256);
+            RuleFor(m => m.ClaimSetName)
+                .Matches(new Regex(ValidationConstants.ClaimSetNameNoWhiteSpaceRegex))
+                .When(m => !string.IsNullOrEmpty(m.ClaimSetName))
+                .WithMessage(ValidationConstants.ClaimSetNameNoWhiteSpaceMessage);
             RuleForEach(a => a.EducationOrganizationIds).NotNull().GreaterThan(0);
         }
     }

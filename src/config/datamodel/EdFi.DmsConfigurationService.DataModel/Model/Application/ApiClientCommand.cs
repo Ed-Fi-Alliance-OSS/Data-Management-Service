@@ -5,7 +5,7 @@
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.Application;
 
-public class ApiClientInsertCommand
+public class ApiClientCommand
 {
     public required string ClientId { get; set; }
     public required Guid ClientUuid { get; set; }
