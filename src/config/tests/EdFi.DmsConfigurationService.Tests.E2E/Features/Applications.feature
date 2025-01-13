@@ -350,3 +350,32 @@ Feature: Applications endpoints
                    "errors": []
                   }
                   """
+
+         Scenario: 16 Ensure the location header has correct path when a path base is provided
+             When a POST request is made to "config/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Demo-application",
+                   "claimSetName": "Claim 06",
+                   "educationOrganizationIds": [1, 2, 3]
+                  }
+                  """
+             Then it should respond with 201
+              And the response headers include
+                  """
+                    {
+                        "location": "config/v2/applications/{applicationId}"
+                    }
+                  """
+              And the response body has key and secret
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": {applicationId},
+                    "applicationName": "Demo-application",
+                    "vendorId": {vendorId},
+                    "claimSetName": "Claim 06",
+                    "educationOrganizationIds": [1, 2, 3]
+                  }
+                  """

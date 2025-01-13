@@ -52,6 +52,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Given("a POST request is made to {string} with")]
         public async Task GivenAPOSTRequestIsMadeToWith(string url, string body)
         {
+            url = AddDataPrefixIfNecessary(url);
             await ExecutePostRequest(url, body);
 
             _apiResponse
@@ -203,13 +204,27 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a POST request is made to {string} with")]
         public async Task WhenSendingAPOSTRequestToWithBody(string url, string body)
         {
+            url = AddDataPrefixIfNecessary(url);
+            await ExecutePostRequest(url, body);
+        }
+
+        [When("a POST request is made to {string} with path base {string}")]
+        public async Task WhenSendingAPOSTRequestToUrlWithPathBaseWithBody(
+            string url,
+            string pathBase,
+            string body
+        )
+        {
+            url = AddDataPrefixIfNecessary(url);
+            if (!string.IsNullOrEmpty(pathBase))
+            {
+                url = pathBase + "/" + url;
+            }
             await ExecutePostRequest(url, body);
         }
 
         private async Task ExecutePostRequest(string url, string body)
         {
-            url = AddDataPrefixIfNecessary(url);
-
             _logger.log.Information($"POST url: {url}");
             _logger.log.Information($"POST body: {body}");
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(url, new() { Data = body })!;

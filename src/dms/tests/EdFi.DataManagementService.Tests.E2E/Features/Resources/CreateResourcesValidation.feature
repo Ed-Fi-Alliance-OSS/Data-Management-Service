@@ -697,7 +697,7 @@ Feature: Resources "Create" Operation validations
                   """
 
         @API-175 @POST
-        Scenario: 06 Post an invalid document missing a comma (Resource)
+        Scenario: 27 Post an invalid document missing a comma (Resource)
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
                   {
@@ -725,5 +725,33 @@ Feature: Resources "Create" Operation validations
                         ]
                     },
                     "errors": []
+                  }
+                  """
+
+        Scenario: 28 Ensure the location header has correct path when a path base is provided
+             When a POST request is made to "/ed-fi/students" with path base "api"
+                  """
+                    {
+                        "studentUniqueId":"89898677",
+                        "birthDate":  "2017-08-23",
+                        "firstName": "first name",
+                        "lastSurname": "last name"
+                    }
+                  """
+             Then it should respond with 201
+             And the response headers include
+                  """
+                    {
+                        "location": "api/data/ed-fi/students/{id}"
+                    }
+                  """
+             And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": "{id}",
+                    "studentUniqueId": "89898677",
+                    "birthDate":  "2017-08-23",
+                    "firstName": "first name",
+                    "lastSurname": "last name"
                   }
                   """
