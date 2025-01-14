@@ -341,4 +341,32 @@ Feature: Vendors endpoints
                   ]
                   """
 
+        Scenario: 17 Ensure the location header has correct path when a path base is provided
+             When a POST request is made to "config/v2/vendors" with
+                  """
+                    {
+                        "company": "Test 99",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": "Test"
+                    }
+                  """
+             Then it should respond with 201
+              And the response headers include
+                  """
+                    {
+                        "location": "config/v2/vendors/{vendorId}"
+                    }
+                  """
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                      "id": {id},
+                      "company": "Test 99",
+                      "contactName": "Test",
+                      "contactEmailAddress": "test@gmail.com",
+                      "namespacePrefixes": "Test"
+                  }
+                  """
+
 
