@@ -87,7 +87,7 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Demo application",
-                   "claimSetName": "Claim 06",
+                   "claimSetName": "Claim06",
                    "educationOrganizationIds": [1, 2, 3]
                   }
                   """
@@ -105,7 +105,7 @@ Feature: Applications endpoints
                     "id": {applicationId},
                     "applicationName": "Demo application",
                     "vendorId": {vendorId},
-                    "claimSetName": "Claim 06",
+                    "claimSetName": "Claim06",
                     "educationOrganizationIds": [1, 2, 3]
                   }
                   """
@@ -116,7 +116,7 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Test Scenario 02",
-                   "claimSetName": "Test Scenario 02"
+                   "claimSetName": "TestScenario02"
                   }
                   """
              Then it should respond with 201
@@ -140,7 +140,7 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Demo application",
-                   "claimSetName": "Claim Scenario 03"
+                   "claimSetName": "ClaimScenario03"
                   }
                   """
              Then it should respond with 201
@@ -150,7 +150,7 @@ Feature: Applications endpoints
                       "id": {applicationId},
                       "vendorId": {vendorId},
                       "applicationName": "Demo application Update",
-                      "claimSetName": "Claim Scenario 03 Update"
+                      "claimSetName": "ClaimScenario03Update"
                       }
                   """
              Then it should respond with 204
@@ -161,7 +161,7 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Delete application",
-                   "claimSetName": "Claim Scenario 05"
+                   "claimSetName": "ClaimScenario05"
                   }
                   """
              Then it should respond with 201
@@ -174,7 +174,7 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Delete application",
-                   "claimSetName": "Claim Scenario 06"
+                   "claimSetName": "ClaimScenario06"
                   }
                   """
              Then it should respond with 201
@@ -189,7 +189,7 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Delete application",
-                   "claimSetName": "Claim Scenario 07"
+                   "claimSetName": "ClaimScenario07"
                   }
                   """
              Then it should respond with 201
@@ -201,7 +201,7 @@ Feature: Applications endpoints
                       "id": {applicationId},
                       "vendorId": {vendorId},
                       "applicationName": "Delete application update",
-                      "claimSetName": "Claim Scenario 07"
+                      "claimSetName": "ClaimScenario07"
                   }
                   """
              Then it should respond with 404
@@ -212,7 +212,7 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Delete application",
-                   "claimSetName": "Claim Scenario 08"
+                   "claimSetName": "ClaimScenario08"
                   }
                   """
              Then it should respond with 201
@@ -235,7 +235,7 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Delete application",
-                   "claimSetName": "Claim Scenario 04"
+                   "claimSetName": "ClaimScenario04"
                   }
                   """
              Then it should respond with 400
@@ -246,7 +246,7 @@ Feature: Applications endpoints
                   {
                    "vendorId": 9999,
                    "applicationName": "Demo application",
-                   "claimSetName": "Claim 999",
+                   "claimSetName": "Claim999",
                    "educationOrganizationIds": [1, 2, 3]
                   }
                   """
@@ -274,7 +274,7 @@ Feature: Applications endpoints
                   {
                    "vendorId": 9999,
                    "applicationName": "",
-                   "claimSetName": "Claim 999",
+                   "claimSetName": "Claim999",
                    "educationOrganizationIds": [1, 2, 3]
                   }
                   """
@@ -324,13 +324,41 @@ Feature: Applications endpoints
                   }
                   """
 
-        Scenario: 15 Verify validation invalid EducationOrganizationId
+          Scenario: 15 Verify validation invalid claim set name with white space
+             When a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": 9999,
+                   "applicationName": "Test 1234",
+                   "claimSetName": "Claim set name with white space",
+                   "educationOrganizationIds": [1, 2, 3]
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": "0HN8RI9E3O45G:00000004",
+                    "validationErrors": {
+                    "ClaimSetName": [
+                      "Claim set name must not contain white spaces."
+                    ]
+                  },
+                  "errors": []
+                  }
+                  """
+
+        Scenario: 16 Verify validation invalid EducationOrganizationId
              When a POST request is made to "/v2/applications" with
                   """
                   {
                    "vendorId": 9999,
                    "applicationName": "Demo application",
-                   "claimSetName": "Claim 999",
+                   "claimSetName": "Claim999",
                    "educationOrganizationIds": [0]
                   }
                   """
@@ -357,7 +385,7 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Demo-application",
-                   "claimSetName": "Claim 06",
+                   "claimSetName": "Claim06",
                    "educationOrganizationIds": [1, 2, 3]
                   }
                   """
@@ -375,7 +403,30 @@ Feature: Applications endpoints
                     "id": {applicationId},
                     "applicationName": "Demo-application",
                     "vendorId": {vendorId},
-                    "claimSetName": "Claim 06",
+                    "claimSetName": "Claim06",
                     "educationOrganizationIds": [1, 2, 3]
                   }
                   """
+
+        Scenario: 17 Ensure clients can update the claim set scope
+             When a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Demo application",
+                   "claimSetName": "ClaimScenario03"
+                  }
+                  """
+             Then it should respond with 201
+             Then retrieve created key and secret
+             When a PUT request is made to "/v2/applications/{applicationId}" with
+                  """
+                      {
+                      "id": {applicationId},
+                      "vendorId": {vendorId},
+                      "applicationName": "Demo application Update",
+                      "claimSetName": "ClaimScenario03Update"
+                      }
+                  """
+             Then it should respond with 204
+             Then token should have updated 'ClaimScenario03Update' scope

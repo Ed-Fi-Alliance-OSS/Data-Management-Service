@@ -317,7 +317,7 @@ Feature: Vendors endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Demo application",
-                   "claimSetName": "Claim 06",
+                   "claimSetName": "Claim06",
                    "educationOrganizationIds": [1, 2, 3]
                   }
                   """
@@ -331,7 +331,7 @@ Feature: Vendors endpoints
                             "id": {id},
                             "applicationName": "Demo application",
                             "vendorId": {vendorId},
-                            "claimSetName": "Claim 06",
+                            "claimSetName": "Claim06",
                             "educationOrganizationIds": [
                                 1,
                                 2,

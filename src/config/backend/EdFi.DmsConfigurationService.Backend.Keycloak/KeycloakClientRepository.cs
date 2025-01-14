@@ -30,7 +30,8 @@ public class KeycloakClientRepository(
         string clientId,
         string clientSecret,
         string role,
-        string displayName
+        string displayName,
+        string scope
     )
     {
         try
@@ -42,7 +43,7 @@ public class KeycloakClientRepository(
                 Secret = clientSecret,
                 Name = displayName,
                 ServiceAccountsEnabled = true,
-                DefaultClientScopes = [keycloakContext.Scope],
+                DefaultClientScopes = [scope],
                 ProtocolMappers = ConfigServiceProtocolMapper(),
             };
 
@@ -59,37 +60,7 @@ public class KeycloakClientRepository(
                 clientRole = await _keycloakClient.GetRoleByNameAsync(_realm, role);
             }
 
-            var clientScopes = await _keycloakClient.GetClientScopesAsync(_realm);
-            ClientScope? clientScope = clientScopes.FirstOrDefault(x => x.Name.Equals(keycloakContext.Scope));
-
-            if (clientScope is null)
-            {
-                await _keycloakClient.CreateClientScopeAsync(
-                    _realm,
-                    new ClientScope()
-                    {
-                        Name = keycloakContext.Scope,
-                        Protocol = "openid-connect",
-                        ProtocolMappers = new List<ProtocolMapper>(
-                            [
-                                new ProtocolMapper()
-                                {
-                                    Name = "audience resolve",
-                                    Protocol = "openid-connect",
-                                    _ProtocolMapper = "oidc-audience-resolve-mapper",
-                                    ConsentRequired = false,
-                                    Config = new Dictionary<string, string>
-                                    {
-                                        { "introspection.token.claim", "true" },
-                                        { "access.token.claim", "true" },
-                                    },
-                                },
-                            ]
-                        ),
-                        Attributes = new Attributes() { IncludeInTokenScope = "true" },
-                    }
-                );
-            }
+            await CheckAndCreateClientScopeAsync(scope);
 
             string? createdClientUuid = await _keycloakClient.CreateClientAndRetrieveClientIdAsync(
                 _realm,
@@ -212,6 +183,47 @@ public class KeycloakClientRepository(
         }
     }
 
+    private async Task CheckAndCreateClientScopeAsync(string scope)
+    {
+        bool scopeExists = await ClientScopeExistsAsync(scope);
+
+        if (!scopeExists)
+        {
+            await _keycloakClient.CreateClientScopeAsync(
+                _realm,
+                new ClientScope()
+                {
+                    Name = scope,
+                    Protocol = "openid-connect",
+                    ProtocolMappers = new List<ProtocolMapper>(
+                        [
+                            new ProtocolMapper()
+                            {
+                                Name = "audience resolve",
+                                Protocol = "openid-connect",
+                                _ProtocolMapper = "oidc-audience-resolve-mapper",
+                                ConsentRequired = false,
+                                Config = new Dictionary<string, string>
+                                {
+                                    { "introspection.token.claim", "true" },
+                                    { "access.token.claim", "true" },
+                                },
+                            },
+                        ]
+                    ),
+                    Attributes = new Attributes() { IncludeInTokenScope = "true" },
+                }
+            );
+        }
+    }
+
+    private async Task<bool> ClientScopeExistsAsync(string scope)
+    {
+        var clientScopes = await _keycloakClient.GetClientScopesAsync(_realm);
+        ClientScope? clientScope = clientScopes.FirstOrDefault(x => x.Name.Equals(scope));
+        return clientScope != null;
+    }
+
     private static IdentityProviderError ExceptionToKeycloakError(FlurlHttpException ex)
     {
         return ex.StatusCode switch
@@ -222,5 +234,67 @@ public class KeycloakClientRepository(
             404 => new IdentityProviderError.NotFound(ex.Message),
             _ => new IdentityProviderError("Unknown"),
         };
+    }
+
+    public async Task<ClientUpdateResult> UpdateClientAsync(
+        string clientUuid,
+        string displayName,
+        string scope
+    )
+    {
+        try
+        {
+            var client = await _keycloakClient.GetClientAsync(_realm, clientUuid);
+            if (client != null)
+            {
+                await CheckAndCreateClientScopeAsync(scope);
+                var scopeExists = await ClientScopeExistsAsync(scope);
+                if (scopeExists)
+                {
+                    // Delete the existing client
+                    await _keycloakClient.DeleteClientAsync(_realm, clientUuid);
+                    Client newClient = new()
+                    {
+                        ClientId = client.ClientId,
+                        Enabled = true,
+                        Secret = client.Secret,
+                        Name = displayName,
+                        ServiceAccountsEnabled = true,
+                        DefaultClientScopes = [scope],
+                        ProtocolMappers = client.ProtocolMappers,
+                    };
+                    // Re-create the client
+                    string? newClientId = await _keycloakClient.CreateClientAndRetrieveClientIdAsync(
+                        _realm,
+                        newClient
+                    );
+                    if (!string.IsNullOrEmpty(newClientId))
+                    {
+                        return new ClientUpdateResult.Success(Guid.Parse(newClientId));
+                    }
+                }
+                else
+                {
+                    var scopeNotFound = $"Scope {scope} not found";
+                    logger.LogError(message: scopeNotFound);
+                    return new ClientUpdateResult.FailureIdentityProvider(
+                        new IdentityProviderError(scopeNotFound)
+                    );
+                }
+            }
+
+            logger.LogError("Update client failure");
+            return new ClientUpdateResult.FailureUnknown($"Error while updating the client: {displayName}");
+        }
+        catch (FlurlHttpException ex)
+        {
+            logger.LogError(ex, "Update client failure");
+            return new ClientUpdateResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Update client failure");
+            return new ClientUpdateResult.FailureUnknown(ex.Message);
+        }
     }
 }
