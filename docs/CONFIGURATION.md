@@ -1,6 +1,14 @@
-# AppSettings Configuration
+# Configuration
 
-The sections below describe custom configuration options in the `appSettings.json` file.
+The sections below describe custom configuration options in the `appSettings.json`
+file.
+
+> [!NOTE]
+> Environment Variables are supported and will take priority over
+> `appsettings.json`. No special prefix is required on environment variable
+> names. The standard convention for reading hierarchial keys from environment is
+> to use a double underscore `__` separator. For example
+> `AppSettings__Datastore=mssql`
 
 ## AppSettings
 

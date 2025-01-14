@@ -30,6 +30,8 @@ public static class WebApplicationBuilderExtensions
         var logger = ConfigureLogging();
         webApplicationBuilder.Services.AddLogging(loggingBuilder => loggingBuilder.AddSerilog(dispose: true));
 
+        webApplicationBuilder.Configuration.AddEnvironmentVariables();
+
         // For FluentValidation
         var executingAssembly = Assembly.GetExecutingAssembly();
 
