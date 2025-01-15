@@ -97,7 +97,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         string? rootUrl = request.RootUrl();
 
         _discoveryService ??= httpContext.RequestServices.GetRequiredService<DiscoveryService>();
-        string discoveryUrl = options.Value.AuthenticationService;
+        string discoveryUrl = options.Value.OpenIdDiscovery;
         string oAuthUrl = await _discoveryService.GetTokenEndpointAsync(discoveryUrl);
         if (
             Array.Exists(

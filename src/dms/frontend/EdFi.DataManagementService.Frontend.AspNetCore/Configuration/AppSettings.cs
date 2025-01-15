@@ -9,7 +9,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 
 public class AppSettings
 {
-    public required string AuthenticationService { get; set; }
+    public required string OpenIdDiscovery { get; set; }
     public required string Datastore { get; set; }
     public required string QueryHandler { get; set; }
     public bool DeployDatabaseOnStartup { get; set; }
@@ -20,9 +20,9 @@ public class AppSettingsValidator : IValidateOptions<AppSettings>
 {
     public ValidateOptionsResult Validate(string? name, AppSettings options)
     {
-        if (string.IsNullOrWhiteSpace(options.AuthenticationService))
+        if (string.IsNullOrWhiteSpace(options.OpenIdDiscovery))
         {
-            return ValidateOptionsResult.Fail("Missing required AppSettings value: AuthenticationService");
+            return ValidateOptionsResult.Fail("Missing required AppSettings value: OpenIdDiscovery");
         }
 
         if (string.IsNullOrWhiteSpace(options.Datastore))

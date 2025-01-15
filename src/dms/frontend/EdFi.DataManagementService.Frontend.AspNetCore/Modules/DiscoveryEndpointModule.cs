@@ -30,7 +30,7 @@ public class DiscoveryEndpointModule : IEndpointModule
     )
     {
         _discoveryService ??= httpContext.RequestServices.GetRequiredService<DiscoveryService>();
-        string discoveryUrl = appSettings.Value.AuthenticationService;
+        string discoveryUrl = appSettings.Value.OpenIdDiscovery;
         string tokenEndpoint = await _discoveryService.GetTokenEndpointAsync(discoveryUrl);
 
         IList<IDataModelInfo> dataModelInfos = apiService.GetDataModelInfo();

@@ -17,7 +17,7 @@ services:
       retries: 50
     environment:
       ASPNETCORE_HTTP_PORTS: ${ASPNETCORE_HTTP_PORTS:-8080}
-      OAUTH_TOKEN_ENDPOINT: ${OAUTH_TOKEN_ENDPOINT:-http://localhost:8045/realms/edfi/protocol/openid-connect/token}
+      OAUTH_TOKEN_ENDPOINT: ${OAUTH_TOKEN_ENDPOINT:-http://localhost:8045/realms/edfi/.well-known/openid-configuration}
       NEED_DATABASE_SETUP: ${NEED_DATABASE_SETUP:-true}
       BYPASS_STRING_COERCION: ${BYPASS_STRING_COERCION:-false}
       LOG_LEVEL: ${LOG_LEVEL:-DEBUG}

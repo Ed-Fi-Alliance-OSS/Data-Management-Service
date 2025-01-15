@@ -29,7 +29,7 @@ public class ConfigurationTests
                     (context, configuration) =>
                     {
                         configuration.AddInMemoryCollection(
-                            new Dictionary<string, string?> { ["AppSettings:AuthenticationService"] = null, }
+                            new Dictionary<string, string?> { ["AppSettings:OpenIdDiscovery"] = null, }
                         );
                     }
                 );
