@@ -9,6 +9,7 @@ using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
+using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
 
@@ -16,6 +17,8 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
 public partial class MetadataEndpointModule : IEndpointModule
 {
+    private DiscoveryService? _discoveryService;
+
     private sealed record SpecificationSection(string name, string prefix);
 
     [GeneratedRegex(@"specifications\/(?<section>[^-]+)-spec.json?")]
@@ -25,7 +28,7 @@ public partial class MetadataEndpointModule : IEndpointModule
     [
         new SpecificationSection("Resources", string.Empty),
         new SpecificationSection("Descriptors", string.Empty),
-        new SpecificationSection("Discovery", "Other")
+        new SpecificationSection("Discovery", "Other"),
     ];
 
     private readonly string ErrorResourcePath = "Invalid resource path";
@@ -45,7 +48,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         {
             dependencies = $"{baseUrl}/dependencies",
             specifications = $"{baseUrl}/specifications",
-            xsdMetadata = $"{baseUrl}/xsd"
+            xsdMetadata = $"{baseUrl}/xsd",
         };
 
         await httpContext.Response.WriteAsJsonAsync(content);
@@ -92,7 +95,10 @@ public partial class MetadataEndpointModule : IEndpointModule
 
         string section = match.Groups["section"].Value.ToLower();
         string? rootUrl = request.RootUrl();
-        string oAuthUrl = options.Value.AuthenticationService;
+
+        _discoveryService ??= httpContext.RequestServices.GetRequiredService<DiscoveryService>();
+        string discoveryUrl = options.Value.AuthenticationService;
+        string oAuthUrl = await _discoveryService.GetTokenEndpointAsync(discoveryUrl);
         if (
             Array.Exists(
                 Sections,

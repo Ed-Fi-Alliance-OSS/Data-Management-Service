@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
+using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
 
@@ -14,6 +15,8 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
 public class DiscoveryEndpointModule : IEndpointModule
 {
+    private DiscoveryService? _discoveryService;
+
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/", GetApiDetails);
@@ -26,6 +29,10 @@ public class DiscoveryEndpointModule : IEndpointModule
         IOptions<AppSettings> appSettings
     )
     {
+        _discoveryService ??= httpContext.RequestServices.GetRequiredService<DiscoveryService>();
+        string discoveryUrl = appSettings.Value.AuthenticationService;
+        string tokenEndpoint = await _discoveryService.GetTokenEndpointAsync(discoveryUrl);
+
         IList<IDataModelInfo> dataModelInfos = apiService.GetDataModelInfo();
 
         var result = new DiscoveryApiDetails(
@@ -42,10 +49,10 @@ public class DiscoveryEndpointModule : IEndpointModule
         Dictionary<string, string> GetUrlsByName()
         {
             var urlsByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            var rootUrl = httpContext.Request.RootUrl();
+            string rootUrl = httpContext.Request.RootUrl();
             urlsByName["dependencies"] = $"{rootUrl}/metadata/dependencies";
             urlsByName["openApiMetadata"] = $"{rootUrl}/metadata/specifications";
-            urlsByName["oauth"] = appSettings.Value.AuthenticationService;
+            urlsByName["oauth"] = tokenEndpoint;
             urlsByName["dataManagementApi"] = $"{rootUrl}/data";
             urlsByName["xsdMetadata"] = $"{rootUrl}/metadata/xsd";
             return urlsByName;

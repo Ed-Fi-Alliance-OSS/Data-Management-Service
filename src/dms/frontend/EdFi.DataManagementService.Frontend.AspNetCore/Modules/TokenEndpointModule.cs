@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.OAuth;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
+using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -14,17 +15,21 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
 public class TokenEndpointModule : IEndpointModule
 {
+    private DiscoveryService? _discoveryService;
+
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost("/oauth/token", HandleFormData)
+        endpoints
+            .MapPost("/oauth/token", HandleFormData)
             .Accepts<TokenRequest>(contentType: "application/x-www-form-urlencoded")
             .DisableAntiforgery();
-        endpoints.MapPost("/oauth/token", HandleJsonData)
+        endpoints
+            .MapPost("/oauth/token", HandleJsonData)
             .Accepts<TokenRequest>(contentType: "application/json")
             .DisableAntiforgery();
     }
 
-    internal static async Task HandleFormData(
+    internal async Task HandleFormData(
         HttpContext httpContext,
         [FromForm] TokenRequest tokenRequest,
         IOptions<AppSettings> appSettings,
@@ -36,30 +41,37 @@ public class TokenEndpointModule : IEndpointModule
         await GenerateToken(httpContext, tokenRequest, appSettings, oAuthManager, logger, httpClientFactory);
     }
 
-    internal static async Task HandleJsonData(
-       HttpContext httpContext,
-       TokenRequest tokenRequest,
-       IOptions<AppSettings> appSettings,
-       IOAuthManager oAuthManager,
-       ILogger<TokenEndpointModule> logger,
-       IHttpClientFactory httpClientFactory
-   )
-    {
-        await GenerateToken(httpContext, tokenRequest, appSettings, oAuthManager, logger, httpClientFactory);
-    }
-
-    private static async Task GenerateToken(HttpContext httpContext,
+    internal async Task HandleJsonData(
+        HttpContext httpContext,
         TokenRequest tokenRequest,
         IOptions<AppSettings> appSettings,
         IOAuthManager oAuthManager,
         ILogger<TokenEndpointModule> logger,
-        IHttpClientFactory httpClientFactory)
+        IHttpClientFactory httpClientFactory
+    )
+    {
+        await GenerateToken(httpContext, tokenRequest, appSettings, oAuthManager, logger, httpClientFactory);
+    }
+
+    private async Task GenerateToken(
+        HttpContext httpContext,
+        TokenRequest tokenRequest,
+        IOptions<AppSettings> appSettings,
+        IOAuthManager oAuthManager,
+        ILogger<TokenEndpointModule> logger,
+        IHttpClientFactory httpClientFactory
+    )
     {
         var traceId = AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, appSettings);
         logger.LogInformation(
             "Received token request for forwarding to identity provider - {TraceId}",
             traceId.Value
         );
+
+        // Get token_endpoint from Discovery URL
+        _discoveryService ??= httpContext.RequestServices.GetRequiredService<DiscoveryService>();
+        string discoveryUrl = appSettings.Value.AuthenticationService;
+        string tokenEndpoint = await _discoveryService.GetTokenEndpointAsync(discoveryUrl);
 
         var client = new HttpClientWrapper(httpClientFactory.CreateClient());
 
@@ -69,7 +81,7 @@ public class TokenEndpointModule : IEndpointModule
             client,
             tokenRequest.grant_type,
             authHeader.ToString(),
-            appSettings.Value.AuthenticationService,
+            tokenEndpoint,
             traceId
         );
 

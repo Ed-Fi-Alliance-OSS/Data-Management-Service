@@ -44,7 +44,8 @@ public static class WebApplicationBuilderExtensions
             .AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>()
             .Configure<ConnectionStrings>(webAppBuilder.Configuration.GetSection("ConnectionStrings"))
             .AddSingleton<IValidateOptions<ConnectionStrings>, ConnectionStringsValidator>()
-            .AddSingleton<IValidateOptions<IdentitySettings>, IdentitySettingsValidator>();
+            .AddSingleton<IValidateOptions<IdentitySettings>, IdentitySettingsValidator>()
+            .AddTransient<DiscoveryService>();
 
         if (webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
         {

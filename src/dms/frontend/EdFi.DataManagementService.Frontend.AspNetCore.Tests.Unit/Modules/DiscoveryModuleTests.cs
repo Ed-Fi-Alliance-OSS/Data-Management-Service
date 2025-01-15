@@ -8,6 +8,7 @@ using System.Text.Json;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
+using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 using FakeItEasy;
 using FluentAssertions;
@@ -49,6 +50,7 @@ public class DiscoveryModuleTests
                 {
                     collection.AddTransient((x) => versionProvider);
                     collection.AddTransient((x) => apiService);
+                    collection.AddTransient<DiscoveryService>();
                 }
             );
         });
