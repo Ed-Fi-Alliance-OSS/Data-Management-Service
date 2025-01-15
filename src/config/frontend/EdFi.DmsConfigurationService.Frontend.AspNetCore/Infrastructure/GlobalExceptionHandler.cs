@@ -19,6 +19,12 @@ public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logge
         CancellationToken cancellationToken
     )
     {
+        var relaxedSerializer = new JsonSerializerOptions
+        {
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+            WriteIndented = true,
+        };
+
         var traceId = httpContext.TraceIdentifier;
         logger.LogError(
             JsonSerializer.Serialize(
@@ -27,18 +33,13 @@ public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logge
                     message = "An uncaught error has occurred",
                     error = new { exception.Message, exception.StackTrace },
                     traceId = traceId,
-                }
+                },
+                relaxedSerializer
             )
         );
         var response = httpContext.Response;
         response.ContentType = "application/problem+json";
         response.Headers["TraceId"] = traceId;
-
-        var relaxedSerializer = new JsonSerializerOptions
-        {
-            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-            WriteIndented = true,
-        };
 
         switch (exception)
         {

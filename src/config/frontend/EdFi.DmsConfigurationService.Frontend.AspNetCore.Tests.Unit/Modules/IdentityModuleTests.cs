@@ -34,6 +34,7 @@ public class RegisterEndpointTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
+                        A<string>.Ignored,
                         A<string>.Ignored
                     )
             )

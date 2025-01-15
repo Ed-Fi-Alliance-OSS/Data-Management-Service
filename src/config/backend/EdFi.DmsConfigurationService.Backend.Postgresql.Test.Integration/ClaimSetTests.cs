@@ -27,7 +27,7 @@ public class ClaimSetTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            ClaimSetInsertCommand claimSet = new() { Name = "Test ClaimSet" };
+            ClaimSetInsertCommand claimSet = new() { Name = "Test-ClaimSet" };
 
             var result = await _repository.InsertClaimSet(claimSet);
             result.Should().BeOfType<ClaimSetInsertResult.Success>();
@@ -49,7 +49,7 @@ public class ClaimSetTests : DatabaseTest
             claimSetFromDb.Should().BeOfType<ClaimSetResponseReduced>();
 
             var reducedResponse = (ClaimSetResponseReduced)claimSetFromDb;
-            reducedResponse.Name.Should().Be("Test ClaimSet");
+            reducedResponse.Name.Should().Be("Test-ClaimSet");
         }
 
         [Test]
@@ -62,13 +62,13 @@ public class ClaimSetTests : DatabaseTest
             claimSetFromDb.Should().BeOfType<ClaimSetResponseReduced>();
 
             var reducedResponse = (ClaimSetResponseReduced)claimSetFromDb;
-            reducedResponse.Name.Should().Be("Test ClaimSet");
+            reducedResponse.Name.Should().Be("Test-ClaimSet");
         }
 
         [Test]
         public async Task Should_get_duplicate_failure()
         {
-            ClaimSetInsertCommand claimSetDup = new() { Name = "Test ClaimSet" };
+            ClaimSetInsertCommand claimSetDup = new() { Name = "Test-ClaimSet" };
 
             var resultDup = await _repository.InsertClaimSet(claimSetDup);
             resultDup.Should().BeOfType<ClaimSetInsertResult.FailureDuplicateClaimSetName>();
@@ -84,15 +84,15 @@ public class ClaimSetTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _insertClaimSet = new ClaimSetInsertCommand() { Name = "Test Insert ClaimSet" };
+            _insertClaimSet = new ClaimSetInsertCommand() { Name = "Test-Insert-ClaimSet" };
 
-            _updateClaimSet = new ClaimSetUpdateCommand() { Name = "Test Update ClaimSet" };
+            _updateClaimSet = new ClaimSetUpdateCommand() { Name = "Test-Update-ClaimSet" };
 
             var insertResult = await _repository.InsertClaimSet(_insertClaimSet);
             insertResult.Should().BeOfType<ClaimSetInsertResult.Success>();
 
             _updateClaimSet.Id = (insertResult as ClaimSetInsertResult.Success)!.Id;
-            _updateClaimSet.Name = "Test Update ClaimSet";
+            _updateClaimSet.Name = "Test-Update-ClaimSet";
 
             var updateResult = await _repository.UpdateClaimSet(_updateClaimSet);
             updateResult.Should().BeOfType<ClaimSetUpdateResult.Success>();
@@ -112,7 +112,7 @@ public class ClaimSetTests : DatabaseTest
             claimSetFromDb.Should().BeOfType<ClaimSetResponseReduced>();
 
             var reducedResponse = (ClaimSetResponseReduced)claimSetFromDb;
-            reducedResponse.Name.Should().Be("Test Update ClaimSet");
+            reducedResponse.Name.Should().Be("Test-Update-ClaimSet");
         }
 
         [Test]
@@ -125,7 +125,7 @@ public class ClaimSetTests : DatabaseTest
             claimSetFromDb.Should().BeOfType<ClaimSetResponseReduced>();
 
             var reducedResponse = (ClaimSetResponseReduced)claimSetFromDb;
-            reducedResponse.Name.Should().Be("Test Update ClaimSet");
+            reducedResponse.Name.Should().Be("Test-Update-ClaimSet");
         }
     }
 
@@ -139,12 +139,12 @@ public class ClaimSetTests : DatabaseTest
         public async Task Setup()
         {
             var insertResult1 = await _repository.InsertClaimSet(
-                new ClaimSetInsertCommand() { Name = "Test One" }
+                new ClaimSetInsertCommand() { Name = "Test-One" }
             );
             _id1 = ((ClaimSetInsertResult.Success)insertResult1).Id;
 
             var insertResult2 = await _repository.InsertClaimSet(
-                new ClaimSetInsertCommand() { Name = "Test Two" }
+                new ClaimSetInsertCommand() { Name = "Test-Two" }
             );
             _id2 = ((ClaimSetInsertResult.Success)insertResult2).Id;
 
@@ -180,7 +180,7 @@ public class ClaimSetTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            ClaimSetInsertCommand claimSet = new() { Name = "Test Export ClaimSet" };
+            ClaimSetInsertCommand claimSet = new() { Name = "Test-Export-ClaimSet" };
 
             var result = await _repository.InsertClaimSet(claimSet);
             result.Should().BeOfType<ClaimSetInsertResult.Success>();
@@ -195,7 +195,7 @@ public class ClaimSetTests : DatabaseTest
             result.Should().BeOfType<ClaimSetExportResult.Success>();
 
             var valueFromDb = ((ClaimSetExportResult.Success)result).ClaimSetExportResponse;
-            valueFromDb.Name.Should().Be("Test Export ClaimSet");
+            valueFromDb.Name.Should().Be("Test-Export-ClaimSet");
         }
     }
 
@@ -233,7 +233,7 @@ public class ClaimSetTests : DatabaseTest
 
             ClaimSetImportCommand claimSet = new()
             {
-                Name = "Test Import ClaimSet",
+                Name = "Test-Import-ClaimSet",
                 ResourceClaims = resourceClaims,
             };
 
@@ -262,7 +262,7 @@ public class ClaimSetTests : DatabaseTest
             claimSetFromDb.Should().BeOfType<ClaimSetResponse>();
 
             var response = (ClaimSetResponse)claimSetFromDb;
-            response.Name.Should().Be("Test Import ClaimSet");
+            response.Name.Should().Be("Test-Import-ClaimSet");
             response.ResourceClaims.Should().NotBeNull();
         }
 
@@ -295,7 +295,7 @@ public class ClaimSetTests : DatabaseTest
 
             ClaimSetImportCommand claimSetDup = new()
             {
-                Name = "Test Import ClaimSet",
+                Name = "Test-Import-ClaimSet",
                 ResourceClaims = resourceClaims,
             };
 
@@ -313,14 +313,14 @@ public class ClaimSetTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            ClaimSetInsertCommand claimSet = new() { Name = "Original ClaimSet" };
+            ClaimSetInsertCommand claimSet = new() { Name = "Original-ClaimSet" };
 
             var result = await _repository.InsertClaimSet(claimSet);
             result.Should().BeOfType<ClaimSetInsertResult.Success>();
             _id = (result as ClaimSetInsertResult.Success)!.Id;
             _id.Should().BeGreaterThan(0);
 
-            ClaimSetCopyCommand command = new() { OriginalId = _id, Name = "Copy Test ClaimSet" };
+            ClaimSetCopyCommand command = new() { OriginalId = _id, Name = "Copy-Test-ClaimSet" };
 
             var copy = await _repository.Copy(command);
             copy.Should().BeOfType<ClaimSetCopyResult.Success>();
@@ -347,7 +347,7 @@ public class ClaimSetTests : DatabaseTest
             claimSetFromDb1.Should().BeOfType<ClaimSetResponseReduced>();
 
             var reducedResponse1 = (ClaimSetResponseReduced)claimSetFromDb1;
-            reducedResponse1.Name.Should().Be("Original ClaimSet");
+            reducedResponse1.Name.Should().Be("Original-ClaimSet");
 
             var getByIdResult2 = await _repository.GetClaimSet(_idCopy, false);
             getByIdResult2.Should().BeOfType<ClaimSetGetResult.Success>();
@@ -356,7 +356,7 @@ public class ClaimSetTests : DatabaseTest
             claimSetFromDb2.Should().BeOfType<ClaimSetResponseReduced>();
 
             var reducedResponse2 = (ClaimSetResponseReduced)claimSetFromDb2;
-            reducedResponse2.Name.Should().Be("Copy Test ClaimSet");
+            reducedResponse2.Name.Should().Be("Copy-Test-ClaimSet");
         }
     }
 }

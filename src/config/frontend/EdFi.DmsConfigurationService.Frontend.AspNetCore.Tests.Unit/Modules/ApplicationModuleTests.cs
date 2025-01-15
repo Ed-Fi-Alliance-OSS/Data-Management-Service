@@ -12,7 +12,6 @@ using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
-using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
@@ -72,7 +71,7 @@ public class ApplicationModuleTests
                     () =>
                         _applicationRepository.InsertApplication(
                             A<ApplicationInsertCommand>.Ignored,
-                            A<ApiClientInsertCommand>.Ignored
+                            A<ApiClientCommand>.Ignored
                         )
                 )
                 .Returns(new ApplicationInsertResult.Success(1));
@@ -107,7 +106,13 @@ public class ApplicationModuleTests
                     )
                 );
 
-            A.CallTo(() => _applicationRepository.UpdateApplication(A<ApplicationUpdateCommand>.Ignored))
+            A.CallTo(
+                    () =>
+                        _applicationRepository.UpdateApplication(
+                            A<ApplicationUpdateCommand>.Ignored,
+                            A<ApiClientCommand>.Ignored
+                        )
+                )
                 .Returns(new ApplicationUpdateResult.Success());
 
             A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
@@ -122,6 +127,7 @@ public class ApplicationModuleTests
                             A<string>.Ignored,
                             A<string>.Ignored,
                             A<string>.Ignored,
+                            A<string>.Ignored,
                             A<string>.Ignored
                         )
                 )
@@ -129,6 +135,16 @@ public class ApplicationModuleTests
 
             A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored))
                 .Returns(new ClientResetResult.Success("SECRET"));
+
+            A.CallTo(
+                    () =>
+                        _clientRepository.UpdateClientAsync(
+                            A<string>.Ignored,
+                            A<string>.Ignored,
+                            A<string>.Ignored
+                        )
+                )
+                .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
         }
 
         [Test]
@@ -202,10 +218,24 @@ public class ApplicationModuleTests
                 }
                 """;
 
+            string invalidClaimSetName = """
+                {
+                   "ApplicationName": "Application101",
+                    "ClaimSetName": "ClaimSet name with white space",
+                    "VendorId":1,
+                    "EducationOrganizationIds": [255901]
+                }
+                """;
+
             //Act
             var addResponse = await client.PostAsync(
                 "/v2/applications",
                 new StringContent(invalidBody, Encoding.UTF8, "application/json")
+            );
+
+            var addResponseForInvalidClaimSetName = await client.PostAsync(
+                "/v2/applications",
+                new StringContent(invalidClaimSetName, Encoding.UTF8, "application/json")
             );
 
             //Assert
@@ -236,6 +266,37 @@ public class ApplicationModuleTests
             );
             addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             JsonNode.DeepEquals(JsonNode.Parse(addResponseContent), expectedResponse).Should().Be(true);
+
+            string addResponseContentForInvalidClaimSetName =
+                await addResponseForInvalidClaimSetName.Content.ReadAsStringAsync();
+            var actualResponseForInvalidClaimSetName = JsonNode.Parse(
+                addResponseContentForInvalidClaimSetName
+            );
+            var expectedResponseForInvalidClaimSetName = JsonNode.Parse(
+                """
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "ClaimSetName": [
+                      "Claim set name must not contain white spaces."
+                    ]
+                  },
+                  "errors": []
+                }
+                """.Replace(
+                    "{correlationId}",
+                    actualResponseForInvalidClaimSetName!["correlationId"]!.GetValue<string>()
+                )
+            );
+            addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            JsonNode
+                .DeepEquals(actualResponseForInvalidClaimSetName, expectedResponseForInvalidClaimSetName)
+                .Should()
+                .Be(true);
         }
     }
 
@@ -251,7 +312,13 @@ public class ApplicationModuleTests
             A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
                 .Returns(new ApplicationGetResult.FailureNotFound());
 
-            A.CallTo(() => _applicationRepository.UpdateApplication(A<ApplicationUpdateCommand>.Ignored))
+            A.CallTo(
+                    () =>
+                        _applicationRepository.UpdateApplication(
+                            A<ApplicationUpdateCommand>.Ignored,
+                            A<ApiClientCommand>.Ignored
+                        )
+                )
                 .Returns(new ApplicationUpdateResult.FailureNotExists());
 
             A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
@@ -314,6 +381,7 @@ public class ApplicationModuleTests
                             A<string>.Ignored,
                             A<string>.Ignored,
                             A<string>.Ignored,
+                            A<string>.Ignored,
                             A<string>.Ignored
                         )
                 )
@@ -323,7 +391,7 @@ public class ApplicationModuleTests
                     () =>
                         _applicationRepository.InsertApplication(
                             A<ApplicationInsertCommand>.Ignored,
-                            A<ApiClientInsertCommand>.Ignored
+                            A<ApiClientCommand>.Ignored
                         )
                 )
                 .Returns(new ApplicationInsertResult.FailureUnknown(""));
@@ -337,7 +405,13 @@ public class ApplicationModuleTests
             A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
                 .Returns(new ApplicationGetResult.FailureUnknown(""));
 
-            A.CallTo(() => _applicationRepository.UpdateApplication(A<ApplicationUpdateCommand>.Ignored))
+            A.CallTo(
+                    () =>
+                        _applicationRepository.UpdateApplication(
+                            A<ApplicationUpdateCommand>.Ignored,
+                            A<ApiClientCommand>.Ignored
+                        )
+                )
                 .Returns(new ApplicationUpdateResult.FailureUnknown(""));
 
             A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
@@ -410,7 +484,7 @@ public class ApplicationModuleTests
                     () =>
                         _applicationRepository.InsertApplication(
                             A<ApplicationInsertCommand>.Ignored,
-                            A<ApiClientInsertCommand>.Ignored
+                            A<ApiClientCommand>.Ignored
                         )
                 )
                 .Returns(new ApplicationInsertResult());
@@ -421,7 +495,13 @@ public class ApplicationModuleTests
             A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
                 .Returns(new ApplicationGetResult());
 
-            A.CallTo(() => _applicationRepository.UpdateApplication(A<ApplicationUpdateCommand>.Ignored))
+            A.CallTo(
+                    () =>
+                        _applicationRepository.UpdateApplication(
+                            A<ApplicationUpdateCommand>.Ignored,
+                            A<ApiClientCommand>.Ignored
+                        )
+                )
                 .Returns(new ApplicationUpdateResult());
 
             A.CallTo(() => _applicationRepository.DeleteApplication(A<long>.Ignored))
@@ -494,6 +574,7 @@ public class ApplicationModuleTests
                             A<string>.Ignored,
                             A<string>.Ignored,
                             A<string>.Ignored,
+                            A<string>.Ignored,
                             A<string>.Ignored
                         )
                 )
@@ -503,16 +584,32 @@ public class ApplicationModuleTests
                     () =>
                         _applicationRepository.InsertApplication(
                             A<ApplicationInsertCommand>.Ignored,
-                            A<ApiClientInsertCommand>.Ignored
+                            A<ApiClientCommand>.Ignored
                         )
                 )
                 .Returns(new ApplicationInsertResult.FailureVendorNotFound());
 
-            A.CallTo(() => _applicationRepository.UpdateApplication(A<ApplicationUpdateCommand>.Ignored))
+            A.CallTo(
+                    () =>
+                        _applicationRepository.UpdateApplication(
+                            A<ApplicationUpdateCommand>.Ignored,
+                            A<ApiClientCommand>.Ignored
+                        )
+                )
                 .Returns(new ApplicationUpdateResult.FailureVendorNotFound());
 
             A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
-                .Returns(new ApplicationApiClientsResult.Success([]));
+                .Returns(new ApplicationApiClientsResult.Success([new ApiClient("111", Guid.NewGuid())]));
+
+            A.CallTo(
+                    () =>
+                        _clientRepository.UpdateClientAsync(
+                            A<string>.Ignored,
+                            A<string>.Ignored,
+                            A<string>.Ignored
+                        )
+                )
+                .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
         }
 
         [Test]
@@ -619,6 +716,7 @@ public class ApplicationModuleTests
             A.CallTo(
                     () =>
                         _clientRepository.CreateClientAsync(
+                            A<string>.Ignored,
                             A<string>.Ignored,
                             A<string>.Ignored,
                             A<string>.Ignored,

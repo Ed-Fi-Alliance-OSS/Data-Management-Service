@@ -5,7 +5,6 @@
 
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
-using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
@@ -60,9 +59,9 @@ internal class UpsertHandler(
         context.FrontendResponse = upsertResult switch
         {
             InsertSuccess insertSuccess => new FrontendResponse(
-                StatusCode: 201,
-                Body: null,
-                Headers: [],
+            StatusCode: 201,
+            Body: null,
+                Headers: new Dictionary<string, string>() { { "etag", context.ParsedBody["_etag"]?.ToString() ?? "" } },
                 LocationHeaderPath: PathComponents.ToResourcePath(
                     context.PathComponents,
                     insertSuccess.NewDocumentUuid
@@ -71,7 +70,7 @@ internal class UpsertHandler(
             UpdateSuccess updateSuccess => new(
                 StatusCode: 200,
                 Body: null,
-                Headers: [],
+                Headers: new Dictionary<string, string>() { { "etag", context.ParsedBody["_etag"]?.ToString() ?? "" } },
                 LocationHeaderPath: PathComponents.ToResourcePath(
                     context.PathComponents,
                     updateSuccess.ExistingDocumentUuid

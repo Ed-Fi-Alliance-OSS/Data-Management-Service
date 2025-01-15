@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.Middleware;
@@ -16,20 +18,20 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
-public class InjectLastModifiedDateToEdFiDocumentMiddlewareTests
+public class InjectVersionMetadataToEdFiDocumentMiddlewareTests
 {
     // Middleware to test
     internal static IPipelineStep Middleware()
     {
-        return new InjectLastModifiedDateToEdFiDocumentMiddleware(NullLogger.Instance);
+        return new InjectVersionMetadataToEdFiDocumentMiddleware(NullLogger.Instance);
     }
 
     [TestFixture]
-    public class Given_Valid_Request_Body : InjectLastModifiedDateToEdFiDocumentMiddlewareTests
+    public class Given_Valid_Request_Body : InjectVersionMetadataToEdFiDocumentMiddlewareTests
     {
         private readonly PipelineContext _context = No.PipelineContext();
         private readonly string _pattern = @"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$";
-        private readonly string _propertyName = "_lastModifiedDate";
+        private readonly string _lastModifiedDatePropertyName = "_lastModifiedDate";
 
         [SetUp]
         public async Task Setup()
@@ -70,10 +72,32 @@ public class InjectLastModifiedDateToEdFiDocumentMiddlewareTests
         [Test]
         public void It_should_have_parsed_body_with_formatted_lastmodifieddate()
         {
-            var lastModifiedDate = _context?.ParsedBody[_propertyName]?.AsValue();
+            var lastModifiedDate = _context?.ParsedBody[_lastModifiedDatePropertyName]?.AsValue();
             lastModifiedDate.Should().NotBeNull();
             var IsValid = Regex.IsMatch(lastModifiedDate!.ToString(), _pattern);
             IsValid.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_should_have_parsed_body_with_etag()
+        {
+            var lastModifiedDate = _context?.ParsedBody[_lastModifiedDatePropertyName]?.AsValue();
+            lastModifiedDate.Should().NotBeNull();
+
+            var eTag = _context?.ParsedBody["_etag"]?.AsValue();
+            eTag.Should().NotBeNull();
+
+            Trace.Assert(lastModifiedDate != null);
+            Trace.Assert(eTag != null);
+
+            var datetime = DateTime.ParseExact(
+                lastModifiedDate.GetValue<string>(),
+                "yyyy-MM-ddTHH:mm:ssZ",
+                DateTimeFormatInfo.InvariantInfo
+            );
+            var reverseEtag = datetime.ToBinary().ToString(CultureInfo.InvariantCulture);
+
+            reverseEtag.Should().BeEquivalentTo(eTag.GetValue<string>());
         }
     }
 }
