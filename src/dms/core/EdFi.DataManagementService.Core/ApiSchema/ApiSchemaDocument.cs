@@ -81,7 +81,7 @@ internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
     }
 
     /// <summary>
-    /// Finds the CoreOpenApiSpecification, if this is a data standard ApiSchemaDocument. Returns null if not found.
+    /// Finds the CoreOpenApiSpecification, if this is a data standard ApiSchemaDocument. Returns null if not.
     /// </summary>
     public JsonNode? FindCoreOpenApiSpecification()
     {
@@ -102,11 +102,11 @@ internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
     }
 
     /// <summary>
-    /// Finds the OpenApiExtensionFragments, if this is an extension ApiSchemaDocument. Returns null if not found.
+    /// Finds the OpenApiExtensionFragments, if this is an extension ApiSchemaDocument. Returns null if not.
     /// </summary>
     public JsonNode? FindOpenApiExtensionFragments()
     {
-        // TODO: Don't hardcode TPDM!
+        // TODO: TPDM is hardcoded until we remove projectSchemas from ApiSchema.json - making one project per file
         bool isExtensionProject = _apiSchemaRootNode.SelectRequiredNodeFromPathAs<bool>(
             "$.projectSchemas['tpdm'].isExtensionProject",
             _logger

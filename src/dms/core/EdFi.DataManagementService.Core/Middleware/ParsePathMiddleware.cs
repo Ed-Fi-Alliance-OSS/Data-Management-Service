@@ -98,35 +98,26 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
         }
 
         // Verify method allowed with/without documentUuid
-        switch (context.Method)
+        if (context.Method == RequestMethod.DELETE && pathInfo.DocumentUuid == null)
         {
-            case RequestMethod.DELETE when pathInfo.DocumentUuid == null:
-                {
-                    NotAllowed(
-                        [
-                            "Resource collections cannot be deleted. To delete a specific item, use DELETE and include the 'id' in the route.",
-                    ]
-                    );
-                    return;
-                }
-            case RequestMethod.PUT when pathInfo.DocumentUuid == null:
-                {
-                    NotAllowed(
-                        [
-                            "Resource collections cannot be replaced. To 'upsert' an item in the collection, use POST. To update a specific item, use PUT and include the 'id' in the route.",
-                    ]
-                    );
-                    return;
-                }
-            case RequestMethod.POST when pathInfo.DocumentUuid != null:
-                {
-                    NotAllowed(
-                        [
-                            "Resource items can only be updated using PUT. To 'upsert' an item in the resource collection using POST, remove the 'id' from the route.",
-                    ]
-                    );
-                    return;
-                }
+            RespondMissingDocumentUuid(
+                "Resource collections cannot be deleted. To delete a specific item, use DELETE and include the 'id' in the route."
+            );
+            return;
+        }
+        if (context.Method == RequestMethod.PUT && pathInfo.DocumentUuid == null)
+        {
+            RespondMissingDocumentUuid(
+                "Resource collections cannot be replaced. To 'upsert' an item in the collection, use POST. To update a specific item, use PUT and include the 'id' in the route."
+            );
+            return;
+        }
+        if (context.Method == RequestMethod.POST && pathInfo.DocumentUuid != null)
+        {
+            RespondMissingDocumentUuid(
+                "Resource items can only be updated using PUT. To 'upsert' an item in the resource collection using POST, remove the 'id' from the route."
+            );
+            return;
         }
 
         DocumentUuid documentUuid =
@@ -141,7 +132,7 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
         await next();
         return;
 
-        void NotAllowed(string[] errors)
+        void RespondMissingDocumentUuid(string error)
         {
             _logger.LogDebug(
                 "ParsePathMiddleware: Missing document UUID on request method {Method} - {TraceId}",
@@ -150,7 +141,7 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
             );
             context.FrontendResponse = new FrontendResponse(
                 StatusCode: 405,
-                Body: FailureResponse.ForMethodNotAllowed(errors, traceId: context.FrontendRequest.TraceId),
+                Body: FailureResponse.ForMethodNotAllowed([error], traceId: context.FrontendRequest.TraceId),
                 Headers: [],
                 ContentType: "application/json; charset=utf-8"
             );
