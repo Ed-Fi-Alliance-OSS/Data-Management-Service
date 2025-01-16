@@ -55,6 +55,9 @@
     <None Update="ApiSchema\ApiSchema.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="ApiSchema\ApiSchema.Extension.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>

@@ -81,17 +81,26 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
 
         if (appSettings.Value.UseLocalApiSchemaJson)
         {
-            string? jsonContent = File.ReadAllText(
-                Path.Combine(
-                    Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? "",
-                    "ApiSchema",
-                    "ApiSchema.Extension.json"
-                )
-            );
-
-            // No extension file found
-            if (jsonContent == null)
+            string? jsonContent;
+            try
             {
+                jsonContent = File.ReadAllText(
+                    Path.Combine(
+                        Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? "",
+                        "ApiSchema",
+                        "ApiSchema.Extension.json"
+                    )
+                );
+
+                // No extension file found
+                if (jsonContent == null)
+                {
+                    return [];
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogInformation(ex, "No ApiSchema.Extension.json file was found.");
                 return [];
             }
 
