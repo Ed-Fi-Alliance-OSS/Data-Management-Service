@@ -13,14 +13,19 @@ public static class SisAdmin
 {
     public static ClientCredentials? ClientCredentials { get; set; }
 
-    private static readonly HttpClient _client = new()
+    private static readonly HttpClient _configurationServiceClient = new()
     {
         BaseAddress = new Uri("http://localhost:8081/"),
     };
 
+    private static readonly HttpClient _dmsClient = new()
+    {
+        BaseAddress = new Uri("http://localhost:8080/"),
+    };
+
     public static async Task Create(string company, string contactName, string contactEmailAddress, string namespacePrefixes, string systemAdministratorToken)
     {
-        _client.DefaultRequestHeaders.Authorization =
+        _configurationServiceClient.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", systemAdministratorToken);
 
         using StringContent vendorContent = new(
@@ -34,13 +39,13 @@ public static class SisAdmin
             Encoding.UTF8,
             "application/json");
 
-        using HttpResponseMessage vendorPostResponse = await _client.PostAsync("v2/vendors", vendorContent);
+        using HttpResponseMessage vendorPostResponse = await _configurationServiceClient.PostAsync("v2/vendors", vendorContent);
 
         var vendorLocation = vendorPostResponse.Headers.Location?.AbsoluteUri;
 
         if (vendorLocation != null)
         {
-            using HttpResponseMessage vendorGetResponse = await _client.GetAsync(vendorLocation);
+            using HttpResponseMessage vendorGetResponse = await _configurationServiceClient.GetAsync(vendorLocation);
             string vendorBody = await vendorGetResponse.Content.ReadAsStringAsync();
 
             int vendorId = JsonDocument.Parse(vendorBody).RootElement.GetProperty("id").GetInt32();
@@ -56,7 +61,7 @@ public static class SisAdmin
                 "application/json");
 
             using HttpResponseMessage applicationPostResponse =
-                await _client.PostAsync("v2/applications", applicationContent);
+                await _configurationServiceClient.PostAsync("v2/applications", applicationContent);
 
             string applicationBody = await applicationPostResponse.Content.ReadAsStringAsync();
             var applicationJson = JsonDocument.Parse(applicationBody);
@@ -67,5 +72,26 @@ public static class SisAdmin
 
             ClientCredentials = credentials;
         }
+    }
+
+    public static async Task<string> GetToken()
+    {
+        var discoveryResponse = await _dmsClient.GetAsync("");
+        var oauthUrl = JsonDocument.Parse(await discoveryResponse.Content.ReadAsStringAsync()).RootElement
+            .GetProperty("urls").GetProperty("oauth").GetString() ?? "";
+
+        var formData = new FormUrlEncodedContent(new[]
+        {
+            new KeyValuePair<string, string>("grant_type", "client_credentials")
+        });
+
+        byte[] basicBytes = Encoding.ASCII.GetBytes($"{ClientCredentials!.key}:{ClientCredentials.secret}");
+        string basicB64 = Convert.ToBase64String(basicBytes);
+
+        _dmsClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue($"Basic", basicB64);
+        var tokenResponse = await _dmsClient.PostAsync(oauthUrl, formData);
+        var tokenJson = JsonDocument.Parse(await tokenResponse.Content.ReadAsStringAsync());
+
+        return tokenJson.RootElement.GetProperty("access_token").GetString() ?? "";
     }
 }

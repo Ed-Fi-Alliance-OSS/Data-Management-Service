@@ -6,6 +6,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using EdFi.DataManagementService.Tests.E2E.Authorization;
 using EdFi.DataManagementService.Tests.E2E.Extensions;
 using EdFi.DataManagementService.Tests.E2E.Management;
 using FluentAssertions;
@@ -29,9 +30,17 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private string _etag = string.Empty;
         private string _dependentId = string.Empty;
         private string _referencedResourceId = string.Empty;
+        private string _bearerToken = string.Empty;
         private readonly bool _openSearchEnabled = AppSettings.OpenSearchEnabled;
 
         #region Given
+
+        [Given("the SIS Vendor is authorized")]
+        public async Task GivenTheSisVendorIsAuthorized()
+        {
+            _bearerToken = await SisAdmin.GetToken();
+            _logger.log.Debug(_bearerToken);
+        }
 
         [Given("the Data Management Service must receive a token issued by {string}")]
 #pragma warning disable CA1822 // Mark members as static

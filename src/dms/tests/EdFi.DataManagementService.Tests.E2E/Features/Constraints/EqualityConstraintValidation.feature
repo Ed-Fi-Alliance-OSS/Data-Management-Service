@@ -8,6 +8,7 @@ Feature: Equality Constraint Validation
     ]
         @API-001
         Scenario: 01 Post a valid bell schedule no equality constraint violations.
+            Given the SIS Vendor is authorized
             Given the system has these "schools"
                   | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
                   | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
