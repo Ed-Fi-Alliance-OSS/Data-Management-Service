@@ -111,7 +111,7 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
         }
         else
         {
-            // TODO: This assembly marker should instead be some indicator of extension assemblies
+            // DMS-497 will fix: This assembly marker should instead be some indicator of extension assemblies
             Assembly assembly =
                 Assembly.GetAssembly(typeof(DataStandard51.ApiSchema.Marker))
                 ?? throw new InvalidOperationException("Could not load the ApiSchema extension library");

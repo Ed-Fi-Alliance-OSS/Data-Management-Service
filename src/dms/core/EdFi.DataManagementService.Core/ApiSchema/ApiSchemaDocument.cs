@@ -106,7 +106,7 @@ internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
     /// </summary>
     public JsonNode? FindOpenApiExtensionFragments()
     {
-        // TODO: TPDM is hardcoded until we remove projectSchemas from ApiSchema.json - making one project per file
+        // DMS-497 will fix: TPDM is hardcoded until we remove projectSchemas from ApiSchema.json - making one project per file
         bool isExtensionProject = _apiSchemaRootNode.SelectRequiredNodeFromPathAs<bool>(
             "$.projectSchemas['tpdm'].isExtensionProject",
             _logger
@@ -117,6 +117,7 @@ internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
             return null;
         }
 
+        // DMS-497 will fix: TPDM is hardcoded
         return _apiSchemaRootNode.SelectRequiredNodeFromPath(
             "$.projectSchemas['tpdm'].openApiExtensionFragments",
             _logger
