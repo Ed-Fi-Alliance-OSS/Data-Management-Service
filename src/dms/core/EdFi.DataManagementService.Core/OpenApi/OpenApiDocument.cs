@@ -13,11 +13,7 @@ namespace EdFi.DataManagementService.Core.OpenApi;
 /// <summary>
 /// Provides information from a loaded ApiSchema.json document
 /// </summary>
-internal class OpenApiDocument(
-    JsonNode _coreApiSchemaRootNode,
-    JsonNode[] _extensionApiSchemaRootNodes,
-    ILogger _logger
-)
+internal class OpenApiDocument(ILogger _logger)
 {
     /// <summary>
     /// Inserts exts from extension OpenAPI fragments into the _ext section of the corresponding
@@ -35,13 +31,9 @@ internal class OpenApiDocument(
             }
 
             // Get the component.schema location for _ext insert
-            // TODO: This is hardcoding EdFi_ prefix - should be in ApiSchema from MetaEd
             JsonObject locationForExt =
                 openApiSpecification
-                    .SelectNodeFromPath(
-                        $"$.components.schemas.EdFi_{componentSchemaName}.properties",
-                        _logger
-                    )
+                    .SelectNodeFromPath($"$.components.schemas.{componentSchemaName}.properties", _logger)
                     ?.AsObject()
                 ?? throw new InvalidOperationException(
                     $"OpenAPI extension fragment expects Core to have '$.components.schemas.EdFi_{componentSchemaName}.properties'. Extension fragment validation failed?"
@@ -122,19 +114,19 @@ internal class OpenApiDocument(
     }
 
     /// <summary>
-    /// Returns the OpenAPI specification derived from core and extension ApiSchemas
+    /// Creates an OpenAPI specification derived from the given core and extension ApiSchemas
     /// </summary>
-    public JsonNode GetDocument()
+    public JsonNode CreateDocument(JsonNode coreApiSchemaRootNode, JsonNode[] extensionApiSchemaRootNodes)
     {
-        ApiSchemaDocument coreApiSchemaDocument = new(_coreApiSchemaRootNode, _logger);
+        ApiSchemaDocument coreApiSchemaDocument = new(coreApiSchemaRootNode, _logger);
 
-        // Get the core OpenAPI spec
+        // Get the core OpenAPI spec as a copy since we are going to modify it
         JsonNode openApiSpecification =
-            coreApiSchemaDocument.FindCoreOpenApiSpecification()
+            coreApiSchemaDocument.FindCoreOpenApiSpecification()?.DeepClone()
             ?? throw new InvalidOperationException("Expected CoreOpenApiSpecification node to exist.");
 
         // Get each extension OpenAPI fragment to insert into core OpenAPI spec
-        foreach (JsonNode extensionApiSchemaRootNode in _extensionApiSchemaRootNodes)
+        foreach (JsonNode extensionApiSchemaRootNode in extensionApiSchemaRootNodes)
         {
             ApiSchemaDocument extensionApiSchemaDocument = new(extensionApiSchemaRootNode, _logger);
             JsonNode extensionFragments =

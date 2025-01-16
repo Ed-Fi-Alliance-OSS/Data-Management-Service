@@ -292,16 +292,22 @@ internal class ApiService(
     }
 
     /// <summary>
+    /// The OpenAPI specification derived from core and extension ApiSchemas
+    /// </summary>
+    private readonly Lazy<JsonNode> _openApiSpecification = new(() =>
+    {
+        OpenApiDocument openApiDocument = new(_logger);
+        return openApiDocument.CreateDocument(
+            _apiSchemaProvider.CoreApiSchemaRootNode,
+            _apiSchemaProvider.ExtensionApiSchemaRootNodes
+        );
+    });
+
+    /// <summary>
     /// DMS entry point to get the OpenAPI specification derived from core and extension ApiSchemas
     /// </summary>
-    public JsonNode GetOpenApiSpec()
+    public JsonNode GetOpenApiSpecification()
     {
-        // TODO: Switch to singleton DI
-        OpenApiDocument openApiDocument = new(
-            _apiSchemaProvider.CoreApiSchemaRootNode,
-            _apiSchemaProvider.ExtensionApiSchemaRootNodes,
-            _logger
-        );
-        return openApiDocument.GetDocument();
+        return _openApiSpecification.Value;
     }
 }

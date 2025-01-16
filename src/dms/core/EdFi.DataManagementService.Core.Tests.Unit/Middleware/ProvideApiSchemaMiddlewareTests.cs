@@ -35,6 +35,7 @@ public class ProvideApiSchemaMiddlewareTests
         public class Provider : IApiSchemaProvider
         {
             public JsonNode CoreApiSchemaRootNode => _apiSchemaRootNode;
+            public JsonNode[] ExtensionApiSchemaRootNodes => [];
         }
 
         [SetUp]

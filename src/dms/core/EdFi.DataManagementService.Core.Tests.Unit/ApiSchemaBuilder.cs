@@ -79,6 +79,7 @@ public class ApiSchemaBuilder
             ["abstractResources"] = new JsonObject(),
             ["caseInsensitiveEndpointNameMapping"] = new JsonObject(),
             ["description"] = $"{projectName} description",
+            ["isExtensionProject"] = projectName != "Ed-Fi",
             ["projectName"] = projectName,
             ["projectVersion"] = projectVersion,
             ["resourceNameMapping"] = new JsonObject(),
@@ -576,6 +577,47 @@ public class ApiSchemaBuilder
         }
 
         _currentProjectNode = null;
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a core OpenAPI specification to a project definition.
+    /// </summary>
+    public ApiSchemaBuilder WithCoreOpenApiSpecification(JsonNode schemas, JsonNode paths)
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentProjectNode["coreOpenApiSpecification"] = new JsonObject
+        {
+            ["components"] = new JsonObject { ["schemas"] = schemas },
+            ["paths"] = paths,
+        };
+        return this;
+    }
+
+    /// <summary>
+    /// Adds OpenAPI extension fragments to a project definition.
+    /// </summary>
+    public ApiSchemaBuilder WithOpenApiExtensionFragments(
+        JsonNode exts,
+        JsonNode newPaths,
+        JsonNode newSchemas
+    )
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentProjectNode["openApiExtensionFragments"] = new JsonObject
+        {
+            ["exts"] = exts,
+            ["newPaths"] = newPaths,
+            ["newSchemas"] = newSchemas,
+        };
         return this;
     }
 }

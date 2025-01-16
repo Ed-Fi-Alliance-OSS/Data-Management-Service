@@ -61,7 +61,7 @@ public partial class MetadataEndpointModule : IEndpointModule
 
     internal static async Task GetOpenApiSpec(HttpContext httpContext, IApiService apiService)
     {
-        JsonNode content = apiService.GetOpenApiSpec();
+        JsonNode content = apiService.GetOpenApiSpecification();
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
 

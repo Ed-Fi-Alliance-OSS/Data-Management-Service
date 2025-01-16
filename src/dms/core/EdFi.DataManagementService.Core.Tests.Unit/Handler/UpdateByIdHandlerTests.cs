@@ -32,6 +32,7 @@ public class UpdateByIdHandlerTests
     internal class Provider : IApiSchemaProvider
     {
         public JsonNode CoreApiSchemaRootNode => _apiSchemaRootNode;
+        public JsonNode[] ExtensionApiSchemaRootNodes => [];
     }
 
     internal static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)

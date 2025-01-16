@@ -51,5 +51,5 @@ public interface IApiService
     /// <summary>
     /// DMS entry point to get the OpenAPI specification derived from core and extension ApiSchemas
     /// </summary>
-    public JsonNode GetOpenApiSpec();
+    public JsonNode GetOpenApiSpecification();
 }
