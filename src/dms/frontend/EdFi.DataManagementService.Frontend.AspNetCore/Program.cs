@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.Deploy;
+using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using Microsoft.Extensions.Options;
@@ -31,6 +32,7 @@ app.UseMiddleware<LoggingMiddleware>();
 if (!ReportInvalidConfiguration(app))
 {
     InitializeDatabase(app);
+    RetrieveAndCacheSecurityMetaData(app);
 }
 
 app.UseRouting();
@@ -64,6 +66,7 @@ bool ReportInvalidConfiguration(WebApplication app)
         _ = app.Services.GetRequiredService<IOptions<AppSettings>>().Value;
         _ = app.Services.GetRequiredService<IOptions<ConnectionStrings>>().Value;
         _ = app.Services.GetRequiredService<IOptions<IdentitySettings>>().Value;
+        _ = app.Services.GetRequiredService<IOptions<ConfigurationServiceSettings>>().Value;
     }
     catch (OptionsValidationException ex)
     {
@@ -96,6 +99,29 @@ void InitializeDatabase(WebApplication app)
             app.Logger.LogCritical(ex, "Database Deploy Failure");
             Environment.Exit(-1);
         }
+    }
+}
+
+async void RetrieveAndCacheSecurityMetaData(WebApplication app)
+{
+    app.Logger.LogInformation("Retrieving and caching required security metadata");
+    try
+    {
+        var cacheExpiration = app.Configuration.GetValue<int>(
+            "ConfigurationServiceSettings:CacheExpirationMinutes"
+        );
+        var result = await app.Services.GetRequiredService<ISecurityMetadataProvider>().GetAllClaimSets();
+
+        if (result != null && result.Count > 0)
+        {
+            var _cache = app.Services.GetRequiredService<ClaimSetsCache>();
+            _cache.CacheClaimSets("ClaimSetCache", result, TimeSpan.FromMinutes(cacheExpiration));
+        }
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogCritical(ex, "Retrieving and caching required security metadata failure");
+        Environment.Exit(-1);
     }
 }
 
