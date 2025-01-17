@@ -4,13 +4,14 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net.Http.Headers;
-using System.Text.Json.Nodes;
+using System.Text.Json;
+using EdFi.DataManagementService.Core.Security.Model;
 
 namespace EdFi.DataManagementService.Core.Security;
 
 public interface ISecurityMetadataProvider
 {
-    Task<IList<string>> GetAllClaimSets();
+    Task<IList<ClaimSet>?> GetAllClaimSets();
 }
 
 public class SecurityMetadataProvider(
@@ -33,24 +34,16 @@ public class SecurityMetadataProvider(
         return requestMessage;
     }
 
-    public async Task<IList<string>> GetAllClaimSets()
+    public async Task<IList<ClaimSet>?> GetAllClaimSets()
     {
-        List<string> claimSets = [];
+        List<ClaimSet>? claimSets = [];
         var request = await ApiRequest(HttpMethod.Get, "/v2/claimSets");
         var response = await configurationServiceApiClient.HttpClient!.SendAsync(request);
         response.EnsureSuccessStatusCode();
         var jsonString = await response.Content.ReadAsStringAsync();
-        var itemList = JsonArray.Parse(jsonString);
-        if (itemList != null)
+        if (jsonString != null)
         {
-            foreach (var item in itemList.AsArray())
-            {
-                var name = item?["name"]?.ToString();
-                if (name != null)
-                {
-                    claimSets.Add(name);
-                }
-            }
+            claimSets = JsonSerializer.Deserialize<List<ClaimSet>>(jsonString);
         }
         return claimSets;
     }
