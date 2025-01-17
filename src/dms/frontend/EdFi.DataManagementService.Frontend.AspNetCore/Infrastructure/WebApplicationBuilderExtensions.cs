@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Backend.OpenSearch;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.OAuth;
+using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
@@ -81,8 +82,47 @@ public static class WebApplicationBuilderExtensions
             return configureLogging;
         }
 
-        // For Security(Keycloak)
         IConfiguration config = webAppBuilder.Configuration;
+
+        // For Token handling
+        webAppBuilder.Services.AddMemoryCache();
+        webAppBuilder.Services.AddTransient<ITokenProcessor, TokenProcessor>();
+        webAppBuilder.Services.AddSingleton<ApiClientDetailsCache>();
+        webAppBuilder.Services.AddSingleton<ITokenService, TokenService>();
+
+        // Access Configuration service
+        var configServiceSettings = config
+            .GetSection("ConfigurationServiceSettings")
+            .Get<ConfigurationServiceSettings>();
+        if (configServiceSettings == null)
+        {
+            logger.Error("Error reading ConfigurationServiceSettings");
+            throw new InvalidOperationException(
+                "Unable to read ConfigurationServiceSettings from appsettings"
+            );
+        }
+        webAppBuilder.Services.AddHttpClient<ConfigurationServiceApiClient>(
+            (serviceProvider, client) =>
+            {
+                client.BaseAddress = new Uri(configServiceSettings.BaseUrl);
+                client.DefaultRequestHeaders.Add("Accept", "application/json");
+                client.DefaultRequestHeaders.Add("Accept", "application/x-www-form-urlencoded");
+            }
+        );
+        webAppBuilder.Services.AddSingleton(
+            new ConfigurationServiceContext(
+                configServiceSettings.Key,
+                configServiceSettings.Secret,
+                configServiceSettings.Scope
+            )
+        );
+        webAppBuilder.Services.AddTransient<
+            IConfigurationServiceTokenHandler,
+            ConfigurationServiceTokenHandler
+        >();
+        webAppBuilder.Services.AddTransient<ISecurityMetadataProvider, SecurityMetadataProvider>();
+
+        // For Security(Keycloak)
         var settings = config.GetSection("IdentitySettings");
         var identitySettings = config.GetSection("IdentitySettings").Get<IdentitySettings>();
         if (identitySettings == null)
@@ -123,6 +163,26 @@ public static class WebApplicationBuilderExtensions
                             {
                                 Console.WriteLine($"Authentication failed: {context.Exception.Message}");
                                 return Task.CompletedTask;
+                            },
+                            OnTokenValidated = context =>
+                            {
+                                var tokenService =
+                                    context.HttpContext.RequestServices.GetRequiredService<TokenService>();
+                                var authHeader = context
+                                    .HttpContext.Request.Headers["Authorization"]
+                                    .ToString();
+                                if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer "))
+                                {
+                                    string rawToken = authHeader["Bearer ".Length..];
+                                    var apiClientDetails = tokenService.ProcessAndCacheToken(rawToken);
+                                    context.HttpContext.Items["ApiClientDetails"] = apiClientDetails;
+                                    return Task.FromResult(apiClientDetails);
+                                }
+                                else
+                                {
+                                    Console.WriteLine($"Invalid token");
+                                    return Task.CompletedTask;
+                                }
                             },
                         };
                     }
