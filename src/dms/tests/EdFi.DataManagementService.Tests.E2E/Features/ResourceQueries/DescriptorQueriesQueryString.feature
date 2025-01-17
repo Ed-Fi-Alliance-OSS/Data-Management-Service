@@ -1,8 +1,7 @@
 Feature: Query String handling for GET requests for Descriptor Queries
 
         Background:
-            Given the Data Management Service must receive a token issued by "http://localhost"
-              And user is already authorized
+            Given the SIS Vendor is authorized
 
         @addwait
         Scenario: 00 Background

@@ -1,5 +1,8 @@
 Feature: ETag validations
 
+        Background:
+            Given the SIS Vendor is authorized
+            
         @API-260
         Scenario: 01 Ensure that clients can retrieve an ETag in the response header
              When a POST request is made to "/ed-fi/students" with

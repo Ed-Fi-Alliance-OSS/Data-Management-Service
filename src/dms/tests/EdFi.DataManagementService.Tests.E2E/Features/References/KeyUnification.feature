@@ -1,5 +1,8 @@
 Feature: Validation of Natural Key Unification
 
+        Background:
+            Given the SIS Vendor is authorized
+            
         Scenario: 00 Background
             Given the system has these descriptors
                   | descriptorValue                                                      |

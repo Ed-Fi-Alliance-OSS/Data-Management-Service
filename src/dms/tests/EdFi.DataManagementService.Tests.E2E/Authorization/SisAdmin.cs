@@ -76,10 +76,6 @@ public static class SisAdmin
 
     public static async Task<string> GetToken()
     {
-        var discoveryResponse = await _dmsClient.GetAsync("");
-        var oauthUrl = JsonDocument.Parse(await discoveryResponse.Content.ReadAsStringAsync()).RootElement
-            .GetProperty("urls").GetProperty("oauth").GetString() ?? "";
-
         var formData = new FormUrlEncodedContent(new[]
         {
             new KeyValuePair<string, string>("grant_type", "client_credentials")
@@ -89,7 +85,7 @@ public static class SisAdmin
         string basicB64 = Convert.ToBase64String(basicBytes);
 
         _dmsClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue($"Basic", basicB64);
-        var tokenResponse = await _dmsClient.PostAsync(oauthUrl, formData);
+        var tokenResponse = await _dmsClient.PostAsync("oauth/token", formData);
         var tokenJson = JsonDocument.Parse(await tokenResponse.Content.ReadAsStringAsync());
 
         return tokenJson.RootElement.GetProperty("access_token").GetString() ?? "";
