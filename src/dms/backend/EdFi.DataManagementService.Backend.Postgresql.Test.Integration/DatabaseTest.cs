@@ -107,7 +107,8 @@ public abstract class DatabaseTest : DatabaseTestBase
 
     internal class ApiSchemaProvider : IApiSchemaProvider
     {
-        public JsonNode ApiSchemaRootNode => _apiSchemaRootNode;
+        public JsonNode CoreApiSchemaRootNode => _apiSchemaRootNode;
+        public JsonNode[] ExtensionApiSchemaRootNodes => [];
     }
 
     [SetUp]

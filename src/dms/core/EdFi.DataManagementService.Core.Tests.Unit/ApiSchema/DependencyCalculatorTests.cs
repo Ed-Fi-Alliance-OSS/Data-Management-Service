@@ -18,8 +18,7 @@ public class DependencyCalculatorTests
     [TestFixture]
     public class Given_A_Sample_ApiSchema() : DependencyCalculatorTests
     {
-        private readonly string _sampleSchema =
-            """
+        private readonly string _sampleSchema = """
             {
               "projectNameMapping": {
                 "Ed-Fi": "ed-fi"
@@ -42,8 +41,7 @@ public class DependencyCalculatorTests
             }
             """;
 
-        private readonly string _expectedDependencies =
-            """
+        private readonly string _expectedDependencies = """
             [
                 {
                   "resource": "/ed-fi/absenceEventCategoryDescriptors",
@@ -71,17 +69,19 @@ public class DependencyCalculatorTests
             dependencies.Count.Should().Be(1);
 
             var expectedDependencies = JsonNode.Parse(_expectedDependencies)!.AsArray();
-            dependencies!.Should().BeEquivalentTo(expectedDependencies!, options => options
-                .WithoutStrictOrdering()
-                .IgnoringCyclicReferences());
+            dependencies!
+                .Should()
+                .BeEquivalentTo(
+                    expectedDependencies!,
+                    options => options.WithoutStrictOrdering().IgnoringCyclicReferences()
+                );
         }
     }
 
     [TestFixture]
     public class Given_A_Sample_ApiSchema_With_Subclass_Resources() : DependencyCalculatorTests
     {
-        private readonly string _sampleSchema =
-            """
+        private readonly string _sampleSchema = """
             {
                 "projectNameMapping": {
                   "Ed-Fi": "ed-fi"
@@ -98,8 +98,8 @@ public class DependencyCalculatorTests
                       "documentPathsMapping": {
                       },
                       "isDescriptor": true,
-                      "isSchoolYearEnumeration": false,          
-                      "isSubclass": false,         
+                      "isSchoolYearEnumeration": false,
+                      "isSubclass": false,
                       "resourceName": "EducationOrganizationCategoryDescriptor"
                     },
                     "localEducationAgencies": {
@@ -115,9 +115,9 @@ public class DependencyCalculatorTests
                           "projectName": "Ed-Fi",
                           "resourceName": "LocalEducationAgency"
                         }
-                      },         
+                      },
                       "isSubclass": true,
-                      "isSchoolYearEnumeration": false,       
+                      "isSchoolYearEnumeration": false,
                       "resourceName": "LocalEducationAgency",
                       "subclassType": "domainEntity",
                       "superclassProjectName": "Ed-Fi",
@@ -154,8 +154,7 @@ public class DependencyCalculatorTests
             }
             """;
 
-        private readonly string _expectedDependencies =
-            """
+        private readonly string _expectedDependencies = """
             [
                 {
                   "resource": "/ed-fi/educationOrganizationCategoryDescriptors",
@@ -198,18 +197,19 @@ public class DependencyCalculatorTests
             dependencies.Should().NotBeEmpty();
 
             var expectedDependencies = JsonNode.Parse(_expectedDependencies)!.AsArray();
-            dependencies!.Should().BeEquivalentTo(expectedDependencies!, options => options
-                .WithoutStrictOrdering()
-                .IgnoringCyclicReferences());
+            dependencies!
+                .Should()
+                .BeEquivalentTo(
+                    expectedDependencies!,
+                    options => options.WithoutStrictOrdering().IgnoringCyclicReferences()
+                );
         }
     }
-
 
     [TestFixture]
     public class Given_A_Sample_ApiSchema_With_Superclass_Reference() : DependencyCalculatorTests
     {
-        private readonly string _sampleSchema =
-            """
+        private readonly string _sampleSchema = """
             {
                 "projectNameMapping": {
                   "Ed-Fi": "ed-fi"
@@ -226,20 +226,20 @@ public class DependencyCalculatorTests
                       "educationOrganizationCategoryDescriptors": {
                       "documentPathsMapping": {
                       },
-                      "isDescriptor": true,   
-                      "isSchoolYearEnumeration": false,       
-                      "isSubclass": false,         
+                      "isDescriptor": true,
+                      "isSchoolYearEnumeration": false,
+                      "isSubclass": false,
                       "resourceName": "EducationOrganizationCategoryDescriptor"
                     },
                     "openStaffPositions": {
                       "allowIdentityUpdates": false,
-                      "documentPathsMapping": {            
+                      "documentPathsMapping": {
                         "EducationOrganization": {
                           "isDescriptor": false,
                           "isReference": true,
                           "projectName": "Ed-Fi",
                           "resourceName": "EducationOrganization"
-                        }            
+                        }
                       },
                       "isSubclass": false,
                       "isSchoolYearEnumeration": false,
@@ -258,9 +258,9 @@ public class DependencyCalculatorTests
                           "projectName": "Ed-Fi",
                           "resourceName": "LocalEducationAgency"
                         }
-                      },         
+                      },
                       "isSubclass": true,
-                      "isSchoolYearEnumeration": false,       
+                      "isSchoolYearEnumeration": false,
                       "resourceName": "LocalEducationAgency",
                       "subclassType": "domainEntity",
                       "superclassProjectName": "Ed-Fi",
@@ -290,8 +290,7 @@ public class DependencyCalculatorTests
             }
             """;
 
-        private readonly string _expectedDescriptors =
-            """
+        private readonly string _expectedDescriptors = """
             [
                 {
                   "resource": "/ed-fi/educationOrganizationCategoryDescriptors",
@@ -342,17 +341,19 @@ public class DependencyCalculatorTests
             dependencies.Should().NotBeEmpty();
 
             var expectedDependencies = JsonNode.Parse(_expectedDescriptors)!.AsArray();
-            dependencies!.Should().BeEquivalentTo(expectedDependencies!, options => options
-                .WithoutStrictOrdering()
-                .IgnoringCyclicReferences());
+            dependencies!
+                .Should()
+                .BeEquivalentTo(
+                    expectedDependencies!,
+                    options => options.WithoutStrictOrdering().IgnoringCyclicReferences()
+                );
         }
     }
 
     [TestFixture]
     public class Given_A_Sample_ApiSchema_Missing_ProjectSchemas() : DependencyCalculatorTests
     {
-        private readonly string _sampleSchema =
-            """
+        private readonly string _sampleSchema = """
             {
                 "projectNameMapping": {
                   "Ed-Fi": "ed-fi"
@@ -403,7 +404,7 @@ public class DependencyCalculatorTests
                 { "A", ["B"] },
                 { "B", ["C", "D"] },
                 { "C", [] },
-                { "D", [] }
+                { "D", [] },
             };
 
             var dependencies = DependencyCalculator.GetDependencies(resources);
@@ -422,7 +423,7 @@ public class DependencyCalculatorTests
                 { "EOCD", [] },
                 { "OSP", ["S"] },
                 { "LEA", ["EOCD", "LEA"] },
-                { "S", ["EOCD", "LEA"] }
+                { "S", ["EOCD", "LEA"] },
             };
 
             var dependencies = DependencyCalculator.GetDependencies(resources);
@@ -434,4 +435,3 @@ public class DependencyCalculatorTests
         }
     }
 }
-

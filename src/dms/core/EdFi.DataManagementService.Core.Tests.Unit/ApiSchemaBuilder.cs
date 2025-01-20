@@ -61,13 +61,21 @@ public class ApiSchemaBuilder
     }
 
     /// <summary>
+    /// Returns the root JsonNode for the current api schema state
+    /// </summary>
+    internal JsonNode AsRootJsonNode()
+    {
+        return RootNode.DeepClone();
+    }
+
+    /// <summary>
     /// Start a project definition. This is the starting point for any api schema,
     /// as projects are at the top level and contain all resources.
     /// Always end a project definition when finished.
     ///
     /// projectName should be the ProjectName for a project, e.g. Ed-Fi, TPDM, Michigan
     /// </summary>
-    public ApiSchemaBuilder WithStartProject(string projectName = "Ed-Fi", string projectVersion = "5.0.0")
+    public ApiSchemaBuilder WithStartProject(string projectName = "ed-fi", string projectVersion = "5.0.0")
     {
         if (_currentProjectNode != null)
         {
@@ -79,6 +87,7 @@ public class ApiSchemaBuilder
             ["abstractResources"] = new JsonObject(),
             ["caseInsensitiveEndpointNameMapping"] = new JsonObject(),
             ["description"] = $"{projectName} description",
+            ["isExtensionProject"] = projectName.ToLower() != "ed-fi",
             ["projectName"] = projectName,
             ["projectVersion"] = projectVersion,
             ["resourceNameMapping"] = new JsonObject(),
@@ -576,6 +585,47 @@ public class ApiSchemaBuilder
         }
 
         _currentProjectNode = null;
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a core OpenAPI specification to a project definition.
+    /// </summary>
+    public ApiSchemaBuilder WithCoreOpenApiSpecification(JsonNode schemas, JsonNode paths)
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentProjectNode["coreOpenApiSpecification"] = new JsonObject
+        {
+            ["components"] = new JsonObject { ["schemas"] = schemas },
+            ["paths"] = paths,
+        };
+        return this;
+    }
+
+    /// <summary>
+    /// Adds OpenAPI extension fragments to a project definition.
+    /// </summary>
+    public ApiSchemaBuilder WithOpenApiExtensionFragments(
+        JsonNode exts,
+        JsonNode newPaths,
+        JsonNode newSchemas
+    )
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentProjectNode["openApiExtensionFragments"] = new JsonObject
+        {
+            ["exts"] = exts,
+            ["newPaths"] = newPaths,
+            ["newSchemas"] = newSchemas,
+        };
         return this;
     }
 }

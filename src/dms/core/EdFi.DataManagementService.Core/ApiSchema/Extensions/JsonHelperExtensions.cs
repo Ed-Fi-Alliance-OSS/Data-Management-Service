@@ -65,8 +65,9 @@ internal static class JsonHelperExtensions
 
             return result.Matches[0].Value;
         }
-        catch (PathParseException)
+        catch (PathParseException ex)
         {
+            logger.LogError(ex, "PathParseException for JSONPath string '{JsonPathString}'", jsonPathString);
             throw new InvalidOperationException($"Unexpected Json.Path error for '{jsonPathString}'");
         }
     }
@@ -239,6 +240,20 @@ internal static class JsonHelperExtensions
     }
 
     /// <summary>
+    /// Helper to go from a scalar JSONPath selection directly to the selected JsonNode.
+    /// Throws if the value does not exist
+    /// </summary>
+    public static JsonNode SelectRequiredNodeFromPath(
+        this JsonNode jsonNode,
+        string jsonPathString,
+        ILogger logger
+    )
+    {
+        return SelectNodeFromPath(jsonNode, jsonPathString, logger)
+            ?? throw new InvalidOperationException($"Node at path '{jsonPathString}' not found");
+    }
+
+    /// <summary>
     /// Helper to get value from json node. Throws if the node does not exist.
     /// </summary>
     public static T SelectNodeValue<T>(this JsonNode jsonNode, string jsonPathString)
@@ -325,7 +340,6 @@ internal static class JsonHelperExtensions
     /// <summary>
     /// Helper to extract a list of JsonNodes as the values of all the properties of a JsonNode
     /// </summary>
-    /// <param name="jsonNode"></param>
     public static List<JsonNode> SelectNodesFromPropertyValues(this JsonNode jsonNode)
     {
         KeyValuePair<string, JsonNode?>[]? nodeKeys = jsonNode?.AsObject().ToArray();

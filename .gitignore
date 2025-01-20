@@ -429,3 +429,4 @@ sdk/
 
 # Local copies of ApiSchema.json
 **/ApiSchema.json
+**/ApiSchema.Extension.json

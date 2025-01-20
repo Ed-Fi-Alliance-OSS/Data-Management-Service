@@ -20,7 +20,9 @@ public class ApiSchemaValidationMiddlewareTests
 {
     internal static IPipelineStep ProvideMiddleware(IApiSchemaProvider provider)
     {
-        var apiValidator = new ApiSchemaValidator(new ApiSchemaSchemaProvider(NullLogger<ApiSchemaSchemaProvider>.Instance));
+        var apiValidator = new ApiSchemaValidator(
+            new ApiSchemaSchemaProvider(NullLogger<ApiSchemaSchemaProvider>.Instance)
+        );
         return new ApiSchemaValidationMiddleware(provider, apiValidator, NullLogger.Instance);
     }
 
@@ -34,7 +36,8 @@ public class ApiSchemaValidationMiddlewareTests
             private static readonly JsonNode _apiSchemaRootNode = JsonNode.Parse(
                 "{ \"projectSchemas\": { \"ed-fi\": {\"abstractResources\":{},\"caseInsensitiveEndpointNameMapping\":{},\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{}} } }"
             )!;
-            public JsonNode ApiSchemaRootNode => _apiSchemaRootNode;
+            public JsonNode CoreApiSchemaRootNode => _apiSchemaRootNode;
+            public JsonNode[] ExtensionApiSchemaRootNodes => [];
         }
 
         [SetUp]

@@ -16,13 +16,18 @@ internal class DependencyCalculator(JsonNode _apiSchemaRootNode, ILogger _logger
         var dependenciesJsonArray = new JsonArray();
         foreach (JsonNode projectSchemaNode in apiSchemaDocument.GetAllProjectSchemaNodes())
         {
-            var resourceSchemas = projectSchemaNode["resourceSchemas"]?.AsObject().Select(x => new ResourceSchema(x.Value!)).ToList()!;
+            var resourceSchemas = projectSchemaNode["resourceSchemas"]
+                ?.AsObject()
+                .Select(x => new ResourceSchema(x.Value!))
+                .ToList()!;
 
-            Dictionary<string, List<string>> resources =
-                resourceSchemas
-                    .ToDictionary(
-                        rs => rs.ResourceName.Value,
-                        rs => rs.DocumentPaths.Where(d => d.IsReference).Select(d => ReplaceAbstractResourceNames(d.ResourceName.Value)).ToList());
+            Dictionary<string, List<string>> resources = resourceSchemas.ToDictionary(
+                rs => rs.ResourceName.Value,
+                rs =>
+                    rs.DocumentPaths.Where(d => d.IsReference)
+                        .Select(d => ReplaceAbstractResourceNames(d.ResourceName.Value))
+                        .ToList()
+            );
 
             var orderedResources = GetDependencies(resources);
 
@@ -52,7 +57,14 @@ internal class DependencyCalculator(JsonNode _apiSchemaRootNode, ILogger _logger
             {
                 string resourceName = ResourceNameMapping(orderedResource.Key);
 
-                dependenciesJsonArray.Add(new { resource = $"/{projectSchemaNode!.GetPropertyName()}/{resourceName}", order = orderedResource.Value, operations = new[] { "Create", "Update" } });
+                dependenciesJsonArray.Add(
+                    new
+                    {
+                        resource = $"/{projectSchemaNode!.GetPropertyName()}/{resourceName}",
+                        order = orderedResource.Value,
+                        operations = new[] { "Create", "Update" },
+                    }
+                );
             }
         }
 
