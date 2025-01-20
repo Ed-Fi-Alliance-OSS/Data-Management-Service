@@ -55,6 +55,16 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
+        [Given("token signature manipulated")]
+        public void TokenSignatureManipulated()
+        {
+            var token = _headers.Single(h => h.Key == "Authorization").Value;
+            var segments = token.Split('.');
+            var signature = segments[2].ToCharArray();
+            new Random().Shuffle(signature);
+            _headers.Single(h => h.Key == "Authorization").Value.Replace(segments[2], signature.ToString());
+        }
+
         private static (string, Dictionary<string, object>) ExtractDescriptorBody(string descriptorValue)
         {
             // build the descriptor object with string splitting operations

@@ -84,6 +84,15 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         }
     }
 
+    [Given("token signature manipulated")]
+    public void TokenSignatureManipulated()
+    {
+        var segments = _token.Split('.');
+        var signature = segments[2].ToCharArray();
+        new Random().Shuffle(signature);
+        _token = $"{segments[0]}.{segments[1]}.{signature}";
+    }
+
     [Given("the system has these {string}")]
     public async Task GivenTheSystemHasThese(string entityType, DataTable dataTable)
     {
