@@ -43,8 +43,13 @@ public interface IApiService
     public IList<IDataModelInfo> GetDataModelInfo();
 
     /// <summary>
-    /// Get the ordered list of dependencies
+    /// DMS entry point to get resource dependencies
     /// </summary>
-    /// <returns></returns>
+    /// <returns>JSON array ordered by dependency sequence</returns>
     public JsonArray GetDependencies();
+
+    /// <summary>
+    /// DMS entry point to get the OpenAPI specification derived from core and extension ApiSchemas
+    /// </summary>
+    public JsonNode GetOpenApiSpecification();
 }

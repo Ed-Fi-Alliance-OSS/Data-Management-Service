@@ -17,20 +17,19 @@ internal class ApiSchemaValidationMiddleware(
     ILogger _logger
 ) : IPipelineStep
 {
-    private readonly Lazy<List<SchemaValidationFailure>> _schemaValidationFailures =
-        new(() =>
+    private readonly Lazy<List<SchemaValidationFailure>> _schemaValidationFailures = new(() =>
+    {
+        var validationErrors = _apiSchemaValidator.Validate(_apiSchemaProvider.CoreApiSchemaRootNode).Value;
+        if (validationErrors.Any())
         {
-            var validationErrors = _apiSchemaValidator.Validate(_apiSchemaProvider.ApiSchemaRootNode).Value;
-            if (validationErrors.Any())
+            _logger.LogCritical("Api schema validation failed.");
+            foreach (var error in validationErrors)
             {
-                _logger.LogCritical("Api schema validation failed.");
-                foreach (var error in validationErrors)
-                {
-                    _logger.LogCritical(error.FailurePath.Value, error.FailureMessages);
-                }
+                _logger.LogCritical(error.FailurePath.Value, error.FailureMessages);
             }
-            return validationErrors;
-        });
+        }
+        return validationErrors;
+    });
 
     public List<SchemaValidationFailure> SchemaValidationFailures => _schemaValidationFailures.Value;
 

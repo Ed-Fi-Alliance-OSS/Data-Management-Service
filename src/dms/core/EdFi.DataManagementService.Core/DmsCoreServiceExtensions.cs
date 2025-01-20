@@ -46,32 +46,33 @@ public static class DmsCoreServiceExtensions
 
         void backendResiliencePipeline(ResiliencePipelineBuilder builder)
         {
-            TelemetryOptions telemetryOptions =
-                new() { LoggerFactory = LoggerFactory.Create(builder => builder.AddSerilog(logger)) };
+            TelemetryOptions telemetryOptions = new()
+            {
+                LoggerFactory = LoggerFactory.Create(builder => builder.AddSerilog(logger)),
+            };
 
             CircuitBreakerSettings breakerSettings = new();
             circuitBreakerConfiguration.Bind(breakerSettings);
 
-            CircuitBreakerStrategyOptions optionsUnknownFailure =
-                new()
+            CircuitBreakerStrategyOptions optionsUnknownFailure = new()
+            {
+                FailureRatio = breakerSettings.FailureRatio,
+                SamplingDuration = TimeSpan.FromSeconds(breakerSettings.SamplingDurationSeconds),
+                MinimumThroughput = breakerSettings.MinimumThroughput,
+                BreakDuration = TimeSpan.FromSeconds(breakerSettings.BreakDurationSeconds),
+                ShouldHandle = new PredicateBuilder().HandleResult(result =>
                 {
-                    FailureRatio = breakerSettings.FailureRatio,
-                    SamplingDuration = TimeSpan.FromSeconds(breakerSettings.SamplingDurationSeconds),
-                    MinimumThroughput = breakerSettings.MinimumThroughput,
-                    BreakDuration = TimeSpan.FromSeconds(breakerSettings.BreakDurationSeconds),
-                    ShouldHandle = new PredicateBuilder().HandleResult(result =>
+                    return result switch
                     {
-                        return result switch
-                        {
-                            DeleteResult.UnknownFailure => true,
-                            GetResult.UnknownFailure => true,
-                            QueryResult.UnknownFailure => true,
-                            UpdateResult.UnknownFailure => true,
-                            UpsertResult.UnknownFailure => true,
-                            _ => false,
-                        };
-                    }),
-                };
+                        DeleteResult.UnknownFailure => true,
+                        GetResult.UnknownFailure => true,
+                        QueryResult.UnknownFailure => true,
+                        UpdateResult.UnknownFailure => true,
+                        UpsertResult.UnknownFailure => true,
+                        _ => false,
+                    };
+                }),
+            };
             builder
                 .ConfigureTelemetry(telemetryOptions)
                 .AddCircuitBreaker(optionsUnknownFailure)

@@ -7,12 +7,17 @@ using System.Text.Json.Nodes;
 namespace EdFi.DataManagementService.Core.ApiSchema;
 
 /// <summary>
-/// Provides an ApiSchema as parsed JSON
+/// Provides core and extension ApiSchemas as parsed JSON
 /// </summary>
 public interface IApiSchemaProvider
 {
     /// <summary>
-    /// ApiSchema as parsed JSON
+    /// Core ApiSchema as parsed JSON
     /// </summary>
-    JsonNode ApiSchemaRootNode { get; }
+    JsonNode CoreApiSchemaRootNode { get; }
+
+    /// <summary>
+    /// Extension ApiSchemas as parsed JSON
+    /// </summary>
+    JsonNode[] ExtensionApiSchemaRootNodes { get; }
 }

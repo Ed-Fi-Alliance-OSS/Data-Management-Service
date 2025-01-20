@@ -13,6 +13,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.OpenApi;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Validation;
 using Microsoft.Extensions.DependencyInjection;
@@ -266,7 +267,7 @@ internal class ApiService(
     /// </summary>
     public IList<IDataModelInfo> GetDataModelInfo()
     {
-        var apiSchemaDocument = new ApiSchemaDocument(_apiSchemaProvider.ApiSchemaRootNode, _logger);
+        ApiSchemaDocument apiSchemaDocument = new(_apiSchemaProvider.CoreApiSchemaRootNode, _logger);
 
         IList<IDataModelInfo> result = [];
         foreach (JsonNode projectSchemaNode in apiSchemaDocument.GetAllProjectSchemaNodes())
@@ -281,12 +282,32 @@ internal class ApiService(
     }
 
     /// <summary>
-    /// Get resource dependencies
+    /// DMS entry point to get resource dependencies
     /// </summary>
     /// <returns>JSON array ordered by dependency sequence</returns>
     public JsonArray GetDependencies()
     {
-        var dependencyCalculator = new DependencyCalculator(_apiSchemaProvider.ApiSchemaRootNode, _logger);
+        DependencyCalculator dependencyCalculator = new(_apiSchemaProvider.CoreApiSchemaRootNode, _logger);
         return dependencyCalculator.GetDependenciesFromResourceSchema();
+    }
+
+    /// <summary>
+    /// The OpenAPI specification derived from core and extension ApiSchemas
+    /// </summary>
+    private readonly Lazy<JsonNode> _openApiSpecification = new(() =>
+    {
+        OpenApiDocument openApiDocument = new(_logger);
+        return openApiDocument.CreateDocument(
+            _apiSchemaProvider.CoreApiSchemaRootNode,
+            _apiSchemaProvider.ExtensionApiSchemaRootNodes
+        );
+    });
+
+    /// <summary>
+    /// DMS entry point to get the OpenAPI specification derived from core and extension ApiSchemas
+    /// </summary>
+    public JsonNode GetOpenApiSpecification()
+    {
+        return _openApiSpecification.Value;
     }
 }

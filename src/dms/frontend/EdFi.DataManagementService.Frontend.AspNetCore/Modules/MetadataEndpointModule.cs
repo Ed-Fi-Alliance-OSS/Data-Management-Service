@@ -5,6 +5,7 @@
 
 
 using System.Net;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
@@ -25,7 +26,7 @@ public partial class MetadataEndpointModule : IEndpointModule
     [
         new SpecificationSection("Resources", string.Empty),
         new SpecificationSection("Descriptors", string.Empty),
-        new SpecificationSection("Discovery", "Other")
+        new SpecificationSection("Discovery", "Other"),
     ];
 
     private readonly string ErrorResourcePath = "Invalid resource path";
@@ -36,6 +37,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         endpoints.MapGet("/metadata/dependencies", GetDependencies);
         endpoints.MapGet("/metadata/specifications", GetSections);
         endpoints.MapGet("/metadata/specifications/{section}-spec.json", GetSectionMetadata);
+        endpoints.MapGet("/metadata/data/v3/resources/swagger.json", GetOpenApiSpec);
     }
 
     internal async Task GetMetadata(HttpContext httpContext)
@@ -45,7 +47,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         {
             dependencies = $"{baseUrl}/dependencies",
             specifications = $"{baseUrl}/specifications",
-            xsdMetadata = $"{baseUrl}/xsd"
+            xsdMetadata = $"{baseUrl}/xsd",
         };
 
         await httpContext.Response.WriteAsJsonAsync(content);
@@ -53,7 +55,13 @@ public partial class MetadataEndpointModule : IEndpointModule
 
     internal static async Task GetDependencies(HttpContext httpContext, IApiService apiService)
     {
-        var content = apiService.GetDependencies();
+        JsonArray content = apiService.GetDependencies();
+        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+    }
+
+    internal static async Task GetOpenApiSpec(HttpContext httpContext, IApiService apiService)
+    {
+        JsonNode content = apiService.GetOpenApiSpecification();
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
 

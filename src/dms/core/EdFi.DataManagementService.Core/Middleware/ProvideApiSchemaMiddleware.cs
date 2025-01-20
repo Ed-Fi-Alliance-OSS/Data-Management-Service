@@ -19,7 +19,7 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
             context.FrontendRequest.TraceId.Value
         );
 
-        context.ApiSchemaDocument = new ApiSchemaDocument(_apiSchemaProvider.ApiSchemaRootNode, _logger);
+        context.ApiSchemaDocument = new ApiSchemaDocument(_apiSchemaProvider.CoreApiSchemaRootNode, _logger);
 
         await next();
     }

@@ -16,72 +16,67 @@ namespace EdFi.DataManagementService.Core.ApiSchema;
 /// </summary>
 internal class ResourceSchema(JsonNode _resourceSchemaNode)
 {
-    private readonly Lazy<ResourceName> _resourceName =
-        new(() =>
-        {
-            return new ResourceName(
-                _resourceSchemaNode["resourceName"]?.GetValue<string>()
-                    ?? throw new InvalidOperationException(
-                        "Expected resourceName to be on ResourceSchema, invalid ApiSchema"
-                    )
-            );
-        });
+    private readonly Lazy<ResourceName> _resourceName = new(() =>
+    {
+        return new ResourceName(
+            _resourceSchemaNode["resourceName"]?.GetValue<string>()
+                ?? throw new InvalidOperationException(
+                    "Expected resourceName to be on ResourceSchema, invalid ApiSchema"
+                )
+        );
+    });
 
     /// <summary>
     /// The ResourceName of this resource, taken from the resourceName
     /// </summary>
     public ResourceName ResourceName => _resourceName.Value;
 
-    private readonly Lazy<bool> _isSchoolYearEnumeration =
-        new(() =>
-        {
-            return _resourceSchemaNode["isSchoolYearEnumeration"]?.GetValue<bool>()
-                ?? throw new InvalidOperationException(
-                    "Expected isSchoolYearEnumeration to be on ResourceSchema, invalid ApiSchema"
-                );
-        });
+    private readonly Lazy<bool> _isSchoolYearEnumeration = new(() =>
+    {
+        return _resourceSchemaNode["isSchoolYearEnumeration"]?.GetValue<bool>()
+            ?? throw new InvalidOperationException(
+                "Expected isSchoolYearEnumeration to be on ResourceSchema, invalid ApiSchema"
+            );
+    });
 
     /// <summary>
     /// Whether the resource is a school year enumeration, taken from isSchoolYearEnumeration
     /// </summary>
     public bool IsSchoolYearEnumeration => _isSchoolYearEnumeration.Value;
 
-    private readonly Lazy<bool> _isDescriptor =
-        new(() =>
-        {
-            return _resourceSchemaNode["isDescriptor"]?.GetValue<bool>()
-                ?? throw new InvalidOperationException(
-                    "Expected isDescriptor to be on ResourceSchema, invalid ApiSchema"
-                );
-        });
+    private readonly Lazy<bool> _isDescriptor = new(() =>
+    {
+        return _resourceSchemaNode["isDescriptor"]?.GetValue<bool>()
+            ?? throw new InvalidOperationException(
+                "Expected isDescriptor to be on ResourceSchema, invalid ApiSchema"
+            );
+    });
 
     /// <summary>
     /// Whether the resource is a descriptor, taken from isDescriptor
     /// </summary>
     public bool IsDescriptor => _isDescriptor.Value;
 
-    private readonly Lazy<bool> _allowIdentityUpdates =
-        new(() =>
-        {
-            return _resourceSchemaNode["allowIdentityUpdates"]?.GetValue<bool>()
-                ?? throw new InvalidOperationException(
-                    "Expected allowIdentityUpdates to be on ResourceSchema, invalid ApiSchema"
-                );
-        });
+    private readonly Lazy<bool> _allowIdentityUpdates = new(() =>
+    {
+        return _resourceSchemaNode["allowIdentityUpdates"]?.GetValue<bool>()
+            ?? throw new InvalidOperationException(
+                "Expected allowIdentityUpdates to be on ResourceSchema, invalid ApiSchema"
+            );
+    });
 
     /// <summary>
     /// Whether the resource allows identity updates, taken from allowIdentityUpdates
     /// </summary>
     public bool AllowIdentityUpdates => _allowIdentityUpdates.Value;
 
-    private readonly Lazy<JsonNode> _jsonSchemaForInsert =
-        new(() =>
-        {
-            return _resourceSchemaNode["jsonSchemaForInsert"]
-                ?? throw new InvalidOperationException(
-                    "Expected jsonSchemaForInsert to be on ResourceSchema, invalid ApiSchema"
-                );
-        });
+    private readonly Lazy<JsonNode> _jsonSchemaForInsert = new(() =>
+    {
+        return _resourceSchemaNode["jsonSchemaForInsert"]
+            ?? throw new InvalidOperationException(
+                "Expected jsonSchemaForInsert to be on ResourceSchema, invalid ApiSchema"
+            );
+    });
 
     /// <summary>
     /// The JSONSchema for the body of this resource on insert
@@ -120,112 +115,106 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
         return JsonSchemaForUpdate;
     }
 
-    private readonly Lazy<IEnumerable<EqualityConstraint>> _equalityConstraints =
-        new(() =>
+    private readonly Lazy<IEnumerable<EqualityConstraint>> _equalityConstraints = new(() =>
+    {
+        var equalityConstraintsJsonArray =
+            _resourceSchemaNode["equalityConstraints"]?.AsArray()
+            ?? throw new InvalidOperationException(
+                "Expected equalityConstraints to be on ResourceSchema, invalid ApiSchema"
+            );
+
+        return equalityConstraintsJsonArray.Select(x =>
         {
-            var equalityConstraintsJsonArray =
-                _resourceSchemaNode["equalityConstraints"]?.AsArray()
-                ?? throw new InvalidOperationException(
-                    "Expected equalityConstraints to be on ResourceSchema, invalid ApiSchema"
-                );
+            JsonPath sourceJsonPath = new(x!["sourceJsonPath"]!.GetValue<string>());
+            JsonPath targetJsonPath = new(x!["targetJsonPath"]!.GetValue<string>());
 
-            return equalityConstraintsJsonArray.Select(x =>
-            {
-                JsonPath sourceJsonPath = new(x!["sourceJsonPath"]!.GetValue<string>());
-                JsonPath targetJsonPath = new(x!["targetJsonPath"]!.GetValue<string>());
-
-                return new EqualityConstraint(sourceJsonPath, targetJsonPath);
-            });
+            return new EqualityConstraint(sourceJsonPath, targetJsonPath);
         });
+    });
 
     /// <summary>
     /// A list of EqualityConstraints to be applied to a resource document. An EqualityConstraint is a source/target JsonPath pair.
     /// </summary>
     public IEnumerable<EqualityConstraint> EqualityConstraints => _equalityConstraints.Value;
 
-    private readonly Lazy<IEnumerable<JsonPath>> _identityJsonPaths =
-        new(() =>
-        {
-            return _resourceSchemaNode["identityJsonPaths"]
-                    ?.AsArray()
-                    .GetValues<string>()
-                    .Select(x => new JsonPath(x))
-                ?? throw new InvalidOperationException(
-                    "Expected identityJsonPaths to be on ResourceSchema, invalid ApiSchema"
-                );
-        });
+    private readonly Lazy<IEnumerable<JsonPath>> _identityJsonPaths = new(() =>
+    {
+        return _resourceSchemaNode["identityJsonPaths"]
+                ?.AsArray()
+                .GetValues<string>()
+                .Select(x => new JsonPath(x))
+            ?? throw new InvalidOperationException(
+                "Expected identityJsonPaths to be on ResourceSchema, invalid ApiSchema"
+            );
+    });
 
     /// <summary>
     /// An ordered list of the JsonPaths that are part of the identity for this resource,
     /// </summary>
     public IEnumerable<JsonPath> IdentityJsonPaths => _identityJsonPaths.Value;
 
-    private readonly Lazy<IEnumerable<JsonPath>> _booleanJsonPaths =
-        new(() =>
-        {
-            return _resourceSchemaNode["booleanJsonPaths"]
-                    ?.AsArray()
-                    .GetValues<string>()
-                    .Select(x => new JsonPath(x))
-                ?? throw new InvalidOperationException(
-                    "Expected booleanJsonPaths to be on ResourceSchema, invalid ApiSchema"
-                );
-        });
+    private readonly Lazy<IEnumerable<JsonPath>> _booleanJsonPaths = new(() =>
+    {
+        return _resourceSchemaNode["booleanJsonPaths"]
+                ?.AsArray()
+                .GetValues<string>()
+                .Select(x => new JsonPath(x))
+            ?? throw new InvalidOperationException(
+                "Expected booleanJsonPaths to be on ResourceSchema, invalid ApiSchema"
+            );
+    });
 
     /// <summary>
     /// An ordered list of the JsonPaths that are of type boolean, for use in type coercion
     /// </summary>
     public IEnumerable<JsonPath> BooleanJsonPaths => _booleanJsonPaths.Value;
 
-    private readonly Lazy<IEnumerable<JsonPath>> _numericJsonPaths =
-        new(() =>
-        {
-            return _resourceSchemaNode["numericJsonPaths"]
-                    ?.AsArray()
-                    .GetValues<string>()
-                    .Select(x => new JsonPath(x))
-                ?? throw new InvalidOperationException(
-                    "Expected numericJsonPaths to be on ResourceSchema, invalid ApiSchema"
-                );
-        });
+    private readonly Lazy<IEnumerable<JsonPath>> _numericJsonPaths = new(() =>
+    {
+        return _resourceSchemaNode["numericJsonPaths"]
+                ?.AsArray()
+                .GetValues<string>()
+                .Select(x => new JsonPath(x))
+            ?? throw new InvalidOperationException(
+                "Expected numericJsonPaths to be on ResourceSchema, invalid ApiSchema"
+            );
+    });
 
     /// <summary>
     /// An ordered list of the JsonPaths that are of type dateTime, for use in type coercion
     /// </summary>
     public IEnumerable<JsonPath> DateTimeJsonPaths => _dateTimeJsonPaths.Value;
 
-    private readonly Lazy<IEnumerable<JsonPath>> _dateTimeJsonPaths =
-        new(() =>
-        {
-            return _resourceSchemaNode["dateTimeJsonPaths"]
-                       ?.AsArray()
-                       .GetValues<string>()
-                       .Select(x => new JsonPath(x))
-                   ?? throw new InvalidOperationException(
-                       "Expected dateTimeJsonPaths to be on ResourceSchema, invalid ApiSchema"
-                   );
-        });
+    private readonly Lazy<IEnumerable<JsonPath>> _dateTimeJsonPaths = new(() =>
+    {
+        return _resourceSchemaNode["dateTimeJsonPaths"]
+                ?.AsArray()
+                .GetValues<string>()
+                .Select(x => new JsonPath(x))
+            ?? throw new InvalidOperationException(
+                "Expected dateTimeJsonPaths to be on ResourceSchema, invalid ApiSchema"
+            );
+    });
 
     /// <summary>
     /// An ordered list of the JsonPaths that are of type boolean, for use in type coercion
     /// </summary>
     public IEnumerable<JsonPath> NumericJsonPaths => _numericJsonPaths.Value;
 
-    private readonly Lazy<IEnumerable<DocumentPath>> _documentPaths =
-        new(() =>
-        {
-            JsonNode documentPathsMapping =
-                _resourceSchemaNode["documentPathsMapping"]
-                ?? throw new InvalidOperationException(
-                    "Expected documentPathsMapping to be on ResourceSchema, invalid ApiSchema"
-                );
-            return documentPathsMapping
-                .AsObject()
-                .AsEnumerable()
-                .Select(documentPathsMappingElement => new DocumentPath(
-                    documentPathsMappingElement.Value ?? throw new InvalidOperationException()
-                ));
-        });
+    private readonly Lazy<IEnumerable<DocumentPath>> _documentPaths = new(() =>
+    {
+        JsonNode documentPathsMapping =
+            _resourceSchemaNode["documentPathsMapping"]
+            ?? throw new InvalidOperationException(
+                "Expected documentPathsMapping to be on ResourceSchema, invalid ApiSchema"
+            );
+        return documentPathsMapping
+            .AsObject()
+            .AsEnumerable()
+            .Select(documentPathsMappingElement => new DocumentPath(
+                documentPathsMappingElement.Value ?? throw new InvalidOperationException()
+            ));
+    });
 
     /// <summary>
     /// The list of DocumentPaths for this resource.
@@ -263,31 +252,30 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
     /// </summary>
     public IEnumerable<DocumentPath> DocumentPaths => _documentPaths.Value;
 
-    public readonly Lazy<IEnumerable<QueryField>> _queryFields =
-        new(() =>
-        {
-            JsonNode queryFieldMapping =
-                _resourceSchemaNode["queryFieldMapping"]
-                ?? throw new InvalidOperationException(
-                    "Expected queryFieldMapping to be on ResourceSchema, invalid ApiSchema"
-                );
-            return queryFieldMapping
-                .AsObject()
-                .AsEnumerable()
-                .Select(queryField => new QueryField(
-                    queryField.Key,
-                    queryField
-                        .Value?.AsArray()
-                        .Select(x => new JsonPathAndType(
-                            x!["path"]!.GetValue<string>(),
-                            x["type"]!.GetValue<string>()
-                        ))
-                        .ToArray()
+    public readonly Lazy<IEnumerable<QueryField>> _queryFields = new(() =>
+    {
+        JsonNode queryFieldMapping =
+            _resourceSchemaNode["queryFieldMapping"]
+            ?? throw new InvalidOperationException(
+                "Expected queryFieldMapping to be on ResourceSchema, invalid ApiSchema"
+            );
+        return queryFieldMapping
+            .AsObject()
+            .AsEnumerable()
+            .Select(queryField => new QueryField(
+                queryField.Key,
+                queryField
+                    .Value?.AsArray()
+                    .Select(x => new JsonPathAndType(
+                        x!["path"]!.GetValue<string>(),
+                        x["type"]!.GetValue<string>()
+                    ))
+                    .ToArray()
                     ?? throw new InvalidOperationException(
                         "Expected queryField to be on queryFieldMapping, invalid ApiSchema"
                     )
-                ));
-        });
+            ));
+    });
 
     /// <summary>
     /// The list of QueryFields for this resource. A QueryField is a mapping of a valid query field
@@ -299,14 +287,13 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
         set => throw new NotImplementedException();
     }
 
-    private readonly Lazy<bool> _isSubclass =
-        new(() =>
-        {
-            return _resourceSchemaNode["isSubclass"]?.GetValue<bool>()
-                ?? throw new InvalidOperationException(
-                    "Expected isSubclass to be on ResourceSchema, invalid ApiSchema"
-                );
-        });
+    private readonly Lazy<bool> _isSubclass = new(() =>
+    {
+        return _resourceSchemaNode["isSubclass"]?.GetValue<bool>()
+            ?? throw new InvalidOperationException(
+                "Expected isSubclass to be on ResourceSchema, invalid ApiSchema"
+            );
+    });
 
     /// <summary>
     /// Whether the resource is a subclass, taken from isSubclass

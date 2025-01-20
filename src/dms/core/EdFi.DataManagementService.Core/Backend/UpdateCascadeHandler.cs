@@ -34,7 +34,7 @@ public class UpdateCascadeHandler(IApiSchemaProvider _apiSchemaProvider, ILogger
         var isIdentityUpdate = false;
         JsonNode returnEdFiDoc = referencingEdFiDoc.DeepClone();
 
-        var apiSchemaDocument = new ApiSchemaDocument(_apiSchemaProvider.ApiSchemaRootNode, _logger);
+        var apiSchemaDocument = new ApiSchemaDocument(_apiSchemaProvider.CoreApiSchemaRootNode, _logger);
 
         var originalResourceNode =
             apiSchemaDocument.FindResourceNode(originalDocumentProjectName, originalDocumentResourceName)
