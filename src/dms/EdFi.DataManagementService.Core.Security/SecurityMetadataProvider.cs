@@ -20,26 +20,23 @@ public class SecurityMetadataProvider(
     ConfigurationServiceContext configurationServiceContext
 ) : ISecurityMetadataProvider
 {
-    private async Task<HttpRequestMessage> ApiRequest(HttpMethod httpMethod, string url)
+    private async Task SetAuthorizationHeader()
     {
         var token = await configurationServiceTokenHandler.GetTokenAsync(
-            configurationServiceContext.key,
-            configurationServiceContext.secret,
+            configurationServiceContext.clientId,
+            configurationServiceContext.clientSecret,
             configurationServiceContext.scope
         );
-        var requestMessage = new HttpRequestMessage { Method = httpMethod, RequestUri = new Uri(url) };
-        var authHeader = $"Bearer {token}";
-
-        requestMessage.Headers.Authorization = AuthenticationHeaderValue.Parse(authHeader);
-        return requestMessage;
+        configurationServiceApiClient.Client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", token);
     }
 
     public async Task<IList<ClaimSet>?> GetAllClaimSets()
     {
         List<ClaimSet>? claimSets = [];
-        var baseAddress = configurationServiceApiClient.HttpClient!.BaseAddress;
-        var request = await ApiRequest(HttpMethod.Get, $"{baseAddress}v2/claimSets");
-        var response = await configurationServiceApiClient.HttpClient!.SendAsync(request);
+        await SetAuthorizationHeader();
+
+        var response = await configurationServiceApiClient.Client.GetAsync("v2/claimSets");
         response.EnsureSuccessStatusCode();
         var jsonString = await response.Content.ReadAsStringAsync();
         if (jsonString != null)

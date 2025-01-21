@@ -9,24 +9,14 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Security;
 
 public interface IApiClientDetailsProvider
 {
-    ApiClientDetails ProcessTokenAndCacheApiClientDetails(string jwtToken);
+    ApiClientDetails RetrieveApiClientDetailsFromToken(string jwtToken);
 }
 
-public class ApiClientDetailsProvider(
-    ITokenProcessor tokenProcessor,
-    ApiClientDetailsCache apiClientDetailsCache
-) : IApiClientDetailsProvider
+public class ApiClientDetailsProvider(ITokenProcessor tokenProcessor) : IApiClientDetailsProvider
 {
-    public ApiClientDetails ProcessTokenAndCacheApiClientDetails(string jwtToken)
+    public ApiClientDetails RetrieveApiClientDetailsFromToken(string jwtToken)
     {
         var tokenId = GetTokenId(jwtToken);
-        var cachedValues = apiClientDetailsCache.GetCachedApiDetails(tokenId);
-
-        if (cachedValues != null)
-        {
-            return cachedValues;
-        }
-
         var tokenValues = tokenProcessor.DecodeToken(jwtToken);
         var apiClientDetails = new ApiClientDetails(
             tokenId,
@@ -34,15 +24,12 @@ public class ApiClientDetailsProvider(
             [29901],
             ["uri://ed-fi.org"]
         );
-
-        apiClientDetailsCache.CacheApiDetails(tokenId, apiClientDetails, TimeSpan.FromMinutes(30));
-
         return apiClientDetails;
     }
 
     private string GetTokenId(string jwtToken)
     {
         var claims = tokenProcessor.DecodeToken(jwtToken);
-        return claims.ContainsKey("jti") ? claims["jti"] : jwtToken.GetHashCode().ToString();
+        return claims.TryGetValue("jti", out string? value) ? value : jwtToken.GetHashCode().ToString();
     }
 }

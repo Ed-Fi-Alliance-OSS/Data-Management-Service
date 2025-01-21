@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.Security.Model;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Security;
 
@@ -14,7 +15,8 @@ public interface ISecurityMetadataService
 
 public class SecurityMetadataService(
     ISecurityMetadataProvider securityMetadataProvider,
-    ClaimSetsCache claimSetsCache
+    ClaimSetsCache claimSetsCache,
+    ILogger<SecurityMetadataService> logger
 ) : ISecurityMetadataService
 {
     private readonly string CacheId = "ClaimSetsCache";
@@ -37,8 +39,9 @@ public class SecurityMetadataService(
             }
             return result;
         }
-        catch
+        catch (Exception ex)
         {
+            logger.LogError(ex, "Error while retrieving and caching the claim sets");
             throw;
         }
     }

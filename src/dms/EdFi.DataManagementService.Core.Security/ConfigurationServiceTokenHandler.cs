@@ -10,47 +10,34 @@ namespace EdFi.DataManagementService.Core.Security;
 
 public interface IConfigurationServiceTokenHandler
 {
-    Task<string?> GetTokenAsync(string key, string secret, string scope);
+    Task<string?> GetTokenAsync(string clientId, string clientSecret, string scope);
 }
 
-public class ConfigurationServiceTokenHandler : IConfigurationServiceTokenHandler
+public class ConfigurationServiceTokenHandler(
+    IMemoryCache configServiceTokenCache,
+    ConfigurationServiceApiClient configurationServiceApiClient
+) : IConfigurationServiceTokenHandler
 {
-    private readonly IMemoryCache _configServiceTokenCache;
-    private readonly ConfigurationServiceApiClient _httpClient;
+    private readonly IMemoryCache _configServiceTokenCache = configServiceTokenCache;
+    private readonly ConfigurationServiceApiClient _configurationServiceApiClient =
+        configurationServiceApiClient;
     private const string TokenCacheKey = "ConfigServiceToken";
 
-    public ConfigurationServiceTokenHandler(
-        IMemoryCache configServiceTokenCache,
-        ConfigurationServiceApiClient httpClient
-    )
-    {
-        _configServiceTokenCache = configServiceTokenCache;
-        _httpClient = httpClient;
-    }
-
-    public async Task<string?> GetTokenAsync(string key, string secret, string scope)
+    public async Task<string?> GetTokenAsync(string clientId, string clientSecret, string scope)
     {
         if (_configServiceTokenCache.TryGetValue(TokenCacheKey, out string? token))
         {
             return token;
         }
-        var urlEncodedData = new Dictionary<string, string>
-        {
-            { "client_id", key },
-            { "client_secret", secret },
-            { "grant_type", "client_credentials" },
-            { "scope", scope },
-        };
-        var content = new FormUrlEncodedContent(urlEncodedData);
-
-        var requestMessage = new HttpRequestMessage
-        {
-            Method = HttpMethod.Post,
-            Content = content,
-            RequestUri = new Uri($"{_httpClient.HttpClient!.BaseAddress}connect/token"),
-        };
-
-        var response = await _httpClient.HttpClient!.SendAsync(requestMessage);
+        var urlEncodedData = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("client_id", clientId),
+                new KeyValuePair<string, string>("client_secret", clientSecret),
+                new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                new KeyValuePair<string, string>("scope", scope),
+            ]
+        );
+        var response = await _configurationServiceApiClient.Client.PostAsync("connect/token", urlEncodedData);
         response.EnsureSuccessStatusCode();
 
         var tokenResponse = await response.Content.ReadFromJsonAsync<BearerToken>();

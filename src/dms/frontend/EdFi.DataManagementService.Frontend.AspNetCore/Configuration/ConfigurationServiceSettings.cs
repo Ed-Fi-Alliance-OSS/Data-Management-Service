@@ -10,8 +10,8 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 public class ConfigurationServiceSettings
 {
     public required string BaseUrl { get; set; }
-    public required string Key { get; set; }
-    public required string Secret { get; set; }
+    public required string ClientId { get; set; }
+    public required string ClientSecret { get; set; }
     public required string Scope { get; set; }
     public required int CacheExpirationMinutes { get; set; }
 }
@@ -25,13 +25,17 @@ public class ConfigurationServiceSettingsValidator : IValidateOptions<Configurat
             return ValidateOptionsResult.Fail("Missing required ConfigurationServiceSettings value: BaseUrl");
         }
 
-        if (string.IsNullOrWhiteSpace(options.Key))
+        if (string.IsNullOrWhiteSpace(options.ClientId))
         {
-            return ValidateOptionsResult.Fail("Missing required ConfigurationServiceSettings value: Key");
+            return ValidateOptionsResult.Fail(
+                "Missing required ConfigurationServiceSettings value: ClientId"
+            );
         }
-        if (string.IsNullOrWhiteSpace(options.Secret))
+        if (string.IsNullOrWhiteSpace(options.ClientSecret))
         {
-            return ValidateOptionsResult.Fail("Missing required ConfigurationServiceSettings value: Secret");
+            return ValidateOptionsResult.Fail(
+                "Missing required ConfigurationServiceSettings value: ClientSecret"
+            );
         }
         if (string.IsNullOrWhiteSpace(options.Scope))
         {
