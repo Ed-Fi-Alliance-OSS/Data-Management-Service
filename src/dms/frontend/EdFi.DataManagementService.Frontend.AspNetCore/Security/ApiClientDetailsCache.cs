@@ -3,10 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Core.Security.Model;
+using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Caching.Memory;
 
-namespace EdFi.DataManagementService.Core.Security;
+namespace EdFi.DataManagementService.Frontend.AspNetCore.Security;
 
 public class ApiClientDetailsCache(IMemoryCache memoryCache)
 {

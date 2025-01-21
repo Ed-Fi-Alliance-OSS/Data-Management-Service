@@ -8,11 +8,11 @@ using Microsoft.Extensions.Caching.Memory;
 
 namespace EdFi.DataManagementService.Core.Security;
 
-public class ClaimSetsCache(IMemoryCache memoryCache)
+public class ClaimSetsCache(IMemoryCache memoryCache, TimeSpan expiration)
 {
     private readonly IMemoryCache _cache = memoryCache;
 
-    public void CacheClaimSets(string cacheId, IList<ClaimSet> claimSets, TimeSpan expiration)
+    public void CacheClaimSets(string cacheId, IList<ClaimSet> claimSets)
     {
         _cache.Set(cacheId, claimSets, expiration);
     }

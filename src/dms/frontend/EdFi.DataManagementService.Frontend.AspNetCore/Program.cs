@@ -107,16 +107,7 @@ async void RetrieveAndCacheSecurityMetaData(WebApplication app)
     app.Logger.LogInformation("Retrieving and caching required security metadata");
     try
     {
-        var cacheExpiration = app.Configuration.GetValue<int>(
-            "ConfigurationServiceSettings:CacheExpirationMinutes"
-        );
-        var result = await app.Services.GetRequiredService<ISecurityMetadataProvider>().GetAllClaimSets();
-
-        if (result != null && result.Count > 0)
-        {
-            var _cache = app.Services.GetRequiredService<ClaimSetsCache>();
-            _cache.CacheClaimSets("ClaimSetCache", result, TimeSpan.FromMinutes(cacheExpiration));
-        }
+        await app.Services.GetRequiredService<ISecurityMetadataService>().GetClaimSets();
     }
     catch (Exception ex)
     {

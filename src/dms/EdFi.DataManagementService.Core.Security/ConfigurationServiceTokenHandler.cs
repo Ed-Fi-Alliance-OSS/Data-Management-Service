@@ -47,7 +47,7 @@ public class ConfigurationServiceTokenHandler : IConfigurationServiceTokenHandle
         {
             Method = HttpMethod.Post,
             Content = content,
-            RequestUri = new Uri("/connect/token"),
+            RequestUri = new Uri($"{_httpClient.HttpClient!.BaseAddress}connect/token"),
         };
 
         var response = await _httpClient.HttpClient!.SendAsync(requestMessage);

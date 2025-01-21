@@ -5,7 +5,7 @@
 
 using System.IdentityModel.Tokens.Jwt;
 
-namespace EdFi.DataManagementService.Core.Security;
+namespace EdFi.DataManagementService.Frontend.AspNetCore.Security;
 
 public interface ITokenProcessor
 {
