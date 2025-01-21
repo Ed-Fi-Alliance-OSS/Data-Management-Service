@@ -7,5 +7,5 @@ namespace EdFi.DataManagementService.Core.Security;
 
 public class ConfigurationServiceApiClient(HttpClient httpClient)
 {
-    public HttpClient? HttpClient { get; } = httpClient;
+    public HttpClient Client { get; } = httpClient;
 }

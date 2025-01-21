@@ -5,4 +5,17 @@
 
 namespace EdFi.DataManagementService.Core.Security;
 
-public record ConfigurationServiceContext(string key, string secret, string scope);
+public record ConfigurationServiceContext(
+    /// <summary>
+    /// The client identifier (client ID) used to access the Configuration service endpoints
+    /// </summary>
+    string clientId,
+    /// <summary>
+    /// The client secret associated with the client ID for accessing the Configuration service endpoints.
+    /// </summary>
+    string clientSecret,
+    /// <summary>
+    /// The authorization scope required for accessing the Configuration service endpoints.
+    /// </summary>
+    string scope
+);

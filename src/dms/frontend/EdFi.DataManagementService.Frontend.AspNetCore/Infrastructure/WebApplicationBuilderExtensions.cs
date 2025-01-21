@@ -89,7 +89,6 @@ public static class WebApplicationBuilderExtensions
         // For Token handling
         webAppBuilder.Services.AddMemoryCache();
         webAppBuilder.Services.AddTransient<ITokenProcessor, TokenProcessor>();
-        webAppBuilder.Services.AddSingleton<ApiClientDetailsCache>();
         webAppBuilder.Services.AddSingleton<IApiClientDetailsProvider, ApiClientDetailsProvider>();
 
         // Access Configuration service
@@ -113,12 +112,11 @@ public static class WebApplicationBuilderExtensions
         );
         webAppBuilder.Services.AddSingleton(
             new ConfigurationServiceContext(
-                configServiceSettings.Key,
-                configServiceSettings.Secret,
+                configServiceSettings.ClientId,
+                configServiceSettings.ClientSecret,
                 configServiceSettings.Scope
             )
         );
-
         webAppBuilder.Services.AddSingleton(serviceProvider =>
         {
             var memoryCache = serviceProvider.GetRequiredService<IMemoryCache>();
@@ -127,14 +125,11 @@ public static class WebApplicationBuilderExtensions
 
             return new ClaimSetsCache(memoryCache, defaultExpiration);
         });
-
         webAppBuilder.Services.AddTransient<
             IConfigurationServiceTokenHandler,
             ConfigurationServiceTokenHandler
         >();
-
         webAppBuilder.Services.AddTransient<ISecurityMetadataProvider, SecurityMetadataProvider>();
-
         webAppBuilder.Services.AddTransient<ISecurityMetadataService, SecurityMetadataService>();
 
         // For Security(Keycloak)
@@ -190,9 +185,7 @@ public static class WebApplicationBuilderExtensions
                                 {
                                     string rawToken = authHeader["Bearer ".Length..];
                                     var apiClientDetails =
-                                        apiClientDetailsProvider.ProcessTokenAndCacheApiClientDetails(
-                                            rawToken
-                                        );
+                                        apiClientDetailsProvider.RetrieveApiClientDetailsFromToken(rawToken);
                                     context.HttpContext.Items["ApiClientDetails"] = apiClientDetails;
                                     return Task.FromResult(apiClientDetails);
                                 }
