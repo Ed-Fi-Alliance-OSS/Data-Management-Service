@@ -3,19 +3,21 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Core.Security.Model;
+using EdFi.DataManagementService.Core.External.Model;
 
-namespace EdFi.DataManagementService.Core.Security;
+namespace EdFi.DataManagementService.Frontend.AspNetCore.Security;
 
-public interface ITokenService
+public interface IApiClientDetailsProvider
 {
-    ApiClientDetails ProcessAndCacheToken(string jwtToken);
+    ApiClientDetails ProcessTokenAndCacheApiClientDetails(string jwtToken);
 }
 
-public class TokenService(ITokenProcessor tokenProcessor, ApiClientDetailsCache apiClientDetailsCache)
-    : ITokenService
+public class ApiClientDetailsProvider(
+    ITokenProcessor tokenProcessor,
+    ApiClientDetailsCache apiClientDetailsCache
+) : IApiClientDetailsProvider
 {
-    public ApiClientDetails ProcessAndCacheToken(string jwtToken)
+    public ApiClientDetails ProcessTokenAndCacheApiClientDetails(string jwtToken)
     {
         var tokenId = GetTokenId(jwtToken);
         var cachedValues = apiClientDetailsCache.GetCachedApiDetails(tokenId);
@@ -30,8 +32,7 @@ public class TokenService(ITokenProcessor tokenProcessor, ApiClientDetailsCache 
             tokenId,
             tokenValues["scope"].ToString(),
             [29901],
-            ["uri://ed-fi.org"],
-            DateTime.UtcNow.AddMinutes(30)
+            ["uri://ed-fi.org"]
         );
 
         apiClientDetailsCache.CacheApiDetails(tokenId, apiClientDetails, TimeSpan.FromMinutes(30));

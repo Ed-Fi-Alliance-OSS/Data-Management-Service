@@ -16,7 +16,7 @@ public interface ISecurityMetadataProvider
 
 public class SecurityMetadataProvider(
     ConfigurationServiceApiClient configurationServiceApiClient,
-    ConfigurationServiceTokenHandler configurationServiceTokenHandler,
+    IConfigurationServiceTokenHandler configurationServiceTokenHandler,
     ConfigurationServiceContext configurationServiceContext
 ) : ISecurityMetadataProvider
 {
@@ -37,7 +37,8 @@ public class SecurityMetadataProvider(
     public async Task<IList<ClaimSet>?> GetAllClaimSets()
     {
         List<ClaimSet>? claimSets = [];
-        var request = await ApiRequest(HttpMethod.Get, "/v2/claimSets");
+        var baseAddress = configurationServiceApiClient.HttpClient!.BaseAddress;
+        var request = await ApiRequest(HttpMethod.Get, $"{baseAddress}v2/claimSets");
         var response = await configurationServiceApiClient.HttpClient!.SendAsync(request);
         response.EnsureSuccessStatusCode();
         var jsonString = await response.Content.ReadAsStringAsync();

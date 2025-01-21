@@ -16,7 +16,9 @@ using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
+using EdFi.DataManagementService.Frontend.AspNetCore.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
@@ -88,7 +90,7 @@ public static class WebApplicationBuilderExtensions
         webAppBuilder.Services.AddMemoryCache();
         webAppBuilder.Services.AddTransient<ITokenProcessor, TokenProcessor>();
         webAppBuilder.Services.AddSingleton<ApiClientDetailsCache>();
-        webAppBuilder.Services.AddSingleton<ITokenService, TokenService>();
+        webAppBuilder.Services.AddSingleton<IApiClientDetailsProvider, ApiClientDetailsProvider>();
 
         // Access Configuration service
         var configServiceSettings = config
@@ -116,11 +118,24 @@ public static class WebApplicationBuilderExtensions
                 configServiceSettings.Scope
             )
         );
+
+        webAppBuilder.Services.AddSingleton(serviceProvider =>
+        {
+            var memoryCache = serviceProvider.GetRequiredService<IMemoryCache>();
+            var cacheExpiration = configServiceSettings.CacheExpirationMinutes;
+            var defaultExpiration = TimeSpan.FromMinutes(cacheExpiration);
+
+            return new ClaimSetsCache(memoryCache, defaultExpiration);
+        });
+
         webAppBuilder.Services.AddTransient<
             IConfigurationServiceTokenHandler,
             ConfigurationServiceTokenHandler
         >();
+
         webAppBuilder.Services.AddTransient<ISecurityMetadataProvider, SecurityMetadataProvider>();
+
+        webAppBuilder.Services.AddTransient<ISecurityMetadataService, SecurityMetadataService>();
 
         // For Security(Keycloak)
         var settings = config.GetSection("IdentitySettings");
@@ -166,15 +181,18 @@ public static class WebApplicationBuilderExtensions
                             },
                             OnTokenValidated = context =>
                             {
-                                var tokenService =
-                                    context.HttpContext.RequestServices.GetRequiredService<TokenService>();
+                                var apiClientDetailsProvider =
+                                    context.HttpContext.RequestServices.GetRequiredService<IApiClientDetailsProvider>();
                                 var authHeader = context
                                     .HttpContext.Request.Headers["Authorization"]
                                     .ToString();
                                 if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer "))
                                 {
                                     string rawToken = authHeader["Bearer ".Length..];
-                                    var apiClientDetails = tokenService.ProcessAndCacheToken(rawToken);
+                                    var apiClientDetails =
+                                        apiClientDetailsProvider.ProcessTokenAndCacheApiClientDetails(
+                                            rawToken
+                                        );
                                     context.HttpContext.Items["ApiClientDetails"] = apiClientDetails;
                                     return Task.FromResult(apiClientDetails);
                                 }
