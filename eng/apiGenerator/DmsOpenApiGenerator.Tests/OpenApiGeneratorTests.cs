@@ -49,7 +49,7 @@ public class OpenApiGeneratorTests
         string extensionSchemaPath = "extension-schema.json";
         string outputPath = "output.json";
 
-        File.WriteAllText(coreSchemaPath, "{ \"openapi\": \"3.0.0\" }");
+        File.WriteAllText(coreSchemaPath, "{ \"projectNameMapping\": { \"Ed-Fi\": \"ed-fi\" } }");
         File.WriteAllText(extensionSchemaPath, "{ \"info\": { \"title\": \"Test API\" } }");
 
         // Act

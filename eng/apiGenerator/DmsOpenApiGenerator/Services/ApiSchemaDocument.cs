@@ -1,10 +1,12 @@
-using Microsoft.Extensions.Logging;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.Logging;
 
 namespace DmsOpenApiGenerator.Services;
 
 internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
 {
+    internal record struct ProjectNamespace(string Value);
+
     /// <summary>
     /// Returns the mapped projectNamespace from the given project name
     /// </summary>

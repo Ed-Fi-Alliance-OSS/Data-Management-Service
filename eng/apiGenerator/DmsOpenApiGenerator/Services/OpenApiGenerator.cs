@@ -1,31 +1,39 @@
-using Microsoft.Extensions.Logging;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.Logging;
 
 namespace DmsOpenApiGenerator.Services;
 
 public class OpenApiGenerator(ILogger<OpenApiGenerator> logger)
 {
-    private readonly ILogger<OpenApiGenerator> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly ILogger<OpenApiGenerator> _logger =
+        logger ?? throw new ArgumentNullException(nameof(logger));
 
     public void Generate(string coreSchemaPath, string? extensionSchemaPath, string outputPath)
     {
         _logger.LogInformation("Starting OpenAPI generation...");
 
-        if (string.IsNullOrWhiteSpace(coreSchemaPath) || string.IsNullOrWhiteSpace(extensionSchemaPath) || string.IsNullOrWhiteSpace(outputPath))
+        if (
+            string.IsNullOrWhiteSpace(coreSchemaPath)
+            || string.IsNullOrWhiteSpace(extensionSchemaPath)
+            || string.IsNullOrWhiteSpace(outputPath)
+        )
         {
             _logger.LogError("Invalid input paths. Ensure all paths are provided.");
             throw new ArgumentException("Core schema, extension schema, and output paths are required.");
         }
 
         _logger.LogDebug("Loading core schema from: {CoreSchemaPath}", coreSchemaPath);
-        var coreSchema = JsonNode.Parse(File.ReadAllText(coreSchemaPath))
-                         ?? throw new InvalidOperationException("Invalid core schema file.");
-
+        var coreSchema =
+            JsonNode.Parse(File.ReadAllText(coreSchemaPath))
+            ?? throw new InvalidOperationException("Invalid core schema file.");
 
         _logger.LogDebug("Loading extension schema from: {ExtensionSchemaPath}", extensionSchemaPath);
-        JsonNode?[] extensionSchema = JsonNode.Parse(File.ReadAllText(extensionSchemaPath)) is JsonArray jsonArray
-            ? jsonArray.ToArray()
-            : throw new InvalidOperationException("Invalid extension schema file.");
+
+        var content = File.ReadAllText(extensionSchemaPath);
+        var parsedNode =
+            JsonNode.Parse(content) ?? throw new InvalidOperationException("Invalid extension schema file.");
+
+        var extensionSchema = new[] { parsedNode };
 
         _logger.LogDebug("Combining core and extension schemas.");
         var combinedSchema = CombineSchemas(coreSchema, extensionSchema);
@@ -158,5 +166,3 @@ public class OpenApiGenerator(ILogger<OpenApiGenerator> logger)
         }
     }
 }
-
-internal record struct ProjectNamespace(string Value);
