@@ -147,7 +147,7 @@ public class OpenApiGeneratorTests
         }
 
         [Test]
-        public void Generate_ShouldThrowException_WhenPathsAreInvalid()
+        public void Should_throw_ArgumentException_when_paths_are_invalid()
         {
             // Act & Assert
             var ex = Assert.Throws<ArgumentException>(() => _generator.Generate("", "", ""));
@@ -174,7 +174,7 @@ public class OpenApiGeneratorTests
         }
 
         [Test]
-        public void Generate_ShouldThrowInvalidOperationException_WhenNodeNotFound()
+        public void Should_throw_InvalidOperationException_when_node_not_found()
         {
             // Arrange
             string coreSchemaPath = "core-schema.json";
