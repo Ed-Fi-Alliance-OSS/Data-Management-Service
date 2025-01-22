@@ -252,8 +252,8 @@ function E2ETests {
     Invoke-Execute {
         try {
             Push-Location eng/docker-compose/
-            ./start-local-dms.ps1 -SearchEngine "OpenSearch" -d -v
-            ./start-local-dms.ps1 -SearchEngine "ElasticSearch" -d -v
+            ./start-local-dms.ps1 -SearchEngine "OpenSearch" -EnableConfig -EnforceAuthorization -d -v
+            ./start-local-dms.ps1 -SearchEngine "ElasticSearch" -EnableConfig -EnforceAuthorization -d -v
         }
         finally {
             Pop-Location
