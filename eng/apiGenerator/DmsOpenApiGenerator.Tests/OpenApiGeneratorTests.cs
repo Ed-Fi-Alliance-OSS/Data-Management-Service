@@ -151,41 +151,41 @@ public class OpenApiGeneratorTests
                 .Should()
                 .Be(
                     """
-{
-  "components": {
-    "schemas": {
-      "EdFi_AcademicWeek": {
-        "description": "AcademicWeek description",
-        "properties": {},
-        "type": "string"
-      },
-      "EdFi_AccountabilityRating": {
-        "description": "AccountabilityRating description",
-        "properties": {},
-        "type": "string"
-      }
-    }
-  },
-  "paths": {
-    "/ed-fi/academicWeeks": {
-      "get": {
-        "description": "academicWeek get description"
-      },
-      "post": {
-        "description": "academicWeek post description"
-      }
-    },
-    "/ed-fi/academicWeeks/{id}": {
-      "get": {
-        "description": "academicWeek id get description"
-      },
-      "delete": {
-        "description": "academicWeek delete description"
-      }
-    }
-  }
-}
-"""
+                    {
+                      "components": {
+                        "schemas": {
+                          "EdFi_AcademicWeek": {
+                            "description": "AcademicWeek description",
+                            "properties": {},
+                            "type": "string"
+                          },
+                          "EdFi_AccountabilityRating": {
+                            "description": "AccountabilityRating description",
+                            "properties": {},
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "paths": {
+                        "/ed-fi/academicWeeks": {
+                          "get": {
+                            "description": "academicWeek get description"
+                          },
+                          "post": {
+                            "description": "academicWeek post description"
+                          }
+                        },
+                        "/ed-fi/academicWeeks/{id}": {
+                          "get": {
+                            "description": "academicWeek id get description"
+                          },
+                          "delete": {
+                            "description": "academicWeek delete description"
+                          }
+                        }
+                      }
+                    }
+                    """
                 );
         }
     }

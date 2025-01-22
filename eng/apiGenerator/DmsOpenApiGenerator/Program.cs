@@ -51,5 +51,11 @@ void ConfigureServices(IServiceCollection services)
         config.SetMinimumLevel(LogLevel.Debug);
     });
 
+    services.AddSingleton<ILogger>(sp =>
+    {
+        var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+        return loggerFactory.CreateLogger("DefaultLogger");
+    });
+
     services.AddSingleton<OpenApiGenerator>();
 }
