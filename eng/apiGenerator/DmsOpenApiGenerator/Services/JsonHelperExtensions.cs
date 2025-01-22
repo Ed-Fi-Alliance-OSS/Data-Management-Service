@@ -1,6 +1,6 @@
+using System.Text.Json.Nodes;
 using Json.Path;
 using Microsoft.Extensions.Logging;
-using System.Text.Json.Nodes;
 
 namespace DmsOpenApiGenerator.Services;
 
@@ -15,10 +15,11 @@ internal static class JsonHelperExtensions
             return default;
         }
 
-        JsonValue? resultNode =
+        JsonValue resultNode =
             selectedNode.AsValue() ?? throw new InvalidOperationException("Unexpected JSONPath value error");
         return resultNode.GetValue<T>();
     }
+
     public static JsonNode? SelectNodeFromPath(this JsonNode jsonNode, string jsonPathString, ILogger logger)
     {
         try
@@ -30,7 +31,7 @@ internal static class JsonHelperExtensions
                 throw new InvalidOperationException($"Malformed JSONPath string '{jsonPathString}'");
             }
 
-            PathResult? result = jsonPath.Evaluate(jsonNode);
+            PathResult result = jsonPath.Evaluate(jsonNode);
 
             if (result.Matches == null)
             {
@@ -45,10 +46,10 @@ internal static class JsonHelperExtensions
                     return null;
                 }
             }
-            catch (System.ArgumentException ae)
+            catch (ArgumentException ae)
             {
                 throw new InvalidOperationException(
-                    $"JSON value to be parsed is problematic, for example might contain duplicate keys.",
+                    "JSON value to be parsed is problematic, for example might contain duplicate keys.",
                     ae
                 );
             }
@@ -72,17 +73,19 @@ internal static class JsonHelperExtensions
             throw new InvalidOperationException($"Unexpected Json.Path error for '{jsonPathString}'");
         }
     }
+
     public static T SelectRequiredNodeFromPathAs<T>(
         this JsonNode jsonNode,
         string jsonPathString,
         ILogger logger
     )
     {
-        T? result =
+        var result =
             SelectNodeFromPathAs<T>(jsonNode, jsonPathString, logger)
             ?? throw new InvalidOperationException($"Node at path '{jsonPathString}' not found");
         return result;
     }
+
     public static JsonNode SelectRequiredNodeFromPath(
         this JsonNode jsonNode,
         string jsonPathString,
@@ -90,6 +93,6 @@ internal static class JsonHelperExtensions
     )
     {
         return SelectNodeFromPath(jsonNode, jsonPathString, logger)
-               ?? throw new InvalidOperationException($"Node at path '{jsonPathString}' not found");
+            ?? throw new InvalidOperationException($"Node at path '{jsonPathString}' not found");
     }
 }

@@ -5,8 +5,7 @@ namespace DmsOpenApiGenerator.Services;
 
 public class OpenApiGenerator(ILogger logger)
 {
-    private readonly ILogger _logger =
-        logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly ILogger _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     public void Generate(string coreSchemaPath, string? extensionSchemaPath, string outputPath)
     {

@@ -2,7 +2,6 @@ using System.Text.Json.Nodes;
 using DmsOpenApiGenerator.Services;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
-using NUnit.Framework;
 
 namespace DmsOpenApiGenerator.Tests;
 
@@ -146,47 +145,49 @@ public class OpenApiGeneratorTests
         [Test]
         public void It_should_be_the_simple_result()
         {
-            openApiDocumentResult
-                .ToJsonString(new() { WriteIndented = true })
-                .Should()
-                .Be(
-                    """
-                    {
-                      "components": {
-                        "schemas": {
-                          "EdFi_AcademicWeek": {
-                            "description": "AcademicWeek description",
-                            "properties": {},
-                            "type": "string"
-                          },
-                          "EdFi_AccountabilityRating": {
-                            "description": "AccountabilityRating description",
-                            "properties": {},
-                            "type": "string"
-                          }
-                        }
+            string expectedResult = """
+                {
+                  "components": {
+                    "schemas": {
+                      "EdFi_AcademicWeek": {
+                        "description": "AcademicWeek description",
+                        "properties": {},
+                        "type": "string"
                       },
-                      "paths": {
-                        "/ed-fi/academicWeeks": {
-                          "get": {
-                            "description": "academicWeek get description"
-                          },
-                          "post": {
-                            "description": "academicWeek post description"
-                          }
-                        },
-                        "/ed-fi/academicWeeks/{id}": {
-                          "get": {
-                            "description": "academicWeek id get description"
-                          },
-                          "delete": {
-                            "description": "academicWeek delete description"
-                          }
-                        }
+                      "EdFi_AccountabilityRating": {
+                        "description": "AccountabilityRating description",
+                        "properties": {},
+                        "type": "string"
                       }
                     }
-                    """
-                );
+                  },
+                  "paths": {
+                    "/ed-fi/academicWeeks": {
+                      "get": {
+                        "description": "academicWeek get description"
+                      },
+                      "post": {
+                        "description": "academicWeek post description"
+                      }
+                    },
+                    "/ed-fi/academicWeeks/{id}": {
+                      "get": {
+                        "description": "academicWeek id get description"
+                      },
+                      "delete": {
+                        "description": "academicWeek delete description"
+                      }
+                    }
+                  }
+                }
+                """;
+
+            string result = openApiDocumentResult.ToJsonString(new() { WriteIndented = true });
+
+            expectedResult = expectedResult.Replace("\r\n", "\n");
+            result = result.Replace("\r\n", "\n");
+
+            result.Should().Be(expectedResult);
         }
     }
 
@@ -214,97 +215,99 @@ public class OpenApiGeneratorTests
         [Test]
         public void It_should_be_the_simple_result()
         {
-            openApiDocumentResult
-                .ToJsonString(new() { WriteIndented = true })
-                .Should()
-                .Be(
-                    """
-{
-  "components": {
-    "schemas": {
-      "EdFi_AcademicWeek": {
-        "description": "AcademicWeek description",
-        "properties": {
-          "_ext": {
-            "description": "ext AcademicWeek description",
-            "type": "string"
-          }
-        },
-        "type": "string"
-      },
-      "EdFi_AccountabilityRating": {
-        "description": "AccountabilityRating description",
-        "properties": {
-          "_ext": {
-            "description": "ext AccountabilityRating description",
-            "type": "string"
-          }
-        },
-        "type": "string"
-      },
-      "TPDM_Credential": {
-        "description": "TPDM credential description",
-        "type": "string"
-      },
-      "TPDM_Candidate": {
-        "description": "TPDM candidate description",
-        "type": "string"
-      }
-    }
-  },
-  "paths": {
-    "/ed-fi/academicWeeks": {
-      "get": {
-        "description": "academicWeek get description"
-      },
-      "post": {
-        "description": "academicWeek post description"
-      }
-    },
-    "/ed-fi/academicWeeks/{id}": {
-      "get": {
-        "description": "academicWeek id get description"
-      },
-      "delete": {
-        "description": "academicWeek delete description"
-      }
-    },
-    "/tpdm/credentials": {
-      "get": {
-        "description": "credential get"
-      },
-      "post": {
-        "description": "credential post"
-      }
-    },
-    "/tpdm/credentials/{id}": {
-      "get": {
-        "description": "credential id get"
-      },
-      "delete": {
-        "description": "credential delete"
-      }
-    },
-    "/tpdm/candidates": {
-      "get": {
-        "description": "candidate get"
-      },
-      "post": {
-        "description": "candidate post"
-      }
-    },
-    "/tpdm/candidates/{id}": {
-      "get": {
-        "description": "candidate id get"
-      },
-      "delete": {
-        "description": "candidate delete"
-      }
-    }
-  }
-}
-"""
-                );
+            string expectedResult = """
+                {
+                  "components": {
+                    "schemas": {
+                      "EdFi_AcademicWeek": {
+                        "description": "AcademicWeek description",
+                        "properties": {
+                          "_ext": {
+                            "description": "ext AcademicWeek description",
+                            "type": "string"
+                          }
+                        },
+                        "type": "string"
+                      },
+                      "EdFi_AccountabilityRating": {
+                        "description": "AccountabilityRating description",
+                        "properties": {
+                          "_ext": {
+                            "description": "ext AccountabilityRating description",
+                            "type": "string"
+                          }
+                        },
+                        "type": "string"
+                      },
+                      "TPDM_Credential": {
+                        "description": "TPDM credential description",
+                        "type": "string"
+                      },
+                      "TPDM_Candidate": {
+                        "description": "TPDM candidate description",
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "paths": {
+                    "/ed-fi/academicWeeks": {
+                      "get": {
+                        "description": "academicWeek get description"
+                      },
+                      "post": {
+                        "description": "academicWeek post description"
+                      }
+                    },
+                    "/ed-fi/academicWeeks/{id}": {
+                      "get": {
+                        "description": "academicWeek id get description"
+                      },
+                      "delete": {
+                        "description": "academicWeek delete description"
+                      }
+                    },
+                    "/tpdm/credentials": {
+                      "get": {
+                        "description": "credential get"
+                      },
+                      "post": {
+                        "description": "credential post"
+                      }
+                    },
+                    "/tpdm/credentials/{id}": {
+                      "get": {
+                        "description": "credential id get"
+                      },
+                      "delete": {
+                        "description": "credential delete"
+                      }
+                    },
+                    "/tpdm/candidates": {
+                      "get": {
+                        "description": "candidate get"
+                      },
+                      "post": {
+                        "description": "candidate post"
+                      }
+                    },
+                    "/tpdm/candidates/{id}": {
+                      "get": {
+                        "description": "candidate id get"
+                      },
+                      "delete": {
+                        "description": "candidate delete"
+                      }
+                    }
+                  }
+                }
+                """;
+
+            string result = openApiDocumentResult.ToJsonString(new() { WriteIndented = true });
+
+            expectedResult = expectedResult.Replace("\r\n", "\n");
+            result = result.Replace("\r\n", "\n");
+
+            result.Should().Be(expectedResult);
         }
     }
 }

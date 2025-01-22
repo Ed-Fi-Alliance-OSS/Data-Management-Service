@@ -4,20 +4,15 @@ namespace DmsOpenApiGenerator.Tests;
 
 public class ApiSchemaBuilder
 {
-    private readonly JsonNode _apiSchemaRootNode;
+    private readonly JsonNode _apiSchemaRootNode = new JsonObject
+    {
+        ["projectNameMapping"] = new JsonObject(),
+        ["projectSchemas"] = new JsonObject(),
+    };
 
     public JsonNode RootNode => _apiSchemaRootNode;
 
-    private JsonNode? _currentProjectNode = null;
-
-    public ApiSchemaBuilder()
-    {
-        _apiSchemaRootNode = new JsonObject
-        {
-            ["projectNameMapping"] = new JsonObject(),
-            ["projectSchemas"] = new JsonObject(),
-        };
-    }
+    private JsonNode? _currentProjectNode;
 
     public ApiSchemaBuilder WithStartProject(string projectName = "ed-fi", string projectVersion = "5.0.0")
     {
