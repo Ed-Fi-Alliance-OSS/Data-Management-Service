@@ -28,8 +28,11 @@ internal class ApiSchemaValidator(IApiSchemaSchemaProvider _apiSchemaSchemaProvi
     {
         List<SchemaValidationFailure> validationErrors = [];
 
-        EvaluationOptions validatorEvaluationOptions =
-            new() { OutputFormat = OutputFormat.List, RequireFormatValidation = true };
+        EvaluationOptions validatorEvaluationOptions = new()
+        {
+            OutputFormat = OutputFormat.List,
+            RequireFormatValidation = true,
+        };
 
         var schema = _apiSchemaSchemaProvider.ApiSchemaSchema;
 

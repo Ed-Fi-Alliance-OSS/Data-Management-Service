@@ -25,18 +25,21 @@ internal interface IApiSchemaSchemaProvider
 /// </summary>
 internal class ApiSchemaSchemaProvider(ILogger<ApiSchemaSchemaProvider> _logger) : IApiSchemaSchemaProvider
 {
-    private readonly Lazy<JsonSchema> _apiSchemaSchema =
-        new(() =>
-        {
-            _logger.LogDebug("Entering ApiSchemaSchemaProvider");
+    private readonly Lazy<JsonSchema> _apiSchemaSchema = new(() =>
+    {
+        _logger.LogDebug("Entering ApiSchemaSchemaProvider");
 
-            string schemaContent = File.ReadAllText(
-                Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? "", "ApiSchema", "ApiSchema_Schema.json")
-            );
-            var schema = JsonSchema.FromText(schemaContent);
+        string schemaContent = File.ReadAllText(
+            Path.Combine(
+                Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? "",
+                "ApiSchema",
+                "ApiSchema_Schema.json"
+            )
+        );
+        var schema = JsonSchema.FromText(schemaContent);
 
-            return schema;
-        });
+        return schema;
+    });
 
     public JsonSchema ApiSchemaSchema => _apiSchemaSchema.Value;
 }
