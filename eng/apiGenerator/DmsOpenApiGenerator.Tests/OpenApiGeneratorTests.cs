@@ -1,7 +1,8 @@
+using System.Reflection.Emit;
 using System.Text.Json.Nodes;
 using DmsOpenApiGenerator.Services;
-using FluentAssertions;
 using FakeItEasy;
+using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -132,10 +133,11 @@ public class OpenApiGeneratorTests
     }
 
     [TestFixture]
-    public class Given_An_Empty_Core_Schema : OpenApiGeneratorTests
+    public class Given_A_Non_Valid_Paths : OpenApiGeneratorTests
     {
         private ILogger<OpenApiGenerator> _fakeLogger = null!;
         private OpenApiGenerator _generator = null!;
+
         [SetUp]
         public void SetUp()
         {
@@ -150,7 +152,53 @@ public class OpenApiGeneratorTests
             // Act & Assert
             var ex = Assert.Throws<ArgumentException>(() => _generator.Generate("", "", ""));
 
-            Assert.That(ex?.Message, Is.EqualTo("Core schema, extension schema, and output paths are required."));
+            Assert.That(
+                ex?.Message,
+                Is.EqualTo("Core schema, extension schema, and output paths are required.")
+            );
+        }
+    }
+
+    [TestFixture]
+    public class Given_Invalid_Values_For_Core_And_Extension : OpenApiGeneratorTests
+    {
+        private ILogger<OpenApiGenerator> _fakeLogger = null!;
+        private OpenApiGenerator _generator = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            // Create a fake logger
+            _fakeLogger = A.Fake<ILogger<OpenApiGenerator>>();
+            _generator = new OpenApiGenerator(_fakeLogger);
+        }
+
+        [Test]
+        public void Generate_ShouldThrowInvalidOperationException_WhenNodeNotFound()
+        {
+            // Arrange
+            string coreSchemaPath = "core-schema.json";
+            string extensionSchemaPath = "extension-schema.json";
+            string outputPath = "output.json";
+
+            File.WriteAllText(coreSchemaPath, "{ \"openapi\": \"3.0.0\" }");
+            File.WriteAllText(extensionSchemaPath, "{ \"info\": { \"title\": \"Test API\" } }");
+
+            // Act
+            var ex = Assert.Throws<InvalidOperationException>(
+                () => _generator.Generate(coreSchemaPath, extensionSchemaPath, outputPath)
+            );
+
+            // Assert
+            Assert.That(
+                ex?.Message,
+                Is.EqualTo("Node at path '$.projectSchemas['ed-fi'].coreOpenApiSpecification' not found")
+            );
+
+            // Cleanup
+            File.Delete(coreSchemaPath);
+            File.Delete(extensionSchemaPath);
+            File.Delete(outputPath);
         }
     }
 
