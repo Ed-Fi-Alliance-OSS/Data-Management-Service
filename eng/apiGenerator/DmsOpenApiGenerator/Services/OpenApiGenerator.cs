@@ -1,41 +1,162 @@
+using Microsoft.Extensions.Logging;
 using System.Text.Json.Nodes;
 
 namespace DmsOpenApiGenerator.Services;
 
-public class OpenApiGenerator
+public class OpenApiGenerator(ILogger<OpenApiGenerator> logger)
 {
+    private readonly ILogger<OpenApiGenerator> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
     public void Generate(string coreSchemaPath, string? extensionSchemaPath, string outputPath)
     {
-        var loader = new ApiSchemaFileLoader();
+        _logger.LogInformation("Starting OpenAPI generation...");
 
-        // Load schemas
-        loader.LoadCoreSchema(coreSchemaPath);
-        if (extensionSchemaPath != null)
+        if (string.IsNullOrWhiteSpace(coreSchemaPath) || string.IsNullOrWhiteSpace(extensionSchemaPath) || string.IsNullOrWhiteSpace(outputPath))
         {
-            loader.LoadExtensionSchemas(extensionSchemaPath);
+            _logger.LogError("Invalid input paths. Ensure all paths are provided.");
+            throw new ArgumentException("Core schema, extension schema, and output paths are required.");
+        }
 
-            // Simulate CreateDocument method
-            var openApiDocument = CreateOpenApiDocument();
+        _logger.LogDebug("Loading core schema from: {CoreSchemaPath}", coreSchemaPath);
+        var coreSchema = JsonNode.Parse(File.ReadAllText(coreSchemaPath))
+                         ?? throw new InvalidOperationException("Invalid core schema file.");
 
-            // Save the OpenAPI document to the specified output path
-            File.WriteAllText(outputPath, openApiDocument.ToJsonString());
+
+        _logger.LogDebug("Loading extension schema from: {ExtensionSchemaPath}", extensionSchemaPath);
+        JsonNode?[] extensionSchema = JsonNode.Parse(File.ReadAllText(extensionSchemaPath)) is JsonArray jsonArray
+            ? jsonArray.ToArray()
+            : throw new InvalidOperationException("Invalid extension schema file.");
+
+        _logger.LogDebug("Combining core and extension schemas.");
+        var combinedSchema = CombineSchemas(coreSchema, extensionSchema);
+
+        _logger.LogDebug("Writing combined schema to: {OutputPath}", outputPath);
+        File.WriteAllText(outputPath, combinedSchema.ToJsonString());
+
+        _logger.LogInformation("OpenAPI generation completed successfully.");
+    }
+
+    private JsonNode CombineSchemas(JsonNode coreSchema, JsonNode[] extensionSchema)
+    {
+        ApiSchemaDocument coreApiSchemaDocument = new(coreSchema, _logger);
+
+        // Get the core OpenAPI spec as a copy since we are going to modify it
+        JsonNode openApiSpecification =
+            coreApiSchemaDocument.FindCoreOpenApiSpecification()?.DeepClone()
+            ?? throw new InvalidOperationException("Expected CoreOpenApiSpecification node to exist.");
+
+        // Get each extension OpenAPI fragment to insert into core OpenAPI spec
+        foreach (JsonNode extensionApiSchemaRootNode in extensionSchema)
+        {
+            ApiSchemaDocument extensionApiSchemaDocument = new(extensionApiSchemaRootNode, _logger);
+            JsonNode extensionFragments =
+                extensionApiSchemaDocument.FindOpenApiExtensionFragments()
+                ?? throw new InvalidOperationException("Expected OpenApiExtensionFragments node to exist.");
+
+            InsertExts(
+                extensionFragments.SelectRequiredNodeFromPath("$.exts", _logger).AsObject(),
+                openApiSpecification
+            );
+
+            InsertNewPaths(
+                extensionFragments.SelectRequiredNodeFromPath("$.newPaths", _logger).AsObject(),
+                openApiSpecification
+            );
+
+            InsertNewSchemas(
+                extensionFragments.SelectRequiredNodeFromPath("$.newSchemas", _logger).AsObject(),
+                openApiSpecification
+            );
+        }
+
+        return openApiSpecification;
+    }
+
+    private void InsertExts(JsonObject extList, JsonNode openApiSpecification)
+    {
+        foreach ((string componentSchemaName, JsonNode? extObject) in extList)
+        {
+            if (extObject == null)
+            {
+                throw new InvalidOperationException(
+                    $"OpenAPI extension fragment has empty exts schema name '{componentSchemaName}'. Extension fragment validation failed?"
+                );
+            }
+
+            // Get the component.schema location for _ext insert
+            JsonObject locationForExt =
+                openApiSpecification
+                    .SelectNodeFromPath($"$.components.schemas.{componentSchemaName}.properties", _logger)
+                    ?.AsObject()
+                ?? throw new InvalidOperationException(
+                    $"OpenAPI extension fragment expects Core to have '$.components.schemas.EdFi_{componentSchemaName}.properties'. Extension fragment validation failed?"
+                );
+
+            // If _ext has already been added by another extension, we don't support a second one
+            if (locationForExt["_ext"] != null)
+            {
+                throw new InvalidOperationException(
+                    $"OpenAPI extension fragment tried to add a second _ext to '$.components.schemas.EdFi_{componentSchemaName}.properties', which is not supported. Extension fragment validation failed?"
+                );
+            }
+
+            locationForExt.Add("_ext", extObject.DeepClone());
         }
     }
 
-    private JsonNode CreateOpenApiDocument()
+    private void InsertNewPaths(JsonObject newPaths, JsonNode openApiSpecification)
     {
-        // Integrate logic to merge core and extension schemas
-        var openApiDocument = new JsonObject
+        foreach ((string pathName, JsonNode? pathObject) in newPaths)
         {
-            ["openapi"] = "3.0.0",
-            ["info"] = new JsonObject
+            if (pathObject == null)
             {
-                ["title"] = "Generated API",
-                ["version"] = "1.0.0"
-            },
-            ["paths"] = new JsonObject()
-        };
+                throw new InvalidOperationException(
+                    $"OpenAPI extension fragment has empty newPaths path name '{pathName}'. Extension fragment validation failed?"
+                );
+            }
 
-        return openApiDocument;
+            JsonObject locationForPaths = openApiSpecification
+                .SelectRequiredNodeFromPath("$.paths", _logger)
+                .AsObject();
+
+            // If pathName has already been added by another extension, we don't support a second one
+            if (locationForPaths[pathName] != null)
+            {
+                throw new InvalidOperationException(
+                    $"OpenAPI extension fragment tried to add a second path '$.paths.{pathName}', which is not supported. Extension fragment validation failed?"
+                );
+            }
+
+            locationForPaths.Add(pathName, pathObject.DeepClone());
+        }
+    }
+
+    private void InsertNewSchemas(JsonObject newSchemas, JsonNode openApiSpecification)
+    {
+        foreach ((string schemaName, JsonNode? schemaObject) in newSchemas)
+        {
+            if (schemaObject == null)
+            {
+                throw new InvalidOperationException(
+                    $"OpenAPI extension fragment has empty newSchemas path name '{schemaName}'. Extension fragment validation failed?"
+                );
+            }
+
+            JsonObject locationForSchemas = openApiSpecification
+                .SelectRequiredNodeFromPath("$.components.schemas", _logger)
+                .AsObject();
+
+            // If schemaName has already been added by another extension, we don't support a second one
+            if (locationForSchemas[schemaName] != null)
+            {
+                throw new InvalidOperationException(
+                    $"OpenAPI extension fragment tried to add a second schema '$.components.schemas.{schemaName}', which is not supported. Extension fragment validation failed?"
+                );
+            }
+
+            locationForSchemas.Add(schemaName, schemaObject.DeepClone());
+        }
     }
 }
+
+internal record struct ProjectNamespace(string Value);

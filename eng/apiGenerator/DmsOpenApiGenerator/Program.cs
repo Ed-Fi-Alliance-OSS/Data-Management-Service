@@ -1,33 +1,55 @@
 using DmsOpenApiGenerator.Services;
-using Spectre.Console;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
-namespace DmsOpenApiGenerator;
+var serviceCollection = new ServiceCollection();
+ConfigureServices(serviceCollection);
+var serviceProvider = serviceCollection.BuildServiceProvider();
 
-abstract class Program
+var logger = serviceProvider.GetRequiredService<ILogger<Program>>();
+var generator = serviceProvider.GetRequiredService<OpenApiGenerator>();
+
+try
 {
-    static void Main()
+    // Prompt for the paths interactively
+    Console.Write("Enter the path to the core schema file: ");
+    string coreSchemaPath = Console.ReadLine()?.Trim() ?? string.Empty;
+
+    Console.Write("Enter the path to the extension schema file: ");
+    string extensionSchemaPath = Console.ReadLine()?.Trim() ?? string.Empty;
+
+    Console.Write("Enter the path to save the output OpenAPI spec file: ");
+    string outputPath = Console.ReadLine()?.Trim() ?? string.Empty;
+
+    // Validate file paths
+    if (!File.Exists(coreSchemaPath))
     {
-        try
-        {
-            var coreSchemaPath = AnsiConsole.Prompt(
-                new TextPrompt<string>("Enter the [green]path to the core ApiSchema JSON file[/]:")
-                    .Validate(path => File.Exists(path) ? ValidationResult.Success() : ValidationResult.Error("[red]File not found[/]")));
-
-            var extensionSchemaPath = AnsiConsole.Prompt(
-                new TextPrompt<string>("Enter the [green]path to the extension ApiSchema JSON file[/] (optional):")
-                    .AllowEmpty());
-
-            var outputPath = AnsiConsole.Prompt(
-                new TextPrompt<string>("Enter the [green]output path[/] for the generated OpenAPI file:"));
-
-            var generator = new OpenApiGenerator();
-            generator.Generate(coreSchemaPath, extensionSchemaPath, outputPath);
-
-            AnsiConsole.MarkupLine($"[bold green]OpenAPI specification successfully generated at:[/] {outputPath}");
-        }
-        catch (Exception ex)
-        {
-            AnsiConsole.WriteException(ex);
-        }
+        logger.LogError("Core schema file not found: {CoreSchemaPath}", coreSchemaPath);
+        return 1;
     }
+
+    if (!File.Exists(extensionSchemaPath))
+    {
+        logger.LogError("Extension schema file not found: {ExtensionSchemaPath}", extensionSchemaPath);
+        return 1;
+    }
+
+    generator.Generate(coreSchemaPath, extensionSchemaPath, outputPath);
+    return 0;
+}
+catch (Exception ex)
+{
+    logger.LogCritical(ex, "An error occurred while generating the OpenAPI spec.");
+    return 1;
+}
+
+void ConfigureServices(IServiceCollection services)
+{
+    services.AddLogging(config =>
+    {
+        config.AddConsole();
+        config.SetMinimumLevel(LogLevel.Debug);
+    });
+
+    services.AddSingleton<OpenApiGenerator>();
 }
