@@ -16,20 +16,15 @@ public class ApiClientDetailsProvider(ITokenProcessor tokenProcessor) : IApiClie
 {
     public ApiClientDetails RetrieveApiClientDetailsFromToken(string jwtToken)
     {
-        var tokenId = GetTokenId(jwtToken);
-        var tokenValues = tokenProcessor.DecodeToken(jwtToken);
-        var apiClientDetails = new ApiClientDetails(
-            tokenId,
-            tokenValues["scope"].ToString(),
-            [29901],
-            ["uri://ed-fi.org"]
-        );
+        var claims = tokenProcessor.DecodeToken(jwtToken);
+        var tokenId = GetTokenId(claims, jwtToken);
+        var claimSet = claims["scope"].ToString();
+        var apiClientDetails = new ApiClientDetails(tokenId, claimSet, [29901], ["uri://ed-fi.org"]);
         return apiClientDetails;
     }
 
-    private string GetTokenId(string jwtToken)
+    private static string GetTokenId(IDictionary<string, string> claims, string jwtToken)
     {
-        var claims = tokenProcessor.DecodeToken(jwtToken);
         return claims.TryGetValue("jti", out string? value) ? value : jwtToken.GetHashCode().ToString();
     }
 }
