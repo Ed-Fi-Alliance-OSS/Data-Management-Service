@@ -216,7 +216,7 @@ public class OpenApiDocumentTests
         }
 
         [Test]
-        public void It_should_be_the_simple_result()
+        public void It_should_merge_in_both_extension_fragments()
         {
             openApiDocumentResult
                 .ToJsonString(new() { WriteIndented = true })
