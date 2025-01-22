@@ -3,9 +3,9 @@ using Microsoft.Extensions.Logging;
 
 namespace DmsOpenApiGenerator.Services;
 
-public class OpenApiGenerator(ILogger<OpenApiGenerator> logger)
+public class OpenApiGenerator(ILogger logger)
 {
-    private readonly ILogger<OpenApiGenerator> _logger =
+    private readonly ILogger _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
 
     public void Generate(string coreSchemaPath, string? extensionSchemaPath, string outputPath)
@@ -44,7 +44,7 @@ public class OpenApiGenerator(ILogger<OpenApiGenerator> logger)
         _logger.LogInformation("OpenAPI generation completed successfully.");
     }
 
-    private JsonNode CombineSchemas(JsonNode coreSchema, JsonNode[] extensionSchema)
+    public JsonNode CombineSchemas(JsonNode coreSchema, JsonNode[] extensionSchema)
     {
         ApiSchemaDocument coreApiSchemaDocument = new(coreSchema, _logger);
 

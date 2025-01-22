@@ -1,100 +1,310 @@
-using DmsOpenApiGenerator.Services;
-using FakeItEasy;
-using Microsoft.Extensions.Logging;
 using System.Text.Json.Nodes;
+using DmsOpenApiGenerator.Services;
+using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
+using NUnit.Framework;
 
 namespace DmsOpenApiGenerator.Tests;
 
 [TestFixture]
 public class OpenApiGeneratorTests
 {
-    private ILogger<OpenApiGenerator> _fakeLogger = null!;
-    private OpenApiGenerator _generator = null!;
-
-    [SetUp]
-    public void SetUp()
+    internal static JsonNode CoreSchemaRootNode()
     {
-        // Create a fake logger
-        _fakeLogger = A.Fake<ILogger<OpenApiGenerator>>();
-        _generator = new OpenApiGenerator(_fakeLogger);
+        JsonObject schemas = new()
+        {
+            ["EdFi_AcademicWeek"] = new JsonObject
+            {
+                ["description"] = "AcademicWeek description",
+                ["properties"] = new JsonObject(),
+                ["type"] = "string",
+            },
+            ["EdFi_AccountabilityRating"] = new JsonObject
+            {
+                ["description"] = "AccountabilityRating description",
+                ["properties"] = new JsonObject(),
+                ["type"] = "string",
+            },
+        };
+
+        JsonObject paths = new()
+        {
+            ["/ed-fi/academicWeeks"] = new JsonObject
+            {
+                ["get"] = new JsonObject { ["description"] = "academicWeek get description" },
+                ["post"] = new JsonObject { ["description"] = "academicWeek post description" },
+            },
+            ["/ed-fi/academicWeeks/{id}"] = new JsonObject
+            {
+                ["get"] = new JsonObject { ["description"] = "academicWeek id get description" },
+                ["delete"] = new JsonObject { ["description"] = "academicWeek delete description" },
+            },
+        };
+
+        return new ApiSchemaBuilder()
+            .WithStartProject("ed-fi", "5.0.0")
+            .WithCoreOpenApiSpecification(schemas, paths)
+            .WithEndProject()
+            .AsRootJsonNode();
     }
 
-    [Test]
-    public void Generate_ShouldThrowException_WhenPathsAreInvalid()
+    internal static JsonNode FirstExtensionSchemaRootNode()
     {
-        // Act & Assert
-        var ex = Assert.Throws<ArgumentException>(() => _generator.Generate("", "", ""));
+        JsonObject exts = new()
+        {
+            ["EdFi_AcademicWeek"] = new JsonObject
+            {
+                ["description"] = "ext AcademicWeek description",
+                ["type"] = "string",
+            },
+        };
 
-        // Verify the error message was logged
-        A.CallTo(
-                () =>
-                    _fakeLogger.Log(
-                        LogLevel.Error,
-                        A<EventId>.Ignored,
-                        A<object>.Ignored,
-                        A<Exception>.That.IsInstanceOf(typeof(ArgumentException)),
-                        A<Func<object, Exception?, string>>.Ignored
-                    )
-            )
-            .MustHaveHappenedOnceExactly();
+        JsonObject newPaths = new()
+        {
+            ["/tpdm/credentials"] = new JsonObject
+            {
+                ["get"] = new JsonObject { ["description"] = "credential get" },
+                ["post"] = new JsonObject { ["description"] = "credential post" },
+            },
+            ["/tpdm/credentials/{id}"] = new JsonObject
+            {
+                ["get"] = new JsonObject { ["description"] = "credential id get" },
+                ["delete"] = new JsonObject { ["description"] = "credential delete" },
+            },
+        };
 
-        Assert.That(ex?.Message, Is.EqualTo("Core schema, extension schema, and output paths are required."));
+        JsonObject newSchemas = new()
+        {
+            ["TPDM_Credential"] = new JsonObject
+            {
+                ["description"] = "TPDM credential description",
+                ["type"] = "string",
+            },
+        };
+
+        return new ApiSchemaBuilder()
+            .WithStartProject("tpdm", "5.0.0")
+            .WithOpenApiExtensionFragments(exts, newPaths, newSchemas)
+            .WithEndProject()
+            .AsRootJsonNode();
     }
 
-    [Test]
-    public void Generate_ShouldWriteCombinedSchemaToOutputPath_WhenPathsAreValid()
+    internal static JsonNode SecondExtensionSchemaRootNode()
     {
-        // Arrange
-        string coreSchemaPath = "core-schema.json";
-        string extensionSchemaPath = "extension-schema.json";
-        string outputPath = "output.json";
+        JsonObject exts = new()
+        {
+            ["EdFi_AccountabilityRating"] = new JsonObject
+            {
+                ["description"] = "ext AccountabilityRating description",
+                ["type"] = "string",
+            },
+        };
 
-        File.WriteAllText(coreSchemaPath, "{ \"projectNameMapping\": { \"Ed-Fi\": \"ed-fi\" } }");
-        File.WriteAllText(extensionSchemaPath, "{ \"info\": { \"title\": \"Test API\" } }");
+        JsonObject newPaths = new()
+        {
+            ["/tpdm/candidates"] = new JsonObject
+            {
+                ["get"] = new JsonObject { ["description"] = "candidate get" },
+                ["post"] = new JsonObject { ["description"] = "candidate post" },
+            },
+            ["/tpdm/candidates/{id}"] = new JsonObject
+            {
+                ["get"] = new JsonObject { ["description"] = "candidate id get" },
+                ["delete"] = new JsonObject { ["description"] = "candidate delete" },
+            },
+        };
 
-        // Act
-        _generator.Generate(coreSchemaPath, extensionSchemaPath, outputPath);
+        JsonObject newSchemas = new()
+        {
+            ["TPDM_Candidate"] = new JsonObject
+            {
+                ["description"] = "TPDM candidate description",
+                ["type"] = "string",
+            },
+        };
 
-        // Assert
-        Assert.IsTrue(File.Exists(outputPath));
-        var content = File.ReadAllText(outputPath);
-        var json = JsonNode.Parse(content);
-        Assert.IsNotNull(json);
-        Assert.AreEqual("3.0.0", json?["openapi"]?.ToString());
-        Assert.AreEqual("Test API", json?["info"]?["title"]?.ToString());
+        return new ApiSchemaBuilder()
+            .WithStartProject("tpdm", "5.0.0")
+            .WithOpenApiExtensionFragments(exts, newPaths, newSchemas)
+            .WithEndProject()
+            .AsRootJsonNode();
+    }
 
-        // Verify the log messages
-        A.CallTo(
-                () =>
-                    _fakeLogger.Log(
-                        LogLevel.Information,
-                        A<EventId>.Ignored,
-                        A<object>.That.Matches(v =>
-                            v.ToString()!.Contains("Starting OpenAPI generation") == true
-                        ),
-                        A<Exception>.Ignored,
-                        A<Func<object, Exception?, string>>.Ignored
-                    )
-            )
-            .MustHaveHappenedOnceExactly();
+    [TestFixture]
+    public class Given_A_Simple_Core_Schema_Document : OpenApiGeneratorTests
+    {
+        private JsonNode openApiDocumentResult = new JsonObject();
 
-        A.CallTo(
-                () =>
-                    _fakeLogger.Log(
-                        LogLevel.Information,
-                        A<EventId>.Ignored,
-                        A<object>.That.Matches(v =>
-                            v.ToString()!.Contains("OpenAPI generation completed successfully") == true
-                        ),
-                        A<Exception>.Ignored,
-                        A<Func<object, Exception?, string>>.Ignored
-                    )
-            )
-            .MustHaveHappenedOnceExactly();
+        [SetUp]
+        public void Setup()
+        {
+            JsonNode coreSchemaRootNode = CoreSchemaRootNode();
+            OpenApiGenerator openApiDocument = new(NullLogger.Instance);
+            openApiDocumentResult = openApiDocument.CombineSchemas(coreSchemaRootNode, []);
+        }
 
-        // Cleanup
-        File.Delete(coreSchemaPath);
-        File.Delete(extensionSchemaPath);
-        File.Delete(outputPath);
+        [Test]
+        public void It_should_be_the_simple_result()
+        {
+            openApiDocumentResult
+                .ToJsonString(new() { WriteIndented = true })
+                .Should()
+                .Be(
+                    """
+{
+  "components": {
+    "schemas": {
+      "EdFi_AcademicWeek": {
+        "description": "AcademicWeek description",
+        "properties": {},
+        "type": "string"
+      },
+      "EdFi_AccountabilityRating": {
+        "description": "AccountabilityRating description",
+        "properties": {},
+        "type": "string"
+      }
+    }
+  },
+  "paths": {
+    "/ed-fi/academicWeeks": {
+      "get": {
+        "description": "academicWeek get description"
+      },
+      "post": {
+        "description": "academicWeek post description"
+      }
+    },
+    "/ed-fi/academicWeeks/{id}": {
+      "get": {
+        "description": "academicWeek id get description"
+      },
+      "delete": {
+        "description": "academicWeek delete description"
+      }
+    }
+  }
+}
+"""
+                );
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Core_Schema_And_Multiple_Extension_Schemas : OpenApiGeneratorTests
+    {
+        private JsonNode openApiDocumentResult = new JsonObject();
+
+        [SetUp]
+        public void Setup()
+        {
+            JsonNode coreSchemaRootNode = CoreSchemaRootNode();
+            JsonNode[] extensionSchemaRootNodes =
+            [
+                FirstExtensionSchemaRootNode(),
+                SecondExtensionSchemaRootNode(),
+            ];
+            OpenApiGenerator openApiDocument = new(NullLogger.Instance);
+            openApiDocumentResult = openApiDocument.CombineSchemas(
+                coreSchemaRootNode,
+                extensionSchemaRootNodes
+            );
+        }
+
+        [Test]
+        public void It_should_be_the_simple_result()
+        {
+            openApiDocumentResult
+                .ToJsonString(new() { WriteIndented = true })
+                .Should()
+                .Be(
+                    """
+{
+  "components": {
+    "schemas": {
+      "EdFi_AcademicWeek": {
+        "description": "AcademicWeek description",
+        "properties": {
+          "_ext": {
+            "description": "ext AcademicWeek description",
+            "type": "string"
+          }
+        },
+        "type": "string"
+      },
+      "EdFi_AccountabilityRating": {
+        "description": "AccountabilityRating description",
+        "properties": {
+          "_ext": {
+            "description": "ext AccountabilityRating description",
+            "type": "string"
+          }
+        },
+        "type": "string"
+      },
+      "TPDM_Credential": {
+        "description": "TPDM credential description",
+        "type": "string"
+      },
+      "TPDM_Candidate": {
+        "description": "TPDM candidate description",
+        "type": "string"
+      }
+    }
+  },
+  "paths": {
+    "/ed-fi/academicWeeks": {
+      "get": {
+        "description": "academicWeek get description"
+      },
+      "post": {
+        "description": "academicWeek post description"
+      }
+    },
+    "/ed-fi/academicWeeks/{id}": {
+      "get": {
+        "description": "academicWeek id get description"
+      },
+      "delete": {
+        "description": "academicWeek delete description"
+      }
+    },
+    "/tpdm/credentials": {
+      "get": {
+        "description": "credential get"
+      },
+      "post": {
+        "description": "credential post"
+      }
+    },
+    "/tpdm/credentials/{id}": {
+      "get": {
+        "description": "credential id get"
+      },
+      "delete": {
+        "description": "credential delete"
+      }
+    },
+    "/tpdm/candidates": {
+      "get": {
+        "description": "candidate get"
+      },
+      "post": {
+        "description": "candidate post"
+      }
+    },
+    "/tpdm/candidates/{id}": {
+      "get": {
+        "description": "candidate id get"
+      },
+      "delete": {
+        "description": "candidate delete"
+      }
+    }
+  }
+}
+"""
+                );
+        }
     }
 }
