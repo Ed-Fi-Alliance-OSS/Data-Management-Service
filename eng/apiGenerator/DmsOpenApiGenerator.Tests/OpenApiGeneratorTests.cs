@@ -1,6 +1,8 @@
 using System.Text.Json.Nodes;
 using DmsOpenApiGenerator.Services;
 using FluentAssertions;
+using FakeItEasy;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DmsOpenApiGenerator.Tests;
@@ -127,6 +129,29 @@ public class OpenApiGeneratorTests
             .WithOpenApiExtensionFragments(exts, newPaths, newSchemas)
             .WithEndProject()
             .AsRootJsonNode();
+    }
+
+    [TestFixture]
+    public class Given_An_Empty_Core_Schema : OpenApiGeneratorTests
+    {
+        private ILogger<OpenApiGenerator> _fakeLogger = null!;
+        private OpenApiGenerator _generator = null!;
+        [SetUp]
+        public void SetUp()
+        {
+            // Create a fake logger
+            _fakeLogger = A.Fake<ILogger<OpenApiGenerator>>();
+            _generator = new OpenApiGenerator(_fakeLogger);
+        }
+
+        [Test]
+        public void Generate_ShouldThrowException_WhenPathsAreInvalid()
+        {
+            // Act & Assert
+            var ex = Assert.Throws<ArgumentException>(() => _generator.Generate("", "", ""));
+
+            Assert.That(ex?.Message, Is.EqualTo("Core schema, extension schema, and output paths are required."));
+        }
     }
 
     [TestFixture]
