@@ -5,6 +5,7 @@
 
 using System.Net;
 using System.Security.Claims;
+using System.Text.Json;
 using System.Threading.RateLimiting;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Deploy;
@@ -184,15 +185,34 @@ public static class WebApplicationBuilderExtensions
                                 if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer "))
                                 {
                                     string rawToken = authHeader["Bearer ".Length..];
-                                    var apiClientDetails =
-                                        apiClientDetailsProvider.RetrieveApiClientDetailsFromToken(rawToken);
-                                    context.HttpContext.Items["ApiClientDetails"] = apiClientDetails;
-                                    return Task.FromResult(apiClientDetails);
+                                    try
+                                    {
+                                        var apiClientDetails =
+                                            apiClientDetailsProvider.RetrieveApiClientDetailsFromToken(
+                                                rawToken
+                                            );
+                                        context.HttpContext.Items["ApiClientDetails"] = apiClientDetails;
+                                        return Task.FromResult(apiClientDetails);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        SetErrorResponse(ex.Message);
+                                        return Task.CompletedTask;
+                                    }
                                 }
                                 else
                                 {
-                                    Console.WriteLine($"Invalid token");
+                                    SetErrorResponse("Invalid token format");
                                     return Task.CompletedTask;
+                                }
+
+                                void SetErrorResponse(string error)
+                                {
+                                    context.Response.ContentType = "application/json";
+                                    context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
+                                    context.Response.WriteAsync(
+                                        JsonSerializer.Serialize(new { message = error })
+                                    );
                                 }
                             },
                         };

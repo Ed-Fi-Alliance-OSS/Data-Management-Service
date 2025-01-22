@@ -32,7 +32,6 @@ app.UseMiddleware<LoggingMiddleware>();
 if (!ReportInvalidConfiguration(app))
 {
     InitializeDatabase(app);
-    RetrieveAndCacheSecurityMetaData(app);
 }
 
 app.UseRouting();
@@ -99,20 +98,6 @@ void InitializeDatabase(WebApplication app)
             app.Logger.LogCritical(ex, "Database Deploy Failure");
             Environment.Exit(-1);
         }
-    }
-}
-
-async void RetrieveAndCacheSecurityMetaData(WebApplication app)
-{
-    app.Logger.LogInformation("Retrieving and caching required security metadata");
-    try
-    {
-        await app.Services.GetRequiredService<ISecurityMetadataService>().GetClaimSets();
-    }
-    catch (Exception ex)
-    {
-        app.Logger.LogCritical(ex, "Retrieving and caching required security metadata failure");
-        Environment.Exit(-1);
     }
 }
 
