@@ -114,6 +114,61 @@ internal class OpenApiDocument(ILogger _logger)
     }
 
     /// <summary>
+    /// Inserts new global tag objects from extension OpenAPI fragments into the tags section of the
+    /// core OpenAPI specification.
+    /// </summary>
+    private void InsertNewTags(JsonArray newTagObjects, JsonNode openApiSpecification)
+    {
+        // This is where the extension tags will be added
+        JsonArray globalTags = openApiSpecification.SelectRequiredNodeFromPath("$.tags", _logger).AsArray();
+
+        // Helper to test for tag uniqueness
+        HashSet<string> existingTagNames = [];
+        foreach (JsonNode? globalTag in globalTags)
+        {
+            if (globalTag == null)
+            {
+                throw new InvalidOperationException(
+                    $"OpenAPI specification has empty global tag. Extension fragment validation failed?"
+                );
+            }
+
+            string tagName =
+                globalTag["name"]?.GetValue<string>()
+                ?? throw new InvalidOperationException(
+                    $"OpenAPI specification has newTag with no name. Extension fragment validation failed?"
+                );
+            existingTagNames.Add(tagName);
+        }
+
+        foreach (JsonNode? newTagObject in newTagObjects)
+        {
+            if (newTagObject == null)
+            {
+                throw new InvalidOperationException(
+                    $"OpenAPI extension fragment has empty newTag. Extension fragment validation failed?"
+                );
+            }
+
+            string tagObjectName =
+                newTagObject["name"]?.GetValue<string>()
+                ?? throw new InvalidOperationException(
+                    $"OpenAPI extension fragment has newTag with no name. Extension fragment validation failed?"
+                );
+
+            // If tag has already been added by another extension, we don't support a second one
+            if (existingTagNames.Contains(tagObjectName))
+            {
+                throw new InvalidOperationException(
+                    $"OpenAPI extension fragment tried to add a second tag named '{tagObjectName}', which is not supported. Extension fragment validation failed?"
+                );
+            }
+
+            globalTags.Add(newTagObject.DeepClone());
+        }
+    }
+
+    /// <summary>
     /// Creates an OpenAPI specification derived from the given core and extension ApiSchemas
     /// </summary>
     public JsonNode CreateDocument(JsonNode coreApiSchemaRootNode, JsonNode[] extensionApiSchemaRootNodes)
@@ -145,6 +200,11 @@ internal class OpenApiDocument(ILogger _logger)
 
             InsertNewSchemas(
                 extensionFragments.SelectRequiredNodeFromPath("$.newSchemas", _logger).AsObject(),
+                openApiSpecification
+            );
+
+            InsertNewTags(
+                extensionFragments.SelectRequiredNodeFromPath("$.newTags", _logger).AsArray(),
                 openApiSpecification
             );
         }

@@ -591,7 +591,7 @@ public class ApiSchemaBuilder
     /// <summary>
     /// Adds a core OpenAPI specification to a project definition.
     /// </summary>
-    public ApiSchemaBuilder WithCoreOpenApiSpecification(JsonNode schemas, JsonNode paths)
+    public ApiSchemaBuilder WithCoreOpenApiSpecification(JsonNode schemas, JsonNode paths, JsonArray tags)
     {
         if (_currentProjectNode == null)
         {
@@ -602,6 +602,7 @@ public class ApiSchemaBuilder
         {
             ["components"] = new JsonObject { ["schemas"] = schemas },
             ["paths"] = paths,
+            ["tags"] = tags,
         };
         return this;
     }
@@ -612,7 +613,8 @@ public class ApiSchemaBuilder
     public ApiSchemaBuilder WithOpenApiExtensionFragments(
         JsonNode exts,
         JsonNode newPaths,
-        JsonNode newSchemas
+        JsonNode newSchemas,
+        JsonNode newTags
     )
     {
         if (_currentProjectNode == null)
@@ -625,6 +627,7 @@ public class ApiSchemaBuilder
             ["exts"] = exts,
             ["newPaths"] = newPaths,
             ["newSchemas"] = newSchemas,
+            ["newTags"] = newTags,
         };
         return this;
     }

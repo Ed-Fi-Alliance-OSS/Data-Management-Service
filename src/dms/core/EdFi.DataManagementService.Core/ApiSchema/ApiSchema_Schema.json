@@ -25,6 +25,48 @@
         "projectSchemas"
     ],
     "definitions": {
+        "CoreOpenApiSpecification": {
+            "type": "object",
+            "properties": {
+                "components": {
+                    "type": "object"
+                },
+                "info": {
+                    "type": "object"
+                },
+                "openapi": {
+                    "type": "string"
+                },
+                "paths": {
+                    "type": "object"
+                },
+                "servers": {
+                    "type": "array"
+                },
+                "tags": {
+                    "type": "array"
+                }
+            },
+            "additionalProperties": false
+        },
+        "OpenApiExtensionFragments": {
+            "type": "object",
+            "properties": {
+                "exts": {
+                    "type": "object"
+                },
+                "newPaths": {
+                    "type": "object"
+                },
+                "newSchemas": {
+                    "type": "object"
+                },
+                "newTags": {
+                    "type": "array"
+                }
+            },
+            "additionalProperties": false
+        },
         "ProjectSchemas": {
             "type": "object",
             "properties": {
@@ -53,11 +95,17 @@
                     "additionalProperties": false
                 },
                 "compatibleDsRange": true,
+                "coreOpenApiSpecification": {
+                    "$ref": "#/definitions/CoreOpenApiSpecification"
+                },
                 "description": {
                     "type": "string"
                 },
                 "isExtensionProject": {
                     "type": "boolean"
+                },
+                "openApiExtensionFragments": {
+                    "$ref": "#/definitions/OpenApiExtensionFragments"
                 },
                 "projectName": {
                     "type": "string"
