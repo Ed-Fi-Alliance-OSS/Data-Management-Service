@@ -264,7 +264,9 @@ function E2ETests {
         Invoke-Execute {
             try {
                 Push-Location eng/docker-compose/
-                ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "OpenSearch" -r
+                ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "OpenSearch" -EnableConfig -EnforceAuthorization -r
+                Start-Sleep 20
+                ./setup-keycloak.ps1
             }
             finally {
                 Pop-Location
@@ -275,7 +277,9 @@ function E2ETests {
         Invoke-Execute {
             try {
                 Push-Location eng/docker-compose/
-                ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "ElasticSearch" -r
+                ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "ElasticSearch" -EnableConfig -EnforceAuthorization -r
+                Start-Sleep 20
+                ./setup-keycloak.ps1
             }
             finally {
                 Pop-Location
