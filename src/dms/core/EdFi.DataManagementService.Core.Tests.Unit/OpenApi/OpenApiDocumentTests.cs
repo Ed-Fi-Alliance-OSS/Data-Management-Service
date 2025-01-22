@@ -45,9 +45,13 @@ public class OpenApiDocumentTests
             },
         };
 
+        JsonArray tags = [];
+        tags.Add(new JsonObject { ["name"] = "TagName1", ["description"] = "Description1" });
+        tags.Add(new JsonObject { ["name"] = "TagName2", ["description"] = "Description2" });
+
         return new ApiSchemaBuilder()
             .WithStartProject("ed-fi", "5.0.0")
-            .WithCoreOpenApiSpecification(schemas, paths)
+            .WithCoreOpenApiSpecification(schemas, paths, tags)
             .WithEndProject()
             .AsRootJsonNode();
     }
@@ -86,9 +90,17 @@ public class OpenApiDocumentTests
             },
         };
 
+        JsonArray newTags = [];
+        newTags.Add(
+            new JsonObject { ["name"] = "ExtensionTagName1", ["description"] = "ExtensionDescription1" }
+        );
+        newTags.Add(
+            new JsonObject { ["name"] = "ExtensionTagName2", ["description"] = "ExtensionDescription2" }
+        );
+
         return new ApiSchemaBuilder()
             .WithStartProject("tpdm", "5.0.0")
-            .WithOpenApiExtensionFragments(exts, newPaths, newSchemas)
+            .WithOpenApiExtensionFragments(exts, newPaths, newSchemas, newTags)
             .WithEndProject()
             .AsRootJsonNode();
     }
@@ -127,9 +139,17 @@ public class OpenApiDocumentTests
             },
         };
 
+        JsonArray newTags = [];
+        newTags.Add(
+            new JsonObject { ["name"] = "ExtensionTagName3", ["description"] = "ExtensionDescription3" }
+        );
+        newTags.Add(
+            new JsonObject { ["name"] = "ExtensionTagName4", ["description"] = "ExtensionDescription4" }
+        );
+
         return new ApiSchemaBuilder()
             .WithStartProject("tpdm", "5.0.0")
-            .WithOpenApiExtensionFragments(exts, newPaths, newSchemas)
+            .WithOpenApiExtensionFragments(exts, newPaths, newSchemas, newTags)
             .WithEndProject()
             .AsRootJsonNode();
     }
@@ -187,7 +207,17 @@ public class OpenApiDocumentTests
         "description": "academicWeek delete description"
       }
     }
-  }
+  },
+  "tags": [
+    {
+      "name": "TagName1",
+      "description": "Description1"
+    },
+    {
+      "name": "TagName2",
+      "description": "Description2"
+    }
+  ]
 }
 """
                 );
@@ -305,7 +335,33 @@ public class OpenApiDocumentTests
         "description": "candidate delete"
       }
     }
-  }
+  },
+  "tags": [
+    {
+      "name": "TagName1",
+      "description": "Description1"
+    },
+    {
+      "name": "TagName2",
+      "description": "Description2"
+    },
+    {
+      "name": "ExtensionTagName1",
+      "description": "ExtensionDescription1"
+    },
+    {
+      "name": "ExtensionTagName2",
+      "description": "ExtensionDescription2"
+    },
+    {
+      "name": "ExtensionTagName3",
+      "description": "ExtensionDescription3"
+    },
+    {
+      "name": "ExtensionTagName4",
+      "description": "ExtensionDescription4"
+    }
+  ]
 }
 """
                 );
