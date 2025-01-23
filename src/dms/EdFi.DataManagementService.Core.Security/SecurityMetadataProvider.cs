@@ -35,9 +35,8 @@ public class SecurityMetadataProvider(
     {
         List<ClaimSet>? claimSets = [];
         await SetAuthorizationHeader();
-
-        var response = await configurationServiceApiClient.Client.GetAsync("v2/claimSets");
-        response.EnsureSuccessStatusCode();
+        var claimsEndpoint = "v2/claimSets";
+        var response = await configurationServiceApiClient.Client.GetAsync(claimsEndpoint);
         var jsonString = await response.Content.ReadAsStringAsync();
         if (jsonString != null)
         {

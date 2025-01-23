@@ -103,14 +103,20 @@ public static class WebApplicationBuilderExtensions
                 "Unable to read ConfigurationServiceSettings from appsettings"
             );
         }
-        webAppBuilder.Services.AddHttpClient<ConfigurationServiceApiClient>(
-            (serviceProvider, client) =>
-            {
-                client.BaseAddress = new Uri(configServiceSettings.BaseUrl);
-                client.DefaultRequestHeaders.Add("Accept", "application/json");
-                client.DefaultRequestHeaders.Add("Accept", "application/x-www-form-urlencoded");
-            }
-        );
+
+        webAppBuilder.Services.AddTransient<ConfigurationServiceResponseHandler>();
+        webAppBuilder
+            .Services.AddHttpClient<ConfigurationServiceApiClient>(
+                (serviceProvider, client) =>
+                {
+                    client.BaseAddress = new Uri(configServiceSettings.BaseUrl);
+                    client.DefaultRequestHeaders.Add("Accept", "application/json");
+                    client.DefaultRequestHeaders.Add("Accept", "application/x-www-form-urlencoded");
+                }
+            )
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler())
+            .AddHttpMessageHandler<ConfigurationServiceResponseHandler>();
+
         webAppBuilder.Services.AddSingleton(
             new ConfigurationServiceContext(
                 configServiceSettings.ClientId,
