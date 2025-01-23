@@ -11,7 +11,7 @@ namespace EdFi.DataManagementService.Core.Security;
 
 public interface ISecurityMetadataProvider
 {
-    Task<IList<ClaimSet>?> GetAllClaimSets();
+    Task<IList<ClaimSet>> GetAllClaimSets();
 }
 
 public class SecurityMetadataProvider(
@@ -31,17 +31,13 @@ public class SecurityMetadataProvider(
             new AuthenticationHeaderValue("Bearer", token);
     }
 
-    public async Task<IList<ClaimSet>?> GetAllClaimSets()
+    public async Task<IList<ClaimSet>> GetAllClaimSets()
     {
-        List<ClaimSet>? claimSets = [];
         await SetAuthorizationHeader();
         var claimsEndpoint = "v2/claimSets";
         var response = await configurationServiceApiClient.Client.GetAsync(claimsEndpoint);
         var jsonString = await response.Content.ReadAsStringAsync();
-        if (jsonString != null)
-        {
-            claimSets = JsonSerializer.Deserialize<List<ClaimSet>>(jsonString);
-        }
+        List<ClaimSet> claimSets = JsonSerializer.Deserialize<List<ClaimSet>>(jsonString) ?? [];
         return claimSets;
     }
 }

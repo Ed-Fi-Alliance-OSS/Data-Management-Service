@@ -17,9 +17,9 @@ public record ApiClientDetails(
     /// <summary>
     /// Education organization id list associated with vendor application key and secret
     /// </summary>
-    IList<long> educationOrganizationIds,
+    IList<long> EducationOrganizationIds,
     /// <summary>
     /// Namespace prefixes associated with vendor application key and secret
     /// </summary>
-    IList<string> namespacePrefixes
+    IList<string> NamespacePrefixes
 );

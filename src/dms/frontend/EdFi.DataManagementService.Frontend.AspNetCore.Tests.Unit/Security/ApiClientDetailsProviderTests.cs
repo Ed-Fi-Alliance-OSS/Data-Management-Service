@@ -3,8 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Security.Claims;
 using EdFi.DataManagementService.Frontend.AspNetCore.Security;
-using FakeItEasy;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -17,43 +17,40 @@ public class ApiClientDetailsProviderTests
     public void Retrieve_Expected_Scopes_From_ApiClientDetailsProvider()
     {
         // Arrange
-        var authority = "ValidIssuer";
-        var audience = "Account";
         var claimSet = "ClaimSet01";
         var tokenId = "123455";
-        var expectedClaims = new Dictionary<string, string> { { "scope", claimSet }, { "jti", tokenId } };
-        var token = MockTokenProvider.GenerateJwtToken(authority, audience, expectedClaims);
-
-        var _fakeTokenProcessor = A.Fake<ITokenProcessor>();
-        A.CallTo(() => _fakeTokenProcessor.DecodeToken(token)).Returns(expectedClaims);
-
-        ApiClientDetailsProvider _apiClientDetailsProvider = new(_fakeTokenProcessor);
+        var claims = new List<Claim> { new("scope", claimSet), new("jti", tokenId) };
+        ApiClientDetailsProvider _apiClientDetailsProvider = new();
 
         // Act
-        var apiClientDetails = _apiClientDetailsProvider.RetrieveApiClientDetailsFromToken(token);
+        var apiClientDetails = _apiClientDetailsProvider.RetrieveApiClientDetailsFromToken(
+            "token-hash",
+            claims
+        );
 
         // Assert
-        A.CallTo(() => _fakeTokenProcessor.DecodeToken(token)).MustHaveHappenedOnceExactly();
         apiClientDetails.Should().NotBeNull();
         apiClientDetails.TokenId.Equals(tokenId);
         apiClientDetails.ClaimSetName.Equals(claimSet);
     }
 
     [Test]
-    public void InvalidToken_ShouldThrowException()
+    public void Retrieve_Token_Hash_When_No_Jti_Scope()
     {
         // Arrange
-        var token = "Invalid token";
+        var claimSet = "ClaimSet01";
+        var claims = new List<Claim> { new("scope", claimSet) };
+        ApiClientDetailsProvider _apiClientDetailsProvider = new();
 
-        var _fakeTokenProcessor = A.Fake<ITokenProcessor>();
-        A.CallTo(() => _fakeTokenProcessor.DecodeToken(token))
-            .Throws(new ArgumentException("Invalid token format."));
-
-        ApiClientDetailsProvider _apiClientDetailsProvider = new(_fakeTokenProcessor);
-
-        // Act & Assert
-        Assert.Throws<ArgumentException>(
-            () => _apiClientDetailsProvider.RetrieveApiClientDetailsFromToken(token)
+        // Act
+        var apiClientDetails = _apiClientDetailsProvider.RetrieveApiClientDetailsFromToken(
+            "token-hash",
+            claims
         );
+
+        // Assert
+        apiClientDetails.Should().NotBeNull();
+        apiClientDetails.TokenId.Equals("token-hash");
+        apiClientDetails.ClaimSetName.Equals(claimSet);
     }
 }

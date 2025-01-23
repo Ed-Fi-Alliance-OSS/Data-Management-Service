@@ -10,7 +10,7 @@ namespace EdFi.DataManagementService.Core.Security;
 
 public class NoClaimsSecurityMetadataService(ILogger _logger) : ISecurityMetadataService
 {
-    public async Task<IList<ClaimSet>?> GetClaimSets()
+    public async Task<IList<ClaimSet>> GetClaimSets()
     {
         _logger.LogWarning(
             "GetClaimSets: Backend SecurityMetadataService has been configured to always report success."

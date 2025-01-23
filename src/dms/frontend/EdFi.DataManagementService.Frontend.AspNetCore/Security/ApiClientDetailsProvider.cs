@@ -3,28 +3,31 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Security.Claims;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Security;
 
 public interface IApiClientDetailsProvider
 {
-    ApiClientDetails RetrieveApiClientDetailsFromToken(string jwtToken);
+    ApiClientDetails RetrieveApiClientDetailsFromToken(string jwtTokenHashCode, IList<Claim> claims);
 }
 
-public class ApiClientDetailsProvider(ITokenProcessor tokenProcessor) : IApiClientDetailsProvider
+public class ApiClientDetailsProvider() : IApiClientDetailsProvider
 {
-    public ApiClientDetails RetrieveApiClientDetailsFromToken(string jwtToken)
+    public ApiClientDetails RetrieveApiClientDetailsFromToken(string jwtTokenHashCode, IList<Claim> claims)
     {
-        var claims = tokenProcessor.DecodeToken(jwtToken);
-        var tokenId = GetTokenId(claims, jwtToken);
-        var claimSet = claims["scope"].ToString();
-        var apiClientDetails = new ApiClientDetails(tokenId, claimSet, [29901], ["uri://ed-fi.org"]);
+        var requiredClaims = claims
+            .Where(c => c.Type == "scope" || c.Type == "jti")
+            .ToDictionary(c => c.Type, c => c.Value);
+        var claimSetName = requiredClaims.TryGetValue("scope", out string? value) ? value : string.Empty;
+        var tokenId = GetTokenId(requiredClaims, jwtTokenHashCode);
+        var apiClientDetails = new ApiClientDetails(tokenId, claimSetName, [], []);
         return apiClientDetails;
     }
 
-    private static string GetTokenId(IDictionary<string, string> claims, string jwtToken)
+    private static string GetTokenId(Dictionary<string, string> claims, string jwtTokenHashCode)
     {
-        return claims.TryGetValue("jti", out string? value) ? value : jwtToken.GetHashCode().ToString();
+        return claims.TryGetValue("jti", out string? value) ? value : jwtTokenHashCode;
     }
 }

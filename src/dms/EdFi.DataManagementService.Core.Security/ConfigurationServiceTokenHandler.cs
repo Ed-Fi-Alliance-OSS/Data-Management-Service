@@ -20,15 +20,12 @@ public class ConfigurationServiceTokenHandler(
     ILogger logger
 ) : IConfigurationServiceTokenHandler
 {
-    private readonly IMemoryCache _configServiceTokenCache = configServiceTokenCache;
-    private readonly ConfigurationServiceApiClient _configurationServiceApiClient =
-        configurationServiceApiClient;
     private static string TokenCacheKey => "ConfigServiceToken";
 
     public async Task<string?> GetTokenAsync(string clientId, string clientSecret, string scope)
     {
         logger.LogInformation("Retrieving token from Configuration service");
-        if (_configServiceTokenCache.TryGetValue(TokenCacheKey, out string? token))
+        if (configServiceTokenCache.TryGetValue(TokenCacheKey, out string? token))
         {
             return token;
         }
@@ -42,7 +39,7 @@ public class ConfigurationServiceTokenHandler(
         );
 
         logger.LogDebug("Post request to receive token from Configuration service");
-        var response = await _configurationServiceApiClient.Client.PostAsync("connect/token", urlEncodedData);
+        var response = await configurationServiceApiClient.Client.PostAsync("connect/token", urlEncodedData);
         var tokenResponse = await response.Content.ReadFromJsonAsync<BearerToken>();
 
         token = tokenResponse?.Access_token;
@@ -51,7 +48,7 @@ public class ConfigurationServiceTokenHandler(
         if (!string.IsNullOrEmpty(token))
         {
             var expires_in = tokenResponse != null ? tokenResponse.Expires_in : 1800;
-            _configServiceTokenCache.Set(TokenCacheKey, token, TimeSpan.FromSeconds(expires_in));
+            configServiceTokenCache.Set(TokenCacheKey, token, TimeSpan.FromSeconds(expires_in));
         }
 
         return token;
