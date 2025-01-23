@@ -15,6 +15,7 @@ using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.OpenApi;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Validation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -30,6 +31,7 @@ internal class ApiService(
     IApiSchemaProvider _apiSchemaProvider,
     IApiSchemaValidator _apiSchemaValidator,
     IDocumentStoreRepository _documentStoreRepository,
+    ISecurityMetadataService _securityMetadataService,
     IDocumentValidator _documentValidator,
     IQueryHandler _queryHandler,
     IMatchingDocumentUuidsValidator matchingDocumentUuidsValidator,
@@ -81,6 +83,7 @@ internal class ApiService(
                 new ExtractDocumentInfoMiddleware(_logger),
                 new DisallowDuplicateReferencesMiddleware(_logger),
                 new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
+                new ResourceAuthorizationMiddleware(_securityMetadataService, _logger),
                 new UpsertHandler(_documentStoreRepository, _logger, _resiliencePipeline, _apiSchemaProvider),
             ]
         );
@@ -104,6 +107,7 @@ internal class ApiService(
                         _logger,
                         _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                     ),
+                    new ResourceAuthorizationMiddleware(_securityMetadataService, _logger),
                     new GetByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline),
                 ]
             )
@@ -126,6 +130,7 @@ internal class ApiService(
                         _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                     ),
                     new ValidateQueryMiddleware(_logger, _appSettings.Value.MaximumPageSize),
+                    new ResourceAuthorizationMiddleware(_securityMetadataService, _logger),
                     new QueryRequestHandler(_queryHandler, _logger, _resiliencePipeline),
                 ]
             )
@@ -173,6 +178,7 @@ internal class ApiService(
                 new ExtractDocumentInfoMiddleware(_logger),
                 new DisallowDuplicateReferencesMiddleware(_logger),
                 new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
+                new ResourceAuthorizationMiddleware(_securityMetadataService, _logger),
                 new UpdateByIdHandler(
                     _documentStoreRepository,
                     _logger,
@@ -200,6 +206,7 @@ internal class ApiService(
                         _logger,
                         _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                     ),
+                    new ResourceAuthorizationMiddleware(_securityMetadataService, _logger),
                     new DeleteByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline),
                 ]
             )
