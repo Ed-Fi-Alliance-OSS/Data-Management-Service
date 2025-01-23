@@ -44,7 +44,7 @@ public class ConfigurationServiceTokenHandlerTests
             _configServiceTokenHandler = new ConfigurationServiceTokenHandler(
                 _memoryCache,
                 _configServiceApiClient,
-                NullLogger.Instance
+                NullLogger<ConfigurationServiceTokenHandler>.Instance
             );
             _token = await _configServiceTokenHandler.GetTokenAsync("ClientId", "Secret", "Scope");
         }
@@ -87,7 +87,7 @@ public class ConfigurationServiceTokenHandlerTests
             _configServiceTokenHandler = new ConfigurationServiceTokenHandler(
                 _memoryCache,
                 _configServiceApiClient,
-                NullLogger.Instance
+                NullLogger<ConfigurationServiceTokenHandler>.Instance
             );
             _token = await _configServiceTokenHandler.GetTokenAsync("ClientId", "Secret", "Scope");
         }
@@ -208,7 +208,7 @@ public class ConfigurationServiceTokenHandlerTests
             _configServiceTokenHandler = new ConfigurationServiceTokenHandler(
                 _memoryCache,
                 _configServiceApiClient,
-                NullLogger.Instance
+                NullLogger<ConfigurationServiceTokenHandler>.Instance
             );
         }
     }

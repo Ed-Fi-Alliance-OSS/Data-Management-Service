@@ -10,6 +10,7 @@ services:
       additional_contexts:
         parentdir: ../../src/
     hostname: config
+    container_name: dms-config-service
     ports:
       - ${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}
     restart: unless-stopped

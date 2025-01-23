@@ -39,7 +39,7 @@ public class SecurityMetadataServiceTests
             _service = new SecurityMetadataService(
                 _securityMetadataProvider,
                 claimSetCache,
-                NullLogger.Instance
+                NullLogger<SecurityMetadataService>.Instance
             );
             _claims = await _service.GetClaimSets();
         }
@@ -79,7 +79,7 @@ public class SecurityMetadataServiceTests
             _service = new SecurityMetadataService(
                 _securityMetadataProvider,
                 claimSetCache,
-                NullLogger.Instance
+                NullLogger<SecurityMetadataService>.Instance
             );
             _claims = await _service.GetClaimSets();
         }
@@ -181,7 +181,7 @@ public class SecurityMetadataServiceTests
             _service = new SecurityMetadataService(
                 _securityMetadataProvider,
                 claimSetCache,
-                NullLogger.Instance
+                NullLogger<SecurityMetadataService>.Instance
             );
         }
     }
