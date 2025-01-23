@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Validation;
 using FakeItEasy;
 using FluentAssertions;
@@ -40,6 +41,7 @@ public class APISchemaFileTests
                     new ApiSchemaSchemaProvider(NullLogger<ApiSchemaSchemaProvider>.Instance)
                 ),
                 new SuccessDocumentStoreRepository(NullLogger<SuccessDocumentStoreRepository>.Instance),
+                new NoClaimsSecurityMetadataService(NullLogger.Instance),
                 new DocumentValidator(),
                 new SuccessDocumentStoreRepository(NullLogger<SuccessDocumentStoreRepository>.Instance),
                 new MatchingDocumentUuidsValidator(),
