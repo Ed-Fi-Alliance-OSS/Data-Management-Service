@@ -8,7 +8,7 @@ using System.Text;
 
 namespace EdFi.DataManagementService.Core.Security.Tests.Unit;
 
-public class FakeHttpMessageHandler(HttpStatusCode httpStatusCode, string? responseContent = null)
+public class TestHttpMessageHandler(HttpStatusCode httpStatusCode, string? responseContent = null)
     : HttpMessageHandler
 {
     private readonly HttpStatusCode _httpStatusCode = httpStatusCode;
