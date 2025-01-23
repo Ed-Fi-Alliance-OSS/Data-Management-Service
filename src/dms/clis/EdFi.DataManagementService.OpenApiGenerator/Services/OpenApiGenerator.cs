@@ -9,9 +9,9 @@ using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.OpenApiGenerator.Services;
 
-public class OpenApiGenerator(ILogger logger)
+public class OpenApiGenerator(ILogger<OpenApiGenerator> logger)
 {
-    private readonly ILogger _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly ILogger<OpenApiGenerator> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     public void Generate(string coreSchemaPath, string? extensionSchemaPath, string outputPath)
     {
@@ -51,4 +51,3 @@ public class OpenApiGenerator(ILogger logger)
         _logger.LogInformation("OpenAPI generation completed successfully.");
     }
 }
-

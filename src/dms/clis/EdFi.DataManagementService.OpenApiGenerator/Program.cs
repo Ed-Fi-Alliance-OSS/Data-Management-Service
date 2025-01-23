@@ -18,14 +18,15 @@ var generator = serviceProvider.GetRequiredService<OpenApiGenerator>();
 try
 {
     // Get parameters from command-line arguments
-    var argsDict = args
-        .Select(arg => arg.Split(new[] { ':' }, 2))
+    var argsDict = args.Select(arg => arg.Split(new[] { ':' }, 2))
         .Where(split => split.Length == 2)
         .ToDictionary(split => split[0].ToLower(), split => split[1].Trim());
 
     if (!argsDict.ContainsKey("core") || !argsDict.ContainsKey("ext") || !argsDict.ContainsKey("output"))
     {
-        logger.LogError("Insufficient arguments. Usage: core:<coreSchemaPath> ext:<extensionSchemaPath> output:<outputPath>");
+        logger.LogError(
+            "Insufficient arguments. Usage: core:<coreSchemaPath> ext:<extensionSchemaPath> output:<outputPath>"
+        );
         return 1;
     }
 
@@ -69,6 +70,8 @@ void ConfigureServices(IServiceCollection services)
         config.ClearProviders();
         config.AddSerilog();
     });
+
+    services.AddSingleton(typeof(ILogger<>), typeof(Logger<>));
 
     services.AddSingleton<OpenApiGenerator>();
 }
