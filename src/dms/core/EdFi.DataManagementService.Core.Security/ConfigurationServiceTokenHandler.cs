@@ -17,7 +17,7 @@ public interface IConfigurationServiceTokenHandler
 public class ConfigurationServiceTokenHandler(
     IMemoryCache configServiceTokenCache,
     ConfigurationServiceApiClient configurationServiceApiClient,
-    ILogger logger
+    ILogger<ConfigurationServiceTokenHandler> logger
 ) : IConfigurationServiceTokenHandler
 {
     private static string TokenCacheKey => "ConfigServiceToken";

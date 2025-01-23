@@ -16,7 +16,7 @@ public interface ISecurityMetadataService
 public class SecurityMetadataService(
     ISecurityMetadataProvider securityMetadataProvider,
     ClaimSetsCache claimSetsCache,
-    ILogger logger
+    ILogger<SecurityMetadataService> logger
 ) : ISecurityMetadataService
 {
     private readonly string CacheId = "ClaimSetsCache";

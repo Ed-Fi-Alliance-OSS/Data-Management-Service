@@ -36,8 +36,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\EdFi.DataManagementService.Core.Security\EdFi.DataManagementService.Core.Security.csproj" />
     <ProjectReference Include="..\EdFi.DataManagementService.Core.External\EdFi.DataManagementService.Core.External.csproj" />
+    <ProjectReference Include="..\EdFi.DataManagementService.Core.Security\EdFi.DataManagementService.Core.Security.csproj" />
   </ItemGroup>
 
   <ItemGroup>
