@@ -19,7 +19,7 @@ public class SecurityMetadataProviderTests
     {
         private SecurityMetadataProvider? _metadataProvider;
         private IList<ClaimSet>? _claims;
-        private FakeHttpMessageHandler? _handler = null;
+        private TestHttpMessageHandler? _handler = null;
 
         [SetUp]
         public async Task Setup()
@@ -35,7 +35,7 @@ public class SecurityMetadataProviderTests
             };
 
             var json = JsonSerializer.Serialize(expectedClaims);
-            _handler = new FakeHttpMessageHandler(HttpStatusCode.OK, json);
+            _handler = new TestHttpMessageHandler(HttpStatusCode.OK, json);
             var configServiceHandler = new ConfigurationServiceResponseHandler { InnerHandler = _handler };
             var httpClientFactory = A.Fake<IHttpClientFactory>();
 
@@ -77,7 +77,7 @@ public class SecurityMetadataProviderTests
     public class Given_Error_Response_From_Api : ConfigurationServiceTokenHandlerTests
     {
         private SecurityMetadataProvider? _metadataProvider;
-        private FakeHttpMessageHandler? _handler = null;
+        private TestHttpMessageHandler? _handler = null;
 
         [Test]
         public void Should_Throw_BadRequest()
@@ -161,7 +161,7 @@ public class SecurityMetadataProviderTests
             var scope = "fullaccess";
             string? expectedToken = "valid-token";
 
-            _handler = new FakeHttpMessageHandler(statusCode);
+            _handler = new TestHttpMessageHandler(statusCode);
             var configServiceHandler = new ConfigurationServiceResponseHandler { InnerHandler = _handler };
             var httpClientFactory = A.Fake<IHttpClientFactory>();
 

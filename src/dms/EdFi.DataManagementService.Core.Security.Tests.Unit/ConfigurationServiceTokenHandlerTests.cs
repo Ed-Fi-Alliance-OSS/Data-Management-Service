@@ -29,7 +29,7 @@ public class ConfigurationServiceTokenHandlerTests
             var httpClientFactory = A.Fake<IHttpClientFactory>();
 
             var json = JsonSerializer.Serialize(new { Access_Token = "valid-token", Expires_in = 1800 });
-            var httpClient = new HttpClient(new FakeHttpMessageHandler(HttpStatusCode.OK, json))
+            var httpClient = new HttpClient(new TestHttpMessageHandler(HttpStatusCode.OK, json))
             {
                 BaseAddress = new Uri("https://api.example.com"),
             };
@@ -72,7 +72,7 @@ public class ConfigurationServiceTokenHandlerTests
             var httpClientFactory = A.Fake<IHttpClientFactory>();
 
             var json = JsonSerializer.Serialize(new { Access_Token = "valid-token", Expires_in = 1800 });
-            var httpClient = new HttpClient(new FakeHttpMessageHandler(HttpStatusCode.OK, json))
+            var httpClient = new HttpClient(new TestHttpMessageHandler(HttpStatusCode.OK, json))
             {
                 BaseAddress = new Uri("https://api.example.com"),
             };
@@ -110,7 +110,7 @@ public class ConfigurationServiceTokenHandlerTests
     {
         private ConfigurationServiceTokenHandler? _configServiceTokenHandler;
         private readonly IMemoryCache _memoryCache = A.Fake<IMemoryCache>();
-        private FakeHttpMessageHandler? _handler = null;
+        private TestHttpMessageHandler? _handler = null;
 
         [Test]
         public void Should_Throw_BadRequest()
@@ -189,7 +189,7 @@ public class ConfigurationServiceTokenHandlerTests
 
         private void SetConfigurationServiceTokenHandler(HttpStatusCode statusCode)
         {
-            _handler = new FakeHttpMessageHandler(statusCode);
+            _handler = new TestHttpMessageHandler(statusCode);
             var configServiceHandler = new ConfigurationServiceResponseHandler { InnerHandler = _handler };
             var httpClientFactory = A.Fake<IHttpClientFactory>();
 
