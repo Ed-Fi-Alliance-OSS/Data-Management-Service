@@ -18,7 +18,7 @@ public class FakeHttpMessageHandler(HttpStatusCode httpStatusCode, string? respo
         CancellationToken cancellationToken
     )
     {
-        if (request.RequestUri?.AbsolutePath == "/connect/token" && _httpStatusCode.Equals(HttpStatusCode.OK))
+        if (_httpStatusCode.Equals(HttpStatusCode.OK))
         {
             var content = new StringContent(responseContent!, Encoding.UTF8, "application/json");
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
