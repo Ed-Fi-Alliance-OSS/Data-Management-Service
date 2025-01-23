@@ -451,7 +451,7 @@ Example:
 }
 ```
 
-### NewTAgs
+### NewTags
 
 The `newTags` section contains OpenAPI the global tags needed for new endpoint paths created
 by the extension. These are added into the Data Standard OpenAPI specification
