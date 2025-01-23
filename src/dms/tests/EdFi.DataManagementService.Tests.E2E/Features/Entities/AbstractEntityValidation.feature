@@ -1,5 +1,8 @@
 Feature: Reject client requests for abstract entities
 
+        Background:
+            Given the SIS Vendor is authorized
+            
         @API-053
         Scenario: 01 Ensure that clients cannot POST an abstract entity (Education Organizations)
              When a POST request is made to "/ed-fi/educationOrganizations" with

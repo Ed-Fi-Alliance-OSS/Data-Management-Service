@@ -1,5 +1,8 @@
 Feature: Query String handling for GET requests for Resource Queries
 
+        Background:
+            Given the SIS Vendor is authorized
+            
         @addwait
         Scenario: 00 Background
             Given the system has these "schools"

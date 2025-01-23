@@ -1,6 +1,7 @@
 Feature: Validate the reference of descriptors when creating resources
 
         Background:
+            Given the SIS Vendor is authorized
             Given the system has these descriptors
                   | descriptorValue                                                |
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |

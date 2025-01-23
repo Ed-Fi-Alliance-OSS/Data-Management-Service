@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Tests.E2E.Authorization;
 using EdFi.DataManagementService.Tests.E2E.Management;
 using Reqnroll;
 
@@ -14,7 +15,7 @@ public static class SetupHooks
     private static ContainerSetupBase? _containerSetup;
 
     [BeforeTestRun]
-    public static async Task BeforeTestRun()
+    public static async Task BeforeTestRun(PlaywrightContext context, TestLogger logger)
     {
         if (AppSettings.UseTestContainers)
         {
@@ -25,6 +26,15 @@ public static class SetupHooks
             else
             {
                 _containerSetup = new ContainerSetup();
+            }
+
+            if (AppSettings.EnforceAuthorization)
+            {
+                var sysAdminToken = await SystemAdministrator.Register("sys-admin " + Guid.NewGuid().ToString(), "SdfH)98&Jk");
+                logger.log.Debug(sysAdminToken);
+
+                await SisAdmin.Create("E2E company", "C. M. Burns", "cmb@example.com",
+                    "uri://ed-fi.org", sysAdminToken);
             }
 
             await _containerSetup.StartContainers();

@@ -6,6 +6,9 @@ Feature: Equality Constraint Validation
     "targetJsonPath": "$.schoolReference.schoolId"
     }
     ]
+        Background:
+            Given the SIS Vendor is authorized
+
         @API-001
         Scenario: 01 Post a valid bell schedule no equality constraint violations.
             Given the system has these "schools"

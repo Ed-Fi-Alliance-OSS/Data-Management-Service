@@ -1,8 +1,7 @@
 Feature: Create a Descriptor
 
         Background:
-            Given the Data Management Service must receive a token issued by "http://localhost"
-              And user is already authorized
+            Given the SIS Vendor is authorized
 
         @API-006
         Scenario: 01 Ensure clients can create a descriptor

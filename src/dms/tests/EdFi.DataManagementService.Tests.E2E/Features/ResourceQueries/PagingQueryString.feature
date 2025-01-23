@@ -1,5 +1,8 @@
 Feature: Paging Support for GET requests for Ed-Fi Resources
 
+        Background:
+            Given the SIS Vendor is authorized
+            
         @addwait
         Scenario: 00 Background
             Given the system has these "schools"
@@ -136,7 +139,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                   | '0)'                     |
                   | '1%27'                   |
 
-    Scenario Outline: 13 Ensure clients can not GET information when filtering by out of tange limit values
+        Scenario Outline: 13 Ensure clients can not GET information when filtering by out of tange limit values
              When a GET request is made to "/ed-fi/schools?offset=0&limit=<value>"
              Then it should respond with 400
               And the response body is
@@ -153,7 +156,7 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                         ]
                     }
                   """
-         Examples:
-                  | value                    |
-                  | -1                       |
-                  | 900                      |
+        Examples:
+                  | value |
+                  | -1    |
+                  | 900   |

@@ -1,8 +1,7 @@
 Feature: Resources "Read" Operation validations
 
         Background:
-            Given the Data Management Service must receive a token issued by "http://localhost"
-              And user is already authorized
+            Given the SIS Vendor is authorized
               And a POST request is made to "/ed-fi/courseIdentificationSystemDescriptors" with
                   """
                     {

@@ -2,9 +2,10 @@
 
 Feature: Resources "Delete" Operation validations
 
+        Background:
+            Given the SIS Vendor is authorized
+            
         Scenario: 00 Background
-            Given the Data Management Service must receive a token issued by "http://localhost"
-              And user is already authorized
               And a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {

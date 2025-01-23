@@ -1,6 +1,9 @@
 Feature: CorrleationId
     Validate the Correlation Id
 
+        Background:
+            Given the SIS Vendor is authorized
+
         @API-061
         Scenario: 01 Ensure the response will contain provided correlation id
             # Note: this requires that the .env file used to startup the DMS container has the following setting:

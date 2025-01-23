@@ -140,6 +140,11 @@ grant_type=client_credentials
 ###
 @dmsToken={{dmsTokenRequest.response.body.access_token}}
 
+### This should fail, using config-service token to access DMS
+# @name forbiddenAccess
+GET {{dataApi}}/ed-fi/schools
+Authorization: bearer {{configToken}}
+
 ### Create a new descriptor
 # @name createDescriptor
 POST {{dataApi}}/ed-fi/educationOrganizationCategoryDescriptors
