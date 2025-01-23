@@ -1,9 +1,7 @@
 Feature: Resources "Create" Operation validations
 
         Background:
-            Given the Data Management Service must receive a token issued by "http://localhost"
-              And user is already authorized
-
+            Given the SIS Vendor is authorized
               And the system has these descriptors
                   | descriptorValue                                                                            |
                   | uri://ed-fi.org/ContentClassDescriptor#Testing                                             |
@@ -739,13 +737,13 @@ Feature: Resources "Create" Operation validations
                     }
                   """
              Then it should respond with 201
-             And the response headers include
+              And the response headers include
                   """
                     {
                         "location": "api/data/ed-fi/students/{id}"
                     }
                   """
-             And the record can be retrieved with a GET request
+              And the record can be retrieved with a GET request
                   """
                   {
                     "id": "{id}",

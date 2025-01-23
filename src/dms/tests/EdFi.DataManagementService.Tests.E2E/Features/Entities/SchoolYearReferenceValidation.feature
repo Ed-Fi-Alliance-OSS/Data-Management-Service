@@ -3,8 +3,7 @@ Feature: School Year Reference Validation
 
         Background:
 
-            Given the Data Management Service must receive a token issued by "http://localhost"
-              And user is already authorized
+            Given the SIS Vendor is authorized
 
             Given the system has these descriptors
                   | descriptorValue                                           |

@@ -1,4 +1,7 @@
 Feature: TotalCount Response Header for GET Requests
+        Background:
+            Given the SIS Vendor is authorized
+            
         @addwait
         Scenario: 00 Background
             Given the system has these "schools"

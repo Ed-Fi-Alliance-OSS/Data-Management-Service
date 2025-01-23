@@ -1,8 +1,7 @@
 Feature: Resources "Update" Operation validations
 
         Background:
-            Given the Data Management Service must receive a token issued by "http://localhost"
-              And user is already authorized
+            Given the SIS Vendor is authorized
               And the system has these descriptors
                   | descriptorValue                                |
                   | uri://ed-fi.org/ContentClassDescriptor#Testing |
