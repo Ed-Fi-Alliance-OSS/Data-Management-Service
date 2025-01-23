@@ -5,6 +5,7 @@
 
 using System.Net;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using FakeItEasy;
 using FluentAssertions;
@@ -29,9 +30,17 @@ public class MetadataModuleTests
         public void SetUp()
         {
             // Arrange
+            var securityMetadataService = A.Fake<ISecurityMetadataService>();
+            A.CallTo(() => securityMetadataService.GetClaimSets()).Returns([]);
             using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
+                builder.ConfigureServices(
+                    (collection) =>
+                    {
+                        collection.AddTransient((x) => securityMetadataService);
+                    }
+                );
             });
             using var client = factory.CreateClient();
 
@@ -79,9 +88,17 @@ public class MetadataModuleTests
     public async Task Metadata_Endpoint_Returns_Specifications_List()
     {
         // Arrange
+        var securityMetadataService = A.Fake<ISecurityMetadataService>();
+        A.CallTo(() => securityMetadataService.GetClaimSets()).Returns([]);
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection.AddTransient((x) => securityMetadataService);
+                }
+            );
         });
         using var client = factory.CreateClient();
 
@@ -107,6 +124,8 @@ public class MetadataModuleTests
     {
         // Arrange
         var contentProvider = A.Fake<IContentProvider>();
+        var securityMetadataService = A.Fake<ISecurityMetadataService>();
+        A.CallTo(() => securityMetadataService.GetClaimSets()).Returns([]);
         var json =
             """{"openapi":"3.0.1", "info":"descriptors","servers":[{"url":"http://localhost:5000/data/v3"}]}""";
         JsonNode _descriptorsJson = JsonNode.Parse(json)!;
@@ -123,6 +142,7 @@ public class MetadataModuleTests
                 (collection) =>
                 {
                     collection.AddTransient((x) => contentProvider);
+                    collection.AddTransient((x) => securityMetadataService);
                 }
             );
         });
@@ -145,9 +165,17 @@ public class MetadataModuleTests
     public async Task Metadata_Returns_Invalid_Resource_Error()
     {
         // Arrange
+        var securityMetadataService = A.Fake<ISecurityMetadataService>();
+        A.CallTo(() => securityMetadataService.GetClaimSets()).Returns([]);
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection.AddTransient((x) => securityMetadataService);
+                }
+            );
         });
         using var client = factory.CreateClient();
 
@@ -163,7 +191,8 @@ public class MetadataModuleTests
     {
         // Arrange
         var httpContext = A.Fake<HttpContext>();
-
+        var securityMetadataService = A.Fake<ISecurityMetadataService>();
+        A.CallTo(() => securityMetadataService.GetClaimSets()).Returns([]);
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
@@ -171,6 +200,7 @@ public class MetadataModuleTests
                 (collection) =>
                 {
                     collection.AddTransient(x => httpContext);
+                    collection.AddTransient((x) => securityMetadataService);
                 }
             );
         });
@@ -185,7 +215,11 @@ public class MetadataModuleTests
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         jsonContent.Should().NotBeNull();
-        jsonContent?[0]!["resource"]?.GetValue<string>().Should().Be("/ed-fi/absenceEventCategoryDescriptors");
+        jsonContent
+            ?[0]!["resource"]
+            ?.GetValue<string>()
+            .Should()
+            .Be("/ed-fi/absenceEventCategoryDescriptors");
         jsonContent?[0]!["order"]?.GetValue<int>().Should().Be(1);
     }
 }

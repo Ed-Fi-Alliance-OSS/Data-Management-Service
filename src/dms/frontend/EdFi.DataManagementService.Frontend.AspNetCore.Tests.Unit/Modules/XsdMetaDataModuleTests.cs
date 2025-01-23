@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using FakeItEasy;
 using FluentAssertions;
@@ -24,6 +25,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 public class XsdMetaDataModuleTests
 {
     private IApiService? _apiService;
+    private ISecurityMetadataService? _securityMetadataService;
     private IContentProvider? _contentProvider;
 
     [SetUp]
@@ -34,7 +36,7 @@ public class XsdMetaDataModuleTests
             {
                 ProjectName = "Ed-Fi",
                 ProjectVersion = "5.0.0",
-                Description = "Ed-Fi data standard 5.0.0"
+                Description = "Ed-Fi data standard 5.0.0",
             }
         ).ActLike<IDataModelInfo>();
         IDataModelInfo expectedtpdmModel = (
@@ -42,13 +44,16 @@ public class XsdMetaDataModuleTests
             {
                 ProjectName = "Tpdm",
                 ProjectVersion = "1.0.0",
-                Description = "TPDM data standard 1.0.0"
+                Description = "TPDM data standard 1.0.0",
             }
         ).ActLike<IDataModelInfo>();
 
         _apiService = A.Fake<IApiService>();
         A.CallTo(() => _apiService.GetDataModelInfo())
             .Returns(new[] { expectededfiModel, expectedtpdmModel });
+
+        _securityMetadataService = A.Fake<ISecurityMetadataService>();
+        A.CallTo(() => _securityMetadataService.GetClaimSets()).Returns([]);
 
         var files = new List<string> { "file1.xsd", "file2.xsd", "file3.xsd" };
 
@@ -67,6 +72,7 @@ public class XsdMetaDataModuleTests
                 (collection) =>
                 {
                     collection.AddTransient((x) => _apiService!);
+                    collection.AddTransient((x) => _securityMetadataService!);
                 }
             );
         });
@@ -99,6 +105,7 @@ public class XsdMetaDataModuleTests
                 {
                     collection.AddTransient((x) => _apiService!);
                     collection.AddTransient((x) => _contentProvider!);
+                    collection.AddTransient((x) => _securityMetadataService!);
                 }
             );
         });
@@ -123,6 +130,12 @@ public class XsdMetaDataModuleTests
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection.AddTransient((x) => _securityMetadataService!);
+                }
+            );
         });
         using var client = factory.CreateClient();
 
@@ -145,6 +158,7 @@ public class XsdMetaDataModuleTests
                 {
                     collection.AddTransient((x) => _apiService!);
                     collection.AddTransient((x) => _contentProvider!);
+                    collection.AddTransient((x) => _securityMetadataService!);
                 }
             );
         });
@@ -161,13 +175,12 @@ public class XsdMetaDataModuleTests
     public async Task XsdMetaData_Files_Returns_Xsd_File_Content()
     {
         // Arrange
-        Lazy<Stream> _fileStream =
-            new(() =>
-            {
-                var content = "test-content";
-                MemoryStream ms = new(Encoding.UTF8.GetBytes(content.ToString()));
-                return ms;
-            });
+        Lazy<Stream> _fileStream = new(() =>
+        {
+            var content = "test-content";
+            MemoryStream ms = new(Encoding.UTF8.GetBytes(content.ToString()));
+            return ms;
+        });
 
         A.CallTo(() => _contentProvider!.LoadXsdContent(A<string>.Ignored)).Returns(_fileStream);
 
@@ -182,6 +195,7 @@ public class XsdMetaDataModuleTests
                 {
                     collection.AddTransient((x) => _apiService!);
                     collection.AddTransient((x) => _contentProvider!);
+                    collection.AddTransient((x) => _securityMetadataService!);
                 }
             );
         });
@@ -211,6 +225,7 @@ public class XsdMetaDataModuleTests
                 {
                     collection.AddTransient((x) => _apiService!);
                     collection.AddTransient((x) => _contentProvider!);
+                    collection.AddTransient((x) => _securityMetadataService!);
                 }
             );
         });

@@ -8,6 +8,7 @@ using System.Security.Claims;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 using FakeItEasy;
 using FluentAssertions;
@@ -32,32 +33,42 @@ public class CoreEndpointModuleTests
         public async Task SetUp()
         {
             // Arrange
+            var securityMetadataService = A.Fake<ISecurityMetadataService>();
+            A.CallTo(() => securityMetadataService.GetClaimSets()).Returns([]);
             var apiService = A.Fake<IApiService>();
             A.CallTo(() => apiService.Get(A<FrontendRequest>.Ignored)).Returns(new FakeFrontendResponse());
             await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
                 builder.ConfigureAppConfiguration(
-                       (context, configuration) =>
-                       {
-                           configuration.AddInMemoryCollection(
-                               new Dictionary<string, string?>
-                               {
-                                   ["IdentitySettings:EnforceAuthorization"] = "true"
-                               }
-                           );
-                       }
-                   );
+                    (context, configuration) =>
+                    {
+                        configuration.AddInMemoryCollection(
+                            new Dictionary<string, string?>
+                            {
+                                ["IdentitySettings:EnforceAuthorization"] = "true",
+                            }
+                        );
+                    }
+                );
                 builder.ConfigureServices(
                     (collection) =>
                     {
                         collection.AddTransient((x) => apiService);
-                        collection.AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                        .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(AuthenticationConstants.AuthenticationSchema, options => { });
+                        collection.AddTransient((x) => securityMetadataService);
+                        collection
+                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
+                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                                AuthenticationConstants.AuthenticationSchema,
+                                options => { }
+                            );
 
-                        collection.AddAuthorization(options => options.AddPolicy(SecurityConstants.ServicePolicy,
-                        policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)));
-
+                        collection.AddAuthorization(options =>
+                            options.AddPolicy(
+                                SecurityConstants.ServicePolicy,
+                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
+                            )
+                        );
                     }
                 );
             });
@@ -89,29 +100,39 @@ public class CoreEndpointModuleTests
         public async Task SetUp()
         {
             // Arrange
+            var securityMetadataService = A.Fake<ISecurityMetadataService>();
+            A.CallTo(() => securityMetadataService.GetClaimSets()).Returns([]);
             await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
                 builder.ConfigureAppConfiguration(
-                       (context, configuration) =>
-                       {
-                           configuration.AddInMemoryCollection(
-                               new Dictionary<string, string?>
-                               {
-                                   ["IdentitySettings:EnforceAuthorization"] = "true"
-                               }
-                           );
-                       }
-                   );
+                    (context, configuration) =>
+                    {
+                        configuration.AddInMemoryCollection(
+                            new Dictionary<string, string?>
+                            {
+                                ["IdentitySettings:EnforceAuthorization"] = "true",
+                            }
+                        );
+                    }
+                );
                 builder.ConfigureServices(
                     (collection) =>
                     {
-                        collection.AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                        .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(AuthenticationConstants.AuthenticationSchema, options => { });
+                        collection
+                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
+                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                                AuthenticationConstants.AuthenticationSchema,
+                                options => { }
+                            );
 
-                        collection.AddAuthorization(options => options.AddPolicy(SecurityConstants.ServicePolicy,
-                        policy => policy.RequireClaim(ClaimTypes.Role, "invalid-role")));
-
+                        collection.AddAuthorization(options =>
+                            options.AddPolicy(
+                                SecurityConstants.ServicePolicy,
+                                policy => policy.RequireClaim(ClaimTypes.Role, "invalid-role")
+                            )
+                        );
+                        collection.AddTransient((x) => securityMetadataService);
                     }
                 );
             });
@@ -143,27 +164,31 @@ public class CoreEndpointModuleTests
         public async Task SetUp()
         {
             // Arrange
+            var securityMetadataService = A.Fake<ISecurityMetadataService>();
+            A.CallTo(() => securityMetadataService.GetClaimSets()).Returns([]);
             var apiService = A.Fake<IApiService>();
             A.CallTo(() => apiService.Get(A<FrontendRequest>.Ignored)).Returns(new FakeFrontendResponse());
             await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
                 builder.ConfigureAppConfiguration(
-                       (context, configuration) =>
-                       {
-                           configuration.AddInMemoryCollection(
-                               new Dictionary<string, string?>
-                               {
-                                   ["IdentitySettings:EnforceAuthorization"] = "false"
-                               }
-                           );
-                       }
-                   );
+                    (context, configuration) =>
+                    {
+                        configuration.AddInMemoryCollection(
+                            new Dictionary<string, string?>
+                            {
+                                ["IdentitySettings:EnforceAuthorization"] = "false",
+                            }
+                        );
+                    }
+                );
                 builder.ConfigureServices(
-                   (collection) =>
-                   {
-                       collection.AddTransient((x) => apiService);
-                   });
+                    (collection) =>
+                    {
+                        collection.AddTransient((x) => apiService);
+                        collection.AddTransient((x) => securityMetadataService);
+                    }
+                );
             });
             using var client = factory.CreateClient();
 

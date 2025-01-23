@@ -7,6 +7,7 @@ using System.Net;
 using System.Text.Json;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 using FakeItEasy;
@@ -39,6 +40,8 @@ public class DiscoveryModuleTests
                 Description = "Ed-Fi data standard 5.0.0",
             }
         ).ActLike<IDataModelInfo>();
+        var securityMetadataService = A.Fake<ISecurityMetadataService>();
+        A.CallTo(() => securityMetadataService.GetClaimSets()).Returns([]);
         var apiService = A.Fake<IApiService>();
         A.CallTo(() => apiService.GetDataModelInfo()).Returns([expectedDataModelInfo]);
 
@@ -50,6 +53,7 @@ public class DiscoveryModuleTests
                 {
                     collection.AddTransient((x) => versionProvider);
                     collection.AddTransient((x) => apiService);
+                    collection.AddTransient((x) => securityMetadataService);
                 }
             );
         });
@@ -86,6 +90,8 @@ public class DiscoveryModuleTests
                 Description = "Ed-Fi data standard 5.0.0",
             }
         ).ActLike<IDataModelInfo>();
+        var securityMetadataService = A.Fake<ISecurityMetadataService>();
+        A.CallTo(() => securityMetadataService.GetClaimSets()).Returns([]);
         var apiService = A.Fake<IApiService>();
         A.CallTo(() => apiService.GetDataModelInfo()).Returns([expectedDataModelInfo]);
 
@@ -106,6 +112,7 @@ public class DiscoveryModuleTests
                 {
                     collection.AddTransient((x) => versionProvider);
                     collection.AddTransient((x) => apiService);
+                    collection.AddTransient((x) => securityMetadataService);
                 }
             );
         });
