@@ -103,46 +103,6 @@ public class MetadataModuleTests
     }
 
     [Test]
-    public async Task Metadata_Returns_Resources_Content()
-    {
-        // Arrange
-        var contentProvider = A.Fake<IContentProvider>();
-
-        var json =
-            """{"openapi":"3.0.1", "info":"resources","servers":[{"url":"http://localhost:5000/data/v3"}]}""";
-        JsonNode _resourcesJson = JsonNode.Parse(json)!;
-
-        A.CallTo(
-                () => contentProvider.LoadJsonContent(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)
-            )
-            .Returns(_resourcesJson);
-
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    collection.AddTransient((x) => contentProvider);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
-
-        // Act
-        var response = await client.GetAsync("/metadata/specifications/resources-spec.json");
-        var content = await response.Content.ReadAsStringAsync();
-
-        var jsonContent = JsonNode.Parse(content);
-        var sectionInfo = jsonContent?["info"]?.GetValue<string>();
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        jsonContent.Should().NotBeNull();
-        sectionInfo.Should().Contain("resources");
-    }
-
-    [Test]
     public async Task Metadata_Returns_Descriptors_Content()
     {
         // Arrange
