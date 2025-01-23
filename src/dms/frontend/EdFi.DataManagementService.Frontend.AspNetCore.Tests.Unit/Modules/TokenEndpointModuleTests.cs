@@ -7,8 +7,9 @@ using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core;
-using EdFi.DataManagementService.Core.OAuth;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.OAuth;
+using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
@@ -26,11 +27,7 @@ public class TokenEndpointModuleTests
         var proxyRequest = new HttpRequestMessage(HttpMethod.Post, "/oauth/token");
         var encodedCredentials = Convert.ToBase64String(Encoding.UTF8.GetBytes("clientId:clientSecret"));
         proxyRequest.Headers.Add("Authorization", $"Basic {encodedCredentials}");
-        proxyRequest!.Content = new StringContent(
-            requestContent,
-            Encoding.UTF8,
-            contentType
-        );
+        proxyRequest!.Content = new StringContent(requestContent, Encoding.UTF8, contentType);
         return proxyRequest;
     }
 
@@ -65,6 +62,8 @@ public class TokenEndpointModuleTests
                 )
                 .Returns(_fake_response_200);
 
+            var securityMetadataService = A.Fake<ISecurityMetadataService>();
+            A.CallTo(() => securityMetadataService.GetClaimSets()).Returns([]);
             using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -72,6 +71,7 @@ public class TokenEndpointModuleTests
                     (collection) =>
                     {
                         collection.AddTransient((x) => oAuthManager);
+                        collection.AddTransient((x) => securityMetadataService);
                     }
                 );
             });
@@ -137,6 +137,8 @@ public class TokenEndpointModuleTests
                 )
                 .Returns(_fake_response_200);
 
+            var securityMetadataService = A.Fake<ISecurityMetadataService>();
+            A.CallTo(() => securityMetadataService.GetClaimSets()).Returns([]);
             using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -144,6 +146,7 @@ public class TokenEndpointModuleTests
                     (collection) =>
                     {
                         collection.AddTransient((x) => oAuthManager);
+                        collection.AddTransient((x) => securityMetadataService);
                     }
                 );
             });
