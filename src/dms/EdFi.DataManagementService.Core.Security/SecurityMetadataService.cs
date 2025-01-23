@@ -10,7 +10,7 @@ namespace EdFi.DataManagementService.Core.Security;
 
 public interface ISecurityMetadataService
 {
-    Task<IList<ClaimSet>?> GetClaimSets();
+    Task<IList<ClaimSet>> GetClaimSets();
 }
 
 public class SecurityMetadataService(
@@ -21,7 +21,7 @@ public class SecurityMetadataService(
 {
     private readonly string CacheId = "ClaimSetsCache";
 
-    public async Task<IList<ClaimSet>?> GetClaimSets()
+    public async Task<IList<ClaimSet>> GetClaimSets()
     {
         var claimSets = claimSetsCache.GetCachedClaimSets(CacheId);
         if (claimSets != null)
@@ -33,7 +33,7 @@ public class SecurityMetadataService(
         {
             var result = await securityMetadataProvider.GetAllClaimSets();
 
-            if (result != null && result.Count > 0)
+            if (result.Count > 0)
             {
                 claimSetsCache.CacheClaimSets(CacheId, result);
             }

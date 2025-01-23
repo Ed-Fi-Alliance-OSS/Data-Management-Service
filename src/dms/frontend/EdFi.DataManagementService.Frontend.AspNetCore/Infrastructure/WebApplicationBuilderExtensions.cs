@@ -89,7 +89,6 @@ public static class WebApplicationBuilderExtensions
 
         // For Token handling
         webAppBuilder.Services.AddMemoryCache();
-        webAppBuilder.Services.AddTransient<ITokenProcessor, TokenProcessor>();
         webAppBuilder.Services.AddSingleton<IApiClientDetailsProvider, ApiClientDetailsProvider>();
 
         // Access Configuration service
@@ -183,43 +182,25 @@ public static class WebApplicationBuilderExtensions
                             },
                             OnTokenValidated = context =>
                             {
-                                var apiClientDetailsProvider =
-                                    context.HttpContext.RequestServices.GetRequiredService<IApiClientDetailsProvider>();
-                                var authHeader = context
-                                    .HttpContext.Request.Headers["Authorization"]
-                                    .ToString();
-                                if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer "))
+                                if (context.Principal != null)
                                 {
+                                    var apiClientDetailsProvider =
+                                        context.HttpContext.RequestServices.GetRequiredService<IApiClientDetailsProvider>();
+                                    var authHeader = context
+                                        .HttpContext.Request.Headers["Authorization"]
+                                        .ToString();
                                     string rawToken = authHeader["Bearer ".Length..];
-                                    try
-                                    {
-                                        var apiClientDetails =
-                                            apiClientDetailsProvider.RetrieveApiClientDetailsFromToken(
-                                                rawToken
-                                            );
-                                        context.HttpContext.Items["ApiClientDetails"] = apiClientDetails;
-                                        return Task.FromResult(apiClientDetails);
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        SetErrorResponse(ex.Message);
-                                        return Task.CompletedTask;
-                                    }
+                                    var tokenHashCode = rawToken.GetHashCode().ToString();
+                                    var apiClientDetails =
+                                        apiClientDetailsProvider.RetrieveApiClientDetailsFromToken(
+                                            tokenHashCode,
+                                            context.Principal.Claims.ToList()
+                                        );
+                                    context.HttpContext.Items["ApiClientDetails"] = apiClientDetails;
+                                    return Task.FromResult(apiClientDetails);
                                 }
-                                else
-                                {
-                                    SetErrorResponse("Invalid token format");
-                                    return Task.CompletedTask;
-                                }
-
-                                void SetErrorResponse(string error)
-                                {
-                                    context.Response.ContentType = "application/json";
-                                    context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
-                                    context.Response.WriteAsync(
-                                        JsonSerializer.Serialize(new { message = error })
-                                    );
-                                }
+                                Console.WriteLine($"Retrieving token claims failed");
+                                return Task.CompletedTask;
                             },
                         };
                     }
