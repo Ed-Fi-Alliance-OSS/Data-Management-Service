@@ -29,11 +29,11 @@ public class OpenApiGeneratorTests
         public void Should_throw_ArgumentException_when_paths_are_invalid()
         {
             // Act & Assert
-            var ex = Assert.Throws<ArgumentException>(() => _generator.Generate("", "", ""));
+            var ex = Assert.Throws<ArgumentException>(() => _generator.Generate("", ""));
 
             Assert.That(
                 ex?.Message,
-                Is.EqualTo("Core schema, extension schema, and output paths are required.")
+                Is.EqualTo("Core schema path is required.")
             );
         }
     }
@@ -65,7 +65,7 @@ public class OpenApiGeneratorTests
 
             // Act
             var ex = Assert.Throws<InvalidOperationException>(
-                () => _generator.Generate(coreSchemaPath, extensionSchemaPath, outputPath)
+                () => _generator.Generate(coreSchemaPath, extensionSchemaPath)
             );
 
             // Assert

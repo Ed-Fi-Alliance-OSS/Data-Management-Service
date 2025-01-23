@@ -18,21 +18,14 @@ var generator = serviceProvider.GetRequiredService<OpenApiGenerator>();
 try
 {
     // Get parameters from command-line arguments
-    var argsDict = args.Select(arg => arg.Split(new[] { ':' }, 2))
-        .Where(split => split.Length == 2)
-        .ToDictionary(split => split[0].ToLower(), split => split[1].Trim());
-
-    if (!argsDict.ContainsKey("core") || !argsDict.ContainsKey("ext") || !argsDict.ContainsKey("output"))
+    if (args.Length < 1)
     {
-        logger.LogError(
-            "Insufficient arguments. Usage: core:<coreSchemaPath> ext:<extensionSchemaPath> output:<outputPath>"
-        );
+        logger.LogError("Usage: <coreSchemaPath> [extensionSchemaPath]");
         return 1;
     }
 
-    string coreSchemaPath = argsDict["core"];
-    string extensionSchemaPath = argsDict["ext"];
-    string outputPath = argsDict["output"];
+    string coreSchemaPath = args[0];
+    string? extensionSchemaPath = args.Length > 1 ? args[1] : null;
 
     // Validate file paths
     if (!File.Exists(coreSchemaPath))
@@ -41,14 +34,26 @@ try
         return 1;
     }
 
-    if (!File.Exists(extensionSchemaPath))
+    if (extensionSchemaPath != null && !File.Exists(extensionSchemaPath))
     {
         logger.LogError("Extension schema file not found: {ExtensionSchemaPath}", extensionSchemaPath);
         return 1;
     }
 
-    generator.Generate(coreSchemaPath, extensionSchemaPath, outputPath);
-    logger.LogInformation("OpenAPI spec successfully generated at: {OutputPath}", outputPath);
+    string combinedSchema = generator.Generate(coreSchemaPath, extensionSchemaPath);
+
+    if (Console.IsOutputRedirected)
+    {
+        Console.WriteLine(combinedSchema);
+        logger.LogInformation("OpenAPI spec successfully generated and written to redirected output.");
+    }
+    else
+    {
+        Console.WriteLine(combinedSchema);
+        logger.LogInformation("OpenAPI spec successfully generated and written to standard output.");
+    }
+
+
     return 0;
 }
 catch (Exception ex)
@@ -59,11 +64,19 @@ catch (Exception ex)
 
 void ConfigureServices(IServiceCollection services)
 {
-    Log.Logger = new LoggerConfiguration()
-        .MinimumLevel.Debug()
-        .WriteTo.Console()
-        .WriteTo.File("logs/OpenApiGenerator.log", rollingInterval: RollingInterval.Day)
-        .CreateLogger();
+    var logConfiguration = new LoggerConfiguration().MinimumLevel.Debug();
+
+    if (Console.IsOutputRedirected)
+    {
+        logConfiguration.WriteTo.File("logs/OpenApiGenerator.log", rollingInterval: RollingInterval.Day);
+    }
+    else
+    {
+        logConfiguration.WriteTo.Console();
+        logConfiguration.WriteTo.File("logs/OpenApiGenerator.log", rollingInterval: RollingInterval.Day);
+    }
+
+    Log.Logger = logConfiguration.CreateLogger();
 
     services.AddLogging(config =>
     {
