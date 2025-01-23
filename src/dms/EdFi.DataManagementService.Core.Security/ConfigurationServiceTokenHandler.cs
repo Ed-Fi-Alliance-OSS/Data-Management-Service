@@ -5,6 +5,7 @@
 
 using System.Net.Http.Json;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Security;
 
@@ -15,16 +16,18 @@ public interface IConfigurationServiceTokenHandler
 
 public class ConfigurationServiceTokenHandler(
     IMemoryCache configServiceTokenCache,
-    ConfigurationServiceApiClient configurationServiceApiClient
+    ConfigurationServiceApiClient configurationServiceApiClient,
+    ILogger logger
 ) : IConfigurationServiceTokenHandler
 {
     private readonly IMemoryCache _configServiceTokenCache = configServiceTokenCache;
     private readonly ConfigurationServiceApiClient _configurationServiceApiClient =
         configurationServiceApiClient;
-    private const string TokenCacheKey = "ConfigServiceToken";
+    private static string TokenCacheKey => "ConfigServiceToken";
 
     public async Task<string?> GetTokenAsync(string clientId, string clientSecret, string scope)
     {
+        logger.LogInformation("Retrieving token from Configuration service");
         if (_configServiceTokenCache.TryGetValue(TokenCacheKey, out string? token))
         {
             return token;
@@ -37,12 +40,13 @@ public class ConfigurationServiceTokenHandler(
                 new KeyValuePair<string, string>("scope", scope),
             ]
         );
-        var response = await _configurationServiceApiClient.Client.PostAsync("connect/token", urlEncodedData);
-        response.EnsureSuccessStatusCode();
 
+        logger.LogDebug("Post request to receive token from Configuration service");
+        var response = await _configurationServiceApiClient.Client.PostAsync("connect/token", urlEncodedData);
         var tokenResponse = await response.Content.ReadFromJsonAsync<BearerToken>();
 
         token = tokenResponse?.Access_token;
+        logger.LogDebug("Received token {token}", token);
 
         if (!string.IsNullOrEmpty(token))
         {

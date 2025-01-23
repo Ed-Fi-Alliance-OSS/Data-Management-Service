@@ -39,6 +39,11 @@ public class SecurityMetadataService(
             }
             return result;
         }
+        catch (ConfigurationServiceException ex)
+        {
+            logger.LogError(ex, "Error while retrieving and caching the claim sets");
+            throw;
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error while retrieving and caching the claim sets");
