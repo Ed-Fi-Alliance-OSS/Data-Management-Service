@@ -1,4 +1,4 @@
-# Execution Options:
+# Execution Options
 
 ### From Powershell:
 
