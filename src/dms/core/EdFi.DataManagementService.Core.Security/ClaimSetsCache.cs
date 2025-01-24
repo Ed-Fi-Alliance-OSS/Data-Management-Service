@@ -10,16 +10,14 @@ namespace EdFi.DataManagementService.Core.Security;
 
 public class ClaimSetsCache(IMemoryCache memoryCache, TimeSpan expiration)
 {
-    private readonly IMemoryCache _cache = memoryCache;
-
     public void CacheClaimSets(string cacheId, IList<ClaimSet> claimSets)
     {
-        _cache.Set(cacheId, claimSets, expiration);
+        memoryCache.Set(cacheId, claimSets, expiration);
     }
 
     public IList<ClaimSet>? GetCachedClaimSets(string cacheId)
     {
-        _cache.TryGetValue(cacheId, out IList<ClaimSet>? claimSets);
+        memoryCache.TryGetValue(cacheId, out IList<ClaimSet>? claimSets);
         return claimSets;
     }
 }
