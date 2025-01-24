@@ -78,11 +78,13 @@ public static class AspNetCoreFrontend
         IOptions<AppSettings> options
     )
     {
+        var apiClientDetails = HttpRequest.HttpContext?.Items["ApiClientDetails"] as ApiClientDetails;
         return new(
             Body: await ExtractJsonBodyFrom(HttpRequest),
             Path: $"/{dmsPath}",
             QueryParameters: HttpRequest.Query.ToDictionary(FromValidatedQueryParam, x => x.Value[^1] ?? ""),
-            TraceId: ExtractTraceIdFrom(HttpRequest, options)
+            TraceId: ExtractTraceIdFrom(HttpRequest, options),
+            ApiClientDetails: apiClientDetails
         );
     }
 

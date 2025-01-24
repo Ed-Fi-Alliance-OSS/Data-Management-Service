@@ -10,6 +10,7 @@ WORKDIR /source
 COPY frontend/EdFi.DataManagementService.Frontend.AspNetCore/ ./frontend/EdFi.DataManagementService.Frontend.AspNetCore/
 COPY core/EdFi.DataManagementService.Core/ ./core/EdFi.DataManagementService.Core/
 COPY core/EdFi.DataManagementService.Core.External/ core/EdFi.DataManagementService.Core.External/
+COPY core/EdFi.DataManagementService.Core.Security/ core/EdFi.DataManagementService.Core.Security/
 COPY backend/EdFi.DataManagementService.Backend.Installer/ backend/EdFi.DataManagementService.Backend.Installer/
 COPY backend/EdFi.DataManagementService.Backend/ backend/EdFi.DataManagementService.Backend/
 COPY backend/EdFi.DataManagementService.Backend.Mssql/ backend/EdFi.DataManagementService.Backend.Mssql/

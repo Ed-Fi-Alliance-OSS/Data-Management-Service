@@ -5,8 +5,6 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
-using EdFi.DataManagementService.Core.ApiSchema.Model;
-using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -22,14 +20,18 @@ internal static class No
     /// <summary>
     /// The null object for ApiSchemaDocument
     /// </summary>
-    public static readonly ApiSchemaDocument ApiSchemaDocument =
-        new(new JsonObject(), NullLogger<ApiSchemaDocument>.Instance);
+    public static readonly ApiSchemaDocument ApiSchemaDocument = new(
+        new JsonObject(),
+        NullLogger<ApiSchemaDocument>.Instance
+    );
 
     /// <summary>
     /// The null object for ProjectSchema
     /// </summary>
-    public static readonly ProjectSchema ProjectSchema =
-        new(new JsonObject(), NullLogger<ProjectSchema>.Instance);
+    public static readonly ProjectSchema ProjectSchema = new(
+        new JsonObject(),
+        NullLogger<ProjectSchema>.Instance
+    );
 
     /// <summary>
     /// The null object for ResourceSchema
@@ -53,37 +55,39 @@ internal static class No
     /// <summary>
     /// The null object for PathComponents
     /// </summary>
-    public static readonly PathComponents PathComponents =
-        new(ProjectNamespace: new(""), EndpointName: new(""), DocumentUuid: DocumentUuid);
+    public static readonly PathComponents PathComponents = new(
+        ProjectNamespace: new(""),
+        EndpointName: new(""),
+        DocumentUuid: DocumentUuid
+    );
 
     /// <summary>
     /// The null object for ResourceInfo
     /// </summary>
-    public static readonly ResourceInfo ResourceInfo =
-        new(
-            ProjectName: new ProjectName(""),
-            ResourceName: new ResourceName(""),
-            IsDescriptor: false,
-            ResourceVersion: new SemVer(""),
-            AllowIdentityUpdates: false
-        );
+    public static readonly ResourceInfo ResourceInfo = new(
+        ProjectName: new ProjectName(""),
+        ResourceName: new ResourceName(""),
+        IsDescriptor: false,
+        ResourceVersion: new SemVer(""),
+        AllowIdentityUpdates: false
+    );
 
     /// <summary>
     /// The null object for DocumentInfo
     /// </summary>
-    public static readonly DocumentInfo DocumentInfo =
-        new(
-            DocumentIdentity: new DocumentIdentity([]),
-            ReferentialId: new(Guid.Empty),
-            DocumentReferences: [],
-            DescriptorReferences: [],
-            SuperclassIdentity: null
-        );
+    public static readonly DocumentInfo DocumentInfo = new(
+        DocumentIdentity: new DocumentIdentity([]),
+        ReferentialId: new(Guid.Empty),
+        DocumentReferences: [],
+        DescriptorReferences: [],
+        SuperclassIdentity: null
+    );
 
     /// <summary>
     /// The null object for FrontendRequest
     /// </summary>
-    public static FrontendRequest CreateFrontendRequest(string traceId) => new(Body: "{}", Path: "", QueryParameters: [], TraceId: new TraceId(traceId));
+    public static FrontendRequest CreateFrontendRequest(string traceId) =>
+        new(Body: "{}", Path: "", QueryParameters: [], TraceId: new TraceId(traceId), ApiClientDetails: null);
 
     /// <summary>
     /// The null object for FrontendResponse

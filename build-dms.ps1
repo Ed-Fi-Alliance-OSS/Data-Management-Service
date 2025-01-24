@@ -289,6 +289,8 @@ function E2ETests {
     else {
         Invoke-Step { DockerRun }
     }
+    Write-Output "Temporary fix for waiting for services to start. First Keycloak must be running, then Config Service, then DMS, finally tests can run."
+    Start-Sleep 120
     Invoke-Step { RunE2E }
 }
 

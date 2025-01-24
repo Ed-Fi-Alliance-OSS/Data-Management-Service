@@ -5,6 +5,7 @@
 
 using System.Net;
 using System.Security.Claims;
+using System.Text.Json;
 using System.Threading.RateLimiting;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Deploy;
@@ -12,10 +13,13 @@ using EdFi.DataManagementService.Backend.OpenSearch;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.OAuth;
+using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
+using EdFi.DataManagementService.Frontend.AspNetCore.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
@@ -81,8 +85,60 @@ public static class WebApplicationBuilderExtensions
             return configureLogging;
         }
 
-        // For Security(Keycloak)
         IConfiguration config = webAppBuilder.Configuration;
+
+        // For Token handling
+        webAppBuilder.Services.AddMemoryCache();
+        webAppBuilder.Services.AddSingleton<IApiClientDetailsProvider, ApiClientDetailsProvider>();
+
+        // Access Configuration service
+        var configServiceSettings = config
+            .GetSection("ConfigurationServiceSettings")
+            .Get<ConfigurationServiceSettings>();
+        if (configServiceSettings == null)
+        {
+            logger.Error("Error reading ConfigurationServiceSettings");
+            throw new InvalidOperationException(
+                "Unable to read ConfigurationServiceSettings from appsettings"
+            );
+        }
+
+        webAppBuilder.Services.AddTransient<ConfigurationServiceResponseHandler>();
+        webAppBuilder
+            .Services.AddHttpClient<ConfigurationServiceApiClient>(
+                (serviceProvider, client) =>
+                {
+                    client.BaseAddress = new Uri(configServiceSettings.BaseUrl);
+                    client.DefaultRequestHeaders.Add("Accept", "application/json");
+                    client.DefaultRequestHeaders.Add("Accept", "application/x-www-form-urlencoded");
+                }
+            )
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler())
+            .AddHttpMessageHandler<ConfigurationServiceResponseHandler>();
+
+        webAppBuilder.Services.AddSingleton(
+            new ConfigurationServiceContext(
+                configServiceSettings.ClientId,
+                configServiceSettings.ClientSecret,
+                configServiceSettings.Scope
+            )
+        );
+        webAppBuilder.Services.AddSingleton(serviceProvider =>
+        {
+            var memoryCache = serviceProvider.GetRequiredService<IMemoryCache>();
+            var cacheExpiration = configServiceSettings.CacheExpirationMinutes;
+            var defaultExpiration = TimeSpan.FromMinutes(cacheExpiration);
+
+            return new ClaimSetsCache(memoryCache, defaultExpiration);
+        });
+        webAppBuilder.Services.AddTransient<
+            IConfigurationServiceTokenHandler,
+            ConfigurationServiceTokenHandler
+        >();
+        webAppBuilder.Services.AddTransient<ISecurityMetadataProvider, SecurityMetadataProvider>();
+        webAppBuilder.Services.AddTransient<ISecurityMetadataService, SecurityMetadataService>();
+
+        // For Security(Keycloak)
         var settings = config.GetSection("IdentitySettings");
         var identitySettings = config.GetSection("IdentitySettings").Get<IdentitySettings>();
         if (identitySettings == null)
@@ -122,6 +178,28 @@ public static class WebApplicationBuilderExtensions
                             OnAuthenticationFailed = context =>
                             {
                                 Console.WriteLine($"Authentication failed: {context.Exception.Message}");
+                                return Task.CompletedTask;
+                            },
+                            OnTokenValidated = context =>
+                            {
+                                if (context.Principal != null)
+                                {
+                                    var apiClientDetailsProvider =
+                                        context.HttpContext.RequestServices.GetRequiredService<IApiClientDetailsProvider>();
+                                    var authHeader = context
+                                        .HttpContext.Request.Headers["Authorization"]
+                                        .ToString();
+                                    string rawToken = authHeader["Bearer ".Length..];
+                                    var tokenHashCode = rawToken.GetHashCode().ToString();
+                                    var apiClientDetails =
+                                        apiClientDetailsProvider.RetrieveApiClientDetailsFromToken(
+                                            tokenHashCode,
+                                            context.Principal.Claims.ToList()
+                                        );
+                                    context.HttpContext.Items["ApiClientDetails"] = apiClientDetails;
+                                    return Task.FromResult(apiClientDetails);
+                                }
+                                Console.WriteLine($"Retrieving token claims failed");
                                 return Task.CompletedTask;
                             },
                         };
