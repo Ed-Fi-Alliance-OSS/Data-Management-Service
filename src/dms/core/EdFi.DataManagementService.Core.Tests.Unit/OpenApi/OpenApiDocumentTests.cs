@@ -170,57 +170,59 @@ public class OpenApiDocumentTests
         [Test]
         public void It_should_be_the_simple_result()
         {
-            openApiDocumentResult
-                .ToJsonString(new() { WriteIndented = true })
-                .Should()
-                .Be(
-                    """
-{
-  "components": {
-    "schemas": {
-      "EdFi_AcademicWeek": {
-        "description": "AcademicWeek description",
-        "properties": {},
-        "type": "string"
-      },
-      "EdFi_AccountabilityRating": {
-        "description": "AccountabilityRating description",
-        "properties": {},
-        "type": "string"
-      }
-    }
-  },
-  "paths": {
-    "/ed-fi/academicWeeks": {
-      "get": {
-        "description": "academicWeek get description"
-      },
-      "post": {
-        "description": "academicWeek post description"
-      }
-    },
-    "/ed-fi/academicWeeks/{id}": {
-      "get": {
-        "description": "academicWeek id get description"
-      },
-      "delete": {
-        "description": "academicWeek delete description"
-      }
-    }
-  },
-  "tags": [
-    {
-      "name": "TagName1",
-      "description": "Description1"
-    },
-    {
-      "name": "TagName2",
-      "description": "Description2"
-    }
-  ]
-}
-"""
-                );
+            string expectedResult = """
+                {
+                  "components": {
+                    "schemas": {
+                      "EdFi_AcademicWeek": {
+                        "description": "AcademicWeek description",
+                        "properties": {},
+                        "type": "string"
+                      },
+                      "EdFi_AccountabilityRating": {
+                        "description": "AccountabilityRating description",
+                        "properties": {},
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "paths": {
+                    "/ed-fi/academicWeeks": {
+                      "get": {
+                        "description": "academicWeek get description"
+                      },
+                      "post": {
+                        "description": "academicWeek post description"
+                      }
+                    },
+                    "/ed-fi/academicWeeks/{id}": {
+                      "get": {
+                        "description": "academicWeek id get description"
+                      },
+                      "delete": {
+                        "description": "academicWeek delete description"
+                      }
+                    }
+                  },
+                  "tags": [
+                    {
+                      "name": "TagName1",
+                      "description": "Description1"
+                    },
+                    {
+                      "name": "TagName2",
+                      "description": "Description2"
+                    }
+                  ]
+                }
+                """;
+
+            string result = openApiDocumentResult.ToJsonString(new() { WriteIndented = true });
+
+            expectedResult = expectedResult.Replace("\r\n", "\n");
+            result = result.Replace("\r\n", "\n");
+
+            result.Should().Be(expectedResult);
         }
     }
 
@@ -248,11 +250,7 @@ public class OpenApiDocumentTests
         [Test]
         public void It_should_merge_in_both_extension_fragments()
         {
-            openApiDocumentResult
-                .ToJsonString(new() { WriteIndented = true })
-                .Should()
-                .Be(
-                    """
+            string expectedResult = """
 {
   "components": {
     "schemas": {
@@ -363,8 +361,14 @@ public class OpenApiDocumentTests
     }
   ]
 }
-"""
-                );
+""";
+
+            string result = openApiDocumentResult.ToJsonString(new() { WriteIndented = true });
+
+            expectedResult = expectedResult.Replace("\r\n", "\n");
+            result = result.Replace("\r\n", "\n");
+
+            result.Should().Be(expectedResult);
         }
     }
 }

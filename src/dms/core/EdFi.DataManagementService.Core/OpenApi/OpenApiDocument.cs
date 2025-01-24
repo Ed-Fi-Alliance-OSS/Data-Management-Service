@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Core.OpenApi;
 /// <summary>
 /// Provides information from a loaded ApiSchema.json document
 /// </summary>
-internal class OpenApiDocument(ILogger _logger)
+public class OpenApiDocument(ILogger _logger)
 {
     /// <summary>
     /// Inserts exts from extension OpenAPI fragments into the _ext section of the corresponding
