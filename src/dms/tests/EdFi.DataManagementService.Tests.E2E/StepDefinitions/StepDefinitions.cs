@@ -30,7 +30,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private string _etag = string.Empty;
         private string _dependentId = string.Empty;
         private string _referencedResourceId = string.Empty;
-        private List<KeyValuePair<string, string>> _headers = new List<KeyValuePair<string, string>>();
+        private List<KeyValuePair<string, string>> _headers = new();
         private readonly bool _openSearchEnabled = AppSettings.OpenSearchEnabled;
 
         #region Given
@@ -38,8 +38,14 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Given("the SIS Vendor is authorized")]
         public async Task GivenTheSisVendorIsAuthorized()
         {
-            var bearerToken = await SisAdmin.GetToken();
+            var bearerToken = await SisVendor.GetToken();
             _headers.Add(new("Authorization", $"Bearer {bearerToken}"));
+        }
+
+        [Given("there is no Authorization header")]
+        public void GivenThereIsNoAuthorizationHeader()
+        {
+            _headers.Where(h => h.Key == "Authorization").ToList().ForEach(h => _headers.Remove(h));
         }
 
         [Given("a POST request is made to {string} with")]
@@ -55,14 +61,15 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
-        [Given("token signature manipulated")]
+        [Given("the token signature is manipulated")]
         public void TokenSignatureManipulated()
         {
             var token = _headers.Single(h => h.Key == "Authorization").Value;
             var segments = token.Split('.');
             var signature = segments[2].ToCharArray();
             new Random().Shuffle(signature);
-            _headers.Single(h => h.Key == "Authorization").Value.Replace(segments[2], signature.ToString());
+            _headers.Remove(_headers.Single(h => h.Key == "Authorization"));
+            _headers.Add(new("Authorization", $"{segments[0]}.{segments[1]}.{signature}"));
         }
 
         private static (string, Dictionary<string, object>) ExtractDescriptorBody(string descriptorValue)
