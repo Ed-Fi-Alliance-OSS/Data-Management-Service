@@ -45,22 +45,14 @@ public interface IContentProvider
 /// <summary>
 /// Loads and parses the file content.
 /// </summary>
-public class ContentProvider : IContentProvider
+public class ContentProvider(ILogger<ContentProvider> _logger, IAssemblyProvider _assemblyProvider) : IContentProvider
 {
-    private readonly ILogger<ContentProvider> _logger;
-    private readonly IAssemblyProvider _assemblyProvider;
-    private readonly Type _type = typeof(DataStandard51.ApiSchema.Marker);
-
-    public ContentProvider(ILogger<ContentProvider> logger, IAssemblyProvider assemblyProvider)
-    {
-        _logger = logger;
-        _assemblyProvider = assemblyProvider;
-    }
+    private readonly Type _dataStandardMarker = typeof(DataStandard51.ApiSchema.Marker);
 
     public IEnumerable<string> Files(string fileNamePattern, string fileExtension)
     {
         var files = new List<string>();
-        var assembly = _assemblyProvider.GetAssemblyByType(_type);
+        var assembly = _assemblyProvider.GetAssemblyByType(_dataStandardMarker);
         foreach (string resourceName in assembly.GetManifestResourceNames())
         {
             if (resourceName.Contains(fileNamePattern) && resourceName.EndsWith(fileExtension))
@@ -124,7 +116,7 @@ public class ContentProvider : IContentProvider
 
     private Stream GetStream(string fileNamePattern, string fileExtension)
     {
-        var assembly = _assemblyProvider.GetAssemblyByType(_type);
+        var assembly = _assemblyProvider.GetAssemblyByType(_dataStandardMarker);
         var resourceName = assembly
             .GetManifestResourceNames()
             .SingleOrDefault(str => str.Contains(fileNamePattern) && str.EndsWith(fileExtension));

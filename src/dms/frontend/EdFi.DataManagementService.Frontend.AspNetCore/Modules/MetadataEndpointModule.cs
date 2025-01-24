@@ -36,8 +36,8 @@ public partial class MetadataEndpointModule : IEndpointModule
         endpoints.MapGet("/metadata", GetMetadata);
         endpoints.MapGet("/metadata/dependencies", GetDependencies);
         endpoints.MapGet("/metadata/specifications", GetSections);
+        endpoints.MapGet("/metadata/specifications/resources-spec.json", GetOpenApiSpec);
         endpoints.MapGet("/metadata/specifications/{section}-spec.json", GetSectionMetadata);
-        endpoints.MapGet("/metadata/data/v3/resources/swagger.json", GetOpenApiSpec);
     }
 
     internal async Task GetMetadata(HttpContext httpContext)

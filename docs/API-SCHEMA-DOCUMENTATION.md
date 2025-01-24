@@ -71,6 +71,11 @@ ProjectSchema object with the following properties:
   SchoolYearEnumeration (which is not a resource but has a ResourceSchema).
 * `abstractResources`: A collection of ResourceNames of abstract resources (that
   don't materialize to endpoints) mapped to AbstractResourceInfos.
+* `coreOpenApiSpecification` The core OpenApi specification DMS will use as a
+  starting point. This is only present if `isExtensionProject` is `false`.
+* `openApiExtensionFragments` The extension OpenApi fragments DMS needs to
+  incorporate into its final OpenApi spec. This is only present if
+  `isExtensionProject` is `true`.
 
 ```json
 {
@@ -94,6 +99,14 @@ ProjectSchema object with the following properties:
       },
       "abstractResources": {
         // ResourceNames of abstract resources mapped to AbstractResourceInfos
+      }
+      "coreOpenApiSpecification": {
+        // OpenAPI specification for a Data Standard. Mutually exclusive
+        // with openApiExtensionFragments
+      }
+      "openApiExtensionFragments": {
+        // OpenAPI fragments for an extension project. Mutually exclusive
+        // with coreOpenApiSpecification
       }
     }
   }
@@ -122,6 +135,342 @@ Example:
   }
 }
 ```
+
+## CoreOpenApiSpecification Object
+
+This is the core OpenApi specification for a Data Standard project. When DMS
+is configured with extension projects, DMS will use this as a starting point.
+This is a complete and valid OpenApi specification, but leaves blank any data
+that can only be determined at runtime, for example server URLs.
+
+This is only present if `isExtensionProject` is `false`.
+
+Heavily truncated example:
+
+```json
+"coreOpenApiSpecification": {
+  "components": {
+    "parameters": {
+      "limit": {
+        "description": "Indicates the maximum number of items that should be returned in the results.",
+        "in": "query",
+        "name": "limit",
+        "schema": {
+          "default": 25,
+          "format": "int32",
+          "maximum": 500,
+          "minimum": 0,
+          "type": "integer"
+        }
+      }
+    },
+    "responses": {
+      "Created": {
+        "description": "The resource was created.  An ETag value is available in the ETag header..."
+      }
+    },
+    "schemas": {
+      "EdFi_AcademicWeek": {
+        "description": "This entity represents the academic weeks for a school year...",
+        "properties": {
+          "beginDate": {
+            "description": "The start date for the academic week.",
+            "format": "date",
+            "type": "string"
+          },
+          "endDate": {
+            "description": "The end date for the academic week.",
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "beginDate",
+          "endDate"
+        ],
+        "type": "object"
+      },
+      "EdFi_AcademicWeek_Reference": {
+        "properties": {
+          "schoolId": {
+            "description": "The identifier assigned to a school. It must be distinct from ...",
+            "type": "integer"
+          },
+          "weekIdentifier": {
+            "description": "The school label for the week.",
+            "maxLength": 80,
+            "minLength": 5,
+            "type": "string"
+          }
+        },
+        "required": [
+          "schoolId",
+          "weekIdentifier"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "contact": {
+      "url": "https://www.ed-fi.org/what-is-ed-fi/contact/"
+    },
+    "description": "",
+    "title": "Ed-Fi Data Management Service API",
+    "version": "1"
+  },
+  "openapi": "3.0.0",
+  "paths": {
+    "/ed-fi/academicWeeks": {
+      "get": {},
+      "post": {}
+    },
+    "/ed-fi/academicWeeks/{id}": {
+      "delete": {},
+      "put": {}
+    },
+  },
+  "servers": [
+    {
+      "url": ""
+    }
+  ],
+  "tags": [
+    {
+      "description": "This entity represents the academic weeks for a school year...",
+      "name": "academicWeeks"
+    }
+  ]
+}
+```
+
+## OpenApiExtensionFragments Object
+
+These are OpenApi fragments for an extension project. When DMS
+is configured with extension projects, DMS will use the
+CoreOpenApiSpecification as a starting point, and insert extension fragments
+into the appropriate locations.
+
+This is only present if `isExtensionProject` is `true`.
+
+The overall structure of this object is made up of four sections, and
+looks like:
+
+```json
+ "openApiExtensionFragments": {
+    "exts": {
+    },
+    "newPaths": {
+    },
+    "newSchemas": {
+    },
+    "newTags": [
+    ]
+ },
+```
+
+### Exts
+
+The `exts` section contains OpenAPI fragments of extensions to an existing
+Data Standard document. These fragments are inserted by DMS into the
+existing document under an `_ext` document node.
+
+An example of extensions to the Data Standard documents `Credential`,
+`School` and `SurveyResponse`:
+
+Example:
+
+```json
+"exts": {
+    "EdFi_Credential": {
+    "description": "",
+    "properties": {
+        "personReference": {
+        "$ref": "#/components/schemas/EdFi_Person_Reference"
+        }
+    }
+    "type": "object"
+    },
+    "EdFi_School": {
+    "description": "",
+    "properties": {
+        "postSecondaryInstitutionReference": {
+        "$ref": "#/components/schemas/EdFi_PostSecondaryInstitution_Reference"
+        }
+    },
+    "type": "object"
+    },
+    "EdFi_SurveyResponse": {
+    "description": "",
+    "properties": {
+        "personReference": {
+        "$ref": "#/components/schemas/EdFi_Person_Reference"
+        }
+    },
+    "type": "object"
+    }
+},
+```
+
+### NewPaths
+
+The `newPaths` section contains OpenAPI fragments of new endpoint paths created
+by the extension. These are added into the Data Standard OpenAPI specification
+under `$.paths`.
+
+Example:
+
+```json
+"paths": {
+  "/tpdm/candidateEducatorPreparationProgramAssociations": {
+     "get": {
+       "description": "This GET operation provides access to resources...",
+       "operationId": "getCandidateEducatorPreparationProgramAssociation",
+       "parameters": [
+         {
+           "$ref": "#/components/parameters/offset"
+         },
+         {
+           "$ref": "#/components/parameters/limit"
+         },
+         {
+           "$ref": "#/components/parameters/totalCount"
+         },
+         {
+           "description": "The begin date for the association.",
+           "in": "query",
+           "name": "beginDate",
+           "schema": {
+             "format": "date",
+             "type": "string"
+           },
+           "x-Ed-Fi-isIdentity": true
+         },
+         {
+           "description": "The end date for the association.",
+           "in": "query",
+           "name": "endDate",
+           "schema": {
+             "format": "date",
+             "type": "string"
+           }
+         }
+       ],
+       "responses": {
+         "200": {
+           "content": {
+             "application/json": {
+               "schema": {
+                 "items": {
+                   "$ref": "#/components/schemas/TPDM_CandidateEducatorPreparationProgramAssociation"
+                 },
+                 "type": "array"
+               }
+             }
+           },
+           "description": "The requested resource was successfully retrieved."
+         }
+       },
+       "summary": "Retrieves specific resources using...",
+       "tags": [
+         "academicWeeks"
+       ]
+     },
+     "post": {
+       "description": "The POST operation can be used to create...",
+       "operationId": "postCandidateEducatorPreparationProgramAssociation",
+       "requestBody": {
+         "content": {
+           "application/json": {
+             "schema": {
+               "$ref": "#/components/schemas/TPDM_CandidateEducatorPreparationProgramAssociation"
+             }
+           }
+         },
+         "description": "The JSON representation of the CandidateEducatorPreparationProgramAssociation...",
+         "required": true,
+         "x-bodyName": "CandidateEducatorPreparationProgramAssociation"
+       },
+       "responses": {
+         "200": {
+           "$ref": "#/components/responses/Updated"
+         }
+       },
+       "summary": "Creates or updates resources based on the natural key values of the supplied resource.",
+         "tags": [
+           "candidateEducatorPreparationProgramAssociations"
+         ]
+       }
+    }
+ }
+```
+
+### NewSchemas
+
+The `newSchemas` section contains OpenAPI fragments of new document schemas created
+by the extension. These are added into the Data Standard OpenAPI specification
+under `$.components.schemas`.
+
+Example:
+
+```json
+"newSchemas": {   
+  "TPDM_Candidate": {
+    "description": "A candidate is both a person enrolled in a...",
+    "properties": {
+      "birthDate": {
+        "description": "The month, day, and year on which an individual was born.",
+        "format": "date",
+        "type": "string"
+      },
+      "candidateIdentifier": {
+        "description": "A unique alphanumeric code assigned to a candidate.",
+        "maxLength": 32,
+        "minLength": 1,
+        "type": "string"
+      },
+      "firstName": {
+        "description": "A name given to an individual at birth...",
+        "maxLength": 75,
+        "type": "string"
+      },
+      "lastSurname": {
+        "description": "The name borne in common by members of a family.",
+        "maxLength": 75,
+        "type": "string"
+      }
+    },
+    "required": [
+      "candidateIdentifier",
+      "firstName",
+      "lastSurname",
+      "birthDate"
+    ],
+    "type": "object"
+  }
+}
+```
+
+### NewTags
+
+The `newTags` section contains OpenAPI the global tags needed for new endpoint paths created
+by the extension. These are added into the Data Standard OpenAPI specification
+under `$.tags`.
+
+Example:
+
+```json
+"newTags": [
+  {
+    "description": "A candidate is both a person enrolled in a...",
+    "name": "candidates"
+  },
+  {
+    "description": "The Educator Preparation Program is designed to...",
+    "name": "educatorPreparationPrograms"
+  },
+]
+ ```
 
 ## ResourceSchemas
 
