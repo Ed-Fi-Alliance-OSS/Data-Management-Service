@@ -38,7 +38,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Given("the SIS Vendor is authorized")]
         public async Task GivenTheSisVendorIsAuthorized()
         {
-            var bearerToken = await SisAdmin.GetToken();
+            var bearerToken = await SisVendor.GetToken();
             _headers.Add(new("Authorization", $"Bearer {bearerToken}"));
         }
 

@@ -33,7 +33,7 @@ public static class SetupHooks
                 var sysAdminToken = await SystemAdministrator.Register("sys-admin " + Guid.NewGuid().ToString(), "SdfH)98&Jk");
                 logger.log.Debug(sysAdminToken);
 
-                await SisAdmin.Create("E2E company", "C. M. Burns", "cmb@example.com",
+                await SisVendor.Create("E2E company", "C. M. Burns", "cmb@example.com",
                     "uri://ed-fi.org", sysAdminToken);
             }
 

@@ -9,7 +9,7 @@ using System.Text.Json;
 
 namespace EdFi.DataManagementService.Tests.E2E.Authorization;
 
-public static class SisAdmin
+public static class SisVendor
 {
     public static ClientCredentials? ClientCredentials { get; set; }
 
