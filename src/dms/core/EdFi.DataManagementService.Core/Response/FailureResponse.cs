@@ -19,6 +19,7 @@ internal static class FailureResponse
     private static readonly string _typePrefix = "urn:ed-fi:api";
     private static readonly string _badRequestTypePrefix = $"{_typePrefix}:bad-request";
     private static readonly string _unauthorizedType = $"{_typePrefix}:unauthorized";
+    private static readonly string _forbiddenType = $"{_typePrefix}:forbidden";
     private static readonly string _gatewayType = $"{_typePrefix}:bad-gateway";
     private static readonly string _dataConflictTypePrefix = $"{_typePrefix}:data-conflict";
     private static readonly string _keyChangeNotSupported =
@@ -158,6 +159,17 @@ internal static class FailureResponse
             type: _unauthorizedType,
             title: error,
             status: 401,
+            correlationId: traceId.Value,
+            validationErrors: [],
+            errors: []
+        );
+
+    public static JsonNode ForForbidden(TraceId traceId, string error, string description) =>
+        CreateBaseJsonObject(
+            detail: description,
+            type: _forbiddenType,
+            title: error,
+            status: 403,
             correlationId: traceId.Value,
             validationErrors: [],
             errors: []
