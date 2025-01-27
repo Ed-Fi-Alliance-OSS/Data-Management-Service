@@ -19,10 +19,10 @@ public class ResourceClaim
 
     [JsonIgnore]
     public bool IsParent { get; set; }
-    public List<ClaimSetResourceClaimActionAuthStrategies?> DefaultAuthorizationStrategiesForCrud { get; set; } =
-        [];
-    public List<ClaimSetResourceClaimActionAuthStrategies?> AuthorizationStrategyOverridesForCrud { get; set; } =
-        [];
+
+    [JsonPropertyName("_defaultAuthorizationStrategiesForCrud")]
+    public List<ClaimSetResourceClaimActionAuthStrategies?> DefaultAuthorizationStrategiesForCrud { get; set; }
+    public List<ClaimSetResourceClaimActionAuthStrategies?> AuthorizationStrategyOverridesForCrud { get; set; }
     public List<ResourceClaim> Children { get; set; }
 
     public ResourceClaim()

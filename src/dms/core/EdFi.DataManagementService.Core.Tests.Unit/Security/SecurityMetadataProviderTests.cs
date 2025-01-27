@@ -4,13 +4,13 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
-using System.Text.Json;
+using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.Model;
 using FakeItEasy;
 using FluentAssertions;
 using NUnit.Framework;
 
-namespace EdFi.DataManagementService.Core.Security.Tests.Unit;
+namespace EdFi.DataManagementService.Core.Tests.Unit.Security;
 
 public class SecurityMetadataProviderTests
 {
@@ -28,14 +28,67 @@ public class SecurityMetadataProviderTests
             var clientSecret = "secret";
             var scope = "fullaccess";
             string? expectedToken = "valid-token";
-            var expectedClaims = new List<ClaimSet>
-            {
-                new() { Name = "ClaimSet1" },
-                new() { Name = "ClaimSet2" },
-            };
+            var jsonContent = """
+                [
+                {
+                    "id": 1,
+                    "Name": "Test-11",
+                    "resourceClaims": [
+                     {
+                        "name": "Test ResourceClaim",
+                        "actions": [
+                          {
+                            "name": "Create",
+                            "enabled": true
+                          }
+                        ]
+                        }
+                    ]
+                },
+                {
+                    "id": 2,
+                    "Name": "Test-22",
+                    "resourceClaims": [
+                     {
+                        "name": "Test ResourceClaim",
+                        "actions": [
+                              {
+                                "name": "Create",
+                                "enabled": true
+                              },
+                              {
+                                "name": "Delete",
+                                "enabled": true
+                              },
+                              {
+                                "name": "Update",
+                                "enabled": true
+                              },
+                              {
+                                "name": "Read",
+                                "enabled": true
+                              }],
+                        "children": [],
+                        "authorizationStrategyOverridesForCRUD": [],
+                        "_defaultAuthorizationStrategiesForCRUD": [
+                            {
+                            "actionId": 1,
+                            "actionName": "Create",
+                            "authorizationStrategies": [
+                                {
+                                "authStrategyId": 1,
+                                "authStrategyName": "NoFurtherAuthorizationRequired",
+                                "isInheritedFromParent": false
+                                }
+                            ]
+                            }
+                        ]
+                     }]
+                   }
+                ]
+                """;
 
-            var json = JsonSerializer.Serialize(expectedClaims);
-            _handler = new TestHttpMessageHandler(HttpStatusCode.OK, json);
+            _handler = new TestHttpMessageHandler(HttpStatusCode.OK, jsonContent);
             var configServiceHandler = new ConfigurationServiceResponseHandler { InnerHandler = _handler };
             var httpClientFactory = A.Fake<IHttpClientFactory>();
 
@@ -69,7 +122,15 @@ public class SecurityMetadataProviderTests
         {
             _claims.Should().NotBeNull();
             _claims.Should().HaveCount(2);
-            _claims![0].Name.Should().Be("ClaimSet1");
+            _claims![0].Name.Should().Be("Test-11");
+            _claims![0].ResourceClaims.Should().NotBeNull();
+            _claims![0].ResourceClaims!.Should().HaveCount(1);
+            _claims![1].Name.Should().Be("Test-22");
+            _claims![1].ResourceClaims.Should().NotBeNull();
+            _claims![1].ResourceClaims!.Should().HaveCount(1);
+            _claims![1].ResourceClaims![0].Should().NotBeNull();
+            _claims![1].ResourceClaims![0].DefaultAuthorizationStrategiesForCrud.Should().NotBeNull();
+            _claims![1].ResourceClaims![0].DefaultAuthorizationStrategiesForCrud.Should().HaveCount(1);
         }
     }
 

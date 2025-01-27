@@ -6,7 +6,7 @@
 using System.Net;
 using System.Text;
 
-namespace EdFi.DataManagementService.Core.Security.Tests.Unit;
+namespace EdFi.DataManagementService.Core.Tests.Unit.Security;
 
 public class TestHttpMessageHandler(HttpStatusCode httpStatusCode, string? responseContent = null)
     : HttpMessageHandler
