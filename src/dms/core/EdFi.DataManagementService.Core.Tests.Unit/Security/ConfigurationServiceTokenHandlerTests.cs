@@ -5,13 +5,14 @@
 
 using System.Net;
 using System.Text.Json;
+using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
-namespace EdFi.DataManagementService.Core.Security.Tests.Unit;
+namespace EdFi.DataManagementService.Core.Tests.Unit.Security;
 
 public class ConfigurationServiceTokenHandlerTests
 {

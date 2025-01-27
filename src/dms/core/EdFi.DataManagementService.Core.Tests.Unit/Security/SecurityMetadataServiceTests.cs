@@ -4,14 +4,14 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.Model;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
-namespace EdFi.DataManagementService.Core.Security.Tests.Unit;
+namespace EdFi.DataManagementService.Core.Tests.Unit.Security;
 
 public class SecurityMetadataServiceTests
 {
@@ -36,11 +36,7 @@ public class SecurityMetadataServiceTests
 
             var claimSetCache = new ClaimSetsCache(_memoryCache, TimeSpan.FromMinutes(10));
 
-            _service = new SecurityMetadataService(
-                _securityMetadataProvider,
-                claimSetCache,
-                NullLogger<SecurityMetadataService>.Instance
-            );
+            _service = new SecurityMetadataService(_securityMetadataProvider, claimSetCache);
             _claims = await _service.GetClaimSets();
         }
 
@@ -76,11 +72,7 @@ public class SecurityMetadataServiceTests
 
             var claimSetCache = new ClaimSetsCache(_memoryCache, TimeSpan.FromMinutes(10));
 
-            _service = new SecurityMetadataService(
-                _securityMetadataProvider,
-                claimSetCache,
-                NullLogger<SecurityMetadataService>.Instance
-            );
+            _service = new SecurityMetadataService(_securityMetadataProvider, claimSetCache);
             _claims = await _service.GetClaimSets();
         }
 
@@ -178,11 +170,7 @@ public class SecurityMetadataServiceTests
 
             var claimSetCache = new ClaimSetsCache(_memoryCache, TimeSpan.FromMinutes(10));
 
-            _service = new SecurityMetadataService(
-                _securityMetadataProvider,
-                claimSetCache,
-                NullLogger<SecurityMetadataService>.Instance
-            );
+            _service = new SecurityMetadataService(_securityMetadataProvider, claimSetCache);
         }
     }
 }

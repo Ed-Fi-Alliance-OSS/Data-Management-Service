@@ -20,6 +20,8 @@ public class SecurityMetadataProvider(
     ConfigurationServiceContext configurationServiceContext
 ) : ISecurityMetadataProvider
 {
+    private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
+
     private async Task SetAuthorizationHeader()
     {
         var token = await configurationServiceTokenHandler.GetTokenAsync(
@@ -37,7 +39,7 @@ public class SecurityMetadataProvider(
         var claimsEndpoint = "v2/claimSets";
         var response = await configurationServiceApiClient.Client.GetAsync(claimsEndpoint);
         var jsonString = await response.Content.ReadAsStringAsync();
-        List<ClaimSet> claimSets = JsonSerializer.Deserialize<List<ClaimSet>>(jsonString) ?? [];
+        List<ClaimSet> claimSets = JsonSerializer.Deserialize<List<ClaimSet>>(jsonString, _jsonOptions) ?? [];
         return claimSets;
     }
 }

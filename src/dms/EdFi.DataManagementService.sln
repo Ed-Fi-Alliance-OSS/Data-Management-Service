@@ -42,15 +42,11 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Backend.OpenSearch", "backend\EdFi.DataManagementService.Backend.OpenSearch\EdFi.DataManagementService.Backend.OpenSearch.csproj", "{083E5FF8-8D13-40F2-AEF3-719B10A2FE66}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Core.Security", "core\EdFi.DataManagementService.Core.Security\EdFi.DataManagementService.Core.Security.csproj", "{FB830332-3C02-4998-AC67-B0E7BD6FB3C3}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Core.Security.Tests.Unit", "core\EdFi.DataManagementService.Core.Security.Tests.Unit\EdFi.DataManagementService.Core.Security.Tests.Unit.csproj", "{8271359F-0C27-4663-86B2-21CAA2618CAB}"
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "clis", "clis", "{2B193382-DF21-4223-888A-CE5CD3B52C25}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.OpenApiGenerator", "clis\EdFi.DataManagementService.OpenApiGenerator\EdFi.DataManagementService.OpenApiGenerator.csproj", "{DEC28148-EEEE-4C24-A592-188CEDF7EB06}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.OpenApiGenerator", "clis\EdFi.DataManagementService.OpenApiGenerator\EdFi.DataManagementService.OpenApiGenerator.csproj", "{DEC28148-EEEE-4C24-A592-188CEDF7EB06}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.OpenApiGenerator.Tests.Integration", "clis\EdFi.DataManagementService.OpenApiGenerator.Tests.Unit\EdFi.DataManagementService.OpenApiGenerator.Tests.Integration.csproj", "{5DD356BC-1CAA-487A-8467-AB85CF6428F2}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.OpenApiGenerator.Tests.Integration", "clis\EdFi.DataManagementService.OpenApiGenerator.Tests.Unit\EdFi.DataManagementService.OpenApiGenerator.Tests.Integration.csproj", "{5DD356BC-1CAA-487A-8467-AB85CF6428F2}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -118,14 +114,6 @@ Global
 		{5DD356BC-1CAA-487A-8467-AB85CF6428F2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5DD356BC-1CAA-487A-8467-AB85CF6428F2}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{5DD356BC-1CAA-487A-8467-AB85CF6428F2}.Release|Any CPU.Build.0 = Release|Any CPU
-		{FB830332-3C02-4998-AC67-B0E7BD6FB3C3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{FB830332-3C02-4998-AC67-B0E7BD6FB3C3}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{FB830332-3C02-4998-AC67-B0E7BD6FB3C3}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{FB830332-3C02-4998-AC67-B0E7BD6FB3C3}.Release|Any CPU.Build.0 = Release|Any CPU
-		{8271359F-0C27-4663-86B2-21CAA2618CAB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{8271359F-0C27-4663-86B2-21CAA2618CAB}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{8271359F-0C27-4663-86B2-21CAA2618CAB}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{8271359F-0C27-4663-86B2-21CAA2618CAB}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -146,8 +134,6 @@ Global
 		{083E5FF8-8D13-40F2-AEF3-719B10A2FE66} = {75AE8F7B-B980-48AE-8518-073830FA6471}
 		{DEC28148-EEEE-4C24-A592-188CEDF7EB06} = {2B193382-DF21-4223-888A-CE5CD3B52C25}
 		{5DD356BC-1CAA-487A-8467-AB85CF6428F2} = {2B193382-DF21-4223-888A-CE5CD3B52C25}
-		{FB830332-3C02-4998-AC67-B0E7BD6FB3C3} = {71E181BF-2E72-45F2-9DAD-6B1D18FAD164}
-		{8271359F-0C27-4663-86B2-21CAA2618CAB} = {71E181BF-2E72-45F2-9DAD-6B1D18FAD164}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {CAB3D5DE-BC6C-44FD-831C-9C7BE3935343}

@@ -15,8 +15,7 @@ public interface ISecurityMetadataService
 
 public class SecurityMetadataService(
     ISecurityMetadataProvider securityMetadataProvider,
-    ClaimSetsCache claimSetsCache,
-    ILogger<SecurityMetadataService> logger
+    ClaimSetsCache claimSetsCache
 ) : ISecurityMetadataService
 {
     private readonly string CacheId = "ClaimSetsCache";
@@ -28,26 +27,12 @@ public class SecurityMetadataService(
         {
             return claimSets;
         }
+        var result = await securityMetadataProvider.GetAllClaimSets();
 
-        try
+        if (result.Count > 0)
         {
-            var result = await securityMetadataProvider.GetAllClaimSets();
-
-            if (result.Count > 0)
-            {
-                claimSetsCache.CacheClaimSets(CacheId, result);
-            }
-            return result;
+            claimSetsCache.CacheClaimSets(CacheId, result);
         }
-        catch (ConfigurationServiceException ex)
-        {
-            logger.LogError(ex, "Error while retrieving and caching the claim sets");
-            throw;
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error while retrieving and caching the claim sets");
-            throw;
-        }
+        return result;
     }
 }
