@@ -69,12 +69,7 @@ internal class ResourceAuthorizationMiddleware(
                     claimSetName,
                     context.FrontendRequest.TraceId.Value
                 );
-                context.FrontendResponse = new FrontendResponse(
-                    StatusCode: 403,
-                    Body: FailureResponse.ForForbidden(context.FrontendRequest.TraceId, errors: []),
-                    Headers: [],
-                    ContentType: "application/problem+json"
-                );
+                RespondAuthorizationError();
                 return;
             }
 
@@ -94,16 +89,11 @@ internal class ResourceAuthorizationMiddleware(
                     context.PathComponents.EndpointName.Value,
                     context.FrontendRequest.TraceId.Value
                 );
-                context.FrontendResponse = new FrontendResponse(
-                    StatusCode: 403,
-                    Body: FailureResponse.ForForbidden(context.FrontendRequest.TraceId, errors: []),
-                    Headers: [],
-                    ContentType: "application/problem+json"
-                );
+                RespondAuthorizationError();
                 return;
             }
 
-            var resourceActions = resourceClaim!.Actions;
+            var resourceActions = resourceClaim.Actions;
             if (resourceActions == null)
             {
                 _logger.LogDebug(
@@ -111,12 +101,7 @@ internal class ResourceAuthorizationMiddleware(
                     resourceClaim.Name,
                     context.FrontendRequest.TraceId.Value
                 );
-                context.FrontendResponse = new FrontendResponse(
-                    StatusCode: 403,
-                    Body: FailureResponse.ForForbidden(traceId: context.FrontendRequest.TraceId, errors: []),
-                    Headers: [],
-                    ContentType: "application/problem+json"
-                );
+                RespondAuthorizationError();
                 return;
             }
             var actionName = ActionResolver.Translate(context.Method).ToString();
@@ -148,9 +133,20 @@ internal class ResourceAuthorizationMiddleware(
                     Headers: [],
                     ContentType: "application/problem+json"
                 );
+                return;
             }
 
             await next();
+
+            void RespondAuthorizationError()
+            {
+                context.FrontendResponse = new FrontendResponse(
+                    StatusCode: 403,
+                    Body: FailureResponse.ForForbidden(traceId: context.FrontendRequest.TraceId, errors: []),
+                    Headers: [],
+                    ContentType: "application/problem+json"
+                );
+            }
         }
         catch (ConfigurationServiceException ex)
         {
