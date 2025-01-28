@@ -169,7 +169,7 @@ internal static class FailureResponse
             detail: "Access to the resource could not be authorized.",
             type: $"{_forbiddenType}:{typeExtension}",
             title: "Authorization Denied",
-            status: 401,
+            status: 403,
             correlationId: traceId.Value,
             validationErrors: [],
             errors: errors
