@@ -57,7 +57,7 @@ internal class ResourceAuthorizationMiddleware(
             _logger.LogInformation("Retrieving claim set list");
             var claimsList = await _securityMetadataService.GetClaimSets();
 
-            var claim = claimsList.SingleOrDefault(c => string.Equals(c.Name, claimSetName));
+            var claim = claimsList.SingleOrDefault(c => string.Equals(c.Name, claimSetName, StringComparison.InvariantCultureIgnoreCase));
 
             if (claim == null)
             {
@@ -81,7 +81,7 @@ internal class ResourceAuthorizationMiddleware(
 
             Debug.Assert(context.PathComponents != null, "context.PathComponents != null");
             ResourceClaim? resourceClaim = (claim.ResourceClaims ?? []).SingleOrDefault(r =>
-                r.Name == context.PathComponents.EndpointName.Value
+                string.Equals(r.Name, context.PathComponents.EndpointName.Value, StringComparison.InvariantCultureIgnoreCase)
             );
 
             if (resourceClaim == null)
