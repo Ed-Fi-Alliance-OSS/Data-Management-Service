@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.Security.Model;
-using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Security;
 
