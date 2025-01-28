@@ -36,7 +36,7 @@ jobs:
           ]
     steps:
       - name: Checkout code
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
         name: Run Linter on ${{ matrix.dockerfile.name }} Dockerfile
@@ -48,7 +48,7 @@ jobs:
           ignore: DL-3022
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
           username: ${{ env.DOCKER_USERNAME }}
           password: ${{ env.DOCKER_HUB_TOKEN }}
@@ -63,7 +63,7 @@ jobs:
           docker buildx build -f $dockerfile -t ${{ matrix.dockerfile.name }} . --build-context parentdir=../
 
       - name: Analyze
-        uses: docker/scout-action@67eb1afe777307506aaecb9acd9a0e0389cb99ae # v1.5.0
+        uses: docker/scout-action@b23590dc1e4d09febc00cfcbc51e9e8c0f7ee9f3 # v1.16.1
         with:
           command: cves
           image: local://${{ matrix.dockerfile.name }}
@@ -94,7 +94,7 @@ jobs:
       # analysis, so not doing this would be security through obscurity.
       - name: Upload Sarif File as Artifact
         if: always()
-        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         with:
           name: Docker Scout analysis
           overwrite: true
