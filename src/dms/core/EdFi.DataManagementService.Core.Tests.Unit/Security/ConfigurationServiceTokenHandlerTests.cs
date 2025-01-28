@@ -114,84 +114,74 @@ public class ConfigurationServiceTokenHandlerTests
         private TestHttpMessageHandler? _handler = null;
 
         [Test]
-        public void Should_Throw_BadRequest()
+        public void Should_Throw_Exception_For_BadRequest()
         {
             // Arrange
             SetConfigurationServiceTokenHandler(HttpStatusCode.BadRequest);
 
             // Act & Assert
-            Assert
-                .ThrowsAsync<ConfigurationServiceException>(
-                    async () => await _configServiceTokenHandler!.GetTokenAsync("ClientId", "Secret", "Scope")
-                )!
-                .StatusCode.Should()
-                .Be(HttpStatusCode.BadRequest);
+            Assert.ThrowsAsync<HttpRequestException>(
+                async () => await _configServiceTokenHandler!.GetTokenAsync("ClientId", "Secret", "Scope")
+            );
         }
 
         [Test]
-        public void Should_Throw_Unauthorized()
+        public void Should_Throw_Exception_For_Unauthorized()
         {
             // Arrange
             SetConfigurationServiceTokenHandler(HttpStatusCode.Unauthorized);
 
             // Act & Assert
-            Assert
-                .ThrowsAsync<ConfigurationServiceException>(
-                    async () => await _configServiceTokenHandler!.GetTokenAsync("ClientId", "Secret", "Scope")
-                )!
-                .StatusCode.Should()
-                .Be(HttpStatusCode.Unauthorized);
+            Assert.ThrowsAsync<HttpRequestException>(
+                async () => await _configServiceTokenHandler!.GetTokenAsync("ClientId", "Secret", "Scope")
+            );
         }
 
         [Test]
-        public void Should_Throw_NotFound()
+        public void Should_Throw_Exception_For_NotFound()
         {
             // Arrange
             SetConfigurationServiceTokenHandler(HttpStatusCode.NotFound);
 
             // Act & Assert
-            Assert
-                .ThrowsAsync<ConfigurationServiceException>(
-                    async () => await _configServiceTokenHandler!.GetTokenAsync("ClientId", "Secret", "Scope")
-                )!
-                .StatusCode.Should()
-                .Be(HttpStatusCode.NotFound);
+            Assert.ThrowsAsync<HttpRequestException>(
+                async () => await _configServiceTokenHandler!.GetTokenAsync("ClientId", "Secret", "Scope")
+            );
         }
 
         [Test]
-        public void Should_Throw_Forbidden()
+        public void Should_Throw_Exception_For_Forbidden()
         {
             // Arrange
             SetConfigurationServiceTokenHandler(HttpStatusCode.Forbidden);
 
             // Act & Assert
-            Assert
-                .ThrowsAsync<ConfigurationServiceException>(
-                    async () => await _configServiceTokenHandler!.GetTokenAsync("ClientId", "Secret", "Scope")
-                )!
-                .StatusCode.Should()
-                .Be(HttpStatusCode.Forbidden);
+            Assert.ThrowsAsync<HttpRequestException>(
+                async () => await _configServiceTokenHandler!.GetTokenAsync("ClientId", "Secret", "Scope")
+            );
         }
 
         [Test]
-        public void Should_Throw_InternalServerError()
+        public void Should_Throw_Exception_For_InternalServerError()
         {
             // Arrange
             SetConfigurationServiceTokenHandler(HttpStatusCode.InternalServerError);
 
             // Act & Assert
-            Assert
-                .ThrowsAsync<ConfigurationServiceException>(
-                    async () => await _configServiceTokenHandler!.GetTokenAsync("ClientId", "Secret", "Scope")
-                )!
-                .StatusCode.Should()
-                .Be(HttpStatusCode.InternalServerError);
+            Assert.ThrowsAsync<HttpRequestException>(
+                async () => await _configServiceTokenHandler!.GetTokenAsync("ClientId", "Secret", "Scope")
+            );
         }
 
         private void SetConfigurationServiceTokenHandler(HttpStatusCode statusCode)
         {
             _handler = new TestHttpMessageHandler(statusCode);
-            var configServiceHandler = new ConfigurationServiceResponseHandler { InnerHandler = _handler };
+            var configServiceHandler = new ConfigurationServiceResponseHandler(
+                NullLogger<ConfigurationServiceResponseHandler>.Instance
+            )
+            {
+                InnerHandler = _handler,
+            };
             var httpClientFactory = A.Fake<IHttpClientFactory>();
 
             var httpClient = new HttpClient(configServiceHandler!)

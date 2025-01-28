@@ -4,6 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
+using System.Net;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -57,7 +59,9 @@ internal class ResourceAuthorizationMiddleware(
             _logger.LogInformation("Retrieving claim set list");
             var claimsList = await _securityMetadataService.GetClaimSets();
 
-            var claim = claimsList.SingleOrDefault(c => string.Equals(c.Name, claimSetName, StringComparison.InvariantCultureIgnoreCase));
+            var claim = claimsList.SingleOrDefault(c =>
+                string.Equals(c.Name, claimSetName, StringComparison.InvariantCultureIgnoreCase)
+            );
 
             if (claim == null)
             {
@@ -66,22 +70,17 @@ internal class ResourceAuthorizationMiddleware(
                     claimSetName,
                     context.FrontendRequest.TraceId.Value
                 );
-                context.FrontendResponse = new FrontendResponse(
-                    StatusCode: 403,
-                    Body: FailureResponse.ForForbidden(
-                        context.FrontendRequest.TraceId,
-                        "Forbidden",
-                        "Access to the resource is forbidden"
-                    ),
-                    Headers: [],
-                    ContentType: "application/problem+json"
-                );
+                RespondAuthorizationError();
                 return;
             }
 
             Debug.Assert(context.PathComponents != null, "context.PathComponents != null");
             ResourceClaim? resourceClaim = (claim.ResourceClaims ?? []).SingleOrDefault(r =>
-                string.Equals(r.Name, context.PathComponents.EndpointName.Value, StringComparison.InvariantCultureIgnoreCase)
+                string.Equals(
+                    r.Name,
+                    context.PathComponents.EndpointName.Value,
+                    StringComparison.InvariantCultureIgnoreCase
+                )
             );
 
             if (resourceClaim == null)
@@ -91,12 +90,45 @@ internal class ResourceAuthorizationMiddleware(
                     context.PathComponents.EndpointName.Value,
                     context.FrontendRequest.TraceId.Value
                 );
+                RespondAuthorizationError();
+                return;
+            }
+
+            var resourceActions = resourceClaim.Actions;
+            if (resourceActions == null)
+            {
+                _logger.LogDebug(
+                    "ResourceAuthorizationMiddleware: No actions on the resource claim {ResourceClaim} - {TraceId}",
+                    resourceClaim.Name,
+                    context.FrontendRequest.TraceId.Value
+                );
+                RespondAuthorizationError();
+                return;
+            }
+            var actionName = ActionResolver.Translate(context.Method).ToString();
+            var isActionAuthorized =
+                resourceActions.SingleOrDefault(x =>
+                    string.Equals(x.Name, actionName, StringComparison.InvariantCultureIgnoreCase)
+                    && x.Enabled
+                ) != null;
+
+            if (!isActionAuthorized)
+            {
+                _logger.LogDebug(
+                    "ResourceAuthorizationMiddleware: Can not perform {RequestMethod} on the resource {ResourceName} - {TraceId}",
+                    context.Method.ToString(),
+                    resourceClaim.Name,
+                    context.FrontendRequest.TraceId.Value
+                );
                 context.FrontendResponse = new FrontendResponse(
-                    StatusCode: 403,
+                    StatusCode: (int)HttpStatusCode.Forbidden,
                     Body: FailureResponse.ForForbidden(
-                        context.FrontendRequest.TraceId,
-                        "Forbidden",
-                        "Access to the resource is forbidden"
+                        traceId: context.FrontendRequest.TraceId,
+                        errors:
+                        [
+                            $"The API client's assigned claim set (currently '{claimSetName}') must grant permission of the '{actionName}' action on one of the following resource claims: {resourceClaim.Name}",
+                        ],
+                        typeExtension: "access-denied:action"
                     ),
                     Headers: [],
                     ContentType: "application/problem+json"
@@ -105,19 +137,33 @@ internal class ResourceAuthorizationMiddleware(
             }
 
             await next();
-        }
-        catch (ConfigurationServiceException ex)
-        {
-            _logger.LogError(ex, "Error while retrieving claim sets");
-            context.FrontendResponse = new FrontendResponse(
-                StatusCode: (int)ex.StatusCode,
-                Body: ex.ErrorContent,
-                Headers: []
-            );
+
+            void RespondAuthorizationError()
+            {
+                context.FrontendResponse = new FrontendResponse(
+                    StatusCode: 403,
+                    Body: FailureResponse.ForForbidden(traceId: context.FrontendRequest.TraceId, errors: []),
+                    Headers: [],
+                    ContentType: "application/problem+json"
+                );
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error while retrieving claim sets");
+            _logger.LogError(
+                ex,
+                "Error while authorizing the request - {TraceId}",
+                context.FrontendRequest.TraceId.Value
+            );
+            context.FrontendResponse = new FrontendResponse(
+                StatusCode: 500,
+                Body: new JsonObject
+                {
+                    ["message"] = "Error while authorizing the request.",
+                    ["traceId"] = context.FrontendRequest.TraceId.Value,
+                },
+                Headers: []
+            );
         }
     }
 }

@@ -19,12 +19,12 @@ internal static class FailureResponse
     private static readonly string _typePrefix = "urn:ed-fi:api";
     private static readonly string _badRequestTypePrefix = $"{_typePrefix}:bad-request";
     private static readonly string _unauthorizedType = $"{_typePrefix}:unauthorized";
-    private static readonly string _forbiddenType = $"{_typePrefix}:forbidden";
     private static readonly string _gatewayType = $"{_typePrefix}:bad-gateway";
     private static readonly string _dataConflictTypePrefix = $"{_typePrefix}:data-conflict";
     private static readonly string _keyChangeNotSupported =
         $"{_badRequestTypePrefix}:data-validation-failed:key-change-not-supported";
     private static readonly string _methodNotAllowed = $"{_typePrefix}:method-not-allowed";
+    private static readonly string _forbiddenType = $"{_typePrefix}:security:authorization";
 
     private static JsonObject CreateBaseJsonObject(
         string detail,
@@ -164,15 +164,15 @@ internal static class FailureResponse
             errors: []
         );
 
-    public static JsonNode ForForbidden(TraceId traceId, string error, string description) =>
+    public static JsonNode ForForbidden(TraceId traceId, string[] errors, string typeExtension = "") =>
         CreateBaseJsonObject(
-            detail: description,
-            type: _forbiddenType,
-            title: error,
+            detail: "Access to the resource could not be authorized.",
+            type: $"{_forbiddenType}:{typeExtension}",
+            title: "Authorization Denied",
             status: 403,
             correlationId: traceId.Value,
             validationErrors: [],
-            errors: []
+            errors: errors
         );
 
     public static JsonNode ForGatewayError(TraceId traceId, string detail = "") =>

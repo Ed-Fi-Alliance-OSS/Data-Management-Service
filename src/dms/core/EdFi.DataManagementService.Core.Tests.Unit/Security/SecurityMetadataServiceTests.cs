@@ -96,74 +96,63 @@ public class SecurityMetadataServiceTests
         private SecurityMetadataService? _service;
 
         [Test]
-        public void Should_Throw_BadRequest()
+        public void Should_Throw_Exception_For_BadRequest()
         {
             // Arrange
             SetSecurityMetadataService(HttpStatusCode.BadRequest);
 
             // Act & Assert
-            Assert
-                .ThrowsAsync<ConfigurationServiceException>(async () => await _service!.GetClaimSets())!
-                .StatusCode.Should()
-                .Be(HttpStatusCode.BadRequest);
+            Assert.ThrowsAsync<HttpRequestException>(async () => await _service!.GetClaimSets());
         }
 
         [Test]
-        public void Should_Throw_Unauthorized()
+        public void Should_Throw_Exception_For_Unauthorized()
         {
             // Arrange
             SetSecurityMetadataService(HttpStatusCode.Unauthorized);
 
             // Act & Assert
-            Assert
-                .ThrowsAsync<ConfigurationServiceException>(async () => await _service!.GetClaimSets())!
-                .StatusCode.Should()
-                .Be(HttpStatusCode.Unauthorized);
+            Assert.ThrowsAsync<HttpRequestException>(async () => await _service!.GetClaimSets());
         }
 
         [Test]
-        public void Should_Throw_NotFound()
+        public void Should_Throw_Exception_For_NotFound()
         {
             // Arrange
             SetSecurityMetadataService(HttpStatusCode.NotFound);
 
             // Act & Assert
-            Assert
-                .ThrowsAsync<ConfigurationServiceException>(async () => await _service!.GetClaimSets())!
-                .StatusCode.Should()
-                .Be(HttpStatusCode.NotFound);
+            Assert.ThrowsAsync<HttpRequestException>(async () => await _service!.GetClaimSets());
         }
 
         [Test]
-        public void Should_Throw_Forbidden()
+        public void Should_Throw_Exception_For_Forbidden()
         {
             // Arrange
             SetSecurityMetadataService(HttpStatusCode.Forbidden);
 
             // Act & Assert
-            Assert
-                .ThrowsAsync<ConfigurationServiceException>(async () => await _service!.GetClaimSets())!
-                .StatusCode.Should()
-                .Be(HttpStatusCode.Forbidden);
+            Assert.ThrowsAsync<HttpRequestException>(async () => await _service!.GetClaimSets());
         }
 
         [Test]
-        public void Should_Throw_InternalServerError()
+        public void Should_Throw_Exception_For_InternalServerError()
         {
             // Arrange
             SetSecurityMetadataService(HttpStatusCode.InternalServerError);
 
             // Act & Assert
-            Assert
-                .ThrowsAsync<ConfigurationServiceException>(async () => await _service!.GetClaimSets())!
-                .StatusCode.Should()
-                .Be(HttpStatusCode.InternalServerError);
+            Assert.ThrowsAsync<HttpRequestException>(async () => await _service!.GetClaimSets());
         }
 
         private void SetSecurityMetadataService(HttpStatusCode statusCode)
         {
             A.CallTo(() => _securityMetadataProvider.GetAllClaimSets())
-                .Throws(new ConfigurationServiceException("message", statusCode, "", null));
+                .Throws(
+                    new HttpRequestException(
+                        $"Error response from http://localhost. Error message: error. StatusCode: {statusCode}"
+                    )
+                );
 
             object? cached = null;
             A.CallTo(() => _memoryCache.TryGetValue(A<object>.Ignored, out cached)).Returns(true);
