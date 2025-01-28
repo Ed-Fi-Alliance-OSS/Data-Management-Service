@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.Model;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Security;
@@ -89,7 +90,12 @@ public class SecurityMetadataProviderTests
                 """;
 
             _handler = new TestHttpMessageHandler(HttpStatusCode.OK, jsonContent);
-            var configServiceHandler = new ConfigurationServiceResponseHandler { InnerHandler = _handler };
+            var configServiceHandler = new ConfigurationServiceResponseHandler(
+                NullLogger<ConfigurationServiceResponseHandler>.Instance
+            )
+            {
+                InnerHandler = _handler,
+            };
             var httpClientFactory = A.Fake<IHttpClientFactory>();
 
             var httpClient = new HttpClient(configServiceHandler)
@@ -141,78 +147,53 @@ public class SecurityMetadataProviderTests
         private TestHttpMessageHandler? _handler = null;
 
         [Test]
-        public void Should_Throw_BadRequest()
+        public void Should_Throw_Exception_For_BadRequest()
         {
             // Arrange
             SetMetadataProvider(HttpStatusCode.BadRequest);
 
             // Act & Assert
-            Assert
-                .ThrowsAsync<ConfigurationServiceException>(
-                    async () => await _metadataProvider!.GetAllClaimSets()
-                )!
-                .StatusCode.Should()
-                .Be(HttpStatusCode.BadRequest);
+            Assert.ThrowsAsync<HttpRequestException>(async () => await _metadataProvider!.GetAllClaimSets());
         }
 
         [Test]
-        public void Should_Throw_Unauthorized()
+        public void Should_Throw_Exception_For_Unauthorized()
         {
             // Arrange
             SetMetadataProvider(HttpStatusCode.Unauthorized);
 
             // Act & Assert
-            Assert
-                .ThrowsAsync<ConfigurationServiceException>(
-                    async () => await _metadataProvider!.GetAllClaimSets()
-                )!
-                .StatusCode.Should()
-                .Be(HttpStatusCode.Unauthorized);
+            Assert.ThrowsAsync<HttpRequestException>(async () => await _metadataProvider!.GetAllClaimSets());
         }
 
         [Test]
-        public void Should_Throw_NotFound()
+        public void Should_Throw_Exception_For_NotFound()
         {
             // Arrange
             SetMetadataProvider(HttpStatusCode.NotFound);
 
             // Act & Assert
-            Assert
-                .ThrowsAsync<ConfigurationServiceException>(
-                    async () => await _metadataProvider!.GetAllClaimSets()
-                )!
-                .StatusCode.Should()
-                .Be(HttpStatusCode.NotFound);
+            Assert.ThrowsAsync<HttpRequestException>(async () => await _metadataProvider!.GetAllClaimSets());
         }
 
         [Test]
-        public void Should_Throw_Forbidden()
+        public void Should_Throw_Exception_For_Forbidden()
         {
             // Arrange
             SetMetadataProvider(HttpStatusCode.Forbidden);
 
             // Act & Assert
-            Assert
-                .ThrowsAsync<ConfigurationServiceException>(
-                    async () => await _metadataProvider!.GetAllClaimSets()
-                )!
-                .StatusCode.Should()
-                .Be(HttpStatusCode.Forbidden);
+            Assert.ThrowsAsync<HttpRequestException>(async () => await _metadataProvider!.GetAllClaimSets());
         }
 
         [Test]
-        public void Should_Throw_InternalServerError()
+        public void Should_Throw_Exception_For_InternalServerError()
         {
             // Arrange
             SetMetadataProvider(HttpStatusCode.InternalServerError);
 
             // Act & Assert
-            Assert
-                .ThrowsAsync<ConfigurationServiceException>(
-                    async () => await _metadataProvider!.GetAllClaimSets()
-                )!
-                .StatusCode.Should()
-                .Be(HttpStatusCode.InternalServerError);
+            Assert.ThrowsAsync<HttpRequestException>(async () => await _metadataProvider!.GetAllClaimSets());
         }
 
         private void SetMetadataProvider(HttpStatusCode statusCode)
@@ -223,7 +204,12 @@ public class SecurityMetadataProviderTests
             string? expectedToken = "valid-token";
 
             _handler = new TestHttpMessageHandler(statusCode);
-            var configServiceHandler = new ConfigurationServiceResponseHandler { InnerHandler = _handler };
+            var configServiceHandler = new ConfigurationServiceResponseHandler(
+                NullLogger<ConfigurationServiceResponseHandler>.Instance
+            )
+            {
+                InnerHandler = _handler,
+            };
             var httpClientFactory = A.Fake<IHttpClientFactory>();
 
             var httpClient = new HttpClient(configServiceHandler)

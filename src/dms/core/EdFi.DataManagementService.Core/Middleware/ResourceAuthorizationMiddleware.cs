@@ -5,6 +5,7 @@
 
 using System.Diagnostics;
 using System.Net;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -148,18 +149,18 @@ internal class ResourceAuthorizationMiddleware(
                 );
             }
         }
-        catch (ConfigurationServiceException ex)
-        {
-            _logger.LogError(ex, "Error while retrieving claim sets");
-            context.FrontendResponse = new FrontendResponse(
-                StatusCode: (int)ex.StatusCode,
-                Body: ex.ErrorContent,
-                Headers: []
-            );
-        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error while retrieving claim sets");
+            _logger.LogError(ex, "Error while authorizing the request");
+            context.FrontendResponse = new FrontendResponse(
+                StatusCode: 500,
+                Body: new JsonObject
+                {
+                    ["message"] = "Error while authorizing the request.",
+                    ["traceId"] = context.FrontendRequest.TraceId.Value,
+                },
+                Headers: []
+            );
         }
     }
 }
