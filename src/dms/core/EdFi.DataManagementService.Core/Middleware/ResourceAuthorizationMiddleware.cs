@@ -107,9 +107,8 @@ internal class ResourceAuthorizationMiddleware(
             }
             var actionName = ActionResolver.Translate(context.Method).ToString();
             var isActionAuthorized =
-                resourceActions.Find(x =>
-                    !string.IsNullOrEmpty(x.Name)
-                    && x.Name.Equals(actionName, StringComparison.InvariantCultureIgnoreCase)
+                resourceActions.SingleOrDefault(x =>
+                    string.Equals(x.Name, actionName, StringComparison.InvariantCultureIgnoreCase)
                     && x.Enabled
                 ) != null;
 
@@ -151,7 +150,11 @@ internal class ResourceAuthorizationMiddleware(
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error while authorizing the request");
+            _logger.LogError(
+                ex,
+                "Error while authorizing the request - {TraceId}",
+                context.FrontendRequest.TraceId.Value
+            );
             context.FrontendResponse = new FrontendResponse(
                 StatusCode: 500,
                 Body: new JsonObject
