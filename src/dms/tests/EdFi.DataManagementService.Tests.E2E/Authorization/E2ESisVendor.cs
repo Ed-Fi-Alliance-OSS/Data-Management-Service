@@ -9,7 +9,7 @@ using System.Text.Json;
 
 namespace EdFi.DataManagementService.Tests.E2E.Authorization;
 
-public static class SisVendor
+public static class E2ESisVendor
 {
     public static ClientCredentials? ClientCredentials { get; set; }
 
@@ -55,7 +55,7 @@ public static class SisVendor
                 {
                     vendorId,
                     applicationName = "E2E",
-                    claimSetName = "SIS-Vendor"
+                    claimSetName = "E2E-SIS-Vendor"
                 }),
                 Encoding.UTF8,
                 "application/json");

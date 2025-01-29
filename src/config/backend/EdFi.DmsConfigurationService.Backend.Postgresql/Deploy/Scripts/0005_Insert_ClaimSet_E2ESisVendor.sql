@@ -1,3 +1,5 @@
+-- This script automatically generates the claimset needed to run the E2E tests using authorization
+
 -- Step 1: Create a temporary table to store the resource names
 DROP TABLE IF EXISTS resource_claims;
 CREATE TEMPORARY TABLE resource_claims (
@@ -71,7 +73,7 @@ SELECT unnest(names) FROM resource_names;
 -- Step 3: Insert the generated JSON into claimset table
 INSERT INTO dmscs.claimset (claimsetname, issystemreserved, resourceclaims)
 SELECT
-    'SIS-Vendor',
+    'E2E-SIS-Vendor',
 	true,
     jsonb_agg(
         jsonb_build_object(
