@@ -31,7 +31,8 @@ public class KeycloakClientRepository(
         string clientSecret,
         string role,
         string displayName,
-        string scope
+        string scope,
+        string namespacePrefixes
     )
     {
         try
@@ -108,9 +109,9 @@ public class KeycloakClientRepository(
 
         List<ClientProtocolMapper> ConfigServiceProtocolMapper()
         {
-            return
+            List<ClientProtocolMapper> protocolMappers =
             [
-                new ClientProtocolMapper
+                new()
                 {
                     Name = "Configuration service role mapper",
                     Protocol = "openid-connect",
@@ -127,6 +128,31 @@ public class KeycloakClientRepository(
                     },
                 },
             ];
+
+            if (namespacePrefixes != string.Empty)
+            {
+                protocolMappers.Add(
+                    new()
+                    {
+                        Name = "Namespace Prefixes",
+                        Protocol = "openid-connect",
+                        ProtocolMapper = "oidc-hardcoded-claim-mapper",
+                        Config = new Dictionary<string, string>
+                        {
+                            { "access.token.claim", "true" },
+                            { "claim.name", "namespacePrefixes" },
+                            { "claim.value", namespacePrefixes },
+                            { "id.token.claim", "true" },
+                            { "introspection.token.claim", "true" },
+                            { "jsonType.label", "String" },
+                            { "lightweight.claim", "false" },
+                            { "userinfo.token.claim", "true" },
+                        },
+                    }
+                );
+            }
+
+            return protocolMappers;
         }
     }
 

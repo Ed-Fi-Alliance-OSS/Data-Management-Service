@@ -9,7 +9,7 @@ namespace EdFi.DmsConfigurationService.Tests.E2E.StepDefinitions;
 
 public static class JwtTokenValidator
 {
-    public static bool Validate(string token, string requiredScope)
+    public static bool ValidateClaimset(string token, string requiredScope)
     {
         try
         {
@@ -22,6 +22,29 @@ public static class JwtTokenValidator
                 {
                     var scopes = scopeClaim.Value.Split(' ');
                     return scopes.Contains(requiredScope);
+                }
+            }
+            return false;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    public static bool ValidateNamespace(string token, string namespacPrefix)
+    {
+        try
+        {
+            var tokenHandler = new JwtSecurityTokenHandler();
+            if (tokenHandler.CanReadToken(token))
+            {
+                var jwtToken = tokenHandler.ReadJwtToken(token);
+                var namespacesClaim = jwtToken.Claims.FirstOrDefault(c => c.Type == "namespacePrefixes");
+                if (namespacesClaim != null)
+                {
+                    var namespaces = namespacesClaim.Value.Split(' ');
+                    return namespaces.Contains(namespacPrefix);
                 }
             }
             return false;

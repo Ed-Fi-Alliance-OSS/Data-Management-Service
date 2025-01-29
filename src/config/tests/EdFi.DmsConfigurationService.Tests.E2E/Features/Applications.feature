@@ -9,7 +9,7 @@ Feature: Applications endpoints
                         "company": "Test Vendor 0",
                         "contactName": "Test",
                         "contactEmailAddress": "test@gmail.com",
-                        "namespacePrefixes": "Test"
+                        "namespacePrefixes": "uri://ed-fi-e2e.org uri://ed-fi-e2e2.org"
                     }
                   """
 
@@ -324,7 +324,7 @@ Feature: Applications endpoints
                   }
                   """
 
-          Scenario: 15 Verify validation invalid claim set name with white space
+        Scenario: 15 Verify validation invalid claim set name with white space
              When a POST request is made to "/v2/applications" with
                   """
                   {
@@ -379,7 +379,7 @@ Feature: Applications endpoints
                   }
                   """
 
-         Scenario: 16 Ensure the location header has correct path when a path base is provided
+        Scenario: 16 Ensure the location header has correct path when a path base is provided
              When a POST request is made to "config/v2/applications" with
                   """
                   {
@@ -429,4 +429,4 @@ Feature: Applications endpoints
                       }
                   """
              Then it should respond with 204
-             Then token should have updated 'ClaimScenario03Update' scope
+             Then the token should have "ClaimScenario03Update" scope and "uri://ed-fi-e2e.org" namespacePrefix

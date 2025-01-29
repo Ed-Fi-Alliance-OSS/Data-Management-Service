@@ -12,7 +12,8 @@ public interface IClientRepository
         string clientSecret,
         string role,
         string displayName,
-        string scope
+        string scope,
+        string namespacePrefixes
     );
 
     public Task<ClientUpdateResult> UpdateClientAsync(string clientUuid, string displayName, string scope);
