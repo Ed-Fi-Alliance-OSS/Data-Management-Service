@@ -430,3 +430,27 @@ Feature: Applications endpoints
                   """
              Then it should respond with 204
              Then the token should have "ClaimScenario03Update" scope and "uri://ed-fi-e2e.org" namespacePrefix
+
+        Scenario: 18 Ensure clients can update the namespacePrefix claim
+             When a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Demo application",
+                   "claimSetName": "ClaimScenario03"
+                  }
+                  """
+             Then it should respond with 201
+             Then retrieve created key and secret
+             When a PUT request is made to "/v2/vendors/{vendorId}" with
+                  """
+                    {
+                        "id": {vendorId},
+                        "company": "Test Vendor 0",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": "uri://ed-fi-e2e.org uri://ed-fi-e2e2.org uri://new-namespace.org"
+                    }
+                  """
+             Then it should respond with 204
+             Then the token should have "ClaimScenario03" scope and "uri://new-namespace.org" namespacePrefix

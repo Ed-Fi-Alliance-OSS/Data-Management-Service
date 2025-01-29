@@ -18,6 +18,11 @@ public interface IClientRepository
 
     public Task<ClientUpdateResult> UpdateClientAsync(string clientUuid, string displayName, string scope);
 
+    public Task<ClientUpdateResult> UpdateClientNamespaceClaimAsync(
+        string clientUuid,
+        string namespacePrefixes
+    );
+
     public Task<ClientClientsResult> GetAllClientsAsync();
 
     public Task<ClientDeleteResult> DeleteClientAsync(string clientUuid);
