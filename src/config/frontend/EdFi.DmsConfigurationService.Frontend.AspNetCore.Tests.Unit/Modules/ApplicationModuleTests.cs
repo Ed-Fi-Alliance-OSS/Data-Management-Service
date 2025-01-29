@@ -67,6 +67,19 @@ public class ApplicationModuleTests
         [SetUp]
         public void Setup()
         {
+            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+                .Returns(
+                    new VendorGetResult.Success(
+                        new VendorResponse
+                        {
+                            Company = "any",
+                            ContactName = "any",
+                            ContactEmailAddress = "any",
+                            NamespacePrefixes = "any",
+                        }
+                    )
+                );
+
             A.CallTo(
                     () =>
                         _applicationRepository.InsertApplication(
@@ -389,6 +402,19 @@ public class ApplicationModuleTests
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
 
+            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+                .Returns(
+                    new VendorGetResult.Success(
+                        new VendorResponse
+                        {
+                            Company = "any",
+                            ContactName = "any",
+                            ContactEmailAddress = "any",
+                            NamespacePrefixes = "any",
+                        }
+                    )
+                );
+
             A.CallTo(
                     () =>
                         _applicationRepository.InsertApplication(
@@ -490,6 +516,19 @@ public class ApplicationModuleTests
                         )
                 )
                 .Returns(new ApplicationInsertResult());
+
+            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+                .Returns(
+                    new VendorGetResult.Success(
+                        new VendorResponse
+                        {
+                            Company = "any",
+                            ContactName = "any",
+                            ContactEmailAddress = "any",
+                            NamespacePrefixes = "any",
+                        }
+                    )
+                );
 
             A.CallTo(() => _applicationRepository.QueryApplication(A<PagingQuery>.Ignored))
                 .Returns(new ApplicationQueryResult());
