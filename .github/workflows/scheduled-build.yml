@@ -20,10 +20,10 @@ jobs:
         shell: pwsh
     steps:
       - name: Checkout the repo
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup dotnet
-        uses: actions/setup-dotnet@607fce577a46308457984d59e4954e075820f10a # v3.0.3
+        uses: actions/setup-dotnet@87b7050bc53ea08284295505d98d2aa94301e852 # v4.2
         with:
           dotnet-version: '8.0.x'
 
@@ -59,7 +59,7 @@ jobs:
 
       - name: Notify Slack on success
         if: success()
-        uses: slackapi/slack-github-action@70cd7be8e40a46e8b0eced40b0de447bdb42f68e #v1.26.0
+        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d #v2.0.0
         with:
           channel-id: 'team-b'
           payload: '{"text":"✅ Build and tests passed for the scheduled run!"}'
@@ -69,7 +69,7 @@ jobs:
 
       - name: Notify Slack on failure
         if: failure()
-        uses: slackapi/slack-github-action@70cd7be8e40a46e8b0eced40b0de447bdb42f68e #v1.26.0
+        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d #v2.0.0
         with:
           channel-id: 'team-b'
           payload: |
