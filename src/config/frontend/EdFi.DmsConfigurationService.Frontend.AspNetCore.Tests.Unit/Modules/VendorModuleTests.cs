@@ -101,7 +101,7 @@ public class VendorModuleTests
                 );
 
             A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
-                .Returns(new VendorUpdateResult.Success());
+                .Returns(new VendorUpdateResult.Success(new List<Guid>()));
 
             A.CallTo(() => _vendorRepository.DeleteVendor(A<long>.Ignored))
                 .Returns(new VendorDeleteResult.Success());

@@ -283,14 +283,17 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         _applicationSecret = responseJson["secret"]!.GetValue<string>();
     }
 
-    [Then("token should have updated {string} scope")]
-    public async Task ThenValidateTheScope(string claimset)
+    [Then("the token should have {string} scope and {string} namespacePrefix")]
+    public async Task ThenValidateTheScope(string claimset, string namespacePrefix)
     {
         await GetClientAccessToken(_applicationKey, _applicationSecret, claimset);
         await TokenReceived();
         _token.Should().NotBeNull();
-        var response = JwtTokenValidator.Validate(_token, claimset);
-        response.Should().BeTrue();
+        var claimsetResponse = JwtTokenValidator.ValidateClaimset(_token, claimset);
+        claimsetResponse.Should().BeTrue();
+
+        var namespaceResponse = JwtTokenValidator.ValidateNamespace(_token, namespacePrefix);
+        namespaceResponse.Should().BeTrue();
     }
 
     private async Task ResponseBodyIs(string expectedBody)

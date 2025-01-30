@@ -19,7 +19,13 @@ public class ApiClientDetailsProviderTests
         // Arrange
         var claimSet = "ClaimSet01";
         var tokenId = "123455";
-        var claims = new List<Claim> { new("scope", claimSet), new("jti", tokenId) };
+        var namespacePrefixes = "http://fake.org http://ed-fi.org";
+        var claims = new List<Claim>
+        {
+            new("scope", claimSet),
+            new("jti", tokenId),
+            new("namespacePrefixes", namespacePrefixes)
+        };
         ApiClientDetailsProvider _apiClientDetailsProvider = new();
 
         // Act
@@ -30,8 +36,9 @@ public class ApiClientDetailsProviderTests
 
         // Assert
         apiClientDetails.Should().NotBeNull();
-        apiClientDetails.TokenId.Equals(tokenId);
-        apiClientDetails.ClaimSetName.Equals(claimSet);
+        apiClientDetails.TokenId.Should().Be(tokenId);
+        apiClientDetails.ClaimSetName.Should().Be(claimSet);
+        string.Join(' ', apiClientDetails.NamespacePrefixes).Should().Be(namespacePrefixes);
     }
 
     [Test]
@@ -50,7 +57,7 @@ public class ApiClientDetailsProviderTests
 
         // Assert
         apiClientDetails.Should().NotBeNull();
-        apiClientDetails.TokenId.Equals("token-hash");
-        apiClientDetails.ClaimSetName.Equals(claimSet);
+        apiClientDetails.TokenId.Should().Be("token-hash");
+        apiClientDetails.ClaimSetName.Should().Be(claimSet);
     }
 }

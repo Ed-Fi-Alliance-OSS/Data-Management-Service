@@ -5,13 +5,13 @@
 
 using System.Net;
 using EdFi.DmsConfigurationService.Backend.Repositories;
-using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FluentValidation;
 using FluentValidation.Results;
+using Keycloak.Net.Models.Clients;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -91,7 +91,10 @@ public class VendorModule : IEndpointModule
         VendorUpdateCommand command,
         VendorUpdateCommand.Validator validator,
         HttpContext httpContext,
-        IVendorRepository repository
+        IVendorRepository repository,
+        IApplicationRepository applicationRepository,
+        IClientRepository clientRepository,
+        ILogger<ApplicationModule> logger
     )
     {
         await validator.GuardAsync(command);
@@ -104,6 +107,42 @@ public class VendorModule : IEndpointModule
         }
 
         var vendorUpdateResult = await repository.UpdateVendor(command);
+
+        if (vendorUpdateResult is VendorUpdateResult.Success result)
+        {
+            foreach (var clientUuid in result.AffectedClientUuids)
+            {
+                var clientUpdateResult = await clientRepository.UpdateClientNamespaceClaimAsync(
+                    clientUuid.ToString(),
+                    command.NamespacePrefixes
+                );
+
+                switch (clientUpdateResult)
+                {
+                    case ClientUpdateResult.Success:
+                        continue;
+                    case ClientUpdateResult.FailureIdentityProvider failureIdentityProvider:
+                        logger.LogError(
+                            "Failure updating client: {failureMessage}",
+                            failureIdentityProvider.IdentityProviderError.FailureMessage
+                        );
+                        return FailureResults.BadGateway(
+                            failureIdentityProvider.IdentityProviderError.FailureMessage,
+                            httpContext.TraceIdentifier
+                        );
+                    case ClientUpdateResult.FailureNotFound notFound:
+                        logger.LogError(notFound.FailureMessage);
+                        return FailureResults.Unknown(httpContext.TraceIdentifier);
+                    case ClientUpdateResult.FailureUnknown unknownFailure:
+                        logger.LogError(
+                            "Error updating apiClient {clientUuid}: {message}",
+                            clientUuid,
+                            unknownFailure.FailureMessage
+                        );
+                        return FailureResults.Unknown(httpContext.TraceIdentifier);
+                }
+            }
+        }
 
         return vendorUpdateResult switch
         {
