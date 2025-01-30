@@ -8,7 +8,6 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Extensions;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Model;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
 
@@ -73,8 +72,11 @@ internal static class ReferenceExtractor
                 continue;
             }
 
-            BaseResourceInfo resourceInfo =
-                new(documentPath.ProjectName, documentPath.ResourceName, documentPath.IsDescriptor);
+            BaseResourceInfo resourceInfo = new(
+                documentPath.ProjectName,
+                documentPath.ResourceName,
+                documentPath.IsDescriptor
+            );
 
             // Reorient intermediateReferenceElements into actual DocumentReferences
             for (int index = 0; index < valueSliceLength; index += 1)
@@ -94,7 +96,9 @@ internal static class ReferenceExtractor
                 }
 
                 DocumentIdentity documentIdentity = new(documentIdentityElements.ToArray());
-                result.Add(new(resourceInfo, documentIdentity, ReferentialIdFrom(resourceInfo, documentIdentity)));
+                result.Add(
+                    new(resourceInfo, documentIdentity, ReferentialIdFrom(resourceInfo, documentIdentity))
+                );
             }
         }
 

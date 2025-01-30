@@ -18,8 +18,12 @@ public record GetResult
     /// <param name="DocumentUuid">The DocumentUuid of the document</param>
     /// <param name="EdfiDoc">The document itself</param>
     /// <param name="LastModifiedDate">The date the document was last modified</param>
-    public record GetSuccess(DocumentUuid DocumentUuid, JsonNode EdfiDoc, DateTime LastModifiedDate, string LastModifiedTraceId)
-        : GetResult();
+    public record GetSuccess(
+        DocumentUuid DocumentUuid,
+        JsonNode EdfiDoc,
+        DateTime LastModifiedDate,
+        string LastModifiedTraceId
+    ) : GetResult();
 
     /// <summary>
     /// A failure because the document does not exist

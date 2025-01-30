@@ -6,19 +6,6 @@
 namespace EdFi.DataManagementService.Core.External.Model;
 
 /// <summary>
-/// The special query parameters used to drive pagination
+/// The elements extracted from a document that can be secured on
 /// </summary>
-public record PaginationParameters(
-    /// <summary>
-    /// The pagination limit
-    /// </summary>
-    int? Limit,
-    /// <summary>
-    /// The pagination offset
-    /// </summary>
-    int? Offset,
-    /// <summary>
-    /// The pagination totalCount
-    /// </summary>
-    bool TotalCount
-);
+public record DocumentSecurityElements(string[] Namespace);
