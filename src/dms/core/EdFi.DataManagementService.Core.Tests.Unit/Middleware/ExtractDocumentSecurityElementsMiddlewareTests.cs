@@ -46,7 +46,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
 
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "assessments");
 
-            string body = """{"namespace": "abc"}""";
+            string body = """{"assessmentIdentifier": "123", "namespace": "abc"}""";
 
             context = new(
                 new(Body: body, QueryParameters: [], Path: "/ed-fi/assessments", TraceId: new TraceId("123")),
@@ -61,7 +61,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
         }
 
         [Test]
-        public void It_has_built_the_document_identity()
+        public void It_has_extracted_the_namespace()
         {
             context.DocumentSecurityElements.Namespace.Should().HaveCount(1);
             context.DocumentSecurityElements.Namespace[0].Should().Be("abc");
