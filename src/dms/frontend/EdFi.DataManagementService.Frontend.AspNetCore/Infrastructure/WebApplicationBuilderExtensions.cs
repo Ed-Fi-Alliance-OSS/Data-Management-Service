@@ -149,69 +149,66 @@ public static class WebApplicationBuilderExtensions
         webAppBuilder.Services.Configure<IdentitySettings>(settings);
         webAppBuilder.Services.AddHttpClient();
 
-        if (identitySettings.EnforceAuthorization)
-        {
-            string metadataAddress = $"{identitySettings.Authority}/.well-known/openid-configuration";
+        string metadataAddress = $"{identitySettings.Authority}/.well-known/openid-configuration";
 
-            webAppBuilder
-                .Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-                .AddJwtBearer(
-                    JwtBearerDefaults.AuthenticationScheme,
-                    options =>
+        webAppBuilder
+            .Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(
+                JwtBearerDefaults.AuthenticationScheme,
+                options =>
+                {
+                    options.MetadataAddress = metadataAddress;
+                    options.Authority = identitySettings.Authority;
+                    options.Audience = identitySettings.Audience;
+                    options.RequireHttpsMetadata = identitySettings.RequireHttpsMetadata;
+                    options.TokenValidationParameters = new TokenValidationParameters
                     {
-                        options.MetadataAddress = metadataAddress;
-                        options.Authority = identitySettings.Authority;
-                        options.Audience = identitySettings.Audience;
-                        options.RequireHttpsMetadata = identitySettings.RequireHttpsMetadata;
-                        options.TokenValidationParameters = new TokenValidationParameters
-                        {
-                            ValidateAudience = true,
-                            ValidAudience = identitySettings.Audience,
-                            ValidateIssuer = true,
-                            ValidIssuer = identitySettings.Authority,
-                            ValidateLifetime = true,
-                            RoleClaimType = identitySettings.RoleClaimType,
-                        };
+                        ValidateAudience = true,
+                        ValidAudience = identitySettings.Audience,
+                        ValidateIssuer = true,
+                        ValidIssuer = identitySettings.Authority,
+                        ValidateLifetime = true,
+                        RoleClaimType = identitySettings.RoleClaimType,
+                    };
 
-                        options.Events = new JwtBearerEvents
+                    options.Events = new JwtBearerEvents
+                    {
+                        OnAuthenticationFailed = context =>
                         {
-                            OnAuthenticationFailed = context =>
+                            Console.WriteLine($"Authentication failed: {context.Exception.Message}");
+                            return Task.CompletedTask;
+                        },
+                        OnTokenValidated = context =>
+                        {
+                            if (context.Principal != null)
                             {
-                                Console.WriteLine($"Authentication failed: {context.Exception.Message}");
-                                return Task.CompletedTask;
-                            },
-                            OnTokenValidated = context =>
-                            {
-                                if (context.Principal != null)
-                                {
-                                    var apiClientDetailsProvider =
-                                        context.HttpContext.RequestServices.GetRequiredService<IApiClientDetailsProvider>();
-                                    var authHeader = context
-                                        .HttpContext.Request.Headers["Authorization"]
-                                        .ToString();
-                                    string rawToken = authHeader["Bearer ".Length..];
-                                    var tokenHashCode = rawToken.GetHashCode().ToString();
-                                    var apiClientDetails =
-                                        apiClientDetailsProvider.RetrieveApiClientDetailsFromToken(
-                                            tokenHashCode,
-                                            context.Principal.Claims.ToList()
-                                        );
-                                    context.HttpContext.Items["ApiClientDetails"] = apiClientDetails;
-                                    return Task.FromResult(apiClientDetails);
-                                }
-                                Console.WriteLine($"Retrieving token claims failed");
-                                return Task.CompletedTask;
-                            },
-                        };
-                    }
-                );
-            webAppBuilder.Services.AddAuthorization(options =>
-                options.AddPolicy(
-                    SecurityConstants.ServicePolicy,
-                    policy => policy.RequireClaim(ClaimTypes.Role, identitySettings.ClientRole)
-                )
+                                var apiClientDetailsProvider =
+                                    context.HttpContext.RequestServices.GetRequiredService<IApiClientDetailsProvider>();
+                                var authHeader = context
+                                    .HttpContext.Request.Headers["Authorization"]
+                                    .ToString();
+                                string rawToken = authHeader["Bearer ".Length..];
+                                var tokenHashCode = rawToken.GetHashCode().ToString();
+                                var apiClientDetails =
+                                    apiClientDetailsProvider.RetrieveApiClientDetailsFromToken(
+                                        tokenHashCode,
+                                        context.Principal.Claims.ToList()
+                                    );
+                                context.HttpContext.Items["ApiClientDetails"] = apiClientDetails;
+                                return Task.FromResult(apiClientDetails);
+                            }
+                            Console.WriteLine($"Retrieving token claims failed");
+                            return Task.CompletedTask;
+                        },
+                    };
+                }
             );
-        }
+        webAppBuilder.Services.AddAuthorization(options =>
+            options.AddPolicy(
+                SecurityConstants.ServicePolicy,
+                policy => policy.RequireClaim(ClaimTypes.Role, identitySettings.ClientRole)
+            )
+        );
     }
 
     private static void ConfigureDatastore(WebApplicationBuilder webAppBuilder, Serilog.ILogger logger)

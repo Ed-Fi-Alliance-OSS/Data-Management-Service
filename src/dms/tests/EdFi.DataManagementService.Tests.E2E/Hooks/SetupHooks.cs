@@ -28,22 +28,19 @@ public static class SetupHooks
                 _containerSetup = new ContainerSetup();
             }
 
-            if (AppSettings.EnforceAuthorization)
-            {
-                string sysAdminToken = await SystemAdministrator.Register(
-                    "sys-admin " + Guid.NewGuid().ToString(),
-                    "SdfH)98&Jk"
-                );
-                logger.log.Debug(sysAdminToken);
+            string sysAdminToken = await SystemAdministrator.Register(
+                "sys-admin " + Guid.NewGuid().ToString(),
+                "SdfH)98&Jk"
+            );
+            logger.log.Debug(sysAdminToken);
 
-                await E2ESisVendor.Create(
-                    "E2E company",
-                    "C. M. Burns",
-                    "cmb@example.com",
-                    "uri://ed-fi.org",
-                    sysAdminToken
-                );
-            }
+            await E2ESisVendor.Create(
+                "E2E company",
+                "C. M. Burns",
+                "cmb@example.com",
+                "uri://ed-fi.org",
+                sysAdminToken
+            );
 
             await _containerSetup.StartContainers();
         }
