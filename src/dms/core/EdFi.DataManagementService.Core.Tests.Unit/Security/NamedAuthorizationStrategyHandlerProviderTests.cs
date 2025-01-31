@@ -3,15 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System;
-using System.Net;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.AuthorizationStrategies;
-using EdFi.DataManagementService.Core.Security.Model;
-using FakeItEasy;
 using FluentAssertions;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 
@@ -20,85 +15,61 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Security;
 public class NamedAuthorizationStrategyHandlerProviderTests
 {
     [TestFixture]
-    public class Given_Service_Receives_Expected_Data : SecurityMetadataServiceTests
+    public class Given_Matching_AuthorizationStrategy_Handler : SecurityMetadataServiceTests
     {
-        private IAuthorizationStrategyHandlerProvider? _handlerProvider;
-        private ServiceProvider? _serviceProvider;
+        private NamedAuthorizationStrategyHandlerProvider? handlerProvider;
+        private ServiceProvider? serviceProvider;
 
         [SetUp]
         public void Setup()
         {
             var services = new ServiceCollection();
-            services.AddTransient<ITestDependency, TestDependency>();
-            services.AddTransient<IAuthorizationStrategyHandler, TestAuthorizationStrategyOneHandler>();
-            services.AddTransient<IAuthorizationStrategyHandler, TestAuthorizationStrategyTwoHandler>();
-            services.AddSingleton<
-                IAuthorizationStrategyHandlerProvider,
-                NamedAuthorizationStrategyHandlerProvider
-            >();
+            services.AddTransient<NamedAuthorizationStrategyHandlerProvider>();
+            services.AddTransient<NoFurtherAuthorizationRequiredAuthorizationStrategyHandler>();
 
-            _serviceProvider = services.BuildServiceProvider();
+            serviceProvider = services.BuildServiceProvider();
 
-            _handlerProvider = new NamedAuthorizationStrategyHandlerProvider(_serviceProvider);
+            handlerProvider = new NamedAuthorizationStrategyHandlerProvider(serviceProvider);
         }
 
         [Test]
-        public void Should_Return_From_TestAuthorizationStrategyOneHandler()
+        public void Should_Return_NoFurtherAuthorizationRequiredAuthorizationStrategyHandler()
         {
-            var handlerOne =
-                _handlerProvider!.GetByName("TestAuthorizationStrategyOne")
-                as TestAuthorizationStrategyOneHandler;
-            handlerOne.Should().NotBeNull();
-            var authResult = handlerOne!.IsRequestAuthorized(
+            var handler =
+                handlerProvider!.GetByName("NoFurtherAuthorizationRequired")
+                as NoFurtherAuthorizationRequiredAuthorizationStrategyHandler;
+            handler.Should().NotBeNull();
+            var authResult = handler!.IsRequestAuthorized(
                 new DocumentSecurityElements([]),
                 new ApiClientDetails("", "", [], [])
             );
             authResult.Should().NotBeNull();
-            authResult.IsAuthorized.Should().BeFalse();
-            authResult.ErrorMessage.Should().Be("TestAuthorizationStrategyOne");
+            authResult.IsAuthorized.Should().BeTrue();
         }
     }
 
-    [AuthorizationStrategyName(AuthorizationStrategyName)]
-    public class TestAuthorizationStrategyOneHandler(ITestDependency testDependency)
-        : IAuthorizationStrategyHandler
+    [TestFixture]
+    public class Given_Not_Matching_AuthorizationStrategy_Handler : SecurityMetadataServiceTests
     {
-        private const string AuthorizationStrategyName = "TestAuthorizationStrategyOne";
+        private NamedAuthorizationStrategyHandlerProvider? handlerProvider;
+        private ServiceProvider? serviceProvider;
 
-        public AuthorizationResult IsRequestAuthorized(
-            DocumentSecurityElements securityElements,
-            ApiClientDetails details
-        )
+        [SetUp]
+        public void Setup()
         {
-            testDependency.TestMethod(AuthorizationStrategyName);
-            return new AuthorizationResult(false, AuthorizationStrategyName);
+            var services = new ServiceCollection();
+            services.AddTransient<NamedAuthorizationStrategyHandlerProvider>();
+
+            serviceProvider = services.BuildServiceProvider();
+
+            handlerProvider = new NamedAuthorizationStrategyHandlerProvider(serviceProvider);
         }
-    }
 
-    [AuthorizationStrategyName(AuthorizationStrategyName)]
-    public class TestAuthorizationStrategyTwoHandler : IAuthorizationStrategyHandler
-    {
-        private const string AuthorizationStrategyName = "TestAuthorizationStrategyTwo";
-
-        public AuthorizationResult IsRequestAuthorized(
-            DocumentSecurityElements securityElements,
-            ApiClientDetails details
-        )
+        [Test]
+        public void Should_Return_Null()
         {
-            return new AuthorizationResult(false, $"error-from-{AuthorizationStrategyName}");
-        }
-    }
-
-    public interface ITestDependency
-    {
-        string TestMethod(string name);
-    }
-
-    public class TestDependency : ITestDependency
-    {
-        public string TestMethod(string name)
-        {
-            return name;
+            var handler = handlerProvider!.GetByName("NotMatchingHandler");
+            handler.Should().BeNull();
         }
     }
 }
