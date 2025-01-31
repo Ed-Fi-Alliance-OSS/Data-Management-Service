@@ -33,8 +33,12 @@ public class ParsePathMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            FrontendRequest frontendRequest =
-                new(Body: "{}", Path: "", QueryParameters: [], TraceId: new TraceId(""));
+            FrontendRequest frontendRequest = new(
+                Body: "{}",
+                Path: "",
+                QueryParameters: [],
+                TraceId: new TraceId("")
+            );
             _context = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
         }
@@ -60,8 +64,12 @@ public class ParsePathMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            FrontendRequest frontendRequest =
-                new(Body: "{}", Path: "badpath", QueryParameters: [], TraceId: new TraceId(""));
+            FrontendRequest frontendRequest = new(
+                Body: "{}",
+                Path: "badpath",
+                QueryParameters: [],
+                TraceId: new TraceId("")
+            );
             _context = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
         }
@@ -87,8 +95,12 @@ public class ParsePathMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            FrontendRequest frontendRequest =
-                new(Body: "{}", Path: "/ed-fi/endpointName", QueryParameters: [], TraceId: new TraceId(""));
+            FrontendRequest frontendRequest = new(
+                Body: "{}",
+                Path: "/ed-fi/endpointName",
+                QueryParameters: [],
+                TraceId: new TraceId("")
+            );
             _context = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
         }
@@ -118,13 +130,12 @@ public class ParsePathMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            FrontendRequest frontendRequest =
-                new(
-                    Body: "{}",
-                    Path: $"/ed-fi/endpointName/{documentUuid}",
-                    QueryParameters: [],
-                    TraceId: new TraceId("")
-                );
+            FrontendRequest frontendRequest = new(
+                Body: "{}",
+                Path: $"/ed-fi/endpointName/{documentUuid}",
+                QueryParameters: [],
+                TraceId: new TraceId("")
+            );
             _context = new(frontendRequest, RequestMethod.PUT);
             await Middleware().Execute(_context, NullNext);
         }
@@ -154,13 +165,12 @@ public class ParsePathMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            FrontendRequest frontendRequest =
-                new(
-                    Body: "{}",
-                    Path: "/ed-fi/endpointName/invalidId",
-                    QueryParameters: [],
-                    TraceId: new TraceId("")
-                );
+            FrontendRequest frontendRequest = new(
+                Body: "{}",
+                Path: "/ed-fi/endpointName/invalidId",
+                QueryParameters: [],
+                TraceId: new TraceId("")
+            );
             _context = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
         }
@@ -196,13 +206,12 @@ public class ParsePathMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            FrontendRequest frontendRequest =
-                new(
-                    Body: "{}",
-                    Path: $"/ed-fi/endpointName/{Guid.NewGuid()}",
-                    QueryParameters: [],
-                    TraceId: new TraceId("")
-                );
+            FrontendRequest frontendRequest = new(
+                Body: "{}",
+                Path: $"/ed-fi/endpointName/{Guid.NewGuid()}",
+                QueryParameters: [],
+                TraceId: new TraceId("")
+            );
             _context = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
         }
@@ -224,9 +233,7 @@ public class ParsePathMiddlewareTests
         {
             string response = JsonSerializer.Serialize(_context.FrontendResponse.Body, SerializerOptions);
 
-            response
-                .Should()
-                .Contain("Method Not Allowed");
+            response.Should().Contain("Method Not Allowed");
         }
     }
 
@@ -238,13 +245,12 @@ public class ParsePathMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            FrontendRequest frontendRequest =
-                new(
-                    Body: "{}",
-                    Path: "/ed-fi/endpointName/",
-                    QueryParameters: [],
-                    TraceId: new TraceId("")
-                );
+            FrontendRequest frontendRequest = new(
+                Body: "{}",
+                Path: "/ed-fi/endpointName/",
+                QueryParameters: [],
+                TraceId: new TraceId("")
+            );
             _context = new(frontendRequest, RequestMethod.PUT);
             await Middleware().Execute(_context, NullNext);
         }
@@ -266,9 +272,7 @@ public class ParsePathMiddlewareTests
         {
             string response = JsonSerializer.Serialize(_context.FrontendResponse.Body, SerializerOptions);
 
-            response
-                .Should()
-                .Contain("Method Not Allowed");
+            response.Should().Contain("Method Not Allowed");
         }
     }
 
@@ -280,13 +284,12 @@ public class ParsePathMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            FrontendRequest frontendRequest =
-                new(
-                    Body: "{}",
-                    Path: "/ed-fi/endpointName/",
-                    QueryParameters: [],
-                    TraceId: new TraceId("")
-                );
+            FrontendRequest frontendRequest = new(
+                Body: "{}",
+                Path: "/ed-fi/endpointName/",
+                QueryParameters: [],
+                TraceId: new TraceId("")
+            );
             _context = new(frontendRequest, RequestMethod.DELETE);
             await Middleware().Execute(_context, NullNext);
         }
@@ -308,9 +311,7 @@ public class ParsePathMiddlewareTests
         {
             string response = JsonSerializer.Serialize(_context.FrontendResponse.Body, SerializerOptions);
 
-            response
-                .Should()
-                .Contain("Method Not Allowed");
+            response.Should().Contain("Method Not Allowed");
         }
     }
 }

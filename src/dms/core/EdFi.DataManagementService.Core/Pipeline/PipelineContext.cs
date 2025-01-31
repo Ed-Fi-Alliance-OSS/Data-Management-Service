@@ -83,4 +83,9 @@ internal class PipelineContext(FrontendRequest _frontendRequest, RequestMethod _
     /// Query elements for GET by query
     /// </summary>
     public QueryElement[] QueryElements { get; set; } = [];
+
+    /// <summary>
+    /// DocumentSecurityElements from the submitted document
+    /// </summary>
+    public DocumentSecurityElements DocumentSecurityElements { get; set; } = No.DocumentSecurityElements;
 }

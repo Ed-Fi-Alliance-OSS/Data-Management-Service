@@ -136,10 +136,7 @@ public class ParseBodyMiddlewareTests
         [Test]
         public void It_returns_error_message_body()
         {
-            _context
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain("Data validation failed.");
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Data validation failed.");
         }
     }
 }

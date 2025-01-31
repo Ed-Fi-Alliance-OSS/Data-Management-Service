@@ -60,7 +60,7 @@ internal static class IdentityExtractor
     {
         DocumentIdentityElement[] newElementArray =
         [
-            new DocumentIdentityElement(superclassIdentityJsonPath, identityElement.IdentityValue)
+            new DocumentIdentityElement(superclassIdentityJsonPath, identityElement.IdentityValue),
         ];
         return new(newElementArray);
     }
@@ -88,12 +88,11 @@ internal static class IdentityExtractor
             return null;
         }
 
-        BaseResourceInfo superclassResourceInfo =
-            new(
-                ResourceName: resourceSchema.SuperclassResourceName,
-                ProjectName: resourceSchema.SuperclassProjectName,
-                IsDescriptor: false
-            );
+        BaseResourceInfo superclassResourceInfo = new(
+            ResourceName: resourceSchema.SuperclassResourceName,
+            ProjectName: resourceSchema.SuperclassProjectName,
+            IsDescriptor: false
+        );
 
         // Associations do not rename the identity fields in MetaEd, so the DocumentIdentity portion is the same
         if (resourceSchema.SubclassType == "association")

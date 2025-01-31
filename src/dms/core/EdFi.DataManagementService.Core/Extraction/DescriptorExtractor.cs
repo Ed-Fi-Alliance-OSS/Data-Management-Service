@@ -26,7 +26,7 @@ internal static class DescriptorExtractor
         ILogger logger
     )
     {
-        logger.LogDebug("DescriptorExtractor.Extract");
+        logger.LogDebug("DescriptorExtractor.ExtractDescriptors");
 
         List<DescriptorReference> result = [];
 
@@ -53,14 +53,19 @@ internal static class DescriptorExtractor
                 continue;
             }
 
-            BaseResourceInfo resourceInfo =
-                new(documentPath.ProjectName, documentPath.ResourceName, documentPath.IsDescriptor);
+            BaseResourceInfo resourceInfo = new(
+                documentPath.ProjectName,
+                documentPath.ResourceName,
+                documentPath.IsDescriptor
+            );
 
             foreach (JsonPathAndValue descriptorUri in descriptorUrisWithPath)
             {
                 // One descriptor reference per Uri
-                DocumentIdentityElement documentIdentityElement =
-                    new(DocumentIdentity.DescriptorIdentityJsonPath, descriptorUri.value);
+                DocumentIdentityElement documentIdentityElement = new(
+                    DocumentIdentity.DescriptorIdentityJsonPath,
+                    descriptorUri.value
+                );
                 DocumentIdentity documentIdentity = new([documentIdentityElement]);
                 result.Add(
                     new(

@@ -182,6 +182,18 @@
                         "resourceName": {
                             "type": "string"
                         },
+                        "securityElements": {
+                            "type": "object",
+                            "properties": {
+                                "Namespace" : {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/JsonPath"
+                                    }
+                                }
+                            },
+                            "required": [ "Namespace" ]
+                        },
                         "subclassType": {
                             "type": "string"
                         },

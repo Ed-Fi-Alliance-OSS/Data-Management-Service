@@ -75,6 +75,7 @@ internal class ApiService(
         steps.AddRange(
             [
                 new ValidateDocumentMiddleware(_logger, _documentValidator),
+                new ExtractDocumentSecurityElementsMiddleware(_logger),
                 new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
                 new BuildResourceInfoMiddleware(
                     _logger,
@@ -169,6 +170,7 @@ internal class ApiService(
         steps.AddRange(
             [
                 new ValidateDocumentMiddleware(_logger, _documentValidator),
+                new ExtractDocumentSecurityElementsMiddleware(_logger),
                 new ValidateMatchingDocumentUuidsMiddleware(_logger, matchingDocumentUuidsValidator),
                 new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
                 new BuildResourceInfoMiddleware(
