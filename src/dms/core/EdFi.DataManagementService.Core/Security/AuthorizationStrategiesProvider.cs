@@ -12,7 +12,7 @@ public interface IAuthorizationStrategiesProvider
     IList<string> GetAuthorizationStrategies(ResourceClaim resourceClaim, string actionName);
 }
 
-public class AuthorizationStrategiesProvider : IAuthorizationStrategiesProvider
+public class AuthorizationStrategiesProvider() : IAuthorizationStrategiesProvider
 {
     /// <summary>
     /// Gets list of authorization strategies for the resource claim action
@@ -23,8 +23,6 @@ public class AuthorizationStrategiesProvider : IAuthorizationStrategiesProvider
     public IList<string> GetAuthorizationStrategies(ResourceClaim resourceClaim, string actionName)
     {
         var authorizationStrategyList = new List<string>();
-
-        // Retrieve AuthorizationStrategy from AuthorizationStrategyOverrides
         var authStrategyOverrides = resourceClaim.AuthorizationStrategyOverridesForCrud;
         var defaultAuthStrategies = resourceClaim.DefaultAuthorizationStrategiesForCrud;
         if (authStrategyOverrides != null)
@@ -44,7 +42,6 @@ public class AuthorizationStrategiesProvider : IAuthorizationStrategiesProvider
                     .ToList();
             }
         }
-        // If none available on AuthorizationStrategyOverrides, then check DefaultAuthorizationStrategiesForCrud
         if (authorizationStrategyList.Count == 0 && defaultAuthStrategies != null)
         {
             var defaultAuthStrategiesForAction = defaultAuthStrategies.SingleOrDefault(x =>

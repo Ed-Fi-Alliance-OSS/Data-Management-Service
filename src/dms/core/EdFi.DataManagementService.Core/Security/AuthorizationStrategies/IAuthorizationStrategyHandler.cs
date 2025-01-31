@@ -12,5 +12,8 @@ namespace EdFi.DataManagementService.Core.Security.AuthorizationStrategies;
 /// </summary>
 public interface IAuthorizationStrategyHandler
 {
-    AuthorizationResult IsRequestAuthorized(SecurityElements securityElements, ApiClientDetails details);
+    AuthorizationResult IsRequestAuthorized(
+        DocumentSecurityElements securityElements,
+        ApiClientDetails details
+    );
 }

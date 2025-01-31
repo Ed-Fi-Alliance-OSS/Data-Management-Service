@@ -38,6 +38,8 @@ internal class ApiService(
     IEqualityConstraintValidator _equalityConstraintValidator,
     ILogger<ApiService> _logger,
     IOptions<AppSettings> _appSettings,
+    IAuthorizationStrategiesProvider _authorizationStrategiesProvider,
+    IAuthorizationStrategyHandlerProvider _authorizationStrategyHandlerProvider,
     [FromKeyedServices("backendResiliencePipeline")] ResiliencePipeline _resiliencePipeline
 ) : IApiService
 {
@@ -84,7 +86,12 @@ internal class ApiService(
                 new ExtractDocumentInfoMiddleware(_logger),
                 new DisallowDuplicateReferencesMiddleware(_logger),
                 new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
-                new ResourceAuthorizationMiddleware(_securityMetadataService, _logger),
+                new ResourceAuthorizationMiddleware(
+                    _securityMetadataService,
+                    _authorizationStrategiesProvider,
+                    _authorizationStrategyHandlerProvider,
+                    _logger
+                ),
                 new UpsertHandler(_documentStoreRepository, _logger, _resiliencePipeline, _apiSchemaProvider),
             ]
         );
@@ -108,7 +115,12 @@ internal class ApiService(
                         _logger,
                         _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                     ),
-                    new ResourceAuthorizationMiddleware(_securityMetadataService, _logger),
+                    new ResourceAuthorizationMiddleware(
+                        _securityMetadataService,
+                        _authorizationStrategiesProvider,
+                        _authorizationStrategyHandlerProvider,
+                        _logger
+                    ),
                     new GetByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline),
                 ]
             )
@@ -131,7 +143,12 @@ internal class ApiService(
                         _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                     ),
                     new ValidateQueryMiddleware(_logger, _appSettings.Value.MaximumPageSize),
-                    new ResourceAuthorizationMiddleware(_securityMetadataService, _logger),
+                    new ResourceAuthorizationMiddleware(
+                        _securityMetadataService,
+                        _authorizationStrategiesProvider,
+                        _authorizationStrategyHandlerProvider,
+                        _logger
+                    ),
                     new QueryRequestHandler(_queryHandler, _logger, _resiliencePipeline),
                 ]
             )
@@ -180,7 +197,12 @@ internal class ApiService(
                 new ExtractDocumentInfoMiddleware(_logger),
                 new DisallowDuplicateReferencesMiddleware(_logger),
                 new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
-                new ResourceAuthorizationMiddleware(_securityMetadataService, _logger),
+                new ResourceAuthorizationMiddleware(
+                    _securityMetadataService,
+                    _authorizationStrategiesProvider,
+                    _authorizationStrategyHandlerProvider,
+                    _logger
+                ),
                 new UpdateByIdHandler(
                     _documentStoreRepository,
                     _logger,
@@ -208,7 +230,12 @@ internal class ApiService(
                         _logger,
                         _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                     ),
-                    new ResourceAuthorizationMiddleware(_securityMetadataService, _logger),
+                    new ResourceAuthorizationMiddleware(
+                        _securityMetadataService,
+                        _authorizationStrategiesProvider,
+                        _authorizationStrategyHandlerProvider,
+                        _logger
+                    ),
                     new DeleteByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline),
                 ]
             )

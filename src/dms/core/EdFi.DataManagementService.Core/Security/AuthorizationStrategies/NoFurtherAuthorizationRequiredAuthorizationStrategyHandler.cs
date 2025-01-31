@@ -16,7 +16,7 @@ public class NoFurtherAuthorizationRequiredAuthorizationStrategyHandler : IAutho
     private const string AuthorizationStrategyName = "NoFurtherAuthorizationRequired";
 
     public AuthorizationResult IsRequestAuthorized(
-        SecurityElements securityElements,
+        DocumentSecurityElements securityElements,
         ApiClientDetails details
     )
     {

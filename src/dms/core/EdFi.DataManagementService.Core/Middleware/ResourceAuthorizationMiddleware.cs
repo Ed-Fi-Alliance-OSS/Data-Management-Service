@@ -13,7 +13,6 @@ using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.Model;
 using Microsoft.Extensions.Logging;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
@@ -152,8 +151,7 @@ internal class ResourceAuthorizationMiddleware(
                         errors:
                         [
                             $"No authorization strategies were defined for the requested action '{actionName}' against resource ['{resourceClaim.Name}'] matched by the caller's claim '{claimSetName}'.",
-                        ],
-                        typeExtension: "access-denied:action"
+                        ]
                     ),
                     Headers: [],
                     ContentType: "application/problem+json"
@@ -175,9 +173,8 @@ internal class ResourceAuthorizationMiddleware(
                             traceId: context.FrontendRequest.TraceId,
                             errors:
                             [
-                                $"Could not find authorization strategy implementation for the following strategy: {authorizationStrategy}'.",
-                            ],
-                            typeExtension: "access-denied:action"
+                                $"Could not find authorization strategy implementation for the following strategy: '{authorizationStrategy}'.",
+                            ]
                         ),
                         Headers: [],
                         ContentType: "application/problem+json"
@@ -186,20 +183,22 @@ internal class ResourceAuthorizationMiddleware(
                 }
 
                 var authorizationResult = authStrategyHandler.IsRequestAuthorized(
-                    new Security.AuthorizationStrategies.SecurityElements([], [], [], [], []),
+                    context.DocumentSecurityElements,
                     apiClientDetails
                 );
                 authResultsAcrossAuthStrategies.Add(authorizationResult);
             }
             if (!authResultsAcrossAuthStrategies.TrueForAll(x => x.IsAuthorized))
             {
-                string[] errors = authResultsAcrossAuthStrategies.Select(x => x.ErrorMessage).ToArray();
+                string[] errors = authResultsAcrossAuthStrategies
+                    .Where(x => !string.IsNullOrEmpty(x.ErrorMessage))
+                    .Select(x => x.ErrorMessage)
+                    .ToArray();
                 context.FrontendResponse = new FrontendResponse(
                     StatusCode: (int)HttpStatusCode.Forbidden,
                     Body: FailureResponse.ForForbidden(
                         traceId: context.FrontendRequest.TraceId,
-                        errors: errors,
-                        typeExtension: "access-denied:action"
+                        errors: errors
                     ),
                     Headers: [],
                     ContentType: "application/problem+json"
