@@ -181,6 +181,11 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
     });
 
     /// <summary>
+    /// An ordered list of the JsonPaths that are of type boolean, for use in type coercion
+    /// </summary>
+    public IEnumerable<JsonPath> NumericJsonPaths => _numericJsonPaths.Value;
+
+    /// <summary>
     /// An ordered list of the JsonPaths that are of type dateTime, for use in type coercion
     /// </summary>
     public IEnumerable<JsonPath> DateTimeJsonPaths => _dateTimeJsonPaths.Value;
@@ -195,11 +200,6 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
                 "Expected dateTimeJsonPaths to be on ResourceSchema, invalid ApiSchema"
             );
     });
-
-    /// <summary>
-    /// An ordered list of the JsonPaths that are of type boolean, for use in type coercion
-    /// </summary>
-    public IEnumerable<JsonPath> NumericJsonPaths => _numericJsonPaths.Value;
 
     private readonly Lazy<IEnumerable<DocumentPath>> _documentPaths = new(() =>
     {
@@ -325,4 +325,21 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
     /// </summary>
     public JsonPath SuperclassIdentityJsonPath =>
         new(_resourceSchemaNode.SelectNodeValue<string>("superclassIdentityJsonPath"));
+
+    private readonly Lazy<IEnumerable<JsonPath>> _namespaceSecurityElementPaths = new(() =>
+    {
+        return _resourceSchemaNode["securityElements"]
+                ?["Namespace"]?.AsArray()
+                .GetValues<string>()
+                .Select(x => new JsonPath(x))
+            ?? throw new InvalidOperationException(
+                "Expected securityElements.Namespace to be on ResourceSchema, invalid ApiSchema"
+            );
+    });
+
+    /// <summary>
+    /// A list of the JsonPaths that are namespace security elements, for authorization.
+    /// Note these can be array paths.
+    /// </summary>
+    public IEnumerable<JsonPath> NamespaceSecurityElementPaths => _namespaceSecurityElementPaths.Value;
 }

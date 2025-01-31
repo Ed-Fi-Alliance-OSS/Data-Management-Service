@@ -134,6 +134,7 @@ public class ApiSchemaBuilder
             ["jsonSchemaForInsert"] = new JsonObject(),
             ["resourceName"] = resourceName,
             ["queryFieldMapping"] = new JsonObject(),
+            ["securityElements"] = new JsonObject { ["Namespace"] = new JsonArray() },
         };
 
         string endpointName = ToEndpointName(resourceName);
@@ -193,7 +194,7 @@ public class ApiSchemaBuilder
     }
 
     /// <summary>
-    /// Adds an booleanJsonPaths section to a resource
+    /// Adds a booleanJsonPaths section to a resource
     /// </summary>
     public ApiSchemaBuilder WithBooleanJsonPaths(string[] booleanJsonPaths)
     {
@@ -214,7 +215,7 @@ public class ApiSchemaBuilder
     }
 
     /// <summary>
-    /// Adds an numericJsonPaths section to a resource
+    /// Adds a numericJsonPaths section to a resource
     /// </summary>
     public ApiSchemaBuilder WithNumericJsonPaths(string[] numericJsonPaths)
     {
@@ -229,6 +230,27 @@ public class ApiSchemaBuilder
 
         _currentResourceNode["numericJsonPaths"] = new JsonArray(
             numericJsonPaths.Select(x => JsonValue.Create(x)).ToArray()
+        );
+
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a NamespaceSecurityElements section to a resource
+    /// </summary>
+    public ApiSchemaBuilder WithNamespaceSecurityElements(string[] jsonPaths)
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentResourceNode["securityElements"]!["Namespace"] = new JsonArray(
+            jsonPaths.Select(x => JsonValue.Create(x)).ToArray()
         );
 
         return this;

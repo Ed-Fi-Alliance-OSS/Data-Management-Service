@@ -178,7 +178,19 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                 await connection.ExecuteAsync(sql, namespacePrefixes);
                 await transaction.CommitAsync();
 
-                return new VendorUpdateResult.Success();
+                var apiClientSql = """
+                    SELECT c.clientUuid
+                    FROM dmscs.apiclient c
+                    	INNER JOIN dmscs.application a ON a.id = c.applicationId
+                    	INNER JOIN dmscs.vendor v on v.id = a.vendorid
+                    WHERE v.id = @VendorId
+                    """;
+
+                var apiClientUuids = await connection.QueryAsync<Guid>(
+                    apiClientSql,
+                    param: new { VendorId = command.Id }
+                );
+                return new VendorUpdateResult.Success(apiClientUuids.ToList());
             }
             catch (Exception ex)
             {

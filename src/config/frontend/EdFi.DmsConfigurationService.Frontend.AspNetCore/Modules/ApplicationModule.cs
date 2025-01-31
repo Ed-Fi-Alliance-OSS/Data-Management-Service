@@ -35,6 +35,7 @@ public class ApplicationModule : IEndpointModule
         ApplicationInsertCommand.Validator validator,
         HttpContext httpContext,
         IApplicationRepository applicationRepository,
+        IVendorRepository vendorRepository,
         IClientRepository clientRepository,
         IOptions<IdentitySettings> identitySettings,
         ILogger<ApplicationModule> logger
@@ -49,12 +50,25 @@ public class ApplicationModule : IEndpointModule
             32
         );
 
+        string namespacePrefixes;
+        switch (await vendorRepository.GetVendor(command.VendorId))
+        {
+            case VendorGetResult.Success success:
+                namespacePrefixes = success.VendorResponse.NamespacePrefixes;
+                break;
+            default:
+                throw new ValidationException(
+                    new[] { new ValidationFailure("VendorId", $"Reference 'VendorId' does not exist.") }
+                );
+        }
+
         var clientCreateResult = await clientRepository.CreateClientAsync(
             clientId,
             clientSecret,
             identitySettings.Value.ClientRole,
             command.ApplicationName,
-            command.ClaimSetName
+            command.ClaimSetName,
+            namespacePrefixes
         );
 
         switch (clientCreateResult)

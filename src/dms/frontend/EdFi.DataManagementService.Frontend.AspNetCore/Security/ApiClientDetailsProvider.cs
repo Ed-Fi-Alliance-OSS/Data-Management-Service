@@ -17,17 +17,26 @@ public class ApiClientDetailsProvider() : IApiClientDetailsProvider
 {
     public ApiClientDetails RetrieveApiClientDetailsFromToken(string jwtTokenHashCode, IList<Claim> claims)
     {
-        var requiredClaims = claims
-            .Where(c => c.Type == "scope" || c.Type == "jti")
+        string[] requiredClaimTypes = ["scope", "jti", "namespacePrefixes"];
+
+        var claimsDictionary = claims
+            .Where(c => requiredClaimTypes.Contains(c.Type))
             .ToDictionary(c => c.Type, c => c.Value);
-        var claimSetName = requiredClaims.TryGetValue("scope", out string? value) ? value : string.Empty;
-        var tokenId = GetTokenId(requiredClaims, jwtTokenHashCode);
-        var apiClientDetails = new ApiClientDetails(tokenId, claimSetName, [], []);
+        string claimSetName = claimsDictionary.GetValueOrDefault("scope", string.Empty);
+        string tokenId = GetTokenId(claimsDictionary, jwtTokenHashCode);
+        string[] namespacePrefixes = GetNamespacePrefixes(claimsDictionary);
+        var apiClientDetails = new ApiClientDetails(tokenId, claimSetName, [], namespacePrefixes);
         return apiClientDetails;
     }
 
     private static string GetTokenId(Dictionary<string, string> claims, string jwtTokenHashCode)
     {
-        return claims.TryGetValue("jti", out string? value) ? value : jwtTokenHashCode;
+        return claims.GetValueOrDefault("jti", jwtTokenHashCode);
+    }
+
+    private static string[] GetNamespacePrefixes(Dictionary<string, string> claims)
+    {
+        string namespacePrefixesValue = claims.GetValueOrDefault("namespacePrefixes", string.Empty);
+        return namespacePrefixesValue.Split(' ', StringSplitOptions.RemoveEmptyEntries);
     }
 }

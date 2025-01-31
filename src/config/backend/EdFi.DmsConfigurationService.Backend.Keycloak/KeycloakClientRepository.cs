@@ -31,7 +31,8 @@ public class KeycloakClientRepository(
         string clientSecret,
         string role,
         string displayName,
-        string scope
+        string scope,
+        string namespacePrefixes
     )
     {
         try
@@ -44,7 +45,7 @@ public class KeycloakClientRepository(
                 Name = displayName,
                 ServiceAccountsEnabled = true,
                 DefaultClientScopes = [scope],
-                ProtocolMappers = ConfigServiceProtocolMapper(),
+                ProtocolMappers = ConfigServiceProtocolMapper(namespacePrefixes),
             };
 
             // Read role from the realm
@@ -105,28 +106,53 @@ public class KeycloakClientRepository(
             logger.LogError(ex, "Create client failure");
             return new ClientCreateResult.FailureUnknown(ex.Message);
         }
+    }
 
-        List<ClientProtocolMapper> ConfigServiceProtocolMapper()
+    public async Task<ClientUpdateResult> UpdateClientNamespaceClaimAsync(
+        string clientUuid,
+        string namespacePrefixes
+    )
+    {
+        try
         {
-            return
-            [
-                new ClientProtocolMapper
+            var client = await _keycloakClient.GetClientAsync(_realm, clientUuid);
+            if (client != null)
+            {
+                // Delete the existing client
+                await _keycloakClient.DeleteClientAsync(_realm, clientUuid);
+                Client newClient = new()
                 {
-                    Name = "Configuration service role mapper",
-                    Protocol = "openid-connect",
-                    ProtocolMapper = "oidc-usermodel-realm-role-mapper",
-                    Config = new Dictionary<string, string>
-                    {
-                        { "claim.name", keycloakContext.RoleClaimType },
-                        { "jsonType.label", "String" },
-                        { "user.attribute", "roles" },
-                        { "multivalued", "true" },
-                        { "id.token.claim", "true" },
-                        { "access.token.claim", "true" },
-                        { "userinfo.token.claim", "true" },
-                    },
-                },
-            ];
+                    ClientId = client.ClientId,
+                    Enabled = true,
+                    Secret = client.Secret,
+                    Name = client.Name,
+                    ServiceAccountsEnabled = true,
+                    DefaultClientScopes = client.DefaultClientScopes,
+                    ProtocolMappers = ConfigServiceProtocolMapper(namespacePrefixes),
+                };
+                // Re-create the client
+                string? newClientId = await _keycloakClient.CreateClientAndRetrieveClientIdAsync(
+                    _realm,
+                    newClient
+                );
+                if (!string.IsNullOrEmpty(newClientId))
+                {
+                    return new ClientUpdateResult.Success(Guid.Parse(newClientId));
+                }
+            }
+
+            logger.LogError("Update client failure");
+            return new ClientUpdateResult.FailureUnknown($"Error while updating the client: {clientUuid}");
+        }
+        catch (FlurlHttpException ex)
+        {
+            logger.LogError(ex, "Update client failure");
+            return new ClientUpdateResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Update client failure");
+            return new ClientUpdateResult.FailureUnknown(ex.Message);
         }
     }
 
@@ -296,5 +322,53 @@ public class KeycloakClientRepository(
             logger.LogError(ex, "Update client failure");
             return new ClientUpdateResult.FailureUnknown(ex.Message);
         }
+    }
+
+    private List<ClientProtocolMapper> ConfigServiceProtocolMapper(string namespacePrefixes)
+    {
+        List<ClientProtocolMapper> protocolMappers =
+        [
+            new()
+            {
+                Name = "Configuration service role mapper",
+                Protocol = "openid-connect",
+                ProtocolMapper = "oidc-usermodel-realm-role-mapper",
+                Config = new Dictionary<string, string>
+                {
+                    { "claim.name", keycloakContext.RoleClaimType },
+                    { "jsonType.label", "String" },
+                    { "user.attribute", "roles" },
+                    { "multivalued", "true" },
+                    { "id.token.claim", "true" },
+                    { "access.token.claim", "true" },
+                    { "userinfo.token.claim", "true" },
+                },
+            },
+        ];
+
+        if (namespacePrefixes != string.Empty)
+        {
+            protocolMappers.Add(
+                new()
+                {
+                    Name = "Namespace Prefixes",
+                    Protocol = "openid-connect",
+                    ProtocolMapper = "oidc-hardcoded-claim-mapper",
+                    Config = new Dictionary<string, string>
+                    {
+                        { "access.token.claim", "true" },
+                        { "claim.name", "namespacePrefixes" },
+                        { "claim.value", namespacePrefixes },
+                        { "id.token.claim", "true" },
+                        { "introspection.token.claim", "true" },
+                        { "jsonType.label", "String" },
+                        { "lightweight.claim", "false" },
+                        { "userinfo.token.claim", "true" },
+                    },
+                }
+            );
+        }
+
+        return protocolMappers;
     }
 }

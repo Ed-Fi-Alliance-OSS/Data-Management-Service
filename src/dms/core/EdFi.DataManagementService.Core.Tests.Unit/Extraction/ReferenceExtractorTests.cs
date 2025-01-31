@@ -7,7 +7,6 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
-using EdFi.DataManagementService.Core.Model;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -29,7 +28,7 @@ public class ExtractDocumentReferencesTests
                     "$.courseOfferingReference.schoolId",
                     "$.courseOfferingReference.schoolYear",
                     "$.courseOfferingReference.sessionName",
-                    "$.sectionIdentifier"
+                    "$.sectionIdentifier",
                 ]
             )
             .WithStartDocumentPathsMapping()
@@ -40,7 +39,7 @@ public class ExtractDocumentReferencesTests
                     new("$.localCourseCode", "$.courseOfferingReference.localCourseCode"),
                     new("$.schoolReference.schoolId", "$.courseOfferingReference.schoolId"),
                     new("$.sessionReference.schoolYear", "$.courseOfferingReference.schoolYear"),
-                    new("$.sessionReference.sessionName", "$.courseOfferingReference.sessionName")
+                    new("$.sessionReference.sessionName", "$.courseOfferingReference.sessionName"),
                 ]
             )
             .WithDocumentPathReference(

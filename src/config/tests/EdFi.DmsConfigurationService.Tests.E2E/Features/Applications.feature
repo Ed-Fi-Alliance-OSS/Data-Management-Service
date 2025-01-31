@@ -9,7 +9,7 @@ Feature: Applications endpoints
                         "company": "Test Vendor 0",
                         "contactName": "Test",
                         "contactEmailAddress": "test@gmail.com",
-                        "namespacePrefixes": "Test"
+                        "namespacePrefixes": "uri://ed-fi-e2e.org uri://ed-fi-e2e2.org"
                     }
                   """
 
@@ -324,7 +324,7 @@ Feature: Applications endpoints
                   }
                   """
 
-          Scenario: 15 Verify validation invalid claim set name with white space
+        Scenario: 15 Verify validation invalid claim set name with white space
              When a POST request is made to "/v2/applications" with
                   """
                   {
@@ -379,7 +379,7 @@ Feature: Applications endpoints
                   }
                   """
 
-         Scenario: 16 Ensure the location header has correct path when a path base is provided
+        Scenario: 16 Ensure the location header has correct path when a path base is provided
              When a POST request is made to "config/v2/applications" with
                   """
                   {
@@ -429,4 +429,28 @@ Feature: Applications endpoints
                       }
                   """
              Then it should respond with 204
-             Then token should have updated 'ClaimScenario03Update' scope
+             Then the token should have "ClaimScenario03Update" scope and "uri://ed-fi-e2e.org" namespacePrefix
+
+        Scenario: 18 Ensure clients can update the namespacePrefix claim
+             When a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Demo application",
+                   "claimSetName": "ClaimScenario03"
+                  }
+                  """
+             Then it should respond with 201
+             Then retrieve created key and secret
+             When a PUT request is made to "/v2/vendors/{vendorId}" with
+                  """
+                    {
+                        "id": {vendorId},
+                        "company": "Test Vendor 0",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": "uri://ed-fi-e2e.org uri://ed-fi-e2e2.org uri://new-namespace.org"
+                    }
+                  """
+             Then it should respond with 204
+             Then the token should have "ClaimScenario03" scope and "uri://new-namespace.org" namespacePrefix

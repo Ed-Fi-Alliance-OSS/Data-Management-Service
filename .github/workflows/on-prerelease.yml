@@ -38,7 +38,7 @@ jobs:
       dms-version: ${{ steps.versions.outputs.dms-v }}
 
     steps:
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
 
@@ -91,10 +91,10 @@ jobs:
     outputs:
       sbom-hash-code: ${{ steps.sbom-hash-code.outputs.sbom-hash-code }}
     steps:
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Get DMS Artifacts
-        uses: actions/download-artifact@6b208ae046db98c579e8a3aa621ab581ff575935 #v4.1.1
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
         with:
           name: ${{ env.DMS_PACKAGE_NAME }}-NuGet
 
@@ -205,10 +205,10 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Get DMS Artifact
-        uses: actions/download-artifact@6b208ae046db98c579e8a3aa621ab581ff575935 #4.1.1
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
         with:
           name: ${{ env.DMS_PACKAGE_NAME }}-NuGet
 
@@ -261,22 +261,22 @@ jobs:
           echo "VERSION=$SEMVERSION" >> $GITHUB_OUTPUT
 
       - name: Set up DMS Docker Buildx
-        uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226 # v3.0.0
+        uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
 
       - name: Log in to Docker Hub for DMS
-        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
           username: ${{ env.DOCKER_USERNAME }}
           password: ${{ env.DOCKER_HUB_TOKEN }}
 
       - name: Extract metadata (tags, labels) for Data Management Service image
         id: metadatamanagementservice
-        uses: docker/metadata-action@96383f45573cb7f253c731d3b3ab81c87ef81934 # v5.0.0
+        uses: docker/metadata-action@369eb591f429131d6889c46b94e711f089e6ca96 # v5.6.1
         with:
           images: ${{ env.IMAGE_NAME }}
 
       - name: Build and push DMS image
-        uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09  # v5.0.0
+        uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc  # v6.11.0
         with:
           context: "{{defaultContext}}:src/dms"
           cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:pre
@@ -300,7 +300,7 @@ jobs:
       dms-version: ${{ steps.versions.outputs.dms-v }}
 
     steps:
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
 
@@ -353,10 +353,10 @@ jobs:
     outputs:
       sbom-hash-code: ${{ steps.sbom-hash-code.outputs.sbom-hash-code }}
     steps:
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Get Config Artifacts
-        uses: actions/download-artifact@6b208ae046db98c579e8a3aa621ab581ff575935 #v4.1.1
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
         with:
           name: ${{ env.CS_PACKAGE_NAME }}-NuGet
 
@@ -467,10 +467,10 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Get Config Artifact
-        uses: actions/download-artifact@6b208ae046db98c579e8a3aa621ab581ff575935 #4.1.1
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
         with:
           name: ${{ env.CS_PACKAGE_NAME }}-NuGet
 
@@ -523,22 +523,22 @@ jobs:
           echo "VERSION=$SEMVERSION" >> $GITHUB_OUTPUT
 
       - name: Set up Config Docker Buildx
-        uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226 # v3.0.0
+        uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
 
       - name: Log in to Docker Hub for Config
-        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
           username: ${{ env.DOCKER_USERNAME }}
           password: ${{ env.DOCKER_HUB_TOKEN }}
 
       - name: Extract metadata (tags, labels) for Configuration Service image
         id: metadatamanagementservice
-        uses: docker/metadata-action@96383f45573cb7f253c731d3b3ab81c87ef81934 # v5.0.0
+        uses: docker/metadata-action@369eb591f429131d6889c46b94e711f089e6ca96 # v5.6.1
         with:
           images: ${{ env.CONFIG_IMAGE_NAME }}
 
       - name: Build and push Config image
-        uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09  # v5.0.0
+        uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6.11.0
         with:
           context: "{{defaultContext}}:src/config"
           cache-from: type=registry,ref=${{ env.CONFIG_IMAGE_NAME }}:pre

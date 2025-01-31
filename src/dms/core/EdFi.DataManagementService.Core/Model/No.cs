@@ -99,6 +99,11 @@ internal static class No
     );
 
     /// <summary>
+    /// The null object for DocumentSecurityElements
+    /// </summary>
+    public static readonly DocumentSecurityElements DocumentSecurityElements = new([]);
+
+    /// <summary>
     /// A constructor of a PipelineContext initialized with null objects
     /// </summary>
     public static PipelineContext PipelineContext(string traceId = "")

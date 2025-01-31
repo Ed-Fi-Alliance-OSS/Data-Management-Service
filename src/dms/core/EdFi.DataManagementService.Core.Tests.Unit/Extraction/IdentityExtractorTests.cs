@@ -34,7 +34,7 @@ public class ExtractDocumentIdentityTests
                         "$.courseOfferingReference.schoolId",
                         "$.courseOfferingReference.schoolYear",
                         "$.courseOfferingReference.sessionName",
-                        "$.sectionIdentifier"
+                        "$.sectionIdentifier",
                     ]
                 )
                 .WithStartDocumentPathsMapping()
@@ -45,7 +45,7 @@ public class ExtractDocumentIdentityTests
                         new("$.localCourseCode", "$.courseOfferingReference.localCourseCode"),
                         new("$.schoolReference.schoolId", "$.courseOfferingReference.schoolId"),
                         new("$.sessionReference.schoolYear", "$.courseOfferingReference.schoolYear"),
-                        new("$.sessionReference.sessionName", "$.courseOfferingReference.sessionName")
+                        new("$.sessionReference.sessionName", "$.courseOfferingReference.sessionName"),
                     ]
                 )
                 .WithEndDocumentPathsMapping()
