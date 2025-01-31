@@ -82,6 +82,7 @@ public class TokenEndpointModule : IEndpointModule
             );
         }
         httpContext.Response.StatusCode = (int)response.StatusCode;
+        httpContext.Response.ContentType = "application/json; charset=utf-8";
         await response.Content.CopyToAsync(httpContext.Response.Body);
     }
 }
