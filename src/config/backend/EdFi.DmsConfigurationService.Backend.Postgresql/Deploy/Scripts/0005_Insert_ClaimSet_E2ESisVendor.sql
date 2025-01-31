@@ -102,8 +102,8 @@ SELECT
                     'actionName', 'Read',
                     'authorizationStrategies', jsonb_build_array(
                         jsonb_build_object(
-                            'authStrategyId', 2,
-                            'authStrategyName', 'RelationshipsWithEdOrgsAndPeople',
+                            'authStrategyId', 1,
+                            'authStrategyName', 'NoFurtherAuthorizationRequired',
                             'isInheritedFromParent', false
                         )
                     )
@@ -113,8 +113,8 @@ SELECT
                     'actionName', 'Update',
                     'authorizationStrategies', jsonb_build_array(
                         jsonb_build_object(
-                            'authStrategyId', 2,
-                            'authStrategyName', 'RelationshipsWithEdOrgsAndPeople',
+                            'authStrategyId', 1,
+                            'authStrategyName', 'NoFurtherAuthorizationRequired',
                             'isInheritedFromParent', false
                         )
                     )
@@ -135,8 +135,8 @@ SELECT
                     'actionName', 'ReadChanges',
                     'authorizationStrategies', jsonb_build_array(
                         jsonb_build_object(
-                            'authStrategyId', 9,
-                            'authStrategyName', 'RelationshipsWithEdOrgsAndPeopleIncludingDeletes',
+                            'authStrategyId', 1,
+                            'authStrategyName', 'NoFurtherAuthorizationRequired',
                             'isInheritedFromParent', false
                         )
                     )
