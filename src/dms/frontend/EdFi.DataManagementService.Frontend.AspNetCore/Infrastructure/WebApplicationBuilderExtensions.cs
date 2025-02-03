@@ -136,7 +136,7 @@ public static class WebApplicationBuilderExtensions
             ConfigurationServiceTokenHandler
         >();
         webAppBuilder.Services.AddTransient<ISecurityMetadataProvider, SecurityMetadataProvider>();
-        webAppBuilder.Services.AddTransient<ISecurityMetadataService, SecurityMetadataService>();
+        webAppBuilder.Services.AddTransient<IClaimSetCacheService, ClaimSetCacheService>();
 
         // For Security(Keycloak)
         var settings = config.GetSection("IdentitySettings");

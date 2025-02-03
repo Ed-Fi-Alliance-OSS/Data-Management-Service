@@ -16,8 +16,13 @@ using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
+/// <summary>
+/// Authorizes request data based on the client's authorization information.
+/// </summary>
 internal class ResourceAuthorizationMiddleware(
-    ISecurityMetadataService _securityMetadataService,
+    IClaimSetCacheService _claimSetCacheService,
+    IAuthorizationStrategiesProvider _authorizationStrategiesProvider,
+    IAuthorizationValidatorProvider _authorizationStrategyHandlerProvider,
     ILogger _logger
 ) : IPipelineStep
 {
@@ -57,16 +62,16 @@ internal class ResourceAuthorizationMiddleware(
             _logger.LogInformation("Claim set name from token scope - {ClaimSetName}", claimSetName);
 
             _logger.LogInformation("Retrieving claim set list");
-            var claimsList = await _securityMetadataService.GetClaimSets();
+            IList<ClaimSet> claimsList = await _claimSetCacheService.GetClaimSets();
 
-            var claim = claimsList.SingleOrDefault(c =>
+            ClaimSet? claim = claimsList.SingleOrDefault(c =>
                 string.Equals(c.Name, claimSetName, StringComparison.InvariantCultureIgnoreCase)
             );
 
             if (claim == null)
             {
-                _logger.LogDebug(
-                    "ResourceAuthorizationMiddleware: No Claim matching Scope {Scope} - {TraceId}",
+                _logger.LogInformation(
+                    "ResourceAuthorizationMiddleware: No ClaimSet matching Scope {Scope} - {TraceId}",
                     claimSetName,
                     context.FrontendRequest.TraceId.Value
                 );
@@ -74,8 +79,19 @@ internal class ResourceAuthorizationMiddleware(
                 return;
             }
 
-            Debug.Assert(context.PathComponents != null, "context.PathComponents != null");
-            ResourceClaim? resourceClaim = (claim.ResourceClaims ?? []).SingleOrDefault(r =>
+            Debug.Assert(
+                context.PathComponents != null,
+                "ResourceAuthorizationMiddleware: There should be PathComponents"
+            );
+
+            if (claim.ResourceClaims == null)
+            {
+                _logger.LogDebug("ResourceAuthorizationMiddleware: No ResourceClaims found");
+                RespondAuthorizationError();
+                return;
+            }
+
+            ResourceClaim? resourceClaim = claim.ResourceClaims.SingleOrDefault(r =>
                 string.Equals(
                     r.Name,
                     context.PathComponents.EndpointName.Value,
@@ -94,7 +110,7 @@ internal class ResourceAuthorizationMiddleware(
                 return;
             }
 
-            var resourceActions = resourceClaim.Actions;
+            List<ResourceClaimAction>? resourceActions = resourceClaim.Actions;
             if (resourceActions == null)
             {
                 _logger.LogDebug(
@@ -136,6 +152,76 @@ internal class ResourceAuthorizationMiddleware(
                 return;
             }
 
+            IList<string> resourceActionAuthStrategies =
+                _authorizationStrategiesProvider.GetAuthorizationStrategies(resourceClaim, actionName);
+
+            if (resourceActionAuthStrategies.Count == 0)
+            {
+                context.FrontendResponse = new FrontendResponse(
+                    StatusCode: (int)HttpStatusCode.Forbidden,
+                    Body: FailureResponse.ForForbidden(
+                        traceId: context.FrontendRequest.TraceId,
+                        errors:
+                        [
+                            $"No authorization strategies were defined for the requested action '{actionName}' against resource ['{resourceClaim.Name}'] matched by the caller's claim '{claimSetName}'.",
+                        ]
+                    ),
+                    Headers: [],
+                    ContentType: "application/problem+json"
+                );
+                return;
+            }
+
+            List<AuthorizationResult> authResultsAcrossAuthStrategies = [];
+
+            foreach (string authorizationStrategy in resourceActionAuthStrategies)
+            {
+                var authStrategyHandler = _authorizationStrategyHandlerProvider.GetByName(
+                    authorizationStrategy
+                );
+                if (authStrategyHandler == null)
+                {
+                    context.FrontendResponse = new FrontendResponse(
+                        StatusCode: (int)HttpStatusCode.Forbidden,
+                        Body: FailureResponse.ForForbidden(
+                            traceId: context.FrontendRequest.TraceId,
+                            errors:
+                            [
+                                $"Could not find authorization strategy implementation for the following strategy: '{authorizationStrategy}'.",
+                            ]
+                        ),
+                        Headers: [],
+                        ContentType: "application/problem+json"
+                    );
+                    return;
+                }
+
+                AuthorizationResult authorizationResult = authStrategyHandler.ValidateAuthorization(
+                    context.DocumentSecurityElements,
+                    apiClientDetails
+                );
+                authResultsAcrossAuthStrategies.Add(authorizationResult);
+            }
+
+            if (!authResultsAcrossAuthStrategies.TrueForAll(x => x.IsAuthorized))
+            {
+                string[] errors = authResultsAcrossAuthStrategies
+                    .Where(x => !string.IsNullOrEmpty(x.ErrorMessage))
+                    .Select(x => x.ErrorMessage)
+                    .ToArray();
+                context.FrontendResponse = new FrontendResponse(
+                    StatusCode: (int)HttpStatusCode.Forbidden,
+                    Body: FailureResponse.ForForbidden(
+                        traceId: context.FrontendRequest.TraceId,
+                        errors: errors
+                    ),
+                    Headers: [],
+                    ContentType: "application/problem+json"
+                );
+                return;
+            }
+
+            // passes authorization
             await next();
 
             void RespondAuthorizationError()

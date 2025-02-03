@@ -32,7 +32,7 @@ app.UseMiddleware<LoggingMiddleware>();
 if (!ReportInvalidConfiguration(app))
 {
     InitializeDatabase(app);
-    await RetrieveAndCacheSecurityMetaData(app);
+    await RetrieveAndCacheClaimSets(app);
 }
 
 app.UseRouting();
@@ -101,12 +101,12 @@ void InitializeDatabase(WebApplication app)
         }
     }
 }
-async Task RetrieveAndCacheSecurityMetaData(WebApplication app)
+async Task RetrieveAndCacheClaimSets(WebApplication app)
 {
-    app.Logger.LogInformation("Retrieving and caching required security metadata");
+    app.Logger.LogInformation("Retrieving and caching required claim sets");
     try
     {
-        await app.Services.GetRequiredService<ISecurityMetadataService>().GetClaimSets();
+        await app.Services.GetRequiredService<IClaimSetCacheService>().GetClaimSets();
     }
     catch (Exception ex)
     {
@@ -115,7 +115,7 @@ async Task RetrieveAndCacheSecurityMetaData(WebApplication app)
         // DMS from loading. This approach is intended to optimize the process
         // of loading claims set list from Configuration service without
         // impacting the application's availability.
-        app.Logger.LogCritical(ex, "Retrieving and caching required security metadata failure");
+        app.Logger.LogCritical(ex, "Retrieving and caching required claim sets failure");
     }
 }
 

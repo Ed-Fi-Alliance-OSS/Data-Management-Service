@@ -7,6 +7,8 @@ using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Security.AuthorizationValidation;
 using EdFi.DataManagementService.Core.Validation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -40,6 +42,9 @@ public static class DmsCoreServiceExtensions
             .AddTransient<IDocumentValidator, DocumentValidator>()
             .AddTransient<IMatchingDocumentUuidsValidator, MatchingDocumentUuidsValidator>()
             .AddTransient<IEqualityConstraintValidator, EqualityConstraintValidator>()
+            .AddTransient<IAuthorizationStrategiesProvider, AuthorizationStrategiesProvider>()
+            .AddSingleton<IAuthorizationValidatorProvider, NamedAuthorizationValidatorProvider>()
+            .AddTransient<NoFurtherAuthorizationRequiredValidator>()
             .AddResiliencePipeline("backendResiliencePipeline", backendResiliencePipeline);
 
         return services;

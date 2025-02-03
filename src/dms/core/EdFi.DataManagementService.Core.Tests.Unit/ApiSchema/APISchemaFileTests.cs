@@ -13,6 +13,7 @@ using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Validation;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
@@ -35,19 +36,23 @@ public class APISchemaFileTests
     {
         internal static ApiService BuildCoreFacade(IApiSchemaProvider apiSchemaProvider)
         {
+            var serviceProvider = new ServiceCollection().BuildServiceProvider();
+
             return new ApiService(
                 apiSchemaProvider,
                 new ApiSchemaValidator(
                     new ApiSchemaSchemaProvider(NullLogger<ApiSchemaSchemaProvider>.Instance)
                 ),
                 new SuccessDocumentStoreRepository(NullLogger<SuccessDocumentStoreRepository>.Instance),
-                new NoClaimsSecurityMetadataService(NullLogger.Instance),
+                new NoClaimsClaimSetCacheService(NullLogger.Instance),
                 new DocumentValidator(),
                 new SuccessDocumentStoreRepository(NullLogger<SuccessDocumentStoreRepository>.Instance),
                 new MatchingDocumentUuidsValidator(),
                 new EqualityConstraintValidator(),
                 NullLogger<ApiService>.Instance,
                 Options.Create(new AppSettings { AllowIdentityUpdateOverrides = "" }),
+                new AuthorizationStrategiesProvider(),
+                new NamedAuthorizationValidatorProvider(serviceProvider),
                 ResiliencePipeline.Empty
             );
         }
