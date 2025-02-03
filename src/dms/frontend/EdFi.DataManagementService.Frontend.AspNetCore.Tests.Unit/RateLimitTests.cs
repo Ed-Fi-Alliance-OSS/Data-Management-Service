@@ -21,8 +21,8 @@ public class RateLimitTests
     public async Task TestRateLimit()
     {
         // Arrange
-        var securityMetadataService = A.Fake<ISecurityMetadataService>();
-        A.CallTo(() => securityMetadataService.GetClaimSets()).Returns([]);
+        var claimSetCacheService = A.Fake<IClaimSetCacheService>();
+        A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             // This environment has an extreme rate limit
@@ -30,7 +30,7 @@ public class RateLimitTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((x) => securityMetadataService);
+                    collection.AddTransient((x) => claimSetCacheService);
                 }
             );
         });

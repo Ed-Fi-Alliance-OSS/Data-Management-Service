@@ -15,7 +15,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Security;
 public class NamedAuthorizationStrategyHandlerProviderTests
 {
     [TestFixture]
-    public class Given_Matching_AuthorizationStrategy_Handler : SecurityMetadataServiceTests
+    public class Given_Matching_AuthorizationStrategy_Handler : ClaimSetCacheServiceTests
     {
         private NamedAuthorizationStrategyHandlerProvider? handlerProvider;
         private ServiceProvider? serviceProvider;
@@ -49,7 +49,7 @@ public class NamedAuthorizationStrategyHandlerProviderTests
     }
 
     [TestFixture]
-    public class Given_Not_Matching_AuthorizationStrategy_Handler : SecurityMetadataServiceTests
+    public class Given_Not_Matching_AuthorizationStrategy_Handler : ClaimSetCacheServiceTests
     {
         private NamedAuthorizationStrategyHandlerProvider? handlerProvider;
         private ServiceProvider? serviceProvider;

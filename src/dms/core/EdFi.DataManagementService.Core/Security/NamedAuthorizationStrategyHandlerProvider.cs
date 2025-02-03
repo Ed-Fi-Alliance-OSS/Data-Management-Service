@@ -25,10 +25,10 @@ public class NamedAuthorizationStrategyHandlerProvider : IAuthorizationStrategyH
     public NamedAuthorizationStrategyHandlerProvider(IServiceProvider serviceProvider)
     {
         _serviceProvider = serviceProvider;
-        RegisterAuthStrategyHandlers();
+        RegisterAuthorizationStrategyHandlers();
     }
 
-    private void RegisterAuthStrategyHandlers()
+    private void RegisterAuthorizationStrategyHandlers()
     {
         var serviceType = typeof(IAuthorizationStrategyHandler);
         var types = Assembly

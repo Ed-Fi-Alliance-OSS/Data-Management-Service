@@ -22,32 +22,35 @@ public class AuthorizationStrategiesProvider() : IAuthorizationStrategiesProvide
     /// <returns></returns>
     public IList<string> GetAuthorizationStrategies(ResourceClaim resourceClaim, string actionName)
     {
-        var authorizationStrategyList = new List<string>();
-        var authStrategyOverrides = resourceClaim.AuthorizationStrategyOverridesForCrud;
-        var defaultAuthStrategies = resourceClaim.DefaultAuthorizationStrategiesForCrud;
-        if (authStrategyOverrides != null)
-        {
-            var authStrategiesOverridesForAction = authStrategyOverrides.SingleOrDefault(x =>
+        List<string> authorizationStrategyList = [];
+        List<ResourceClaimActionAuthStrategies> authStrategyOverrides =
+            resourceClaim.AuthorizationStrategyOverrides;
+        List<ResourceClaimActionAuthStrategies> defaultAuthStrategies =
+            resourceClaim.DefaultAuthorizationStrategies;
+
+        ResourceClaimActionAuthStrategies? authStrategiesOverridesForAction =
+            authStrategyOverrides.SingleOrDefault(x =>
                 x != null
                 && string.Equals(x.ActionName, actionName, StringComparison.InvariantCultureIgnoreCase)
             );
 
-            if (
-                authStrategiesOverridesForAction != null
-                && authStrategiesOverridesForAction.AuthorizationStrategies != null
-            )
-            {
-                authorizationStrategyList = authStrategiesOverridesForAction
-                    .AuthorizationStrategies.Select(x => x.AuthStrategyName)
-                    .ToList();
-            }
-        }
-        if (authorizationStrategyList.Count == 0 && defaultAuthStrategies != null)
+        if (
+            authStrategiesOverridesForAction != null
+            && authStrategiesOverridesForAction.AuthorizationStrategies != null
+        )
         {
-            var defaultAuthStrategiesForAction = defaultAuthStrategies.SingleOrDefault(x =>
-                x != null
-                && string.Equals(x.ActionName, actionName, StringComparison.InvariantCultureIgnoreCase)
-            );
+            authorizationStrategyList = authStrategiesOverridesForAction
+                .AuthorizationStrategies.Select(x => x.AuthStrategyName)
+                .ToList();
+        }
+
+        if (authorizationStrategyList.Count == 0)
+        {
+            ResourceClaimActionAuthStrategies? defaultAuthStrategiesForAction =
+                defaultAuthStrategies.SingleOrDefault(x =>
+                    x != null
+                    && string.Equals(x.ActionName, actionName, StringComparison.InvariantCultureIgnoreCase)
+                );
 
             if (
                 defaultAuthStrategiesForAction != null

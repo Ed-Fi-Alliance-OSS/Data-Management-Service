@@ -30,8 +30,8 @@ public class ResourceAuthorizationMiddlewareTests
     internal static IPipelineStep Middleware()
     {
         var expectedAuthStrategy = "NoFurtherAuthorizationRequired";
-        var securityMetadataService = A.Fake<ISecurityMetadataService>();
-        A.CallTo(() => securityMetadataService.GetClaimSets())
+        var claimSetCacheService = A.Fake<IClaimSetCacheService>();
+        A.CallTo(() => claimSetCacheService.GetClaimSets())
             .Returns(
                 [
                     new ClaimSet()
@@ -42,18 +42,17 @@ public class ResourceAuthorizationMiddlewareTests
                             new ResourceClaim()
                             {
                                 Name = "schools",
-                                Actions = [new() { Enabled = true, Name = "Create" }],
-                                DefaultAuthorizationStrategiesForCrud =
+                                Actions = [new(Enabled: true, Name: "Create")],
+                                DefaultAuthorizationStrategies =
                                 [
-                                    new ClaimSetResourceClaimActionAuthStrategies
-                                    {
-                                        ActionId = 1,
-                                        ActionName = "Create",
-                                        AuthorizationStrategies =
+                                    new(
+                                        ActionId: 1,
+                                        ActionName: "Create",
+                                        AuthorizationStrategies:
                                         [
                                             new() { AuthStrategyName = expectedAuthStrategy },
-                                        ],
-                                    },
+                                        ]
+                                    ),
                                 ],
                             },
                         ],
@@ -74,7 +73,7 @@ public class ResourceAuthorizationMiddlewareTests
         A.CallTo(() => authorizationStrategyHandler.GetByName(A<string>.Ignored))
             .Returns(new NoFurtherAuthorizationRequiredAuthorizationStrategyHandler());
         return new ResourceAuthorizationMiddleware(
-            securityMetadataService,
+            claimSetCacheService,
             authorizationStrategiesProvider,
             authorizationStrategyHandler,
             NullLogger.Instance
@@ -273,8 +272,8 @@ public class ResourceAuthorizationMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            var securityMetadataService = A.Fake<ISecurityMetadataService>();
-            A.CallTo(() => securityMetadataService.GetClaimSets())
+            var claimSetCacheService = A.Fake<IClaimSetCacheService>();
+            A.CallTo(() => claimSetCacheService.GetClaimSets())
                 .Returns(
                     [
                         new ClaimSet()
@@ -287,7 +286,7 @@ public class ResourceAuthorizationMiddlewareTests
             var authorizationStrategiesProvider = A.Fake<IAuthorizationStrategiesProvider>();
             var authorizationStrategyHandler = A.Fake<IAuthorizationStrategyHandlerProvider>();
             var authMiddleware = new ResourceAuthorizationMiddleware(
-                securityMetadataService,
+                claimSetCacheService,
                 authorizationStrategiesProvider,
                 authorizationStrategyHandler,
                 NullLogger.Instance
@@ -363,8 +362,8 @@ public class ResourceAuthorizationMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            var securityMetadataService = A.Fake<ISecurityMetadataService>();
-            A.CallTo(() => securityMetadataService.GetClaimSets())
+            var claimSetCacheService = A.Fake<IClaimSetCacheService>();
+            A.CallTo(() => claimSetCacheService.GetClaimSets())
                 .Returns(
                     [
                         new ClaimSet()
@@ -375,8 +374,8 @@ public class ResourceAuthorizationMiddlewareTests
                                 new ResourceClaim()
                                 {
                                     Name = "schools",
-                                    Actions = [new() { Enabled = true, Name = "Create" }],
-                                    DefaultAuthorizationStrategiesForCrud = [],
+                                    Actions = [new(Enabled: true, Name: "Create")],
+                                    DefaultAuthorizationStrategies = [],
                                 },
                             ],
                         },
@@ -393,7 +392,7 @@ public class ResourceAuthorizationMiddlewareTests
                 .Returns([]);
             var authorizationStrategyHandler = A.Fake<IAuthorizationStrategyHandlerProvider>();
             var authMiddleware = new ResourceAuthorizationMiddleware(
-                securityMetadataService,
+                claimSetCacheService,
                 authorizationStrategiesProvider,
                 authorizationStrategyHandler,
                 NullLogger.Instance
@@ -452,8 +451,8 @@ public class ResourceAuthorizationMiddlewareTests
         public async Task Setup()
         {
             var authStrategy = "NotValidAuthStrategy";
-            var securityMetadataService = A.Fake<ISecurityMetadataService>();
-            A.CallTo(() => securityMetadataService.GetClaimSets())
+            var claimSetCacheService = A.Fake<IClaimSetCacheService>();
+            A.CallTo(() => claimSetCacheService.GetClaimSets())
                 .Returns(
                     [
                         new ClaimSet()
@@ -464,7 +463,7 @@ public class ResourceAuthorizationMiddlewareTests
                                 new ResourceClaim()
                                 {
                                     Name = "schools",
-                                    Actions = [new() { Enabled = true, Name = "Create" }],
+                                    Actions = [new(Enabled: true, Name: "Create")],
                                 },
                             ],
                         },
@@ -482,7 +481,7 @@ public class ResourceAuthorizationMiddlewareTests
             var authorizationStrategyHandler = A.Fake<IAuthorizationStrategyHandlerProvider>();
             A.CallTo(() => authorizationStrategyHandler.GetByName(authStrategy)).Returns(null);
             var authMiddleware = new ResourceAuthorizationMiddleware(
-                securityMetadataService,
+                claimSetCacheService,
                 authorizationStrategiesProvider,
                 authorizationStrategyHandler,
                 NullLogger.Instance
@@ -541,8 +540,8 @@ public class ResourceAuthorizationMiddlewareTests
         public async Task Setup()
         {
             var authStrategy = "NoFurtherAuthorizationRequired";
-            var securityMetadataService = A.Fake<ISecurityMetadataService>();
-            A.CallTo(() => securityMetadataService.GetClaimSets())
+            var claimSetCacheService = A.Fake<IClaimSetCacheService>();
+            A.CallTo(() => claimSetCacheService.GetClaimSets())
                 .Returns(
                     [
                         new ClaimSet()
@@ -553,7 +552,7 @@ public class ResourceAuthorizationMiddlewareTests
                                 new ResourceClaim()
                                 {
                                     Name = "schools",
-                                    Actions = [new() { Enabled = true, Name = "Create" }],
+                                    Actions = [new(Enabled: true, Name: "Create")],
                                 },
                             ],
                         },
@@ -584,7 +583,7 @@ public class ResourceAuthorizationMiddlewareTests
                 .Returns(authorizationStrategyHandler);
 
             var authMiddleware = new ResourceAuthorizationMiddleware(
-                securityMetadataService,
+                claimSetCacheService,
                 authorizationStrategiesProvider,
                 authorizationStrategyHandlerProvider,
                 NullLogger.Instance

@@ -8,12 +8,12 @@ using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Security;
 
-public class NoClaimsSecurityMetadataService(ILogger _logger) : ISecurityMetadataService
+public class NoClaimsClaimSetCacheService(ILogger _logger) : IClaimSetCacheService
 {
     public async Task<IList<ClaimSet>> GetClaimSets()
     {
         _logger.LogWarning(
-            "GetClaimSets: Backend SecurityMetadataService has been configured to always report success."
+            "GetClaimSets: Backend ClaimSetCacheService has been configured to always report success."
         );
         return await Task.FromResult(new List<ClaimSet>());
     }

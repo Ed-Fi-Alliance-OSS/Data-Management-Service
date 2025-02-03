@@ -44,7 +44,7 @@ public class APISchemaFileTests
                     new ApiSchemaSchemaProvider(NullLogger<ApiSchemaSchemaProvider>.Instance)
                 ),
                 new SuccessDocumentStoreRepository(NullLogger<SuccessDocumentStoreRepository>.Instance),
-                new NoClaimsSecurityMetadataService(NullLogger.Instance),
+                new NoClaimsClaimSetCacheService(NullLogger.Instance),
                 new DocumentValidator(),
                 new SuccessDocumentStoreRepository(NullLogger<SuccessDocumentStoreRepository>.Instance),
                 new MatchingDocumentUuidsValidator(),

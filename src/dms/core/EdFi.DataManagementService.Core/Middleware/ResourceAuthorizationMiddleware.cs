@@ -17,7 +17,7 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DataManagementService.Core.Middleware;
 
 internal class ResourceAuthorizationMiddleware(
-    ISecurityMetadataService _securityMetadataService,
+    IClaimSetCacheService _claimSetCacheService,
     IAuthorizationStrategiesProvider _authorizationStrategiesProvider,
     IAuthorizationStrategyHandlerProvider _authorizationStrategyHandlerProvider,
     ILogger _logger
@@ -59,16 +59,16 @@ internal class ResourceAuthorizationMiddleware(
             _logger.LogInformation("Claim set name from token scope - {ClaimSetName}", claimSetName);
 
             _logger.LogInformation("Retrieving claim set list");
-            var claimsList = await _securityMetadataService.GetClaimSets();
+            IList<ClaimSet> claimsList = await _claimSetCacheService.GetClaimSets();
 
-            var claim = claimsList.SingleOrDefault(c =>
+            ClaimSet? claim = claimsList.SingleOrDefault(c =>
                 string.Equals(c.Name, claimSetName, StringComparison.InvariantCultureIgnoreCase)
             );
 
             if (claim == null)
             {
-                _logger.LogDebug(
-                    "ResourceAuthorizationMiddleware: No Claim matching Scope {Scope} - {TraceId}",
+                _logger.LogInformation(
+                    "ResourceAuthorizationMiddleware: No ClaimSet matching Scope {Scope} - {TraceId}",
                     claimSetName,
                     context.FrontendRequest.TraceId.Value
                 );
@@ -76,8 +76,19 @@ internal class ResourceAuthorizationMiddleware(
                 return;
             }
 
-            Debug.Assert(context.PathComponents != null, "context.PathComponents != null");
-            ResourceClaim? resourceClaim = (claim.ResourceClaims ?? []).SingleOrDefault(r =>
+            Debug.Assert(
+                context.PathComponents != null,
+                "ResourceAuthorizationMiddleware: There should be PathComponents"
+            );
+
+            if (claim.ResourceClaims == null)
+            {
+                _logger.LogDebug("ResourceAuthorizationMiddleware: No ResourceClaims found");
+                RespondAuthorizationError();
+                return;
+            }
+
+            ResourceClaim? resourceClaim = claim.ResourceClaims.SingleOrDefault(r =>
                 string.Equals(
                     r.Name,
                     context.PathComponents.EndpointName.Value,
@@ -96,7 +107,7 @@ internal class ResourceAuthorizationMiddleware(
                 return;
             }
 
-            var resourceActions = resourceClaim.Actions;
+            List<ResourceClaimAction>? resourceActions = resourceClaim.Actions;
             if (resourceActions == null)
             {
                 _logger.LogDebug(
@@ -138,10 +149,9 @@ internal class ResourceAuthorizationMiddleware(
                 return;
             }
 
-            var resourceActionAuthStrategies = _authorizationStrategiesProvider.GetAuthorizationStrategies(
-                resourceClaim,
-                actionName
-            );
+            IList<string> resourceActionAuthStrategies =
+                _authorizationStrategiesProvider.GetAuthorizationStrategies(resourceClaim, actionName);
+
             if (resourceActionAuthStrategies.Count == 0)
             {
                 context.FrontendResponse = new FrontendResponse(
@@ -159,8 +169,9 @@ internal class ResourceAuthorizationMiddleware(
                 return;
             }
 
-            var authResultsAcrossAuthStrategies = new List<AuthorizationResult>();
-            foreach (var authorizationStrategy in resourceActionAuthStrategies)
+            List<AuthorizationResult> authResultsAcrossAuthStrategies = [];
+
+            foreach (string authorizationStrategy in resourceActionAuthStrategies)
             {
                 var authStrategyHandler = _authorizationStrategyHandlerProvider.GetByName(
                     authorizationStrategy
@@ -182,12 +193,13 @@ internal class ResourceAuthorizationMiddleware(
                     return;
                 }
 
-                var authorizationResult = authStrategyHandler.IsRequestAuthorized(
+                AuthorizationResult authorizationResult = authStrategyHandler.IsRequestAuthorized(
                     context.DocumentSecurityElements,
                     apiClientDetails
                 );
                 authResultsAcrossAuthStrategies.Add(authorizationResult);
             }
+
             if (!authResultsAcrossAuthStrategies.TrueForAll(x => x.IsAuthorized))
             {
                 string[] errors = authResultsAcrossAuthStrategies
@@ -206,6 +218,7 @@ internal class ResourceAuthorizationMiddleware(
                 return;
             }
 
+            // passes authorization
             await next();
 
             void RespondAuthorizationError()

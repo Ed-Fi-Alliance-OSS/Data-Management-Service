@@ -7,15 +7,15 @@ using EdFi.DataManagementService.Core.Security.Model;
 
 namespace EdFi.DataManagementService.Core.Security;
 
-public interface ISecurityMetadataService
+public interface IClaimSetCacheService
 {
     Task<IList<ClaimSet>> GetClaimSets();
 }
 
-public class SecurityMetadataService(
+public class ClaimSetCacheService(
     ISecurityMetadataProvider securityMetadataProvider,
     ClaimSetsCache claimSetsCache
-) : ISecurityMetadataService
+) : IClaimSetCacheService
 {
     private readonly string CacheId = "ClaimSetsCache";
 

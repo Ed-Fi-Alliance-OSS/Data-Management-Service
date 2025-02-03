@@ -24,16 +24,15 @@ public class AuthorizationStrategiesProviderTests
             var resourceClaim = new ResourceClaim()
             {
                 Name = "schools",
-                Actions = [new() { Enabled = true, Name = "Create" }],
-                AuthorizationStrategyOverridesForCrud = [],
-                DefaultAuthorizationStrategiesForCrud =
+                Actions = [new(Enabled: true, Name: "Create")],
+                AuthorizationStrategyOverrides = [],
+                DefaultAuthorizationStrategies =
                 [
-                    new ClaimSetResourceClaimActionAuthStrategies
-                    {
-                        ActionId = 1,
-                        ActionName = "Create",
-                        AuthorizationStrategies = [new() { AuthStrategyName = _expectedAuthStrategy }],
-                    },
+                    new(
+                        ActionId: 1,
+                        ActionName: "Create",
+                        AuthorizationStrategies: [new() { AuthStrategyName = _expectedAuthStrategy }]
+                    ),
                 ],
             };
 
@@ -62,17 +61,16 @@ public class AuthorizationStrategiesProviderTests
             var resourceClaim = new ResourceClaim()
             {
                 Name = "schools",
-                Actions = [new() { Enabled = true, Name = "Create" }],
-                AuthorizationStrategyOverridesForCrud =
+                Actions = [new(Enabled: true, Name: "Create")],
+                AuthorizationStrategyOverrides =
                 [
-                    new ClaimSetResourceClaimActionAuthStrategies
-                    {
-                        ActionId = 1,
-                        ActionName = "Create",
-                        AuthorizationStrategies = [new() { AuthStrategyName = _expectedAuthStrategy }],
-                    },
+                    new(
+                        ActionId: 1,
+                        ActionName: "Create",
+                        AuthorizationStrategies: [new() { AuthStrategyName = _expectedAuthStrategy }]
+                    ),
                 ],
-                DefaultAuthorizationStrategiesForCrud = [],
+                DefaultAuthorizationStrategies = [],
             };
 
             var provider = new AuthorizationStrategiesProvider();
@@ -102,27 +100,22 @@ public class AuthorizationStrategiesProviderTests
             var resourceClaim = new ResourceClaim()
             {
                 Name = "schools",
-                Actions = [new() { Enabled = true, Name = "Create" }],
-                AuthorizationStrategyOverridesForCrud =
+                Actions = [new(Enabled: true, Name: "Create")],
+                AuthorizationStrategyOverrides =
                 [
-                    new ClaimSetResourceClaimActionAuthStrategies
-                    {
-                        ActionId = 1,
-                        ActionName = "Create",
-                        AuthorizationStrategies =
-                        [
-                            new() { AuthStrategyName = _expectedAuthStrategyOverride },
-                        ],
-                    },
+                    new(
+                        ActionId: 1,
+                        ActionName: "Create",
+                        AuthorizationStrategies: [new() { AuthStrategyName = _expectedAuthStrategyOverride }]
+                    ),
                 ],
-                DefaultAuthorizationStrategiesForCrud =
+                DefaultAuthorizationStrategies =
                 [
-                    new ClaimSetResourceClaimActionAuthStrategies
-                    {
-                        ActionId = 1,
-                        ActionName = "Create",
-                        AuthorizationStrategies = [new() { AuthStrategyName = _expectedAuthStrategyDefault }],
-                    },
+                    new(
+                        ActionId: 1,
+                        ActionName: "Create",
+                        AuthorizationStrategies: [new() { AuthStrategyName = _expectedAuthStrategyDefault }]
+                    ),
                 ],
             };
 

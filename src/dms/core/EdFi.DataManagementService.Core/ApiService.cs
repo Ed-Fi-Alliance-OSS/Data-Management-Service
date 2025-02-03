@@ -31,7 +31,7 @@ internal class ApiService(
     IApiSchemaProvider _apiSchemaProvider,
     IApiSchemaValidator _apiSchemaValidator,
     IDocumentStoreRepository _documentStoreRepository,
-    ISecurityMetadataService _securityMetadataService,
+    IClaimSetCacheService _claimSetCacheService,
     IDocumentValidator _documentValidator,
     IQueryHandler _queryHandler,
     IMatchingDocumentUuidsValidator matchingDocumentUuidsValidator,
@@ -87,7 +87,7 @@ internal class ApiService(
                 new DisallowDuplicateReferencesMiddleware(_logger),
                 new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
                 new ResourceAuthorizationMiddleware(
-                    _securityMetadataService,
+                    _claimSetCacheService,
                     _authorizationStrategiesProvider,
                     _authorizationStrategyHandlerProvider,
                     _logger
@@ -116,7 +116,7 @@ internal class ApiService(
                         _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                     ),
                     new ResourceAuthorizationMiddleware(
-                        _securityMetadataService,
+                        _claimSetCacheService,
                         _authorizationStrategiesProvider,
                         _authorizationStrategyHandlerProvider,
                         _logger
@@ -144,7 +144,7 @@ internal class ApiService(
                     ),
                     new ValidateQueryMiddleware(_logger, _appSettings.Value.MaximumPageSize),
                     new ResourceAuthorizationMiddleware(
-                        _securityMetadataService,
+                        _claimSetCacheService,
                         _authorizationStrategiesProvider,
                         _authorizationStrategyHandlerProvider,
                         _logger
@@ -198,7 +198,7 @@ internal class ApiService(
                 new DisallowDuplicateReferencesMiddleware(_logger),
                 new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
                 new ResourceAuthorizationMiddleware(
-                    _securityMetadataService,
+                    _claimSetCacheService,
                     _authorizationStrategiesProvider,
                     _authorizationStrategyHandlerProvider,
                     _logger
@@ -231,7 +231,7 @@ internal class ApiService(
                         _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                     ),
                     new ResourceAuthorizationMiddleware(
-                        _securityMetadataService,
+                        _claimSetCacheService,
                         _authorizationStrategiesProvider,
                         _authorizationStrategyHandlerProvider,
                         _logger

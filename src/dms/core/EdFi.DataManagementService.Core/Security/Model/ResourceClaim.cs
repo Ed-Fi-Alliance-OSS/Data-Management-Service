@@ -21,27 +21,22 @@ public class ResourceClaim
     public bool IsParent { get; set; }
 
     [JsonPropertyName("_defaultAuthorizationStrategiesForCrud")]
-    public List<ClaimSetResourceClaimActionAuthStrategies?> DefaultAuthorizationStrategiesForCrud { get; set; }
-    public List<ClaimSetResourceClaimActionAuthStrategies?> AuthorizationStrategyOverridesForCrud { get; set; }
+    public List<ResourceClaimActionAuthStrategies> DefaultAuthorizationStrategies { get; set; }
+    public List<ResourceClaimActionAuthStrategies> AuthorizationStrategyOverrides { get; set; }
     public List<ResourceClaim> Children { get; set; }
 
     public ResourceClaim()
     {
         Children = [];
-        DefaultAuthorizationStrategiesForCrud = [];
-        AuthorizationStrategyOverridesForCrud = [];
+        DefaultAuthorizationStrategies = [];
+        AuthorizationStrategyOverrides = [];
     }
 }
 
-public class ResourceClaimAction
-{
-    public string? Name { get; set; }
-    public bool Enabled { get; set; }
-}
+public record ResourceClaimAction(string Name, bool Enabled);
 
-public class ClaimSetResourceClaimActionAuthStrategies
-{
-    public int? ActionId { get; set; }
-    public string? ActionName { get; set; }
-    public IEnumerable<AuthorizationStrategy>? AuthorizationStrategies { get; set; }
-}
+public record ResourceClaimActionAuthStrategies(
+    int ActionId,
+    string ActionName,
+    IEnumerable<AuthorizationStrategy> AuthorizationStrategies
+);
