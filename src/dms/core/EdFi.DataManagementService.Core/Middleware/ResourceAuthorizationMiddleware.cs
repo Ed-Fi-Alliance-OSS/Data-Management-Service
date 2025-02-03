@@ -16,6 +16,9 @@ using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
+/// <summary>
+/// Authorizes request data based on the client's authorization information.
+/// </summary>
 internal class ResourceAuthorizationMiddleware(
     IClaimSetCacheService _claimSetCacheService,
     IAuthorizationStrategiesProvider _authorizationStrategiesProvider,
