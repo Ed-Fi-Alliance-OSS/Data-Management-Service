@@ -2,7 +2,7 @@ Feature: Update Reference Validation
     PUT requests validation for invalid references
 
         Background:
-            Given the SIS Vendor is authorized
+            Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
             Given the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                        | educationOrganizationCategories                                                                                        |
                   | 255901   | School Test       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"} ] | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School" }] |

@@ -2,7 +2,7 @@ Feature: CorrleationId
     Validate the Correlation Id
 
         Background:
-            Given the SIS Vendor is authorized
+            Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
 
         @API-061
         Scenario: 01 Ensure the response will contain provided correlation id

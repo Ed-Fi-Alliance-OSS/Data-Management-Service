@@ -30,11 +30,7 @@ public static class SetupHooks
 
             if (AppSettings.EnforceAuthorization)
             {
-                var sysAdminToken = await SystemAdministrator.Register("sys-admin " + Guid.NewGuid().ToString(), "SdfH)98&Jk");
-                logger.log.Debug(sysAdminToken);
-
-                await SisVendor.Create("E2E company", "C. M. Burns", "cmb@example.com",
-                    "uri://ed-fi.org", sysAdminToken);
+                await SystemAdministrator.Register("sys-admin " + Guid.NewGuid().ToString(), "SdfH)98&Jk");
             }
 
             await _containerSetup.StartContainers();

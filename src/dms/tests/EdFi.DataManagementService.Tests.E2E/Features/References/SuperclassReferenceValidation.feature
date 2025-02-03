@@ -1,7 +1,7 @@
 Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resources
 
         Background:
-            Given the SIS Vendor is authorized
+            Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
             Given the system has these descriptors
                   | descriptorValue                                                                     |
                   | uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Other local education agency |

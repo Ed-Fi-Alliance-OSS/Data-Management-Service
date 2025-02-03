@@ -40,6 +40,7 @@ WITH resource_names AS (
 		'studentProgramAssociations',
 		'studentSchoolAssociations',
 		'studentSectionAssociations',
+        'surveys',
 	--descriptors:
 		'absenceEventCategoryDescriptors',
 --		'academicHonorCategoryDescriptors',

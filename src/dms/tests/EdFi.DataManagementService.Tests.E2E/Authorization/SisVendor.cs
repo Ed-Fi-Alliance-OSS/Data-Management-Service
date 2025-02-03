@@ -9,7 +9,7 @@ using System.Text.Json;
 
 namespace EdFi.DataManagementService.Tests.E2E.Authorization;
 
-public static class SisVendor
+public class SisVendor
 {
     public static ClientCredentials? ClientCredentials { get; set; }
 
@@ -23,7 +23,7 @@ public static class SisVendor
         BaseAddress = new Uri("http://localhost:8080/"),
     };
 
-    public static async Task Create(string company, string contactName, string contactEmailAddress, string namespacePrefixes, string systemAdministratorToken)
+    public async Task Create(string company, string contactName, string contactEmailAddress, string namespacePrefixes, string systemAdministratorToken)
     {
         _configurationServiceClient.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", systemAdministratorToken);
@@ -41,37 +41,34 @@ public static class SisVendor
 
         using HttpResponseMessage vendorPostResponse = await _configurationServiceClient.PostAsync("v2/vendors", vendorContent);
 
-        var vendorLocation = vendorPostResponse.Headers.Location?.AbsoluteUri;
+        var vendorLocation = vendorPostResponse.Headers.Location?.AbsoluteUri ?? "";
 
-        if (vendorLocation != null)
-        {
-            using HttpResponseMessage vendorGetResponse = await _configurationServiceClient.GetAsync(vendorLocation);
-            string vendorBody = await vendorGetResponse.Content.ReadAsStringAsync();
+        using HttpResponseMessage vendorGetResponse = await _configurationServiceClient.GetAsync(vendorLocation);
+        string vendorBody = await vendorGetResponse.Content.ReadAsStringAsync();
 
-            int vendorId = JsonDocument.Parse(vendorBody).RootElement.GetProperty("id").GetInt32();
+        int vendorId = JsonDocument.Parse(vendorBody).RootElement.GetProperty("id").GetInt32();
 
-            using StringContent applicationContent = new(
-                JsonSerializer.Serialize(new
-                {
-                    vendorId,
-                    applicationName = "E2E",
-                    claimSetName = "SIS-Vendor"
-                }),
-                Encoding.UTF8,
-                "application/json");
+        using StringContent applicationContent = new(
+            JsonSerializer.Serialize(new
+            {
+                vendorId,
+                applicationName = "E2E",
+                claimSetName = "SIS-Vendor"
+            }),
+            Encoding.UTF8,
+            "application/json");
 
-            using HttpResponseMessage applicationPostResponse =
-                await _configurationServiceClient.PostAsync("v2/applications", applicationContent);
+        using HttpResponseMessage applicationPostResponse =
+            await _configurationServiceClient.PostAsync("v2/applications", applicationContent);
 
-            string applicationBody = await applicationPostResponse.Content.ReadAsStringAsync();
-            var applicationJson = JsonDocument.Parse(applicationBody);
+        string applicationBody = await applicationPostResponse.Content.ReadAsStringAsync();
+        var applicationJson = JsonDocument.Parse(applicationBody);
 
-            var credentials = new ClientCredentials(
-                applicationJson.RootElement.GetProperty("key").GetString() ?? "",
-                applicationJson.RootElement.GetProperty("secret").GetString() ?? "");
+        var credentials = new ClientCredentials(
+            applicationJson.RootElement.GetProperty("key").GetString() ?? "",
+            applicationJson.RootElement.GetProperty("secret").GetString() ?? "");
 
-            ClientCredentials = credentials;
-        }
+        ClientCredentials = credentials;
     }
 
     public static async Task<string> GetToken()

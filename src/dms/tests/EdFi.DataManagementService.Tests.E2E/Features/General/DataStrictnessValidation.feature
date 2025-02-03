@@ -2,7 +2,7 @@ Feature: Data strictness
     Validate that the API meets data strictness / laxity requirements.
 
         Background:
-            Given the SIS Vendor is authorized
+            Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
             Given the system has these descriptors
                   | descriptorValue                                                 |
                   | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade                |
