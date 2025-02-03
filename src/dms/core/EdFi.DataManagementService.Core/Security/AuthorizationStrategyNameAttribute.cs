@@ -6,7 +6,7 @@
 namespace EdFi.DataManagementService.Core.Security;
 
 /// <summary>
-/// Provides the authorization strategy handler name that is associated with an <see cref="IAuthorizationStrategyHandler" /> implementation
+/// Provides the authorization strategy name that is associated with an IAuthorizationValidator implementation
 /// </summary>
 [AttributeUsage(AttributeTargets.Class, Inherited = false)]
 public sealed class AuthorizationStrategyNameAttribute(string name) : Attribute

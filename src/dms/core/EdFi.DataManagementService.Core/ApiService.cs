@@ -39,7 +39,7 @@ internal class ApiService(
     ILogger<ApiService> _logger,
     IOptions<AppSettings> _appSettings,
     IAuthorizationStrategiesProvider _authorizationStrategiesProvider,
-    IAuthorizationStrategyHandlerProvider _authorizationStrategyHandlerProvider,
+    IAuthorizationValidatorProvider _authorizationStrategyHandlerProvider,
     [FromKeyedServices("backendResiliencePipeline")] ResiliencePipeline _resiliencePipeline
 ) : IApiService
 {

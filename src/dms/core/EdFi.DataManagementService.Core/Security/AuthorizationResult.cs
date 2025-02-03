@@ -6,6 +6,6 @@
 namespace EdFi.DataManagementService.Core.Security;
 
 /// <summary>
-/// Represents the authorization result
+/// Represents the authorization validation result
 /// </summary>
 public record AuthorizationResult(bool IsAuthorized, string ErrorMessage = "");

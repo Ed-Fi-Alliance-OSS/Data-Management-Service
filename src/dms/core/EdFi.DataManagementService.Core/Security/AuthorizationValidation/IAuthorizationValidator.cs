@@ -5,14 +5,14 @@
 
 using EdFi.DataManagementService.Core.External.Model;
 
-namespace EdFi.DataManagementService.Core.Security.AuthorizationStrategies;
+namespace EdFi.DataManagementService.Core.Security.AuthorizationValidation;
 
 /// <summary>
-/// Defines a method for handling the authorization of a request action against a particular authorization strategy.
+/// Defines a method for validating the authorization of a request against a particular authorization strategy.
 /// </summary>
-public interface IAuthorizationStrategyHandler
+public interface IAuthorizationValidator
 {
-    AuthorizationResult IsRequestAuthorized(
+    AuthorizationResult ValidateAuthorization(
         DocumentSecurityElements securityElements,
         ApiClientDetails details
     );

@@ -5,7 +5,7 @@
 
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Security;
-using EdFi.DataManagementService.Core.Security.AuthorizationStrategies;
+using EdFi.DataManagementService.Core.Security.AuthorizationValidation;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -17,19 +17,19 @@ public class NamedAuthorizationStrategyHandlerProviderTests
     [TestFixture]
     public class Given_Matching_AuthorizationStrategy_Handler : ClaimSetCacheServiceTests
     {
-        private NamedAuthorizationStrategyHandlerProvider? handlerProvider;
+        private NamedAuthorizationValidatorProvider? handlerProvider;
         private ServiceProvider? serviceProvider;
 
         [SetUp]
         public void Setup()
         {
             var services = new ServiceCollection();
-            services.AddTransient<NamedAuthorizationStrategyHandlerProvider>();
-            services.AddTransient<NoFurtherAuthorizationRequiredAuthorizationStrategyHandler>();
+            services.AddTransient<NamedAuthorizationValidatorProvider>();
+            services.AddTransient<NoFurtherAuthorizationRequiredValidator>();
 
             serviceProvider = services.BuildServiceProvider();
 
-            handlerProvider = new NamedAuthorizationStrategyHandlerProvider(serviceProvider);
+            handlerProvider = new NamedAuthorizationValidatorProvider(serviceProvider);
         }
 
         [Test]
@@ -37,9 +37,9 @@ public class NamedAuthorizationStrategyHandlerProviderTests
         {
             var handler =
                 handlerProvider!.GetByName("NoFurtherAuthorizationRequired")
-                as NoFurtherAuthorizationRequiredAuthorizationStrategyHandler;
+                as NoFurtherAuthorizationRequiredValidator;
             handler.Should().NotBeNull();
-            var authResult = handler!.IsRequestAuthorized(
+            var authResult = handler!.ValidateAuthorization(
                 new DocumentSecurityElements([]),
                 new ApiClientDetails("", "", [], [])
             );
@@ -51,18 +51,18 @@ public class NamedAuthorizationStrategyHandlerProviderTests
     [TestFixture]
     public class Given_Not_Matching_AuthorizationStrategy_Handler : ClaimSetCacheServiceTests
     {
-        private NamedAuthorizationStrategyHandlerProvider? handlerProvider;
+        private NamedAuthorizationValidatorProvider? handlerProvider;
         private ServiceProvider? serviceProvider;
 
         [SetUp]
         public void Setup()
         {
             var services = new ServiceCollection();
-            services.AddTransient<NamedAuthorizationStrategyHandlerProvider>();
+            services.AddTransient<NamedAuthorizationValidatorProvider>();
 
             serviceProvider = services.BuildServiceProvider();
 
-            handlerProvider = new NamedAuthorizationStrategyHandlerProvider(serviceProvider);
+            handlerProvider = new NamedAuthorizationValidatorProvider(serviceProvider);
         }
 
         [Test]

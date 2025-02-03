@@ -19,7 +19,7 @@ namespace EdFi.DataManagementService.Core.Middleware;
 internal class ResourceAuthorizationMiddleware(
     IClaimSetCacheService _claimSetCacheService,
     IAuthorizationStrategiesProvider _authorizationStrategiesProvider,
-    IAuthorizationStrategyHandlerProvider _authorizationStrategyHandlerProvider,
+    IAuthorizationValidatorProvider _authorizationStrategyHandlerProvider,
     ILogger _logger
 ) : IPipelineStep
 {
@@ -193,7 +193,7 @@ internal class ResourceAuthorizationMiddleware(
                     return;
                 }
 
-                AuthorizationResult authorizationResult = authStrategyHandler.IsRequestAuthorized(
+                AuthorizationResult authorizationResult = authStrategyHandler.ValidateAuthorization(
                     context.DocumentSecurityElements,
                     apiClientDetails
                 );

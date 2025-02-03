@@ -5,17 +5,17 @@
 
 using EdFi.DataManagementService.Core.External.Model;
 
-namespace EdFi.DataManagementService.Core.Security.AuthorizationStrategies;
+namespace EdFi.DataManagementService.Core.Security.AuthorizationValidation;
 
 /// <summary>
-/// Implements an authorization strategy that performs no additional authorization.
+/// Validates the authorization strategy that performs no additional authorization.
 /// </summary>
 [AuthorizationStrategyName(AuthorizationStrategyName)]
-public class NoFurtherAuthorizationRequiredAuthorizationStrategyHandler : IAuthorizationStrategyHandler
+public class NoFurtherAuthorizationRequiredValidator : IAuthorizationValidator
 {
     private const string AuthorizationStrategyName = "NoFurtherAuthorizationRequired";
 
-    public AuthorizationResult IsRequestAuthorized(
+    public AuthorizationResult ValidateAuthorization(
         DocumentSecurityElements securityElements,
         ApiClientDetails details
     )
