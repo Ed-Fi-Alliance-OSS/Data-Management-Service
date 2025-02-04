@@ -1,8 +1,8 @@
 Feature: Validation of Natural Key Unification
 
         Background:
-            Given the SIS Vendor is authorized
-            
+            Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
+
         Scenario: 00 Background
             Given the system has these descriptors
                   | descriptorValue                                                      |

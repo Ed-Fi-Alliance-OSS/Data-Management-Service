@@ -9,12 +9,14 @@ namespace EdFi.DataManagementService.Tests.E2E.Authorization;
 
 public static class SystemAdministrator
 {
+    public static string Token = string.Empty;
+
     private static readonly HttpClient _client = new()
     {
         BaseAddress = new Uri("http://localhost:8081/"),
     };
 
-    public static async Task<string> Register(string clientId, string clientSecret)
+    public static async Task Register(string clientId, string clientSecret)
     {
         var formContent = new FormUrlEncodedContent(new[]
         {
@@ -40,10 +42,8 @@ public static class SystemAdministrator
             {
                 var body = await tokenResult.Content.ReadAsStringAsync();
                 var document = JsonDocument.Parse(body);
-                return document.RootElement.GetProperty("access_token").GetString() ?? "";
+                Token = document.RootElement.GetProperty("access_token").GetString() ?? "";
             }
         }
-
-        return string.Empty;
     }
 }

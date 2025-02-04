@@ -1,7 +1,7 @@
 Feature: Resources "Read" Operation validations
 
         Background:
-            Given the SIS Vendor is authorized
+            Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
               And a POST request is made to "/ed-fi/courseIdentificationSystemDescriptors" with
                   """
                     {

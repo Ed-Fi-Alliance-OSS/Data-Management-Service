@@ -1,7 +1,7 @@
 Feature: Validation of the structure of the URLs
 
         Background:
-            Given the SIS Vendor is authorized
+            Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
 
         @addwait
         Scenario: 00 Background

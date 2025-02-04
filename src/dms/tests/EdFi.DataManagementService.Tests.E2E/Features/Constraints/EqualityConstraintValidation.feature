@@ -7,7 +7,7 @@ Feature: Equality Constraint Validation
     }
     ]
         Background:
-            Given the SIS Vendor is authorized
+            Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
 
         @API-001
         Scenario: 01 Post a valid bell schedule no equality constraint violations.

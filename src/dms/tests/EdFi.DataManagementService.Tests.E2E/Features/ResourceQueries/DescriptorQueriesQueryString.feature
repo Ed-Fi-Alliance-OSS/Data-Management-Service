@@ -1,7 +1,7 @@
 Feature: Query String handling for GET requests for Descriptor Queries
 
         Background:
-            Given the SIS Vendor is authorized
+            Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
 
         @addwait
         Scenario: 00 Background

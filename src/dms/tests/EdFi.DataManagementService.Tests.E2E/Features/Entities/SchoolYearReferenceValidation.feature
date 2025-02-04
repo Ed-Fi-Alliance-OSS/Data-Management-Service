@@ -3,7 +3,7 @@ Feature: School Year Reference Validation
 
         Background:
 
-            Given the SIS Vendor is authorized
+            Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
 
             Given the system has these descriptors
                   | descriptorValue                                           |
