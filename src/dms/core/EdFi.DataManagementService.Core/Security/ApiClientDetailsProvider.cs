@@ -6,7 +6,7 @@
 using System.Security.Claims;
 using EdFi.DataManagementService.Core.External.Model;
 
-namespace EdFi.DataManagementService.Frontend.AspNetCore.Security;
+namespace EdFi.DataManagementService.Core.Security;
 
 public interface IApiClientDetailsProvider
 {
@@ -25,7 +25,12 @@ public class ApiClientDetailsProvider() : IApiClientDetailsProvider
         string claimSetName = claimsDictionary.GetValueOrDefault("scope", string.Empty);
         string tokenId = GetTokenId(claimsDictionary, jwtTokenHashCode);
         string[] namespacePrefixes = GetNamespacePrefixes(claimsDictionary);
-        var apiClientDetails = new ApiClientDetails(tokenId, claimSetName, [], namespacePrefixes);
+        ApiClientDetails apiClientDetails = new(
+            tokenId,
+            claimSetName,
+            [],
+            namespacePrefixes.Select(x => new NamespacePrefix(x)).ToList()
+        );
         return apiClientDetails;
     }
 

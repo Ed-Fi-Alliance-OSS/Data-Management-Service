@@ -222,6 +222,10 @@ internal class ResourceAuthorizationMiddleware(
             }
 
             // passes authorization
+            context.ClientAuthorizations = new(
+                apiClientDetails.EducationOrganizationIds,
+                apiClientDetails.NamespacePrefixes
+            );
             await next();
 
             void RespondAuthorizationError()

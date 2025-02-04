@@ -31,6 +31,11 @@ public abstract record DeleteResult
     public record DeleteFailureWriteConflict() : DeleteResult();
 
     /// <summary>
+    /// A failure because the client is not authorized to delete the document
+    /// </summary>
+    public record DeleteFailureNotAuthorized() : DeleteResult();
+
+    /// <summary>
     /// A failure of unknown category
     /// </summary>
     /// <param name="FailureMessage">A message providing failure information</param>

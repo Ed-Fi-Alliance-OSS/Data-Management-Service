@@ -22,6 +22,11 @@ public interface IDeleteRequest
     ResourceInfo ResourceInfo { get; }
 
     /// <summary>
+    /// The ClientAuthorizations for the requesting client
+    /// </summary>
+    ClientAuthorizations ClientAuthorizations { get; }
+
+    /// <summary>
     /// If true, validates there are no references to the document
     /// </summary>
     bool validateNoReferencesToDocument { get; }

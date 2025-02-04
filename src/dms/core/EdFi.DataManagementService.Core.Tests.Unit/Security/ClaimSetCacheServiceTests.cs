@@ -28,7 +28,7 @@ public class ClaimSetCacheServiceTests
         [SetUp]
         public async Task Setup()
         {
-            _expectedClaims = [new() { Name = "ClaimSet1" }, new() { Name = "ClaimSet2" }];
+            _expectedClaims = [new("ClaimSet1", []), new("ClaimSet2", [])];
             A.CallTo(() => _securityMetadataProvider.GetAllClaimSets()).Returns(_expectedClaims);
 
             object? cached = null;
@@ -64,7 +64,7 @@ public class ClaimSetCacheServiceTests
         [SetUp]
         public async Task Setup()
         {
-            _expectedClaims = [new() { Name = "ClaimSet1" }, new() { Name = "ClaimSet2" }];
+            _expectedClaims = [new("ClaimSet1", []), new("ClaimSet2", [])];
             A.CallTo(() => _securityMetadataProvider.GetAllClaimSets()).Returns(_expectedClaims);
 
             object? cached = _expectedClaims;
