@@ -45,6 +45,7 @@ public static class DmsCoreServiceExtensions
             .AddTransient<IAuthorizationStrategiesProvider, AuthorizationStrategiesProvider>()
             .AddSingleton<IAuthorizationValidatorProvider, NamedAuthorizationValidatorProvider>()
             .AddTransient<NoFurtherAuthorizationRequiredValidator>()
+            .AddTransient<NamespaceBasedValidator>()
             .AddResiliencePipeline("backendResiliencePipeline", backendResiliencePipeline);
 
         return services;
