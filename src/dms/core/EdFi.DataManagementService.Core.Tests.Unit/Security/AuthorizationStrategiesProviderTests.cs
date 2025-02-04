@@ -25,8 +25,8 @@ public class AuthorizationStrategiesProviderTests
             {
                 Name = "schools",
                 Actions = [new(Enabled: true, Name: "Create")],
-                AuthorizationStrategyOverrides = [],
-                DefaultAuthorizationStrategies =
+                AuthorizationStrategyOverridesForCRUD = [],
+                DefaultAuthorizationStrategiesForCRUD =
                 [
                     new(
                         ActionId: 1,
@@ -62,7 +62,7 @@ public class AuthorizationStrategiesProviderTests
             {
                 Name = "schools",
                 Actions = [new(Enabled: true, Name: "Create")],
-                AuthorizationStrategyOverrides =
+                AuthorizationStrategyOverridesForCRUD =
                 [
                     new(
                         ActionId: 1,
@@ -70,7 +70,7 @@ public class AuthorizationStrategiesProviderTests
                         AuthorizationStrategies: [new() { AuthStrategyName = _expectedAuthStrategy }]
                     ),
                 ],
-                DefaultAuthorizationStrategies = [],
+                DefaultAuthorizationStrategiesForCRUD = [],
             };
 
             var provider = new AuthorizationStrategiesProvider();
@@ -101,7 +101,7 @@ public class AuthorizationStrategiesProviderTests
             {
                 Name = "schools",
                 Actions = [new(Enabled: true, Name: "Create")],
-                AuthorizationStrategyOverrides =
+                AuthorizationStrategyOverridesForCRUD =
                 [
                     new(
                         ActionId: 1,
@@ -109,7 +109,7 @@ public class AuthorizationStrategiesProviderTests
                         AuthorizationStrategies: [new() { AuthStrategyName = _expectedAuthStrategyOverride }]
                     ),
                 ],
-                DefaultAuthorizationStrategies =
+                DefaultAuthorizationStrategiesForCRUD =
                 [
                     new(
                         ActionId: 1,
