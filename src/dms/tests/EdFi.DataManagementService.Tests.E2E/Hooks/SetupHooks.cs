@@ -28,10 +28,7 @@ public static class SetupHooks
                 _containerSetup = new ContainerSetup();
             }
 
-            if (AppSettings.EnforceAuthorization)
-            {
-                await SystemAdministrator.Register("sys-admin " + Guid.NewGuid().ToString(), "SdfH)98&Jk");
-            }
+            await SystemAdministrator.Register("sys-admin " + Guid.NewGuid().ToString(), "SdfH)98&Jk");
 
             await _containerSetup.StartContainers();
         }
