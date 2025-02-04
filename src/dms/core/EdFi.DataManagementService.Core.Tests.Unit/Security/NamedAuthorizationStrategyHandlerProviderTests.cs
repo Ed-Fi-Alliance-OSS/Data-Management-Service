@@ -26,6 +26,7 @@ public class NamedAuthorizationStrategyHandlerProviderTests
             var services = new ServiceCollection();
             services.AddTransient<NamedAuthorizationValidatorProvider>();
             services.AddTransient<NoFurtherAuthorizationRequiredValidator>();
+            services.AddTransient<NamespaceBasedValidator>();
 
             serviceProvider = services.BuildServiceProvider();
 
