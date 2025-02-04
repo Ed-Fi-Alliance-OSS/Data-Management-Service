@@ -34,7 +34,7 @@ public static class SetupHooks
             );
             logger.log.Debug(sysAdminToken);
 
-            await E2ESisVendor.Create(
+            await SisVendor.Create(
                 "E2E company",
                 "C. M. Burns",
                 "cmb@example.com",
