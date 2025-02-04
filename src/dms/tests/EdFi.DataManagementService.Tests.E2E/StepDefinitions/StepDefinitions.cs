@@ -30,22 +30,25 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private string _etag = string.Empty;
         private string _dependentId = string.Empty;
         private string _referencedResourceId = string.Empty;
-        private List<KeyValuePair<string, string>> _headers = new();
+        private string _dmsToken = string.Empty;
         private readonly bool _openSearchEnabled = AppSettings.OpenSearchEnabled;
 
         #region Given
 
-        [Given("the SIS Vendor is authorized")]
-        public async Task GivenTheSisVendorIsAuthorized()
+        [Given("the SIS Vendor is authorized with namespacePrefixes {string}")]
+        public async Task GivenTheSisVendorIsAuthorized(string namespacePrefixes)
         {
-            string bearerToken = await SisVendor.GetToken();
-            _headers.Add(new("Authorization", $"Bearer {bearerToken}"));
+            await new SisVendor().Create(Guid.NewGuid().ToString(), "C. M. Burns", "cmb@example.com",
+                namespacePrefixes, SystemAdministrator.Token);
+
+            var bearerToken = await SisVendor.GetToken();
+            _dmsToken = $"Bearer {bearerToken}";
         }
 
         [Given("there is no Authorization header")]
         public void GivenThereIsNoAuthorizationHeader()
         {
-            _headers.Where(h => h.Key == "Authorization").ToList().ForEach(h => _headers.Remove(h));
+            _dmsToken = string.Empty;
         }
 
         [Given("a POST request is made to {string} with")]
@@ -64,12 +67,11 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Given("the token signature is manipulated")]
         public void TokenSignatureManipulated()
         {
-            var token = _headers.Single(h => h.Key == "Authorization").Value;
+            var token = _dmsToken;
             var segments = token.Split('.');
             var signature = segments[2].ToCharArray();
             new Random().Shuffle(signature);
-            _headers.Remove(_headers.Single(h => h.Key == "Authorization"));
-            _headers.Add(new("Authorization", $"{segments[0]}.{segments[1]}.{signature}"));
+            _dmsToken = $"{segments[0]}.{segments[1]}.{signature}";
         }
 
         private static (string, Dictionary<string, object>) ExtractDescriptorBody(string descriptorValue)
@@ -105,7 +107,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             {
                 var response = await _playwrightContext.ApiRequestContext?.PostAsync(
                     $"{baseUrl}/{descriptor["descriptorName"]}",
-                    new() { DataObject = descriptor, Headers = _headers }
+                    new() { DataObject = descriptor, Headers = GetHeaders() }
                 )!;
                 _apiResponses.Add(response);
 
@@ -126,7 +128,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 _logger.log.Information(dataUrl);
                 var response = await _playwrightContext.ApiRequestContext?.PostAsync(
                     dataUrl,
-                    new() { Data = body, Headers = _headers }
+                    new() { Data = body, Headers = GetHeaders() }
                 )!;
                 _apiResponses.Add(response);
 
@@ -165,7 +167,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
                 IAPIResponse apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
                     $"{baseUrl}/{descriptorName}",
-                    new() { DataObject = descriptorBody, Headers = _headers }
+                    new() { DataObject = descriptorBody, Headers = GetHeaders() }
                 )!;
 
                 string body = apiResponse.TextAsync().Result;
@@ -228,7 +230,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information($"POST body: {body}");
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
                 url,
-                new() { Data = body, Headers = _headers }
+                new() { Data = body, Headers = GetHeaders() }
             )!;
             _logger.log.Information(_apiResponse.TextAsync().Result);
 
@@ -271,7 +273,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             // Add custom header
             var httpHeaders = new List<KeyValuePair<string, string>> { new(header, value) };
-            httpHeaders.AddRange(_headers);
+            httpHeaders.AddRange(GetHeaders());
 
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
                 url,
@@ -288,7 +290,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             url = AddDataPrefixIfNecessary(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
                 url,
-                new() { Data = body, Headers = _headers }
+                new() { Data = body, Headers = GetHeaders() }
             )!;
 
             _dependentId = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
@@ -304,7 +306,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information($"PUT body: {body}");
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
                 url,
-                new() { Data = body, Headers = _headers }
+                new() { Data = body, Headers = GetHeaders() }
             )!;
 
             extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
@@ -320,7 +322,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information(body);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
                 url,
-                new() { Data = body, Headers = _headers }
+                new() { Data = body, Headers = GetHeaders() }
             )!;
             if (_apiResponse.Status != 204)
             {
@@ -349,7 +351,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             url = AddDataPrefixIfNecessary(url).Replace("{id}", _id);
             _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(
                 url,
-                new() { Headers = _headers }
+                new() { Headers = GetHeaders() }
             )!;
 
             WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
@@ -362,7 +364,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(
                 url,
-                new() { Headers = _headers }
+                new() { Headers = GetHeaders() }
             )!;
         }
 
@@ -373,7 +375,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
                 url,
-                new() { Headers = _headers }
+                new() { Headers = GetHeaders() }
             )!;
         }
 
@@ -674,7 +676,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             JsonNode expectedJson = JsonNode.Parse(expectedBody)!;
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
                 _location,
-                new() { Headers = _headers }
+                new() { Headers = GetHeaders() }
             )!;
 
             string responseJsonString = await _apiResponse.TextAsync();
@@ -766,5 +768,11 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
         [GeneratedRegex(@"\{id\}", RegexOptions.Compiled)]
         private static partial Regex IdRegex();
+
+        private IEnumerable<KeyValuePair<string, string>> GetHeaders()
+        {
+            var list = new List<KeyValuePair<string, string>> { new("Authorization", _dmsToken) };
+            return list;
+        }
     }
 }

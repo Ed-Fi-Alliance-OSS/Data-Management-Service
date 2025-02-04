@@ -62,8 +62,8 @@ public class TokenEndpointModuleTests
                 )
                 .Returns(_fake_response_200);
 
-            var securityMetadataService = A.Fake<ISecurityMetadataService>();
-            A.CallTo(() => securityMetadataService.GetClaimSets()).Returns([]);
+            var claimSetCacheService = A.Fake<IClaimSetCacheService>();
+            A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
             using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -71,7 +71,7 @@ public class TokenEndpointModuleTests
                     (collection) =>
                     {
                         collection.AddTransient((x) => oAuthManager);
-                        collection.AddTransient((x) => securityMetadataService);
+                        collection.AddTransient((x) => claimSetCacheService);
                     }
                 );
             });
@@ -137,8 +137,8 @@ public class TokenEndpointModuleTests
                 )
                 .Returns(_fake_response_200);
 
-            var securityMetadataService = A.Fake<ISecurityMetadataService>();
-            A.CallTo(() => securityMetadataService.GetClaimSets()).Returns([]);
+            var claimSetCacheService = A.Fake<IClaimSetCacheService>();
+            A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
             using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -146,7 +146,7 @@ public class TokenEndpointModuleTests
                     (collection) =>
                     {
                         collection.AddTransient((x) => oAuthManager);
-                        collection.AddTransient((x) => securityMetadataService);
+                        collection.AddTransient((x) => claimSetCacheService);
                     }
                 );
             });

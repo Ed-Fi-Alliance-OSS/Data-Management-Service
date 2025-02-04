@@ -33,8 +33,8 @@ public class CoreEndpointModuleTests
         public async Task SetUp()
         {
             // Arrange
-            var securityMetadataService = A.Fake<ISecurityMetadataService>();
-            A.CallTo(() => securityMetadataService.GetClaimSets()).Returns([]);
+            var claimSetCacheService = A.Fake<IClaimSetCacheService>();
+            A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
             var apiService = A.Fake<IApiService>();
             A.CallTo(() => apiService.Get(A<FrontendRequest>.Ignored)).Returns(new FakeFrontendResponse());
             await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -44,7 +44,7 @@ public class CoreEndpointModuleTests
                     (collection) =>
                     {
                         collection.AddTransient((x) => apiService);
-                        collection.AddTransient((x) => securityMetadataService);
+                        collection.AddTransient((x) => claimSetCacheService);
                         collection
                             .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
                             .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
@@ -89,8 +89,8 @@ public class CoreEndpointModuleTests
         public async Task SetUp()
         {
             // Arrange
-            var securityMetadataService = A.Fake<ISecurityMetadataService>();
-            A.CallTo(() => securityMetadataService.GetClaimSets()).Returns([]);
+            var claimSetCacheService = A.Fake<IClaimSetCacheService>();
+            A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
             await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -110,7 +110,7 @@ public class CoreEndpointModuleTests
                                 policy => policy.RequireClaim(ClaimTypes.Role, "invalid-role")
                             )
                         );
-                        collection.AddTransient((x) => securityMetadataService);
+                        collection.AddTransient((x) => claimSetCacheService);
                     }
                 );
             });

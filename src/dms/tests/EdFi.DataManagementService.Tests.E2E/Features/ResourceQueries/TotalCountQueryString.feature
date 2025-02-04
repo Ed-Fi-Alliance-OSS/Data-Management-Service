@@ -1,7 +1,7 @@
 Feature: TotalCount Response Header for GET Requests
         Background:
-            Given the SIS Vendor is authorized
-            
+            Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
+
         @addwait
         Scenario: 00 Background
             Given the system has these "schools"

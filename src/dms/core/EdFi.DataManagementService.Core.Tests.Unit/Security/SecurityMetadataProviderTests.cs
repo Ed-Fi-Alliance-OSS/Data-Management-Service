@@ -135,8 +135,8 @@ public class SecurityMetadataProviderTests
             _claims![1].ResourceClaims.Should().NotBeNull();
             _claims![1].ResourceClaims!.Should().HaveCount(1);
             _claims![1].ResourceClaims![0].Should().NotBeNull();
-            _claims![1].ResourceClaims![0].DefaultAuthorizationStrategiesForCrud.Should().NotBeNull();
-            _claims![1].ResourceClaims![0].DefaultAuthorizationStrategiesForCrud.Should().HaveCount(1);
+            _claims![1].ResourceClaims![0].DefaultAuthorizationStrategies.Should().NotBeNull();
+            _claims![1].ResourceClaims![0].DefaultAuthorizationStrategies.Should().HaveCount(1);
         }
     }
 

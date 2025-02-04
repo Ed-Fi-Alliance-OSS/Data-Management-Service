@@ -1,8 +1,8 @@
 Feature: Validate the duplicate references
 
         Background:
-            Given the SIS Vendor is authorized
-            
+            Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
+
         @API-095
         Scenario: 01 Verify clients can create a studentEducationOrganizationAssociation resource with combined unique descriptors
             Given the system has these descriptors

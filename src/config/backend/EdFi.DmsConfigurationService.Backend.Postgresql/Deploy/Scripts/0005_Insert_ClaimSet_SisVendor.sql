@@ -42,6 +42,7 @@ WITH resource_names AS (
 		'studentProgramAssociations',
 		'studentSchoolAssociations',
 		'studentSectionAssociations',
+        'surveys',
 	--descriptors:
 		'absenceEventCategoryDescriptors',
 --		'academicHonorCategoryDescriptors',
@@ -73,7 +74,7 @@ SELECT unnest(names) FROM resource_names;
 -- Step 3: Insert the generated JSON into claimset table
 INSERT INTO dmscs.claimset (claimsetname, issystemreserved, resourceclaims)
 SELECT
-    'E2E-SIS-Vendor',
+    'SIS-Vendor',
 	true,
     jsonb_agg(
         jsonb_build_object(

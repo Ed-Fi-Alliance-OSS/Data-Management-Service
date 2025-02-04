@@ -26,8 +26,8 @@ public class ConfigurationTests
         [SetUp]
         public void Setup()
         {
-            var securityMetadataService = A.Fake<ISecurityMetadataService>();
-            A.CallTo(() => securityMetadataService.GetClaimSets()).Returns([]);
+            var claimSetCacheService = A.Fake<IClaimSetCacheService>();
+            A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
             _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -42,7 +42,7 @@ public class ConfigurationTests
                 builder.ConfigureServices(
                     (collection) =>
                     {
-                        collection.AddTransient((x) => securityMetadataService);
+                        collection.AddTransient((x) => claimSetCacheService);
                     }
                 );
             });
@@ -83,8 +83,8 @@ public class ConfigurationTests
         [SetUp]
         public void Setup()
         {
-            var securityMetadataService = A.Fake<ISecurityMetadataService>();
-            A.CallTo(() => securityMetadataService.GetClaimSets()).Returns([]);
+            var claimSetCacheService = A.Fake<IClaimSetCacheService>();
+            A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
             _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -102,7 +102,7 @@ public class ConfigurationTests
                 builder.ConfigureServices(
                     (collection) =>
                     {
-                        collection.AddTransient((x) => securityMetadataService);
+                        collection.AddTransient((x) => claimSetCacheService);
                     }
                 );
             });

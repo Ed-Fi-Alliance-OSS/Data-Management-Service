@@ -40,8 +40,8 @@ public class DiscoveryModuleTests
                 Description = "Ed-Fi data standard 5.0.0",
             }
         ).ActLike<IDataModelInfo>();
-        var securityMetadataService = A.Fake<ISecurityMetadataService>();
-        A.CallTo(() => securityMetadataService.GetClaimSets()).Returns([]);
+        var claimSetCacheService = A.Fake<IClaimSetCacheService>();
+        A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
         var apiService = A.Fake<IApiService>();
         A.CallTo(() => apiService.GetDataModelInfo()).Returns([expectedDataModelInfo]);
 
@@ -53,7 +53,7 @@ public class DiscoveryModuleTests
                 {
                     collection.AddTransient((x) => versionProvider);
                     collection.AddTransient((x) => apiService);
-                    collection.AddTransient((x) => securityMetadataService);
+                    collection.AddTransient((x) => claimSetCacheService);
                 }
             );
         });
@@ -90,8 +90,8 @@ public class DiscoveryModuleTests
                 Description = "Ed-Fi data standard 5.0.0",
             }
         ).ActLike<IDataModelInfo>();
-        var securityMetadataService = A.Fake<ISecurityMetadataService>();
-        A.CallTo(() => securityMetadataService.GetClaimSets()).Returns([]);
+        var claimSetCacheService = A.Fake<IClaimSetCacheService>();
+        A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
         var apiService = A.Fake<IApiService>();
         A.CallTo(() => apiService.GetDataModelInfo()).Returns([expectedDataModelInfo]);
 
@@ -112,7 +112,7 @@ public class DiscoveryModuleTests
                 {
                     collection.AddTransient((x) => versionProvider);
                     collection.AddTransient((x) => apiService);
-                    collection.AddTransient((x) => securityMetadataService);
+                    collection.AddTransient((x) => claimSetCacheService);
                 }
             );
         });

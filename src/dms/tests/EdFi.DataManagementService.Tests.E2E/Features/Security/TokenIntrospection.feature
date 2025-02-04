@@ -75,12 +75,12 @@ Feature: JWT Token Introspection
 
         @API-229
         Scenario: Accept a Resource endpoint GET request where the token is valid
-            Given the SIS Vendor is authorized
+            Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
              When a GET request is made to "/ed-fi/academicWeeks"
              Then it should respond with 200
 
         Scenario: Reject a Resource endpoint GET request where the token signature is manipulated
-            Given the SIS Vendor is authorized
+            Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
               And the token signature is manipulated
              When a GET request is made to "/ed-fi/academicWeeks"
              Then it should respond with 401

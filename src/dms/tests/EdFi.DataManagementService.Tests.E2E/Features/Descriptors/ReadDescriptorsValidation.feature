@@ -1,7 +1,7 @@
 Feature: Read a Descriptor
 
         Background:
-            Given the SIS Vendor is authorized
+            Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
               And a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {

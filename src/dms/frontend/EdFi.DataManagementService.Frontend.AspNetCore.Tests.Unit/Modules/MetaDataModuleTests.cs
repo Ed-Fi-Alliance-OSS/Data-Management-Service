@@ -30,15 +30,15 @@ public class MetadataModuleTests
         public void SetUp()
         {
             // Arrange
-            var securityMetadataService = A.Fake<ISecurityMetadataService>();
-            A.CallTo(() => securityMetadataService.GetClaimSets()).Returns([]);
+            var claimSetCacheService = A.Fake<IClaimSetCacheService>();
+            A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
             using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
                 builder.ConfigureServices(
                     (collection) =>
                     {
-                        collection.AddTransient((x) => securityMetadataService);
+                        collection.AddTransient((x) => claimSetCacheService);
                     }
                 );
             });
@@ -88,15 +88,15 @@ public class MetadataModuleTests
     public async Task Metadata_Endpoint_Returns_Specifications_List()
     {
         // Arrange
-        var securityMetadataService = A.Fake<ISecurityMetadataService>();
-        A.CallTo(() => securityMetadataService.GetClaimSets()).Returns([]);
+        var claimSetCacheService = A.Fake<IClaimSetCacheService>();
+        A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((x) => securityMetadataService);
+                    collection.AddTransient((x) => claimSetCacheService);
                 }
             );
         });
@@ -124,8 +124,8 @@ public class MetadataModuleTests
     {
         // Arrange
         var contentProvider = A.Fake<IContentProvider>();
-        var securityMetadataService = A.Fake<ISecurityMetadataService>();
-        A.CallTo(() => securityMetadataService.GetClaimSets()).Returns([]);
+        var claimSetCacheService = A.Fake<IClaimSetCacheService>();
+        A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
         var json =
             """{"openapi":"3.0.1", "info":"descriptors","servers":[{"url":"http://localhost:5000/data/v3"}]}""";
         JsonNode _descriptorsJson = JsonNode.Parse(json)!;
@@ -142,7 +142,7 @@ public class MetadataModuleTests
                 (collection) =>
                 {
                     collection.AddTransient((x) => contentProvider);
-                    collection.AddTransient((x) => securityMetadataService);
+                    collection.AddTransient((x) => claimSetCacheService);
                 }
             );
         });
@@ -165,15 +165,15 @@ public class MetadataModuleTests
     public async Task Metadata_Returns_Invalid_Resource_Error()
     {
         // Arrange
-        var securityMetadataService = A.Fake<ISecurityMetadataService>();
-        A.CallTo(() => securityMetadataService.GetClaimSets()).Returns([]);
+        var claimSetCacheService = A.Fake<IClaimSetCacheService>();
+        A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((x) => securityMetadataService);
+                    collection.AddTransient((x) => claimSetCacheService);
                 }
             );
         });
@@ -191,8 +191,8 @@ public class MetadataModuleTests
     {
         // Arrange
         var httpContext = A.Fake<HttpContext>();
-        var securityMetadataService = A.Fake<ISecurityMetadataService>();
-        A.CallTo(() => securityMetadataService.GetClaimSets()).Returns([]);
+        var claimSetCacheService = A.Fake<IClaimSetCacheService>();
+        A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
@@ -200,7 +200,7 @@ public class MetadataModuleTests
                 (collection) =>
                 {
                     collection.AddTransient(x => httpContext);
-                    collection.AddTransient((x) => securityMetadataService);
+                    collection.AddTransient((x) => claimSetCacheService);
                 }
             );
         });

@@ -1,7 +1,7 @@
 Feature: Resources "Create" Operation validations
 
         Background:
-            Given the SIS Vendor is authorized
+            Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
               And the system has these descriptors
                   | descriptorValue                                                                            |
                   | uri://ed-fi.org/ContentClassDescriptor#Testing                                             |

@@ -1,7 +1,7 @@
 Feature: Create a Descriptor
 
         Background:
-            Given the SIS Vendor is authorized
+            Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
 
         @API-006
         Scenario: 01 Ensure clients can create a descriptor
