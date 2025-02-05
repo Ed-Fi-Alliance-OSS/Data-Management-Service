@@ -55,7 +55,7 @@ public class NamedAuthorizationStrategyHandlerProviderTests
             handler.Should().NotBeNull();
             var authResult = handler!.ValidateAuthorization(
                 new DocumentSecurityElements(["uri://namespace/resource"]),
-                new ApiClientDetails("", "", [], ["uri://namespace"])
+                new ApiClientDetails("", "", [], [new NamespacePrefix("uri://namespace")])
             );
             authResult.Should().NotBeNull();
             authResult.IsAuthorized.Should().BeTrue();

@@ -24,7 +24,7 @@ public class NamespaceBasedValidatorTests
             var validator = new NamespaceBasedValidator();
             _expectedResult = validator.ValidateAuthorization(
                 new DocumentSecurityElements([]),
-                new ApiClientDetails("", "", [], ["uri://namespace"])
+                new ApiClientDetails("", "", [], [new NamespacePrefix("uri://namespace")])
             );
         }
 
@@ -82,7 +82,7 @@ public class NamespaceBasedValidatorTests
             var validator = new NamespaceBasedValidator();
             _expectedResult = validator.ValidateAuthorization(
                 new DocumentSecurityElements(["uri://namespace/resource"]),
-                new ApiClientDetails("", "", [], ["uri://namespace"])
+                new ApiClientDetails("", "", [], [new NamespacePrefix("uri://namespace")])
             );
         }
 
@@ -106,7 +106,7 @@ public class NamespaceBasedValidatorTests
             var validator = new NamespaceBasedValidator();
             _expectedResult = validator.ValidateAuthorization(
                 new DocumentSecurityElements(["uri://not-matching/resource"]),
-                new ApiClientDetails("", "", [], ["uri://namespace"])
+                new ApiClientDetails("", "", [], [new NamespacePrefix("uri://namespace")])
             );
         }
 
@@ -135,7 +135,12 @@ public class NamespaceBasedValidatorTests
             var validator = new NamespaceBasedValidator();
             _expectedResult = validator.ValidateAuthorization(
                 new DocumentSecurityElements(["uri://matching/resource", "uri://not-matching1/resource"]),
-                new ApiClientDetails("", "", [], ["uri://matching", "uri://matching1"])
+                new ApiClientDetails(
+                    "",
+                    "",
+                    [],
+                    [new NamespacePrefix("uri://matching"), new NamespacePrefix("uri://matching1")]
+                )
             );
         }
 

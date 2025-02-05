@@ -38,14 +38,17 @@ public class NamespaceBasedValidator : IAuthorizationValidator
         var allMatching = namespacesFromRequest
             .ToList()
             .TrueForAll(fromRequest =>
-                namespacePrefixesFromClaim.Any(fromClaim =>
-                    fromRequest.StartsWith(fromClaim, StringComparison.InvariantCultureIgnoreCase)
+                namespacePrefixesFromClaim.Exists(fromClaim =>
+                    fromRequest.StartsWith(fromClaim.Value, StringComparison.InvariantCultureIgnoreCase)
                 )
             );
 
         if (!allMatching)
         {
-            string claimNamespacePrefixes = string.Join("', '", namespacePrefixesFromClaim);
+            string claimNamespacePrefixes = string.Join(
+                "', '",
+                namespacePrefixesFromClaim.Select(x => x.Value)
+            );
             return new AuthorizationResult(
                 false,
                 $"The 'Namespace' value of the data does not start with any of the caller's associated namespace prefixes ('{claimNamespacePrefixes}')."
