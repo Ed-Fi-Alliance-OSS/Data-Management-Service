@@ -26,6 +26,7 @@ public class NamedAuthorizationStrategyHandlerProviderTests
             var services = new ServiceCollection();
             services.AddTransient<NamedAuthorizationValidatorProvider>();
             services.AddTransient<NoFurtherAuthorizationRequiredValidator>();
+            services.AddTransient<NamespaceBasedValidator>();
 
             serviceProvider = services.BuildServiceProvider();
 
@@ -33,7 +34,7 @@ public class NamedAuthorizationStrategyHandlerProviderTests
         }
 
         [Test]
-        public void Should_Return_NoFurtherAuthorizationRequiredAuthorizationStrategyHandler()
+        public void Should_Return_NoFurtherAuthorizationRequiredValidator()
         {
             var handler =
                 handlerProvider!.GetByName("NoFurtherAuthorizationRequired")
@@ -42,6 +43,19 @@ public class NamedAuthorizationStrategyHandlerProviderTests
             var authResult = handler!.ValidateAuthorization(
                 new DocumentSecurityElements([]),
                 new ApiClientDetails("", "", [], [])
+            );
+            authResult.Should().NotBeNull();
+            authResult.IsAuthorized.Should().BeTrue();
+        }
+
+        [Test]
+        public void Should_Return_NamespaceBasedValidator()
+        {
+            var handler = handlerProvider!.GetByName("NamespaceBased") as NamespaceBasedValidator;
+            handler.Should().NotBeNull();
+            var authResult = handler!.ValidateAuthorization(
+                new DocumentSecurityElements(["uri://namespace/resource"]),
+                new ApiClientDetails("", "", [], [new NamespacePrefix("uri://namespace")])
             );
             authResult.Should().NotBeNull();
             authResult.IsAuthorized.Should().BeTrue();

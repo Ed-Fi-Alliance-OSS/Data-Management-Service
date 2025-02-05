@@ -6,7 +6,7 @@ Feature: Namespace Authorization
             # Note: the api client used in the background has two namespaces. For these tests we will
             # use the second namespace (ns2). Elsewhere in the test suite we will be using the first
             # and more common namespace "uri://ed-fi.org"
-            Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org uri://ns2.org"
+            Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ed-fi.org uri://ns2.org"
               And a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                   {
@@ -19,7 +19,7 @@ Feature: Namespace Authorization
                   }
                   """
 
-        Scenario: 01 Ensure SIS Vendor can create a descriptor in the ns2 namespace
+        Scenario: 01 Ensure client can create a descriptor in the ns2 namespace
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                   {
@@ -33,11 +33,11 @@ Feature: Namespace Authorization
                   """
              Then it should respond with 200
 
-        Scenario: 02 Ensure SIS Vendor can get a descriptor in the ns2 namespace
+        Scenario: 02 Ensure client can get a descriptor in the ns2 namespace
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 200
 
-        Scenario: 03 Ensure SIS Vendor can update a descriptor in the ns2 namespace
+        Scenario: 03 Ensure client can update a descriptor in the ns2 namespace
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
                   {
@@ -52,13 +52,12 @@ Feature: Namespace Authorization
                   """
              Then it should respond with 204
 
-        Scenario: 04 Ensure SIS Vendor can delete a descriptor in the ns2 namespace
+        Scenario: 04 Ensure client can delete a descriptor in the ns2 namespace
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 204
 
-        @ignore #DMS-417
-        Scenario: 05 Ensure Different SIS Vendor with different namespace can not create a descriptor in the ns2 namespace
-            Given the SIS Vendor is authorized with namespacePrefixes "uri://ns3.org"
+        Scenario: 05 Ensure claimSet with different namespace can not create a descriptor in the ns2 namespace
+            Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                   {
@@ -73,14 +72,13 @@ Feature: Namespace Authorization
              Then it should respond with 403
 
         @ignore #DMS-503
-        Scenario: 06 Ensure Different SIS Vendor with different namespace can not get a descriptor in the ns2 namespace
+        Scenario: 06 Ensure claimSet with different namespace can not get a descriptor in the ns2 namespace
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ns3.org"
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 403
 
-        @ignore #DMS-417
-        Scenario: 07 Ensure Different SIS Vendor with different namespace can not update a descriptor in the ns2 namespace
-            Given the SIS Vendor is authorized with namespacePrefixes "uri://ns3.org"
+        Scenario: 07 Ensure claimSet with different namespace can not update a descriptor in the ns2 namespace
+            Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
                   {
@@ -96,8 +94,8 @@ Feature: Namespace Authorization
              Then it should respond with 403
 
         @ignore #DMS-503
-        Scenario: 08 Ensure Different SIS Vendor with different namespace can not delete a descriptor in the ns2 namespace
-            Given the SIS Vendor is authorized with namespacePrefixes "uri://ns3.org"
+        Scenario: 08 Ensure claimSet with different namespace can not delete a descriptor in the ns2 namespace
+            Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 403
 
@@ -107,7 +105,7 @@ Feature: Namespace Authorization
             # Note: the api client used in the background has two namespaces. For these tests we will
             # use the second namespace (ns2). Elsewhere in the test suite we will be using the first
             # and more common namespace "uri://ed-fi.org"
-            Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org uri://ns2.org"
+            Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ed-fi.org uri://ns2.org"
             Given the system has these "schoolYearTypes"
                   | schoolYear | currentSchoolYear | schoolYearDescription |
                   | 2024       | true              | School Year 2024      |
@@ -123,7 +121,7 @@ Feature: Namespace Authorization
                   }
                   """
 
-        Scenario: 09 Ensure SIS Vendor can create a resource in the ns2 namespace
+        Scenario: 09 Ensure client can create a resource in the ns2 namespace
              When a POST request is made to "/ed-fi/surveys" with
                   """
                   {
@@ -137,11 +135,11 @@ Feature: Namespace Authorization
                   """
              Then it should respond with 200
 
-        Scenario: 10 Ensure SIS Vendor can get a resource in the ns2 namespace
+        Scenario: 10 Ensure client can get a resource in the ns2 namespace
              When a GET request is made to "/ed-fi/surveys/{id}"
              Then it should respond with 200
 
-        Scenario: 11 Ensure SIS Vendor can update a resource in the ns2 namespace
+        Scenario: 11 Ensure client can update a resource in the ns2 namespace
              When a PUT request is made to "/ed-fi/surveys/{id}" with
                   """
                   {
@@ -156,13 +154,12 @@ Feature: Namespace Authorization
                   """
              Then it should respond with 204
 
-        Scenario: 12 Ensure SIS Vendor can delete a resource in the ns2 namespace
+        Scenario: 12 Ensure client can delete a resource in the ns2 namespace
              When a DELETE request is made to "/ed-fi/surveys/{id}"
              Then it should respond with 204
 
-        @ignore #DMS-417
-        Scenario: 13 Ensure Different SIS Vendor with different namespace can not create a resource in the ns2 namespace
-            Given the SIS Vendor is authorized with namespacePrefixes "uri://ns3.org"
+        Scenario: 13 Ensure claimSet with different namespace can not create a resource in the ns2 namespace
+            Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a POST request is made to "/ed-fi/surveys" with
                   """
                   {
@@ -177,14 +174,13 @@ Feature: Namespace Authorization
              Then it should respond with 403
 
         @ignore #DMS-503
-        Scenario: 14 Ensure Different SIS Vendor with different namespace can not get a resource in the ns2 namespace
-            Given the SIS Vendor is authorized with namespacePrefixes "uri://ns3.org"
+        Scenario: 14 Ensure claimSet with different namespace can not get a resource in the ns2 namespace
+            Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a GET request is made to "/ed-fi/surveys/{id}"
              Then it should respond with 403
 
-        @ignore #DMS-417
-        Scenario: 15 Ensure Different SIS Vendor with different namespace can not update a resource in the ns2 namespace
-            Given the SIS Vendor is authorized with namespacePrefixes "uri://ns3.org"
+        Scenario: 15 Ensure claimSet with different namespace can not update a resource in the ns2 namespace
+            Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a PUT request is made to "/ed-fi/surveys/{id}" with
                   """
                   {
@@ -200,7 +196,7 @@ Feature: Namespace Authorization
              Then it should respond with 403
 
         @ignore #DMS-503
-        Scenario: 16 Ensure Different SIS Vendor with different namespace can not delete a resource in the ns2 namespace
-            Given the SIS Vendor is authorized with namespacePrefixes "uri://ns3.org"
+        Scenario: 16 Ensure claimSet with different namespace can not delete a resource in the ns2 namespace
+            Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a DELETE request is made to "/ed-fi/surveys/{id}"
              Then it should respond with 403

@@ -35,12 +35,12 @@ public class ResourceClaim
     /// Pre-defined authorization strategy for the resource
     /// </summary>
     [JsonPropertyName("_defaultAuthorizationStrategiesForCrud")]
-    public List<ResourceClaimActionAuthStrategies> DefaultAuthorizationStrategies { get; set; }
+    public List<ResourceClaimActionAuthStrategies> DefaultAuthorizationStrategiesForCrud { get; set; }
 
     /// <summary>
     /// Authorization strategy overrides for the resource
     /// </summary>
-    public List<ResourceClaimActionAuthStrategies> AuthorizationStrategyOverrides { get; set; }
+    public List<ResourceClaimActionAuthStrategies> AuthorizationStrategyOverridesForCrud { get; set; }
 
     /// <summary>
     /// Represents the child resource claims associated with the resource
@@ -50,8 +50,8 @@ public class ResourceClaim
     public ResourceClaim()
     {
         Children = [];
-        DefaultAuthorizationStrategies = [];
-        AuthorizationStrategyOverrides = [];
+        DefaultAuthorizationStrategiesForCrud = [];
+        AuthorizationStrategyOverridesForCrud = [];
     }
 }
 

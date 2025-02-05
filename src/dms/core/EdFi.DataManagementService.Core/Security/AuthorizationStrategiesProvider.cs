@@ -24,9 +24,9 @@ public class AuthorizationStrategiesProvider() : IAuthorizationStrategiesProvide
     {
         List<string> authorizationStrategyList = [];
         List<ResourceClaimActionAuthStrategies> authStrategyOverrides =
-            resourceClaim.AuthorizationStrategyOverrides;
+            resourceClaim.AuthorizationStrategyOverridesForCrud;
         List<ResourceClaimActionAuthStrategies> defaultAuthStrategies =
-            resourceClaim.DefaultAuthorizationStrategies;
+            resourceClaim.DefaultAuthorizationStrategiesForCrud;
 
         ResourceClaimActionAuthStrategies? authStrategiesOverridesForAction =
             authStrategyOverrides.SingleOrDefault(x =>

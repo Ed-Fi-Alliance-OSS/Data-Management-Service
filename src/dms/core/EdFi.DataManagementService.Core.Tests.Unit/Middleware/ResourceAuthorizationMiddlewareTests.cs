@@ -42,7 +42,7 @@ public class ResourceAuthorizationMiddlewareTests
                             {
                                 Name = "schools",
                                 Actions = [new(Enabled: true, Name: "Create")],
-                                DefaultAuthorizationStrategies =
+                                DefaultAuthorizationStrategiesForCrud =
                                 [
                                     new(
                                         ActionId: 1,
@@ -372,7 +372,7 @@ public class ResourceAuthorizationMiddlewareTests
                                 {
                                     Name = "schools",
                                     Actions = [new(Enabled: true, Name: "Create")],
-                                    DefaultAuthorizationStrategies = [],
+                                    DefaultAuthorizationStrategiesForCrud = [],
                                 },
                             ]
                         ),
