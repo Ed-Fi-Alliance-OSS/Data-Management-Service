@@ -1,6 +1,6 @@
 # Usage:
 # 1. in `eng/docker-compose`, copy `.env.example` to `.env`
-# 2. start up all services: `./start-local-dms.ps1 -EnableSearchEngineUI -EnableConfig -EnforceAuthorization -r`
+# 2. start up all services: `./start-local-dms.ps1 -EnableSearchEngineUI -EnableConfig -r`
 # 3. Setup keycloak: `.\setup-keycloak.ps1`
 # 4. Run everything here from top to bottom.
 

@@ -11,7 +11,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
@@ -67,7 +66,7 @@ public class ConfigurationTests
 
                 // Act
                 var response = await client.GetAsync("/");
-                var content = await response.Content.ReadAsStringAsync();
+                string content = await response.Content.ReadAsStringAsync();
 
                 // Assert
                 response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
@@ -127,115 +126,11 @@ public class ConfigurationTests
 
                 // Act
                 var response = await client.GetAsync("/");
-                var content = await response.Content.ReadAsStringAsync();
+                string content = await response.Content.ReadAsStringAsync();
 
                 // Assert
                 response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
                 content.Should().Be(string.Empty);
-            }
-        }
-    }
-
-    [TestFixture]
-    public class Given_A_Configuration_With_Invalid_Identity_Settings
-    {
-        private WebApplicationFactory<Program>? _factoryWithAuthorization;
-        private WebApplicationFactory<Program>? _factoryWithoutAuthorization;
-
-        [SetUp]
-        public void Setup()
-        {
-            var claimSetCacheService = A.Fake<IClaimSetCacheService>();
-            A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
-            _factoryWithAuthorization = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureAppConfiguration(
-                    (context, configuration) =>
-                    {
-                        configuration.AddInMemoryCollection(
-                            new Dictionary<string, string?>
-                            {
-                                ["IdentitySettings:EnforceAuthorization"] = "true",
-                                ["IdentitySettings:Authority"] = "",
-                            }
-                        );
-                    }
-                );
-                builder.ConfigureServices(
-                    (collection) =>
-                    {
-                        collection.AddTransient((x) => claimSetCacheService);
-                    }
-                );
-            });
-
-            _factoryWithoutAuthorization = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureAppConfiguration(
-                    (context, configuration) =>
-                    {
-                        configuration.AddInMemoryCollection(
-                            new Dictionary<string, string?>
-                            {
-                                ["IdentitySettings:EnforceAuthorization"] = "false",
-                                ["IdentitySettings:Authority"] = "",
-                            }
-                        );
-                    }
-                );
-                builder.ConfigureServices(
-                    (collection) =>
-                    {
-                        collection.AddTransient((x) => claimSetCacheService);
-                    }
-                );
-            });
-        }
-
-        [TearDown]
-        public void Teardown()
-        {
-            _factoryWithAuthorization!.Dispose();
-            _factoryWithoutAuthorization!.Dispose();
-        }
-
-        [TestFixture]
-        public class When_Requesting_Any_Endpoint_Should_Return_InternalServerError
-            : Given_A_Configuration_With_Invalid_Identity_Settings
-        {
-            [Test]
-            public void When_authorization_enabled_and_no_authority()
-            {
-                // Act
-                Func<HttpClient> createClient = () => _factoryWithAuthorization!.CreateClient();
-
-                // Assert
-                createClient
-                    .Should()
-                    .Throw<OptionsValidationException>()
-                    .WithMessage("Missing required IdentitySettings value: Authority");
-            }
-        }
-
-        [TestFixture]
-        public class When_Requesting_Any_Endpoint_Should_Return_Ok
-            : Given_A_Configuration_With_Invalid_Identity_Settings
-        {
-            [Test]
-            public async Task When_authorization_disabled_and_no_authority()
-            {
-                // Arrange
-                using var client = _factoryWithoutAuthorization!.CreateClient();
-
-                // Act
-                var response = await client.GetAsync("/");
-                var content = await response.Content.ReadAsStringAsync();
-
-                // Assert
-                response.StatusCode.Should().Be(HttpStatusCode.OK);
-                content.Should().NotBeEmpty();
             }
         }
     }

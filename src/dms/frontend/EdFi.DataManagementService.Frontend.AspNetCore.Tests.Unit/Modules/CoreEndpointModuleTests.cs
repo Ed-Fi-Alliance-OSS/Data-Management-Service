@@ -40,17 +40,6 @@ public class CoreEndpointModuleTests
             await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
-                builder.ConfigureAppConfiguration(
-                    (context, configuration) =>
-                    {
-                        configuration.AddInMemoryCollection(
-                            new Dictionary<string, string?>
-                            {
-                                ["IdentitySettings:EnforceAuthorization"] = "true",
-                            }
-                        );
-                    }
-                );
                 builder.ConfigureServices(
                     (collection) =>
                     {
@@ -105,17 +94,6 @@ public class CoreEndpointModuleTests
             await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
-                builder.ConfigureAppConfiguration(
-                    (context, configuration) =>
-                    {
-                        configuration.AddInMemoryCollection(
-                            new Dictionary<string, string?>
-                            {
-                                ["IdentitySettings:EnforceAuthorization"] = "true",
-                            }
-                        );
-                    }
-                );
                 builder.ConfigureServices(
                     (collection) =>
                     {
@@ -152,60 +130,6 @@ public class CoreEndpointModuleTests
         public void Then_it_responds_with_status_forbidden()
         {
             _response!.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        }
-    }
-
-    [TestFixture]
-    public class When_authorization_disabled
-    {
-        private HttpResponseMessage? _response;
-
-        [SetUp]
-        public async Task SetUp()
-        {
-            // Arrange
-            var claimSetCacheService = A.Fake<IClaimSetCacheService>();
-            A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
-            var apiService = A.Fake<IApiService>();
-            A.CallTo(() => apiService.Get(A<FrontendRequest>.Ignored)).Returns(new FakeFrontendResponse());
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureAppConfiguration(
-                    (context, configuration) =>
-                    {
-                        configuration.AddInMemoryCollection(
-                            new Dictionary<string, string?>
-                            {
-                                ["IdentitySettings:EnforceAuthorization"] = "false",
-                            }
-                        );
-                    }
-                );
-                builder.ConfigureServices(
-                    (collection) =>
-                    {
-                        collection.AddTransient((x) => apiService);
-                        collection.AddTransient((x) => claimSetCacheService);
-                    }
-                );
-            });
-            using var client = factory.CreateClient();
-
-            // Act
-            _response = await client.GetAsync("/data/ed-fi/students");
-        }
-
-        [TearDown]
-        public void TearDownAttribute()
-        {
-            _response?.Dispose();
-        }
-
-        [Test]
-        public void Then_it_responds_with_status_OK()
-        {
-            _response!.StatusCode.Should().Be(HttpStatusCode.OK);
         }
     }
 }

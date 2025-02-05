@@ -97,3 +97,19 @@ Feature: Read a Descriptor
                       "errors": []
                   }
                   """
+
+        Scenario: 07 Get a Descriptor using a resource not configured in claims
+            When a GET request is made to "/ed-fi/academicHonorCategoryDescriptors"
+            Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                      "detail": "Access to the resource could not be authorized.",
+                      "type": "urn:ed-fi:api:security:authorization:",
+                      "title": "Authorization Denied",
+                      "status": 403,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
+                  }
+                  """

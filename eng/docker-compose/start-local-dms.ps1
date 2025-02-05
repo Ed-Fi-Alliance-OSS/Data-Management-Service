@@ -25,10 +25,6 @@ param (
     [Switch]
     $EnableSearchEngineUI,
 
-    # Enforce Authorization
-    [Switch]
-    $EnforceAuthorization,
-
     # Search engine type ("OpenSearch" or "ElasticSearch")
     [string]
     [ValidateSet("OpenSearch", "ElasticSearch")]
@@ -43,7 +39,9 @@ $files = @(
     "-f",
     "postgresql.yml",
     "-f",
-    "local-dms.yml"
+    "local-dms.yml",
+    "-f",
+    "keycloak.yml"
 )
 
 if ($SearchEngine -eq "ElasticSearch") {
@@ -57,10 +55,6 @@ else {
     if ($EnableSearchEngineUI) {
         $files += @("-f", "kafka-opensearch-ui.yml")
     }
-}
-
-if ($EnforceAuthorization) {
-    $files += @("-f", "keycloak.yml")
 }
 
 if ($EnableConfig) {
@@ -86,12 +80,6 @@ else {
     if ($r) { $upArgs += @("--build") }
 
     Write-Output "Starting locally-built DMS"
-    if ($EnforceAuthorization) {
-        $env:IDENTITY_ENFORCE_AUTHORIZATION = "true"
-    }
-    else {
-        $env:IDENTITY_ENFORCE_AUTHORIZATION = "false"
-    }
 
     docker compose $files --env-file $EnvironmentFile up $upArgs
 

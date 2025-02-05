@@ -11,10 +11,13 @@ public class CoreEndpointModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        bool enforceAuthorization = IdentityConfiguration.EnforceAuthorization(endpoints);
-        endpoints.MapPost("/data/{**dmsPath}", Upsert).RequireAuthorizationWithPolicy(enforceAuthorization);
-        endpoints.MapGet("/data/{**dmsPath}", Get).RequireAuthorizationWithPolicy(enforceAuthorization);
-        endpoints.MapPut("/data/{**dmsPath}", UpdateById).RequireAuthorizationWithPolicy(enforceAuthorization);
-        endpoints.MapDelete("/data/{**dmsPath}", DeleteById).RequireAuthorizationWithPolicy(enforceAuthorization);
+        endpoints.MapPost("/data/{**dmsPath}", Upsert).RequireAuthorization(SecurityConstants.ServicePolicy);
+        endpoints.MapGet("/data/{**dmsPath}", Get).RequireAuthorization(SecurityConstants.ServicePolicy);
+        endpoints
+            .MapPut("/data/{**dmsPath}", UpdateById)
+            .RequireAuthorization(SecurityConstants.ServicePolicy);
+        endpoints
+            .MapDelete("/data/{**dmsPath}", DeleteById)
+            .RequireAuthorization(SecurityConstants.ServicePolicy);
     }
 }

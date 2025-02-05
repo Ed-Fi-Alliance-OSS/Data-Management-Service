@@ -21,7 +21,5 @@ namespace EdFi.DataManagementService.Tests.E2E
                 "opensearch",
                 StringComparison.InvariantCultureIgnoreCase
             );
-
-        public static bool EnforceAuthorization => bool.TryParse(_configuration["EnforceAuthorization"], out _);
     }
 }

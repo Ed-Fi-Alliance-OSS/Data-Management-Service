@@ -313,7 +313,6 @@ Please refer "Creating a Configuration Service Client" section above
        IdentitySettings section in appsettings.json file as follows:
 
         ```js
-            "EnforceAuthorization": true,
             "ConfigServiceRole": "config-service-app",
             "ClientRole": "dms-client",
             "Authority": "http://your-keycloak-url:port/realms/<your-realm>",

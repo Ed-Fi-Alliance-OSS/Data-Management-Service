@@ -1,3 +1,5 @@
+-- This script automatically generates the claimset needed to run the E2E tests using authorization
+
 -- Step 1: Create a temporary table to store the resource names
 DROP TABLE IF EXISTS resource_claims;
 CREATE TEMPORARY TABLE resource_claims (
@@ -101,7 +103,7 @@ SELECT
                     'actionName', 'Read',
                     'authorizationStrategies', jsonb_build_array(
                         jsonb_build_object(
-                            'authStrategyId', 2,
+                            'authStrategyId', 1,
                             'authStrategyName', 'NoFurtherAuthorizationRequired',
                             'isInheritedFromParent', false
                         )
@@ -112,7 +114,7 @@ SELECT
                     'actionName', 'Update',
                     'authorizationStrategies', jsonb_build_array(
                         jsonb_build_object(
-                            'authStrategyId', 2,
+                            'authStrategyId', 1,
                             'authStrategyName', 'NoFurtherAuthorizationRequired',
                             'isInheritedFromParent', false
                         )
@@ -134,7 +136,7 @@ SELECT
                     'actionName', 'ReadChanges',
                     'authorizationStrategies', jsonb_build_array(
                         jsonb_build_object(
-                            'authStrategyId', 9,
+                            'authStrategyId', 1,
                             'authStrategyName', 'NoFurtherAuthorizationRequired',
                             'isInheritedFromParent', false
                         )

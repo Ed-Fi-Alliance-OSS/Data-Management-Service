@@ -107,7 +107,7 @@ Search engine type. Valid values are `OpenSearch`, `ElasticSearch`. Default: `Op
 
 ```pwsh
 # To set up the Keycloak container for enabling authorization 
-./start-local-dms.ps1 -EnforceAuthorization
+./start-local-dms.ps1
 ```
 
 You can also pass `-r` to `start-local-dms.ps1` to force rebuilding the DMS API

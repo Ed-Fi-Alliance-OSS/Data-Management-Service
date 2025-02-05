@@ -42,11 +42,8 @@ if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
     app.UseRateLimiter();
 }
 
-if (app.Services.GetRequiredService<IOptions<IdentitySettings>>().Value.EnforceAuthorization)
-{
-    app.UseAuthentication();
-    app.UseAuthorization();
-}
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapRouteEndpoints();
 
