@@ -35,11 +35,23 @@ internal record UpsertRequest(
     /// </summary>
     DocumentUuid DocumentUuid,
     /// <summary>
+    /// The security elements extracted from the document
+    /// </summary>
+    DocumentSecurityElements DocumentSecurityElements,
+    /// <summary>
     /// This class will modify the EdFiDoc of a referencing
     /// resource when the referenced resource's identifying
     /// values are modified
     /// </summary>
     IUpdateCascadeHandler UpdateCascadeHandler
 )
-    : UpdateRequest(ResourceInfo, DocumentInfo, EdfiDoc, TraceId, DocumentUuid, UpdateCascadeHandler),
+    : UpdateRequest(
+        ResourceInfo,
+        DocumentInfo,
+        EdfiDoc,
+        TraceId,
+        DocumentUuid,
+        DocumentSecurityElements,
+        UpdateCascadeHandler
+    ),
         IUpsertRequest;

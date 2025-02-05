@@ -34,10 +34,9 @@ public class ResourceAuthorizationMiddlewareTests
         A.CallTo(() => claimSetCacheService.GetClaimSets())
             .Returns(
                 [
-                    new ClaimSet()
-                    {
-                        Name = "SIS-Vendor",
-                        ResourceClaims =
+                    new ClaimSet(
+                        Name: "SIS-Vendor",
+                        ResourceClaims:
                         [
                             new ResourceClaim()
                             {
@@ -55,8 +54,8 @@ public class ResourceAuthorizationMiddlewareTests
                                     ),
                                 ],
                             },
-                        ],
-                    },
+                        ]
+                    ),
                 ]
             );
         var authStrategyList = new List<string> { expectedAuthStrategy };
@@ -276,11 +275,10 @@ public class ResourceAuthorizationMiddlewareTests
             A.CallTo(() => claimSetCacheService.GetClaimSets())
                 .Returns(
                     [
-                        new ClaimSet()
-                        {
-                            Name = "SIS-Vendor",
-                            ResourceClaims = [new ResourceClaim() { Name = "schools", Actions = null }],
-                        },
+                        new ClaimSet(
+                            Name: "SIS-Vendor",
+                            ResourceClaims: [new ResourceClaim() { Name = "schools", Actions = null }]
+                        ),
                     ]
                 );
             var authorizationStrategiesProvider = A.Fake<IAuthorizationStrategiesProvider>();
@@ -366,10 +364,9 @@ public class ResourceAuthorizationMiddlewareTests
             A.CallTo(() => claimSetCacheService.GetClaimSets())
                 .Returns(
                     [
-                        new ClaimSet()
-                        {
-                            Name = "SIS-Vendor",
-                            ResourceClaims =
+                        new ClaimSet(
+                            Name: "SIS-Vendor",
+                            ResourceClaims:
                             [
                                 new ResourceClaim()
                                 {
@@ -377,8 +374,8 @@ public class ResourceAuthorizationMiddlewareTests
                                     Actions = [new(Enabled: true, Name: "Create")],
                                     DefaultAuthorizationStrategies = [],
                                 },
-                            ],
-                        },
+                            ]
+                        ),
                     ]
                 );
             var authorizationStrategiesProvider = A.Fake<IAuthorizationStrategiesProvider>();
@@ -455,18 +452,17 @@ public class ResourceAuthorizationMiddlewareTests
             A.CallTo(() => claimSetCacheService.GetClaimSets())
                 .Returns(
                     [
-                        new ClaimSet()
-                        {
-                            Name = "SIS-Vendor",
-                            ResourceClaims =
+                        new ClaimSet(
+                            Name: "SIS-Vendor",
+                            ResourceClaims:
                             [
                                 new ResourceClaim()
                                 {
                                     Name = "schools",
                                     Actions = [new(Enabled: true, Name: "Create")],
                                 },
-                            ],
-                        },
+                            ]
+                        ),
                     ]
                 );
             var authorizationStrategiesProvider = A.Fake<IAuthorizationStrategiesProvider>();
@@ -544,18 +540,17 @@ public class ResourceAuthorizationMiddlewareTests
             A.CallTo(() => claimSetCacheService.GetClaimSets())
                 .Returns(
                     [
-                        new ClaimSet()
-                        {
-                            Name = "SIS-Vendor",
-                            ResourceClaims =
+                        new ClaimSet(
+                            Name: "SIS-Vendor",
+                            ResourceClaims:
                             [
                                 new ResourceClaim()
                                 {
                                     Name = "schools",
                                     Actions = [new(Enabled: true, Name: "Create")],
                                 },
-                            ],
-                        },
+                            ]
+                        ),
                     ]
                 );
             var authorizationStrategiesProvider = A.Fake<IAuthorizationStrategiesProvider>();

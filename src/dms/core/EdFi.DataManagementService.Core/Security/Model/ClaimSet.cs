@@ -5,8 +5,4 @@
 
 namespace EdFi.DataManagementService.Core.Security.Model;
 
-public class ClaimSet
-{
-    public required string Name { get; set; }
-    public List<ResourceClaim>? ResourceClaims { get; set; }
-}
+public record ClaimSet(string Name, List<ResourceClaim> ResourceClaims);

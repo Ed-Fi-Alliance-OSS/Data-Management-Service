@@ -23,6 +23,11 @@ public interface IGetRequest
     ResourceInfo ResourceInfo { get; }
 
     /// <summary>
+    /// The ClientAuthorizations for the requesting client
+    /// </summary>
+    ClientAuthorizations ClientAuthorizations { get; }
+
+    /// <summary>
     /// The request TraceId
     /// </summary>
     TraceId TraceId { get; }

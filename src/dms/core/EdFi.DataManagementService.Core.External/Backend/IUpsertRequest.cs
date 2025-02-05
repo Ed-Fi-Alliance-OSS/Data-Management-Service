@@ -29,6 +29,11 @@ public interface IUpsertRequest
     JsonNode EdfiDoc { get; }
 
     /// <summary>
+    /// The elements extracted from a document are being secured on
+    /// </summary>
+    DocumentSecurityElements DocumentSecurityElements { get; }
+
+    /// <summary>
     /// The request TraceId
     /// </summary>
     TraceId TraceId { get; }
@@ -40,7 +45,7 @@ public interface IUpsertRequest
     DocumentUuid DocumentUuid { get; }
 
     /// <summary>
-    /// This class will modify the EdFiDoc of a referencing
+    /// This callback will modify the EdFiDoc of a referencing
     /// resource when the referenced resource's identifying
     /// values are modified
     /// </summary>

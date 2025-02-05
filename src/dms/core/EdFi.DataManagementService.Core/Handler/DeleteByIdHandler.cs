@@ -33,6 +33,7 @@ internal class DeleteByIdHandler(
                 new DeleteRequest(
                     DocumentUuid: context.PathComponents.DocumentUuid,
                     ResourceInfo: context.ResourceInfo,
+                    ClientAuthorizations: context.ClientAuthorizations,
                     validateNoReferencesToDocument: false,
                     TraceId: context.FrontendRequest.TraceId
                 )
@@ -49,6 +50,11 @@ internal class DeleteByIdHandler(
         {
             DeleteSuccess => new FrontendResponse(StatusCode: 204, Body: null, Headers: []),
             DeleteFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
+            DeleteFailureNotAuthorized => new FrontendResponse(
+                StatusCode: 403,
+                Body: FailureResponse.ForForbidden(traceId: context.FrontendRequest.TraceId, errors: []),
+                Headers: []
+            ),
             DeleteFailureReference failure => new FrontendResponse(
                 StatusCode: 409,
                 Body: FailureResponse.ForDataConflict(

@@ -45,6 +45,7 @@ internal class UpsertHandler(
                     EdfiDoc: context.ParsedBody,
                     TraceId: context.FrontendRequest.TraceId,
                     DocumentUuid: candidateDocumentUuid,
+                    DocumentSecurityElements: context.DocumentSecurityElements,
                     UpdateCascadeHandler: updateCascadeHandler
                 )
             );
@@ -59,9 +60,12 @@ internal class UpsertHandler(
         context.FrontendResponse = upsertResult switch
         {
             InsertSuccess insertSuccess => new FrontendResponse(
-            StatusCode: 201,
-            Body: null,
-                Headers: new Dictionary<string, string>() { { "etag", context.ParsedBody["_etag"]?.ToString() ?? "" } },
+                StatusCode: 201,
+                Body: null,
+                Headers: new Dictionary<string, string>()
+                {
+                    { "etag", context.ParsedBody["_etag"]?.ToString() ?? "" },
+                },
                 LocationHeaderPath: PathComponents.ToResourcePath(
                     context.PathComponents,
                     insertSuccess.NewDocumentUuid
@@ -70,7 +74,10 @@ internal class UpsertHandler(
             UpdateSuccess updateSuccess => new(
                 StatusCode: 200,
                 Body: null,
-                Headers: new Dictionary<string, string>() { { "etag", context.ParsedBody["_etag"]?.ToString() ?? "" } },
+                Headers: new Dictionary<string, string>()
+                {
+                    { "etag", context.ParsedBody["_etag"]?.ToString() ?? "" },
+                },
                 LocationHeaderPath: PathComponents.ToResourcePath(
                     context.PathComponents,
                     updateSuccess.ExistingDocumentUuid

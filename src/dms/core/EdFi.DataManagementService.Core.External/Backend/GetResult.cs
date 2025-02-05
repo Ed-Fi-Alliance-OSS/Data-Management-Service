@@ -31,6 +31,11 @@ public record GetResult
     public record GetFailureNotExists() : GetResult();
 
     /// <summary>
+    /// A failure because the client is not authorized to get the document
+    /// </summary>
+    public record GetFailureNotAuthorized() : GetResult();
+
+    /// <summary>
     /// A transient failure due to a retryable condition, for example a serialization issue
     /// </summary>
     public record GetFailureRetryable() : GetResult();

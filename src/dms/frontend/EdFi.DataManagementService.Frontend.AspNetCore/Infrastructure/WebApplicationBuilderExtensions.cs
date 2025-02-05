@@ -17,7 +17,6 @@ using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
-using EdFi.DataManagementService.Frontend.AspNetCore.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;

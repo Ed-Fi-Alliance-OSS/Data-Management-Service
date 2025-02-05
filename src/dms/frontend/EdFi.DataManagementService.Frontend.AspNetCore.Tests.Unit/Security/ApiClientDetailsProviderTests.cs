@@ -4,7 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Security.Claims;
-using EdFi.DataManagementService.Frontend.AspNetCore.Security;
+using EdFi.DataManagementService.Core.Security;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -24,7 +24,7 @@ public class ApiClientDetailsProviderTests
         {
             new("scope", claimSet),
             new("jti", tokenId),
-            new("namespacePrefixes", namespacePrefixes)
+            new("namespacePrefixes", namespacePrefixes),
         };
         ApiClientDetailsProvider _apiClientDetailsProvider = new();
 
@@ -38,7 +38,9 @@ public class ApiClientDetailsProviderTests
         apiClientDetails.Should().NotBeNull();
         apiClientDetails.TokenId.Should().Be(tokenId);
         apiClientDetails.ClaimSetName.Should().Be(claimSet);
-        string.Join(' ', apiClientDetails.NamespacePrefixes).Should().Be(namespacePrefixes);
+        string.Join(' ', apiClientDetails.NamespacePrefixes.Select(x => x.Value))
+            .Should()
+            .Be(namespacePrefixes);
     }
 
     [Test]
