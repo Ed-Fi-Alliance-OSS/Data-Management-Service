@@ -1,0 +1,186 @@
+# This file describes the steps to locally run the DMS and Configuration Service for development and debugging.
+# Usage:
+# 1. in `eng/docker-compose`, copy `.env.e2e` to `.env`
+# 2. start up all services: `./start-all-services.ps1`
+# 3. start keycloak `.\start-keycloak.ps1`
+# 4. Setup keycloak: `.\setup-keycloak.ps1`
+# 5. Run DMS Configuration Service from Visual Studio. Observe the following appsettings.development.json configuration:
+#    "AppSettings": {
+#        "DeployDatabaseOnStartup": "true",
+#        "Datastore": "postgresql",
+#        "IdentityProvider": "keycloak"
+#    },
+#    "ConnectionStrings": {
+#        "DatabaseConnection": "host=localhost;port=5435;username=postgres;password=abcdefgh1!;database=edfi_configurationservice;"
+#    },
+#    "IdentitySettings": {
+#        "AllowRegistration": "true",
+#        "ConfigServiceRole": "config-service-app",
+#        "ClientRole": "dms-client",
+#        "Authority": "http://localhost:8045/realms/edfi",
+#        "Audience": "account",
+#        "ClientId": "DmsConfigurationService",
+#        "ClientSecret": "s3creT@09",
+#        "RequireHttpsMetadata": "false",
+#        "RoleClaimType": "http://schemas\\.microsoft\\.com/ws/2008/06/identity/claims/role",
+#        "Scope": "edfi_admin_api/full_access"
+#    },
+#    "KeycloakSettings": {
+#        "Url": "http://localhost:8045",
+#        "Realm": "edfi"
+#    },
+# 6. Run DMS from Visual Studio. Observe the following appsettings.development.json configuration:
+#    "AppSettings": {
+#        "AuthenticationService": "http://localhost:8045/realms/edfi/protocol/openid-connect/token",
+#        "Datastore": "postgresql",
+#        "QueryHandler": "postgresql",
+#        "DeployDatabaseOnStartup": true,
+#        "BypassStringTypeCoercion": "false",
+#        "CorrelationIdHeader": "",
+#        "AllowIdentityUpdateOverrides": "",
+#        "MaskRequestBodyInLogs": "true"
+#    },
+#    "ConfigurationServiceSettings": {
+#        "BaseUrl": "http://localhost:5126",
+#        "ClientId": "DmsConfigurationService",
+#        "ClientSecret": "s3creT@09",
+#        "Scope": "edfi_admin_api/full_access",
+#        "CacheExpirationMinutes": 10
+#    },
+#    "IdentitySettings": {
+#        "EnforceAuthorization": "true",
+#        "ClientRole": "dms-client",
+#        "Authority": "http://localhost:8045/realms/edfi",
+#        "Audience": "account",
+#        "RequireHttpsMetadata": "false",
+#        "RoleClaimType": "http://schemas\\.microsoft\\.com/ws/2008/06/identity/claims/role"
+#    },
+#    "ConnectionStrings": {
+#        "DatabaseConnection": "host=localhost;port=5435;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;",
+#        "OpenSearchUrl": "http://localhost:9200"
+#    },
+# 7. Run these steps from top to bottom.
+
+@configPort=5126
+@dmsPort=5198
+@sysAdminId=sys-admin
+@sysAdminSecret=SdfH)98&Jk
+@encodedSysAdminSecret=SdfH%2998%26Jk
+
+#
+# Create a new system administrator and create a token
+#
+
+### Create the system administrator credentials
+POST http://localhost:{{configPort}}/connect/register
+Content-Type: application/x-www-form-urlencoded
+
+ClientId={{sysAdminId}}
+&ClientSecret={{encodedSysAdminSecret}}
+&DisplayName=System Administrator
+
+### Create a token
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{sysAdminId}}
+&client_secret={{encodedSysAdminSecret}}
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+
+###
+@configToken={{configTokenRequest.response.body.access_token}}
+
+#
+# Create vendor, application, and new DMS client credentials
+#
+
+### Create a new vendor
+# @name createVendor
+POST http://localhost:{{configPort}}/v2/vendors
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "company": "Demo Vendor",
+    "contactName": "George Washington",
+    "contactEmailAddress": "george@example.com",
+    "namespacePrefixes": "uri://ed-fi.org"
+}
+
+###
+@vendorLocation={{createVendor.response.headers.location}}
+
+### Retrieve the vendor so that we can extract the Id
+# @name getVendor
+GET {{vendorLocation}}
+Authorization: bearer {{configToken}}
+
+###
+@vendorId={{getVendor.response.body.id}}
+
+### Create a new application
+# @name createApplication
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "vendorId": {{vendorId}},
+    "applicationName": "Demo application",
+    "claimSetName": "SIS-Vendor"
+}
+
+###
+@clientKey={{createApplication.response.body.key}}
+@clientSecret={{createApplication.response.body.secret}}
+@applicationLocation={{createApplication.response.headers.location}}
+
+#
+# DMS demonstration
+#
+
+### Read the Token URL from the Discovery API
+# @name discovery
+GET http://localhost:{{dmsPort}}
+
+###
+@dataApi={{discovery.response.body.urls.dataManagementApi}}
+
+### Create a DMS token
+# @name dmsTokenRequest
+POST http://localhost:{{dmsPort}}/oauth/token
+Authorization: basic {{clientKey}}:{{clientSecret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@dmsToken={{dmsTokenRequest.response.body.access_token}}
+
+### Create a new descriptor
+# @name createDescriptor
+POST {{dataApi}}/ed-fi/educationOrganizationCategoryDescriptors
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org",
+    "codeValue": "School",
+    "shortDescription": "School"
+}
+
+###
+@descriptorLocation={{createDescriptor.response.headers.location}}
+
+### Retrieve just that descriptor
+# @name getDescriptor
+GET {{descriptorLocation}}
+Authorization: bearer {{dmsToken}}
+
+### Delete that descriptor
+# @name deleteDescriptor
+DELETE {{descriptorLocation}}
+Authorization: bearer {{dmsToken}}
