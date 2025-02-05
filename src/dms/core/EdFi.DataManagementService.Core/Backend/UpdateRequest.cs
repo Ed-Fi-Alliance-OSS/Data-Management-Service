@@ -34,6 +34,10 @@ internal record UpdateRequest(
     /// </summary>
     DocumentUuid DocumentUuid,
     /// <summary>
+    /// The security elements extracted from the document
+    /// </summary>
+    DocumentSecurityElements DocumentSecurityElements,
+    /// <summary>
     /// This class will modify the EdFiDoc of a referencing
     /// resource when the referenced resource's identifying
     /// values are modified

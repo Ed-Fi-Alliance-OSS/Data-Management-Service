@@ -104,6 +104,11 @@ internal static class No
     public static readonly DocumentSecurityElements DocumentSecurityElements = new([]);
 
     /// <summary>
+    /// The null object for ClientAuthorizations
+    /// </summary>
+    public static readonly ClientAuthorizations ClientAuthorizations = new([], []);
+
+    /// <summary>
     /// A constructor of a PipelineContext initialized with null objects
     /// </summary>
     public static PipelineContext PipelineContext(string traceId = "")

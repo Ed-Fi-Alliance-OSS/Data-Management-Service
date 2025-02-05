@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Response;
 using Microsoft.Extensions.Logging;
 using Polly;
 using static EdFi.DataManagementService.Core.External.Backend.GetResult;
@@ -32,6 +33,7 @@ internal class GetByIdHandler(
                 new GetRequest(
                     DocumentUuid: context.PathComponents.DocumentUuid,
                     ResourceInfo: context.ResourceInfo,
+                    ClientAuthorizations: context.ClientAuthorizations,
                     TraceId: context.FrontendRequest.TraceId
                 )
             )
@@ -47,6 +49,11 @@ internal class GetByIdHandler(
         {
             GetSuccess success => new FrontendResponse(StatusCode: 200, Body: success.EdfiDoc, Headers: []),
             GetFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
+            GetFailureNotAuthorized => new FrontendResponse(
+                StatusCode: 403,
+                Body: FailureResponse.ForForbidden(traceId: context.FrontendRequest.TraceId, errors: []),
+                Headers: []
+            ),
             UnknownFailure failure => new FrontendResponse(
                 StatusCode: 500,
                 Body: ToJsonError(failure.FailureMessage, context.FrontendRequest.TraceId),

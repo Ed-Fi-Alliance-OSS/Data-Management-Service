@@ -5,11 +5,5 @@
 
 namespace EdFi.DataManagementService.Core.External.Model;
 
-/// <summary>
-/// The elements extracted from a document that can be secured on
-/// </summary>
-public record DocumentSecurityElements(
-    // A list of the Namespaces extracted from the document. Note these are the full
-    // Namespace values and not simply prefixes
-    string[] Namespace
-);
+// A string type branded as a NamespacePrefix, which is a unit of security authorization.
+public record struct NamespacePrefix(string Value);
