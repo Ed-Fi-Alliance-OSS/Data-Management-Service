@@ -38,10 +38,27 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Given("the SIS Vendor is authorized with namespacePrefixes {string}")]
         public async Task GivenTheSisVendorIsAuthorized(string namespacePrefixes)
         {
-            await new SisVendor().Create(Guid.NewGuid().ToString(), "C. M. Burns", "cmb@example.com",
-                namespacePrefixes, SystemAdministrator.Token);
+            await SetAuthorizationToken(namespacePrefixes);
+        }
 
-            var bearerToken = await SisVendor.GetToken();
+        [Given("the claimSet {string} is authorized with namespacePrefixes {string}")]
+        public async Task GivenTheclaimSetIsAuthorized(string claimSetName, string namespacePrefixes)
+        {
+            await SetAuthorizationToken(namespacePrefixes, claimSetName);
+        }
+
+        private async Task SetAuthorizationToken(string namespacePrefixes, string claimSetName = "SIS-Vendor")
+        {
+            await AuthorizationDataProvider.Create(
+                Guid.NewGuid().ToString(),
+                "C. M. Burns",
+                "cmb@example.com",
+                namespacePrefixes,
+                SystemAdministrator.Token,
+                claimSetName
+            );
+
+            var bearerToken = await AuthorizationDataProvider.GetToken();
             _dmsToken = $"Bearer {bearerToken}";
         }
 
