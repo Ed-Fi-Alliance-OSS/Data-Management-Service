@@ -8,13 +8,14 @@ using System.Text.Json;
 namespace EdFi.DataManagementService.Backend.Postgresql.Model;
 
 /// <summary>
-/// Extracts only the document and the date and trace id it was last updated 
+/// A subset of a document row with only the document itself and the last
+/// modified date and trace id
 /// </summary>
 public record DocumentSummary(
-    JsonElement EdfiDoc,
     /// <summary>
-    /// The datetime this document was created in the database
+    /// The JSON document itself
     /// </summary>
+    JsonElement EdfiDoc,
     /// <summary>
     /// The datetime this document was last modified in the database
     /// </summary>

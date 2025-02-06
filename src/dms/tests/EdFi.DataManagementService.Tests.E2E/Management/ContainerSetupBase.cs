@@ -58,9 +58,7 @@ public abstract class ContainerSetupBase
             .WithEnvironment("MINIMUM_THROUGHPUT", "2")
             .WithEnvironment("BREAK_DURATION_SECONDS", "30")
             .WithEnvironment("OPENSEARCH_URL", openSearchURl)
-            .WithWaitStrategy(
-                Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(HttpPort))
-            )
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(HttpPort)))
             .WithNetwork(network)
             .WithLogger(loggerFactory!.CreateLogger("apiContainer"))
             .Build();

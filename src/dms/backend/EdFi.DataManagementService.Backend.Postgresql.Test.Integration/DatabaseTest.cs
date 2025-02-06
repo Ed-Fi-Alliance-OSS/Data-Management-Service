@@ -5,6 +5,7 @@
 
 using System.Data;
 using System.Text.Json.Nodes;
+using System.Transactions;
 using EdFi.DataManagementService.Backend.Postgresql.Operation;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
@@ -240,9 +241,19 @@ public abstract class DatabaseTest : DatabaseTestBase
         DescriptorReference[]? descriptorReferences = null,
         SuperclassIdentity? superclassIdentity = null,
         bool allowIdentityUpdates = false,
-        DocumentIdentityElement[]? documentIdentityElements = null
+        DocumentIdentityElement[]? documentIdentityElements = null,
+        DocumentSecurityElements? documentSecurityElements = null,
+        TraceId? traceId = null
     )
     {
+        if (documentSecurityElements == null)
+        {
+            documentSecurityElements = new([]);
+        }
+        if (traceId == null)
+        {
+            traceId = new("NotProvided");
+        }
         return (
             new
             {
@@ -255,9 +266,10 @@ public abstract class DatabaseTest : DatabaseTestBase
                     documentIdentityElements
                 ),
                 EdfiDoc = JsonNode.Parse(edfiDocString),
-                TraceId = new TraceId("123"),
+                TraceId = traceId,
                 DocumentUuid = new DocumentUuid(documentUuidGuid),
                 UpdateCascadeHandler = new UpdateCascadeHandler(new ApiSchemaProvider(), NullLogger.Instance),
+                DocumentSecurityElements = documentSecurityElements,
             }
         ).ActLike<IUpsertRequest>();
     }
@@ -281,9 +293,20 @@ public abstract class DatabaseTest : DatabaseTestBase
         DescriptorReference[]? descriptorReferences = null,
         SuperclassIdentity? superclassIdentity = null,
         bool allowIdentityUpdates = false,
-        DocumentIdentityElement[]? documentIdentityElements = null
+        DocumentIdentityElement[]? documentIdentityElements = null,
+        DocumentSecurityElements? documentSecurityElements = null,
+        TraceId? traceId = null
     )
     {
+        if (documentSecurityElements == null)
+        {
+            documentSecurityElements = new([]);
+        }
+
+        if (traceId == null)
+        {
+            traceId = new("NotProvided");
+        }
         return (
             new
             {
@@ -296,20 +319,30 @@ public abstract class DatabaseTest : DatabaseTestBase
                     documentIdentityElements
                 ),
                 EdfiDoc = JsonNode.Parse(edFiDocString),
-                TraceId = new TraceId("123"),
+                TraceId = traceId,
                 DocumentUuid = new DocumentUuid(documentUuidGuid),
                 UpdateCascadeHandler = new UpdateCascadeHandler(new ApiSchemaProvider(), NullLogger.Instance),
+                DocumentSecurityElements = documentSecurityElements,
             }
         ).ActLike<IUpdateRequest>();
     }
 
-    protected static IGetRequest CreateGetRequest(string resourceName, Guid documentUuidGuid)
+    protected static IGetRequest CreateGetRequest(
+        string resourceName,
+        Guid documentUuidGuid,
+        TraceId? traceId = null
+    )
     {
+        if (traceId == null)
+        {
+            traceId = new("NotProvided");
+        }
+
         return (
             new
             {
                 ResourceInfo = CreateResourceInfo(resourceName),
-                TraceId = new TraceId("123"),
+                TraceId = traceId,
                 DocumentUuid = new DocumentUuid(documentUuidGuid),
             }
         ).ActLike<IGetRequest>();
@@ -318,27 +351,40 @@ public abstract class DatabaseTest : DatabaseTestBase
     protected static IQueryRequest CreateQueryRequest(
         string resourceName,
         Dictionary<string, string>? searchParameters,
-        PaginationParameters? paginationParameters
+        PaginationParameters? paginationParameters,
+        TraceId? traceId = null
     )
     {
+        if (traceId == null)
+        {
+            traceId = new("NotProvided");
+        }
         return (
             new
             {
                 ResourceInfo = CreateResourceInfo(resourceName),
                 SearchParameters = searchParameters,
                 PaginationParameters = paginationParameters,
-                TraceId = new TraceId("123"),
+                TraceId = traceId,
             }
         ).ActLike<IQueryRequest>();
     }
 
-    protected static IDeleteRequest CreateDeleteRequest(string resourceName, Guid documentUuidGuid)
+    protected static IDeleteRequest CreateDeleteRequest(
+        string resourceName,
+        Guid documentUuidGuid,
+        TraceId? traceId = null
+    )
     {
+        if (traceId == null)
+        {
+            traceId = new("NotProvided");
+        }
         return (
             new
             {
                 ResourceInfo = CreateResourceInfo(resourceName),
-                TraceId = new TraceId("123"),
+                TraceId = traceId,
                 DocumentUuid = new DocumentUuid(documentUuidGuid),
             }
         ).ActLike<IDeleteRequest>();
@@ -370,7 +416,7 @@ public abstract class DatabaseTest : DatabaseTestBase
         // Connection and transaction for the setup
         await using var connectionForSetup = await DataSource!.OpenConnectionAsync();
         await using var transactionForSetup = await connectionForSetup.BeginTransactionAsync(
-            IsolationLevel.RepeatableRead
+            System.Data.IsolationLevel.RepeatableRead
         );
 
         // Run the setup

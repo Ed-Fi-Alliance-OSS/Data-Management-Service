@@ -21,8 +21,7 @@ public interface IUpdateDocumentById
     public Task<UpdateResult> UpdateById(
         IUpdateRequest updateRequest,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        TraceId traceId
+        NpgsqlTransaction transaction
     );
 }
 
@@ -64,8 +63,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
     public async Task<UpdateResult> UpdateById(
         IUpdateRequest updateRequest,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        TraceId traceId
+        NpgsqlTransaction transaction
     )
     {
         _logger.LogDebug("Entering UpdateDocumentById.UpdateById - {TraceId}", updateRequest.TraceId.Value);
@@ -88,7 +86,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 PartitionKeyFor(updateRequest.DocumentInfo.ReferentialId),
                 connection,
                 transaction,
-                traceId
+                updateRequest.TraceId
             );
 
             if (!validationResult.DocumentExists)
@@ -112,7 +110,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                         updateRequest.DocumentUuid.Value,
                         connection,
                         transaction,
-                        traceId
+                        updateRequest.TraceId
                     );
 
                     if (aliasRowsAffected == 0)
@@ -144,16 +142,17 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 PartitionKeyFor(updateRequest.DocumentInfo.ReferentialId),
                 connection,
                 transaction,
-                traceId
+                updateRequest.TraceId
             );
 
             int rowsAffected = await _sqlAction.UpdateDocumentEdfiDoc(
                 PartitionKeyFor(updateRequest.DocumentUuid).Value,
                 updateRequest.DocumentUuid.Value,
                 JsonSerializer.Deserialize<JsonElement>(updateRequest.EdfiDoc),
+                updateRequest.DocumentSecurityElements.ToJsonElement(),
                 connection,
                 transaction,
-                traceId
+                updateRequest.TraceId
             );
 
             switch (rowsAffected)
@@ -186,7 +185,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                             ),
                             connection,
                             transaction,
-                            traceId
+                            updateRequest.TraceId
                         );
 
                         if (invalidReferentialIds.Length > 0)
@@ -209,7 +208,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                             documentFromDb.DocumentPartitionKey,
                             connection,
                             transaction,
-                            traceId
+                            updateRequest.TraceId
                         );
 
                         await recursivelyCascadeUpdates(
@@ -233,33 +232,33 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                             return;
                         }
 
-                        foreach (var parentDocument in referencingDocuments)
+                        foreach (Document referencingDocument in referencingDocuments)
                         {
                             var cascadeResult = updateRequest.UpdateCascadeHandler.Cascade(
                                 originalReferencedDocument.EdfiDoc,
                                 originalReferencedDocument.ProjectName,
                                 originalReferencedDocument.ResourceName,
                                 modifiedReferencedEdFiDoc,
-                                parentDocument.EdfiDoc.AsNode()!,
-                                parentDocument.Id.GetValueOrDefault(),
-                                parentDocument.DocumentPartitionKey,
-                                parentDocument.DocumentUuid,
-                                parentDocument.ProjectName,
-                                parentDocument.ResourceName
+                                referencingDocument.EdfiDoc.AsNode()!,
+                                referencingDocument.Id.GetValueOrDefault(),
+                                referencingDocument.DocumentPartitionKey,
+                                referencingDocument.DocumentUuid,
+                                referencingDocument.ProjectName,
+                                referencingDocument.ResourceName
                             );
 
                             if (cascadeResult.isIdentityUpdate)
                             {
-                                var grandparentDocuments =
+                                Document[] grandparentDocuments =
                                     await _sqlAction.FindReferencingDocumentsByDocumentId(
                                         cascadeResult.Id,
                                         cascadeResult.DocumentPartitionKey,
                                         connection,
                                         transaction,
-                                        traceId
+                                        updateRequest.TraceId
                                     );
                                 await recursivelyCascadeUpdates(
-                                    parentDocument,
+                                    referencingDocument,
                                     cascadeResult.ModifiedEdFiDoc,
                                     grandparentDocuments
                                 );
@@ -269,9 +268,10 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                                 cascadeResult.DocumentPartitionKey,
                                 cascadeResult.DocumentUuid,
                                 JsonSerializer.Deserialize<JsonElement>(cascadeResult.ModifiedEdFiDoc),
+                                updateRequest.DocumentSecurityElements.ToJsonElement(),
                                 connection,
                                 transaction,
-                                traceId
+                                updateRequest.TraceId
                             );
 
                             _logger.LogInformation(cascadeResult.isIdentityUpdate.ToString());

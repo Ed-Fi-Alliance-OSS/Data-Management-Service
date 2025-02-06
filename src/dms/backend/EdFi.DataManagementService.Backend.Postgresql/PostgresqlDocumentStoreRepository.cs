@@ -38,12 +38,7 @@ public class PostgresqlDocumentStoreRepository(
             await using var connection = await _dataSource.OpenConnectionAsync();
             await using var transaction = await connection.BeginTransactionAsync(_isolationLevel);
 
-            UpsertResult result = await _upsertDocument.Upsert(
-                upsertRequest,
-                connection,
-                transaction,
-                upsertRequest.TraceId
-            );
+            UpsertResult result = await _upsertDocument.Upsert(upsertRequest, connection, transaction);
 
             switch (result)
             {
@@ -115,8 +110,7 @@ public class PostgresqlDocumentStoreRepository(
             UpdateResult result = await _updateDocumentById.UpdateById(
                 updateRequest,
                 connection,
-                transaction,
-                updateRequest.TraceId
+                transaction
             );
 
             switch (result)

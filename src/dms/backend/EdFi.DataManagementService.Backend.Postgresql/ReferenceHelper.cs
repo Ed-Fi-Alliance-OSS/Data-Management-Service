@@ -44,13 +44,12 @@ internal static class ReferenceHelper
         Guid[] referentialIds
     )
     {
-        Dictionary<Guid, string> guidToResourceNameMap =
-            new(
-                documentReferences.Select(x => new KeyValuePair<Guid, string>(
-                    x.ReferentialId.Value,
-                    x.ResourceInfo.ResourceName.Value
-                ))
-            );
+        Dictionary<Guid, string> guidToResourceNameMap = new(
+            documentReferences.Select(x => new KeyValuePair<Guid, string>(
+                x.ReferentialId.Value,
+                x.ResourceInfo.ResourceName.Value
+            ))
+        );
 
         HashSet<string> uniqueResourceNames = [];
 
@@ -72,8 +71,6 @@ internal static class ReferenceHelper
         Guid[] referentialIds
     )
     {
-        return descriptorReferences
-            .Where(d => referentialIds.Contains(d.ReferentialId.Value))
-            .ToList();
+        return descriptorReferences.Where(d => referentialIds.Contains(d.ReferentialId.Value)).ToList();
     }
 }

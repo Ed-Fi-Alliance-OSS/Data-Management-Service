@@ -16,8 +16,6 @@ public class QueryTests : DatabaseTest
 {
     private static readonly string _defaultResourceName = "DefaultResourceName";
 
-    private static TraceId traceId = new("");
-
     [TestFixture]
     public class Given_an_upsert_of_a_new_document : QueryTests
     {
@@ -37,7 +35,7 @@ public class QueryTests : DatabaseTest
                 Guid.NewGuid(),
                 _edFiDocString
             );
-            _upsertResult = await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
 
             // Confirm it's there
             IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
@@ -103,7 +101,7 @@ public class QueryTests : DatabaseTest
 
             foreach (var request in requests)
             {
-                await CreateUpsert().Upsert(request, Connection!, Transaction!, traceId);
+                await CreateUpsert().Upsert(request, Connection!, Transaction!);
             }
 
             Dictionary<string, string>? searchParameters = [];
@@ -158,15 +156,14 @@ public class QueryTests : DatabaseTest
 
             foreach (var request in requests)
             {
-                await CreateUpsert().Upsert(request, Connection!, Transaction!, traceId);
+                await CreateUpsert().Upsert(request, Connection!, Transaction!);
             }
 
             await CreateUpsert()
                 .Upsert(
                     CreateUpsertRequest("ResourceName2", Guid.NewGuid(), Guid.NewGuid(), _edFiDocString4),
                     Connection!,
-                    Transaction!,
-                    traceId
+                    Transaction!
                 );
 
             Dictionary<string, string>? searchParameters = [];

@@ -12,6 +12,7 @@ CREATE TABLE dms.Document (
   IsDescriptor BOOLEAN NOT NULL,
   ProjectName VARCHAR(256) NOT NULL,
   EdfiDoc JSONB NOT NULL,
+  SecurityElements JSONB NOT NULL,
   CreatedAt TIMESTAMP NOT NULL DEFAULT NOW(),
   LastModifiedAt TIMESTAMP NOT NULL DEFAULT NOW(),
   LastModifiedTraceId VARCHAR(128) NOT NULL,
