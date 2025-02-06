@@ -13,12 +13,11 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// <param name="DocumentUuid">The document UUID to delete</param>
 /// <param name="ResourceInfo">The ResourceInfo for the resource being deleted</param>
 /// <param name="ClientAuthorizations">The ClientAuthorizations for the requesting client</param>
-/// <param name="validateNoReferencesToDocument">If true, validates there are no references to the document</param>
 /// <param name="TraceId">The request TraceId</param>
 internal record DeleteRequest(
     DocumentUuid DocumentUuid,
     ResourceInfo ResourceInfo,
     ClientAuthorizations ClientAuthorizations,
-    bool validateNoReferencesToDocument,
+    IDeleteAuthorizationHandler DeleteAuthorizationHandler,
     TraceId TraceId
 ) : IDeleteRequest;

@@ -329,7 +329,7 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
     private readonly Lazy<IEnumerable<JsonPath>> _namespaceSecurityElementPaths = new(() =>
     {
         return _resourceSchemaNode["securityElements"]
-                ?["Namespace"]?.AsArray()
+                ?["namespace"]?.AsArray()
                 .GetValues<string>()
                 .Select(x => new JsonPath(x))
             ?? throw new InvalidOperationException(

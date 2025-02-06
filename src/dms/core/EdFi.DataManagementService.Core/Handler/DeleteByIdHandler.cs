@@ -34,8 +34,8 @@ internal class DeleteByIdHandler(
                     DocumentUuid: context.PathComponents.DocumentUuid,
                     ResourceInfo: context.ResourceInfo,
                     ClientAuthorizations: context.ClientAuthorizations,
-                    validateNoReferencesToDocument: false,
-                    TraceId: context.FrontendRequest.TraceId
+                    TraceId: context.FrontendRequest.TraceId,
+                    DeleteAuthorizationHandler: new DeleteAuthorizationHandler(context.ClientAuthorizations, context.ResourceSchema.NamespaceSecurityElementPaths, _logger)
                 )
             )
         );

@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -35,6 +37,29 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
         {
             // Create a transaction save point
             await transaction.SaveAsync("beforeDelete");
+
+            var documentSummary = await _sqlAction.FindDocumentEdfiDocByDocumentUuid(
+                deleteRequest.DocumentUuid,
+                deleteRequest.ResourceInfo.ResourceName.Value,
+                documentPartitionKey,
+                connection,
+                transaction,
+                deleteRequest.TraceId
+            );
+
+            if (documentSummary == null)
+            {
+                return new DeleteResult.DeleteFailureNotExists();
+            }
+
+            JsonNode edFiDoc = documentSummary.EdfiDoc.Deserialize<JsonNode>()!;
+
+            var deleteAuthorizationResult = deleteRequest.DeleteAuthorizationHandler.Authorize(edFiDoc);
+
+            if (deleteAuthorizationResult is DeleteAuthorizationResult.NotAuthorizedNamespace)
+            {
+                return new DeleteResult.DeleteFailureNotAuthorized();
+            }
 
             int rowsAffectedOnDocumentDelete = await _sqlAction.DeleteDocumentByDocumentUuid(
                 documentPartitionKey,
