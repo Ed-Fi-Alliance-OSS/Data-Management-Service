@@ -16,8 +16,6 @@ public class UpdateTests : DatabaseTest
 {
     private static readonly string _defaultResourceName = "DefaultResourceName";
 
-    private static TraceId traceId = new("");
-
     [TestFixture]
     public class Given_An_Update_Of_A_Nonexistent_Document : UpdateTests
     {
@@ -34,8 +32,7 @@ public class UpdateTests : DatabaseTest
                 Guid.NewGuid(),
                 _edFiDocString
             );
-            _updateResult = await CreateUpdate()
-                .UpdateById(updateRequest, Connection!, Transaction!, traceId);
+            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
         }
 
         [Test]
@@ -77,9 +74,10 @@ public class UpdateTests : DatabaseTest
                 _defaultResourceName,
                 _documentUuidGuid,
                 _referentialIdGuid,
-                _edFiDocString1
+                _edFiDocString1,
+                traceId: new("upsertRequest")
             );
-            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, new TraceId(Guid.NewGuid().ToString()));
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
 
             // Get
             IGetRequest getInsertedRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
@@ -90,10 +88,10 @@ public class UpdateTests : DatabaseTest
                 _defaultResourceName,
                 _documentUuidGuid,
                 _referentialIdGuid,
-                _edFiDocString2
+                _edFiDocString2,
+                traceId: new("updateRequest")
             );
-            _updateResult = await CreateUpdate()
-                .UpdateById(updateRequest, Connection!, Transaction!, new TraceId(Guid.NewGuid().ToString()));
+            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
 
             // Confirm change was made
             IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
@@ -112,8 +110,10 @@ public class UpdateTests : DatabaseTest
             _getResult!.Should().BeOfType<GetResult.GetSuccess>();
             (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
             (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Be(_edFiDocString2);
-            (_getResult! as GetResult.GetSuccess)!.LastModifiedTraceId.Should().NotBe((_getInsertedResult! as GetResult.GetSuccess)!.LastModifiedTraceId);
-            (_getResult! as GetResult.GetSuccess)!.LastModifiedDate.Should().NotBe((_getInsertedResult! as GetResult.GetSuccess)!.LastModifiedDate);
+            (_getResult! as GetResult.GetSuccess)!.LastModifiedTraceId.Should().Be("updateRequest");
+            (_getResult! as GetResult.GetSuccess)!
+                .LastModifiedDate.Should()
+                .NotBe((_getInsertedResult! as GetResult.GetSuccess)!.LastModifiedDate);
         }
     }
 
@@ -136,19 +136,20 @@ public class UpdateTests : DatabaseTest
                 _defaultResourceName,
                 _documentUuidGuid,
                 _referentialIdGuid1,
-                _edFiDocString1
+                _edFiDocString1,
+                traceId: new("upsertRequest")
             );
-            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
 
             // Update
             IUpdateRequest updateRequest = CreateUpdateRequest(
                 _defaultResourceName,
                 _documentUuidGuid,
                 _referentialIdGuid2,
-                _edFiDocString2
+                _edFiDocString2,
+                traceId: new("updateRequest")
             );
-            _updateResult = await CreateUpdate()
-                .UpdateById(updateRequest, Connection!, Transaction!, traceId);
+            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
         }
 
         [Test]
@@ -167,7 +168,7 @@ public class UpdateTests : DatabaseTest
                     Transaction!
                 );
             (getResult as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":1");
-            (getResult! as GetResult.GetSuccess)!.LastModifiedTraceId.Should().Be(traceId.Value);
+            (getResult! as GetResult.GetSuccess)!.LastModifiedTraceId.Should().Be("upsertRequest");
         }
     }
 
@@ -194,9 +195,10 @@ public class UpdateTests : DatabaseTest
                 _documentUuidGuid,
                 _referentialIdGuid1,
                 _edFiDocString1,
-                allowIdentityUpdates: true
+                allowIdentityUpdates: true,
+                traceId: new("upsertRequest")
             );
-            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
 
             // Create referencing document referencing the first
             _ = CreateUpsertRequest(
@@ -213,10 +215,10 @@ public class UpdateTests : DatabaseTest
                 _documentUuidGuid,
                 _referentialIdGuid2,
                 _edFiDocString2,
-                allowIdentityUpdates: true
+                allowIdentityUpdates: true,
+                traceId: new("updateRequest")
             );
-            _updateResult = await CreateUpdate()
-                .UpdateById(updateRequest, Connection!, Transaction!, traceId);
+            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
         }
 
         [Test]
@@ -235,7 +237,7 @@ public class UpdateTests : DatabaseTest
                     Transaction!
                 );
             (getResult as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":2");
-            (getResult! as GetResult.GetSuccess)!.LastModifiedTraceId.Should().Be(traceId.Value);
+            (getResult! as GetResult.GetSuccess)!.LastModifiedTraceId.Should().Be("updateRequest");
         }
     }
 
@@ -267,8 +269,7 @@ public class UpdateTests : DatabaseTest
                                 _edFiDocString1
                             ),
                             connection,
-                            transaction,
-                            traceId
+                            transaction
                         );
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
@@ -279,7 +280,7 @@ public class UpdateTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString2
                     );
-                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction, traceId);
+                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction);
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
@@ -289,7 +290,7 @@ public class UpdateTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString3
                     );
-                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction, traceId);
+                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction);
                 }
             );
         }
@@ -339,7 +340,7 @@ public class UpdateTests : DatabaseTest
                 _referencedReferentialIdGuid,
                 """{"abc":1}"""
             );
-            await CreateUpsert().Upsert(refUpsertRequest, Connection!, Transaction!, traceId);
+            await CreateUpsert().Upsert(refUpsertRequest, Connection!, Transaction!);
 
             // Document with valid reference
             IUpsertRequest upsertRequest = CreateUpsertRequest(
@@ -350,7 +351,7 @@ public class UpdateTests : DatabaseTest
                 CreateDocumentReferences([new(_referencingResourceName, _referencedReferentialIdGuid)])
             );
 
-            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
 
             // Update with invalid reference
             string updatedReferencedDocString = """{"abc":3}""";
@@ -361,8 +362,7 @@ public class UpdateTests : DatabaseTest
                 updatedReferencedDocString,
                 CreateDocumentReferences([new(_referencingResourceName, _invalidReferentialIdGuid)])
             );
-            _updateResult = await CreateUpdate()
-                .UpdateById(updateRequest, Connection!, Transaction!, traceId);
+            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
         }
 
         [Test]
@@ -404,8 +404,7 @@ public class UpdateTests : DatabaseTest
                 _referencedRefIdGuid,
                 _referencedDocString
             );
-            var upsertResult1 = await CreateUpsert()
-                .Upsert(refUpsertRequest, Connection!, Transaction!, traceId);
+            var upsertResult1 = await CreateUpsert().Upsert(refUpsertRequest, Connection!, Transaction!);
             upsertResult1.Should().BeOfType<UpsertResult.InsertSuccess>();
 
             // Then, insert the referencing document without a reference
@@ -416,8 +415,7 @@ public class UpdateTests : DatabaseTest
                 _edFiDocString
             );
 
-            var upsertResult2 = await CreateUpsert()
-                .Upsert(upsertRequest, Connection!, Transaction!, traceId);
+            var upsertResult2 = await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
             upsertResult2.Should().BeOfType<UpsertResult.InsertSuccess>();
 
             // Update the referencing document, adding the reference
@@ -429,8 +427,7 @@ public class UpdateTests : DatabaseTest
                 updatedReferencingDocString,
                 CreateDocumentReferences([new(_referencingResourceName, _referencedRefIdGuid)])
             );
-            _updateResult = await CreateUpdate()
-                .UpdateById(updateRequest, Connection!, Transaction!, traceId);
+            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
         }
 
         [Test]
@@ -466,7 +463,7 @@ public class UpdateTests : DatabaseTest
                 _existingReferencedDocString
             );
             var upsertResult1 = await CreateUpsert()
-                .Upsert(existingRefUpsertRequest, Connection!, Transaction!, traceId);
+                .Upsert(existingRefUpsertRequest, Connection!, Transaction!);
             upsertResult1.Should().BeOfType<UpsertResult.InsertSuccess>();
 
             // Then, insert the referencing document with no references yet
@@ -477,8 +474,7 @@ public class UpdateTests : DatabaseTest
                 _edFiDocString
             );
 
-            var upsertResult2 = await CreateUpsert()
-                .Upsert(upsertRequest, Connection!, Transaction!, traceId);
+            var upsertResult2 = await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
             upsertResult2.Should().BeOfType<UpsertResult.InsertSuccess>();
 
             // One existing and one non-existent reference
@@ -496,8 +492,7 @@ public class UpdateTests : DatabaseTest
                 """{"abc":3}""",
                 CreateDocumentReferences(references)
             );
-            _updateResult = await CreateUpdate()
-                .UpdateById(updateRequest, Connection!, Transaction!, traceId);
+            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
         }
 
         [Test]
@@ -543,7 +538,7 @@ public class UpdateTests : DatabaseTest
                 _superclassDocString
             );
             var upsertResult1 = await CreateUpsert()
-                .Upsert(superclassUpsertRequest, Connection!, Transaction!, traceId);
+                .Upsert(superclassUpsertRequest, Connection!, Transaction!);
             upsertResult1.Should().BeOfType<UpsertResult.InsertSuccess>();
 
             // The original document with no reference (AcademicWeek)
@@ -555,7 +550,7 @@ public class UpdateTests : DatabaseTest
             );
 
             var upsertResult2 = await CreateUpsert()
-                .Upsert(referencingUpsertRequest, Connection!, Transaction!, traceId);
+                .Upsert(referencingUpsertRequest, Connection!, Transaction!);
             upsertResult2.Should().BeOfType<UpsertResult.InsertSuccess>();
 
             // The updated document with reference as superclass (an AcademicWeek reference an EducationOrganization)
@@ -567,8 +562,7 @@ public class UpdateTests : DatabaseTest
                 CreateDocumentReferences([new(_subclassResourceName, _superclassRefIdGuid)])
             );
 
-            _updateResult = await CreateUpdate()
-                .UpdateById(updateRequest, Connection!, Transaction!, traceId);
+            _updateResult = await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
         }
 
         [Test]
@@ -611,8 +605,7 @@ public class UpdateTests : DatabaseTest
                                 _edFiDocString1
                             ),
                             connection,
-                            transaction,
-                            traceId
+                            transaction
                         );
 
                     // Add references: one existing and one non-existent
@@ -626,7 +619,7 @@ public class UpdateTests : DatabaseTest
                         CreateDocumentReferences(references)
                     );
 
-                    await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!, traceId);
+                    await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
@@ -636,7 +629,7 @@ public class UpdateTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString2
                     );
-                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction, traceId);
+                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction);
                 },
                 async (NpgsqlConnection connection, NpgsqlTransaction transaction) =>
                 {
@@ -646,7 +639,7 @@ public class UpdateTests : DatabaseTest
                         _referentialIdGuid,
                         _edFiDocString3
                     );
-                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction, traceId);
+                    return await CreateUpdate().UpdateById(updateRequest, connection, transaction);
                 }
             );
         }
@@ -694,15 +687,11 @@ public class UpdateTests : DatabaseTest
                     "sessionName": "Third Quarter"
                 }
                 """,
-                allowIdentityUpdates: true
+                allowIdentityUpdates: true,
+                traceId: new("sessionUpsertRequest")
             );
             var upsert = CreateUpsert();
-            var sessionUpsertResult = await upsert.Upsert(
-                sessionUpsertRequest,
-                Connection!,
-                Transaction!,
-                traceId
-            );
+            var sessionUpsertResult = await upsert.Upsert(sessionUpsertRequest, Connection!, Transaction!);
             sessionUpsertResult.Should().BeOfType<UpsertResult.InsertSuccess>();
 
             IUpsertRequest courseOfferingUpsertRequest = CreateUpsertRequest(
@@ -720,11 +709,12 @@ public class UpdateTests : DatabaseTest
                 """,
                 CreateDocumentReferences(
                     [new("CourseOffering", sessionUpsertRequest.DocumentInfo.ReferentialId.Value)]
-                )
+                ),
+                traceId: new("courseOfferingUpsertRequest")
             );
 
             var courseOfferingUpsertResult = await CreateUpsert()
-                .Upsert(courseOfferingUpsertRequest, Connection!, Transaction!, traceId);
+                .Upsert(courseOfferingUpsertRequest, Connection!, Transaction!);
             courseOfferingUpsertResult.Should().BeOfType<UpsertResult.InsertSuccess>();
 
             var getCourseOffingInsertResult = await CreateGetById()
@@ -734,10 +724,13 @@ public class UpdateTests : DatabaseTest
                     Transaction!
                 );
 
-            _courseOfferingInsertDateTime =
-                (getCourseOffingInsertResult! as GetResult.GetSuccess)!.LastModifiedDate;
+            _courseOfferingInsertDateTime = (
+                getCourseOffingInsertResult! as GetResult.GetSuccess
+            )!.LastModifiedDate;
 
-            _courseOfferingLastModifiedDate = (getCourseOffingInsertResult! as GetResult.GetSuccess)!.EdfiDoc["_lastModifiedDate"]!.GetValue<DateTime>();
+            _courseOfferingLastModifiedDate = (getCourseOffingInsertResult! as GetResult.GetSuccess)!.EdfiDoc[
+                "_lastModifiedDate"
+            ]!.GetValue<DateTime>();
 
             IUpsertRequest section1UpsertRequest = CreateUpsertRequest(
                 "Section",
@@ -754,18 +747,19 @@ public class UpdateTests : DatabaseTest
                 """,
                 CreateDocumentReferences(
                     [new("Section", courseOfferingUpsertRequest.DocumentInfo.ReferentialId.Value)]
-                )
+                ),
+                traceId: new("section1UpsertRequest")
             );
 
             var section1UpsertResult = await CreateUpsert()
-                .Upsert(section1UpsertRequest, Connection!, Transaction!, traceId);
+                .Upsert(section1UpsertRequest, Connection!, Transaction!);
             section1UpsertResult.Should().BeOfType<UpsertResult.InsertSuccess>();
 
             IUpsertRequest section2UpsertRequest = CreateUpsertRequest(
-                "Section",
-                _section2DocumentUuid,
-                _section2ReferentialIdUuid,
-                """
+                resourceName: "Section",
+                documentUuidGuid: _section2DocumentUuid,
+                referentialIdGuid: _section2ReferentialIdUuid,
+                edfiDocString: """
                 {
                     "sectionName": "SECTION 2",
                     "courseOfferingReference": {
@@ -774,13 +768,14 @@ public class UpdateTests : DatabaseTest
                     }
                 }
                 """,
-                CreateDocumentReferences(
+                documentReferences: CreateDocumentReferences(
                     [new("Section", courseOfferingUpsertRequest.DocumentInfo.ReferentialId.Value)]
-                )
+                ),
+                traceId: new("section2UpsertRequest")
             );
 
             var section2UpsertResult = await CreateUpsert()
-                .Upsert(section2UpsertRequest, Connection!, Transaction!, traceId);
+                .Upsert(section2UpsertRequest, Connection!, Transaction!);
             section2UpsertResult.Should().BeOfType<UpsertResult.InsertSuccess>();
 
             var documentIdentityElement = new DocumentIdentityElement(
@@ -788,20 +783,21 @@ public class UpdateTests : DatabaseTest
                 "Fourth Quarter"
             );
             IUpdateRequest sessionUpdateRequest = CreateUpdateRequest(
-                "Session",
-                _sessionDocumentUuid,
-                Guid.NewGuid(),
-                """
+                resourceName: "Session",
+                documentUuidGuid: _sessionDocumentUuid,
+                referentialIdGuid: Guid.NewGuid(),
+                edFiDocString: """
                 {
                     "sessionName": "Fourth Quarter"
                 }
                 """,
                 documentIdentityElements: [documentIdentityElement],
-                allowIdentityUpdates: true
+                allowIdentityUpdates: true,
+                traceId: new("sessionUpdateRequest")
             );
 
             var sessionUpdateResult = await CreateUpdate()
-                .UpdateById(sessionUpdateRequest, Connection!, Transaction!, traceId);
+                .UpdateById(sessionUpdateRequest, Connection!, Transaction!);
 
             sessionUpdateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
         }
@@ -819,7 +815,7 @@ public class UpdateTests : DatabaseTest
             getResult!.Should().BeOfType<GetResult.GetSuccess>();
             (getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_courseOfferingDocumentUuid);
             (getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("Fourth Quarter");
-            (getResult! as GetResult.GetSuccess)!.LastModifiedTraceId.Should().Be(traceId.Value);
+            (getResult! as GetResult.GetSuccess)!.LastModifiedTraceId.Should().Be("sessionUpdateRequest");
         }
 
         [Test]
@@ -827,14 +823,27 @@ public class UpdateTests : DatabaseTest
         {
             var getResult = await CreateGetById()
                 .GetById(
-                CreateGetRequest("CourseOffering", _courseOfferingDocumentUuid),
-                Connection!,
-                Transaction!
+                    CreateGetRequest("CourseOffering", _courseOfferingDocumentUuid),
+                    Connection!,
+                    Transaction!
                 );
 
-            (getResult! as GetResult.GetSuccess)!.LastModifiedDate.Should().NotBe(_courseOfferingInsertDateTime);
-            _courseOfferingLastModifiedDate.Should().Be(DateTime.ParseExact("2024-10-29T14:54:49Z", "yyyy-MM-ddTHH:mm:ssZ", DateTimeFormatInfo.InvariantInfo));
-            (getResult! as GetResult.GetSuccess)!.EdfiDoc["_lastModifiedDate"]!.GetValue<DateTime>().Should().NotBe(_courseOfferingLastModifiedDate);
+            (getResult! as GetResult.GetSuccess)!
+                .LastModifiedDate.Should()
+                .NotBe(_courseOfferingInsertDateTime);
+            _courseOfferingLastModifiedDate
+                .Should()
+                .Be(
+                    DateTime.ParseExact(
+                        "2024-10-29T14:54:49Z",
+                        "yyyy-MM-ddTHH:mm:ssZ",
+                        DateTimeFormatInfo.InvariantInfo
+                    )
+                );
+            (getResult! as GetResult.GetSuccess)!.EdfiDoc["_lastModifiedDate"]!
+                .GetValue<DateTime>()
+                .Should()
+                .NotBe(_courseOfferingLastModifiedDate);
         }
 
         [Test]

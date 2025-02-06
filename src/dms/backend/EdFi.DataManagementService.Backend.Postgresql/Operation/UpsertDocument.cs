@@ -19,8 +19,7 @@ public interface IUpsertDocument
     public Task<UpsertResult> Upsert(
         IUpsertRequest upsertRequest,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        TraceId traceId
+        NpgsqlTransaction transaction
     );
 }
 
@@ -75,13 +74,14 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 ResourceVersion: upsertRequest.ResourceInfo.ResourceVersion.Value,
                 IsDescriptor: upsertRequest.ResourceInfo.IsDescriptor,
                 ProjectName: upsertRequest.ResourceInfo.ProjectName.Value,
-                EdfiDoc: JsonSerializer.Deserialize<JsonElement>(upsertRequest.EdfiDoc)
+                EdfiDoc: JsonSerializer.Deserialize<JsonElement>(upsertRequest.EdfiDoc),
+                SecurityElements: upsertRequest.DocumentSecurityElements.ToJsonElement(),
+                LastModifiedTraceId: traceId.Value
             ),
             PartitionKeyFor(upsertRequest.DocumentInfo.ReferentialId).Value,
             upsertRequest.DocumentInfo.ReferentialId.Value,
             connection,
-            transaction,
-            traceId
+            transaction
         );
 
         SuperclassIdentity? superclassIdentity = upsertRequest.DocumentInfo.SuperclassIdentity;
@@ -176,6 +176,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             documentPartitionKey,
             documentUuid,
             JsonSerializer.Deserialize<JsonElement>(upsertRequest.EdfiDoc),
+            upsertRequest.DocumentSecurityElements.ToJsonElement(),
             connection,
             transaction,
             traceId
@@ -224,8 +225,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
     public async Task<UpsertResult> Upsert(
         IUpsertRequest upsertRequest,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        TraceId traceId
+        NpgsqlTransaction transaction
     )
     {
         _logger.LogDebug("Entering UpsertDocument.Upsert - {TraceId}", upsertRequest.TraceId.Value);
@@ -249,7 +249,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                     PartitionKeyFor(upsertRequest.DocumentInfo.ReferentialId),
                     connection,
                     transaction,
-                    traceId
+                    upsertRequest.TraceId
                 );
             }
             catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.SerializationFailure)
@@ -280,7 +280,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                     descriptorReferenceIds,
                     connection,
                     transaction,
-                    traceId
+                    upsertRequest.TraceId
                 );
             }
 
@@ -297,7 +297,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 descriptorReferenceIds,
                 connection,
                 transaction,
-                traceId
+                upsertRequest.TraceId
             );
         }
         catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.SerializationFailure)

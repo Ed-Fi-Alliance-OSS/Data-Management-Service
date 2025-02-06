@@ -32,6 +32,29 @@ public class SqlAction() : ISqlAction
     }
 
     /// <summary>
+    /// Returns a Document from a data reader row for the Document table
+    /// </summary>
+    private static async Task<Document> ExtractDocumentFrom(NpgsqlDataReader reader)
+    {
+        return new(
+            Id: reader.GetInt64(reader.GetOrdinal("Id")),
+            DocumentPartitionKey: reader.GetInt16(reader.GetOrdinal("DocumentPartitionKey")),
+            DocumentUuid: reader.GetGuid(reader.GetOrdinal("DocumentUuid")),
+            ResourceName: reader.GetString(reader.GetOrdinal("ResourceName")),
+            ResourceVersion: reader.GetString(reader.GetOrdinal("ResourceVersion")),
+            IsDescriptor: reader.GetBoolean(reader.GetOrdinal("IsDescriptor")),
+            ProjectName: reader.GetString(reader.GetOrdinal("ProjectName")),
+            EdfiDoc: await reader.GetFieldValueAsync<JsonElement>(reader.GetOrdinal("EdfiDoc")),
+            SecurityElements: await reader.GetFieldValueAsync<JsonElement>(
+                reader.GetOrdinal("SecurityElements")
+            ),
+            CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
+            LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt")),
+            LastModifiedTraceId: reader.GetString(reader.GetOrdinal("LastModifiedTraceId"))
+        );
+    }
+
+    /// <summary>
     /// Returns the EdfiDoc of single Document from the database corresponding to the given DocumentUuid,
     /// or null if no matching Document was found.
     /// </summary>
@@ -44,20 +67,19 @@ public class SqlAction() : ISqlAction
         TraceId traceId
     )
     {
-        await using NpgsqlCommand command =
-            new(
-                $@"SELECT EdfiDoc, LastModifiedAt, LastModifiedTraceId  FROM dms.Document WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 AND ResourceName = $3 {SqlFor(LockOption.BlockUpdateDelete)};",
-                connection,
-                transaction
-            )
+        await using NpgsqlCommand command = new(
+            $@"SELECT EdfiDoc, LastModifiedAt, LastModifiedTraceId  FROM dms.Document WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 AND ResourceName = $3 {SqlFor(LockOption.BlockUpdateDelete)};",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
             {
-                Parameters =
-                {
-                    new() { Value = partitionKey.Value },
-                    new() { Value = documentUuid.Value },
-                    new() { Value = resourceName },
-                },
-            };
+                new() { Value = partitionKey.Value },
+                new() { Value = documentUuid.Value },
+                new() { Value = resourceName },
+            },
+        };
 
         await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
@@ -89,21 +111,20 @@ public class SqlAction() : ISqlAction
         TraceId traceId
     )
     {
-        await using NpgsqlCommand command =
-            new(
-                $@"SELECT * FROM dms.Document d
+        await using NpgsqlCommand command = new(
+            $@"SELECT * FROM dms.Document d
                 INNER JOIN dms.Alias a ON a.DocumentId = d.Id AND a.DocumentPartitionKey = d.DocumentPartitionKey
                 WHERE a.ReferentialPartitionKey = $1 AND a.ReferentialId = $2 {SqlFor(LockOption.BlockUpdateDelete)};",
-                connection,
-                transaction
-            )
+            connection,
+            transaction
+        )
+        {
+            Parameters =
             {
-                Parameters =
-                {
-                    new() { Value = partitionKey.Value },
-                    new() { Value = referentialId.Value },
-                },
-            };
+                new() { Value = partitionKey.Value },
+                new() { Value = referentialId.Value },
+            },
+        };
 
         await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
@@ -115,20 +136,7 @@ public class SqlAction() : ISqlAction
 
         // Assumes only one row returned (should never be more due to DB unique constraint)
         await reader.ReadAsync();
-
-        return new Document(
-            Id: reader.GetInt64(reader.GetOrdinal("Id")),
-            DocumentPartitionKey: reader.GetInt16(reader.GetOrdinal("DocumentPartitionKey")),
-            DocumentUuid: reader.GetGuid(reader.GetOrdinal("DocumentUuid")),
-            ResourceName: reader.GetString(reader.GetOrdinal("ResourceName")),
-            ResourceVersion: reader.GetString(reader.GetOrdinal("ResourceVersion")),
-            IsDescriptor: reader.GetBoolean(reader.GetOrdinal("IsDescriptor")),
-            ProjectName: reader.GetString(reader.GetOrdinal("ProjectName")),
-            EdfiDoc: await reader.GetFieldValueAsync<JsonElement>(reader.GetOrdinal("EdfiDoc")),
-            CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
-            LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt")),
-            LastModifiedTraceId: reader.GetString(reader.GetOrdinal("LastModifiedTraceId"))
-        );
+        return await ExtractDocumentFrom(reader);
     }
 
     /// <summary>
@@ -142,20 +150,19 @@ public class SqlAction() : ISqlAction
         TraceId traceId
     )
     {
-        await using NpgsqlCommand command =
-            new(
-                @"SELECT EdfiDoc FROM dms.Document WHERE ResourceName = $1 ORDER BY CreatedAt OFFSET $2 ROWS FETCH FIRST $3 ROWS ONLY;",
-                connection,
-                transaction
-            )
+        await using NpgsqlCommand command = new(
+            @"SELECT EdfiDoc FROM dms.Document WHERE ResourceName = $1 ORDER BY CreatedAt OFFSET $2 ROWS FETCH FIRST $3 ROWS ONLY;",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
             {
-                Parameters =
-                {
-                    new() { Value = resourceName },
-                    new() { Value = paginationParameters.Offset ?? 0 },
-                    new() { Value = paginationParameters.Limit ?? 25 },
-                },
-            };
+                new() { Value = resourceName },
+                new() { Value = paginationParameters.Offset ?? 0 },
+                new() { Value = paginationParameters.Limit ?? 25 },
+            },
+        };
 
         await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
@@ -186,11 +193,14 @@ public class SqlAction() : ISqlAction
         TraceId traceId
     )
     {
-        await using NpgsqlCommand command =
-            new(@"SELECT Count(1) Total FROM dms.Document WHERE resourcename = $1;", connection, transaction)
-            {
-                Parameters = { new() { Value = resourceName } },
-            };
+        await using NpgsqlCommand command = new(
+            @"SELECT Count(1) Total FROM dms.Document WHERE resourcename = $1;",
+            connection,
+            transaction
+        )
+        {
+            Parameters = { new() { Value = resourceName } },
+        };
 
         await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
@@ -212,19 +222,18 @@ public class SqlAction() : ISqlAction
         int referentialPartitionKey,
         Guid referentialId,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        TraceId traceId
+        NpgsqlTransaction transaction
     )
     {
         await using var command = new NpgsqlCommand(
             @"
             WITH Documents AS (
-            INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, IsDescriptor, ProjectName, EdfiDoc, LastModifiedTraceId)
-              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, IsDescriptor, ProjectName, EdfiDoc, SecurityElements, LastModifiedTraceId)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
               RETURNING Id
             )
             INSERT INTO dms.Alias (ReferentialPartitionKey, ReferentialId, DocumentId, DocumentPartitionKey)
-              SELECT $9, $10, Id, $1 FROM Documents RETURNING DocumentId;
+              SELECT $10, $11, Id, $1 FROM Documents RETURNING DocumentId;
             ",
             connection,
             transaction
@@ -239,9 +248,10 @@ public class SqlAction() : ISqlAction
                 new() { Value = document.IsDescriptor },
                 new() { Value = document.ProjectName },
                 new() { Value = document.EdfiDoc },
-                new() { Value = traceId.Value },
+                new() { Value = document.SecurityElements },
+                new() { Value = document.LastModifiedTraceId },
                 new() { Value = referentialPartitionKey },
-                new() { Value = referentialId }
+                new() { Value = referentialId },
             },
         };
 
@@ -256,6 +266,7 @@ public class SqlAction() : ISqlAction
         int documentPartitionKey,
         Guid documentUuid,
         JsonElement edfiDoc,
+        JsonElement securityElements,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         TraceId traceId
@@ -263,7 +274,7 @@ public class SqlAction() : ISqlAction
     {
         await using var command = new NpgsqlCommand(
             @"UPDATE dms.Document
-              SET EdfiDoc = $1, LastModifiedAt = clock_timestamp(), LastModifiedTraceId = $4
+              SET EdfiDoc = $1, LastModifiedAt = clock_timestamp(), LastModifiedTraceId = $4, SecurityElements = $5
               WHERE DocumentPartitionKey = $2 AND DocumentUuid = $3
               RETURNING Id;",
             connection,
@@ -276,6 +287,7 @@ public class SqlAction() : ISqlAction
                 new() { Value = documentPartitionKey },
                 new() { Value = documentUuid },
                 new() { Value = traceId.Value },
+                new() { Value = securityElements },
             },
         };
 
@@ -300,27 +312,26 @@ public class SqlAction() : ISqlAction
             sqlForLockOption += " OF d";
         }
 
-        await using NpgsqlCommand command =
-            new(
-                $@"SELECT DocumentUuid, ReferentialId
+        await using NpgsqlCommand command = new(
+            $@"SELECT DocumentUuid, ReferentialId
                    FROM dms.Document d
                    LEFT JOIN dms.Alias a ON
                        a.DocumentId = d.Id
                        AND a.DocumentPartitionKey = d.DocumentPartitionKey
                        AND a.ReferentialId = $1 and a.ReferentialPartitionKey = $2
                    WHERE d.DocumentUuid = $3 AND d.DocumentPartitionKey = $4 {sqlForLockOption};",
-                connection,
-                transaction
-            )
+            connection,
+            transaction
+        )
+        {
+            Parameters =
             {
-                Parameters =
-                {
-                    new() { Value = referentialId.Value },
-                    new() { Value = referentialPartitionKey.Value },
-                    new() { Value = documentUuid.Value },
-                    new() { Value = documentPartitionKey.Value },
-                },
-            };
+                new() { Value = referentialId.Value },
+                new() { Value = referentialPartitionKey.Value },
+                new() { Value = documentUuid.Value },
+                new() { Value = documentPartitionKey.Value },
+            },
+        };
 
         await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
@@ -444,7 +455,7 @@ public class SqlAction() : ISqlAction
                 new() { Value = parentDocumentIds },
                 new() { Value = parentDocumentPartitionKeys },
                 new() { Value = bulkReferences.ReferentialIds },
-                new() { Value = bulkReferences.ReferentialPartitionKeys }
+                new() { Value = bulkReferences.ReferentialPartitionKeys },
             },
         };
         await command.PrepareAsync();
@@ -471,19 +482,18 @@ public class SqlAction() : ISqlAction
         TraceId traceId
     )
     {
-        await using NpgsqlCommand command =
-            new(
-                @"DELETE from dms.Document WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2;",
-                connection,
-                transaction
-            )
+        await using NpgsqlCommand command = new(
+            @"DELETE from dms.Document WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2;",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
             {
-                Parameters =
-                {
-                    new() { Value = documentPartitionKey.Value },
-                    new() { Value = documentUuid.Value },
-                },
-            };
+                new() { Value = documentPartitionKey.Value },
+                new() { Value = documentUuid.Value },
+            },
+        };
 
         await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
@@ -497,9 +507,8 @@ public class SqlAction() : ISqlAction
         TraceId traceId
     )
     {
-        await using NpgsqlCommand command =
-            new(
-                $@"SELECT d.ResourceName FROM dms.Document d
+        await using NpgsqlCommand command = new(
+            $@"SELECT d.ResourceName FROM dms.Document d
                    INNER JOIN (
                      SELECT ParentDocumentId, ParentDocumentPartitionKey
                      FROM dms.Reference r
@@ -508,16 +517,16 @@ public class SqlAction() : ISqlAction
                        WHERE d2.DocumentUuid = $1 AND d2.DocumentPartitionKey = $2) AS re
                      ON re.ParentDocumentId = d.id AND re.ParentDocumentPartitionKey = d.DocumentPartitionKey
                    ORDER BY d.ResourceName {SqlFor(LockOption.BlockUpdateDelete)};",
-                connection,
-                transaction
-            )
+            connection,
+            transaction
+        )
+        {
+            Parameters =
             {
-                Parameters =
-                {
-                    new() { Value = documentUuid.Value },
-                    new() { Value = documentPartitionKey.Value },
-                },
-            };
+                new() { Value = documentUuid.Value },
+                new() { Value = documentPartitionKey.Value },
+            },
+        };
 
         await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
@@ -540,22 +549,21 @@ public class SqlAction() : ISqlAction
         TraceId traceId
     )
     {
-        await using NpgsqlCommand command =
-            new(
-                $@"SELECT * FROM dms.Document d
+        await using NpgsqlCommand command = new(
+            $@"SELECT * FROM dms.Document d
                                 INNER JOIN dms.Reference r ON d.Id = r.ParentDocumentId And d.DocumentPartitionKey = r.ParentDocumentPartitionKey
                                 WHERE r.ReferencedDocumentId = $1 AND r.ReferencedDocumentPartitionKey = $2
                                 ORDER BY d.ResourceName {SqlFor(LockOption.BlockUpdateDelete)};",
-                connection,
-                transaction
-            )
+            connection,
+            transaction
+        )
+        {
+            Parameters =
             {
-                Parameters =
-                {
-                    new() { Value = documentId },
-                    new() { Value = documentPartitionKey },
-                },
-            };
+                new() { Value = documentId },
+                new() { Value = documentPartitionKey },
+            },
+        };
 
         await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
@@ -564,20 +572,7 @@ public class SqlAction() : ISqlAction
 
         while (await reader.ReadAsync())
         {
-            documents.Add(
-                new Document(
-                    Id: reader.GetInt64(reader.GetOrdinal("Id")),
-                    DocumentPartitionKey: reader.GetInt16(reader.GetOrdinal("DocumentPartitionKey")),
-                    DocumentUuid: reader.GetGuid(reader.GetOrdinal("DocumentUuid")),
-                    ResourceName: reader.GetString(reader.GetOrdinal("ResourceName")),
-                    ResourceVersion: reader.GetString(reader.GetOrdinal("ResourceVersion")),
-                    IsDescriptor: reader.GetBoolean(reader.GetOrdinal("IsDescriptor")),
-                    ProjectName: reader.GetString(reader.GetOrdinal("ProjectName")),
-                    EdfiDoc: await reader.GetFieldValueAsync<JsonElement>(reader.GetOrdinal("EdfiDoc")),
-                    CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
-                    LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt"))
-                )
-            );
+            documents.Add(await ExtractDocumentFrom(reader));
         }
 
         return documents.ToArray();

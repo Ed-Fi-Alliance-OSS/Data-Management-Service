@@ -37,7 +37,7 @@ public abstract class DatabaseTestBase
             new RespawnerOptions
             {
                 TablesToInclude = [new("dms", "document"), new("dms", "alias"), new("dms", "reference")],
-                DbAdapter = DbAdapter.Postgres
+                DbAdapter = DbAdapter.Postgres,
             }
         );
     }

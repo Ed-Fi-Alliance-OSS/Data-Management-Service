@@ -30,7 +30,7 @@ public interface IUpdateRequest
     JsonNode EdfiDoc { get; }
 
     /// <summary>
-    /// The elements extracted from a document are being secured on
+    /// The elements extracted from the document that are being secured on
     /// </summary>
     DocumentSecurityElements DocumentSecurityElements { get; }
 

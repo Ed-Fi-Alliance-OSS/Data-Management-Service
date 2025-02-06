@@ -55,14 +55,14 @@ public interface ISqlAction
         int referentialPartitionKey,
         Guid referentialId,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        TraceId traceId
+        NpgsqlTransaction transaction
     );
 
     public Task<int> UpdateDocumentEdfiDoc(
         int documentPartitionKey,
         Guid documentUuid,
         JsonElement edfiDoc,
+        JsonElement securityElements,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         TraceId traceId
