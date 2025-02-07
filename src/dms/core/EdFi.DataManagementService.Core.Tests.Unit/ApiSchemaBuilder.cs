@@ -249,7 +249,7 @@ public class ApiSchemaBuilder
             throw new InvalidOperationException();
         }
 
-        _currentResourceNode["securityElements"]!["namespace"] = new JsonArray(
+        _currentResourceNode["securityElements"]!["Namespace"] = new JsonArray(
             jsonPaths.Select(x => JsonValue.Create(x)).ToArray()
         );
 
