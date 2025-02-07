@@ -15,7 +15,7 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// The DeleteAuthorizationHandler implementation that uses
 /// ClientAuthorizations and NamespaceSecurityElementPaths to
 /// interrogate the EdFiDoc and determine whether a Delete operation
-/// is authorized and if not, why. 
+/// is authorized and if not, why.
 /// </summary>
 /// <param name="clientAuthorizations"></param>
 /// <param name="namespaceSecurityElementPaths"></param>
@@ -38,11 +38,7 @@ public class DeleteAuthorizationHandler(
                 );
                 if (
                     !clientAuthorizations.NamespacePrefixes.Any(n =>
-                        string.Equals(
-                            n.Value,
-                            namespaceFromDocument,
-                            StringComparison.InvariantCultureIgnoreCase
-                        )
+                        namespaceFromDocument.StartsWith(n.Value, StringComparison.InvariantCultureIgnoreCase)
                     )
                 )
                 {
