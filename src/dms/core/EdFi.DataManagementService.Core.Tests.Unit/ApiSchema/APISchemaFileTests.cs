@@ -53,6 +53,7 @@ public class APISchemaFileTests
                 Options.Create(new AppSettings { AllowIdentityUpdateOverrides = "" }),
                 new AuthorizationStrategiesProvider(),
                 new NamedAuthorizationValidatorProvider(serviceProvider),
+                new NamedAuthorizationFiltersProvider(serviceProvider),
                 ResiliencePipeline.Empty
             );
         }
