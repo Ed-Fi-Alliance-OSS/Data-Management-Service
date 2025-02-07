@@ -40,6 +40,7 @@ internal class ApiService(
     IOptions<AppSettings> _appSettings,
     IAuthorizationStrategiesProvider _authorizationStrategiesProvider,
     IAuthorizationValidatorProvider _authorizationStrategyHandlerProvider,
+    IAuthorizationFiltersProvider _authorizationFiltersProvider,
     [FromKeyedServices("backendResiliencePipeline")] ResiliencePipeline _resiliencePipeline
 ) : IApiService
 {
@@ -143,10 +144,10 @@ internal class ApiService(
                         _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                     ),
                     new ValidateQueryMiddleware(_logger, _appSettings.Value.MaximumPageSize),
-                    new ResourceAuthorizationMiddleware(
+                    new ProvideAuthorizationFiltersMiddleware(
                         _claimSetCacheService,
                         _authorizationStrategiesProvider,
-                        _authorizationStrategyHandlerProvider,
+                        _authorizationFiltersProvider,
                         _logger
                     ),
                     new QueryRequestHandler(_queryHandler, _logger, _resiliencePipeline),

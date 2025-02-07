@@ -118,6 +118,37 @@ public static partial class QueryOpenSearch
                 }
             }
 
+            foreach (var strategyFilter in queryRequest.AuthorizationStrategyFilters)
+            {
+                JsonObject[] possibleFilters = strategyFilter
+                    .Filters.Select(filter => new JsonObject
+                    {
+                        ["match_phrase"] = new JsonObject
+                        {
+                            [$@"securityelements.{filter.FilterPath}"] = filter.Value,
+                        },
+                    })
+                    .ToArray();
+                if (strategyFilter.Operator.Equals(FilterOperator.Or))
+                {
+                    terms.Add(
+                        new JsonObject
+                        {
+                            ["bool"] = new JsonObject { ["should"] = new JsonArray(possibleFilters) },
+                        }
+                    );
+                }
+                if (strategyFilter.Operator.Equals(FilterOperator.And))
+                {
+                    terms.Add(
+                        new JsonObject
+                        {
+                            ["bool"] = new JsonObject { ["must"] = new JsonArray(possibleFilters) },
+                        }
+                    );
+                }
+            }
+
             JsonObject query = new()
             {
                 ["query"] = new JsonObject { ["bool"] = new JsonObject { ["must"] = terms } },
