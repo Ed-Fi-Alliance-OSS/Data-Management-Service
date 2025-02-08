@@ -39,8 +39,7 @@ internal class ApiService(
     ILogger<ApiService> _logger,
     IOptions<AppSettings> _appSettings,
     IAuthorizationStrategiesProvider _authorizationStrategiesProvider,
-    IAuthorizationValidatorProvider _authorizationStrategyHandlerProvider,
-    IAuthorizationFiltersProvider _authorizationFiltersProvider,
+    IAuthorizationServiceFactory _authorizationServiceFactory,
     [FromKeyedServices("backendResiliencePipeline")] ResiliencePipeline _resiliencePipeline
 ) : IApiService
 {
@@ -90,7 +89,7 @@ internal class ApiService(
                 new ResourceAuthorizationMiddleware(
                     _claimSetCacheService,
                     _authorizationStrategiesProvider,
-                    _authorizationStrategyHandlerProvider,
+                    _authorizationServiceFactory,
                     _logger
                 ),
                 new UpsertHandler(_documentStoreRepository, _logger, _resiliencePipeline, _apiSchemaProvider),
@@ -115,12 +114,6 @@ internal class ApiService(
                     new BuildResourceInfoMiddleware(
                         _logger,
                         _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
-                    ),
-                    new ResourceAuthorizationMiddleware(
-                        _claimSetCacheService,
-                        _authorizationStrategiesProvider,
-                        _authorizationStrategyHandlerProvider,
-                        _logger
                     ),
                     new GetByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline),
                 ]
@@ -147,7 +140,7 @@ internal class ApiService(
                     new ProvideAuthorizationFiltersMiddleware(
                         _claimSetCacheService,
                         _authorizationStrategiesProvider,
-                        _authorizationFiltersProvider,
+                        _authorizationServiceFactory,
                         _logger
                     ),
                     new QueryRequestHandler(_queryHandler, _logger, _resiliencePipeline),
@@ -201,7 +194,7 @@ internal class ApiService(
                 new ResourceAuthorizationMiddleware(
                     _claimSetCacheService,
                     _authorizationStrategiesProvider,
-                    _authorizationStrategyHandlerProvider,
+                    _authorizationServiceFactory,
                     _logger
                 ),
                 new UpdateByIdHandler(
@@ -230,12 +223,6 @@ internal class ApiService(
                     new BuildResourceInfoMiddleware(
                         _logger,
                         _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
-                    ),
-                    new ResourceAuthorizationMiddleware(
-                        _claimSetCacheService,
-                        _authorizationStrategiesProvider,
-                        _authorizationStrategyHandlerProvider,
-                        _logger
                     ),
                     new DeleteByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline),
                 ]

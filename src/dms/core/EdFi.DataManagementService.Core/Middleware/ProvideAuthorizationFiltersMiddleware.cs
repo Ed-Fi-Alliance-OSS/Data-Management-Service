@@ -11,18 +11,19 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Security.AuthorizationFilters;
 using EdFi.DataManagementService.Core.Security.Model;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
 /// <summary>
-/// Authorizes request data based on the client's authorization information.
+/// Provides authorization filters
 /// </summary>
 internal class ProvideAuthorizationFiltersMiddleware(
     IClaimSetCacheService _claimSetCacheService,
     IAuthorizationStrategiesProvider _authorizationStrategiesProvider,
-    IAuthorizationFiltersProvider _authorizationFiltersProvider,
+    IAuthorizationServiceFactory _authorizationFiltersProvider,
     ILogger _logger
 ) : IPipelineStep
 {
@@ -30,6 +31,7 @@ internal class ProvideAuthorizationFiltersMiddleware(
     {
         try
         {
+            // Common authorization steps will be moved to common middleware
             _logger.LogDebug(
                 "Entering ResourceAuthorizationMiddleware - {TraceId}",
                 context.FrontendRequest.TraceId.Value
@@ -175,7 +177,9 @@ internal class ProvideAuthorizationFiltersMiddleware(
             List<AuthorizationStrategyFilter> authorizationStrategyFilters = [];
             foreach (string authorizationStrategy in resourceActionAuthStrategies)
             {
-                var authFilters = _authorizationFiltersProvider.GetByName(authorizationStrategy);
+                var authFilters = _authorizationFiltersProvider.GetByName<IAuthorizationFilters>(
+                    authorizationStrategy
+                );
                 if (authFilters == null)
                 {
                     context.FrontendResponse = new FrontendResponse(

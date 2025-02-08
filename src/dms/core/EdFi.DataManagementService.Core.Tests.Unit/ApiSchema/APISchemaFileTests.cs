@@ -52,8 +52,7 @@ public class APISchemaFileTests
                 NullLogger<ApiService>.Instance,
                 Options.Create(new AppSettings { AllowIdentityUpdateOverrides = "" }),
                 new AuthorizationStrategiesProvider(),
-                new NamedAuthorizationValidatorProvider(serviceProvider),
-                new NamedAuthorizationFiltersProvider(serviceProvider),
+                new NamedAuthorizationServiceFactory(serviceProvider),
                 ResiliencePipeline.Empty
             );
         }

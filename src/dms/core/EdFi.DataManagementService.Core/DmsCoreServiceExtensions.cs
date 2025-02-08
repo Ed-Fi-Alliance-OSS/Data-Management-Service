@@ -44,10 +44,9 @@ public static class DmsCoreServiceExtensions
             .AddTransient<IMatchingDocumentUuidsValidator, MatchingDocumentUuidsValidator>()
             .AddTransient<IEqualityConstraintValidator, EqualityConstraintValidator>()
             .AddTransient<IAuthorizationStrategiesProvider, AuthorizationStrategiesProvider>()
-            .AddSingleton<IAuthorizationValidatorProvider, NamedAuthorizationValidatorProvider>()
+            .AddSingleton<IAuthorizationServiceFactory, NamedAuthorizationServiceFactory>()
             .AddTransient<NoFurtherAuthorizationRequiredValidator>()
             .AddTransient<NamespaceBasedValidator>()
-            .AddSingleton<IAuthorizationFiltersProvider, NamedAuthorizationFiltersProvider>()
             .AddTransient<NoFurtherAuthorizationRequiredFilters>()
             .AddTransient<NamespaceBasedFilters>()
             .AddResiliencePipeline("backendResiliencePipeline", backendResiliencePipeline);

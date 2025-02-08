@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Security.AuthorizationValidation;
 using EdFi.DataManagementService.Core.Security.Model;
 using Microsoft.Extensions.Logging;
 
@@ -22,7 +23,7 @@ namespace EdFi.DataManagementService.Core.Middleware;
 internal class ResourceAuthorizationMiddleware(
     IClaimSetCacheService _claimSetCacheService,
     IAuthorizationStrategiesProvider _authorizationStrategiesProvider,
-    IAuthorizationValidatorProvider _authorizationStrategyHandlerProvider,
+    IAuthorizationServiceFactory _authorizationStrategyHandlerProvider,
     ILogger _logger
 ) : IPipelineStep
 {
@@ -176,9 +177,10 @@ internal class ResourceAuthorizationMiddleware(
 
             foreach (string authorizationStrategy in resourceActionAuthStrategies)
             {
-                var authStrategyHandler = _authorizationStrategyHandlerProvider.GetByName(
-                    authorizationStrategy
-                );
+                var authStrategyHandler =
+                    _authorizationStrategyHandlerProvider.GetByName<IAuthorizationValidator>(
+                        authorizationStrategy
+                    );
                 if (authStrategyHandler == null)
                 {
                     context.FrontendResponse = new FrontendResponse(
