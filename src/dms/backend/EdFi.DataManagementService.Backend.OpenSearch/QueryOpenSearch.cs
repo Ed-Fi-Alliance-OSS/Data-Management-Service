@@ -120,32 +120,35 @@ public static partial class QueryOpenSearch
 
             foreach (var strategyFilter in queryRequest.AuthorizationStrategyFilters)
             {
-                JsonObject[] possibleFilters = strategyFilter
-                    .Filters.Select(filter => new JsonObject
+                if (strategyFilter != null && strategyFilter.Filters.Length != 0)
+                {
+                    JsonObject[] possibleFilters = strategyFilter
+                        .Filters.Select(filter => new JsonObject
+                        {
+                            ["match_phrase"] = new JsonObject
+                            {
+                                [$@"securityelements.{filter.FilterPath}"] = filter.Value,
+                            },
+                        })
+                        .ToArray();
+                    if (strategyFilter.Operator.Equals(FilterOperator.Or))
                     {
-                        ["match_phrase"] = new JsonObject
-                        {
-                            [$@"securityelements.{filter.FilterPath}"] = filter.Value,
-                        },
-                    })
-                    .ToArray();
-                if (strategyFilter.Operator.Equals(FilterOperator.Or))
-                {
-                    terms.Add(
-                        new JsonObject
-                        {
-                            ["bool"] = new JsonObject { ["should"] = new JsonArray(possibleFilters) },
-                        }
-                    );
-                }
-                if (strategyFilter.Operator.Equals(FilterOperator.And))
-                {
-                    terms.Add(
-                        new JsonObject
-                        {
-                            ["bool"] = new JsonObject { ["must"] = new JsonArray(possibleFilters) },
-                        }
-                    );
+                        terms.Add(
+                            new JsonObject
+                            {
+                                ["bool"] = new JsonObject { ["should"] = new JsonArray(possibleFilters) },
+                            }
+                        );
+                    }
+                    if (strategyFilter.Operator.Equals(FilterOperator.And))
+                    {
+                        terms.Add(
+                            new JsonObject
+                            {
+                                ["bool"] = new JsonObject { ["must"] = new JsonArray(possibleFilters) },
+                            }
+                        );
+                    }
                 }
             }
 
