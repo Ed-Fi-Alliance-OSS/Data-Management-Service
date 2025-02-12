@@ -172,6 +172,36 @@ Feature: Namespace Authorization
                   """
              Then it should respond with 200
 
+        @addwait
+        Scenario: 19 Ensure client can get a resource in the ed-fi namespace
+         Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ed-fi.org"
+             When a POST request is made to "/ed-fi/surveys" with
+                  """
+                  {
+                      "namespace": "uri://ed-fi.org",
+                      "surveyIdentifier": "NB_1",
+                      "schoolYearTypeReference": {
+                        "schoolYear": 2024
+                      },
+                    "surveyTitle": "NB Course Evaluation"
+                  }
+                  """
+             Then it should respond with 200 or 201
+              When a GET request is made to "/ed-fi/surveys?surveyIdentifier=NB_1"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [{
+                      "id": "{id}",
+                      "namespace": "uri://ed-fi.org",
+                      "surveyIdentifier": "NB_1",
+                      "schoolYearTypeReference": {
+                        "schoolYear": 2024
+                      },
+                    "surveyTitle": "NB Course Evaluation"
+                  }]
+                  """
+
         Scenario: 10 Ensure client can get a resource in the ns2 namespace
              When a GET request is made to "/ed-fi/surveys/{id}"
              Then it should respond with 200
