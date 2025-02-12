@@ -18,4 +18,6 @@ public record ClientAuthorizations(
     /// Namespace prefixes this client is authorized for
     /// </summary>
     IReadOnlyList<NamespacePrefix> NamespacePrefixes
+
+
 );

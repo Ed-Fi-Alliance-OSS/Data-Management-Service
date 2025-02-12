@@ -17,47 +17,17 @@ using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
-using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
-using static EdFi.DataManagementService.Core.UtilityService;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
-public class ResourceAuthorizationMiddlewareTests
+public class ResourceUpsertAuthorizationMiddlewareTests
 {
     private PipelineContext _context = No.PipelineContext();
 
     internal static IPipelineStep Middleware()
     {
         var expectedAuthStrategy = "NoFurtherAuthorizationRequired";
-        var claimSetCacheService = A.Fake<IClaimSetCacheService>();
-        A.CallTo(() => claimSetCacheService.GetClaimSets())
-            .Returns(
-                [
-                    new ClaimSet(
-                        Name: "SIS-Vendor",
-                        ResourceClaims:
-                        [
-                            new ResourceClaim()
-                            {
-                                Name = "schools",
-                                Actions = [new(Enabled: true, Name: "Create")],
-                                DefaultAuthorizationStrategiesForCrud =
-                                [
-                                    new(
-                                        ActionId: 1,
-                                        ActionName: "Create",
-                                        AuthorizationStrategies:
-                                        [
-                                            new() { AuthStrategyName = expectedAuthStrategy },
-                                        ]
-                                    ),
-                                ],
-                            },
-                        ]
-                    ),
-                ]
-            );
         var authStrategyList = new List<string> { expectedAuthStrategy };
         var authorizationStrategiesProvider = A.Fake<IAuthorizationStrategiesProvider>();
         A.CallTo(
@@ -71,8 +41,7 @@ public class ResourceAuthorizationMiddlewareTests
         var authorizationStrategyHandler = A.Fake<IAuthorizationServiceFactory>();
         A.CallTo(() => authorizationStrategyHandler.GetByName<IAuthorizationValidator>(A<string>.Ignored))
             .Returns(new NoFurtherAuthorizationRequiredValidator());
-        return new ResourceAuthorizationMiddleware(
-            claimSetCacheService,
+        return new ResourceUpsertAuthorizationMiddleware(
             authorizationStrategiesProvider,
             authorizationStrategyHandler,
             NullLogger.Instance
@@ -80,109 +49,7 @@ public class ResourceAuthorizationMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_Matching_Resource_Claim : ResourceAuthorizationMiddlewareTests
-    {
-        [SetUp]
-        public async Task Setup()
-        {
-            FrontendRequest frontEndRequest = new(
-                Path: "ed-fi/schools",
-                Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
-                QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails("", "SIS-Vendor", [], [])
-            );
-
-            _context = new PipelineContext(frontEndRequest, RequestMethod.POST);
-            _context.PathComponents = new PathComponents(
-                new ProjectNamespace("ed-fi"),
-                new EndpointName("schools"),
-                new DocumentUuid()
-            );
-            await Middleware().Execute(_context, NullNext);
-        }
-
-        [Test]
-        public void It_has_No_response()
-        {
-            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
-        }
-    }
-
-    [TestFixture]
-    public class Given_No_Matching_ClaimSet : ResourceAuthorizationMiddlewareTests
-    {
-        [SetUp]
-        public async Task Setup()
-        {
-            FrontendRequest frontEndRequest = new(
-                Path: "ed-fi/schools",
-                Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
-                QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails("", "NO-MATCH", [], [])
-            );
-
-            _context = new PipelineContext(frontEndRequest, RequestMethod.POST);
-            _context.PathComponents = new PathComponents(
-                new ProjectNamespace("ed-fi"),
-                new EndpointName("schools"),
-                new DocumentUuid()
-            );
-            await Middleware().Execute(_context, NullNext);
-        }
-
-        [Test]
-        public void It_has_a_response()
-        {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
-        }
-
-        [Test]
-        public void It_has_forbidden_response()
-        {
-            _context?.FrontendResponse.StatusCode.Should().Be(403);
-        }
-    }
-
-    [TestFixture]
-    public class Given_No_Matching_ResourceClaim : ResourceAuthorizationMiddlewareTests
-    {
-        [SetUp]
-        public async Task Setup()
-        {
-            FrontendRequest frontEndRequest = new(
-                Path: "ed-fi/stateDescriptor",
-                Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
-                QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails("", "SIS-Vendor", [], [])
-            );
-
-            _context = new PipelineContext(frontEndRequest, RequestMethod.POST);
-            _context.PathComponents = new PathComponents(
-                new ProjectNamespace("ed-fi"),
-                new EndpointName("stateDescriptor"),
-                new DocumentUuid()
-            );
-            await Middleware().Execute(_context, NullNext);
-        }
-
-        [Test]
-        public void It_has_a_response()
-        {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
-        }
-
-        [Test]
-        public void It_has_forbidden_response()
-        {
-            _context?.FrontendResponse.StatusCode.Should().Be(403);
-        }
-    }
-
-    [TestFixture]
-    public class Given_Matching_ResourceClaimAction : ResourceAuthorizationMiddlewareTests
+    public class GivenMatchingResourceActionClaimAction : ResourceUpsertAuthorizationMiddlewareTests
     {
         [SetUp]
         public async Task Setup()
@@ -203,7 +70,7 @@ public class ResourceAuthorizationMiddlewareTests
                     new DocumentUuid()
                 ),
             };
-            await Middleware().Execute(_context, NullNext);
+            await Middleware().Execute(_context, TestHelper.NullNext);
         }
 
         [Test]
@@ -214,116 +81,8 @@ public class ResourceAuthorizationMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_No_Matching_ResourceClaimAction : ResourceAuthorizationMiddlewareTests
-    {
-        [SetUp]
-        public async Task Setup()
-        {
-            FrontendRequest frontEndRequest = new(
-                Path: "ed-fi/schools",
-                Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
-                QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails("", "SIS-Vendor", [], [])
-            );
-
-            _context = new PipelineContext(frontEndRequest, RequestMethod.PUT)
-            {
-                PathComponents = new PathComponents(
-                    new ProjectNamespace("ed-fi"),
-                    new EndpointName("schools"),
-                    new DocumentUuid()
-                ),
-            };
-            await Middleware().Execute(_context, NullNext);
-        }
-
-        [Test]
-        public void It_has_a_response()
-        {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
-        }
-
-        [Test]
-        public void It_has_forbidden_response()
-        {
-            _context?.FrontendResponse.StatusCode.Should().Be(403);
-        }
-
-        [Test]
-        public void It_returns_message_body_with_failures()
-        {
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Authorization Denied");
-
-            string response = JsonSerializer.Serialize(_context.FrontendResponse.Body, SerializerOptions);
-
-            response
-                .Should()
-                .Contain(
-                    "\"errors\":[\"The API client's assigned claim set (currently 'SIS-Vendor') must grant permission of the 'Update' action on one of the following resource claims: schools\"]"
-                );
-        }
-    }
-
-    [TestFixture]
-    public class Given_No_ResourceClaimActions : ResourceAuthorizationMiddlewareTests
-    {
-        [SetUp]
-        public async Task Setup()
-        {
-            var claimSetCacheService = A.Fake<IClaimSetCacheService>();
-            A.CallTo(() => claimSetCacheService.GetClaimSets())
-                .Returns(
-                    [
-                        new ClaimSet(
-                            Name: "SIS-Vendor",
-                            ResourceClaims: [new ResourceClaim() { Name = "schools", Actions = null }]
-                        ),
-                    ]
-                );
-            var authorizationStrategiesProvider = A.Fake<IAuthorizationStrategiesProvider>();
-            var authorizationStrategyHandler = A.Fake<IAuthorizationServiceFactory>();
-            var authMiddleware = new ResourceAuthorizationMiddleware(
-                claimSetCacheService,
-                authorizationStrategiesProvider,
-                authorizationStrategyHandler,
-                NullLogger.Instance
-            );
-
-            FrontendRequest frontEndRequest = new(
-                Path: "ed-fi/schools",
-                Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
-                QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails("", "SIS-Vendor", [], [])
-            );
-
-            _context = new PipelineContext(frontEndRequest, RequestMethod.PUT)
-            {
-                PathComponents = new PathComponents(
-                    new ProjectNamespace("ed-fi"),
-                    new EndpointName("stateDescriptor"),
-                    new DocumentUuid()
-                ),
-            };
-            await authMiddleware.Execute(_context, NullNext);
-        }
-
-        [Test]
-        public void It_has_a_response()
-        {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
-        }
-
-        [Test]
-        public void It_has_forbidden_response()
-        {
-            _context?.FrontendResponse.StatusCode.Should().Be(403);
-        }
-    }
-
-    [TestFixture]
-    public class Given_Matching_ResourceClaimActionAuthStrategy : ResourceAuthorizationMiddlewareTests
+    public class GivenMatchingResourceActionClaimActionAuthStrategy
+        : ResourceUpsertAuthorizationMiddlewareTests
     {
         [SetUp]
         public async Task Setup()
@@ -344,7 +103,7 @@ public class ResourceAuthorizationMiddlewareTests
                     new DocumentUuid()
                 ),
             };
-            await Middleware().Execute(_context, NullNext);
+            await Middleware().Execute(_context, TestHelper.NullNext);
         }
 
         [Test]
@@ -355,29 +114,11 @@ public class ResourceAuthorizationMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_No_ResourceClaimActionAuthStrategies : ResourceAuthorizationMiddlewareTests
+    public class GivenNoResourceActionClaimActionAuthStrategies : ResourceUpsertAuthorizationMiddlewareTests
     {
         [SetUp]
         public async Task Setup()
         {
-            var claimSetCacheService = A.Fake<IClaimSetCacheService>();
-            A.CallTo(() => claimSetCacheService.GetClaimSets())
-                .Returns(
-                    [
-                        new ClaimSet(
-                            Name: "SIS-Vendor",
-                            ResourceClaims:
-                            [
-                                new ResourceClaim()
-                                {
-                                    Name = "schools",
-                                    Actions = [new(Enabled: true, Name: "Create")],
-                                    DefaultAuthorizationStrategiesForCrud = [],
-                                },
-                            ]
-                        ),
-                    ]
-                );
             var authorizationStrategiesProvider = A.Fake<IAuthorizationStrategiesProvider>();
             A.CallTo(
                     () =>
@@ -387,9 +128,8 @@ public class ResourceAuthorizationMiddlewareTests
                         )
                 )
                 .Returns([]);
-            var authorizationStrategyHandler = A.Fake<IAuthorizationServiceFactory>();
-            var authMiddleware = new ResourceAuthorizationMiddleware(
-                claimSetCacheService,
+            var authorizationStrategyHandler = A.Fake<IAuthorizationValidatorProvider>();
+            var authMiddleware = new ResourceUpsertAuthorizationMiddleware(
                 authorizationStrategiesProvider,
                 authorizationStrategyHandler,
                 NullLogger.Instance
@@ -410,8 +150,10 @@ public class ResourceAuthorizationMiddlewareTests
                     new EndpointName("schools"),
                     new DocumentUuid()
                 ),
+                ResourceClaim = new ResourceClaim() { Name = "schools" },
             };
-            await authMiddleware.Execute(_context, NullNext);
+            await authMiddleware.Execute(_context, TestHelper.NullNext);
+            Console.Write(_context.FrontendResponse);
         }
 
         [Test]
@@ -431,7 +173,10 @@ public class ResourceAuthorizationMiddlewareTests
         {
             _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Authorization Denied");
 
-            string response = JsonSerializer.Serialize(_context.FrontendResponse.Body, SerializerOptions);
+            string response = JsonSerializer.Serialize(
+                _context.FrontendResponse.Body,
+                UtilityService.SerializerOptions
+            );
 
             response
                 .Should()
@@ -442,7 +187,8 @@ public class ResourceAuthorizationMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_No_Valid_ResourceClaimActionAuthStrategy_Handler : ResourceAuthorizationMiddlewareTests
+    public class GivenNoValidResourceActionClaimActionAuthStrategyHandler
+        : ResourceUpsertAuthorizationMiddlewareTests
     {
         [SetUp]
         public async Task Setup()
@@ -474,11 +220,9 @@ public class ResourceAuthorizationMiddlewareTests
                         )
                 )
                 .Returns([authStrategy]);
-            var authorizationStrategyHandler = A.Fake<IAuthorizationServiceFactory>();
-            A.CallTo(() => authorizationStrategyHandler.GetByName<IAuthorizationValidator>(authStrategy))
-                .Returns(null);
-            var authMiddleware = new ResourceAuthorizationMiddleware(
-                claimSetCacheService,
+            var authorizationStrategyHandler = A.Fake<IAuthorizationValidatorProvider>();
+            A.CallTo(() => authorizationStrategyHandler.GetByName(authStrategy)).Returns(null);
+            var authMiddleware = new ResourceUpsertAuthorizationMiddleware(
                 authorizationStrategiesProvider,
                 authorizationStrategyHandler,
                 NullLogger.Instance
@@ -500,7 +244,7 @@ public class ResourceAuthorizationMiddlewareTests
                     new DocumentUuid()
                 ),
             };
-            await authMiddleware.Execute(_context, NullNext);
+            await authMiddleware.Execute(_context, TestHelper.NullNext);
         }
 
         [Test]
@@ -520,7 +264,10 @@ public class ResourceAuthorizationMiddlewareTests
         {
             _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Authorization Denied");
 
-            string response = JsonSerializer.Serialize(_context.FrontendResponse.Body, SerializerOptions);
+            string response = JsonSerializer.Serialize(
+                _context.FrontendResponse.Body,
+                UtilityService.SerializerOptions
+            );
 
             response
                 .Should()
@@ -531,7 +278,7 @@ public class ResourceAuthorizationMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_Request_Not_Authorized : ResourceAuthorizationMiddlewareTests
+    public class Given_Request_Not_Authorized : ResourceUpsertAuthorizationMiddlewareTests
     {
         [SetUp]
         public async Task Setup()
@@ -581,8 +328,7 @@ public class ResourceAuthorizationMiddlewareTests
                 )
                 .Returns(authorizationStrategyHandler);
 
-            var authMiddleware = new ResourceAuthorizationMiddleware(
-                claimSetCacheService,
+            var authMiddleware = new ResourceUpsertAuthorizationMiddleware(
                 authorizationStrategiesProvider,
                 authorizationStrategyHandlerProvider,
                 NullLogger.Instance
@@ -604,7 +350,7 @@ public class ResourceAuthorizationMiddlewareTests
                     new DocumentUuid()
                 ),
             };
-            await authMiddleware.Execute(_context, NullNext);
+            await authMiddleware.Execute(_context, TestHelper.NullNext);
         }
 
         [Test]
@@ -624,7 +370,10 @@ public class ResourceAuthorizationMiddlewareTests
         {
             _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Authorization Denied");
 
-            string response = JsonSerializer.Serialize(_context.FrontendResponse.Body, SerializerOptions);
+            string response = JsonSerializer.Serialize(
+                _context.FrontendResponse.Body,
+                UtilityService.SerializerOptions
+            );
 
             response.Should().Contain("\"errors\":[\"test-error\"]");
         }

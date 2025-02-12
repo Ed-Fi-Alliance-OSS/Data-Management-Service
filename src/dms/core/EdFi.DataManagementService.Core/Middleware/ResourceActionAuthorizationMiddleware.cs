@@ -18,12 +18,10 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DataManagementService.Core.Middleware;
 
 /// <summary>
-/// Authorizes request data based on the client's authorization information.
+/// Authorizes requests resource and action based on the client's authorization information.
 /// </summary>
-internal class ResourceAuthorizationMiddleware(
+internal class ResourceActionAuthorizationMiddleware(
     IClaimSetCacheService _claimSetCacheService,
-    IAuthorizationStrategiesProvider _authorizationStrategiesProvider,
-    IAuthorizationServiceFactory _authorizationStrategyHandlerProvider,
     ILogger _logger
 ) : IPipelineStep
 {
@@ -111,6 +109,8 @@ internal class ResourceAuthorizationMiddleware(
                 return;
             }
 
+            context.ResourceClaim = resourceClaim;
+
             List<ResourceClaimAction>? resourceActions = resourceClaim.Actions;
             if (resourceActions == null)
             {
@@ -153,8 +153,74 @@ internal class ResourceAuthorizationMiddleware(
                 return;
             }
 
+            // passes authorization
+            context.ClientAuthorizations = new(
+                apiClientDetails.EducationOrganizationIds,
+                apiClientDetails.NamespacePrefixes
+            );
+            await next();
+
+            void RespondAuthorizationError()
+            {
+                context.FrontendResponse = new FrontendResponse(
+                    StatusCode: 403,
+                    Body: FailureResponse.ForForbidden(traceId: context.FrontendRequest.TraceId, errors: []),
+                    Headers: [],
+                    ContentType: "application/problem+json"
+                );
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error while authorizing the request - {TraceId}",
+                context.FrontendRequest.TraceId.Value
+            );
+            context.FrontendResponse = new FrontendResponse(
+                StatusCode: 500,
+                Body: new JsonObject
+                {
+                    ["message"] = "Error while authorizing the request.",
+                    ["traceId"] = context.FrontendRequest.TraceId.Value,
+                },
+                Headers: []
+            );
+        }
+    }
+}
+
+/// <summary>
+/// Authorize the request bodies based on the client's authorization information.
+/// </summary>
+internal class ResourceUpsertAuthorizationMiddleware(
+    IAuthorizationStrategiesProvider _authorizationStrategiesProvider,
+    IAuthorizationValidatorProvider _authorizationStrategyHandlerProvider,
+    ILogger _logger
+) : IPipelineStep
+{
+    public async Task Execute(PipelineContext context, Func<Task> next)
+    {
+        try
+        {
+            _logger.LogDebug(
+                "Entering ResourceAuthorizationMiddleware - {TraceId}",
+                context.FrontendRequest.TraceId.Value
+            );
+
+            Debug.Assert(
+                context.FrontendRequest.ApiClientDetails != null,
+                "context.FrontendRequest.ApiClientDetails != null"
+            );
+
+            string claimSetName = context.FrontendRequest.ApiClientDetails.ClaimSetName;
+            string actionName = ActionResolver.Translate(context.Method).ToString();
+
             IList<string> resourceActionAuthStrategies =
-                _authorizationStrategiesProvider.GetAuthorizationStrategies(resourceClaim, actionName);
+                _authorizationStrategiesProvider.GetAuthorizationStrategies(
+                    context.ResourceClaim,
+                    actionName
+                );
 
             if (resourceActionAuthStrategies.Count == 0)
             {
@@ -164,7 +230,7 @@ internal class ResourceAuthorizationMiddleware(
                         traceId: context.FrontendRequest.TraceId,
                         errors:
                         [
-                            $"No authorization strategies were defined for the requested action '{actionName}' against resource ['{resourceClaim.Name}'] matched by the caller's claim '{claimSetName}'.",
+                            $"No authorization strategies were defined for the requested action '{actionName}' against resource ['{context.ResourceClaim.Name}'] matched by the caller's claim '{claimSetName}'.",
                         ]
                     ),
                     Headers: [],
@@ -177,10 +243,9 @@ internal class ResourceAuthorizationMiddleware(
 
             foreach (string authorizationStrategy in resourceActionAuthStrategies)
             {
-                var authStrategyHandler =
-                    _authorizationStrategyHandlerProvider.GetByName<IAuthorizationValidator>(
-                        authorizationStrategy
-                    );
+                var authStrategyHandler = _authorizationStrategyHandlerProvider.GetByName(
+                    authorizationStrategy
+                );
                 if (authStrategyHandler == null)
                 {
                     context.FrontendResponse = new FrontendResponse(
@@ -200,7 +265,7 @@ internal class ResourceAuthorizationMiddleware(
 
                 AuthorizationResult authorizationResult = authStrategyHandler.ValidateAuthorization(
                     context.DocumentSecurityElements,
-                    apiClientDetails
+                    context.FrontendRequest.ApiClientDetails
                 );
                 authResultsAcrossAuthStrategies.Add(authorizationResult);
             }
@@ -223,22 +288,7 @@ internal class ResourceAuthorizationMiddleware(
                 return;
             }
 
-            // passes authorization
-            context.ClientAuthorizations = new(
-                apiClientDetails.EducationOrganizationIds,
-                apiClientDetails.NamespacePrefixes
-            );
             await next();
-
-            void RespondAuthorizationError()
-            {
-                context.FrontendResponse = new FrontendResponse(
-                    StatusCode: 403,
-                    Body: FailureResponse.ForForbidden(traceId: context.FrontendRequest.TraceId, errors: []),
-                    Headers: [],
-                    ContentType: "application/problem+json"
-                );
-            }
         }
         catch (Exception ex)
         {

@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.Security.Model;
 
 namespace EdFi.DataManagementService.Core.Pipeline;
 
@@ -99,4 +100,9 @@ internal class PipelineContext(FrontendRequest _frontendRequest, RequestMethod _
     /// ClientAuthorizations for the requesting client
     /// </summary>
     public ClientAuthorizations ClientAuthorizations { get; set; } = No.ClientAuthorizations;
+
+    /// <summary>
+    /// ResourceClaims for the request
+    /// </summary>
+    public ResourceClaim ResourceClaim { get; set; } = No.ResourceClaim;
 }

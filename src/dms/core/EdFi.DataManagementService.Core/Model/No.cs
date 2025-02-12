@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Security.Model;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DataManagementService.Core.Model;
@@ -107,6 +108,17 @@ internal static class No
     /// The null object for ClientAuthorizations
     /// </summary>
     public static readonly ClientAuthorizations ClientAuthorizations = new([], []);
+
+    /// <summary>
+    /// The null object for ResourceClaim
+    /// </summary>
+    public static readonly ResourceClaim ResourceClaim = new ResourceClaim()
+    {
+        Actions = null,
+        AuthorizationStrategyOverridesForCrud = [],
+        Children = [],
+        DefaultAuthorizationStrategiesForCrud = []
+    };
 
     /// <summary>
     /// A constructor of a PipelineContext initialized with null objects
