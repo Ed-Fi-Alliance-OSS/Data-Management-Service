@@ -71,19 +71,32 @@ Feature: Namespace Authorization
                   """
              Then it should respond with 403
 
+        @addwait
         Scenario: 17 Ensure clients can GET information when querying a resource in the ns2 namespace
-             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors?codeValue=Sick Leave"
+              Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns2.org"
+              And a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+                  """
+                  {
+                      "codeValue": "Namespace Based",
+                      "description": "Namespace Based",
+                      "effectiveBeginDate": "2024-05-14",
+                      "effectiveEndDate": "2024-05-14",
+                      "namespace": "uri://ns2.org/AbsenceEventCategoryDescriptor",
+                      "shortDescription": "Namespace Based"
+                  }
+                  """
+             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors?codeValue=Namespace Based"
              Then it should respond with 200
               And the response body is
                   """
                   [{
                       "id": "{id}",
-                      "codeValue": "Sick Leave",
-                      "description": "Sick Leave",
+                      "codeValue": "Namespace Based",
+                      "description": "Namespace Based",
                       "effectiveBeginDate": "2024-05-14",
                       "effectiveEndDate": "2024-05-14",
                       "namespace": "uri://ns2.org/AbsenceEventCategoryDescriptor",
-                      "shortDescription": "Sick Leave"
+                      "shortDescription": "Namespace Based"
                   }]
                   """
          Scenario: 18 Ensure clients GET empty array when querying a resource with ns2 namespace
