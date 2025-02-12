@@ -6,7 +6,7 @@ Feature: Namespace Authorization
             # Note: the api client used in the background has two namespaces. For these tests we will
             # use the second namespace (ns2). Elsewhere in the test suite we will be using the first
             # and more common namespace "uri://ed-fi.org"
-            Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ed-fi.org uri://ns2.org"
+            Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ed-fi.org, uri://ns2.org"
               And a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                   {
@@ -71,6 +71,30 @@ Feature: Namespace Authorization
                   """
              Then it should respond with 403
 
+        Scenario: 17 Ensure clients can GET information when querying a resource in the ns2 namespace
+             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors?codeValue=Sick Leave"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [{
+                      "id": "{id}",
+                      "codeValue": "Sick Leave",
+                      "description": "Sick Leave",
+                      "effectiveBeginDate": "2024-05-14",
+                      "effectiveEndDate": "2024-05-14",
+                      "namespace": "uri://ns2.org/AbsenceEventCategoryDescriptor",
+                      "shortDescription": "Sick Leave"
+                  }]
+                  """
+         Scenario: 18 Ensure clients GET empty array when querying a resource with ns2 namespace
+             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
+             When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors?codeValue=Sick Leave"
+             Then it should respond with 200
+              And the response body is
+              """
+              []
+              """
+
         @ignore #DMS-503
         Scenario: 06 Ensure claimSet with different namespace can not get a descriptor in the ns2 namespace
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ns3.org"
@@ -105,7 +129,7 @@ Feature: Namespace Authorization
             # Note: the api client used in the background has two namespaces. For these tests we will
             # use the second namespace (ns2). Elsewhere in the test suite we will be using the first
             # and more common namespace "uri://ed-fi.org"
-            Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ed-fi.org uri://ns2.org"
+            Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ed-fi.org, uri://ns2.org"
             Given the system has these "schoolYearTypes"
                   | schoolYear | currentSchoolYear | schoolYearDescription |
                   | 2024       | true              | School Year 2024      |

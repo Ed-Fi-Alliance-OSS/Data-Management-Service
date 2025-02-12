@@ -4,11 +4,13 @@ CREATE TEMPORARY TABLE resource_claims (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
 	create_auth_strategy TEXT NOT NULL,
-	update_auth_strategy TEXT NOT NULL
+	update_auth_strategy TEXT NOT NULL,
+  read_auth_strategy TEXT NOT NULL,
+  delete_auth_strategy TEXT NOT NULL
 );
-INSERT INTO resource_claims (name, create_auth_strategy, update_auth_strategy) VALUES('schoolYearTypes', 'NoFurtherAuthorizationRequired', 'NoFurtherAuthorizationRequired');
-INSERT INTO resource_claims (name, create_auth_strategy, update_auth_strategy) VALUES('surveys', 'NamespaceBased', 'NamespaceBased');
-INSERT INTO resource_claims (name, create_auth_strategy, update_auth_strategy) VALUES('absenceEventCategoryDescriptors', 'NamespaceBased', 'NamespaceBased');
+INSERT INTO resource_claims (name, create_auth_strategy, update_auth_strategy, read_auth_strategy, delete_auth_strategy) VALUES('schoolYearTypes', 'NoFurtherAuthorizationRequired', 'NoFurtherAuthorizationRequired', 'NoFurtherAuthorizationRequired', 'NoFurtherAuthorizationRequired');
+INSERT INTO resource_claims (name, create_auth_strategy, update_auth_strategy, read_auth_strategy, delete_auth_strategy) VALUES('surveys', 'NamespaceBased', 'NamespaceBased', 'NamespaceBased', 'NoFurtherAuthorizationRequired');
+INSERT INTO resource_claims (name, create_auth_strategy, update_auth_strategy, read_auth_strategy, delete_auth_strategy) VALUES('absenceEventCategoryDescriptors', 'NamespaceBased', 'NamespaceBased', 'NamespaceBased', 'NoFurtherAuthorizationRequired');
 
 -- Step 3: Insert the generated JSON into claimset table
 INSERT INTO dmscs.claimset (claimsetname, issystemreserved, resourceclaims)
@@ -43,7 +45,7 @@ SELECT
                     'authorizationStrategies', jsonb_build_array(
                         jsonb_build_object(
                             'authStrategyId', 2,
-                            'authStrategyName', 'NoFurtherAuthorizationRequired',
+                            'authStrategyName', r.read_auth_strategy,
                             'isInheritedFromParent', false
                         )
                     )
@@ -65,7 +67,7 @@ SELECT
                     'authorizationStrategies', jsonb_build_array(
                         jsonb_build_object(
                             'authStrategyId', 1,
-                            'authStrategyName', 'NoFurtherAuthorizationRequired',
+                            'authStrategyName', r.delete_auth_strategy,
                             'isInheritedFromParent', false
                         )
                     )
@@ -76,7 +78,7 @@ SELECT
                     'authorizationStrategies', jsonb_build_array(
                         jsonb_build_object(
                             'authStrategyId', 9,
-                            'authStrategyName', 'NoFurtherAuthorizationRequired',
+                            'authStrategyName', r.read_auth_strategy,
                             'isInheritedFromParent', false
                         )
                     )
