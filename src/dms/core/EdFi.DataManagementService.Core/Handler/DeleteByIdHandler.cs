@@ -50,9 +50,9 @@ internal class DeleteByIdHandler(
         {
             DeleteSuccess => new FrontendResponse(StatusCode: 204, Body: null, Headers: []),
             DeleteFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
-            DeleteFailureNotAuthorized => new FrontendResponse(
+            DeleteFailureNotAuthorized notAuthorized => new FrontendResponse(
                 StatusCode: 403,
-                Body: FailureResponse.ForForbidden(traceId: context.FrontendRequest.TraceId, errors: []),
+                Body: FailureResponse.ForForbidden(traceId: context.FrontendRequest.TraceId, errors: [notAuthorized.ErrorMessage]),
                 Headers: []
             ),
             DeleteFailureReference failure => new FrontendResponse(

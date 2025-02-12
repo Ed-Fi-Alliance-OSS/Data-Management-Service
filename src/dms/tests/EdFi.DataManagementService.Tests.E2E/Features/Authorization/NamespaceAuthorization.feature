@@ -129,12 +129,37 @@ Feature: Namespace Authorization
                   }
                   """
              Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                    "detail": "Access to the resource could not be authorized.",
+                    "type": "urn:ed-fi:api:security:authorization:",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": [
+                        "The 'Namespace' value of the data does not start with any of the caller's associated namespace prefixes ('uri://ns3.org')."
+                    ]
+                  }
+                  """
 
-        @ignore #DMS-503
         Scenario: 08 Ensure claimSet with different namespace can not delete a descriptor in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                   "detail": "Access to the resource could not be authorized.",
+                   "type": "urn:ed-fi:api:security:authorization:",
+                   "title": "Authorization Denied",
+                   "status": 403,
+                   "validationErrors": {},
+                   "errors": [
+                        "The 'Namespace' value of the data does not start with any of the caller's associated namespace prefixes ('uri://ns3.org')."
+                    ]
+                  }
+                  """
 
     Rule: Resources respect namespace authorization
 
@@ -239,6 +264,19 @@ Feature: Namespace Authorization
                   }
                   """
              Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                   "detail": "Access to the resource could not be authorized.",
+                   "type": "urn:ed-fi:api:security:authorization:",
+                   "title": "Authorization Denied",
+                   "status": 403,
+                   "validationErrors": {},
+                   "errors": [
+                        "The 'Namespace' value of the data does not start with any of the caller's associated namespace prefixes ('uri://ns3.org')."
+                    ]
+                  }
+                  """
 
         @ignore #DMS-503
         Scenario: 14 Ensure claimSet with different namespace can not get a resource in the ns2 namespace
@@ -262,8 +300,20 @@ Feature: Namespace Authorization
                   """
              Then it should respond with 403
 
-        @ignore #DMS-503
         Scenario: 16 Ensure claimSet with different namespace can not delete a resource in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a DELETE request is made to "/ed-fi/surveys/{id}"
              Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                   "detail": "Access to the resource could not be authorized.",
+                   "type": "urn:ed-fi:api:security:authorization:",
+                   "title": "Authorization Denied",
+                   "status": 403,
+                   "validationErrors": {},
+                   "errors": [
+                        "The 'Namespace' value of the data does not start with any of the caller's associated namespace prefixes ('uri://ns3.org')."
+                    ]
+                  }
+                  """

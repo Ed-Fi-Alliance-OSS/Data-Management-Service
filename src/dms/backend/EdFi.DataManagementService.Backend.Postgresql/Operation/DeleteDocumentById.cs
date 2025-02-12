@@ -56,9 +56,9 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
 
             var deleteAuthorizationResult = deleteRequest.DeleteAuthorizationHandler.Authorize(edFiDoc);
 
-            if (deleteAuthorizationResult is DeleteAuthorizationResult.NotAuthorizedNamespace)
+            if (deleteAuthorizationResult is DeleteAuthorizationResult.NotAuthorizedNamespace notAuthorizedNamespace)
             {
-                return new DeleteResult.DeleteFailureNotAuthorized();
+                return new DeleteResult.DeleteFailureNotAuthorized(notAuthorizedNamespace.ErrorMessage);
             }
 
             int rowsAffectedOnDocumentDelete = await _sqlAction.DeleteDocumentByDocumentUuid(

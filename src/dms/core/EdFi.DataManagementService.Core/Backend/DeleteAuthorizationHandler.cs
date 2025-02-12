@@ -42,7 +42,13 @@ public class DeleteAuthorizationHandler(
                     )
                 )
                 {
-                    return new DeleteAuthorizationResult.NotAuthorizedNamespace();
+                    string claimNamespacePrefixes = string.Join(
+                        "', '",
+                        clientAuthorizations.NamespacePrefixes.Select(x => x.Value)
+                    );
+                    return new DeleteAuthorizationResult.NotAuthorizedNamespace(
+                        $"The 'Namespace' value of the data does not start with any of the caller's associated namespace prefixes ('{claimNamespacePrefixes}')."
+                    );
                 }
             }
         }
