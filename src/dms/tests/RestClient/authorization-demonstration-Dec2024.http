@@ -126,7 +126,8 @@ Authorization: bearer {{configToken}}
 GET http://localhost:{{dmsPort}}
 
 ###
-@tokenUrl={{discovery.response.body.urls.oauth}}
+#@tokenUrl={{discovery.response.body.urls.oauth}}
+@tokenUrl=http://dms-keycloak:8089/realms/edfi/protocol/openid-connect/token
 @dataApi={{discovery.response.body.urls.dataManagementApi}}
 
 ### Create a DMS token
