@@ -85,7 +85,7 @@ internal class ResourceAuthorizationMiddleware(
                 "ResourceAuthorizationMiddleware: There should be PathComponents"
             );
 
-            if (claim.ResourceClaims == null)
+            if (claim.ResourceClaims.Count == 0)
             {
                 _logger.LogDebug("ResourceAuthorizationMiddleware: No ResourceClaims found");
                 RespondAuthorizationError();
@@ -122,7 +122,7 @@ internal class ResourceAuthorizationMiddleware(
                 RespondAuthorizationError();
                 return;
             }
-            var actionName = ActionResolver.Translate(context.Method).ToString();
+            var actionName = ActionResolver.Resolve(context.Method).ToString();
             var isActionAuthorized =
                 resourceActions.SingleOrDefault(x =>
                     string.Equals(x.Name, actionName, StringComparison.InvariantCultureIgnoreCase)

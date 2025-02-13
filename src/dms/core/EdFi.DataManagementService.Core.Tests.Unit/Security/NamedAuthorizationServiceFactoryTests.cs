@@ -101,8 +101,8 @@ public class NamedAuthorizationServiceFactoryTests
         {
             var services = new ServiceCollection();
             services.AddTransient<NamedAuthorizationServiceFactory>();
-            services.AddTransient<NoFurtherAuthorizationRequiredFilters>();
-            services.AddTransient<NamespaceBasedFilters>();
+            services.AddTransient<NoFurtherAuthorizationRequiredFiltersProvider>();
+            services.AddTransient<NamespaceBasedFiltersProvider>();
 
             serviceProvider = services.BuildServiceProvider();
 
@@ -113,10 +113,10 @@ public class NamedAuthorizationServiceFactoryTests
         public void Should_Return_NoFurtherAuthorizationRequiredValidator()
         {
             var handler =
-                handlerProvider!.GetByName<IAuthorizationFilters>("NoFurtherAuthorizationRequired")
-                as NoFurtherAuthorizationRequiredFilters;
+                handlerProvider!.GetByName<IAuthorizationFiltersProvider>("NoFurtherAuthorizationRequired")
+                as NoFurtherAuthorizationRequiredFiltersProvider;
             handler.Should().NotBeNull();
-            var filters = handler!.Create(new ApiClientDetails("", "", [], []));
+            var filters = handler!.GetFilters(new ApiClientDetails("", "", [], []));
             filters.Should().NotBeNull();
             filters.Filters.Should().BeEmpty();
         }
@@ -125,9 +125,10 @@ public class NamedAuthorizationServiceFactoryTests
         public void Should_Return_NamespaceBasedValidator()
         {
             var handler =
-                handlerProvider!.GetByName<IAuthorizationFilters>("NamespaceBased") as NamespaceBasedFilters;
+                handlerProvider!.GetByName<IAuthorizationFiltersProvider>("NamespaceBased")
+                as NamespaceBasedFiltersProvider;
             handler.Should().NotBeNull();
-            var filters = handler!.Create(
+            var filters = handler!.GetFilters(
                 new ApiClientDetails("", "", [], [new NamespacePrefix("uri://namespace")])
             );
             filters.Should().NotBeNull();
@@ -164,7 +165,7 @@ public class NamedAuthorizationServiceFactoryTests
         [Test]
         public void Should_Return_Null_Authorization_Filters()
         {
-            var handler = handlerProvider!.GetByName<IAuthorizationFilters>("NotMatchingHandler");
+            var handler = handlerProvider!.GetByName<IAuthorizationFiltersProvider>("NotMatchingHandler");
             handler.Should().BeNull();
         }
     }

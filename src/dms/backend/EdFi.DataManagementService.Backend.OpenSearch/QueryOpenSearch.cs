@@ -118,11 +118,11 @@ public static partial class QueryOpenSearch
                 }
             }
 
-            foreach (var strategyFilter in queryRequest.AuthorizationStrategyFilters)
+            foreach (var strategyEvaluator in queryRequest.AuthorizationStrategyEvaluators)
             {
-                if (strategyFilter != null && strategyFilter.Filters.Length != 0)
+                if (strategyEvaluator != null && strategyEvaluator.Filters.Length != 0)
                 {
-                    JsonObject[] possibleFilters = strategyFilter
+                    JsonObject[] possibleFilters = strategyEvaluator
                         .Filters.Select(filter => new JsonObject
                         {
                             ["match_phrase"] = new JsonObject
@@ -131,7 +131,7 @@ public static partial class QueryOpenSearch
                             },
                         })
                         .ToArray();
-                    if (strategyFilter.Operator.Equals(FilterOperator.Or))
+                    if (strategyEvaluator.Operator.Equals(FilterOperator.Or))
                     {
                         terms.Add(
                             new JsonObject
@@ -140,7 +140,7 @@ public static partial class QueryOpenSearch
                             }
                         );
                     }
-                    if (strategyFilter.Operator.Equals(FilterOperator.And))
+                    if (strategyEvaluator.Operator.Equals(FilterOperator.And))
                     {
                         terms.Add(
                             new JsonObject

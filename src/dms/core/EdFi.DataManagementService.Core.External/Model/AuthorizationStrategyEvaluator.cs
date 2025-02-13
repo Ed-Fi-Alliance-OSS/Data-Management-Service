@@ -8,7 +8,7 @@ namespace EdFi.DataManagementService.Core.External.Model;
 /// <summary>
 /// Represents collection of authorization filters and filter operator
 /// </summary>
-public record AuthorizationStrategyFilter(
+public record AuthorizationStrategyEvaluator(
     /// <summary>
     /// Authorization filters to be applied
     /// </summary>

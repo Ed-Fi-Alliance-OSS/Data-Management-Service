@@ -24,7 +24,7 @@ internal record QueryRequest(
     /// Collection of authorization strategy filters, each specifying
     /// collection of filters and filter operator
     /// </summary>
-    AuthorizationStrategyFilter[] AuthorizationStrategyFilters,
+    AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators,
     /// <summary>
     /// The pagination parameters for this query
     /// </summary>

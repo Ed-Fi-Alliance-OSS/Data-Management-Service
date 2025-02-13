@@ -26,7 +26,7 @@ internal static class ActionResolver
         { RequestMethod.DELETE, ActionType.Delete },
     };
 
-    public static ActionType Translate(RequestMethod requestMethod)
+    public static ActionType Resolve(RequestMethod requestMethod)
     {
         return _actionMappings.TryGetValue(requestMethod, out var translatedAction)
             ? translatedAction

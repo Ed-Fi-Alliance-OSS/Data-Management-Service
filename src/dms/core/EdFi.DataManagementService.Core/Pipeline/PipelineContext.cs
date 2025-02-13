@@ -88,7 +88,7 @@ internal class PipelineContext(FrontendRequest _frontendRequest, RequestMethod _
     /// Collection of authorization strategy filters, each specifying
     /// collection of filters and filter operator
     /// </summary>
-    public AuthorizationStrategyFilter[] AuthorizationStrategyFilters { get; set; } = [];
+    public AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators { get; set; } = [];
 
     /// <summary>
     /// DocumentSecurityElements from the submitted document

@@ -11,12 +11,12 @@ namespace EdFi.DataManagementService.Core.Security.AuthorizationFilters;
 /// Provides no authorization strategy filter
 /// </summary>
 [AuthorizationStrategyName(AuthorizationStrategyName)]
-public class NoFurtherAuthorizationRequiredFilters : IAuthorizationFilters
+public class NoFurtherAuthorizationRequiredFiltersProvider : IAuthorizationFiltersProvider
 {
     private const string AuthorizationStrategyName = "NoFurtherAuthorizationRequired";
 
-    public AuthorizationStrategyFilter Create(ApiClientDetails details)
+    public AuthorizationStrategyEvaluator GetFilters(ApiClientDetails details)
     {
-        return new AuthorizationStrategyFilter([], FilterOperator.Or);
+        return new AuthorizationStrategyEvaluator([], FilterOperator.Or);
     }
 }

@@ -11,11 +11,11 @@ namespace EdFi.DataManagementService.Core.Security.AuthorizationFilters;
 /// Provides authorization filters for namespace based authorization strategy
 /// </summary>
 [AuthorizationStrategyName(AuthorizationStrategyName)]
-public class NamespaceBasedFilters : IAuthorizationFilters
+public class NamespaceBasedFiltersProvider : IAuthorizationFiltersProvider
 {
     private const string AuthorizationStrategyName = "NamespaceBased";
 
-    public AuthorizationStrategyFilter Create(ApiClientDetails details)
+    public AuthorizationStrategyEvaluator GetFilters(ApiClientDetails details)
     {
         var filters = new List<AuthorizationFilter>();
         foreach (var namespacePrefix in details.NamespacePrefixes)
@@ -23,6 +23,6 @@ public class NamespaceBasedFilters : IAuthorizationFilters
             filters.Add(new AuthorizationFilter("Namespace", namespacePrefix.Value));
         }
 
-        return new AuthorizationStrategyFilter([.. filters], FilterOperator.Or);
+        return new AuthorizationStrategyEvaluator([.. filters], FilterOperator.Or);
     }
 }

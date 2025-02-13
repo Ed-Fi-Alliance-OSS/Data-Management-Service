@@ -15,13 +15,13 @@ public class NamespaceBasedFiltersTests
     [TestFixture]
     public class Given_Claim_Has_NamespacePrefixes
     {
-        private AuthorizationStrategyFilter? _expectedResult;
+        private AuthorizationStrategyEvaluator? _expectedResult;
 
         [SetUp]
         public void Setup()
         {
-            var filters = new NamespaceBasedFilters();
-            _expectedResult = filters.Create(
+            var filters = new NamespaceBasedFiltersProvider();
+            _expectedResult = filters.GetFilters(
                 new ApiClientDetails(
                     "",
                     "",

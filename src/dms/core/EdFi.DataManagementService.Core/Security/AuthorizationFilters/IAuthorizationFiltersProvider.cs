@@ -10,7 +10,7 @@ namespace EdFi.DataManagementService.Core.Security.AuthorizationFilters;
 /// <summary>
 /// Provides the authorization strategy filter for particular authorization strategy
 /// </summary>
-public interface IAuthorizationFilters
+public interface IAuthorizationFiltersProvider
 {
-    AuthorizationStrategyFilter Create(ApiClientDetails details);
+    AuthorizationStrategyEvaluator GetFilters(ApiClientDetails details);
 }

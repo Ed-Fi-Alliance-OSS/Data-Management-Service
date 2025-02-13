@@ -26,7 +26,7 @@ public interface IQueryRequest
     /// Collection of authorization strategy filters, each specifying
     /// collection of filters and filter operator
     /// </summary>
-    public AuthorizationStrategyFilter[] AuthorizationStrategyFilters { get; }
+    public AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators { get; }
 
     /// <summary>
     /// The pagination parameters for this query
