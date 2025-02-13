@@ -46,7 +46,13 @@ public class ValidateQueryMiddlewareTests
                 Path: "/ed-fi/schools",
                 Body: null,
                 QueryParameters: queryParameters,
-                TraceId: new TraceId("")
+                TraceId: new TraceId(""),
+                ApiClientDetails: new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = new(frontendRequest, RequestMethod.GET);
             await Middleware().Execute(_context, NullNext);
@@ -114,7 +120,13 @@ public class ValidateQueryMiddlewareTests
                 Path: "/ed-fi/schools",
                 Body: null,
                 QueryParameters: queryParameters,
-                TraceId: new TraceId("")
+                TraceId: new TraceId(""),
+                ApiClientDetails: new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = new(frontendRequest, RequestMethod.GET);
             await Middleware().Execute(_context, NullNext);
@@ -221,7 +233,13 @@ public class ValidateQueryMiddlewareTests
                 Path: "/ed-fi/academicWeeks",
                 Body: null,
                 QueryParameters: queryParameters,
-                TraceId: new TraceId("")
+                TraceId: new TraceId(""),
+                ApiClientDetails: new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
 
             _context = NewPipelineContext(frontendRequest, RequestMethod.GET);
@@ -366,7 +384,13 @@ public class ValidateQueryMiddlewareTests
                 Path: "/ed-fi/academicWeeks",
                 Body: null,
                 QueryParameters: queryParameters,
-                TraceId: new TraceId("")
+                TraceId: new TraceId(""),
+                ApiClientDetails: new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
 
             _context = NewPipelineContext(frontendRequest, RequestMethod.GET);
@@ -444,7 +468,13 @@ public class ValidateQueryMiddlewareTests
                 Path: "/ed-fi/academicWeeks",
                 Body: null,
                 QueryParameters: queryParameters,
-                TraceId: new TraceId("")
+                TraceId: new TraceId(""),
+                ApiClientDetails: new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
 
             _context = NewPipelineContext(frontendRequest, RequestMethod.GET);
@@ -526,7 +556,13 @@ public class ValidateQueryMiddlewareTests
                 Path: "/ed-fi/academicWeeks",
                 Body: null,
                 QueryParameters: queryParameters,
-                TraceId: new TraceId("")
+                TraceId: new TraceId(""),
+                ApiClientDetails: new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
 
             _context = NewPipelineContext(frontendRequest, RequestMethod.GET);

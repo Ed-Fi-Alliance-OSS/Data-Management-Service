@@ -36,7 +36,13 @@ public class RejectResourceIdentifierMiddlewareTests
                     Body: """{"id":"2a5a8b65-40c9-4524-8eb8-a1b3bb857b32","studentUniqueId":"333333","birthDate": "2017-08-26","firstName": "hello firstName","lastSurname":"lastSurname"}""",
                     Path: "/ed-fi/students",
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    ApiClientDetails: new ApiClientDetails(
+                        TokenId: "",
+                        ClaimSetName: "",
+                        EducationOrganizationIds: [],
+                        NamespacePrefixes: []
+                    )
                 );
             _context = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -79,7 +85,13 @@ public class RejectResourceIdentifierMiddlewareTests
                     Body: """{"studentUniqueId":"333333","birthDate": "2017-08-26","firstName": "hello firstName","lastSurname":"lastSurname"}""",
                     Path: "/ed-fi/students",
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    ApiClientDetails: new ApiClientDetails(
+                        TokenId: "",
+                        ClaimSetName: "",
+                        EducationOrganizationIds: [],
+                        NamespacePrefixes: []
+                    )
                 );
             _context = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);

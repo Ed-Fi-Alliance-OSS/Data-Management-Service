@@ -88,7 +88,18 @@ internal static class No
     /// The null object for FrontendRequest
     /// </summary>
     public static FrontendRequest CreateFrontendRequest(string traceId) =>
-        new(Body: "{}", Path: "", QueryParameters: [], TraceId: new TraceId(traceId), ApiClientDetails: null);
+        new(
+            Body: "{}",
+            Path: "",
+            QueryParameters: [],
+            TraceId: new TraceId(traceId),
+            ApiClientDetails: new ApiClientDetails(
+                TokenId: "",
+                ClaimSetName: "",
+                EducationOrganizationIds: [],
+                NamespacePrefixes: []
+            )
+        );
 
     /// <summary>
     /// The null object for FrontendResponse
@@ -117,7 +128,7 @@ internal static class No
         Actions = null,
         AuthorizationStrategyOverridesForCrud = [],
         Children = [],
-        DefaultAuthorizationStrategiesForCrud = []
+        DefaultAuthorizationStrategiesForCrud = [],
     };
 
     /// <summary>

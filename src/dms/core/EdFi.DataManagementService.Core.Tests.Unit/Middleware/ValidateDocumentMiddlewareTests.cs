@@ -140,7 +140,13 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: jsonData,
                 QueryParameters: [],
-                new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                ApiClientDetails: new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());
@@ -168,7 +174,13 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: jsonData,
                 QueryParameters: [],
-                new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                ApiClientDetails: new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());
@@ -196,7 +208,13 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: jsonData,
                 QueryParameters: [],
-                new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                ApiClientDetails: new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());
@@ -269,7 +287,13 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: jsonData,
                 QueryParameters: [],
-                new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                ApiClientDetails: new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());
@@ -297,7 +321,13 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: jsonData,
                 QueryParameters: [],
-                new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                ApiClientDetails: new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());
@@ -325,7 +355,13 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: jsonData,
                 QueryParameters: [],
-                new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                ApiClientDetails: new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());
@@ -365,7 +401,13 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: jsonData,
                 QueryParameters: [],
-                new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                ApiClientDetails: new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());
@@ -408,7 +450,13 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: jsonData,
                 QueryParameters: [],
-                new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                ApiClientDetails: new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = Context(frontEndRequest, RequestMethod.PUT);
             await Middleware().Execute(_context, Next());
@@ -449,7 +497,13 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: jsonData,
                 QueryParameters: [],
-                new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                ApiClientDetails: new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());
@@ -493,7 +547,13 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: jsonData,
                 QueryParameters: [],
-                new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                ApiClientDetails: new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());
@@ -537,7 +597,13 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: jsonData,
                 QueryParameters: [],
-                new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                ApiClientDetails: new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());
@@ -566,7 +632,13 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: jsonData,
                 QueryParameters: [],
-                new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                ApiClientDetails: new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());
@@ -610,7 +682,13 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: jsonData,
                 QueryParameters: [],
-                new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                ApiClientDetails: new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());
@@ -653,7 +731,13 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: jsonData,
                 QueryParameters: [],
-                new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                ApiClientDetails: new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());
@@ -697,7 +781,13 @@ public class ValidateDocumentMiddlewareTests
                 "ed-fi/schools",
                 Body: jsonData,
                 QueryParameters: [],
-                new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                ApiClientDetails: new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());

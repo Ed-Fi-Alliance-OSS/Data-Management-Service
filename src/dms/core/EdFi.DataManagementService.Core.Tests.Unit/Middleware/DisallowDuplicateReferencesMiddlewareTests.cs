@@ -43,16 +43,15 @@ public class DisallowDuplicateReferencesMiddlewareTests
 
     internal PipelineContext DocRefContext(FrontendRequest frontendRequest, RequestMethod method)
     {
-        PipelineContext docRefContext =
-            new(frontendRequest, method)
-            {
-                ApiSchemaDocument = DocRefSchemaDocument(),
-                PathComponents = new(
-                    ProjectNamespace: new("ed-fi"),
-                    EndpointName: new("bellschedules"),
-                    DocumentUuid: No.DocumentUuid
-                )
-            };
+        PipelineContext docRefContext = new(frontendRequest, method)
+        {
+            ApiSchemaDocument = DocRefSchemaDocument(),
+            PathComponents = new(
+                ProjectNamespace: new("ed-fi"),
+                EndpointName: new("bellschedules"),
+                DocumentUuid: No.DocumentUuid
+            ),
+        };
         docRefContext.ProjectSchema = new ProjectSchema(
             docRefContext.ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
             NullLogger.Instance
@@ -124,13 +123,18 @@ public class DisallowDuplicateReferencesMiddlewareTests
                 }
                 """;
 
-            FrontendRequest frontEndRequest =
-                new(
-                    Path: "ed-fi/bellschedules",
-                    Body: jsonBody,
-                    QueryParameters: [],
-                    TraceId: new TraceId("")
-                );
+            FrontendRequest frontEndRequest = new(
+                Path: "ed-fi/bellschedules",
+                Body: jsonBody,
+                QueryParameters: [],
+                TraceId: new TraceId(""),
+                new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
+            );
 
             _context = DocRefContext(frontEndRequest, RequestMethod.POST);
 
@@ -192,13 +196,18 @@ public class DisallowDuplicateReferencesMiddlewareTests
                 }
                 """;
 
-            FrontendRequest frontEndRequest =
-                new(
-                    Path: "ed-fi/bellschedules",
-                    Body: jsonBody,
-                    QueryParameters: [],
-                    TraceId: new TraceId("")
-                );
+            FrontendRequest frontEndRequest = new(
+                Path: "ed-fi/bellschedules",
+                Body: jsonBody,
+                QueryParameters: [],
+                TraceId: new TraceId(""),
+                new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
+            );
 
             _context = DocRefContext(frontEndRequest, RequestMethod.POST);
 
@@ -233,16 +242,15 @@ public class DisallowDuplicateReferencesMiddlewareTests
 
     internal PipelineContext DescRefContext(FrontendRequest frontendRequest, RequestMethod method)
     {
-        PipelineContext descRefContext =
-            new(frontendRequest, method)
-            {
-                ApiSchemaDocument = DescRefSchemaDocument(),
-                PathComponents = new(
-                    ProjectNamespace: new("ed-fi"),
-                    EndpointName: new("schools"),
-                    DocumentUuid: No.DocumentUuid
-                )
-            };
+        PipelineContext descRefContext = new(frontendRequest, method)
+        {
+            ApiSchemaDocument = DescRefSchemaDocument(),
+            PathComponents = new(
+                ProjectNamespace: new("ed-fi"),
+                EndpointName: new("schools"),
+                DocumentUuid: No.DocumentUuid
+            ),
+        };
         descRefContext.ProjectSchema = new ProjectSchema(
             descRefContext.ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
             NullLogger.Instance
@@ -300,16 +308,15 @@ public class DisallowDuplicateReferencesMiddlewareTests
 
     internal PipelineContext DuplicateDescRefContext(FrontendRequest frontendRequest, RequestMethod method)
     {
-        PipelineContext refContext =
-            new(frontendRequest, method)
-            {
-                ApiSchemaDocument = DuplicateDescRefSchemaDocument(),
-                PathComponents = new(
-                    ProjectNamespace: new("ed-fi"),
-                    EndpointName: new("assessments"),
-                    DocumentUuid: No.DocumentUuid
-                ),
-            };
+        PipelineContext refContext = new(frontendRequest, method)
+        {
+            ApiSchemaDocument = DuplicateDescRefSchemaDocument(),
+            PathComponents = new(
+                ProjectNamespace: new("ed-fi"),
+                EndpointName: new("assessments"),
+                DocumentUuid: No.DocumentUuid
+            ),
+        };
         refContext.ProjectSchema = new ProjectSchema(
             refContext.ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
             NullLogger.Instance
@@ -386,8 +393,18 @@ public class DisallowDuplicateReferencesMiddlewareTests
                 }
                 """;
 
-            FrontendRequest frontEndRequest =
-                new(Path: "ed-fi/schools", Body: jsonBody, QueryParameters: [], TraceId: new TraceId(""));
+            FrontendRequest frontEndRequest = new(
+                Path: "ed-fi/schools",
+                Body: jsonBody,
+                QueryParameters: [],
+                TraceId: new TraceId(""),
+                new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
+            );
 
             _context = DescRefContext(frontEndRequest, RequestMethod.POST);
 
@@ -463,8 +480,18 @@ public class DisallowDuplicateReferencesMiddlewareTests
                 }
                 """;
 
-            FrontendRequest frontEndRequest =
-                new(Path: "ed-fi/assessments", Body: jsonBody, QueryParameters: [], TraceId: new TraceId(""));
+            FrontendRequest frontEndRequest = new(
+                Path: "ed-fi/assessments",
+                Body: jsonBody,
+                QueryParameters: [],
+                TraceId: new TraceId(""),
+                new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
+            );
 
             _context = DuplicateDescRefContext(frontEndRequest, RequestMethod.POST);
 
@@ -525,8 +552,18 @@ public class DisallowDuplicateReferencesMiddlewareTests
                 }
                 """;
 
-            FrontendRequest frontEndRequest =
-                new(Path: "ed-fi/assessments", Body: jsonBody, QueryParameters: [], TraceId: new TraceId(""));
+            FrontendRequest frontEndRequest = new(
+                Path: "ed-fi/assessments",
+                Body: jsonBody,
+                QueryParameters: [],
+                TraceId: new TraceId(""),
+                new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
+            );
 
             _context = DuplicateDescRefContext(frontEndRequest, RequestMethod.POST);
 
@@ -582,8 +619,18 @@ public class DisallowDuplicateReferencesMiddlewareTests
                 }
                 """;
 
-            FrontendRequest frontEndRequest =
-                new(Path: "ed-fi/schools", Body: jsonBody, QueryParameters: [], TraceId: new TraceId(""));
+            FrontendRequest frontEndRequest = new(
+                Path: "ed-fi/schools",
+                Body: jsonBody,
+                QueryParameters: [],
+                TraceId: new TraceId(""),
+                new ApiClientDetails(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
+            );
 
             _context = DescRefContext(frontEndRequest, RequestMethod.POST);
 

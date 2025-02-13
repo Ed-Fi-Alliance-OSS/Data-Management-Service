@@ -41,14 +41,20 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                         new JsonSchemaBuilder()
                             .Type(SchemaValueType.Array)
                             .Properties(
-                                ("gradeLevelDescriptor", new JsonSchemaBuilder().Type(SchemaValueType.String)),
+                                (
+                                    "gradeLevelDescriptor",
+                                    new JsonSchemaBuilder().Type(SchemaValueType.String)
+                                ),
                                 ("isSecondary", new JsonSchemaBuilder().Type(SchemaValueType.Boolean))
                             )
                             .Required("gradeLevelDescriptor")
                             .AdditionalProperties(false)
                     ),
                     ("nameOfInstitution", new JsonSchemaBuilder().Type(SchemaValueType.String)),
-                    ("webSite", new JsonSchemaBuilder().Type(SchemaValueType.String).MinLength(5).MaxLength(10))
+                    (
+                        "webSite",
+                        new JsonSchemaBuilder().Type(SchemaValueType.String).MinLength(5).MaxLength(10)
+                    )
                 )
                 .Required("schoolId", "gradeLevels", "nameOfInstitution");
 
@@ -56,14 +62,8 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 .WithStartProject("Ed-Fi", "5.0.0")
                 .WithStartResource("School")
                 .WithJsonSchemaForInsert(builder.Build()!)
-                .WithBooleanJsonPaths(new[]
-                {
-                    "$.gradeLevels[*].isSecondary"
-                })
-                .WithNumericJsonPaths(new[]
-                {
-                    "$.schoolId"
-                })
+                .WithBooleanJsonPaths(new[] { "$.gradeLevels[*].isSecondary" })
+                .WithNumericJsonPaths(new[] { "$.schoolId" })
                 .WithEndResource()
                 .WithEndProject()
                 .ToApiSchemaDocument();
@@ -76,16 +76,15 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
 
         internal PipelineContext Context(FrontendRequest frontendRequest, RequestMethod method)
         {
-            PipelineContext _context =
-                new(frontendRequest, method)
-                {
-                    ApiSchemaDocument = SchemaDocument(),
-                    PathComponents = new(
-                        ProjectNamespace: new("ed-fi"),
-                        EndpointName: new("schools"),
-                        DocumentUuid: No.DocumentUuid
-                    )
-                };
+            PipelineContext _context = new(frontendRequest, method)
+            {
+                ApiSchemaDocument = SchemaDocument(),
+                PathComponents = new(
+                    ProjectNamespace: new("ed-fi"),
+                    EndpointName: new("schools"),
+                    DocumentUuid: No.DocumentUuid
+                ),
+            };
             _context.ProjectSchema = new ProjectSchema(
                 _context.ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
                 NullLogger.Instance
@@ -107,7 +106,8 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         }
 
         [TestFixture]
-        public class Given_A_Request_With_Boolean_And_Numeric_Property_As_String : CoerceFromStringsMiddlewareTests
+        public class Given_A_Request_With_Boolean_And_Numeric_Property_As_String
+            : CoerceFromStringsMiddlewareTests
         {
             private PipelineContext _context = No.PipelineContext();
 
@@ -121,7 +121,13 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     "ed-fi/schools",
                     Body: jsonData,
                     QueryParameters: [],
-                    new TraceId("traceId")
+                    new TraceId("traceId"),
+                    new ApiClientDetails(
+                        TokenId: "",
+                        ClaimSetName: "",
+                        EducationOrganizationIds: [],
+                        NamespacePrefixes: []
+                    )
                 );
                 _context = Context(frontEndRequest, RequestMethod.POST);
                 await Middleware().Execute(_context, Next());
@@ -132,7 +138,11 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
             {
                 foreach (string path in _context.ResourceSchema.NumericJsonPaths.Select(s => s.Value))
                 {
-                    _context.ParsedBody.SelectNodeFromPath(path, NullLogger.Instance)!.AsValue().GetValueKind().Should()
+                    _context
+                        .ParsedBody.SelectNodeFromPath(path, NullLogger.Instance)!
+                        .AsValue()
+                        .GetValueKind()
+                        .Should()
                         .Be(JsonValueKind.Number);
                 }
             }
@@ -142,7 +152,11 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
             {
                 foreach (string path in _context.ResourceSchema.BooleanJsonPaths.Select(s => s.Value))
                 {
-                    _context.ParsedBody.SelectNodeFromPath(path, NullLogger.Instance)!.AsValue().GetValueKind().Should()
+                    _context
+                        .ParsedBody.SelectNodeFromPath(path, NullLogger.Instance)!
+                        .AsValue()
+                        .GetValueKind()
+                        .Should()
                         .BeOneOf(JsonValueKind.True, JsonValueKind.False);
                 }
             }

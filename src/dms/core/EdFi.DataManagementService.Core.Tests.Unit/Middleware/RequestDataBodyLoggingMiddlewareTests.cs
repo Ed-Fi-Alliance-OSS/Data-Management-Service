@@ -62,7 +62,13 @@ public class RequestDataBodyLoggingMiddlewareTests
                     Path: "ed-fi/schools",
                     Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId")
+                    TraceId: new TraceId("traceId"),
+                    ApiClientDetails: new ApiClientDetails(
+                        TokenId: "",
+                        ClaimSetName: "",
+                        EducationOrganizationIds: [],
+                        NamespacePrefixes: []
+                    )
                 );
 
             _context = new(frontEndRequest, RequestMethod.POST);
@@ -107,7 +113,13 @@ public class RequestDataBodyLoggingMiddlewareTests
                     Path: "ed-fi/schools",
                     Body: """{"schoolId":"12345","nameOfInstitution":"School Test"}""",
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId")
+                    TraceId: new TraceId("traceId"),
+                    ApiClientDetails: new ApiClientDetails(
+                        TokenId: "",
+                        ClaimSetName: "",
+                        EducationOrganizationIds: [],
+                        NamespacePrefixes: []
+                    )
                 );
 
             _context = new(frontEndRequest, RequestMethod.POST);
@@ -157,7 +169,13 @@ public class RequestDataBodyLoggingMiddlewareTests
                     Path: "ed-fi/schools",
                     Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId")
+                    TraceId: new TraceId("traceId"),
+                    ApiClientDetails: new ApiClientDetails(
+                        TokenId: "",
+                        ClaimSetName: "",
+                        EducationOrganizationIds: [],
+                        NamespacePrefixes: []
+                    )
                 );
 
             _context = new(frontEndRequest, RequestMethod.POST);
@@ -205,7 +223,13 @@ public class RequestDataBodyLoggingMiddlewareTests
                     Path: "ed-fi/schools",
                     Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId")
+                    TraceId: new TraceId("traceId"),
+                    ApiClientDetails: new ApiClientDetails(
+                        TokenId: "",
+                        ClaimSetName: "",
+                        EducationOrganizationIds: [],
+                        NamespacePrefixes: []
+                    )
                 );
 
             _context = new(frontEndRequest, RequestMethod.POST);
