@@ -175,7 +175,7 @@ Feature: Namespace Authorization
         @addwait
         Scenario: 19 Ensure client can get a resource in the ed-fi namespace
          Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ed-fi.org"
-             When a POST request is made to "/ed-fi/surveys" with
+             And a POST request is made to "/ed-fi/surveys" with
                   """
                   {
                       "namespace": "uri://ed-fi.org",
