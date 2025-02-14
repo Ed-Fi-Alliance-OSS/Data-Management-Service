@@ -116,7 +116,10 @@ public class NamedAuthorizationServiceFactoryTests
                 handlerProvider!.GetByName<IAuthorizationFiltersProvider>("NoFurtherAuthorizationRequired")
                 as NoFurtherAuthorizationRequiredFiltersProvider;
             handler.Should().NotBeNull();
-            var filters = handler!.GetFilters(new ApiClientDetails("", "", [], []));
+            var filters = handler!.GetFilters(
+                [new JsonPath("$.namespace")],
+                new ApiClientDetails("", "", [], [])
+            );
             filters.Should().NotBeNull();
             filters.Filters.Should().BeEmpty();
         }
@@ -129,6 +132,7 @@ public class NamedAuthorizationServiceFactoryTests
                 as NamespaceBasedFiltersProvider;
             handler.Should().NotBeNull();
             var filters = handler!.GetFilters(
+                [new JsonPath("$.namespace")],
                 new ApiClientDetails("", "", [], [new NamespacePrefix("uri://namespace")])
             );
             filters.Should().NotBeNull();

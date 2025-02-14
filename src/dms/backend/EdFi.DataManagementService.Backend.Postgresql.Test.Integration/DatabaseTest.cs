@@ -387,7 +387,6 @@ public abstract class DatabaseTest : DatabaseTestBase
                 TraceId = traceId,
                 DocumentUuid = new DocumentUuid(documentUuidGuid),
                 DeleteAuthorizationHandler = new DeleteAuthorizationHandler(
-                    new ClientAuthorizations([], []),
                     [],
                     NullLogger.Instance
                 ),

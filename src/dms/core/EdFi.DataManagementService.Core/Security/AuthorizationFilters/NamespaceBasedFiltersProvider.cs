@@ -15,12 +15,20 @@ public class NamespaceBasedFiltersProvider : IAuthorizationFiltersProvider
 {
     private const string AuthorizationStrategyName = "NamespaceBased";
 
-    public AuthorizationStrategyEvaluator GetFilters(ApiClientDetails details)
+    public AuthorizationStrategyEvaluator GetFilters(
+        IEnumerable<JsonPath> namespaceJsonPaths,
+        ApiClientDetails details
+    )
     {
         var filters = new List<AuthorizationFilter>();
-        foreach (var namespacePrefix in details.NamespacePrefixes)
+        foreach (var path in namespaceJsonPaths)
         {
-            filters.Add(new AuthorizationFilter("Namespace", namespacePrefix.Value));
+            foreach (var namespacePrefix in details.NamespacePrefixes)
+            {
+                filters.Add(
+                    new AuthorizationFilter(path, namespacePrefix.Value, FilterComparison.StartsWith)
+                );
+            }
         }
 
         return new AuthorizationStrategyEvaluator([.. filters], FilterOperator.Or);

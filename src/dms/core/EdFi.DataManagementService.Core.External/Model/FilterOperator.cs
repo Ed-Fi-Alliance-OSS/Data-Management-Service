@@ -10,3 +10,9 @@ public enum FilterOperator
     Or = 1,
     And = 2,
 }
+
+public enum FilterComparison
+{
+    StartsWith,
+    Equals
+}

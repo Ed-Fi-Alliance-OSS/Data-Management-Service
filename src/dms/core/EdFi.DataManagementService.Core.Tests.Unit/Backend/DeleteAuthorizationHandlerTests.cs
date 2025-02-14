@@ -26,7 +26,6 @@ public class DeleteAuthorizationHandlerTests
         [SetUp]
         public void Setup()
         {
-            ClientAuthorizations clientAuthorizations = new ClientAuthorizations([], clientNamespacePrefixes.Split(' ').Select(n => new NamespacePrefix(n)).ToArray());
             JsonNode? edFiDoc = JsonNode.Parse("""
                                               {
                                                 "id": "f97aa4ca-2c2c-4b04-bb63-3a2d45d46e56",
@@ -38,8 +37,12 @@ public class DeleteAuthorizationHandlerTests
                                               }
                                               """)!;
 
+            var authStrategyEvaluators = clientNamespacePrefixes.Split(' ').Select(namespacePrefix =>
+                new AuthorizationStrategyEvaluator([
+                    new AuthorizationFilter(new JsonPath("$.namespace"), namespacePrefix, FilterComparison.StartsWith)
+                ], FilterOperator.Or)).ToArray();
 
-            var handler = new DeleteAuthorizationHandler(clientAuthorizations, [new JsonPath("$.namespace")], NullLogger.Instance);
+            var handler = new DeleteAuthorizationHandler(authStrategyEvaluators, NullLogger.Instance);
             _deleteAuthorizationResult = handler.Authorize(edFiDoc);
         }
 
@@ -60,7 +63,6 @@ public class DeleteAuthorizationHandlerTests
         [SetUp]
         public void Setup()
         {
-            ClientAuthorizations clientAuthorizations = new ClientAuthorizations([], clientNamespacePrefixes.Split(' ').Select(n => new NamespacePrefix(n)).ToArray());
             JsonNode? edFiDoc = JsonNode.Parse("""
                                                {
                                                  "id": "f97aa4ca-2c2c-4b04-bb63-3a2d45d46e56",
@@ -72,8 +74,12 @@ public class DeleteAuthorizationHandlerTests
                                                }
                                                """)!;
 
+            var authStrategyEvaluators = clientNamespacePrefixes.Split(' ').Select(namespacePrefix =>
+                new AuthorizationStrategyEvaluator([
+                    new AuthorizationFilter(new JsonPath("$.namespace"), namespacePrefix, FilterComparison.StartsWith)
+                ], FilterOperator.Or)).ToArray();
 
-            var handler = new DeleteAuthorizationHandler(clientAuthorizations, [new JsonPath("$.namespace")], NullLogger.Instance);
+            var handler = new DeleteAuthorizationHandler(authStrategyEvaluators, NullLogger.Instance);
             _deleteAuthorizationResult = handler.Authorize(edFiDoc);
         }
 
@@ -92,7 +98,6 @@ public class DeleteAuthorizationHandlerTests
         [SetUp]
         public void Setup()
         {
-            ClientAuthorizations clientAuthorizations = new ClientAuthorizations([], []);
             JsonNode? edFiDoc = JsonNode.Parse("""
                                                {
                                                  "id": "f97aa4ca-2c2c-4b04-bb63-3a2d45d46e56",
@@ -104,8 +109,12 @@ public class DeleteAuthorizationHandlerTests
                                                }
                                                """)!;
 
+            var authStrategyEvaluators = "".Split(' ').Select(namespacePrefix =>
+                new AuthorizationStrategyEvaluator([
+                    new AuthorizationFilter(new JsonPath("$.namespace"), namespacePrefix, FilterComparison.StartsWith)
+                ], FilterOperator.Or)).ToArray();
 
-            var handler = new DeleteAuthorizationHandler(clientAuthorizations, [new JsonPath("$.namespace")], NullLogger.Instance);
+            var handler = new DeleteAuthorizationHandler(authStrategyEvaluators, NullLogger.Instance);
             _deleteAuthorizationResult = handler.Authorize(edFiDoc);
         }
 

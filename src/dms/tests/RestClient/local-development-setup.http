@@ -130,7 +130,7 @@ Authorization: bearer {{configToken}}
 {
     "vendorId": {{vendorId}},
     "applicationName": "Demo application",
-    "claimSetName": "SIS-Vendor"
+    "claimSetName": "E2E-NameSpaceBasedClaimSet"
 }
 
 ###
@@ -162,14 +162,14 @@ grant_type=client_credentials
 
 ### Create a new descriptor
 # @name createDescriptor
-POST {{dataApi}}/ed-fi/educationOrganizationCategoryDescriptors
+POST {{dataApi}}/ed-fi/absenceEventCategoryDescriptors
 Authorization: bearer {{dmsToken}}
 Content-Type: application/json
 
 {
     "namespace": "uri://ed-fi.org",
-    "codeValue": "School",
-    "shortDescription": "School"
+    "codeValue": "AnyCode",
+    "shortDescription": "AnyDescription"
 }
 
 ###

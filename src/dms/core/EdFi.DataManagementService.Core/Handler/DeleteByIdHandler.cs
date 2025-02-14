@@ -35,7 +35,7 @@ internal class DeleteByIdHandler(
                     ResourceInfo: context.ResourceInfo,
                     ClientAuthorizations: context.ClientAuthorizations,
                     TraceId: context.FrontendRequest.TraceId,
-                    DeleteAuthorizationHandler: new DeleteAuthorizationHandler(context.ClientAuthorizations, context.ResourceSchema.NamespaceSecurityElementPaths, _logger)
+                    DeleteAuthorizationHandler: new DeleteAuthorizationHandler(context.AuthorizationStrategyEvaluators, _logger)
                 )
             )
         );
@@ -52,7 +52,7 @@ internal class DeleteByIdHandler(
             DeleteFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
             DeleteFailureNotAuthorized notAuthorized => new FrontendResponse(
                 StatusCode: 403,
-                Body: FailureResponse.ForForbidden(traceId: context.FrontendRequest.TraceId, errors: [notAuthorized.ErrorMessage]),
+                Body: FailureResponse.ForForbidden(traceId: context.FrontendRequest.TraceId, errors: notAuthorized.ErrorMessages),
                 Headers: []
             ),
             DeleteFailureReference failure => new FrontendResponse(

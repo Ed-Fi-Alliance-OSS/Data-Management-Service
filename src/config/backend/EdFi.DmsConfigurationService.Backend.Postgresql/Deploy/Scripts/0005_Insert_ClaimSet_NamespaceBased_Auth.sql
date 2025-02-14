@@ -10,7 +10,7 @@ CREATE TEMPORARY TABLE resource_claims (
 );
 INSERT INTO resource_claims (name, create_auth_strategy, update_auth_strategy, read_auth_strategy, delete_auth_strategy) VALUES('schoolYearTypes', 'NoFurtherAuthorizationRequired', 'NoFurtherAuthorizationRequired', 'NoFurtherAuthorizationRequired', 'NoFurtherAuthorizationRequired');
 INSERT INTO resource_claims (name, create_auth_strategy, update_auth_strategy, read_auth_strategy, delete_auth_strategy) VALUES('surveys', 'NamespaceBased', 'NamespaceBased', 'NamespaceBased', 'NoFurtherAuthorizationRequired');
-INSERT INTO resource_claims (name, create_auth_strategy, update_auth_strategy, read_auth_strategy, delete_auth_strategy) VALUES('absenceEventCategoryDescriptors', 'NamespaceBased', 'NamespaceBased', 'NamespaceBased', 'NoFurtherAuthorizationRequired');
+INSERT INTO resource_claims (name, create_auth_strategy, update_auth_strategy, read_auth_strategy, delete_auth_strategy) VALUES('absenceEventCategoryDescriptors', 'NamespaceBased', 'NamespaceBased', 'NamespaceBased', 'NamespaceBased');
 
 -- Step 3: Insert the generated JSON into claimset table
 INSERT INTO dmscs.claimset (claimsetname, issystemreserved, resourceclaims)

@@ -223,6 +223,10 @@ internal class ApiService(
                         _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                     ),
                     new ResourceActionAuthorizationMiddleware(_authorizationStrategiesProvider, _claimSetCacheService, _logger),
+                    new ProvideAuthorizationFiltersMiddleware(
+                        _authorizationServiceFactory,
+                        _logger
+                    ),
                     new DeleteByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline),
                 ]
             )

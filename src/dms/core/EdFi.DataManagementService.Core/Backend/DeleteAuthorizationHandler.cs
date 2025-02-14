@@ -21,35 +21,44 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// <param name="namespaceSecurityElementPaths"></param>
 /// <param name="logger"></param>
 public class DeleteAuthorizationHandler(
-    ClientAuthorizations clientAuthorizations,
-    IEnumerable<JsonPath> namespaceSecurityElementPaths,
+    AuthorizationStrategyEvaluator[] authorizationStrategyEvaluators,
     ILogger logger
 ) : IDeleteAuthorizationHandler
 {
     public DeleteAuthorizationResult Authorize(JsonNode edFiDoc)
     {
-        if (clientAuthorizations.NamespacePrefixes.Any())
+        foreach (var evaluator in authorizationStrategyEvaluators)
         {
-            foreach (JsonPath namespacePath in namespaceSecurityElementPaths)
+            List<KeyValuePair<string, bool>> filterEvaluations = [];
+            foreach (var filter in evaluator.Filters)
             {
-                string namespaceFromDocument = edFiDoc.SelectRequiredNodeFromPathCoerceToString(
-                    namespacePath.Value,
+                string valueFromDocument = edFiDoc.SelectRequiredNodeFromPathCoerceToString(
+                    filter.FilterPath.Value,
                     logger
                 );
-                if (
-                    !clientAuthorizations.NamespacePrefixes.Any(n =>
-                        namespaceFromDocument.StartsWith(n.Value, StringComparison.InvariantCultureIgnoreCase)
-                    )
-                )
+                switch (filter.Comparison)
                 {
-                    string claimNamespacePrefixes = string.Join(
-                        "', '",
-                        clientAuthorizations.NamespacePrefixes.Select(x => x.Value)
-                    );
-                    return new DeleteAuthorizationResult.NotAuthorizedNamespace(
-                        $"The 'Namespace' value of the data does not start with any of the caller's associated namespace prefixes ('{claimNamespacePrefixes}')."
-                    );
+                    case FilterComparison.Equals:
+                        filterEvaluations.Add(new KeyValuePair<string, bool>(filter.FilterPath.Value, valueFromDocument.Equals(filter.Value)));
+                        break;
+                    case FilterComparison.StartsWith:
+                        filterEvaluations.Add(new KeyValuePair<string, bool>(filter.FilterPath.Value, valueFromDocument.StartsWith(filter.Value)));
+                        break;
                 }
+            }
+
+            if (evaluator.Operator == FilterOperator.And && !filterEvaluations.TrueForAll(b => b.Value))
+            {
+                var errors = filterEvaluations.Where(e => !e.Value).Select(e =>
+                    $"The '{e.Key}' value of the data does not start with any of the caller's associated namespace prefixes ('{string.Join(", ", evaluator.Filters.Select(f => f.Value))}').");
+                return new DeleteAuthorizationResult.NotAuthorizedNamespace(errors.ToArray());
+            }
+
+            if (evaluator.Operator == FilterOperator.Or && !filterEvaluations.Exists(b => b.Value))
+            {
+                var errors = filterEvaluations.Where(e => !e.Value).Select(e =>
+                    $"The '{e.Key}' value of the data does not start with any of the caller's associated namespace prefixes ('{string.Join(", ", evaluator.Filters.Select(f => f.Value))}').");
+                return new DeleteAuthorizationResult.NotAuthorizedNamespace(errors.ToArray());
             }
         }
 

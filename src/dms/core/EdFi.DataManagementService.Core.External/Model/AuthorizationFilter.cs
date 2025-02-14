@@ -13,9 +13,13 @@ public record AuthorizationFilter(
     /// <summary>
     /// The JSON element name used to extract the relevant data
     /// </summary>
-    string FilterPath,
+    JsonPath FilterPath,
     /// <summary>
     /// The expected value used
     /// </summary>
-    string Value
+    string Value,
+    ///
+    /// How the filter is applied. StartsWith in the case of Namespace vs Equals in the case of EdOrg
+    /// 
+    FilterComparison Comparison = FilterComparison.Equals
 );

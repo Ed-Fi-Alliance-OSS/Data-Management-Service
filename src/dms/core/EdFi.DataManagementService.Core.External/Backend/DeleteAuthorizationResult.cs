@@ -13,5 +13,5 @@ public record DeleteAuthorizationResult
 {
     public record Authorized() : DeleteAuthorizationResult();
 
-    public record NotAuthorizedNamespace(string ErrorMessage) : DeleteAuthorizationResult();
+    public record NotAuthorizedNamespace(string[] ErrorMessages) : DeleteAuthorizationResult();
 }
