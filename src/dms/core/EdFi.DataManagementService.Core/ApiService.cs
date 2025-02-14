@@ -34,7 +34,7 @@ internal class ApiService(
     IClaimSetCacheService _claimSetCacheService,
     IDocumentValidator _documentValidator,
     IQueryHandler _queryHandler,
-    IMatchingDocumentUuidsValidator matchingDocumentUuidsValidator,
+    IMatchingDocumentUuidsValidator _matchingDocumentUuidsValidator,
     IEqualityConstraintValidator _equalityConstraintValidator,
     ILogger<ApiService> _logger,
     IOptions<AppSettings> _appSettings,
@@ -115,10 +115,7 @@ internal class ApiService(
                         _logger,
                         _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                     ),
-                    new ResourceActionAuthorizationMiddleware(
-                        _claimSetCacheService,
-                        _logger
-                    ),
+                    new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
                     new GetByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline),
                 ]
             )
@@ -141,8 +138,11 @@ internal class ApiService(
                         _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                     ),
                     new ValidateQueryMiddleware(_logger, _appSettings.Value.MaximumPageSize),
-                    new ResourceActionAuthorizationMiddleware(
+                    new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
+                    new ProvideAuthorizationFiltersMiddleware(
                         _claimSetCacheService,
+                        _authorizationStrategiesProvider,
+                        _authorizationServiceFactory,
                         _logger
                     ),
                     new QueryRequestHandler(_queryHandler, _logger, _resiliencePipeline),
@@ -184,7 +184,7 @@ internal class ApiService(
             [
                 new ValidateDocumentMiddleware(_logger, _documentValidator),
                 new ExtractDocumentSecurityElementsMiddleware(_logger),
-                new ValidateMatchingDocumentUuidsMiddleware(_logger, matchingDocumentUuidsValidator),
+                new ValidateMatchingDocumentUuidsMiddleware(_logger, _matchingDocumentUuidsValidator),
                 new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
                 new BuildResourceInfoMiddleware(
                     _logger,
@@ -193,14 +193,12 @@ internal class ApiService(
                 new ExtractDocumentInfoMiddleware(_logger),
                 new DisallowDuplicateReferencesMiddleware(_logger),
                 new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
-                new ResourceActionAuthorizationMiddleware(
-                    _claimSetCacheService,
-                    _logger
-                ),
+                new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
                 new ResourceUpsertAuthorizationMiddleware(
                     _authorizationStrategiesProvider,
-                    _authorizationStrategyHandlerProvider,
-                    _logger),
+                    _authorizationServiceFactory,
+                    _logger
+                ),
                 new UpdateByIdHandler(
                     _documentStoreRepository,
                     _logger,
@@ -228,10 +226,7 @@ internal class ApiService(
                         _logger,
                         _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                     ),
-                    new ResourceActionAuthorizationMiddleware(
-                        _claimSetCacheService,
-                        _logger
-                    ),
+                    new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
                     new DeleteByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline),
                 ]
             )
@@ -304,9 +299,9 @@ internal class ApiService(
         IList<IDataModelInfo> result = [];
         foreach (JsonNode projectSchemaNode in apiSchemaDocument.GetAllProjectSchemaNodes())
         {
-            var projectName = projectSchemaNode?["projectName"]?.GetValue<string>() ?? string.Empty;
-            var projectVersion = projectSchemaNode?["projectVersion"]?.GetValue<string>() ?? string.Empty;
-            var description = projectSchemaNode?["description"]?.GetValue<string>() ?? string.Empty;
+            string projectName = projectSchemaNode?["projectName"]?.GetValue<string>() ?? string.Empty;
+            string projectVersion = projectSchemaNode?["projectVersion"]?.GetValue<string>() ?? string.Empty;
+            string description = projectSchemaNode?["description"]?.GetValue<string>() ?? string.Empty;
 
             result.Add(new DataModelInfo(projectName, projectVersion, description));
         }

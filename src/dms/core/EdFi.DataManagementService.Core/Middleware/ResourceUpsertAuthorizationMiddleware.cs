@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Security.AuthorizationValidation;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
@@ -18,7 +19,7 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// </summary>
 internal class ResourceUpsertAuthorizationMiddleware(
     IAuthorizationStrategiesProvider _authorizationStrategiesProvider,
-    IAuthorizationValidatorProvider _authorizationStrategyHandlerProvider,
+    IAuthorizationServiceFactory _authorizationServiceFactory,
     ILogger _logger
 ) : IPipelineStep
 {
@@ -32,7 +33,7 @@ internal class ResourceUpsertAuthorizationMiddleware(
             );
 
             string claimSetName = context.FrontendRequest.ApiClientDetails.ClaimSetName;
-            string actionName = ActionResolver.Translate(context.Method).ToString();
+            string actionName = ActionResolver.Resolve(context.Method).ToString();
 
             IList<string> resourceActionAuthStrategies =
                 _authorizationStrategiesProvider.GetAuthorizationStrategies(
@@ -61,9 +62,10 @@ internal class ResourceUpsertAuthorizationMiddleware(
 
             foreach (string authorizationStrategy in resourceActionAuthStrategies)
             {
-                var authStrategyHandler = _authorizationStrategyHandlerProvider.GetByName(
-                    authorizationStrategy
-                );
+                var authStrategyHandler =
+                    _authorizationServiceFactory.GetByName<IAuthorizationValidator>(
+                        authorizationStrategy
+                    );
                 if (authStrategyHandler == null)
                 {
                     context.FrontendResponse = new FrontendResponse(

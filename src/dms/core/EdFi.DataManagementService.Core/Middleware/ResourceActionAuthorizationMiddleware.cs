@@ -6,12 +6,10 @@
 using System.Diagnostics;
 using System.Net;
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
-using EdFi.DataManagementService.Core.Security.AuthorizationValidation;
 using EdFi.DataManagementService.Core.Security.Model;
 using Microsoft.Extensions.Logging;
 

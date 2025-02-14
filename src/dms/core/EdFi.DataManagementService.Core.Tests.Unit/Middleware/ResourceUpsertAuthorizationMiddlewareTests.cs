@@ -38,12 +38,12 @@ public class ResourceUpsertAuthorizationMiddlewareTests
                     )
             )
             .Returns(authStrategyList);
-        var authorizationStrategyHandler = A.Fake<IAuthorizationServiceFactory>();
-        A.CallTo(() => authorizationStrategyHandler.GetByName<IAuthorizationValidator>(A<string>.Ignored))
+        var authorizationServiceFactory = A.Fake<IAuthorizationServiceFactory>();
+        A.CallTo(() => authorizationServiceFactory.GetByName<IAuthorizationValidator>(A<string>.Ignored))
             .Returns(new NoFurtherAuthorizationRequiredValidator());
         return new ResourceUpsertAuthorizationMiddleware(
             authorizationStrategiesProvider,
-            authorizationStrategyHandler,
+            authorizationServiceFactory,
             NullLogger.Instance
         );
     }
@@ -128,10 +128,10 @@ public class ResourceUpsertAuthorizationMiddlewareTests
                         )
                 )
                 .Returns([]);
-            var authorizationStrategyHandler = A.Fake<IAuthorizationValidatorProvider>();
+            var authorizationServiceFactory = A.Fake<IAuthorizationServiceFactory>();
             var authMiddleware = new ResourceUpsertAuthorizationMiddleware(
                 authorizationStrategiesProvider,
-                authorizationStrategyHandler,
+                authorizationServiceFactory,
                 NullLogger.Instance
             );
 
@@ -220,11 +220,12 @@ public class ResourceUpsertAuthorizationMiddlewareTests
                         )
                 )
                 .Returns([authStrategy]);
-            var authorizationStrategyHandler = A.Fake<IAuthorizationValidatorProvider>();
-            A.CallTo(() => authorizationStrategyHandler.GetByName(authStrategy)).Returns(null);
+            var authorizationServiceFactory = A.Fake<IAuthorizationServiceFactory>();
+            A.CallTo(() => authorizationServiceFactory.GetByName<IAuthorizationValidator>(A<string>.Ignored))
+                .Returns(null);
             var authMiddleware = new ResourceUpsertAuthorizationMiddleware(
                 authorizationStrategiesProvider,
-                authorizationStrategyHandler,
+                authorizationServiceFactory,
                 NullLogger.Instance
             );
 
@@ -283,7 +284,7 @@ public class ResourceUpsertAuthorizationMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            var authStrategy = "NoFurtherAuthorizationRequired";
+            string authStrategy = "NoFurtherAuthorizationRequired";
             var claimSetCacheService = A.Fake<IClaimSetCacheService>();
             A.CallTo(() => claimSetCacheService.GetClaimSets())
                 .Returns(
@@ -310,7 +311,7 @@ public class ResourceUpsertAuthorizationMiddlewareTests
                         )
                 )
                 .Returns([authStrategy]);
-            var authorizationStrategyHandlerProvider = A.Fake<IAuthorizationServiceFactory>();
+            var authorizationServiceFactory = A.Fake<IAuthorizationServiceFactory>();
 
             var authorizationStrategyHandler = A.Fake<IAuthorizationValidator>();
             A.CallTo(
@@ -324,13 +325,13 @@ public class ResourceUpsertAuthorizationMiddlewareTests
 
             A.CallTo(
                     () =>
-                        authorizationStrategyHandlerProvider.GetByName<IAuthorizationValidator>(authStrategy)
+                        authorizationServiceFactory.GetByName<IAuthorizationValidator>(authStrategy)
                 )
                 .Returns(authorizationStrategyHandler);
 
             var authMiddleware = new ResourceUpsertAuthorizationMiddleware(
                 authorizationStrategiesProvider,
-                authorizationStrategyHandlerProvider,
+                authorizationServiceFactory,
                 NullLogger.Instance
             );
 
