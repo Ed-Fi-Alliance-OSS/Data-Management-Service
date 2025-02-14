@@ -43,8 +43,34 @@ public static class JwtTokenValidator
                 var namespacesClaim = jwtToken.Claims.FirstOrDefault(c => c.Type == "namespacePrefixes");
                 if (namespacesClaim != null)
                 {
-                    var namespaces = namespacesClaim.Value.Split(' ');
+                    var namespaces = namespacesClaim.Value.Split(
+                        ',',
+                        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+                    );
                     return namespaces.Contains(namespacPrefix);
+                }
+            }
+            return false;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    public static bool ValidateEdOrgIds(string token, string edOrgIds)
+    {
+        try
+        {
+            var tokenHandler = new JwtSecurityTokenHandler();
+            if (tokenHandler.CanReadToken(token))
+            {
+                var jwtToken = tokenHandler.ReadJwtToken(token);
+                var edOrgIdsClaim = jwtToken.Claims.FirstOrDefault(c => c.Type == "educationOrganizationIds");
+                if (edOrgIdsClaim != null)
+                {
+                    var edOrgIdList = edOrgIdsClaim.Value.Split(',');
+                    return edOrgIdList.Contains(edOrgIds);
                 }
             }
             return false;
