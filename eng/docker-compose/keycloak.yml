@@ -11,6 +11,8 @@ services:
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HOSTNAME: http://localhost:${KEYCLOAK_PORT:-8065}
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: true
     command:
       - start-dev
     ports:
