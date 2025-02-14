@@ -28,6 +28,6 @@
     "transforms.extractId.field": "id",
 
     "transforms.expandJson.type": "com.redhat.insights.expandjsonsmt.ExpandJSON$Value",
-    "transforms.expandJson.sourceFields": "edfidoc, securityelements"
+    "transforms.expandJson.sourceFields": "edfidoc"
   }
 }

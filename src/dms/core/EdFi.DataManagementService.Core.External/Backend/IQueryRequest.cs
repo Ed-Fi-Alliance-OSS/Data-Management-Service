@@ -23,12 +23,6 @@ public interface IQueryRequest
     QueryElement[] QueryElements { get; }
 
     /// <summary>
-    /// Collection of authorization strategy filters, each specifying
-    /// collection of filters and filter operator
-    /// </summary>
-    public AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators { get; }
-
-    /// <summary>
     /// The pagination parameters for this query
     /// </summary>
     PaginationParameters PaginationParameters { get; }

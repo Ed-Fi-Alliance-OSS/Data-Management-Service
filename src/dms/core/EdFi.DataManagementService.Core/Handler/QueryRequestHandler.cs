@@ -29,7 +29,6 @@ internal class QueryRequestHandler(
                 new QueryRequest(
                     ResourceInfo: context.ResourceInfo,
                     QueryElements: context.QueryElements,
-                    AuthorizationStrategyEvaluators: context.AuthorizationStrategyEvaluators,
                     PaginationParameters: context.PaginationParameters,
                     TraceId: context.FrontendRequest.TraceId
                 )

@@ -68,8 +68,8 @@ public class ResourceAuthorizationMiddlewareTests
                     )
             )
             .Returns(authStrategyList);
-        var authorizationStrategyHandler = A.Fake<IAuthorizationServiceFactory>();
-        A.CallTo(() => authorizationStrategyHandler.GetByName<IAuthorizationValidator>(A<string>.Ignored))
+        var authorizationStrategyHandler = A.Fake<IAuthorizationValidatorProvider>();
+        A.CallTo(() => authorizationStrategyHandler.GetByName(A<string>.Ignored))
             .Returns(new NoFurtherAuthorizationRequiredValidator());
         return new ResourceAuthorizationMiddleware(
             claimSetCacheService,
@@ -282,7 +282,7 @@ public class ResourceAuthorizationMiddlewareTests
                     ]
                 );
             var authorizationStrategiesProvider = A.Fake<IAuthorizationStrategiesProvider>();
-            var authorizationStrategyHandler = A.Fake<IAuthorizationServiceFactory>();
+            var authorizationStrategyHandler = A.Fake<IAuthorizationValidatorProvider>();
             var authMiddleware = new ResourceAuthorizationMiddleware(
                 claimSetCacheService,
                 authorizationStrategiesProvider,
@@ -387,7 +387,7 @@ public class ResourceAuthorizationMiddlewareTests
                         )
                 )
                 .Returns([]);
-            var authorizationStrategyHandler = A.Fake<IAuthorizationServiceFactory>();
+            var authorizationStrategyHandler = A.Fake<IAuthorizationValidatorProvider>();
             var authMiddleware = new ResourceAuthorizationMiddleware(
                 claimSetCacheService,
                 authorizationStrategiesProvider,
@@ -474,9 +474,8 @@ public class ResourceAuthorizationMiddlewareTests
                         )
                 )
                 .Returns([authStrategy]);
-            var authorizationStrategyHandler = A.Fake<IAuthorizationServiceFactory>();
-            A.CallTo(() => authorizationStrategyHandler.GetByName<IAuthorizationValidator>(authStrategy))
-                .Returns(null);
+            var authorizationStrategyHandler = A.Fake<IAuthorizationValidatorProvider>();
+            A.CallTo(() => authorizationStrategyHandler.GetByName(authStrategy)).Returns(null);
             var authMiddleware = new ResourceAuthorizationMiddleware(
                 claimSetCacheService,
                 authorizationStrategiesProvider,
@@ -563,7 +562,7 @@ public class ResourceAuthorizationMiddlewareTests
                         )
                 )
                 .Returns([authStrategy]);
-            var authorizationStrategyHandlerProvider = A.Fake<IAuthorizationServiceFactory>();
+            var authorizationStrategyHandlerProvider = A.Fake<IAuthorizationValidatorProvider>();
 
             var authorizationStrategyHandler = A.Fake<IAuthorizationValidator>();
             A.CallTo(
@@ -575,10 +574,7 @@ public class ResourceAuthorizationMiddlewareTests
                 )
                 .Returns(new AuthorizationResult(false, "test-error"));
 
-            A.CallTo(
-                    () =>
-                        authorizationStrategyHandlerProvider.GetByName<IAuthorizationValidator>(authStrategy)
-                )
+            A.CallTo(() => authorizationStrategyHandlerProvider.GetByName(authStrategy))
                 .Returns(authorizationStrategyHandler);
 
             var authMiddleware = new ResourceAuthorizationMiddleware(

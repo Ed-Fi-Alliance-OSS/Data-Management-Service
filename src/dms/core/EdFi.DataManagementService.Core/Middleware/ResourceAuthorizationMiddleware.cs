@@ -11,7 +11,6 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
-using EdFi.DataManagementService.Core.Security.AuthorizationValidation;
 using EdFi.DataManagementService.Core.Security.Model;
 using Microsoft.Extensions.Logging;
 
@@ -23,7 +22,7 @@ namespace EdFi.DataManagementService.Core.Middleware;
 internal class ResourceAuthorizationMiddleware(
     IClaimSetCacheService _claimSetCacheService,
     IAuthorizationStrategiesProvider _authorizationStrategiesProvider,
-    IAuthorizationServiceFactory _authorizationStrategyHandlerProvider,
+    IAuthorizationValidatorProvider _authorizationStrategyHandlerProvider,
     ILogger _logger
 ) : IPipelineStep
 {
@@ -85,7 +84,7 @@ internal class ResourceAuthorizationMiddleware(
                 "ResourceAuthorizationMiddleware: There should be PathComponents"
             );
 
-            if (claim.ResourceClaims.Count == 0)
+            if (claim.ResourceClaims == null)
             {
                 _logger.LogDebug("ResourceAuthorizationMiddleware: No ResourceClaims found");
                 RespondAuthorizationError();
@@ -122,7 +121,7 @@ internal class ResourceAuthorizationMiddleware(
                 RespondAuthorizationError();
                 return;
             }
-            var actionName = ActionResolver.Resolve(context.Method).ToString();
+            var actionName = ActionResolver.Translate(context.Method).ToString();
             var isActionAuthorized =
                 resourceActions.SingleOrDefault(x =>
                     string.Equals(x.Name, actionName, StringComparison.InvariantCultureIgnoreCase)
@@ -177,10 +176,9 @@ internal class ResourceAuthorizationMiddleware(
 
             foreach (string authorizationStrategy in resourceActionAuthStrategies)
             {
-                var authStrategyHandler =
-                    _authorizationStrategyHandlerProvider.GetByName<IAuthorizationValidator>(
-                        authorizationStrategy
-                    );
+                var authStrategyHandler = _authorizationStrategyHandlerProvider.GetByName(
+                    authorizationStrategy
+                );
                 if (authStrategyHandler == null)
                 {
                     context.FrontendResponse = new FrontendResponse(

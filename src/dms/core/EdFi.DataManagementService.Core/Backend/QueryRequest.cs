@@ -16,19 +16,17 @@ internal record QueryRequest(
     /// The ResourceInfo for the resource being retrieved
     /// </summary>
     ResourceInfo ResourceInfo,
+
     /// <summary>
     /// The elements of this query. This must not include pagination parameters.
     /// </summary>
     QueryElement[] QueryElements,
-    /// <summary>
-    /// Collection of authorization strategy filters, each specifying
-    /// collection of filters and filter operator
-    /// </summary>
-    AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators,
+
     /// <summary>
     /// The pagination parameters for this query
     /// </summary>
     PaginationParameters PaginationParameters,
+
     /// <summary>
     /// The request TraceId
     /// </summary>

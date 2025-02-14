@@ -42,6 +42,6 @@ public class ApiClientDetailsProvider() : IApiClientDetailsProvider
     private static string[] GetNamespacePrefixes(Dictionary<string, string> claims)
     {
         string namespacePrefixesValue = claims.GetValueOrDefault("namespacePrefixes", string.Empty);
-        return namespacePrefixesValue.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        return namespacePrefixesValue.Split(' ', StringSplitOptions.RemoveEmptyEntries);
     }
 }
