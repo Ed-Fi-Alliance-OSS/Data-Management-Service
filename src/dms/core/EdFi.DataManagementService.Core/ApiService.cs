@@ -86,9 +86,8 @@ internal class ApiService(
                 new ExtractDocumentInfoMiddleware(_logger),
                 new DisallowDuplicateReferencesMiddleware(_logger),
                 new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
-                new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
+                new ResourceActionAuthorizationMiddleware(_authorizationStrategiesProvider, _claimSetCacheService, _logger),
                 new ResourceUpsertAuthorizationMiddleware(
-                    _authorizationStrategiesProvider,
                     _authorizationServiceFactory,
                     _logger
                 ),
@@ -115,7 +114,7 @@ internal class ApiService(
                         _logger,
                         _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                     ),
-                    new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
+                    new ResourceActionAuthorizationMiddleware(_authorizationStrategiesProvider, _claimSetCacheService, _logger),
                     new GetByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline),
                 ]
             )
@@ -138,10 +137,8 @@ internal class ApiService(
                         _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                     ),
                     new ValidateQueryMiddleware(_logger, _appSettings.Value.MaximumPageSize),
-                    new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
+                    new ResourceActionAuthorizationMiddleware(_authorizationStrategiesProvider, _claimSetCacheService, _logger),
                     new ProvideAuthorizationFiltersMiddleware(
-                        _claimSetCacheService,
-                        _authorizationStrategiesProvider,
                         _authorizationServiceFactory,
                         _logger
                     ),
@@ -193,9 +190,8 @@ internal class ApiService(
                 new ExtractDocumentInfoMiddleware(_logger),
                 new DisallowDuplicateReferencesMiddleware(_logger),
                 new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
-                new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
+                new ResourceActionAuthorizationMiddleware(_authorizationStrategiesProvider, _claimSetCacheService, _logger),
                 new ResourceUpsertAuthorizationMiddleware(
-                    _authorizationStrategiesProvider,
                     _authorizationServiceFactory,
                     _logger
                 ),
@@ -226,7 +222,7 @@ internal class ApiService(
                         _logger,
                         _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                     ),
-                    new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
+                    new ResourceActionAuthorizationMiddleware(_authorizationStrategiesProvider, _claimSetCacheService, _logger),
                     new DeleteByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline),
                 ]
             )

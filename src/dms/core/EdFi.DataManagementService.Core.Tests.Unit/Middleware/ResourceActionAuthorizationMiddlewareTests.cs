@@ -29,6 +29,18 @@ public class ResourceActionAuthorizationMiddlewareTests
     internal static IPipelineStep Middleware()
     {
         var expectedAuthStrategy = "NoFurtherAuthorizationRequired";
+
+        var authStrategyList = new List<string> { expectedAuthStrategy };
+        var authorizationStrategiesProvider = A.Fake<IAuthorizationStrategiesProvider>();
+        A.CallTo(
+                () =>
+                    authorizationStrategiesProvider.GetAuthorizationStrategies(
+                        A<ResourceClaim>.Ignored,
+                        A<string>.Ignored
+                    )
+            )
+            .Returns(authStrategyList);
+
         var claimSetCacheService = A.Fake<IClaimSetCacheService>();
         A.CallTo(() => claimSetCacheService.GetClaimSets())
             .Returns(
@@ -57,8 +69,51 @@ public class ResourceActionAuthorizationMiddlewareTests
                     ),
                 ]
             );
+        return new ResourceActionAuthorizationMiddleware(authorizationStrategiesProvider, claimSetCacheService, NullLogger.Instance);
+    }
 
-        return new ResourceActionAuthorizationMiddleware(claimSetCacheService, NullLogger.Instance);
+    internal static IPipelineStep NoAuthStrategyMiddleware()
+    {
+        var expectedAuthStrategy = "NoFurtherAuthorizationRequired";
+        var authorizationStrategiesProvider = A.Fake<IAuthorizationStrategiesProvider>();
+        A.CallTo(
+                () =>
+                    authorizationStrategiesProvider.GetAuthorizationStrategies(
+                        A<ResourceClaim>.Ignored,
+                        A<string>.Ignored
+                    )
+            )
+            .Returns([]);
+
+        var claimSetCacheService = A.Fake<IClaimSetCacheService>();
+        A.CallTo(() => claimSetCacheService.GetClaimSets())
+            .Returns(
+                [
+                    new ClaimSet(
+                        Name: "SIS-Vendor",
+                        ResourceClaims:
+                        [
+                            new ResourceClaim()
+                            {
+                                Name = "schools",
+                                Actions = [new(Enabled: true, Name: "Create")],
+                                DefaultAuthorizationStrategiesForCrud =
+                                [
+                                    new(
+                                        ActionId: 1,
+                                        ActionName: "Create",
+                                        AuthorizationStrategies:
+                                        [
+                                            new() { AuthStrategyName = expectedAuthStrategy },
+                                        ]
+                                    ),
+                                ],
+                            },
+                        ]
+                    ),
+                ]
+            );
+        return new ResourceActionAuthorizationMiddleware(authorizationStrategiesProvider, claimSetCacheService, NullLogger.Instance);
     }
 
     [TestFixture]
@@ -254,6 +309,7 @@ public class ResourceActionAuthorizationMiddlewareTests
         public async Task Setup()
         {
             var claimSetCacheService = A.Fake<IClaimSetCacheService>();
+            var authorizationStrategiesProvider = A.Fake<AuthorizationStrategiesProvider>();
             A.CallTo(() => claimSetCacheService.GetClaimSets())
                 .Returns(
                     [
@@ -264,6 +320,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                     ]
                 );
             var authMiddleware = new ResourceActionAuthorizationMiddleware(
+                authorizationStrategiesProvider,
                 claimSetCacheService,
                 NullLogger.Instance
             );
@@ -330,6 +387,62 @@ public class ResourceActionAuthorizationMiddlewareTests
         public void It_has_a_response()
         {
             _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    [TestFixture]
+    public class GivenNoMatchingResourceActionClaimActionAuthStrategy
+        : ResourceActionAuthorizationMiddlewareTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            FrontendRequest frontEndRequest = new(
+                Path: "ed-fi/schools",
+                Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
+                QueryParameters: [],
+                TraceId: new TraceId("traceId"),
+                ApiClientDetails: new ApiClientDetails("", "SIS-Vendor", [], [])
+            );
+
+            _context = new PipelineContext(frontEndRequest, RequestMethod.POST)
+            {
+                PathComponents = new PathComponents(
+                    new ProjectNamespace("ed-fi"),
+                    new EndpointName("schools"),
+                    new DocumentUuid()
+                ),
+            };
+            await NoAuthStrategyMiddleware().Execute(_context, NullNext);
+        }
+
+        [Test]
+        public void It_has_a_response()
+        {
+            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+        }
+
+        [Test]
+        public void It_has_forbidden_response()
+        {
+            _context?.FrontendResponse.StatusCode.Should().Be(403);
+        }
+
+        [Test]
+        public void It_returns_message_body_with_failures()
+        {
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Authorization Denied");
+
+            string response = JsonSerializer.Serialize(
+                _context.FrontendResponse.Body,
+                UtilityService.SerializerOptions
+            );
+
+            response
+                .Should()
+                .Contain(
+                    "\"errors\":[\"No authorization strategies were defined for the requested action 'Create' against resource ['schools'] matched by the caller's claim 'SIS-Vendor'.\"]"
+                );
         }
     }
 }

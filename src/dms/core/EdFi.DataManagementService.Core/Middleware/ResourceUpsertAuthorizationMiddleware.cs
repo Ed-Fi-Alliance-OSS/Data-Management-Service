@@ -18,7 +18,6 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// Authorize the request bodies based on the client's authorization information.
 /// </summary>
 internal class ResourceUpsertAuthorizationMiddleware(
-    IAuthorizationStrategiesProvider _authorizationStrategiesProvider,
     IAuthorizationServiceFactory _authorizationServiceFactory,
     ILogger _logger
 ) : IPipelineStep
@@ -32,35 +31,9 @@ internal class ResourceUpsertAuthorizationMiddleware(
                 context.FrontendRequest.TraceId.Value
             );
 
-            string claimSetName = context.FrontendRequest.ApiClientDetails.ClaimSetName;
-            string actionName = ActionResolver.Resolve(context.Method).ToString();
-
-            IList<string> resourceActionAuthStrategies =
-                _authorizationStrategiesProvider.GetAuthorizationStrategies(
-                    context.ResourceClaim,
-                    actionName
-                );
-
-            if (resourceActionAuthStrategies.Count == 0)
-            {
-                context.FrontendResponse = new FrontendResponse(
-                    StatusCode: (int)HttpStatusCode.Forbidden,
-                    Body: FailureResponse.ForForbidden(
-                        traceId: context.FrontendRequest.TraceId,
-                        errors:
-                        [
-                            $"No authorization strategies were defined for the requested action '{actionName}' against resource ['{context.ResourceClaim.Name}'] matched by the caller's claim '{claimSetName}'.",
-                        ]
-                    ),
-                    Headers: [],
-                    ContentType: "application/problem+json"
-                );
-                return;
-            }
-
             List<AuthorizationResult> authResultsAcrossAuthStrategies = [];
 
-            foreach (string authorizationStrategy in resourceActionAuthStrategies)
+            foreach (string authorizationStrategy in context.ResourceActionAuthStrategies)
             {
                 var authStrategyHandler =
                     _authorizationServiceFactory.GetByName<IAuthorizationValidator>(

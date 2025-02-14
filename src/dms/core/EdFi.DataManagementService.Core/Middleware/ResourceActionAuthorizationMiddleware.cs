@@ -19,6 +19,7 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// Authorizes requests resource and action based on the client's authorization information.
 /// </summary>
 internal class ResourceActionAuthorizationMiddleware(
+    IAuthorizationStrategiesProvider _authorizationStrategiesProvider,
     IClaimSetCacheService _claimSetCacheService,
     ILogger _logger
 ) : IPipelineStep
@@ -38,14 +39,14 @@ internal class ResourceActionAuthorizationMiddleware(
             _logger.LogInformation("Retrieving claim set list");
             IList<ClaimSet> claimsList = await _claimSetCacheService.GetClaimSets();
 
-            ClaimSet? claim = claimsList.SingleOrDefault(c =>
+            ClaimSet? claimSet = claimsList.SingleOrDefault(c =>
                 string.Equals(c.Name, claimSetName, StringComparison.InvariantCultureIgnoreCase)
             );
 
-            if (claim == null)
+            if (claimSet == null)
             {
                 _logger.LogInformation(
-                    "ResourceAuthorizationMiddleware: No ClaimSet matching Scope {Scope} - {TraceId}",
+                    "ResourceActionAuthorizationMiddleware: No ClaimSet matching Scope {Scope} - {TraceId}",
                     claimSetName,
                     context.FrontendRequest.TraceId.Value
                 );
@@ -55,17 +56,17 @@ internal class ResourceActionAuthorizationMiddleware(
 
             Debug.Assert(
                 context.PathComponents != null,
-                "ResourceAuthorizationMiddleware: There should be PathComponents"
+                "ResourceActionAuthorizationMiddleware: There should be PathComponents"
             );
 
-            if (claim.ResourceClaims.Count == 0)
+            if (claimSet.ResourceClaims.Count == 0)
             {
-                _logger.LogDebug("ResourceAuthorizationMiddleware: No ResourceClaims found");
+                _logger.LogDebug("ResourceActionAuthorizationMiddleware: No ResourceClaims found");
                 RespondAuthorizationError();
                 return;
             }
 
-            ResourceClaim? resourceClaim = claim.ResourceClaims.SingleOrDefault(r =>
+            ResourceClaim? resourceClaim = claimSet.ResourceClaims.SingleOrDefault(r =>
                 string.Equals(
                     r.Name,
                     context.PathComponents.EndpointName.Value,
@@ -76,7 +77,7 @@ internal class ResourceActionAuthorizationMiddleware(
             if (resourceClaim == null)
             {
                 _logger.LogDebug(
-                    "ResourceAuthorizationMiddleware: No ResourceClaim matching Endpoint {Endpoint} - {TraceId}",
+                    "ResourceActionAuthorizationMiddleware: No ResourceClaim matching Endpoint {Endpoint} - {TraceId}",
                     context.PathComponents.EndpointName.Value,
                     context.FrontendRequest.TraceId.Value
                 );
@@ -127,6 +128,28 @@ internal class ResourceActionAuthorizationMiddleware(
                 );
                 return;
             }
+
+            IReadOnlyList<string> resourceActionAuthStrategies =
+                _authorizationStrategiesProvider.GetAuthorizationStrategies(resourceClaim, actionName);
+
+            if (resourceActionAuthStrategies.Count == 0)
+            {
+                context.FrontendResponse = new FrontendResponse(
+                    StatusCode: (int)HttpStatusCode.Forbidden,
+                    Body: FailureResponse.ForForbidden(
+                        traceId: context.FrontendRequest.TraceId,
+                        errors:
+                        [
+                            $"No authorization strategies were defined for the requested action '{actionName}' against resource ['{resourceClaim.Name}'] matched by the caller's claim '{claimSetName}'.",
+                        ]
+                    ),
+                    Headers: [],
+                    ContentType: "application/problem+json"
+                );
+                return;
+            }
+
+            context.ResourceActionAuthStrategies = resourceActionAuthStrategies;
 
             // passes authorization
             context.ClientAuthorizations = new(

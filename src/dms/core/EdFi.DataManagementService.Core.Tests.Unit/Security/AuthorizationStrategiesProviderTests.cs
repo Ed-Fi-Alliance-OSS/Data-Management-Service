@@ -16,7 +16,7 @@ public class AuthorizationStrategiesProviderTests
     public class Given_ResourceClaim_Has_Default_AuthStrategies : AuthorizationStrategiesProviderTests
     {
         private readonly string _expectedAuthStrategy = "auth-strategy1";
-        private IList<string>? _authStrategyList = null;
+        private IReadOnlyList<string>? _authStrategyList = null;
 
         [SetUp]
         public void Setup()
@@ -53,7 +53,7 @@ public class AuthorizationStrategiesProviderTests
     public class Given_ResourceClaim_Has_AuthStrategy_Overrides : AuthorizationStrategiesProviderTests
     {
         private readonly string _expectedAuthStrategy = "auth-strategy-override";
-        private IList<string>? _authStrategyList = null;
+        private IReadOnlyList<string>? _authStrategyList = null;
 
         [SetUp]
         public void Setup()
@@ -92,7 +92,7 @@ public class AuthorizationStrategiesProviderTests
     {
         private readonly string _expectedAuthStrategyOverride = "auth-strategy-override";
         private readonly string _expectedAuthStrategyDefault = "auth-strategy-default";
-        private IList<string>? _authStrategyList = null;
+        private IReadOnlyList<string>? _authStrategyList = null;
 
         [SetUp]
         public void Setup()
