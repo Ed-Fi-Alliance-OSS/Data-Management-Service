@@ -59,6 +59,7 @@ public class IdentityModule : IEndpointModule
                             identitySettings.Value.ConfigServiceRole,
                             model.DisplayName!,
                             identitySettings.Value.Scope,
+                            string.Empty,
                             string.Empty
                         );
                         return result switch

@@ -9,7 +9,7 @@ Feature: Applications endpoints
                         "company": "Test Vendor 0",
                         "contactName": "Test",
                         "contactEmailAddress": "test@gmail.com",
-                        "namespacePrefixes": "uri://ed-fi-e2e.org uri://ed-fi-e2e2.org"
+                        "namespacePrefixes": "uri://ed-fi-e2e.org,uri://ed-fi-e2e2.org"
                     }
                   """
 
@@ -449,8 +449,33 @@ Feature: Applications endpoints
                         "company": "Test Vendor 0",
                         "contactName": "Test",
                         "contactEmailAddress": "test@gmail.com",
-                        "namespacePrefixes": "uri://ed-fi-e2e.org uri://ed-fi-e2e2.org uri://new-namespace.org"
+                        "namespacePrefixes": "uri://ed-fi-e2e.org, uri://ed-fi-e2e2.org,uri://new-namespace.org"
                     }
                   """
              Then it should respond with 204
              Then the token should have "ClaimScenario03" scope and "uri://new-namespace.org" namespacePrefix
+
+        Scenario: 19 Ensure clients can update the claim set scope and education organization ids
+             When a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Demo application",
+                   "claimSetName": "ClaimScenario2559",
+                   "educationOrganizationIds": [2559, 255901]
+                  }
+                  """
+             Then it should respond with 201
+             Then retrieve created key and secret
+             When a PUT request is made to "/v2/applications/{applicationId}" with
+                  """
+                      {
+                      "id": {applicationId},
+                      "vendorId": {vendorId},
+                      "applicationName": "Demo application Update",
+                      "claimSetName": "ClaimScenario2559Update",
+                      "educationOrganizationIds": [2559, 255902]
+                      }
+                  """
+             Then it should respond with 204
+             Then the token should have "ClaimScenario2559Update" scope and "255902" edOrgIds

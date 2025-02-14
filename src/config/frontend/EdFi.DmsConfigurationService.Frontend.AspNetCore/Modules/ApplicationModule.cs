@@ -68,7 +68,8 @@ public class ApplicationModule : IEndpointModule
             identitySettings.Value.ClientRole,
             command.ApplicationName,
             command.ClaimSetName,
-            namespacePrefixes
+            namespacePrefixes,
+            string.Join(",", command.EducationOrganizationIds)
         );
 
         switch (clientCreateResult)
@@ -181,7 +182,8 @@ public class ApplicationModule : IEndpointModule
                     var clientUpdateResult = await clientRepository.UpdateClientAsync(
                         client.ClientUuid.ToString(),
                         command.ApplicationName,
-                        command.ClaimSetName
+                        command.ClaimSetName,
+                        string.Join(",", command.EducationOrganizationIds)
                     );
                     switch (clientUpdateResult)
                     {
