@@ -17,13 +17,13 @@
 This directory contains several Docker Compose files, which can be combined to
 start up different configurations:
 
-1. `kafka-opensearch.yml` covers Kafka, Zookeeper, OpenSearch
+1. `kafka-opensearch.yml` covers Kafka, OpenSearch
 2. `kafka-opensearch-ui.yml` covers KafkaUI, OpenSearch Dashboard
 3. `postgresql.yml` starts only PostgreSQL
 4. `local-dms.yml` runs the DMS from local source code.
 5. `published-dms.yml` runs the latest DMS `pre` tag as published to Docker Hub.
 6. `keycloak.yml` runs KeyCloak (identity provider).
-7. `kafka-elasticsearch.yml` covers Kafka, Zookeeper, ElasticSearch
+7. `kafka-elasticsearch.yml` covers Kafka, ElasticSearch
 8. `kafka-elasticsearch-ui` covers KafkaUI, ElasticSearch(Kibana) Dashboard
 
 Before running these, create a `.env` file. The `.env.example` is a good
