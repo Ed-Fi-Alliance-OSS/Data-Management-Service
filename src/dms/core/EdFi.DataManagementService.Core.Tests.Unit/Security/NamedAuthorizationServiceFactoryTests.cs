@@ -42,7 +42,7 @@ public class NamedAuthorizationServiceFactoryTests
                 as NoFurtherAuthorizationRequiredValidator;
             handler.Should().NotBeNull();
             var authResult = handler!.ValidateAuthorization(
-                new DocumentSecurityElements([]),
+                new DocumentSecurityElements([], []),
                 new ClientAuthorizations("", "", [], [])
             );
             authResult.Should().NotBeNull();
@@ -57,7 +57,7 @@ public class NamedAuthorizationServiceFactoryTests
                 as NamespaceBasedValidator;
             handler.Should().NotBeNull();
             var authResult = handler!.ValidateAuthorization(
-                new DocumentSecurityElements(["uri://namespace/resource"]),
+                new DocumentSecurityElements(["uri://namespace/resource"], []),
                 new ClientAuthorizations("", "", [], [new NamespacePrefix("uri://namespace")])
             );
             authResult.Should().NotBeNull();
@@ -116,9 +116,7 @@ public class NamedAuthorizationServiceFactoryTests
                 handlerProvider!.GetByName<IAuthorizationFiltersProvider>("NoFurtherAuthorizationRequired")
                 as NoFurtherAuthorizationRequiredFiltersProvider;
             handler.Should().NotBeNull();
-            var filters = handler!.GetFilters(
-                new ClientAuthorizations("", "", [], [])
-            );
+            var filters = handler!.GetFilters(new ClientAuthorizations("", "", [], []));
             filters.Should().NotBeNull();
             filters.Filters.Should().BeEmpty();
         }
