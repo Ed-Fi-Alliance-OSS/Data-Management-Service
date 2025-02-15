@@ -11,5 +11,7 @@ namespace EdFi.DataManagementService.Core.External.Model;
 public record DocumentSecurityElements(
     // A list of the Namespaces extracted from the document. Note these are the full
     // Namespace values and not simply prefixes
-    string[] Namespace
+    string[] Namespace,
+    // A list of the EducationOrganizations extracted from the document
+    string[] EducationOrganization
 );
