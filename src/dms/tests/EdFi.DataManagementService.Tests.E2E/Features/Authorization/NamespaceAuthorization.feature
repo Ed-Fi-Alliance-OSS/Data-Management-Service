@@ -73,7 +73,7 @@ Feature: Namespace Authorization
 
         @addwait
         Scenario: 17 Ensure clients can GET information when querying a resource in the ns2 namespace
-              Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns2.org"
+            Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns2.org"
               And a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                   {
@@ -99,14 +99,14 @@ Feature: Namespace Authorization
                       "shortDescription": "Namespace Based"
                   }]
                   """
-         Scenario: 18 Ensure clients GET empty array when querying a resource with ns2 namespace
-             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
+        Scenario: 18 Ensure clients GET empty array when querying a resource with ns2 namespace
+            Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors?codeValue=Sick Leave"
              Then it should respond with 200
               And the response body is
-              """
-              []
-              """
+                  """
+                  []
+                  """
 
         @ignore #DMS-503
         Scenario: 06 Ensure claimSet with different namespace can not get a descriptor in the ns2 namespace
@@ -156,7 +156,7 @@ Feature: Namespace Authorization
                    "status": 403,
                    "validationErrors": {},
                    "errors": [
-                        "The 'Namespace' value of the data does not start with any of the caller's associated namespace prefixes ('uri://ns3.org')."
+                        "The '$.namespace' value of the data does not start with any of the caller's associated namespace prefixes ('uri://ns3.org')."
                     ]
                   }
                   """
@@ -199,8 +199,8 @@ Feature: Namespace Authorization
 
         @addwait
         Scenario: 19 Ensure client can get a resource in the ed-fi namespace
-         Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ed-fi.org"
-             And a POST request is made to "/ed-fi/surveys" with
+            Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ed-fi.org"
+              And a POST request is made to "/ed-fi/surveys" with
                   """
                   {
                       "namespace": "uri://ed-fi.org",
@@ -212,7 +212,7 @@ Feature: Namespace Authorization
                   }
                   """
              Then it should respond with 200 or 201
-              When a GET request is made to "/ed-fi/surveys?surveyIdentifier=NB_1"
+             When a GET request is made to "/ed-fi/surveys?surveyIdentifier=NB_1"
              Then it should respond with 200
               And the response body is
                   """
@@ -313,7 +313,7 @@ Feature: Namespace Authorization
                    "status": 403,
                    "validationErrors": {},
                    "errors": [
-                        "The 'Namespace' value of the data does not start with any of the caller's associated namespace prefixes ('uri://ns3.org')."
+                        "The '$.namespace' value of the data does not start with any of the caller's associated namespace prefixes ('uri://ns3.org')."
                     ]
                   }
                   """

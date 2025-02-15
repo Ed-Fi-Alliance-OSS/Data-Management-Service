@@ -137,7 +137,7 @@ public class NamedAuthorizationServiceFactoryTests
             );
             filters.Should().NotBeNull();
             filters.Filters.Should().NotBeEmpty();
-            filters.Filters[0].FilterPath.Should().Be("Namespace");
+            filters.Filters[0].FilterPath.Value.Should().Be("$.namespace");
             filters.Filters[0].Value.Should().Be("uri://namespace");
         }
     }

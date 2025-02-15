@@ -40,11 +40,9 @@ public class OpenSearchContainerSetup : ContainerSetupBase
             await openSearchClient.Indices.DeleteAsync(index.Index);
 
             // Recreate the index with default or custom settings if needed
-            await openSearchClient.Indices.CreateAsync(index.Index, c => c
-                .Settings(s => s
-                    .NumberOfShards(1)
-                    .NumberOfReplicas(1)
-                )
+            await openSearchClient.Indices.CreateAsync(
+                index.Index,
+                c => c.Settings(s => s.NumberOfShards(1).NumberOfReplicas(1))
             );
         }
     }
