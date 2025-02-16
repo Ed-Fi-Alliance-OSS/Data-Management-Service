@@ -16,7 +16,6 @@ public class NoFurtherAuthorizationRequiredFiltersProvider : IAuthorizationFilte
     private const string AuthorizationStrategyName = "NoFurtherAuthorizationRequired";
 
     public AuthorizationStrategyEvaluator GetFilters(
-        IEnumerable<JsonPath> namespaceJsonPaths,
         ApiClientDetails details
     )
     {

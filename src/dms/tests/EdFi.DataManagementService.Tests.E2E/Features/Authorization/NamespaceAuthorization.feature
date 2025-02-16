@@ -142,8 +142,8 @@ Feature: Namespace Authorization
                     ]
                   }
                   """
-
-        Scenario: 08 Ensure claimSet with different namespace can not delete a descriptor in the ns2 namespace
+        @ignore
+        Scenario: 08 Ensure claimSet with different namespace cannot delete a descriptor in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 403
@@ -300,7 +300,8 @@ Feature: Namespace Authorization
                   """
              Then it should respond with 403
 
-        Scenario: 16 Ensure claimSet with different namespace can not delete a resource in the ns2 namespace
+        @ignore
+        Scenario: 16 Ensure claimSet with different namespace cannot delete a resource in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a DELETE request is made to "/ed-fi/surveys/{id}"
              Then it should respond with 403

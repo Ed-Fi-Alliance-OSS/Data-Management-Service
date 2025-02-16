@@ -127,7 +127,7 @@ public static partial class QueryOpenSearch
                         {
                             ["match_phrase"] = new JsonObject
                             {
-                                [$@"securityelements.{QueryFieldFrom(filter.FilterPath)}"] = filter.Value,
+                                [$@"securityelements.{filter.FilterPath}"] = filter.Value,
                             },
                         })
                         .ToArray();

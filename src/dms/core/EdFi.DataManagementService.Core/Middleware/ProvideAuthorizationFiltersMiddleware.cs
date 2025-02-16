@@ -56,7 +56,7 @@ internal class ProvideAuthorizationFiltersMiddleware(
                     return;
                 }
 
-                authorizationStrategyEvaluators.Add(authFiltersProvider.GetFilters(context.ResourceSchema.NamespaceSecurityElementPaths, context.FrontendRequest.ApiClientDetails));
+                authorizationStrategyEvaluators.Add(authFiltersProvider.GetFilters(context.FrontendRequest.ApiClientDetails));
             }
 
             context.AuthorizationStrategyEvaluators = [.. authorizationStrategyEvaluators];

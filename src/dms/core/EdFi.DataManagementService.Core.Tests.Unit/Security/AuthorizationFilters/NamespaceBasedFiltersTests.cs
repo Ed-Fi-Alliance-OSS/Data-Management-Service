@@ -22,7 +22,6 @@ public class NamespaceBasedFiltersTests
         {
             var filters = new NamespaceBasedFiltersProvider();
             _expectedResult = filters.GetFilters(
-                [new JsonPath("$.namespace")],
                 new ApiClientDetails(
                     "",
                     "",

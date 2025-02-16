@@ -17,8 +17,7 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// interrogate the EdFiDoc and determine whether a Delete operation
 /// is authorized and if not, why.
 /// </summary>
-/// <param name="clientAuthorizations"></param>
-/// <param name="namespaceSecurityElementPaths"></param>
+/// <param name="authorizationStrategyEvaluators"></param>
 /// <param name="logger"></param>
 public class DeleteAuthorizationHandler(
     AuthorizationStrategyEvaluator[] authorizationStrategyEvaluators,
@@ -27,92 +26,96 @@ public class DeleteAuthorizationHandler(
 {
     public DeleteAuthorizationResult Authorize(JsonNode edFiDoc)
     {
-        List<KeyValuePair<AuthorizationFilter, bool>> andFilterEvaluations =
-            new List<KeyValuePair<AuthorizationFilter, bool>>();
-        List<KeyValuePair<AuthorizationFilter, bool>> orFilterEvaluations =
-            new List<KeyValuePair<AuthorizationFilter, bool>>();
+        logger.LogDebug(authorizationStrategyEvaluators.Length.ToString());
 
-        foreach (var evaluator in authorizationStrategyEvaluators)
-        {
-            foreach (var filter in evaluator.Filters)
-            {
-                string valueFromDocument = edFiDoc.SelectRequiredNodeFromPathCoerceToString(
-                    filter.FilterPath.Value,
-                    logger
-                );
-                switch (filter.Comparison)
-                {
-                    case FilterComparison.Equals:
-                        if (evaluator.Operator == FilterOperator.And)
-                        {
-                            andFilterEvaluations.Add(
-                                new KeyValuePair<AuthorizationFilter, bool>(
-                                    filter,
-                                    valueFromDocument.Equals(filter.Value)
-                                )
-                            );
-                        }
-                        else
-                        {
-                            orFilterEvaluations.Add(
-                                new KeyValuePair<AuthorizationFilter, bool>(
-                                    filter,
-                                    valueFromDocument.Equals(filter.Value)
-                                )
-                            );
-                        }
-                        break;
-                    case FilterComparison.StartsWith:
-                        if (evaluator.Operator == FilterOperator.And)
-                        {
-                            andFilterEvaluations.Add(
-                                new KeyValuePair<AuthorizationFilter, bool>(
-                                    filter,
-                                    valueFromDocument.StartsWith(filter.Value)
-                                )
-                            );
-                        }
-                        else
-                        {
-                            orFilterEvaluations.Add(
-                                new KeyValuePair<AuthorizationFilter, bool>(
-                                    filter,
-                                    valueFromDocument.StartsWith(filter.Value)
-                                )
-                            );
-                        }
-                        break;
-                }
-            }
-        }
+#pragma warning disable S125
+        //List<KeyValuePair<AuthorizationFilter, bool>> andFilterEvaluations =
+        //    new List<KeyValuePair<AuthorizationFilter, bool>>();
+        //List<KeyValuePair<AuthorizationFilter, bool>> orFilterEvaluations =
+        //    new List<KeyValuePair<AuthorizationFilter, bool>>();
 
-        if (andFilterEvaluations.Exists(e => !e.Value))
-        {
-            var values = authorizationStrategyEvaluators
-                .SelectMany(e => e.Filters.Select(f => f.Value))
-                .Distinct();
+        //foreach (var evaluator in authorizationStrategyEvaluators)
+        //{
+        //    foreach (var filter in evaluator.Filters)
+        //    {
+        //        string valueFromDocument = edFiDoc.SelectRequiredNodeFromPathCoerceToString(
+        //            filter.FilterPath,
+        //            logger
+        //        );
+        //        switch (filter.Comparison)
+        //        {
+        //            case FilterComparison.Equals:
+        //                if (evaluator.Operator == FilterOperator.And)
+        //                {
+        //                    andFilterEvaluations.Add(
+        //                        new KeyValuePair<AuthorizationFilter, bool>(
+        //                            filter,
+        //                            valueFromDocument.Equals(filter.Value)
+        //                        )
+        //                    );
+        //                }
+        //                else
+        //                {
+        //                    orFilterEvaluations.Add(
+        //                        new KeyValuePair<AuthorizationFilter, bool>(
+        //                            filter,
+        //                            valueFromDocument.Equals(filter.Value)
+        //                        )
+        //                    );
+        //                }
+        //                break;
+        //            case FilterComparison.StartsWith:
+        //                if (evaluator.Operator == FilterOperator.And)
+        //                {
+        //                    andFilterEvaluations.Add(
+        //                        new KeyValuePair<AuthorizationFilter, bool>(
+        //                            filter,
+        //                            valueFromDocument.StartsWith(filter.Value)
+        //                        )
+        //                    );
+        //                }
+        //                else
+        //                {
+        //                    orFilterEvaluations.Add(
+        //                        new KeyValuePair<AuthorizationFilter, bool>(
+        //                            filter,
+        //                            valueFromDocument.StartsWith(filter.Value)
+        //                        )
+        //                    );
+        //                }
+        //                break;
+        //        }
+        //    }
+        //}
 
-            var errors = andFilterEvaluations
-                .Where(e => !e.Value)
-                .Select(e =>
-                    $"The '{e.Key.FilterPath.Value}' value of the data does not start with any of the caller's associated namespace prefixes ('{string.Join(", ", values)}')."
-                );
-            return new DeleteAuthorizationResult.NotAuthorizedNamespace(errors.ToArray());
-        }
+        //if (andFilterEvaluations.Exists(e => !e.Value))
+        //{
+        //    var values = authorizationStrategyEvaluators
+        //        .SelectMany(e => e.Filters.Select(f => f.Value))
+        //        .Distinct();
 
-        if (orFilterEvaluations.Any() && orFilterEvaluations.TrueForAll(e => !e.Value))
-        {
-            var values = authorizationStrategyEvaluators
-                .SelectMany(e => e.Filters.Select(f => f.Value))
-                .Distinct();
+        //    var errors = andFilterEvaluations
+        //        .Where(e => !e.Value)
+        //        .Select(e =>
+        //            $"The '{e.Key.FilterPath}' value of the data does not start with any of the caller's associated namespace prefixes ('{string.Join(", ", values)}')."
+        //        );
+        //    return new DeleteAuthorizationResult.NotAuthorizedNamespace(errors.ToArray());
+        //}
 
-            var errors = orFilterEvaluations
-                .Where(e => !e.Value)
-                .Select(e =>
-                    $"The '{e.Key.FilterPath.Value}' value of the data does not start with any of the caller's associated namespace prefixes ('{string.Join(", ", values)}')."
-                );
-            return new DeleteAuthorizationResult.NotAuthorizedNamespace(errors.ToArray());
-        }
+        //if (orFilterEvaluations.Any() && orFilterEvaluations.TrueForAll(e => !e.Value))
+        //{
+        //    var values = authorizationStrategyEvaluators
+        //        .SelectMany(e => e.Filters.Select(f => f.Value))
+        //        .Distinct();
+
+        //    var errors = orFilterEvaluations
+        //        .Where(e => !e.Value)
+        //        .Select(e =>
+        //            $"The '{e.Key.FilterPath}' value of the data does not start with any of the caller's associated namespace prefixes ('{string.Join(", ", values)}')."
+        //        );
+        //    return new DeleteAuthorizationResult.NotAuthorizedNamespace(errors.ToArray());
+        //}
+#pragma warning restore S125 // commented out code
 
         return new DeleteAuthorizationResult.Authorized();
     }

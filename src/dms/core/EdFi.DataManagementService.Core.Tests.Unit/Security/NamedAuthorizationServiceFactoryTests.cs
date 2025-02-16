@@ -117,7 +117,6 @@ public class NamedAuthorizationServiceFactoryTests
                 as NoFurtherAuthorizationRequiredFiltersProvider;
             handler.Should().NotBeNull();
             var filters = handler!.GetFilters(
-                [new JsonPath("$.namespace")],
                 new ApiClientDetails("", "", [], [])
             );
             filters.Should().NotBeNull();
@@ -132,12 +131,11 @@ public class NamedAuthorizationServiceFactoryTests
                 as NamespaceBasedFiltersProvider;
             handler.Should().NotBeNull();
             var filters = handler!.GetFilters(
-                [new JsonPath("$.namespace")],
                 new ApiClientDetails("", "", [], [new NamespacePrefix("uri://namespace")])
             );
             filters.Should().NotBeNull();
             filters.Filters.Should().NotBeEmpty();
-            filters.Filters[0].FilterPath.Value.Should().Be("$.namespace");
+            filters.Filters[0].FilterPath.Should().Be("Namespace");
             filters.Filters[0].Value.Should().Be("uri://namespace");
         }
     }
