@@ -119,7 +119,7 @@ public class NamespaceBasedValidatorTests
             _expectedResult!
                 .ErrorMessage.Should()
                 .Be(
-                    "The 'Namespace' value of the data does not start with any of the caller's associated namespace prefixes ('uri://namespace')."
+                    "Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: 'uri://namespace'."
                 );
         }
     }
@@ -153,7 +153,7 @@ public class NamespaceBasedValidatorTests
             _expectedResult!
                 .ErrorMessage.Should()
                 .Be(
-                    "The 'Namespace' value of the data does not start with any of the caller's associated namespace prefixes ('uri://matching', 'uri://matching1')."
+                    "Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: 'uri://matching', 'uri://matching1'."
                 );
         }
     }

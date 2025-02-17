@@ -46,12 +46,12 @@ public class NamespaceBasedValidator : IAuthorizationValidator
         if (!allMatching)
         {
             string claimNamespacePrefixes = string.Join(
-                "', '",
-                namespacePrefixesFromClaim.Select(x => x.Value)
+                ", ",
+                namespacePrefixesFromClaim.Select(x => $"'{x.Value}'")
             );
             return new AuthorizationResult(
                 false,
-                $"The 'Namespace' value of the data does not start with any of the caller's associated namespace prefixes ('{claimNamespacePrefixes}')."
+                $"Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: {claimNamespacePrefixes}."
             );
         }
         return new AuthorizationResult(true);
