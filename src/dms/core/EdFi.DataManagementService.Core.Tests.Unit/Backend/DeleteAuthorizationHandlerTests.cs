@@ -26,14 +26,9 @@ public class DeleteAuthorizationHandlerTests
         [SetUp]
         public void Setup()
         {
-            JsonNode? edFiDoc = JsonNode.Parse("""
+            JsonNode? securityElements = JsonNode.Parse("""
                                               {
-                                                "id": "f97aa4ca-2c2c-4b04-bb63-3a2d45d46e56",
-                                                "_etag": "-8584628262134775808",
-                                                "codeValue": "School",
-                                                "namespace": "uri://ed-fi.org",
-                                                "shortDescription": "School",
-                                                "_lastModifiedDate": "2025-02-05T18:37:52Z"
+                                                "Namespace": ["uri://ed-fi.org"]
                                               }
                                               """)!;
 
@@ -43,7 +38,7 @@ public class DeleteAuthorizationHandlerTests
                 ], FilterOperator.Or)).ToArray();
 
             var handler = new DeleteAuthorizationHandler(authStrategyEvaluators, NullLogger.Instance);
-            _deleteAuthorizationResult = handler.Authorize(edFiDoc);
+            _deleteAuthorizationResult = handler.Authorize(securityElements);
         }
 
         [Test]
@@ -63,14 +58,9 @@ public class DeleteAuthorizationHandlerTests
         [SetUp]
         public void Setup()
         {
-            JsonNode? edFiDoc = JsonNode.Parse("""
+            JsonNode? securityElements = JsonNode.Parse("""
                                                {
-                                                 "id": "f97aa4ca-2c2c-4b04-bb63-3a2d45d46e56",
-                                                 "_etag": "-8584628262134775808",
-                                                 "codeValue": "School",
-                                                 "namespace": "uri://i-match-nothing.org",
-                                                 "shortDescription": "School",
-                                                 "_lastModifiedDate": "2025-02-05T18:37:52Z"
+                                                 "Namespace": ["uri://i-match-nothing.org"]
                                                }
                                                """)!;
 
@@ -80,11 +70,10 @@ public class DeleteAuthorizationHandlerTests
                 ], FilterOperator.Or)).ToArray();
 
             var handler = new DeleteAuthorizationHandler(authStrategyEvaluators, NullLogger.Instance);
-            _deleteAuthorizationResult = handler.Authorize(edFiDoc);
+            _deleteAuthorizationResult = handler.Authorize(securityElements);
         }
 
         [Test]
-        [Ignore("Temporary")]
         public void Result_should_be_authorized()
         {
             _deleteAuthorizationResult.Should().BeOfType<DeleteAuthorizationResult.NotAuthorizedNamespace>();
@@ -101,12 +90,7 @@ public class DeleteAuthorizationHandlerTests
         {
             JsonNode? edFiDoc = JsonNode.Parse("""
                                                {
-                                                 "id": "f97aa4ca-2c2c-4b04-bb63-3a2d45d46e56",
-                                                 "_etag": "-8584628262134775808",
-                                                 "codeValue": "School",
-                                                 "namespace": "uri://i-match-nothing.org",
-                                                 "shortDescription": "School",
-                                                 "_lastModifiedDate": "2025-02-05T18:37:52Z"
+                                                 "Namespace": ["uri://i-match-nothing.org"]
                                                }
                                                """)!;
 

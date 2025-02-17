@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Security.Cryptography.X509Certificates;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema.Extensions;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -24,98 +25,97 @@ public class DeleteAuthorizationHandler(
     ILogger logger
 ) : IDeleteAuthorizationHandler
 {
-    public DeleteAuthorizationResult Authorize(JsonNode edFiDoc)
+    public DeleteAuthorizationResult Authorize(JsonNode securityElements)
     {
-        logger.LogDebug(authorizationStrategyEvaluators.Length.ToString());
+        List<KeyValuePair<AuthorizationFilter, bool>> andFilterEvaluations =
+            new List<KeyValuePair<AuthorizationFilter, bool>>();
+        List<KeyValuePair<AuthorizationFilter, bool>> orFilterEvaluations =
+            new List<KeyValuePair<AuthorizationFilter, bool>>();
 
-#pragma warning disable S125
-        //List<KeyValuePair<AuthorizationFilter, bool>> andFilterEvaluations =
-        //    new List<KeyValuePair<AuthorizationFilter, bool>>();
-        //List<KeyValuePair<AuthorizationFilter, bool>> orFilterEvaluations =
-        //    new List<KeyValuePair<AuthorizationFilter, bool>>();
+        foreach (var evaluator in authorizationStrategyEvaluators)
+        {
+            foreach (var filter in evaluator.Filters)
+            {
+                logger.LogDebug("Evaluating filter: {Filter}", filter);
+                JsonArray? valuesArray = securityElements[filter.FilterPath]?.AsArray();
+                string[] valuesStrings =
+                    valuesArray?.Select(v => v?.ToString() ?? string.Empty).ToArray()
+                    ?? Array.Empty<string>()
+                    ?? Array.Empty<string>();
 
-        //foreach (var evaluator in authorizationStrategyEvaluators)
-        //{
-        //    foreach (var filter in evaluator.Filters)
-        //    {
-        //        string valueFromDocument = edFiDoc.SelectRequiredNodeFromPathCoerceToString(
-        //            filter.FilterPath,
-        //            logger
-        //        );
-        //        switch (filter.Comparison)
-        //        {
-        //            case FilterComparison.Equals:
-        //                if (evaluator.Operator == FilterOperator.And)
-        //                {
-        //                    andFilterEvaluations.Add(
-        //                        new KeyValuePair<AuthorizationFilter, bool>(
-        //                            filter,
-        //                            valueFromDocument.Equals(filter.Value)
-        //                        )
-        //                    );
-        //                }
-        //                else
-        //                {
-        //                    orFilterEvaluations.Add(
-        //                        new KeyValuePair<AuthorizationFilter, bool>(
-        //                            filter,
-        //                            valueFromDocument.Equals(filter.Value)
-        //                        )
-        //                    );
-        //                }
-        //                break;
-        //            case FilterComparison.StartsWith:
-        //                if (evaluator.Operator == FilterOperator.And)
-        //                {
-        //                    andFilterEvaluations.Add(
-        //                        new KeyValuePair<AuthorizationFilter, bool>(
-        //                            filter,
-        //                            valueFromDocument.StartsWith(filter.Value)
-        //                        )
-        //                    );
-        //                }
-        //                else
-        //                {
-        //                    orFilterEvaluations.Add(
-        //                        new KeyValuePair<AuthorizationFilter, bool>(
-        //                            filter,
-        //                            valueFromDocument.StartsWith(filter.Value)
-        //                        )
-        //                    );
-        //                }
-        //                break;
-        //        }
-        //    }
-        //}
+                switch (filter.Comparison)
+                {
+                    case FilterComparison.Equals:
+                        if (evaluator.Operator == FilterOperator.And)
+                        {
+                            andFilterEvaluations.Add(
+                                new KeyValuePair<AuthorizationFilter, bool>(
+                                    filter,
+                                    Array.FindIndex(valuesStrings, v => v.Equals(filter.Value)) >= 0
+                                )
+                            );
+                        }
+                        else
+                        {
+                            orFilterEvaluations.Add(
+                                new KeyValuePair<AuthorizationFilter, bool>(
+                                    filter,
+                                    Array.FindIndex(valuesStrings, v => v.Equals(filter.Value)) >= 0
+                                )
+                            );
+                        }
+                        break;
+                    case FilterComparison.StartsWith:
+                        if (evaluator.Operator == FilterOperator.And)
+                        {
+                            andFilterEvaluations.Add(
+                                new KeyValuePair<AuthorizationFilter, bool>(
+                                    filter,
+                                    Array.FindIndex(valuesStrings, v => v.StartsWith(filter.Value)) >= 0
+                                )
+                            );
+                        }
+                        else
+                        {
+                            orFilterEvaluations.Add(
+                                new KeyValuePair<AuthorizationFilter, bool>(
+                                    filter,
+                                    Array.FindIndex(valuesStrings, v => v.StartsWith(filter.Value)) >= 0
+                                )
+                            );
+                        }
+                        break;
+                }
+            }
+        }
 
-        //if (andFilterEvaluations.Exists(e => !e.Value))
-        //{
-        //    var values = authorizationStrategyEvaluators
-        //        .SelectMany(e => e.Filters.Select(f => f.Value))
-        //        .Distinct();
+        if (andFilterEvaluations.Exists(e => !e.Value))
+        {
+            var values = authorizationStrategyEvaluators
+                .SelectMany(e => e.Filters.Select(f => f.Value))
+                .Distinct();
 
-        //    var errors = andFilterEvaluations
-        //        .Where(e => !e.Value)
-        //        .Select(e =>
-        //            $"The '{e.Key.FilterPath}' value of the data does not start with any of the caller's associated namespace prefixes ('{string.Join(", ", values)}')."
-        //        );
-        //    return new DeleteAuthorizationResult.NotAuthorizedNamespace(errors.ToArray());
-        //}
+            var errors = andFilterEvaluations
+                .Where(e => !e.Value)
+                .Select(e =>
+                    $"The '{e.Key.FilterPath}' value of the data does not start with any of the caller's associated namespace prefixes ('{string.Join(", ", values)}')."
+                );
+            return new DeleteAuthorizationResult.NotAuthorizedNamespace(errors.ToArray());
+        }
 
-        //if (orFilterEvaluations.Any() && orFilterEvaluations.TrueForAll(e => !e.Value))
-        //{
-        //    var values = authorizationStrategyEvaluators
-        //        .SelectMany(e => e.Filters.Select(f => f.Value))
-        //        .Distinct();
+        if (orFilterEvaluations.Any() && orFilterEvaluations.TrueForAll(e => !e.Value))
+        {
+            var values = authorizationStrategyEvaluators
+                .SelectMany(e => e.Filters.Select(f => f.Value))
+                .Distinct();
 
-        //    var errors = orFilterEvaluations
-        //        .Where(e => !e.Value)
-        //        .Select(e =>
-        //            $"The '{e.Key.FilterPath}' value of the data does not start with any of the caller's associated namespace prefixes ('{string.Join(", ", values)}')."
-        //        );
-        //    return new DeleteAuthorizationResult.NotAuthorizedNamespace(errors.ToArray());
-        //}
-#pragma warning restore S125 // commented out code
+            var errors = orFilterEvaluations
+                .Where(e => !e.Value)
+                .Select(e =>
+                    $"The '{e.Key.FilterPath}' value of the data does not start with any of the caller's associated namespace prefixes ('{string.Join(", ", values)}')."
+                );
+            return new DeleteAuthorizationResult.NotAuthorizedNamespace(errors.ToArray());
+        }
 
         return new DeleteAuthorizationResult.Authorized();
     }

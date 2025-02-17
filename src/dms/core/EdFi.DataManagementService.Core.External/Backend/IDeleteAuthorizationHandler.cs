@@ -12,5 +12,5 @@ namespace EdFi.DataManagementService.Core.External.Backend;
 /// </summary>
 public interface IDeleteAuthorizationHandler
 {
-    DeleteAuthorizationResult Authorize(JsonNode edFiDoc);
+    DeleteAuthorizationResult Authorize(JsonNode securityElements);
 }

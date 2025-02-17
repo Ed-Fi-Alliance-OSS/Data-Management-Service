@@ -52,11 +52,16 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
                 return new DeleteResult.DeleteFailureNotExists();
             }
 
-            JsonNode edFiDoc = documentSummary.EdfiDoc.Deserialize<JsonNode>()!;
+            JsonNode securityElements = documentSummary.SecurityElements.Deserialize<JsonNode>()!;
 
-            var deleteAuthorizationResult = deleteRequest.DeleteAuthorizationHandler.Authorize(edFiDoc);
+            var deleteAuthorizationResult = deleteRequest.DeleteAuthorizationHandler.Authorize(
+                securityElements
+            );
 
-            if (deleteAuthorizationResult is DeleteAuthorizationResult.NotAuthorizedNamespace notAuthorizedNamespace)
+            if (
+                deleteAuthorizationResult
+                is DeleteAuthorizationResult.NotAuthorizedNamespace notAuthorizedNamespace
+            )
             {
                 return new DeleteResult.DeleteFailureNotAuthorized(notAuthorizedNamespace.ErrorMessages);
             }

@@ -142,7 +142,6 @@ Feature: Namespace Authorization
                     ]
                   }
                   """
-        @ignore
         Scenario: 08 Ensure claimSet with different namespace cannot delete a descriptor in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a DELETE request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
@@ -156,7 +155,7 @@ Feature: Namespace Authorization
                    "status": 403,
                    "validationErrors": {},
                    "errors": [
-                        "The '$.namespace' value of the data does not start with any of the caller's associated namespace prefixes ('uri://ns3.org')."
+                        "The 'Namespace' value of the data does not start with any of the caller's associated namespace prefixes ('uri://ns3.org')."
                     ]
                   }
                   """
@@ -300,7 +299,6 @@ Feature: Namespace Authorization
                   """
              Then it should respond with 403
 
-        @ignore
         Scenario: 16 Ensure claimSet with different namespace cannot delete a resource in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a DELETE request is made to "/ed-fi/surveys/{id}"
@@ -314,7 +312,7 @@ Feature: Namespace Authorization
                    "status": 403,
                    "validationErrors": {},
                    "errors": [
-                        "The '$.namespace' value of the data does not start with any of the caller's associated namespace prefixes ('uri://ns3.org')."
+                        "The 'Namespace' value of the data does not start with any of the caller's associated namespace prefixes ('uri://ns3.org')."
                     ]
                   }
                   """
