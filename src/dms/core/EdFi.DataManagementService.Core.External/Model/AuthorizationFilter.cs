@@ -22,8 +22,8 @@ public record AuthorizationFilter(
     /// The error message template to send to the client on authorization failure
     /// </summary>
     string ErrorMessageTemplate,
-    ///
+    /// <summary>
     /// How the filter is applied. StartsWith in the case of Namespace vs Equals in the case of EdOrg
-    ///
+    /// </summary>
     FilterComparison Comparison = FilterComparison.Equals
 );
