@@ -12,12 +12,11 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// </summary>
 /// <param name="DocumentUuid">The document UUID to delete</param>
 /// <param name="ResourceInfo">The ResourceInfo for the resource being deleted</param>
-/// <param name="ClientAuthorizations">The ClientAuthorizations for the requesting client</param>
+/// <param name="ResourceAuthorizationHandler">The handler to authorize the delete request for a resource in the database</param>
 /// <param name="TraceId">The request TraceId</param>
 internal record DeleteRequest(
     DocumentUuid DocumentUuid,
     ResourceInfo ResourceInfo,
-    ClientAuthorizations ClientAuthorizations,
     IResourceAuthorizationHandler ResourceAuthorizationHandler,
     TraceId TraceId
 ) : IDeleteRequest;

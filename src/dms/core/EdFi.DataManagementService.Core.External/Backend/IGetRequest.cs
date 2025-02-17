@@ -23,11 +23,6 @@ public interface IGetRequest
     ResourceInfo ResourceInfo { get; }
 
     /// <summary>
-    /// The ClientAuthorizations for the requesting client
-    /// </summary>
-    ClientAuthorizations ClientAuthorizations { get; }
-
-    /// <summary>
     /// The backend should use this handler to determine whether
     /// the client is authorized to get the document
     /// </summary>

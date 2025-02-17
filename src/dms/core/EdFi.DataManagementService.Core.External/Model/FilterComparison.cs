@@ -5,8 +5,8 @@
 
 namespace EdFi.DataManagementService.Core.External.Model;
 
-public enum FilterOperator
+public enum FilterComparison
 {
-    Or = 1,
-    And = 2,
+    StartsWith,
+    Equals,
 }

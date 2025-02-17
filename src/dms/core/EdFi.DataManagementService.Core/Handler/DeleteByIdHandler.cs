@@ -33,7 +33,6 @@ internal class DeleteByIdHandler(
                 new DeleteRequest(
                     DocumentUuid: context.PathComponents.DocumentUuid,
                     ResourceInfo: context.ResourceInfo,
-                    ClientAuthorizations: context.ClientAuthorizations,
                     TraceId: context.FrontendRequest.TraceId,
                     ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
                         context.AuthorizationStrategyEvaluators,

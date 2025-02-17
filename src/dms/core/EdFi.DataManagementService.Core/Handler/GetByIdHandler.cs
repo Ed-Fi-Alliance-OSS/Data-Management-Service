@@ -33,7 +33,6 @@ internal class GetByIdHandler(
                 new GetRequest(
                     DocumentUuid: context.PathComponents.DocumentUuid,
                     ResourceInfo: context.ResourceInfo,
-                    ClientAuthorizations: context.ClientAuthorizations,
                     ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
                         context.AuthorizationStrategyEvaluators,
                         _logger
