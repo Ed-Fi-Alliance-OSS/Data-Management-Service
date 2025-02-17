@@ -11,12 +11,12 @@ services:
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
-      KC_HOSTNAME: http://localhost:${KEYCLOAK_PORT:-8065}
+      KC_HOSTNAME: http://localhost:${KEYCLOAK_PORT:-8045}
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: true
     command:
       - start-dev
     ports:
-      - ${KEYCLOAK_PORT:-8065}:8080
+      - ${KEYCLOAK_PORT:-8045}:8080
     volumes:
       - dms-keycloak:/var/lib/keycloak/data
     networks:
