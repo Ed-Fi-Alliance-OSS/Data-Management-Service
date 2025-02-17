@@ -14,15 +14,15 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Backend;
 
 [TestFixture]
-public class DeleteAuthorizationHandlerTests
+public class ResourceAuthorizationHandlerTests
 {
     [TestFixture("uri://ed-fi.org")]
     [TestFixture("uri://ed-fi.org uri://test.org")]
     [TestFixture("uri://test.org uri://ed-fi.org")]
     public class Given_An_EdFi_Doc_With_Matching_ClientAuthorization_Namespace(string clientNamespacePrefixes)
-        : DeleteAuthorizationHandlerTests
+        : ResourceAuthorizationHandlerTests
     {
-        private ResourceAuthorizationResult? _deleteAuthorizationResult;
+        private ResourceAuthorizationResult? _resourceAuthorizationResult;
 
         [SetUp]
         public void Setup()
@@ -44,13 +44,13 @@ public class DeleteAuthorizationHandlerTests
                 .ToArray();
 
             var handler = new ResourceAuthorizationHandler(authStrategyEvaluators, NullLogger.Instance);
-            _deleteAuthorizationResult = handler.Authorize(securityElements);
+            _resourceAuthorizationResult = handler.Authorize(securityElements);
         }
 
         [Test]
         public void Result_should_be_authorized()
         {
-            _deleteAuthorizationResult.Should().BeOfType<ResourceAuthorizationResult.Authorized>();
+            _resourceAuthorizationResult.Should().BeOfType<ResourceAuthorizationResult.Authorized>();
         }
     }
 
@@ -59,9 +59,9 @@ public class DeleteAuthorizationHandlerTests
     [TestFixture("uri://test.org uri://ed-fi.org")]
     public class Given_An_EdFi_Doc_With_No_Matching_ClientAuthorization_Namespace(
         string clientNamespacePrefixes
-    ) : DeleteAuthorizationHandlerTests
+    ) : ResourceAuthorizationHandlerTests
     {
-        private ResourceAuthorizationResult? _deleteAuthorizationResult;
+        private ResourceAuthorizationResult? _resourceAuthorizationResult;
 
         [SetUp]
         public void Setup()
@@ -83,20 +83,20 @@ public class DeleteAuthorizationHandlerTests
                 .ToArray();
 
             var handler = new ResourceAuthorizationHandler(authStrategyEvaluators, NullLogger.Instance);
-            _deleteAuthorizationResult = handler.Authorize(securityElements);
+            _resourceAuthorizationResult = handler.Authorize(securityElements);
         }
 
         [Test]
         public void Result_should_be_authorized()
         {
-            _deleteAuthorizationResult.Should().BeOfType<ResourceAuthorizationResult.NotAuthorized>();
+            _resourceAuthorizationResult.Should().BeOfType<ResourceAuthorizationResult.NotAuthorized>();
         }
     }
 
     [TestFixture]
-    public class Given_An_EdFi_Doc_With_No_ClientAuthorization_Namespace() : DeleteAuthorizationHandlerTests
+    public class Given_An_EdFi_Doc_With_No_ClientAuthorization_Namespace() : ResourceAuthorizationHandlerTests
     {
-        private ResourceAuthorizationResult? _deleteAuthorizationResult;
+        private ResourceAuthorizationResult? _resourceAuthorizationResult;
 
         [SetUp]
         public void Setup()
@@ -118,13 +118,13 @@ public class DeleteAuthorizationHandlerTests
                 .ToArray();
 
             var handler = new ResourceAuthorizationHandler(authStrategyEvaluators, NullLogger.Instance);
-            _deleteAuthorizationResult = handler.Authorize(edFiDoc);
+            _resourceAuthorizationResult = handler.Authorize(edFiDoc);
         }
 
         [Test]
         public void Result_should_be_authorized()
         {
-            _deleteAuthorizationResult.Should().BeOfType<ResourceAuthorizationResult.Authorized>();
+            _resourceAuthorizationResult.Should().BeOfType<ResourceAuthorizationResult.Authorized>();
         }
     }
 }
