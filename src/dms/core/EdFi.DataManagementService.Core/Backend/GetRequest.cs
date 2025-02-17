@@ -19,5 +19,6 @@ internal record GetRequest(
     DocumentUuid DocumentUuid,
     ResourceInfo ResourceInfo,
     ClientAuthorizations ClientAuthorizations,
+    IResourceAuthorizationHandler ResourceAuthorizationHandler,
     TraceId TraceId
 ) : IGetRequest;

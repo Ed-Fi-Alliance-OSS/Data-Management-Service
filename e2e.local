@@ -1,0 +1,43 @@
+diff --git a/src/dms/tests/EdFi.DataManagementService.Tests.E2E/Authorization/AuthorizationDataProvider.cs b/src/dms/tests/EdFi.DataManagementService.Tests.E2E/Authorization/AuthorizationDataProvider.cs
+index d3c396d..c52a7a9 100644
+--- a/src/dms/tests/EdFi.DataManagementService.Tests.E2E/Authorization/AuthorizationDataProvider.cs
++++ b/src/dms/tests/EdFi.DataManagementService.Tests.E2E/Authorization/AuthorizationDataProvider.cs
+@@ -15,10 +15,10 @@ public static class AuthorizationDataProvider
+ 
+     private static readonly HttpClient _configurationServiceClient = new()
+     {
+-        BaseAddress = new Uri("http://localhost:8081/"),
++        BaseAddress = new Uri("http://localhost:5126/"),
+     };
+ 
+-    private static readonly HttpClient _dmsClient = new() { BaseAddress = new Uri("http://localhost:8080/") };
++    private static readonly HttpClient _dmsClient = new() { BaseAddress = new Uri("http://localhost:5198/") };
+ 
+     public static async Task Create(
+         string company,
+diff --git a/src/dms/tests/EdFi.DataManagementService.Tests.E2E/Authorization/SystemAdministrator.cs b/src/dms/tests/EdFi.DataManagementService.Tests.E2E/Authorization/SystemAdministrator.cs
+index 887d2b8..265123b 100644
+--- a/src/dms/tests/EdFi.DataManagementService.Tests.E2E/Authorization/SystemAdministrator.cs
++++ b/src/dms/tests/EdFi.DataManagementService.Tests.E2E/Authorization/SystemAdministrator.cs
+@@ -11,7 +11,7 @@ public static class SystemAdministrator
+ {
+     public static string Token = string.Empty;
+ 
+-    private static readonly HttpClient _client = new() { BaseAddress = new Uri("http://localhost:8081/") };
++    private static readonly HttpClient _client = new() { BaseAddress = new Uri("http://localhost:5126/") };
+ 
+     public static async Task Register(string clientId, string clientSecret)
+     {
+diff --git a/src/dms/tests/EdFi.DataManagementService.Tests.E2E/Management/OpenSearchContainerSetup.cs b/src/dms/tests/EdFi.DataManagementService.Tests.E2E/Management/OpenSearchContainerSetup.cs
+index 0041a40..8e9dfb7 100644
+--- a/src/dms/tests/EdFi.DataManagementService.Tests.E2E/Management/OpenSearchContainerSetup.cs
++++ b/src/dms/tests/EdFi.DataManagementService.Tests.E2E/Management/OpenSearchContainerSetup.cs
+@@ -21,7 +21,7 @@ public class OpenSearchContainerSetup : ContainerSetupBase
+ 
+     public override string ApiUrl()
+     {
+-        return "http://localhost:8080/";
++        return "http://localhost:5198/";
+     }
+ 
+     public override async Task ResetData()

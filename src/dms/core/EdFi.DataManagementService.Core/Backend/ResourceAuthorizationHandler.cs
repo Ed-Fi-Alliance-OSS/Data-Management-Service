@@ -11,19 +11,18 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DataManagementService.Core.Backend;
 
 /// <summary>
-/// The DeleteAuthorizationHandler implementation that uses
-/// ClientAuthorizations and NamespaceSecurityElementPaths to
-/// interrogate the EdFiDoc and determine whether a Delete operation
-/// is authorized and if not, why.
+/// The ResourceAuthorizationHandler implementation that
+/// interrogates a resources securityElements to determine if the
+/// filters in the provided authorizationStrategy are satisfied.
 /// </summary>
 /// <param name="authorizationStrategyEvaluators"></param>
 /// <param name="logger"></param>
-public class DeleteAuthorizationHandler(
+public class ResourceAuthorizationHandler(
     AuthorizationStrategyEvaluator[] authorizationStrategyEvaluators,
     ILogger logger
-) : IDeleteAuthorizationHandler
+) : IResourceAuthorizationHandler
 {
-    public DeleteAuthorizationResult Authorize(JsonNode securityElements)
+    public ResourceAuthorizationResult Authorize(JsonNode securityElements)
     {
         List<KeyValuePair<AuthorizationFilter, bool>> andFilterEvaluations =
             new List<KeyValuePair<AuthorizationFilter, bool>>();
@@ -88,28 +87,27 @@ public class DeleteAuthorizationHandler(
 
         if (andFilterEvaluations.Exists(e => !e.Value))
         {
-            var values = authorizationStrategyEvaluators
-                .SelectMany(e => e.Filters.Select(f => $"'{f.Value}'"))
-                .Distinct();
-
-            var errors = andFilterEvaluations
-                .Where(e => !e.Value)
-                .Select(e => e.Key.ErrorMessageTemplate.Replace("{claims}", string.Join(", ", values)));
-            return new DeleteAuthorizationResult.NotAuthorizedNamespace(errors.ToArray());
+            return reportErrors(andFilterEvaluations);
         }
 
         if (orFilterEvaluations.Any() && orFilterEvaluations.TrueForAll(e => !e.Value))
         {
-            var values = authorizationStrategyEvaluators
-                .SelectMany(e => e.Filters.Select(f => f.Value))
-                .Distinct();
-
-            var errors = orFilterEvaluations
-                .Where(e => !e.Value)
-                .Select(e => e.Key.ErrorMessageTemplate.Replace("{claims}", string.Join(", ", values)));
-            return new DeleteAuthorizationResult.NotAuthorizedNamespace(errors.ToArray());
+            return reportErrors(orFilterEvaluations);
         }
 
-        return new DeleteAuthorizationResult.Authorized();
+        return new ResourceAuthorizationResult.Authorized();
+
+        ResourceAuthorizationResult reportErrors(List<KeyValuePair<AuthorizationFilter, bool>> evaluations)
+        {
+            var values = authorizationStrategyEvaluators
+                .SelectMany(e => e.Filters.Select(f => $"'{f.Value}'"))
+                .Distinct();
+
+            var errors = evaluations
+                .Where(e => !e.Value)
+                .Select(e => e.Key.ErrorMessageTemplate.Replace("{claims}", string.Join(", ", values)));
+
+            return new ResourceAuthorizationResult.NotAuthorized(errors.ToArray());
+        }
     }
 }

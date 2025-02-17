@@ -19,94 +19,112 @@ public class DeleteAuthorizationHandlerTests
     [TestFixture("uri://ed-fi.org")]
     [TestFixture("uri://ed-fi.org uri://test.org")]
     [TestFixture("uri://test.org uri://ed-fi.org")]
-    public class Given_An_EdFi_Doc_With_Matching_ClientAuthorization_Namespace(string clientNamespacePrefixes) : DeleteAuthorizationHandlerTests
+    public class Given_An_EdFi_Doc_With_Matching_ClientAuthorization_Namespace(string clientNamespacePrefixes)
+        : DeleteAuthorizationHandlerTests
     {
-        private DeleteAuthorizationResult? _deleteAuthorizationResult;
+        private ResourceAuthorizationResult? _deleteAuthorizationResult;
 
         [SetUp]
         public void Setup()
         {
-            JsonNode? securityElements = JsonNode.Parse("""
-                                              {
-                                                "Namespace": ["uri://ed-fi.org"]
-                                              }
-                                              """)!;
+            JsonNode? securityElements = JsonNode.Parse(
+                """
+                {
+                  "Namespace": ["uri://ed-fi.org"]
+                }
+                """
+            )!;
 
-            var authStrategyEvaluators = clientNamespacePrefixes.Split(' ').Select(namespacePrefix =>
-                new AuthorizationStrategyEvaluator([
-                    new AuthorizationFilter("Namespace", namespacePrefix, FilterComparison.StartsWith)
-                ], FilterOperator.Or)).ToArray();
+            var authStrategyEvaluators = clientNamespacePrefixes
+                .Split(' ')
+                .Select(namespacePrefix => new AuthorizationStrategyEvaluator(
+                    [new AuthorizationFilter("Namespace", namespacePrefix, "", FilterComparison.StartsWith)],
+                    FilterOperator.Or
+                ))
+                .ToArray();
 
-            var handler = new DeleteAuthorizationHandler(authStrategyEvaluators, NullLogger.Instance);
+            var handler = new ResourceAuthorizationHandler(authStrategyEvaluators, NullLogger.Instance);
             _deleteAuthorizationResult = handler.Authorize(securityElements);
         }
 
         [Test]
         public void Result_should_be_authorized()
         {
-            _deleteAuthorizationResult.Should().BeOfType<DeleteAuthorizationResult.Authorized>();
+            _deleteAuthorizationResult.Should().BeOfType<ResourceAuthorizationResult.Authorized>();
         }
     }
 
     [TestFixture("uri://ed-fi.org")]
     [TestFixture("uri://ed-fi.org uri://test.org")]
     [TestFixture("uri://test.org uri://ed-fi.org")]
-    public class Given_An_EdFi_Doc_With_No_Matching_ClientAuthorization_Namespace(string clientNamespacePrefixes) : DeleteAuthorizationHandlerTests
+    public class Given_An_EdFi_Doc_With_No_Matching_ClientAuthorization_Namespace(
+        string clientNamespacePrefixes
+    ) : DeleteAuthorizationHandlerTests
     {
-        private DeleteAuthorizationResult? _deleteAuthorizationResult;
+        private ResourceAuthorizationResult? _deleteAuthorizationResult;
 
         [SetUp]
         public void Setup()
         {
-            JsonNode? securityElements = JsonNode.Parse("""
-                                               {
-                                                 "Namespace": ["uri://i-match-nothing.org"]
-                                               }
-                                               """)!;
+            JsonNode? securityElements = JsonNode.Parse(
+                """
+                {
+                  "Namespace": ["uri://i-match-nothing.org"]
+                }
+                """
+            )!;
 
-            var authStrategyEvaluators = clientNamespacePrefixes.Split(' ').Select(namespacePrefix =>
-                new AuthorizationStrategyEvaluator([
-                    new AuthorizationFilter("Namespace", namespacePrefix, FilterComparison.StartsWith)
-                ], FilterOperator.Or)).ToArray();
+            var authStrategyEvaluators = clientNamespacePrefixes
+                .Split(' ')
+                .Select(namespacePrefix => new AuthorizationStrategyEvaluator(
+                    [new AuthorizationFilter("Namespace", namespacePrefix, "", FilterComparison.StartsWith)],
+                    FilterOperator.Or
+                ))
+                .ToArray();
 
-            var handler = new DeleteAuthorizationHandler(authStrategyEvaluators, NullLogger.Instance);
+            var handler = new ResourceAuthorizationHandler(authStrategyEvaluators, NullLogger.Instance);
             _deleteAuthorizationResult = handler.Authorize(securityElements);
         }
 
         [Test]
         public void Result_should_be_authorized()
         {
-            _deleteAuthorizationResult.Should().BeOfType<DeleteAuthorizationResult.NotAuthorizedNamespace>();
+            _deleteAuthorizationResult.Should().BeOfType<ResourceAuthorizationResult.NotAuthorized>();
         }
     }
 
     [TestFixture]
     public class Given_An_EdFi_Doc_With_No_ClientAuthorization_Namespace() : DeleteAuthorizationHandlerTests
     {
-        private DeleteAuthorizationResult? _deleteAuthorizationResult;
+        private ResourceAuthorizationResult? _deleteAuthorizationResult;
 
         [SetUp]
         public void Setup()
         {
-            JsonNode? edFiDoc = JsonNode.Parse("""
-                                               {
-                                                 "Namespace": ["uri://i-match-nothing.org"]
-                                               }
-                                               """)!;
+            JsonNode? edFiDoc = JsonNode.Parse(
+                """
+                {
+                  "Namespace": ["uri://i-match-nothing.org"]
+                }
+                """
+            )!;
 
-            var authStrategyEvaluators = "".Split(' ').Select(namespacePrefix =>
-                new AuthorizationStrategyEvaluator([
-                    new AuthorizationFilter("Namespace", namespacePrefix, FilterComparison.StartsWith)
-                ], FilterOperator.Or)).ToArray();
+            var authStrategyEvaluators = ""
+                .Split(' ')
+                .Select(namespacePrefix => new AuthorizationStrategyEvaluator(
+                    [new AuthorizationFilter("Namespace", namespacePrefix, "", FilterComparison.StartsWith)],
+                    FilterOperator.Or
+                ))
+                .ToArray();
 
-            var handler = new DeleteAuthorizationHandler(authStrategyEvaluators, NullLogger.Instance);
+            var handler = new ResourceAuthorizationHandler(authStrategyEvaluators, NullLogger.Instance);
             _deleteAuthorizationResult = handler.Authorize(edFiDoc);
         }
 
         [Test]
         public void Result_should_be_authorized()
         {
-            _deleteAuthorizationResult.Should().BeOfType<DeleteAuthorizationResult.Authorized>();
+            _deleteAuthorizationResult.Should().BeOfType<ResourceAuthorizationResult.Authorized>();
         }
     }
 }

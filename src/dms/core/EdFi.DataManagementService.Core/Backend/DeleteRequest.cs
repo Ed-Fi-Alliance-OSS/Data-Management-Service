@@ -18,6 +18,6 @@ internal record DeleteRequest(
     DocumentUuid DocumentUuid,
     ResourceInfo ResourceInfo,
     ClientAuthorizations ClientAuthorizations,
-    IDeleteAuthorizationHandler DeleteAuthorizationHandler,
+    IResourceAuthorizationHandler ResourceAuthorizationHandler,
     TraceId TraceId
 ) : IDeleteRequest;

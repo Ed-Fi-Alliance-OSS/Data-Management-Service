@@ -54,16 +54,13 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
 
             JsonNode securityElements = documentSummary.SecurityElements.Deserialize<JsonNode>()!;
 
-            var deleteAuthorizationResult = deleteRequest.DeleteAuthorizationHandler.Authorize(
+            var deleteAuthorizationResult = deleteRequest.ResourceAuthorizationHandler.Authorize(
                 securityElements
             );
 
-            if (
-                deleteAuthorizationResult
-                is DeleteAuthorizationResult.NotAuthorizedNamespace notAuthorizedNamespace
-            )
+            if (deleteAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
             {
-                return new DeleteResult.DeleteFailureNotAuthorized(notAuthorizedNamespace.ErrorMessages);
+                return new DeleteResult.DeleteFailureNotAuthorized(notAuthorized.ErrorMessages);
             }
 
             int rowsAffectedOnDocumentDelete = await _sqlAction.DeleteDocumentByDocumentUuid(

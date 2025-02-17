@@ -28,6 +28,12 @@ public interface IGetRequest
     ClientAuthorizations ClientAuthorizations { get; }
 
     /// <summary>
+    /// The backend should use this handler to determine whether
+    /// the client is authorized to get the document
+    /// </summary>
+    IResourceAuthorizationHandler ResourceAuthorizationHandler { get; }
+
+    /// <summary>
     /// The request TraceId
     /// </summary>
     TraceId TraceId { get; }

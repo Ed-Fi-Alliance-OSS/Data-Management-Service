@@ -6,12 +6,12 @@
 namespace EdFi.DataManagementService.Core.External.Backend;
 
 /// <summary>
-/// The result of a DeleteAuthorizationHandler Authorize call to determine
-/// whether a document is authorized to be deleted. 
+/// The result of a ResourceAuthorizationHandler Authorize call to determine
+/// whether a client ia authorized to access the resource.
 /// </summary>
-public record DeleteAuthorizationResult
+public record ResourceAuthorizationResult
 {
-    public record Authorized() : DeleteAuthorizationResult();
+    public record Authorized() : ResourceAuthorizationResult();
 
-    public record NotAuthorizedNamespace(string[] ErrorMessages) : DeleteAuthorizationResult();
+    public record NotAuthorized(string[] ErrorMessages) : ResourceAuthorizationResult();
 }

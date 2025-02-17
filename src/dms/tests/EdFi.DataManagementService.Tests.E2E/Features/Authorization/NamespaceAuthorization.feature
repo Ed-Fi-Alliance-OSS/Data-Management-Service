@@ -108,11 +108,23 @@ Feature: Namespace Authorization
                   []
                   """
 
-        @ignore #DMS-503
         Scenario: 06 Ensure claimSet with different namespace can not get a descriptor in the ns2 namespace
-            Given the SIS Vendor is authorized with namespacePrefixes "uri://ns3.org"
+            Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}"
              Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                   "detail": "Access to the resource could not be authorized.",
+                   "type": "urn:ed-fi:api:security:authorization:",
+                   "title": "Authorization Denied",
+                   "status": 403,
+                   "validationErrors": {},
+                   "errors": [
+                        "Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: 'uri://ns3.org'."
+                    ]
+                  }
+                  """
 
         Scenario: 07 Ensure claimSet with different namespace can not update a descriptor in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
@@ -277,11 +289,23 @@ Feature: Namespace Authorization
                   }
                   """
 
-        @ignore #DMS-503
         Scenario: 14 Ensure claimSet with different namespace can not get a resource in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"
              When a GET request is made to "/ed-fi/surveys/{id}"
              Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                   "detail": "Access to the resource could not be authorized.",
+                   "type": "urn:ed-fi:api:security:authorization:",
+                   "title": "Authorization Denied",
+                   "status": 403,
+                   "validationErrors": {},
+                   "errors": [
+                        "Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: 'uri://ns3.org'."
+                    ]
+                  }
+                  """
 
         Scenario: 15 Ensure claimSet with different namespace can not update a resource in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns3.org"

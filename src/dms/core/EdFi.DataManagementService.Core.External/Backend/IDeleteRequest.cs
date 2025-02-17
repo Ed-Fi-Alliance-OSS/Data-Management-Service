@@ -32,7 +32,7 @@ public interface IDeleteRequest
     /// The backend should use this handler to determine whether
     /// the client is authorized to delete the document
     /// </summary>
-    IDeleteAuthorizationHandler DeleteAuthorizationHandler { get; }
+    IResourceAuthorizationHandler ResourceAuthorizationHandler { get; }
 
     /// <summary>
     /// The request TraceId

@@ -8,9 +8,9 @@ using System.Text.Json.Nodes;
 namespace EdFi.DataManagementService.Core.External.Backend;
 
 /// <summary>
-/// A handler to determine if the edFiDoc is authorized to be deleted.
+/// A handler to determine if the client is authorized for the resource.
 /// </summary>
-public interface IDeleteAuthorizationHandler
+public interface IResourceAuthorizationHandler
 {
-    DeleteAuthorizationResult Authorize(JsonNode securityElements);
+    ResourceAuthorizationResult Authorize(JsonNode securityElements);
 }
