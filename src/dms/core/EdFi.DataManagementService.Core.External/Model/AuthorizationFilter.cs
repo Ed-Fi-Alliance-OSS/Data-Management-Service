@@ -18,6 +18,10 @@ public record AuthorizationFilter(
     /// The expected value used
     /// </summary>
     string Value,
+    /// <summary>
+    /// The error message template to send to the client on authorization failure
+    /// </summary>
+    string ErrorMessageTemplate,
     ///
     /// How the filter is applied. StartsWith in the case of Namespace vs Equals in the case of EdOrg
     ///

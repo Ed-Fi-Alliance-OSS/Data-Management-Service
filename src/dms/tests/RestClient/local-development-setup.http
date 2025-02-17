@@ -167,7 +167,7 @@ Authorization: bearer {{dmsToken}}
 Content-Type: application/json
 
 {
-    "namespace": "uri://ed-fi.org",
+    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
     "codeValue": "AnyCode",
     "shortDescription": "AnyDescription"
 }

@@ -155,7 +155,7 @@ Feature: Namespace Authorization
                    "status": 403,
                    "validationErrors": {},
                    "errors": [
-                        "The 'Namespace' value of the data does not start with any of the caller's associated namespace prefixes ('uri://ns3.org')."
+                        "Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: 'uri://ns3.org'."
                     ]
                   }
                   """
@@ -312,7 +312,7 @@ Feature: Namespace Authorization
                    "status": 403,
                    "validationErrors": {},
                    "errors": [
-                        "The 'Namespace' value of the data does not start with any of the caller's associated namespace prefixes ('uri://ns3.org')."
+                        "Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: 'uri://ns3.org'."
                     ]
                   }
                   """

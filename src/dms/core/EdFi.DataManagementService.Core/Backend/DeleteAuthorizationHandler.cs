@@ -3,9 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Security.Cryptography.X509Certificates;
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Core.ApiSchema.Extensions;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
@@ -40,7 +38,6 @@ public class DeleteAuthorizationHandler(
                 JsonArray? valuesArray = securityElements[filter.FilterPath]?.AsArray();
                 string[] valuesStrings =
                     valuesArray?.Select(v => v?.ToString() ?? string.Empty).ToArray()
-                    ?? Array.Empty<string>()
                     ?? Array.Empty<string>();
 
                 switch (filter.Comparison)
@@ -92,14 +89,12 @@ public class DeleteAuthorizationHandler(
         if (andFilterEvaluations.Exists(e => !e.Value))
         {
             var values = authorizationStrategyEvaluators
-                .SelectMany(e => e.Filters.Select(f => f.Value))
+                .SelectMany(e => e.Filters.Select(f => $"'{f.Value}'"))
                 .Distinct();
 
             var errors = andFilterEvaluations
                 .Where(e => !e.Value)
-                .Select(e =>
-                    $"The '{e.Key.FilterPath}' value of the data does not start with any of the caller's associated namespace prefixes ('{string.Join(", ", values)}')."
-                );
+                .Select(e => e.Key.ErrorMessageTemplate.Replace("{claims}", string.Join(", ", values)));
             return new DeleteAuthorizationResult.NotAuthorizedNamespace(errors.ToArray());
         }
 
@@ -111,9 +106,7 @@ public class DeleteAuthorizationHandler(
 
             var errors = orFilterEvaluations
                 .Where(e => !e.Value)
-                .Select(e =>
-                    $"The '{e.Key.FilterPath}' value of the data does not start with any of the caller's associated namespace prefixes ('{string.Join(", ", values)}')."
-                );
+                .Select(e => e.Key.ErrorMessageTemplate.Replace("{claims}", string.Join(", ", values)));
             return new DeleteAuthorizationResult.NotAuthorizedNamespace(errors.ToArray());
         }
 

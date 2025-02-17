@@ -21,7 +21,12 @@ public class NamespaceBasedFiltersProvider : IAuthorizationFiltersProvider
         foreach (var namespacePrefix in details.NamespacePrefixes)
         {
             filters.Add(
-                new AuthorizationFilter("Namespace", namespacePrefix.Value, FilterComparison.StartsWith)
+                new AuthorizationFilter(
+                    "Namespace",
+                    namespacePrefix.Value,
+                    "Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: {claims}.",
+                    FilterComparison.StartsWith
+                )
             );
         }
 
