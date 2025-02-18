@@ -5,7 +5,7 @@
 
 using CommandLine;
 
-namespace EdFi.DataManagementService.Downloader
+namespace EdFi.DataManagementService.ApiSchemaDownloader
 {
     public class CommandLineOverrides
     {
@@ -18,7 +18,12 @@ namespace EdFi.DataManagementService.Downloader
         [Option('f', "feedUrl", Required = false, HelpText = "feed Url")]
         public string FeedUrl { get; set; } = "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json";
 
-        [Option('d', "apiSchemaFolder", Required = true, HelpText = "Path to folder containing the api schema files ")]
+        [Option(
+            'd',
+            "apiSchemaFolder",
+            Required = true,
+            HelpText = "Path to folder containing the api schema files "
+        )]
         public required string ApiSchemaFolder { get; set; }
     }
 }
