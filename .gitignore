@@ -430,3 +430,6 @@ sdk/
 # Local copies of ApiSchema.json
 **/ApiSchema.json
 **/ApiSchema.Extension.json
+
+src/dms/EdFi.DataStandard51.ApiSchema/
+

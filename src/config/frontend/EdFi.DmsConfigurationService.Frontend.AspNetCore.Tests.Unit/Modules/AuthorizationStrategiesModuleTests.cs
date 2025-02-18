@@ -32,27 +32,31 @@ public class AuthorizationStrategiesModuleTests
         public void Setup()
         {
             _mockAuthStrategiesResponse = [
-            new() {
-                AuthStrategyId = 1,
-                AuthStrategyName = "AuthStrategy1",
-                DisplayName = "AuthStrategy1"
-            },
-            new() {
-                AuthStrategyId = 2,
-                AuthStrategyName = "AuthStrategy2",
-                DisplayName = "AuthStrategy2"
-            },
-            new() {
-                AuthStrategyId = 3,
-                AuthStrategyName = "AuthStrategy3",
-                DisplayName = "AuthStrategy3"
-            },
-            new() {
-                AuthStrategyId = 4,
-                AuthStrategyName = "AuthStrategy4",
-                DisplayName = "AuthStrategy4"
-            },
-        ];
+                new()
+                {
+                    AuthStrategyId = 1,
+                    AuthStrategyName = "AuthStrategy1",
+                    DisplayName = "AuthStrategy1"
+                },
+                new()
+                {
+                    AuthStrategyId = 2,
+                    AuthStrategyName = "AuthStrategy2",
+                    DisplayName = "AuthStrategy2"
+                },
+                new()
+                {
+                    AuthStrategyId = 3,
+                    AuthStrategyName = "AuthStrategy3",
+                    DisplayName = "AuthStrategy3"
+                },
+                new()
+                {
+                    AuthStrategyId = 4,
+                    AuthStrategyName = "AuthStrategy4",
+                    DisplayName = "AuthStrategy4"
+                },
+            ];
             A.CallTo(() => _claimSetRepository.GetAuthorizationStrategies())
                .Returns(_mockAuthStrategiesResponse);
         }

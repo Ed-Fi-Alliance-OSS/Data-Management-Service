@@ -31,10 +31,7 @@ public class OpenApiGeneratorTests
             // Act & Assert
             var ex = Assert.Throws<ArgumentException>(() => _generator.Generate("", ""));
 
-            Assert.That(
-                ex?.Message,
-                Is.EqualTo("Core schema path is required.")
-            );
+            Assert.That(ex?.Message, Is.EqualTo("Core schema path is required."));
         }
     }
 

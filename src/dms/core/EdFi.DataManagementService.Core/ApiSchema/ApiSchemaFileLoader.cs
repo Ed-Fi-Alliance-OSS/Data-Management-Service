@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Reflection;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Configuration;
 using Microsoft.Extensions.Logging;
@@ -17,112 +16,54 @@ namespace EdFi.DataManagementService.Core.ApiSchema;
 internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOptions<AppSettings> appSettings)
     : IApiSchemaProvider
 {
-    /// <summary>
-    /// Loads the resource with the given resourceName from the assembly as a JsonNode
-    /// </summary>
-    private static JsonNode LoadFromAssembly(string resourceName, Assembly assembly)
+    private readonly Lazy<Dictionary<string, JsonNode>> _apiSchemaNodes = new(() =>
     {
-        using Stream stream =
-            assembly.GetManifestResourceStream(resourceName)
-            ?? throw new InvalidOperationException($"Could not load ApiSchema '{resourceName}'");
+        _logger.LogDebug("Entering ApiSchemaFileLoader._apiSchemaNodes");
 
-        using StreamReader reader = new(stream);
+        var schemaNodes = new Dictionary<string, JsonNode>();
 
-        string? jsonContent = reader.ReadToEnd();
+        string basePath = Path.GetFullPath(appSettings.Value.ApiSchemaFolder);
 
-        return JsonNode.Parse(jsonContent)
-            ?? throw new InvalidOperationException($"Unable to parse ApiSchema file '{resourceName}'");
-    }
-
-    /// <summary>
-    /// Loads the core ApiSchema file, either from the file system or an ApiSchema assembly
-    /// </summary>
-    private readonly Lazy<JsonNode> _coreApiSchemaRootNode = new(() =>
-    {
-        _logger.LogDebug("Entering ApiSchemaFileLoader._coreApiSchemaRootNode");
-
-        string jsonContent;
-
-        if (appSettings.Value.UseLocalApiSchemaJson)
+        if (!Directory.Exists(basePath))
         {
-            jsonContent = File.ReadAllText(
-                Path.Combine(
-                    Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? "",
-                    "ApiSchema",
-                    "ApiSchema.json"
-                )
-            );
-
-            return JsonNode.Parse(jsonContent)
-                ?? throw new InvalidOperationException($"Unable to parse ApiSchema file 'ApiSchema.json'");
+            _logger.LogError("ApiSchema folder '{BasePath}' does not exist.", basePath);
+            return schemaNodes;
         }
-        else
+
+
+        string[] schemaFiles = { "ApiSchema.json", "ApiSchema.Extension.json" };
+
+        foreach (string fileName in schemaFiles)
         {
-            Assembly assembly =
-                Assembly.GetAssembly(typeof(DataStandard51.ApiSchema.Marker))
-                ?? throw new InvalidOperationException("Could not load the core ApiSchema library");
+            string filePath = Path.Combine(basePath, fileName);
+            if (!File.Exists(filePath))
+            {
+                _logger.LogInformation("Schema file '{FileName}' not found in '{BasePath}'.", fileName, basePath);
+                continue;
+            }
 
-            string? resourceName = assembly
-                .GetManifestResourceNames()
-                .Single(str => str.EndsWith("ApiSchema.json"));
-
-            return LoadFromAssembly(resourceName, assembly);
-        }
-    });
-
-    public JsonNode CoreApiSchemaRootNode => _coreApiSchemaRootNode.Value;
-
-    /// <summary>
-    /// Loads extension ApiSchema files if they exist, either from the file system or ApiSchema assemblies
-    /// </summary>
-    private readonly Lazy<JsonNode[]> _extensionApiSchemaRootNodes = new(() =>
-    {
-        _logger.LogDebug("Entering ApiSchemaFileLoader._extensionApiSchemaRootNode");
-
-        if (appSettings.Value.UseLocalApiSchemaJson)
-        {
-            string? jsonContent;
             try
             {
-                jsonContent = File.ReadAllText(
-                    Path.Combine(
-                        Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? "",
-                        "ApiSchema",
-                        "ApiSchema.Extension.json"
-                    )
-                );
-
-                // No extension file found
-                if (jsonContent == null)
+                string jsonContent = File.ReadAllText(filePath);
+                JsonNode? rootNode = JsonNode.Parse(jsonContent);
+                if (rootNode == null)
                 {
-                    return [];
+                    throw new InvalidOperationException($"Unable to parse '{fileName}'");
                 }
+
+                schemaNodes[fileName] = rootNode;
             }
             catch (Exception ex)
             {
-                _logger.LogInformation(ex, "No ApiSchema.Extension.json file was found.");
-                return [];
+                _logger.LogError(ex, "Failed to load schema file '{FileName}' from '{BasePath}'", fileName, basePath);
             }
-
-            JsonNode rootNode =
-                JsonNode.Parse(jsonContent)
-                ?? throw new InvalidOperationException("Unable to parse ApiSchema extension file");
-            return [rootNode];
         }
-        else
-        {
-            // DMS-497 will fix: This assembly marker should instead be some indicator of extension assemblies
-            Assembly assembly =
-                Assembly.GetAssembly(typeof(DataStandard51.ApiSchema.Marker))
-                ?? throw new InvalidOperationException("Could not load the ApiSchema extension library");
 
-            IEnumerable<string> resourceNames = assembly
-                .GetManifestResourceNames()
-                .Where(str => str.EndsWith("ApiSchema.Extension.json"));
-
-            return resourceNames.Select(resourceName => LoadFromAssembly(resourceName, assembly)).ToArray();
-        }
+        return schemaNodes;
     });
 
-    public JsonNode[] ExtensionApiSchemaRootNodes => _extensionApiSchemaRootNodes.Value;
+    public JsonNode CoreApiSchemaRootNode => _apiSchemaNodes.Value.TryGetValue("ApiSchema.json", out var node) ? node : new JsonArray();
+
+    public JsonNode[] ExtensionApiSchemaRootNodes =>
+        _apiSchemaNodes.Value.TryGetValue("ApiSchema.Extension.json", out var node) ? [node] : [];
 }
