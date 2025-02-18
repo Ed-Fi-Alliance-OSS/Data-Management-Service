@@ -20,7 +20,7 @@ public class ApiClientDetailsProvider() : IApiClientDetailsProvider
         IList<Claim> claims
     )
     {
-        string[] requiredClaimTypes = ["scope", "jti", "namespacePrefixes"];
+        string[] requiredClaimTypes = ["scope", "jti", "namespacePrefixes", "educationOrganizationIds"];
 
         var claimsDictionary = claims
             .Where(c => requiredClaimTypes.Contains(c.Type))
