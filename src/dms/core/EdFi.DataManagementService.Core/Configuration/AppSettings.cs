@@ -21,14 +21,13 @@ namespace EdFi.DataManagementService.Core.Configuration
         public bool MaskRequestBodyInLogs { get; set; }
 
         /// <summary>
-        /// When true the application will use \ApiSchema\ApiSchema.json
-        /// instead of the published package.
-        /// </summary>
-        public bool UseLocalApiSchemaJson { get; set; }
-
-        /// <summary>
         /// Indicates the maximum number of items that should be returned in the results
         /// </summary>
         public int MaximumPageSize { get; set; }
+
+        /// <summary>
+        /// Indicates the where ApiSchema Folder exists 
+        /// </summary>
+        public required string ApiSchemaFolder { get; set; }
     }
 }
