@@ -141,7 +141,7 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -175,7 +175,7 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -209,7 +209,7 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -288,7 +288,7 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -322,7 +322,7 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -356,7 +356,7 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -402,7 +402,7 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -451,7 +451,7 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -498,7 +498,7 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -548,7 +548,7 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -598,7 +598,7 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -633,7 +633,7 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -683,7 +683,7 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -732,7 +732,7 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -782,7 +782,7 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],

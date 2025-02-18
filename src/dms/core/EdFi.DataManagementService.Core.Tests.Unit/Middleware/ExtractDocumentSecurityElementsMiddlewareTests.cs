@@ -54,7 +54,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                     QueryParameters: [],
                     Path: "/ed-fi/assessments",
                     TraceId: new TraceId("123"),
-                    ApiClientDetails: new ApiClientDetails(
+                    ClientAuthorizations: new ClientAuthorizations(
                         TokenId: "",
                         ClaimSetName: "",
                         EducationOrganizationIds: [],

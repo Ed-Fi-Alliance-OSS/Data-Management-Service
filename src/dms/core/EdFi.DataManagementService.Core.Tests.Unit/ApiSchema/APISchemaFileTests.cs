@@ -82,7 +82,7 @@ public class APISchemaFileTests
                     null,
                     [],
                     new TraceId(""),
-                    new ApiClientDetails(
+                    new ClientAuthorizations(
                         TokenId: "",
                         ClaimSetName: "",
                         EducationOrganizationIds: [],
@@ -108,7 +108,7 @@ public class APISchemaFileTests
                     null,
                     [],
                     new TraceId(""),
-                    new ApiClientDetails(
+                    new ClientAuthorizations(
                         TokenId: "",
                         ClaimSetName: "",
                         EducationOrganizationIds: [],
@@ -134,7 +134,7 @@ public class APISchemaFileTests
                     null,
                     [],
                     new TraceId(""),
-                    new ApiClientDetails(
+                    new ClientAuthorizations(
                         TokenId: "",
                         ClaimSetName: "",
                         EducationOrganizationIds: [],
@@ -165,7 +165,7 @@ public class APISchemaFileTests
                     null,
                     [],
                     new TraceId(""),
-                    new ApiClientDetails(
+                    new ClientAuthorizations(
                         TokenId: "",
                         ClaimSetName: "",
                         EducationOrganizationIds: [],
@@ -191,7 +191,7 @@ public class APISchemaFileTests
                     null,
                     [],
                     new TraceId(""),
-                    new ApiClientDetails(
+                    new ClientAuthorizations(
                         TokenId: "",
                         ClaimSetName: "",
                         EducationOrganizationIds: [],
@@ -217,7 +217,7 @@ public class APISchemaFileTests
                     null,
                     [],
                     new TraceId(""),
-                    new ApiClientDetails(
+                    new ClientAuthorizations(
                         TokenId: "",
                         ClaimSetName: "",
                         EducationOrganizationIds: [],
@@ -243,7 +243,7 @@ public class APISchemaFileTests
                     null,
                     [],
                     new TraceId(""),
-                    new ApiClientDetails(
+                    new ClientAuthorizations(
                         TokenId: "",
                         ClaimSetName: "",
                         EducationOrganizationIds: [],
@@ -269,7 +269,7 @@ public class APISchemaFileTests
                     null,
                     [],
                     new TraceId(""),
-                    new ApiClientDetails(
+                    new ClientAuthorizations(
                         TokenId: "",
                         ClaimSetName: "",
                         EducationOrganizationIds: [],
@@ -295,7 +295,7 @@ public class APISchemaFileTests
                     null,
                     [],
                     new TraceId(""),
-                    new ApiClientDetails(
+                    new ClientAuthorizations(
                         TokenId: "",
                         ClaimSetName: "",
                         EducationOrganizationIds: [],
@@ -321,7 +321,7 @@ public class APISchemaFileTests
                     null,
                     [],
                     new TraceId(""),
-                    new ApiClientDetails(
+                    new ClientAuthorizations(
                         TokenId: "",
                         ClaimSetName: "",
                         EducationOrganizationIds: [],
@@ -347,7 +347,7 @@ public class APISchemaFileTests
                     null,
                     [],
                     new TraceId(""),
-                    new ApiClientDetails(
+                    new ClientAuthorizations(
                         TokenId: "",
                         ClaimSetName: "",
                         EducationOrganizationIds: [],
@@ -373,7 +373,7 @@ public class APISchemaFileTests
                     null,
                     [],
                     new TraceId(""),
-                    new ApiClientDetails(
+                    new ClientAuthorizations(
                         TokenId: "",
                         ClaimSetName: "",
                         EducationOrganizationIds: [],
@@ -399,7 +399,7 @@ public class APISchemaFileTests
                     null,
                     [],
                     new TraceId(""),
-                    new ApiClientDetails(
+                    new ClientAuthorizations(
                         TokenId: "",
                         ClaimSetName: "",
                         EducationOrganizationIds: [],

@@ -15,10 +15,10 @@ public class NamespaceBasedFiltersProvider : IAuthorizationFiltersProvider
 {
     private const string AuthorizationStrategyName = "NamespaceBased";
 
-    public AuthorizationStrategyEvaluator GetFilters(ApiClientDetails details)
+    public AuthorizationStrategyEvaluator GetFilters(ClientAuthorizations authorizations)
     {
         var filters = new List<AuthorizationFilter>();
-        foreach (var namespacePrefix in details.NamespacePrefixes)
+        foreach (var namespacePrefix in authorizations.NamespacePrefixes)
         {
             filters.Add(
                 new AuthorizationFilter(

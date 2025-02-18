@@ -31,5 +31,5 @@ public record FrontendRequest(
     /// <summary>
     /// ApiDetails retrieved from the token, used for resource authorization
     /// </summary>
-    ApiClientDetails ApiClientDetails
+    ClientAuthorizations ClientAuthorizations
 );

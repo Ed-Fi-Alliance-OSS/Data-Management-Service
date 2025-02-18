@@ -54,7 +54,7 @@ public class DuplicatePropertiesMiddlewareTest
                 Body: jsonBody,
                 QueryParameters: [],
                 new TraceId("traceId"),
-                new ApiClientDetails(
+                new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -122,7 +122,7 @@ public class DuplicatePropertiesMiddlewareTest
                 Body: jsonBody,
                 QueryParameters: [],
                 new TraceId("traceId"),
-                new ApiClientDetails(
+                new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -192,7 +192,7 @@ public class DuplicatePropertiesMiddlewareTest
                 Body: jsonBody,
                 QueryParameters: [],
                 new TraceId("traceId"),
-                new ApiClientDetails(
+                new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -260,7 +260,7 @@ public class DuplicatePropertiesMiddlewareTest
                 Body: jsonBody,
                 QueryParameters: [],
                 new TraceId("traceId"),
-                new ApiClientDetails(
+                new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -328,7 +328,7 @@ public class DuplicatePropertiesMiddlewareTest
                 Body: jsonBody,
                 QueryParameters: [],
                 new TraceId("traceId"),
-                new ApiClientDetails(
+                new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -386,7 +386,7 @@ public class DuplicatePropertiesMiddlewareTest
                 Body: jsonBody,
                 QueryParameters: [],
                 new TraceId("traceId"),
-                new ApiClientDetails(
+                new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -457,7 +457,7 @@ public class DuplicatePropertiesMiddlewareTest
                 Body: jsonBody,
                 QueryParameters: [],
                 new TraceId("traceId"),
-                new ApiClientDetails(
+                new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],

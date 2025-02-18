@@ -24,7 +24,7 @@ public class NamespaceBasedValidatorTests
             var validator = new NamespaceBasedValidator();
             _expectedResult = validator.ValidateAuthorization(
                 new DocumentSecurityElements([]),
-                new ApiClientDetails("", "", [], [new NamespacePrefix("uri://namespace")])
+                new ClientAuthorizations("", "", [], [new NamespacePrefix("uri://namespace")])
             );
         }
 
@@ -53,7 +53,7 @@ public class NamespaceBasedValidatorTests
             var validator = new NamespaceBasedValidator();
             _expectedResult = validator.ValidateAuthorization(
                 new DocumentSecurityElements(["uri://namespace/resource"]),
-                new ApiClientDetails("", "", [], [])
+                new ClientAuthorizations("", "", [], [])
             );
         }
 
@@ -82,7 +82,7 @@ public class NamespaceBasedValidatorTests
             var validator = new NamespaceBasedValidator();
             _expectedResult = validator.ValidateAuthorization(
                 new DocumentSecurityElements(["uri://namespace/resource"]),
-                new ApiClientDetails("", "", [], [new NamespacePrefix("uri://namespace")])
+                new ClientAuthorizations("", "", [], [new NamespacePrefix("uri://namespace")])
             );
         }
 
@@ -106,7 +106,7 @@ public class NamespaceBasedValidatorTests
             var validator = new NamespaceBasedValidator();
             _expectedResult = validator.ValidateAuthorization(
                 new DocumentSecurityElements(["uri://not-matching/resource"]),
-                new ApiClientDetails("", "", [], [new NamespacePrefix("uri://namespace")])
+                new ClientAuthorizations("", "", [], [new NamespacePrefix("uri://namespace")])
             );
         }
 
@@ -135,7 +135,7 @@ public class NamespaceBasedValidatorTests
             var validator = new NamespaceBasedValidator();
             _expectedResult = validator.ValidateAuthorization(
                 new DocumentSecurityElements(["uri://matching/resource", "uri://not-matching1/resource"]),
-                new ApiClientDetails(
+                new ClientAuthorizations(
                     "",
                     "",
                     [],

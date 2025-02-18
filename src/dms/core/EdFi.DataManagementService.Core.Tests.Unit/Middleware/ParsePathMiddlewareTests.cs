@@ -38,7 +38,7 @@ public class ParsePathMiddlewareTests
                 Path: "",
                 QueryParameters: [],
                 TraceId: new TraceId(""),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -75,7 +75,7 @@ public class ParsePathMiddlewareTests
                 Path: "badpath",
                 QueryParameters: [],
                 TraceId: new TraceId(""),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -112,7 +112,7 @@ public class ParsePathMiddlewareTests
                 Path: "/ed-fi/endpointName",
                 QueryParameters: [],
                 TraceId: new TraceId(""),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -153,7 +153,7 @@ public class ParsePathMiddlewareTests
                 Path: $"/ed-fi/endpointName/{documentUuid}",
                 QueryParameters: [],
                 TraceId: new TraceId(""),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -194,7 +194,7 @@ public class ParsePathMiddlewareTests
                 Path: "/ed-fi/endpointName/invalidId",
                 QueryParameters: [],
                 TraceId: new TraceId(""),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -241,7 +241,7 @@ public class ParsePathMiddlewareTests
                 Path: $"/ed-fi/endpointName/{Guid.NewGuid()}",
                 QueryParameters: [],
                 TraceId: new TraceId(""),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -286,7 +286,7 @@ public class ParsePathMiddlewareTests
                 Path: "/ed-fi/endpointName/",
                 QueryParameters: [],
                 TraceId: new TraceId(""),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -331,7 +331,7 @@ public class ParsePathMiddlewareTests
                 Path: "/ed-fi/endpointName/",
                 QueryParameters: [],
                 TraceId: new TraceId(""),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],

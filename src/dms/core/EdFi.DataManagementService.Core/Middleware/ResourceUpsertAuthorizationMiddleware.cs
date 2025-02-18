@@ -58,7 +58,7 @@ internal class ResourceUpsertAuthorizationMiddleware(
 
                 AuthorizationResult authorizationResult = authStrategyHandler.ValidateAuthorization(
                     context.DocumentSecurityElements,
-                    context.FrontendRequest.ApiClientDetails
+                    context.FrontendRequest.ClientAuthorizations
                 );
                 authResultsAcrossAuthStrategies.Add(authorizationResult);
             }

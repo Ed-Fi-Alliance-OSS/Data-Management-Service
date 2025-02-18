@@ -37,7 +37,7 @@ public class RejectResourceIdentifierMiddlewareTests
                     Path: "/ed-fi/students",
                     QueryParameters: [],
                     TraceId: new TraceId(""),
-                    ApiClientDetails: new ApiClientDetails(
+                    ClientAuthorizations: new ClientAuthorizations(
                         TokenId: "",
                         ClaimSetName: "",
                         EducationOrganizationIds: [],
@@ -86,7 +86,7 @@ public class RejectResourceIdentifierMiddlewareTests
                     Path: "/ed-fi/students",
                     QueryParameters: [],
                     TraceId: new TraceId(""),
-                    ApiClientDetails: new ApiClientDetails(
+                    ClientAuthorizations: new ClientAuthorizations(
                         TokenId: "",
                         ClaimSetName: "",
                         EducationOrganizationIds: [],

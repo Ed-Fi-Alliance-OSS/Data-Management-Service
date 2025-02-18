@@ -33,7 +33,7 @@ internal class ResourceActionAuthorizationMiddleware(
                 context.FrontendRequest.TraceId.Value
             );
 
-            string claimSetName = context.FrontendRequest.ApiClientDetails.ClaimSetName;
+            string claimSetName = context.FrontendRequest.ClientAuthorizations.ClaimSetName;
             _logger.LogInformation("Claim set name from token scope - {ClaimSetName}", claimSetName);
 
             _logger.LogInformation("Retrieving claim set list");
@@ -151,11 +151,6 @@ internal class ResourceActionAuthorizationMiddleware(
 
             context.ResourceActionAuthStrategies = resourceActionAuthStrategies;
 
-            // passes authorization
-            context.ClientAuthorizations = new(
-                context.FrontendRequest.ApiClientDetails.EducationOrganizationIds,
-                context.FrontendRequest.ApiClientDetails.NamespacePrefixes
-            );
             await next();
 
             void RespondAuthorizationError()

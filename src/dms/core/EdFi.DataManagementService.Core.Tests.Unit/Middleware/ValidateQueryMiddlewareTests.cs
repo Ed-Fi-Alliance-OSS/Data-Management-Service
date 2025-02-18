@@ -47,7 +47,7 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 QueryParameters: queryParameters,
                 TraceId: new TraceId(""),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -121,7 +121,7 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 QueryParameters: queryParameters,
                 TraceId: new TraceId(""),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -234,7 +234,7 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 QueryParameters: queryParameters,
                 TraceId: new TraceId(""),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -385,7 +385,7 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 QueryParameters: queryParameters,
                 TraceId: new TraceId(""),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -469,7 +469,7 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 QueryParameters: queryParameters,
                 TraceId: new TraceId(""),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -557,7 +557,7 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 QueryParameters: queryParameters,
                 TraceId: new TraceId(""),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],

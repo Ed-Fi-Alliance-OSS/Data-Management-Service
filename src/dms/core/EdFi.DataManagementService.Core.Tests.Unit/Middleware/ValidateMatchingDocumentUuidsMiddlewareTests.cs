@@ -95,7 +95,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: jsonData,
                     QueryParameters: [],
                     TraceId: new TraceId("traceId"),
-                    ApiClientDetails: new ApiClientDetails(
+                    ClientAuthorizations: new ClientAuthorizations(
                         TokenId: "",
                         ClaimSetName: "",
                         EducationOrganizationIds: [],
@@ -150,7 +150,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: jsonData,
                     QueryParameters: [],
                     TraceId: new TraceId("traceId"),
-                    ApiClientDetails: new ApiClientDetails(
+                    ClientAuthorizations: new ClientAuthorizations(
                         TokenId: "",
                         ClaimSetName: "",
                         EducationOrganizationIds: [],
@@ -213,7 +213,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: jsonData,
                     QueryParameters: [],
                     TraceId: new TraceId("traceId"),
-                    ApiClientDetails: new ApiClientDetails(
+                    ClientAuthorizations: new ClientAuthorizations(
                         TokenId: "",
                         ClaimSetName: "",
                         EducationOrganizationIds: [],
@@ -276,7 +276,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: jsonData,
                     QueryParameters: [],
                     TraceId: new TraceId("traceId"),
-                    ApiClientDetails: new ApiClientDetails(
+                    ClientAuthorizations: new ClientAuthorizations(
                         TokenId: "",
                         ClaimSetName: "",
                         EducationOrganizationIds: [],

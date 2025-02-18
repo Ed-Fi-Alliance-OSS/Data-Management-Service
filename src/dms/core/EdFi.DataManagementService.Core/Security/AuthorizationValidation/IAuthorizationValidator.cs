@@ -14,6 +14,6 @@ public interface IAuthorizationValidator
 {
     AuthorizationResult ValidateAuthorization(
         DocumentSecurityElements securityElements,
-        ApiClientDetails details
+        ClientAuthorizations authorizations
     );
 }

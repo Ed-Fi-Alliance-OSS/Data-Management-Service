@@ -43,7 +43,7 @@ public class NamedAuthorizationServiceFactoryTests
             handler.Should().NotBeNull();
             var authResult = handler!.ValidateAuthorization(
                 new DocumentSecurityElements([]),
-                new ApiClientDetails("", "", [], [])
+                new ClientAuthorizations("", "", [], [])
             );
             authResult.Should().NotBeNull();
             authResult.IsAuthorized.Should().BeTrue();
@@ -58,7 +58,7 @@ public class NamedAuthorizationServiceFactoryTests
             handler.Should().NotBeNull();
             var authResult = handler!.ValidateAuthorization(
                 new DocumentSecurityElements(["uri://namespace/resource"]),
-                new ApiClientDetails("", "", [], [new NamespacePrefix("uri://namespace")])
+                new ClientAuthorizations("", "", [], [new NamespacePrefix("uri://namespace")])
             );
             authResult.Should().NotBeNull();
             authResult.IsAuthorized.Should().BeTrue();
@@ -117,7 +117,7 @@ public class NamedAuthorizationServiceFactoryTests
                 as NoFurtherAuthorizationRequiredFiltersProvider;
             handler.Should().NotBeNull();
             var filters = handler!.GetFilters(
-                new ApiClientDetails("", "", [], [])
+                new ClientAuthorizations("", "", [], [])
             );
             filters.Should().NotBeNull();
             filters.Filters.Should().BeEmpty();
@@ -131,7 +131,7 @@ public class NamedAuthorizationServiceFactoryTests
                 as NamespaceBasedFiltersProvider;
             handler.Should().NotBeNull();
             var filters = handler!.GetFilters(
-                new ApiClientDetails("", "", [], [new NamespacePrefix("uri://namespace")])
+                new ClientAuthorizations("", "", [], [new NamespacePrefix("uri://namespace")])
             );
             filters.Should().NotBeNull();
             filters.Filters.Should().NotBeEmpty();

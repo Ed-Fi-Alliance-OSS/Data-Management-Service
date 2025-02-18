@@ -128,7 +128,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
                 Body: jsonBody,
                 QueryParameters: [],
                 TraceId: new TraceId(""),
-                new ApiClientDetails(
+                new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -201,7 +201,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
                 Body: jsonBody,
                 QueryParameters: [],
                 TraceId: new TraceId(""),
-                new ApiClientDetails(
+                new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -398,7 +398,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
                 Body: jsonBody,
                 QueryParameters: [],
                 TraceId: new TraceId(""),
-                new ApiClientDetails(
+                new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -485,7 +485,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
                 Body: jsonBody,
                 QueryParameters: [],
                 TraceId: new TraceId(""),
-                new ApiClientDetails(
+                new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -557,7 +557,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
                 Body: jsonBody,
                 QueryParameters: [],
                 TraceId: new TraceId(""),
-                new ApiClientDetails(
+                new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -624,7 +624,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
                 Body: jsonBody,
                 QueryParameters: [],
                 TraceId: new TraceId(""),
-                new ApiClientDetails(
+                new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],

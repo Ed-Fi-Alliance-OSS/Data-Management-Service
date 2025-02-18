@@ -17,10 +17,10 @@ public class NamespaceBasedValidator : IAuthorizationValidator
 
     public AuthorizationResult ValidateAuthorization(
         DocumentSecurityElements securityElements,
-        ApiClientDetails details
+        ClientAuthorizations authorizations
     )
     {
-        var namespacePrefixesFromClaim = details.NamespacePrefixes;
+        var namespacePrefixesFromClaim = authorizations.NamespacePrefixes;
         var namespacesFromRequest = securityElements.Namespace;
 
         if (namespacesFromRequest == null || namespacesFromRequest.Length == 0)

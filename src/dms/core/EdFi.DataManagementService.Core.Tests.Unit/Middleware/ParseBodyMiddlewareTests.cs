@@ -37,7 +37,7 @@ public class ParseBodyMiddlewareTests
                 Body: null,
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -83,7 +83,7 @@ public class ParseBodyMiddlewareTests
                 Body: "",
                 QueryParameters: [],
                 new TraceId("traceId"),
-                new ApiClientDetails(
+                new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -129,7 +129,7 @@ public class ParseBodyMiddlewareTests
                 Body: """{ "id":"value" "name":"firstname"}""",
                 QueryParameters: [],
                 new TraceId("traceId"),
-                new ApiClientDetails(
+                new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],

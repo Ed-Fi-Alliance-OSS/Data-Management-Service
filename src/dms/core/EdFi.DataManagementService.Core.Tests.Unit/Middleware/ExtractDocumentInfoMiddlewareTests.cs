@@ -59,7 +59,7 @@ public class ExtractDocumentInfoMiddlewareTests
                     QueryParameters: [],
                     Path: "/ed-fi/schools",
                     TraceId: new TraceId("123"),
-                    ApiClientDetails: new ApiClientDetails(
+                    ClientAuthorizations: new ClientAuthorizations(
                         TokenId: "",
                         ClaimSetName: "",
                         EducationOrganizationIds: [],

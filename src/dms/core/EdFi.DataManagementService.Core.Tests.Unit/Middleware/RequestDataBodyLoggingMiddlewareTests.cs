@@ -63,7 +63,7 @@ public class RequestDataBodyLoggingMiddlewareTests
                     Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                     QueryParameters: [],
                     TraceId: new TraceId("traceId"),
-                    ApiClientDetails: new ApiClientDetails(
+                    ClientAuthorizations: new ClientAuthorizations(
                         TokenId: "",
                         ClaimSetName: "",
                         EducationOrganizationIds: [],
@@ -114,7 +114,7 @@ public class RequestDataBodyLoggingMiddlewareTests
                     Body: """{"schoolId":"12345","nameOfInstitution":"School Test"}""",
                     QueryParameters: [],
                     TraceId: new TraceId("traceId"),
-                    ApiClientDetails: new ApiClientDetails(
+                    ClientAuthorizations: new ClientAuthorizations(
                         TokenId: "",
                         ClaimSetName: "",
                         EducationOrganizationIds: [],
@@ -170,7 +170,7 @@ public class RequestDataBodyLoggingMiddlewareTests
                     Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                     QueryParameters: [],
                     TraceId: new TraceId("traceId"),
-                    ApiClientDetails: new ApiClientDetails(
+                    ClientAuthorizations: new ClientAuthorizations(
                         TokenId: "",
                         ClaimSetName: "",
                         EducationOrganizationIds: [],
@@ -224,7 +224,7 @@ public class RequestDataBodyLoggingMiddlewareTests
                     Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                     QueryParameters: [],
                     TraceId: new TraceId("traceId"),
-                    ApiClientDetails: new ApiClientDetails(
+                    ClientAuthorizations: new ClientAuthorizations(
                         TokenId: "",
                         ClaimSetName: "",
                         EducationOrganizationIds: [],

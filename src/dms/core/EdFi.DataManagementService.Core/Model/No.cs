@@ -93,7 +93,7 @@ internal static class No
             Path: "",
             QueryParameters: [],
             TraceId: new TraceId(traceId),
-            ApiClientDetails: new ApiClientDetails(
+            ClientAuthorizations: new ClientAuthorizations(
                 TokenId: "",
                 ClaimSetName: "",
                 EducationOrganizationIds: [],
@@ -114,11 +114,6 @@ internal static class No
     /// The null object for DocumentSecurityElements
     /// </summary>
     public static readonly DocumentSecurityElements DocumentSecurityElements = new([]);
-
-    /// <summary>
-    /// The null object for ClientAuthorizations
-    /// </summary>
-    public static readonly ClientAuthorizations ClientAuthorizations = new([], []);
 
     /// <summary>
     /// The null object for ResourceClaim

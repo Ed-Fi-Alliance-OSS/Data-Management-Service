@@ -113,7 +113,7 @@ public class ValidateEqualityConstraintMiddlewareTests
                 Body: jsonData,
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],
@@ -171,7 +171,7 @@ public class ValidateEqualityConstraintMiddlewareTests
                 Body: jsonData,
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails(
+                ClientAuthorizations: new ClientAuthorizations(
                     TokenId: "",
                     ClaimSetName: "",
                     EducationOrganizationIds: [],

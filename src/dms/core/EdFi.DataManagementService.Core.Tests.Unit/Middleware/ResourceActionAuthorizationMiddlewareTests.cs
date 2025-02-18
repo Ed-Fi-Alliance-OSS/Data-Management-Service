@@ -127,7 +127,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails("", "SIS-Vendor", [], [])
+                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
             );
 
             _context = new PipelineContext(frontEndRequest, RequestMethod.POST);
@@ -157,7 +157,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails("", "NO-MATCH", [], [])
+                ClientAuthorizations: new ClientAuthorizations("", "NO-MATCH", [], [])
             );
 
             _context = new PipelineContext(frontEndRequest, RequestMethod.POST);
@@ -193,7 +193,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails("", "SIS-Vendor", [], [])
+                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
             );
 
             _context = new PipelineContext(frontEndRequest, RequestMethod.POST);
@@ -229,7 +229,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails("", "SIS-Vendor", [], [])
+                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
             );
 
             _context = new PipelineContext(frontEndRequest, RequestMethod.POST)
@@ -261,7 +261,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails("", "SIS-Vendor", [], [])
+                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
             );
 
             _context = new PipelineContext(frontEndRequest, RequestMethod.PUT)
@@ -330,7 +330,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails("", "SIS-Vendor", [], [])
+                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
             );
 
             _context = new PipelineContext(frontEndRequest, RequestMethod.PUT)
@@ -369,7 +369,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails("", "SIS-Vendor", [], [])
+                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
             );
 
             _context = new PipelineContext(frontEndRequest, RequestMethod.POST)
@@ -402,7 +402,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails("", "SIS-Vendor", [], [])
+                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
             );
 
             _context = new PipelineContext(frontEndRequest, RequestMethod.POST)

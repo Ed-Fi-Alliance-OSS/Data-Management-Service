@@ -17,8 +17,8 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Backend;
 public class ResourceAuthorizationHandlerTests
 {
     [TestFixture("uri://ed-fi.org")]
-    [TestFixture("uri://ed-fi.org uri://test.org")]
-    [TestFixture("uri://test.org uri://ed-fi.org")]
+    [TestFixture("uri://ed-fi.org,uri://test.org")]
+    [TestFixture("uri://test.org,uri://ed-fi.org")]
     public class Given_An_EdFi_Doc_With_Matching_ClientAuthorization_Namespace(string clientNamespacePrefixes)
         : ResourceAuthorizationHandlerTests
     {
@@ -36,7 +36,7 @@ public class ResourceAuthorizationHandlerTests
             )!;
 
             var authStrategyEvaluators = clientNamespacePrefixes
-                .Split(' ')
+                .Split(',')
                 .Select(namespacePrefix => new AuthorizationStrategyEvaluator(
                     [new AuthorizationFilter("Namespace", namespacePrefix, "", FilterComparison.StartsWith)],
                     FilterOperator.Or
@@ -55,8 +55,8 @@ public class ResourceAuthorizationHandlerTests
     }
 
     [TestFixture("uri://ed-fi.org")]
-    [TestFixture("uri://ed-fi.org uri://test.org")]
-    [TestFixture("uri://test.org uri://ed-fi.org")]
+    [TestFixture("uri://ed-fi.org,uri://test.org")]
+    [TestFixture("uri://test.org,uri://ed-fi.org")]
     public class Given_An_EdFi_Doc_With_No_Matching_ClientAuthorization_Namespace(
         string clientNamespacePrefixes
     ) : ResourceAuthorizationHandlerTests
@@ -75,7 +75,7 @@ public class ResourceAuthorizationHandlerTests
             )!;
 
             var authStrategyEvaluators = clientNamespacePrefixes
-                .Split(' ')
+                .Split(',')
                 .Select(namespacePrefix => new AuthorizationStrategyEvaluator(
                     [new AuthorizationFilter("Namespace", namespacePrefix, "", FilterComparison.StartsWith)],
                     FilterOperator.Or
@@ -110,7 +110,7 @@ public class ResourceAuthorizationHandlerTests
             )!;
 
             var authStrategyEvaluators = ""
-                .Split(' ')
+                .Split(',')
                 .Select(namespacePrefix => new AuthorizationStrategyEvaluator(
                     [new AuthorizationFilter("Namespace", namespacePrefix, "", FilterComparison.StartsWith)],
                     FilterOperator.Or

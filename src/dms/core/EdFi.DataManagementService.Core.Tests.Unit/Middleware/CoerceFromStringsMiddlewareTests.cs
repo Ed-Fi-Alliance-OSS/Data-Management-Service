@@ -122,7 +122,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: jsonData,
                     QueryParameters: [],
                     new TraceId("traceId"),
-                    new ApiClientDetails(
+                    new ClientAuthorizations(
                         TokenId: "",
                         ClaimSetName: "",
                         EducationOrganizationIds: [],

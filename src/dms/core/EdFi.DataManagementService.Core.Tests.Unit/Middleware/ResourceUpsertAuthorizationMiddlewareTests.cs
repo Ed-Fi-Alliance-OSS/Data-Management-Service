@@ -53,7 +53,7 @@ public class ResourceUpsertAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails("", "SIS-Vendor", [], [])
+                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
             );
 
             _context = new PipelineContext(frontEndRequest, RequestMethod.POST)
@@ -86,7 +86,7 @@ public class ResourceUpsertAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails("", "SIS-Vendor", [], [])
+                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
             );
 
             _context = new PipelineContext(frontEndRequest, RequestMethod.POST)
@@ -163,7 +163,7 @@ public class ResourceUpsertAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails("", "SIS-Vendor", [], [])
+                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
             );
 
             _context = new PipelineContext(frontEndRequest, RequestMethod.POST)
@@ -221,7 +221,7 @@ public class ResourceUpsertAuthorizationMiddlewareTests
             var notAuthorizedValidator = A.Fake<IAuthorizationValidator>();
             A.CallTo(() =>
                 notAuthorizedValidator.ValidateAuthorization(A<DocumentSecurityElements>.Ignored,
-                    A<ApiClientDetails>.Ignored)).Returns(new AuthorizationResult(false));
+                    A<ClientAuthorizations>.Ignored)).Returns(new AuthorizationResult(false));
             A.CallTo(() => authorizationServiceFactory.GetByName<IAuthorizationValidator>(authStrategy))
                 .Returns(notAuthorizedValidator);
 
@@ -235,7 +235,7 @@ public class ResourceUpsertAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
-                ApiClientDetails: new ApiClientDetails("", "SIS-Vendor", [], [])
+                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
             );
 
             _context = new PipelineContext(frontEndRequest, RequestMethod.POST)
