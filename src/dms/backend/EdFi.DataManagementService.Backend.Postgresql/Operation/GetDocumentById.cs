@@ -39,7 +39,7 @@ public class GetDocumentById(ISqlAction _sqlAction, ILogger<GetDocumentById> _lo
 
         try
         {
-            DocumentSummary? document = await _sqlAction.FindDocumentEdfiDocByDocumentUuid(
+            DocumentSummary? documentSummary = await _sqlAction.FindDocumentEdfiDocByDocumentUuid(
                 getRequest.DocumentUuid,
                 getRequest.ResourceInfo.ResourceName.Value,
                 PartitionKeyFor(getRequest.DocumentUuid),
@@ -48,16 +48,25 @@ public class GetDocumentById(ISqlAction _sqlAction, ILogger<GetDocumentById> _lo
                 getRequest.TraceId
             );
 
-            if (document == null)
+            if (documentSummary == null)
             {
                 return new GetResult.GetFailureNotExists();
             }
 
+            JsonNode securityElements = documentSummary.SecurityElements.Deserialize<JsonNode>()!;
+
+            var getAuthorizationResult = getRequest.ResourceAuthorizationHandler.Authorize(securityElements);
+
+            if (getAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
+            {
+                return new GetResult.GetFailureNotAuthorized(notAuthorized.ErrorMessages);
+            }
+
             return new GetResult.GetSuccess(
                 getRequest.DocumentUuid,
-                document.EdfiDoc.Deserialize<JsonNode>()!,
-                document.LastModifiedAt,
-                document.LastModifiedTraceId
+                documentSummary.EdfiDoc.Deserialize<JsonNode>()!,
+                documentSummary.LastModifiedAt,
+                documentSummary.LastModifiedTraceId
             );
         }
         catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.DeadlockDetected)

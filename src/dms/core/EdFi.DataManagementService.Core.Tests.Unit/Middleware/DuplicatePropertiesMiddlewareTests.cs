@@ -53,7 +53,13 @@ public class DuplicatePropertiesMiddlewareTest
                 "ed-fi/schools",
                 Body: jsonBody,
                 QueryParameters: [],
-                new TraceId("traceId")
+                new TraceId("traceId"),
+                new ClientAuthorizations(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -115,7 +121,13 @@ public class DuplicatePropertiesMiddlewareTest
                 "ed-fi/schools",
                 Body: jsonBody,
                 QueryParameters: [],
-                new TraceId("traceId")
+                new TraceId("traceId"),
+                new ClientAuthorizations(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -179,7 +191,13 @@ public class DuplicatePropertiesMiddlewareTest
                 "ed-fi/bellschedules",
                 Body: jsonBody,
                 QueryParameters: [],
-                new TraceId("traceId")
+                new TraceId("traceId"),
+                new ClientAuthorizations(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -241,7 +259,13 @@ public class DuplicatePropertiesMiddlewareTest
                 "ed-fi/schools",
                 Body: jsonBody,
                 QueryParameters: [],
-                new TraceId("traceId")
+                new TraceId("traceId"),
+                new ClientAuthorizations(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -303,7 +327,13 @@ public class DuplicatePropertiesMiddlewareTest
                 "ed-fi/schools",
                 Body: jsonBody,
                 QueryParameters: [],
-                new TraceId("traceId")
+                new TraceId("traceId"),
+                new ClientAuthorizations(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -355,7 +385,13 @@ public class DuplicatePropertiesMiddlewareTest
                 $"ed-fi/students/{id}",
                 Body: jsonBody,
                 QueryParameters: [],
-                new TraceId("traceId")
+                new TraceId("traceId"),
+                new ClientAuthorizations(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = new(frontEndRequest, RequestMethod.PUT);
             await Middleware().Execute(_context, NullNext);
@@ -420,7 +456,13 @@ public class DuplicatePropertiesMiddlewareTest
                 $"ed-fi/schools/{id}",
                 Body: jsonBody,
                 QueryParameters: [],
-                new TraceId("traceId")
+                new TraceId("traceId"),
+                new ClientAuthorizations(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = new(frontEndRequest, RequestMethod.PUT);
             await Middleware().Execute(_context, NullNext);

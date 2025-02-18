@@ -15,7 +15,9 @@ public class NoFurtherAuthorizationRequiredFiltersProvider : IAuthorizationFilte
 {
     private const string AuthorizationStrategyName = "NoFurtherAuthorizationRequired";
 
-    public AuthorizationStrategyEvaluator GetFilters(ApiClientDetails details)
+    public AuthorizationStrategyEvaluator GetFilters(
+        ClientAuthorizations authorizations
+    )
     {
         return new AuthorizationStrategyEvaluator([], FilterOperator.Or);
     }

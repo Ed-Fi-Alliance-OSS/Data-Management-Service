@@ -120,7 +120,7 @@ public static partial class QueryOpenSearch
 
             foreach (var strategyEvaluator in queryRequest.AuthorizationStrategyEvaluators)
             {
-                if (strategyEvaluator != null && strategyEvaluator.Filters.Length != 0)
+                if (strategyEvaluator.Filters.Length != 0)
                 {
                     JsonObject[] possibleFilters = strategyEvaluator
                         .Filters.Select(filter => new JsonObject

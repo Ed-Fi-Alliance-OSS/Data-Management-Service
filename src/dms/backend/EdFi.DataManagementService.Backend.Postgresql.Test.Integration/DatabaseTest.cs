@@ -344,6 +344,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                 ResourceInfo = CreateResourceInfo(resourceName),
                 TraceId = traceId,
                 DocumentUuid = new DocumentUuid(documentUuidGuid),
+                ResourceAuthorizationHandler = new ResourceAuthorizationHandler([], NullLogger.Instance)
             }
         ).ActLike<IGetRequest>();
     }
@@ -386,6 +387,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                 ResourceInfo = CreateResourceInfo(resourceName),
                 TraceId = traceId,
                 DocumentUuid = new DocumentUuid(documentUuidGuid),
+                ResourceAuthorizationHandler = new ResourceAuthorizationHandler([], NullLogger.Instance),
             }
         ).ActLike<IDeleteRequest>();
     }

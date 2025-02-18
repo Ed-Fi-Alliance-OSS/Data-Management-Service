@@ -9,7 +9,7 @@ namespace EdFi.DataManagementService.Core.Security;
 
 public interface IAuthorizationStrategiesProvider
 {
-    IList<string> GetAuthorizationStrategies(ResourceClaim resourceClaim, string actionName);
+    IReadOnlyList<string> GetAuthorizationStrategies(ResourceClaim resourceClaim, string actionName);
 }
 
 public class AuthorizationStrategiesProvider() : IAuthorizationStrategiesProvider
@@ -20,7 +20,7 @@ public class AuthorizationStrategiesProvider() : IAuthorizationStrategiesProvide
     /// <param name="resourceClaim"></param>
     /// <param name="actionName"></param>
     /// <returns></returns>
-    public IList<string> GetAuthorizationStrategies(ResourceClaim resourceClaim, string actionName)
+    public IReadOnlyList<string> GetAuthorizationStrategies(ResourceClaim resourceClaim, string actionName)
     {
         List<string> authorizationStrategyList = [];
         List<ResourceClaimActionAuthStrategies> authStrategyOverrides =

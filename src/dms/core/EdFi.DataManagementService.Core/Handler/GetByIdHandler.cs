@@ -33,7 +33,10 @@ internal class GetByIdHandler(
                 new GetRequest(
                     DocumentUuid: context.PathComponents.DocumentUuid,
                     ResourceInfo: context.ResourceInfo,
-                    ClientAuthorizations: context.ClientAuthorizations,
+                    ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
+                        context.AuthorizationStrategyEvaluators,
+                        _logger
+                    ),
                     TraceId: context.FrontendRequest.TraceId
                 )
             )
@@ -49,9 +52,12 @@ internal class GetByIdHandler(
         {
             GetSuccess success => new FrontendResponse(StatusCode: 200, Body: success.EdfiDoc, Headers: []),
             GetFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
-            GetFailureNotAuthorized => new FrontendResponse(
+            GetFailureNotAuthorized notAuthorized => new FrontendResponse(
                 StatusCode: 403,
-                Body: FailureResponse.ForForbidden(traceId: context.FrontendRequest.TraceId, errors: []),
+                Body: FailureResponse.ForForbidden(
+                    traceId: context.FrontendRequest.TraceId,
+                    errors: notAuthorized.ErrorMessages
+                ),
                 Headers: []
             ),
             UnknownFailure failure => new FrontendResponse(

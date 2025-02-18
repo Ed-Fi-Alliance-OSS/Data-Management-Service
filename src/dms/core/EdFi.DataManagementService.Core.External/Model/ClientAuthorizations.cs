@@ -5,17 +5,21 @@
 
 namespace EdFi.DataManagementService.Core.External.Model;
 
-/// <summary>
-/// An immutable list of the EducationOrganizations and NamespacePrefixes
-/// this client is authorized for
-/// </summary>
 public record ClientAuthorizations(
     /// <summary>
-    /// Education organization ids this client is authorized for
+    /// Unique token identifier
     /// </summary>
-    IReadOnlyList<EducationOrganizationId> EducationOrganizationIds,
+    string TokenId,
     /// <summary>
-    /// Namespace prefixes this client is authorized for
+    /// Claim set name associated with vendor application key and secret
     /// </summary>
-    IReadOnlyList<NamespacePrefix> NamespacePrefixes
+    string ClaimSetName,
+    /// <summary>
+    /// Education organization id list associated with vendor application key and secret
+    /// </summary>
+    List<EducationOrganizationId> EducationOrganizationIds,
+    /// <summary>
+    /// Namespace prefixes associated with vendor application key and secret
+    /// </summary>
+    List<NamespacePrefix> NamespacePrefixes
 );

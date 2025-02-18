@@ -112,7 +112,13 @@ public class ValidateEqualityConstraintMiddlewareTests
                 "ed-fi/bellschedules",
                 Body: jsonData,
                 QueryParameters: [],
-                new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                ClientAuthorizations: new ClientAuthorizations(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());
@@ -164,7 +170,13 @@ public class ValidateEqualityConstraintMiddlewareTests
                 "ed-fi/bellschedules",
                 Body: jsonData,
                 QueryParameters: [],
-                new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                ClientAuthorizations: new ClientAuthorizations(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
 

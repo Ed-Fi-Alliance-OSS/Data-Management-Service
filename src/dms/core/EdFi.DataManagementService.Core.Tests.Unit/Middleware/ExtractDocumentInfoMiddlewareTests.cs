@@ -54,7 +54,18 @@ public class ExtractDocumentInfoMiddlewareTests
             string body = """{"schoolId": "123"}""";
 
             context = new(
-                new(Body: body, QueryParameters: [], Path: "/ed-fi/schools", TraceId: new TraceId("123")),
+                new(
+                    Body: body,
+                    QueryParameters: [],
+                    Path: "/ed-fi/schools",
+                    TraceId: new TraceId("123"),
+                    ClientAuthorizations: new ClientAuthorizations(
+                        TokenId: "",
+                        ClaimSetName: "",
+                        EducationOrganizationIds: [],
+                        NamespacePrefixes: []
+                    )
+                ),
                 RequestMethod.POST
             )
             {

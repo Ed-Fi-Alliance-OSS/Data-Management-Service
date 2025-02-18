@@ -10,12 +10,12 @@ namespace EdFi.DataManagementService.Core.Security;
 
 public interface IApiClientDetailsProvider
 {
-    ApiClientDetails RetrieveApiClientDetailsFromToken(string jwtTokenHashCode, IList<Claim> claims);
+    ClientAuthorizations RetrieveApiClientDetailsFromToken(string jwtTokenHashCode, IList<Claim> claims);
 }
 
 public class ApiClientDetailsProvider() : IApiClientDetailsProvider
 {
-    public ApiClientDetails RetrieveApiClientDetailsFromToken(string jwtTokenHashCode, IList<Claim> claims)
+    public ClientAuthorizations RetrieveApiClientDetailsFromToken(string jwtTokenHashCode, IList<Claim> claims)
     {
         string[] requiredClaimTypes = ["scope", "jti", "namespacePrefixes"];
 
@@ -25,13 +25,13 @@ public class ApiClientDetailsProvider() : IApiClientDetailsProvider
         string claimSetName = claimsDictionary.GetValueOrDefault("scope", string.Empty);
         string tokenId = GetTokenId(claimsDictionary, jwtTokenHashCode);
         string[] namespacePrefixes = GetNamespacePrefixes(claimsDictionary);
-        ApiClientDetails apiClientDetails = new(
+        ClientAuthorizations clientAuthorizations = new(
             tokenId,
             claimSetName,
             [],
             namespacePrefixes.Select(x => new NamespacePrefix(x)).ToList()
         );
-        return apiClientDetails;
+        return clientAuthorizations;
     }
 
     private static string GetTokenId(Dictionary<string, string> claims, string jwtTokenHashCode)

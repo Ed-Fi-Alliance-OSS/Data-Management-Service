@@ -49,7 +49,18 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
             string body = """{"assessmentIdentifier": "123", "namespace": "abc"}""";
 
             context = new(
-                new(Body: body, QueryParameters: [], Path: "/ed-fi/assessments", TraceId: new TraceId("123")),
+                new(
+                    Body: body,
+                    QueryParameters: [],
+                    Path: "/ed-fi/assessments",
+                    TraceId: new TraceId("123"),
+                    ClientAuthorizations: new ClientAuthorizations(
+                        TokenId: "",
+                        ClaimSetName: "",
+                        EducationOrganizationIds: [],
+                        NamespacePrefixes: []
+                    )
+                ),
                 RequestMethod.POST
             )
             {

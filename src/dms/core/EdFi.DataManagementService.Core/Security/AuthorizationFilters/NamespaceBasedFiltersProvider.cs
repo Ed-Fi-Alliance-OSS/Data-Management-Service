@@ -15,12 +15,19 @@ public class NamespaceBasedFiltersProvider : IAuthorizationFiltersProvider
 {
     private const string AuthorizationStrategyName = "NamespaceBased";
 
-    public AuthorizationStrategyEvaluator GetFilters(ApiClientDetails details)
+    public AuthorizationStrategyEvaluator GetFilters(ClientAuthorizations authorizations)
     {
         var filters = new List<AuthorizationFilter>();
-        foreach (var namespacePrefix in details.NamespacePrefixes)
+        foreach (var namespacePrefix in authorizations.NamespacePrefixes)
         {
-            filters.Add(new AuthorizationFilter("Namespace", namespacePrefix.Value));
+            filters.Add(
+                new AuthorizationFilter(
+                    "Namespace",
+                    namespacePrefix.Value,
+                    "Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: {claims}.",
+                    FilterComparison.StartsWith
+                )
+            );
         }
 
         return new AuthorizationStrategyEvaluator([.. filters], FilterOperator.Or);

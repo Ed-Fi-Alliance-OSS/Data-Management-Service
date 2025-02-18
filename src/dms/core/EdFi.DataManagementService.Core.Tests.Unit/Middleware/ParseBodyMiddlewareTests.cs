@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
@@ -35,7 +36,13 @@ public class ParseBodyMiddlewareTests
                 "ed-fi/schools",
                 Body: null,
                 QueryParameters: [],
-                new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                ClientAuthorizations: new ClientAuthorizations(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -75,7 +82,13 @@ public class ParseBodyMiddlewareTests
                 "ed-fi/schools",
                 Body: "",
                 QueryParameters: [],
-                new TraceId("traceId")
+                new TraceId("traceId"),
+                new ClientAuthorizations(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -115,7 +128,13 @@ public class ParseBodyMiddlewareTests
                 "ed-fi/schools",
                 Body: """{ "id":"value" "name":"firstname"}""",
                 QueryParameters: [],
-                new TraceId("traceId")
+                new TraceId("traceId"),
+                new ClientAuthorizations(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);

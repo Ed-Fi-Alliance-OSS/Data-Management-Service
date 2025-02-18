@@ -6,24 +6,21 @@
 using System.Diagnostics;
 using System.Net;
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
-using EdFi.DataManagementService.Core.Security.AuthorizationValidation;
 using EdFi.DataManagementService.Core.Security.Model;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
 /// <summary>
-/// Authorizes request data based on the client's authorization information.
+/// Authorizes requests resource and action based on the client's authorization information.
 /// </summary>
-internal class ResourceAuthorizationMiddleware(
-    IClaimSetCacheService _claimSetCacheService,
+internal class ResourceActionAuthorizationMiddleware(
     IAuthorizationStrategiesProvider _authorizationStrategiesProvider,
-    IAuthorizationServiceFactory _authorizationStrategyHandlerProvider,
+    IClaimSetCacheService _claimSetCacheService,
     ILogger _logger
 ) : IPipelineStep
 {
@@ -35,44 +32,21 @@ internal class ResourceAuthorizationMiddleware(
                 "Entering ResourceAuthorizationMiddleware - {TraceId}",
                 context.FrontendRequest.TraceId.Value
             );
-            ApiClientDetails? apiClientDetails = context.FrontendRequest.ApiClientDetails;
-            if (apiClientDetails == null)
-            {
-                _logger.LogDebug(
-                    "ResourceAuthorizationMiddleware: No ApiClientDetails - {TraceId}",
-                    context.FrontendRequest.TraceId.Value
-                );
-                context.FrontendResponse = new FrontendResponse(
-                    StatusCode: 401,
-                    Body: FailureResponse.ForUnauthorized(
-                        context.FrontendRequest.TraceId,
-                        "Unauthorized",
-                        "No Api Client Details"
-                    ),
-                    Headers: [],
-                    ContentType: "application/problem+json"
-                );
-                return;
-            }
 
-            Debug.Assert(
-                context.FrontendRequest.ApiClientDetails != null,
-                "context.FrontendRequest.ApiClientDetails != null"
-            );
-            string claimSetName = context.FrontendRequest.ApiClientDetails.ClaimSetName;
+            string claimSetName = context.FrontendRequest.ClientAuthorizations.ClaimSetName;
             _logger.LogInformation("Claim set name from token scope - {ClaimSetName}", claimSetName);
 
             _logger.LogInformation("Retrieving claim set list");
             IList<ClaimSet> claimsList = await _claimSetCacheService.GetClaimSets();
 
-            ClaimSet? claim = claimsList.SingleOrDefault(c =>
+            ClaimSet? claimSet = claimsList.SingleOrDefault(c =>
                 string.Equals(c.Name, claimSetName, StringComparison.InvariantCultureIgnoreCase)
             );
 
-            if (claim == null)
+            if (claimSet == null)
             {
                 _logger.LogInformation(
-                    "ResourceAuthorizationMiddleware: No ClaimSet matching Scope {Scope} - {TraceId}",
+                    "ResourceActionAuthorizationMiddleware: No ClaimSet matching Scope {Scope} - {TraceId}",
                     claimSetName,
                     context.FrontendRequest.TraceId.Value
                 );
@@ -82,17 +56,17 @@ internal class ResourceAuthorizationMiddleware(
 
             Debug.Assert(
                 context.PathComponents != null,
-                "ResourceAuthorizationMiddleware: There should be PathComponents"
+                "ResourceActionAuthorizationMiddleware: There should be PathComponents"
             );
 
-            if (claim.ResourceClaims.Count == 0)
+            if (claimSet.ResourceClaims.Count == 0)
             {
-                _logger.LogDebug("ResourceAuthorizationMiddleware: No ResourceClaims found");
+                _logger.LogDebug("ResourceActionAuthorizationMiddleware: No ResourceClaims found");
                 RespondAuthorizationError();
                 return;
             }
 
-            ResourceClaim? resourceClaim = claim.ResourceClaims.SingleOrDefault(r =>
+            ResourceClaim? resourceClaim = claimSet.ResourceClaims.SingleOrDefault(r =>
                 string.Equals(
                     r.Name,
                     context.PathComponents.EndpointName.Value,
@@ -103,13 +77,15 @@ internal class ResourceAuthorizationMiddleware(
             if (resourceClaim == null)
             {
                 _logger.LogDebug(
-                    "ResourceAuthorizationMiddleware: No ResourceClaim matching Endpoint {Endpoint} - {TraceId}",
+                    "ResourceActionAuthorizationMiddleware: No ResourceClaim matching Endpoint {Endpoint} - {TraceId}",
                     context.PathComponents.EndpointName.Value,
                     context.FrontendRequest.TraceId.Value
                 );
                 RespondAuthorizationError();
                 return;
             }
+
+            context.ResourceClaim = resourceClaim;
 
             List<ResourceClaimAction>? resourceActions = resourceClaim.Actions;
             if (resourceActions == null)
@@ -153,7 +129,7 @@ internal class ResourceAuthorizationMiddleware(
                 return;
             }
 
-            IList<string> resourceActionAuthStrategies =
+            IReadOnlyList<string> resourceActionAuthStrategies =
                 _authorizationStrategiesProvider.GetAuthorizationStrategies(resourceClaim, actionName);
 
             if (resourceActionAuthStrategies.Count == 0)
@@ -173,61 +149,8 @@ internal class ResourceAuthorizationMiddleware(
                 return;
             }
 
-            List<AuthorizationResult> authResultsAcrossAuthStrategies = [];
+            context.ResourceActionAuthStrategies = resourceActionAuthStrategies;
 
-            foreach (string authorizationStrategy in resourceActionAuthStrategies)
-            {
-                var authStrategyHandler =
-                    _authorizationStrategyHandlerProvider.GetByName<IAuthorizationValidator>(
-                        authorizationStrategy
-                    );
-                if (authStrategyHandler == null)
-                {
-                    context.FrontendResponse = new FrontendResponse(
-                        StatusCode: (int)HttpStatusCode.Forbidden,
-                        Body: FailureResponse.ForForbidden(
-                            traceId: context.FrontendRequest.TraceId,
-                            errors:
-                            [
-                                $"Could not find authorization strategy implementation for the following strategy: '{authorizationStrategy}'.",
-                            ]
-                        ),
-                        Headers: [],
-                        ContentType: "application/problem+json"
-                    );
-                    return;
-                }
-
-                AuthorizationResult authorizationResult = authStrategyHandler.ValidateAuthorization(
-                    context.DocumentSecurityElements,
-                    apiClientDetails
-                );
-                authResultsAcrossAuthStrategies.Add(authorizationResult);
-            }
-
-            if (!authResultsAcrossAuthStrategies.TrueForAll(x => x.IsAuthorized))
-            {
-                string[] errors = authResultsAcrossAuthStrategies
-                    .Where(x => !string.IsNullOrEmpty(x.ErrorMessage))
-                    .Select(x => x.ErrorMessage)
-                    .ToArray();
-                context.FrontendResponse = new FrontendResponse(
-                    StatusCode: (int)HttpStatusCode.Forbidden,
-                    Body: FailureResponse.ForForbidden(
-                        traceId: context.FrontendRequest.TraceId,
-                        errors: errors
-                    ),
-                    Headers: [],
-                    ContentType: "application/problem+json"
-                );
-                return;
-            }
-
-            // passes authorization
-            context.ClientAuthorizations = new(
-                apiClientDetails.EducationOrganizationIds,
-                apiClientDetails.NamespacePrefixes
-            );
             await next();
 
             void RespondAuthorizationError()

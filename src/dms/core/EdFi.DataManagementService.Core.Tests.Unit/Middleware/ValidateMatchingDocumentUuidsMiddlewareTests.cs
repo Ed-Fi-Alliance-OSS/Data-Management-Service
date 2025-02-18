@@ -94,7 +94,13 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     $"ed-fi/academicweeks/{id}",
                     Body: jsonData,
                     QueryParameters: [],
-                    new TraceId("traceId")
+                    TraceId: new TraceId("traceId"),
+                    ClientAuthorizations: new ClientAuthorizations(
+                        TokenId: "",
+                        ClaimSetName: "",
+                        EducationOrganizationIds: [],
+                        NamespacePrefixes: []
+                    )
                 );
                 _context = Context(frontEndRequest, RequestMethod.PUT);
                 _context.ParsedBody = JsonNode.Parse(jsonData)!;
@@ -143,7 +149,13 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     $"ed-fi/academicweeks/{differentId}",
                     Body: jsonData,
                     QueryParameters: [],
-                    new TraceId("traceId")
+                    TraceId: new TraceId("traceId"),
+                    ClientAuthorizations: new ClientAuthorizations(
+                        TokenId: "",
+                        ClaimSetName: "",
+                        EducationOrganizationIds: [],
+                        NamespacePrefixes: []
+                    )
                 );
                 _context = Context(frontEndRequest, RequestMethod.PUT);
                 _context.ParsedBody = JsonNode.Parse(jsonData)!;
@@ -200,7 +212,13 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     $"ed-fi/academicweeks/{id}",
                     Body: jsonData,
                     QueryParameters: [],
-                    new TraceId("traceId")
+                    TraceId: new TraceId("traceId"),
+                    ClientAuthorizations: new ClientAuthorizations(
+                        TokenId: "",
+                        ClaimSetName: "",
+                        EducationOrganizationIds: [],
+                        NamespacePrefixes: []
+                    )
                 );
                 _context = Context(frontEndRequest, RequestMethod.PUT);
                 _context.ParsedBody = JsonNode.Parse(jsonData)!;
@@ -257,7 +275,13 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     $"ed-fi/academicweeks/{id}",
                     Body: jsonData,
                     QueryParameters: [],
-                    new TraceId("traceId")
+                    TraceId: new TraceId("traceId"),
+                    ClientAuthorizations: new ClientAuthorizations(
+                        TokenId: "",
+                        ClaimSetName: "",
+                        EducationOrganizationIds: [],
+                        NamespacePrefixes: []
+                    )
                 );
                 _context = Context(frontEndRequest, RequestMethod.PUT);
                 _context.ParsedBody = JsonNode.Parse(jsonData)!;

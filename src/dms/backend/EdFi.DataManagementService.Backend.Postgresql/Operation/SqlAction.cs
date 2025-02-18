@@ -68,7 +68,7 @@ public class SqlAction() : ISqlAction
     )
     {
         await using NpgsqlCommand command = new(
-            $@"SELECT EdfiDoc, LastModifiedAt, LastModifiedTraceId  FROM dms.Document WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 AND ResourceName = $3 {SqlFor(LockOption.BlockUpdateDelete)};",
+            $@"SELECT EdfiDoc, SecurityElements, LastModifiedAt, LastModifiedTraceId  FROM dms.Document WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 AND ResourceName = $3 {SqlFor(LockOption.BlockUpdateDelete)};",
             connection,
             transaction
         )
@@ -94,6 +94,7 @@ public class SqlAction() : ISqlAction
 
         return new DocumentSummary(
             EdfiDoc: await reader.GetFieldValueAsync<JsonElement>(reader.GetOrdinal("EdfiDoc")),
+            SecurityElements: await reader.GetFieldValueAsync<JsonElement>(reader.GetOrdinal("SecurityElements")),
             LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt")),
             LastModifiedTraceId: reader.GetString(reader.GetOrdinal("LastModifiedTraceId"))
         );

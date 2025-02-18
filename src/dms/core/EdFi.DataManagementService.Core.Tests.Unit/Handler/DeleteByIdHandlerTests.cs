@@ -5,6 +5,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -28,6 +29,23 @@ public class DeleteByIdHandlerTests
         return new DeleteByIdHandler(documentStoreRepository, NullLogger.Instance, ResiliencePipeline.Empty);
     }
 
+    internal static ResourceSchema GetResourceSchema()
+    {
+        ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
+            .WithStartProject()
+            .WithStartResource("Assessment")
+            .WithNamespaceSecurityElements(["$.namespace"])
+            .WithStartDocumentPathsMapping()
+            .WithDocumentPathScalar("Namespace", "$.namespace")
+            .WithEndDocumentPathsMapping()
+            .WithEndResource()
+            .WithEndProject()
+            .ToApiSchemaDocument();
+
+        ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "assessments");
+        return resourceSchema;
+    }
+
     [TestFixture]
     public class Given_A_Repository_That_Returns_Success : DeleteByIdHandlerTests
     {
@@ -39,20 +57,21 @@ public class DeleteByIdHandlerTests
             }
         }
 
-        private readonly PipelineContext context = No.PipelineContext();
+        private readonly PipelineContext _context = No.PipelineContext();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep deleteByIdHandler = Handler(new Repository());
-            await deleteByIdHandler.Execute(context, NullNext);
+            _context.ResourceSchema = GetResourceSchema();
+            await deleteByIdHandler.Execute(_context, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(204);
-            context.FrontendResponse.Body.Should().BeNull();
+            _context.FrontendResponse.StatusCode.Should().Be(204);
+            _context.FrontendResponse.Body.Should().BeNull();
         }
     }
 
@@ -67,20 +86,21 @@ public class DeleteByIdHandlerTests
             }
         }
 
-        private readonly PipelineContext context = No.PipelineContext();
+        private readonly PipelineContext _context = No.PipelineContext();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep deleteByIdHandler = Handler(new Repository());
-            await deleteByIdHandler.Execute(context, NullNext);
+            _context.ResourceSchema = GetResourceSchema();
+            await deleteByIdHandler.Execute(_context, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(404);
-            context.FrontendResponse.Body.Should().BeNull();
+            _context.FrontendResponse.StatusCode.Should().Be(404);
+            _context.FrontendResponse.Body.Should().BeNull();
         }
     }
 
@@ -97,20 +117,21 @@ public class DeleteByIdHandlerTests
             }
         }
 
-        private readonly PipelineContext context = No.PipelineContext();
+        private readonly PipelineContext _context = No.PipelineContext();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep deleteByIdHandler = Handler(new Repository());
-            await deleteByIdHandler.Execute(context, NullNext);
+            _context.ResourceSchema = GetResourceSchema();
+            await deleteByIdHandler.Execute(_context, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(409);
-            context
+            _context.FrontendResponse.StatusCode.Should().Be(409);
+            _context
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
                 .Contain(string.Join(", ", Repository.ResponseBody));
@@ -128,26 +149,26 @@ public class DeleteByIdHandlerTests
             }
         }
 
-        private readonly PipelineContext context = No.PipelineContext();
+        private readonly PipelineContext _context = No.PipelineContext();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep deleteByIdHandler = Handler(new Repository());
-            await deleteByIdHandler.Execute(context, NullNext);
+            _context.ResourceSchema = GetResourceSchema();
+            await deleteByIdHandler.Execute(_context, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(409);
+            _context.FrontendResponse.StatusCode.Should().Be(409);
         }
     }
 
     [TestFixture]
     public class Given_A_Repository_That_Returns_Unknown_Failure : DeleteByIdHandlerTests
     {
-
         internal class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly string ResponseBody = "FailureMessage";
@@ -159,19 +180,20 @@ public class DeleteByIdHandlerTests
         }
 
         private static readonly string _traceId = "xyz";
-        private readonly PipelineContext context = No.PipelineContext(_traceId);
+        private readonly PipelineContext _context = No.PipelineContext(_traceId);
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep deleteByIdHandler = Handler(new Repository());
-            await deleteByIdHandler.Execute(context, NullNext);
+            _context.ResourceSchema = GetResourceSchema();
+            await deleteByIdHandler.Execute(_context, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(500);
+            _context.FrontendResponse.StatusCode.Should().Be(500);
 
             var expected = $$"""
 {
@@ -180,15 +202,15 @@ public class DeleteByIdHandlerTests
 }
 """;
 
-            context.FrontendResponse.Body.Should().NotBeNull();
+            _context.FrontendResponse.Body.Should().NotBeNull();
             JsonNode
-                .DeepEquals(context.FrontendResponse.Body, JsonNode.Parse(expected))
+                .DeepEquals(_context.FrontendResponse.Body, JsonNode.Parse(expected))
                 .Should()
                 .BeTrue(
                     $"""
 expected: {expected}
 
-actual: {context.FrontendResponse.Body}
+actual: {_context.FrontendResponse.Body}
 """
                 );
         }

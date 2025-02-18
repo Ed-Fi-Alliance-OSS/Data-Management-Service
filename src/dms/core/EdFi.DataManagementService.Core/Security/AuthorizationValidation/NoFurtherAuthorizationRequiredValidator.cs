@@ -17,7 +17,7 @@ public class NoFurtherAuthorizationRequiredValidator : IAuthorizationValidator
 
     public AuthorizationResult ValidateAuthorization(
         DocumentSecurityElements securityElements,
-        ApiClientDetails details
+        ClientAuthorizations authorizations
     )
     {
         return new AuthorizationResult(true);

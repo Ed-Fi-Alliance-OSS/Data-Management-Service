@@ -2,6 +2,7 @@
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
+
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.External.Backend;
@@ -22,14 +23,10 @@ public interface IDeleteRequest
     ResourceInfo ResourceInfo { get; }
 
     /// <summary>
-    /// The ClientAuthorizations for the requesting client
+    /// The backend should use this handler to determine whether
+    /// the client is authorized to delete the document
     /// </summary>
-    ClientAuthorizations ClientAuthorizations { get; }
-
-    /// <summary>
-    /// If true, validates there are no references to the document
-    /// </summary>
-    bool validateNoReferencesToDocument { get; }
+    IResourceAuthorizationHandler ResourceAuthorizationHandler { get; }
 
     /// <summary>
     /// The request TraceId

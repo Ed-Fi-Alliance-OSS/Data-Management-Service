@@ -5,20 +5,19 @@
 
 using System.Net;
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
-using EdFi.DataManagementService.Core.Security.AuthorizationFilters;
+using EdFi.DataManagementService.Core.Security.AuthorizationValidation;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
 /// <summary>
-/// Provides authorization filters
+/// Authorize the request bodies based on the client's authorization information.
 /// </summary>
-internal class ProvideAuthorizationFiltersMiddleware(
+internal class ResourceUpsertAuthorizationMiddleware(
     IAuthorizationServiceFactory _authorizationServiceFactory,
     ILogger _logger
 ) : IPipelineStep
@@ -28,18 +27,19 @@ internal class ProvideAuthorizationFiltersMiddleware(
         try
         {
             _logger.LogDebug(
-                "Entering ProvideAuthorizationFiltersMiddleware - {TraceId}",
+                "Entering ResourceAuthorizationMiddleware - {TraceId}",
                 context.FrontendRequest.TraceId.Value
             );
 
-            List<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators = [];
+            List<AuthorizationResult> authResultsAcrossAuthStrategies = [];
+
             foreach (string authorizationStrategy in context.ResourceActionAuthStrategies)
             {
-                var authFiltersProvider =
-                    _authorizationServiceFactory.GetByName<IAuthorizationFiltersProvider>(
+                var authStrategyHandler =
+                    _authorizationServiceFactory.GetByName<IAuthorizationValidator>(
                         authorizationStrategy
                     );
-                if (authFiltersProvider == null)
+                if (authStrategyHandler == null)
                 {
                     context.FrontendResponse = new FrontendResponse(
                         StatusCode: (int)HttpStatusCode.Forbidden,
@@ -47,7 +47,7 @@ internal class ProvideAuthorizationFiltersMiddleware(
                             traceId: context.FrontendRequest.TraceId,
                             errors:
                             [
-                                $"Could not find authorization filters implementation for the following strategy: '{authorizationStrategy}'.",
+                                $"Could not find authorization strategy implementation for the following strategy: '{authorizationStrategy}'.",
                             ]
                         ),
                         Headers: [],
@@ -56,10 +56,30 @@ internal class ProvideAuthorizationFiltersMiddleware(
                     return;
                 }
 
-                authorizationStrategyEvaluators.Add(authFiltersProvider.GetFilters(context.FrontendRequest.ClientAuthorizations));
+                AuthorizationResult authorizationResult = authStrategyHandler.ValidateAuthorization(
+                    context.DocumentSecurityElements,
+                    context.FrontendRequest.ClientAuthorizations
+                );
+                authResultsAcrossAuthStrategies.Add(authorizationResult);
             }
 
-            context.AuthorizationStrategyEvaluators = [.. authorizationStrategyEvaluators];
+            if (!authResultsAcrossAuthStrategies.TrueForAll(x => x.IsAuthorized))
+            {
+                string[] errors = authResultsAcrossAuthStrategies
+                    .Where(x => !string.IsNullOrEmpty(x.ErrorMessage))
+                    .Select(x => x.ErrorMessage)
+                    .ToArray();
+                context.FrontendResponse = new FrontendResponse(
+                    StatusCode: (int)HttpStatusCode.Forbidden,
+                    Body: FailureResponse.ForForbidden(
+                        traceId: context.FrontendRequest.TraceId,
+                        errors: errors
+                    ),
+                    Headers: [],
+                    ContentType: "application/problem+json"
+                );
+                return;
+            }
 
             await next();
         }

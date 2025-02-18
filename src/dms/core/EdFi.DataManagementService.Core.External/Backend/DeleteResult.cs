@@ -33,7 +33,7 @@ public abstract record DeleteResult
     /// <summary>
     /// A failure because the client is not authorized to delete the document
     /// </summary>
-    public record DeleteFailureNotAuthorized() : DeleteResult();
+    public record DeleteFailureNotAuthorized(string[] ErrorMessages) : DeleteResult();
 
     /// <summary>
     /// A failure of unknown category
