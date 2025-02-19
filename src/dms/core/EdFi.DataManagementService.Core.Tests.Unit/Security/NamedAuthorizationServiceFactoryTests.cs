@@ -28,6 +28,7 @@ public class NamedAuthorizationServiceFactoryTests
             services.AddTransient<NamedAuthorizationServiceFactory>();
             services.AddTransient<NoFurtherAuthorizationRequiredValidator>();
             services.AddTransient<NamespaceBasedValidator>();
+            services.AddTransient<RelationshipsWithEdOrgsOnlyValidator>();
 
             serviceProvider = services.BuildServiceProvider();
 
@@ -59,6 +60,21 @@ public class NamedAuthorizationServiceFactoryTests
             var authResult = handler!.ValidateAuthorization(
                 new DocumentSecurityElements(["uri://namespace/resource"], []),
                 new ClientAuthorizations("", "", [], [new NamespacePrefix("uri://namespace")])
+            );
+            authResult.Should().NotBeNull();
+            authResult.IsAuthorized.Should().BeTrue();
+        }
+
+        [Test]
+        public void Should_Return_RelationshipsWithEdOrgsOnlyValidator()
+        {
+            var handler =
+                handlerProvider!.GetByName<IAuthorizationValidator>("RelationshipsWithEdOrgsOnly")
+                as RelationshipsWithEdOrgsOnlyValidator;
+            handler.Should().NotBeNull();
+            var authResult = handler!.ValidateAuthorization(
+                new DocumentSecurityElements([], ["255901"]),
+                new ClientAuthorizations("", "", [new EducationOrganizationId("255901")], [])
             );
             authResult.Should().NotBeNull();
             authResult.IsAuthorized.Should().BeTrue();
