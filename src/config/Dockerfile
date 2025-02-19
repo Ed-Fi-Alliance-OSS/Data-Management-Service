@@ -13,8 +13,14 @@ COPY backend/EdFi.DmsConfigurationService.Backend.Keycloak/ backend/EdFi.DmsConf
 COPY backend/EdFi.DmsConfigurationService.Backend.Mssql/ backend/EdFi.DmsConfigurationService.Backend.Mssql/
 COPY backend/EdFi.DmsConfigurationService.Backend.Postgresql/ backend/EdFi.DmsConfigurationService.Backend.Postgresql/
 COPY datamodel/EdFi.DmsConfigurationService.DataModel/ datamodel/EdFi.DmsConfigurationService.DataModel/
+# Named context support https://github.com/hadolint/hadolint/issues/830
+# hadolint ignore=DL3022
 COPY --from=parentdir .editorconfig .
+# Named context support https://github.com/hadolint/hadolint/issues/830
+# hadolint ignore=DL3022
 COPY --from=parentdir Directory.Packages.props ./
+# Named context support https://github.com/hadolint/hadolint/issues/830
+# hadolint ignore=DL3022
 COPY --from=parentdir nuget.config .
 
 RUN dotnet restore frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/EdFi.DmsConfigurationService.Frontend.AspNetCore.csproj
