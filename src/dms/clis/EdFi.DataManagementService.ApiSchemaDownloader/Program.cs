@@ -17,7 +17,7 @@ ConfigureServices(serviceCollection);
 var serviceProvider = serviceCollection.BuildServiceProvider();
 
 var logger = serviceProvider.GetRequiredService<ILogger<Program>>();
-var downloader = serviceProvider.GetRequiredService<ApiSchemaDownloader>();
+var downloader = serviceProvider.GetRequiredService<IApiSchemaDownloader>();
 
 try
 {
@@ -56,7 +56,9 @@ try
             outputDir
         );
         Console.WriteLine($"Package downloaded to: {packagePath}");
-        logger.LogInformation("Package downloaded to: $packagePath");
+        logger.LogInformation("Package downloaded to: {PackagePath}", packagePath);
+
+
 
         // Ensure the output directory for API schema extraction exists
         Directory.CreateDirectory(options.ApiSchemaFolder);
@@ -64,7 +66,7 @@ try
         // Extract the API schema
         downloader.ExtractApiSchemaJsonFromAssembly(packageId, packagePath, options.ApiSchemaFolder);
         Console.WriteLine($"ApiSchema.json extracted to folder: {options.ApiSchemaFolder}");
-        logger.LogInformation("ApiSchema.json extracted to folder: $options.ApiSchemaFolder");
+        logger.LogInformation("ApiSchema.json extracted to folder: {ApiSchemaFolder}", options.ApiSchemaFolder);
     });
 
     return 0;
