@@ -44,7 +44,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Given("the claimSet {string} is authorized with namespacePrefixes {string}")]
         public async Task GivenTheClaimSetIsAuthorized(string claimSetName, string namespacePrefixes)
         {
-            await SetAuthorizationToken(namespacePrefixes, claimSetName);
+            await SetAuthorizationToken(namespacePrefixes, string.Empty, claimSetName);
         }
 
         [Given("the claimSet {string} is authorized with educationOrganizationIds {string}")]
