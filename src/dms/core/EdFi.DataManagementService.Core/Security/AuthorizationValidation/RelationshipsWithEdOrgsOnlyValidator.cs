@@ -17,10 +17,10 @@ public class RelationshipsWithEdOrgsOnlyValidator : IAuthorizationValidator
 
     public AuthorizationResult ValidateAuthorization(
         DocumentSecurityElements securityElements,
-        ApiClientDetails details
+        ClientAuthorizations authorizations
     )
     {
-        var edOrgIdsFromClaim = details.EducationOrganizationIds;
+        var edOrgIdsFromClaim = authorizations.EducationOrganizationIds;
         var edOrgsFromRequest = securityElements.EducationOrganization;
 
         if (edOrgsFromRequest.Length == 0)
