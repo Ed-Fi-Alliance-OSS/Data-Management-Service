@@ -119,6 +119,7 @@ public class NamedAuthorizationServiceFactoryTests
             services.AddTransient<NamedAuthorizationServiceFactory>();
             services.AddTransient<NoFurtherAuthorizationRequiredFiltersProvider>();
             services.AddTransient<NamespaceBasedFiltersProvider>();
+            services.AddTransient<RelationshipsWithEdOrgsOnlyFiltersProvider>();
 
             serviceProvider = services.BuildServiceProvider();
 
@@ -126,7 +127,7 @@ public class NamedAuthorizationServiceFactoryTests
         }
 
         [Test]
-        public void Should_Return_NoFurtherAuthorizationRequiredValidator()
+        public void Should_Return_NoFurtherAuthorizationRequiredFiltersProvider()
         {
             var handler =
                 handlerProvider!.GetByName<IAuthorizationFiltersProvider>("NoFurtherAuthorizationRequired")
@@ -138,7 +139,7 @@ public class NamedAuthorizationServiceFactoryTests
         }
 
         [Test]
-        public void Should_Return_NamespaceBasedValidator()
+        public void Should_Return_NamespaceBasedFiltersProvider()
         {
             var handler =
                 handlerProvider!.GetByName<IAuthorizationFiltersProvider>("NamespaceBased")
@@ -151,6 +152,22 @@ public class NamedAuthorizationServiceFactoryTests
             filters.Filters.Should().NotBeEmpty();
             filters.Filters[0].FilterPath.Should().Be("Namespace");
             filters.Filters[0].Value.Should().Be("uri://namespace");
+        }
+
+        [Test]
+        public void Should_Return_RelationshipsWithEdOrgsOnlyFiltersProvider()
+        {
+            var handler =
+                handlerProvider!.GetByName<IAuthorizationFiltersProvider>("RelationshipsWithEdOrgsOnly")
+                as RelationshipsWithEdOrgsOnlyFiltersProvider;
+            handler.Should().NotBeNull();
+            var filters = handler!.GetFilters(
+                new ClientAuthorizations("", "", [new EducationOrganizationId("255901")], [])
+            );
+            filters.Should().NotBeNull();
+            filters.Filters.Should().NotBeEmpty();
+            filters.Filters[0].FilterPath.Should().Be("EducationOrganization");
+            filters.Filters[0].Value.Should().Be("255901");
         }
     }
 
