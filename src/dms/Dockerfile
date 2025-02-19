@@ -15,8 +15,14 @@ COPY backend/EdFi.DataManagementService.Backend/ backend/EdFi.DataManagementServ
 COPY backend/EdFi.DataManagementService.Backend.Mssql/ backend/EdFi.DataManagementService.Backend.Mssql/
 COPY backend/EdFi.DataManagementService.Backend.Postgresql/ backend/EdFi.DataManagementService.Backend.Postgresql/
 COPY backend/EdFi.DataManagementService.Backend.OpenSearch/ backend/EdFi.DataManagementService.Backend.OpenSearch/
+# Named context support https://github.com/hadolint/hadolint/issues/830
+# hadolint ignore=DL3022
 COPY --from=parentdir .editorconfig .
+# Named context support https://github.com/hadolint/hadolint/issues/830
+# hadolint ignore=DL3022
 COPY --from=parentdir Directory.Packages.props ./
+# Named context support https://github.com/hadolint/hadolint/issues/830
+# hadolint ignore=DL3022
 COPY --from=parentdir nuget.config .
 
 RUN dotnet restore frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj && \
@@ -30,7 +36,7 @@ WORKDIR /source/backend/EdFi.DataManagementService.Backend.Installer
 RUN dotnet build -c Release --no-restore && \
     dotnet publish -c Release -o /app/Installer --no-restore --no-build
 
-FROM mcr.microsoft.com/dotnet/aspnet:8.0.8-alpine3.20-amd64@sha256:98fa594b91cda6cac28d2aae25567730db6f8857367fab7646bdda91bc784b5f AS runtimebase
+FROM mcr.microsoft.com/dotnet/aspnet:8.0.12-alpine3.21@sha256:accc7352721d44ef6246e91704f4efb1954f69912af2d2bd54d117fa09922a53 AS runtimebase
 
 # bash: used in startup script and debugging
 # postgresql: used to test for PostgreSQL readiness
