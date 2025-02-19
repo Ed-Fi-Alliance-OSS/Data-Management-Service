@@ -29,7 +29,7 @@ public class ProvideApiSchemaMiddlewareTests
         private readonly PipelineContext _context = No.PipelineContext();
         private static readonly JsonNode _apiSchemaRootNode =
             JsonNode.Parse(
-                "{\"projectNameMapping\":{}, \"projectSchema\": { \"ed-fi\": {\"abstractResources\":{},\"caseInsensitiveEndpointNameMapping\":{},\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{}} } }"
+                "{\"projectNameMapping\":{}, \"projectSchemas\": { \"ed-fi\": {\"abstractResources\":{},\"caseInsensitiveEndpointNameMapping\":{},\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{}} } }"
             ) ?? new JsonObject();
 
         public class Provider : IApiSchemaProvider

@@ -34,7 +34,7 @@ public class ApiSchemaValidationMiddlewareTests
         public class Provider : IApiSchemaProvider
         {
             private static readonly JsonNode _apiSchemaRootNode = JsonNode.Parse(
-                "{ \"projectSchema\": { \"ed-fi\": {\"abstractResources\":{},\"caseInsensitiveEndpointNameMapping\":{},\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{}} } }"
+                "{ \"projectSchemas\": { \"ed-fi\": {\"abstractResources\":{},\"caseInsensitiveEndpointNameMapping\":{},\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{}} } }"
             )!;
             public JsonNode CoreApiSchemaRootNode => _apiSchemaRootNode;
             public JsonNode[] ExtensionApiSchemaRootNodes => [];

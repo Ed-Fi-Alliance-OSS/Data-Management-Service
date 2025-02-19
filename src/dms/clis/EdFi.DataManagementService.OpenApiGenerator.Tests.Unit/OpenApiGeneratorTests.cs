@@ -68,7 +68,7 @@ public class OpenApiGeneratorTests
             // Assert
             Assert.That(
                 ex?.Message,
-                Is.EqualTo("Node at path '$.projectSchema['ed-fi'].coreOpenApiSpecification' not found")
+                Is.EqualTo("Node at path '$.projectSchemas['ed-fi'].coreOpenApiSpecification' not found")
             );
 
             // Cleanup

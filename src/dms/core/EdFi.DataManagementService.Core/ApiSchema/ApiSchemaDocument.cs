@@ -29,12 +29,12 @@ internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
     }
 
     /// <summary>
-    /// Finds the ProjectSchema that represents the given ProjectNamespace. Returns null if not found.
+    /// Finds the projectSchemas that represents the given ProjectNamespace. Returns null if not found.
     /// </summary>
     public JsonNode? FindProjectSchemaNode(ProjectNamespace projectNamespace)
     {
         return _apiSchemaRootNode.SelectNodeFromPath(
-            $"$.projectSchema[\"{projectNamespace.Value}\"]",
+            $"$.projectSchemas[\"{projectNamespace.Value}\"]",
             _logger
         );
     }
@@ -45,18 +45,18 @@ internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
     /// </summary>
     public JsonNode? FindResourceNode(string projectName, string resourceName)
     {
-        var projectSchemaNode = FindProjectSchemaNode(GetMappedProjectName(projectName));
+        var projectSchemasNode = FindProjectSchemaNode(GetMappedProjectName(projectName));
 
-        if (projectSchemaNode != null)
+        if (projectSchemasNode != null)
         {
-            var mappedResourceName = projectSchemaNode.SelectNodeFromPathAs<string>(
+            var mappedResourceName = projectSchemasNode.SelectNodeFromPathAs<string>(
                 $"$.resourceNameMapping[\"{resourceName}\"]",
                 _logger
             );
 
             if (mappedResourceName != null)
             {
-                var resourceNode = projectSchemaNode.SelectNodeFromPath(
+                var resourceNode = projectSchemasNode.SelectNodeFromPath(
                     $"$.resourceSchemas[\"{mappedResourceName}\"]",
                     _logger
                 );
@@ -69,15 +69,15 @@ internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
     }
 
     /// <summary>
-    /// Gets all ProjectSchema nodes in the document.
+    /// Gets all projectSchemas nodes in the document.
     /// </summary>
-    public JsonNode GetProjectSchemaNodes()
+    public JsonNode GetProjectSchemasNodes()
     {
-        JsonNode projectSchemaNode =
-            _apiSchemaRootNode["projectSchema"]
-            ?? throw new InvalidOperationException("Expected ProjectSchema node to exist.");
+        JsonNode projectSchemasNode =
+            _apiSchemaRootNode["projectSchemas"]
+            ?? throw new InvalidOperationException("Expected projectSchemas node to exist.");
 
-        return projectSchemaNode;
+        return projectSchemasNode;
     }
 
     /// <summary>
@@ -86,7 +86,7 @@ internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
     public JsonNode? FindCoreOpenApiSpecification()
     {
         bool isExtensionProject = _apiSchemaRootNode.SelectRequiredNodeFromPathAs<bool>(
-            "$.projectSchema['ed-fi'].isExtensionProject",
+            "$.projectSchemas['ed-fi'].isExtensionProject",
             _logger
         );
 
@@ -96,7 +96,7 @@ internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
         }
 
         return _apiSchemaRootNode.SelectRequiredNodeFromPath(
-            "$.projectSchema['ed-fi'].coreOpenApiSpecification",
+            "$.projectSchemas['ed-fi'].coreOpenApiSpecification",
             _logger
         );
     }
@@ -106,9 +106,9 @@ internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
     /// </summary>
     public JsonNode? FindOpenApiExtensionFragments()
     {
-        // DMS-497 will fix: TPDM is hardcoded until we remove projectSchema from ApiSchema.json - making one project per file
+        // DMS-497 will fix: TPDM is hardcoded until we remove projectSchemas from ApiSchema.json - making one project per file
         bool isExtensionProject = _apiSchemaRootNode.SelectRequiredNodeFromPathAs<bool>(
-            "$.projectSchema['tpdm'].isExtensionProject",
+            "$.projectSchemas['tpdm'].isExtensionProject",
             _logger
         );
 
@@ -119,7 +119,7 @@ internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
 
         // DMS-497 will fix: TPDM is hardcoded
         return _apiSchemaRootNode.SelectRequiredNodeFromPath(
-            "$.projectSchema['tpdm'].openApiExtensionFragments",
+            "$.projectSchemas['tpdm'].openApiExtensionFragments",
             _logger
         );
     }

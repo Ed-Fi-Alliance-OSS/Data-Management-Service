@@ -36,7 +36,7 @@ public class ApiSchemaValidatorTests
             response[0].FailureMessages.Count.Should().Be(1);
             response[0].FailureMessages[0].Should().Contain("Required properties");
             response[0].FailureMessages[0].Should().Contain("projectNameMapping");
-            response[0].FailureMessages[0].Should().Contain("projectSchema");
+            response[0].FailureMessages[0].Should().Contain("projectSchemas");
         }
     }
 
@@ -45,7 +45,7 @@ public class ApiSchemaValidatorTests
     {
         private readonly JsonNode _apiSchemaRootNode =
             JsonNode.Parse(
-                "{\"projectNameMapping\":{}, \"projectSchema\": { \"ed-fi\": {\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{}} } }"
+                "{\"projectNameMapping\":{}, \"projectSchemas\": { \"ed-fi\": {\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{}} } }"
             ) ?? new JsonObject();
 
         [Test]
@@ -68,7 +68,7 @@ public class ApiSchemaValidatorTests
     {
         private readonly JsonNode _apiSchemaRootNode =
             JsonNode.Parse(
-                "{\"projectNameMapping\":{}, \"projectSchema\": { \"ed-fi\":{\"caseInsensitiveEndpointNameMapping\":{}, \"abstractResources\":{\"educationOrg\":{ \"identityJsonPaths\": [\"educationOrganizationId\"]} },\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{}} } }"
+                "{\"projectNameMapping\":{}, \"projectSchemas\": { \"ed-fi\":{\"caseInsensitiveEndpointNameMapping\":{}, \"abstractResources\":{\"educationOrg\":{ \"identityJsonPaths\": [\"educationOrganizationId\"]} },\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{}} } }"
             ) ?? new JsonObject();
 
         [Test]
@@ -92,7 +92,7 @@ public class ApiSchemaValidatorTests
     {
         private readonly JsonNode _apiSchemaRootNode =
             JsonNode.Parse(
-                "{\"projectNameMapping\":{}, \"projectSchema\": { \"ed-fi\":{\"caseInsensitiveEndpointNameMapping\":{}, "
+                "{\"projectNameMapping\":{}, \"projectSchemas\": { \"ed-fi\":{\"caseInsensitiveEndpointNameMapping\":{}, "
                     + "\"abstractResources\":{ },\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\","
                     + "\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{\"Students\":{\"allowIdentityUpdates\":false, "
                     + "\"documentPathsMapping\":{}, \"identityJsonPaths\":[], \"isDescriptor\":false, \"jsonSchemaForInsert\":{}, \"resourceName\":\"Student\"}}} } }"
@@ -120,7 +120,7 @@ public class ApiSchemaValidatorTests
     {
         private readonly JsonNode _apiSchemaRootNode =
             JsonNode.Parse(
-                "{\"projectNameMapping\":{}, \"projectSchema\": { \"ed-fi\":{\"caseInsensitiveEndpointNameMapping\":{}, "
+                "{\"projectNameMapping\":{}, \"projectSchemas\": { \"ed-fi\":{\"caseInsensitiveEndpointNameMapping\":{}, "
                     + "\"abstractResources\":{ },\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\","
                     + "\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{\"Students\":{\"allowIdentityUpdates\":false, "
                     + "\"documentPathsMapping\":{\"begindate\":{}}, \"identityJsonPaths\":[],\"isSchoolYearEnumeration\":false,\"isSubclass\":false,\"equalityConstraints\":[],"
@@ -148,7 +148,7 @@ public class ApiSchemaValidatorTests
     {
         private readonly JsonNode _apiSchemaRootNode =
             JsonNode.Parse(
-                "{\"projectNameMapping\":{}, \"projectSchema\": { \"ed-fi\":{\"caseInsensitiveEndpointNameMapping\":{}, "
+                "{\"projectNameMapping\":{}, \"projectSchemas\": { \"ed-fi\":{\"caseInsensitiveEndpointNameMapping\":{}, "
                     + "\"abstractResources\":{ },\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\","
                     + "\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{\"Students\":{\"allowIdentityUpdates\":false, "
                     + "\"documentPathsMapping\":{\"begindate\":{\"isReference\":false }}, \"identityJsonPaths\":[],\"isSchoolYearEnumeration\":false,\"isSubclass\":false,\"equalityConstraints\":[],"

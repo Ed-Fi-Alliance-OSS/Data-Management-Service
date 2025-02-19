@@ -10,11 +10,11 @@
             },
             "additionalProperties": false
         },
-        "projectSchema": {
+        "projectSchemas": {
             "type": "object",
             "patternProperties": {
                 "^.*$": {
-                    "$ref": "#/definitions/ProjectSchema"
+                    "$ref": "#/definitions/projectSchemas"
                 }
             },
             "additionalProperties": false
@@ -22,7 +22,7 @@
     },
     "required": [
         "projectNameMapping",
-        "projectSchema"
+        "projectSchemas"
     ],
     "definitions": {
         "CoreOpenApiSpecification": {
@@ -67,7 +67,7 @@
             },
             "additionalProperties": false
         },
-        "ProjectSchema": {
+        "projectSchemas": {
             "type": "object",
             "properties": {
                 "abstractResources": {

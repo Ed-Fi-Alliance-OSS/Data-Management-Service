@@ -15,7 +15,7 @@ internal class DependencyCalculator(JsonNode _apiSchemaRootNode, ILogger _logger
         var apiSchemaDocument = new ApiSchemaDocument(_apiSchemaRootNode, _logger);
         var dependenciesJsonArray = new JsonArray();
 
-        JsonNode projectSchemaNode = apiSchemaDocument.GetProjectSchemaNodes();
+        JsonNode projectSchemaNode = apiSchemaDocument.GetProjectSchemasNodes();
 
         var resourceSchemas = projectSchemaNode["resourceSchemas"]
             ?.AsObject()

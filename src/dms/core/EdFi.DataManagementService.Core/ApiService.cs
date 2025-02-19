@@ -307,7 +307,7 @@ internal class ApiService(
 
         IList<IDataModelInfo> result = [];
 
-        JsonNode projectSchemaNode = apiSchemaDocument.GetProjectSchemaNodes();
+        JsonNode projectSchemaNode = apiSchemaDocument.GetProjectSchemasNodes();
         string projectName = projectSchemaNode?["projectName"]?.GetValue<string>() ?? string.Empty;
         string projectVersion = projectSchemaNode?["projectVersion"]?.GetValue<string>() ?? string.Empty;
         string description = projectSchemaNode?["description"]?.GetValue<string>() ?? string.Empty;

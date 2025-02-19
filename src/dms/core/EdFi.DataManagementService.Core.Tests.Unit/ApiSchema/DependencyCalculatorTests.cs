@@ -23,7 +23,7 @@ public class DependencyCalculatorTests
               "projectNameMapping": {
                 "Ed-Fi": "ed-fi"
               },
-              "projectSchema": {
+              "projectSchemas": {
                 "ed-fi": {
                   "resourceNameMapping": {
                     "AbsenceEventCategory": "absenceEventCategoryDescriptors"
@@ -86,7 +86,7 @@ public class DependencyCalculatorTests
                 "projectNameMapping": {
                   "Ed-Fi": "ed-fi"
                 },
-                "projectSchema": {
+                "projectSchemas": {
                   "ed-fi": {
                     "resourceNameMapping": {
                       "EducationOrganizationCategory": "educationOrganizationCategoryDescriptors",
@@ -214,7 +214,7 @@ public class DependencyCalculatorTests
                 "projectNameMapping": {
                   "Ed-Fi": "ed-fi"
                 },
-                "projectSchema": {
+                "projectSchemas": {
                   "ed-fi": {
                     "resourceNameMapping": {
                       "EducationOrganizationCategory": "educationOrganizationCategoryDescriptors",
@@ -351,7 +351,7 @@ public class DependencyCalculatorTests
     }
 
     [TestFixture]
-    public class Given_A_Sample_ApiSchema_Missing_ProjectSchema() : DependencyCalculatorTests
+    public class Given_A_Sample_ApiSchema_Missing_projectSchemas() : DependencyCalculatorTests
     {
         private readonly string _sampleSchema = """
             {
