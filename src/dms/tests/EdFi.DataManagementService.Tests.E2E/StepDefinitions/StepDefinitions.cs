@@ -38,22 +38,36 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Given("the SIS Vendor is authorized with namespacePrefixes {string}")]
         public async Task GivenTheSisVendorIsAuthorized(string namespacePrefixes)
         {
-            await SetAuthorizationToken(namespacePrefixes);
+            await SetAuthorizationToken(namespacePrefixes, string.Empty);
         }
 
         [Given("the claimSet {string} is authorized with namespacePrefixes {string}")]
-        public async Task GivenTheclaimSetIsAuthorized(string claimSetName, string namespacePrefixes)
+        public async Task GivenTheClaimSetIsAuthorized(string claimSetName, string namespacePrefixes)
         {
-            await SetAuthorizationToken(namespacePrefixes, claimSetName);
+            await SetAuthorizationToken(namespacePrefixes, string.Empty, claimSetName);
         }
 
-        private async Task SetAuthorizationToken(string namespacePrefixes, string claimSetName = "SIS-Vendor")
+        [Given("the claimSet {string} is authorized with educationOrganizationIds {string}")]
+        public async Task GivenTheClaimSetIsAuthorizedWithEdOrgIds(
+            string claimSetName,
+            string educationOrganizationIds
+        )
+        {
+            await SetAuthorizationToken("uri://ed-fi.org", educationOrganizationIds, claimSetName);
+        }
+
+        private async Task SetAuthorizationToken(
+            string namespacePrefixes,
+            string educationOrganizationIds,
+            string claimSetName = "SIS-Vendor"
+        )
         {
             await AuthorizationDataProvider.Create(
                 Guid.NewGuid().ToString(),
                 "C. M. Burns",
                 "cmb@example.com",
                 namespacePrefixes,
+                educationOrganizationIds,
                 SystemAdministrator.Token,
                 claimSetName
             );

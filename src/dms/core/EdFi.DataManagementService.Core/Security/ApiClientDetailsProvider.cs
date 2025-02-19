@@ -15,9 +15,12 @@ public interface IApiClientDetailsProvider
 
 public class ApiClientDetailsProvider() : IApiClientDetailsProvider
 {
-    public ClientAuthorizations RetrieveApiClientDetailsFromToken(string jwtTokenHashCode, IList<Claim> claims)
+    public ClientAuthorizations RetrieveApiClientDetailsFromToken(
+        string jwtTokenHashCode,
+        IList<Claim> claims
+    )
     {
-        string[] requiredClaimTypes = ["scope", "jti", "namespacePrefixes"];
+        string[] requiredClaimTypes = ["scope", "jti", "namespacePrefixes", "educationOrganizationIds"];
 
         var claimsDictionary = claims
             .Where(c => requiredClaimTypes.Contains(c.Type))
@@ -25,10 +28,11 @@ public class ApiClientDetailsProvider() : IApiClientDetailsProvider
         string claimSetName = claimsDictionary.GetValueOrDefault("scope", string.Empty);
         string tokenId = GetTokenId(claimsDictionary, jwtTokenHashCode);
         string[] namespacePrefixes = GetNamespacePrefixes(claimsDictionary);
+        string[] edOrgIds = GetEducationOrganizationIds(claimsDictionary);
         ClientAuthorizations clientAuthorizations = new(
             tokenId,
             claimSetName,
-            [],
+            edOrgIds.Select(x => new EducationOrganizationId(x)).ToList(),
             namespacePrefixes.Select(x => new NamespacePrefix(x)).ToList()
         );
         return clientAuthorizations;
@@ -43,5 +47,11 @@ public class ApiClientDetailsProvider() : IApiClientDetailsProvider
     {
         string namespacePrefixesValue = claims.GetValueOrDefault("namespacePrefixes", string.Empty);
         return namespacePrefixesValue.Split(',', StringSplitOptions.RemoveEmptyEntries);
+    }
+
+    private static string[] GetEducationOrganizationIds(Dictionary<string, string> claims)
+    {
+        string educationOrganizationIds = claims.GetValueOrDefault("educationOrganizationIds", string.Empty);
+        return educationOrganizationIds.Split(',', StringSplitOptions.RemoveEmptyEntries);
     }
 }

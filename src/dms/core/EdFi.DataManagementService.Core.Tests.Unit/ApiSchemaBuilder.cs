@@ -257,6 +257,27 @@ public class ApiSchemaBuilder
     }
 
     /// <summary>
+    /// Adds a EducationOrganizationSecurityElements section to a resource
+    /// </summary>
+    public ApiSchemaBuilder WithEducationOrganizationSecurityElements(string[] jsonPaths)
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentResourceNode["securityElements"]!["EducationOrganization"] = new JsonArray(
+            jsonPaths.Select(x => JsonValue.Create(x)).ToArray()
+        );
+
+        return this;
+    }
+
+    /// <summary>
     /// Define resource schema. Can only be done inside a project definition.
     /// Always end a resource definition when finished.
     ///

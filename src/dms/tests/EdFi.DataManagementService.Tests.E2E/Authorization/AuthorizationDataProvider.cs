@@ -25,6 +25,7 @@ public static class AuthorizationDataProvider
         string contactName,
         string contactEmailAddress,
         string namespacePrefixes,
+        string edOrgIds,
         string systemAdministratorToken,
         string claimSetName = "SIS-Vendor"
     )
@@ -62,19 +63,26 @@ public static class AuthorizationDataProvider
 
         int vendorId = JsonDocument.Parse(vendorBody).RootElement.GetProperty("id").GetInt32();
 
-        using StringContent applicationContent = new(
-            JsonSerializer.Serialize(
-                new
-                {
-                    vendorId,
-                    applicationName = "E2E",
-                    claimSetName,
-                }
-            ),
-            Encoding.UTF8,
-            "application/json"
+        long[] educationOrganizationIds = [];
+        if (!string.IsNullOrEmpty(edOrgIds))
+        {
+            educationOrganizationIds = edOrgIds
+                .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => long.Parse(s.Trim()))
+                .ToArray();
+        }
+
+        var requestJson = JsonSerializer.Serialize(
+            new
+            {
+                vendorId,
+                applicationName = "E2E",
+                claimSetName,
+                educationOrganizationIds,
+            }
         );
 
+        using StringContent applicationContent = new(requestJson, Encoding.UTF8, "application/json");
         using HttpResponseMessage applicationPostResponse = await _configurationServiceClient.PostAsync(
             "v2/applications",
             applicationContent

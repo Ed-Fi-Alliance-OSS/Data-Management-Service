@@ -17,7 +17,13 @@ internal static class SecurityHelper
     public static JsonElement ToJsonElement(this DocumentSecurityElements documentSecurityElements)
     {
         return JsonSerializer.Deserialize<JsonElement>(
-            new JsonObject { ["Namespace"] = new JsonArray([.. documentSecurityElements.Namespace]) }
+            new JsonObject
+            {
+                ["Namespace"] = new JsonArray([.. documentSecurityElements.Namespace]),
+                ["EducationOrganization"] = new JsonArray(
+                    [.. documentSecurityElements.EducationOrganization]
+                ),
+            }
         );
     }
 }

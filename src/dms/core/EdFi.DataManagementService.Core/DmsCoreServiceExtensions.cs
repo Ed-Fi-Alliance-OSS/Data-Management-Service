@@ -47,6 +47,7 @@ public static class DmsCoreServiceExtensions
             .AddSingleton<IAuthorizationServiceFactory, NamedAuthorizationServiceFactory>()
             .AddTransient<NoFurtherAuthorizationRequiredValidator>()
             .AddTransient<NamespaceBasedValidator>()
+            .AddTransient<RelationshipsWithEdOrgsOnlyValidator>()
             .AddTransient<NoFurtherAuthorizationRequiredFiltersProvider>()
             .AddTransient<NamespaceBasedFiltersProvider>()
             .AddResiliencePipeline("backendResiliencePipeline", backendResiliencePipeline);

@@ -13,10 +13,16 @@ public interface IClientRepository
         string role,
         string displayName,
         string scope,
-        string namespacePrefixes
+        string namespacePrefixes,
+        string educationOrganizationIds
     );
 
-    public Task<ClientUpdateResult> UpdateClientAsync(string clientUuid, string displayName, string scope);
+    public Task<ClientUpdateResult> UpdateClientAsync(
+        string clientUuid,
+        string displayName,
+        string scope,
+        string educationOrganizationIds
+    );
 
     public Task<ClientUpdateResult> UpdateClientNamespaceClaimAsync(
         string clientUuid,
