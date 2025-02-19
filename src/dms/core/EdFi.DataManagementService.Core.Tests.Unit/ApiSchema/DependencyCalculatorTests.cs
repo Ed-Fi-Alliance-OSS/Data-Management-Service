@@ -351,7 +351,7 @@ public class DependencyCalculatorTests
     }
 
     [TestFixture]
-    public class Given_A_Sample_ApiSchema_Missing_projectSchemas() : DependencyCalculatorTests
+    public class Given_A_Sample_ApiSchema_Missing_ProjectSchemas() : DependencyCalculatorTests
     {
         private readonly string _sampleSchema = """
             {

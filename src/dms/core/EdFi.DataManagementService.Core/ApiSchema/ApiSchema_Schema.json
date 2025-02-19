@@ -14,7 +14,7 @@
             "type": "object",
             "patternProperties": {
                 "^.*$": {
-                    "$ref": "#/definitions/projectSchemas"
+                    "$ref": "#/definitions/ProjectSchemas"
                 }
             },
             "additionalProperties": false
@@ -67,7 +67,7 @@
             },
             "additionalProperties": false
         },
-        "projectSchemas": {
+        "ProjectSchemas": {
             "type": "object",
             "properties": {
                 "abstractResources": {
