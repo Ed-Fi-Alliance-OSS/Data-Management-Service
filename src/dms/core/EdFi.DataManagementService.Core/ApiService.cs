@@ -306,14 +306,14 @@ internal class ApiService(
         ApiSchemaDocument apiSchemaDocument = new(_apiSchemaProvider.CoreApiSchemaRootNode, _logger);
 
         IList<IDataModelInfo> result = [];
-        foreach (JsonNode projectSchemaNode in apiSchemaDocument.GetAllProjectSchemaNodes())
-        {
-            string projectName = projectSchemaNode?["projectName"]?.GetValue<string>() ?? string.Empty;
-            string projectVersion = projectSchemaNode?["projectVersion"]?.GetValue<string>() ?? string.Empty;
-            string description = projectSchemaNode?["description"]?.GetValue<string>() ?? string.Empty;
 
-            result.Add(new DataModelInfo(projectName, projectVersion, description));
-        }
+        JsonNode projectSchemaNode = apiSchemaDocument.GetProjectSchemaNodes();
+        string projectName = projectSchemaNode?["projectName"]?.GetValue<string>() ?? string.Empty;
+        string projectVersion = projectSchemaNode?["projectVersion"]?.GetValue<string>() ?? string.Empty;
+        string description = projectSchemaNode?["description"]?.GetValue<string>() ?? string.Empty;
+
+        result.Add(new DataModelInfo(projectName, projectVersion, description));
+
         return result;
     }
 

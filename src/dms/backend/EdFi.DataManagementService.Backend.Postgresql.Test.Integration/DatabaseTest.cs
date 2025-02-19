@@ -30,7 +30,7 @@ public abstract class DatabaseTest : DatabaseTestBase
               "projectNameMapping": {
                 "ProjectName": "project-name"
               },
-              "projectSchemas": {
+              "projectSchema": {
                 "project-name": {
                   "resourceNameMapping": {
                     "CourseOffering": "courseOfferings",

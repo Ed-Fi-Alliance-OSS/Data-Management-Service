@@ -34,7 +34,7 @@ internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
     public JsonNode? FindProjectSchemaNode(ProjectNamespace projectNamespace)
     {
         return _apiSchemaRootNode.SelectNodeFromPath(
-            $"$.projectSchemas[\"{projectNamespace.Value}\"]",
+            $"$.projectSchema[\"{projectNamespace.Value}\"]",
             _logger
         );
     }
@@ -71,13 +71,13 @@ internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
     /// <summary>
     /// Gets all ProjectSchema nodes in the document.
     /// </summary>
-    public List<JsonNode> GetAllProjectSchemaNodes()
+    public JsonNode GetProjectSchemaNodes()
     {
-        JsonNode projectSchemasNode =
-            _apiSchemaRootNode["projectSchemas"]
-            ?? throw new InvalidOperationException("Expected ProjectSchemas node to exist.");
+        JsonNode projectSchemaNode =
+            _apiSchemaRootNode["projectSchema"]
+            ?? throw new InvalidOperationException("Expected ProjectSchema node to exist.");
 
-        return projectSchemasNode.SelectNodesFromPropertyValues();
+        return projectSchemaNode;
     }
 
     /// <summary>
@@ -86,7 +86,7 @@ internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
     public JsonNode? FindCoreOpenApiSpecification()
     {
         bool isExtensionProject = _apiSchemaRootNode.SelectRequiredNodeFromPathAs<bool>(
-            "$.projectSchemas['ed-fi'].isExtensionProject",
+            "$.projectSchema['ed-fi'].isExtensionProject",
             _logger
         );
 
@@ -96,7 +96,7 @@ internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
         }
 
         return _apiSchemaRootNode.SelectRequiredNodeFromPath(
-            "$.projectSchemas['ed-fi'].coreOpenApiSpecification",
+            "$.projectSchema['ed-fi'].coreOpenApiSpecification",
             _logger
         );
     }
@@ -106,9 +106,9 @@ internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
     /// </summary>
     public JsonNode? FindOpenApiExtensionFragments()
     {
-        // DMS-497 will fix: TPDM is hardcoded until we remove projectSchemas from ApiSchema.json - making one project per file
+        // DMS-497 will fix: TPDM is hardcoded until we remove projectSchema from ApiSchema.json - making one project per file
         bool isExtensionProject = _apiSchemaRootNode.SelectRequiredNodeFromPathAs<bool>(
-            "$.projectSchemas['tpdm'].isExtensionProject",
+            "$.projectSchema['tpdm'].isExtensionProject",
             _logger
         );
 
@@ -119,7 +119,7 @@ internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
 
         // DMS-497 will fix: TPDM is hardcoded
         return _apiSchemaRootNode.SelectRequiredNodeFromPath(
-            "$.projectSchemas['tpdm'].openApiExtensionFragments",
+            "$.projectSchema['tpdm'].openApiExtensionFragments",
             _logger
         );
     }

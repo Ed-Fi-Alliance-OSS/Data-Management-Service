@@ -35,7 +35,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\clis\EdFi.DataManagementService.ApiSchemaDownloader\EdFi.DataManagementService.ApiSchemaDownloader.csproj" />
+      <ProjectReference Include="..\EdFi.DataManagementService.ApiSchemaDownloader\EdFi.DataManagementService.ApiSchemaDownloader.csproj" />
     </ItemGroup>
 
 </Project>

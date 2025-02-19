@@ -34,7 +34,7 @@ public class ApiSchemaBuilder
         _apiSchemaRootNode = new JsonObject
         {
             ["projectNameMapping"] = new JsonObject(),
-            ["projectSchemas"] = new JsonObject(),
+            ["projectSchema"] = new JsonObject(),
         };
     }
 
@@ -95,7 +95,7 @@ public class ApiSchemaBuilder
         };
 
         _apiSchemaRootNode["projectNameMapping"]![projectName] = projectName.ToLower();
-        _apiSchemaRootNode["projectSchemas"]![projectName.ToLower()] = _currentProjectNode;
+        _apiSchemaRootNode["projectSchema"]![projectName.ToLower()] = _currentProjectNode;
         return this;
     }
 

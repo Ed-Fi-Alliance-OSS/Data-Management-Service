@@ -1,5 +1,5 @@
 {
-    "projectSchemas": {
+    "projectSchema": {
         "ed-fi": {
             "projectName": "Ed-Fi",
             "projectVersion": "5.0.0",
