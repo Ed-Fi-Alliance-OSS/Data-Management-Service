@@ -29,7 +29,7 @@ internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
     }
 
     /// <summary>
-    /// Finds the ProjectSchema that represents the given ProjectNamespace. Returns null if not found.
+    /// Finds the projectSchemas that represents the given ProjectNamespace. Returns null if not found.
     /// </summary>
     public JsonNode? FindProjectSchemaNode(ProjectNamespace projectNamespace)
     {
@@ -45,18 +45,18 @@ internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
     /// </summary>
     public JsonNode? FindResourceNode(string projectName, string resourceName)
     {
-        var projectSchemaNode = FindProjectSchemaNode(GetMappedProjectName(projectName));
+        var projectSchemasNode = FindProjectSchemaNode(GetMappedProjectName(projectName));
 
-        if (projectSchemaNode != null)
+        if (projectSchemasNode != null)
         {
-            var mappedResourceName = projectSchemaNode.SelectNodeFromPathAs<string>(
+            var mappedResourceName = projectSchemasNode.SelectNodeFromPathAs<string>(
                 $"$.resourceNameMapping[\"{resourceName}\"]",
                 _logger
             );
 
             if (mappedResourceName != null)
             {
-                var resourceNode = projectSchemaNode.SelectNodeFromPath(
+                var resourceNode = projectSchemasNode.SelectNodeFromPath(
                     $"$.resourceSchemas[\"{mappedResourceName}\"]",
                     _logger
                 );
@@ -69,15 +69,15 @@ internal class ApiSchemaDocument(JsonNode _apiSchemaRootNode, ILogger _logger)
     }
 
     /// <summary>
-    /// Gets all ProjectSchema nodes in the document.
+    /// Gets all projectSchemas nodes in the document.
     /// </summary>
-    public List<JsonNode> GetAllProjectSchemaNodes()
+    public JsonNode GetProjectSchemasNodes()
     {
         JsonNode projectSchemasNode =
             _apiSchemaRootNode["projectSchemas"]
-            ?? throw new InvalidOperationException("Expected ProjectSchemas node to exist.");
+            ?? throw new InvalidOperationException("Expected projectSchemas node to exist.");
 
-        return projectSchemasNode.SelectNodesFromPropertyValues();
+        return projectSchemasNode;
     }
 
     /// <summary>

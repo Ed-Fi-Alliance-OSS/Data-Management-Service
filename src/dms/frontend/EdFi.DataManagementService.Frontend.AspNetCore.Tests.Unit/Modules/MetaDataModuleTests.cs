@@ -12,6 +12,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 
@@ -203,6 +204,23 @@ public class MetadataModuleTests
                     collection.AddTransient((x) => claimSetCacheService);
                 }
             );
+
+            // Override configuration values for the test environment
+            builder.ConfigureAppConfiguration(
+                (context, config) =>
+                {
+                    var testConfig = new Dictionary<string, string>
+                    {
+                        {
+                            "AppSettings:ApiSchemaFolder",
+                            "$(ProjectDir)\\..\\..\\..\\..\\..\\..\\EdFi.DataStandard51.ApiSchema\\"
+                        },
+                    };
+
+                    // Use the null-forgiving operator here
+                    config.AddInMemoryCollection(testConfig!);
+                }
+            );
         });
         using var client = factory.CreateClient();
 
@@ -219,7 +237,7 @@ public class MetadataModuleTests
             ?[0]!["resource"]
             ?.GetValue<string>()
             .Should()
-            .Be("/ed-fi/absenceEventCategoryDescriptors");
+            .Be("/projectSchema/absenceEventCategoryDescriptors");
         jsonContent?[0]!["order"]?.GetValue<int>().Should().Be(1);
     }
 }
