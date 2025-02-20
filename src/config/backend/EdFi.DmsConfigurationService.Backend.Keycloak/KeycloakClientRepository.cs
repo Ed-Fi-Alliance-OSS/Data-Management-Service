@@ -38,6 +38,10 @@ public class KeycloakClientRepository(
     {
         try
         {
+            var protocolMappers = ConfigServiceRoleProtocolMapper();
+            protocolMappers.Add(NamespacePrefixProtocolMapper(namespacePrefixes));
+            protocolMappers.Add(EducationOrganizationProtocolMapper(educationOrganizationIds));
+
             Client client = new()
             {
                 ClientId = clientId,
@@ -46,7 +50,7 @@ public class KeycloakClientRepository(
                 Name = displayName,
                 ServiceAccountsEnabled = true,
                 DefaultClientScopes = [scope],
-                ProtocolMappers = ConfigServiceProtocolMapper(namespacePrefixes, educationOrganizationIds),
+                ProtocolMappers = protocolMappers,
             };
 
             // Read role from the realm
@@ -121,6 +125,9 @@ public class KeycloakClientRepository(
             {
                 // Delete the existing client
                 await _keycloakClient.DeleteClientAsync(_realm, clientUuid);
+
+                var protocolMappers = ConfigServiceRoleProtocolMapper();
+                protocolMappers.Add(NamespacePrefixProtocolMapper(namespacePrefixes));
                 Client newClient = new()
                 {
                     ClientId = client.ClientId,
@@ -129,7 +136,7 @@ public class KeycloakClientRepository(
                     Name = client.Name,
                     ServiceAccountsEnabled = true,
                     DefaultClientScopes = client.DefaultClientScopes,
-                    ProtocolMappers = ConfigServiceProtocolMapper(namespacePrefixes),
+                    ProtocolMappers = protocolMappers,
                 };
                 // Re-create the client
                 string? newClientId = await _keycloakClient.CreateClientAndRetrieveClientIdAsync(
@@ -338,10 +345,38 @@ public class KeycloakClientRepository(
         }
     }
 
-    private List<ClientProtocolMapper> ConfigServiceProtocolMapper(
-        string namespacePrefixes,
-        string educationOrgIds = ""
-    )
+    private ClientProtocolMapper NamespacePrefixProtocolMapper(string value)
+    {
+        return ProtocolMapper("Namespace Prefixes", "namespacePrefixes", value);
+    }
+
+    private ClientProtocolMapper EducationOrganizationProtocolMapper(string value)
+    {
+        return ProtocolMapper("Education Organization Ids", "educationOrganizationIds", value);
+    }
+
+    private ClientProtocolMapper ProtocolMapper(string name, string claimName, string value)
+    {
+        return new()
+        {
+            Name = name,
+            Protocol = "openid-connect",
+            ProtocolMapper = "oidc-hardcoded-claim-mapper",
+            Config = new Dictionary<string, string>
+            {
+                { "access.token.claim", "true" },
+                { "claim.name", claimName },
+                { "claim.value", value },
+                { "id.token.claim", "true" },
+                { "introspection.token.claim", "true" },
+                { "jsonType.label", "String" },
+                { "lightweight.claim", "false" },
+                { "userinfo.token.claim", "true" },
+            },
+        };
+    }
+
+    private List<ClientProtocolMapper> ConfigServiceRoleProtocolMapper()
     {
         List<ClientProtocolMapper> protocolMappers =
         [
@@ -362,53 +397,6 @@ public class KeycloakClientRepository(
                 },
             },
         ];
-
-        if (namespacePrefixes != string.Empty)
-        {
-            protocolMappers.Add(
-                new()
-                {
-                    Name = "Namespace Prefixes",
-                    Protocol = "openid-connect",
-                    ProtocolMapper = "oidc-hardcoded-claim-mapper",
-                    Config = new Dictionary<string, string>
-                    {
-                        { "access.token.claim", "true" },
-                        { "claim.name", "namespacePrefixes" },
-                        { "claim.value", namespacePrefixes },
-                        { "id.token.claim", "true" },
-                        { "introspection.token.claim", "true" },
-                        { "jsonType.label", "String" },
-                        { "lightweight.claim", "false" },
-                        { "userinfo.token.claim", "true" },
-                    },
-                }
-            );
-        }
-
-        if (!string.IsNullOrEmpty(educationOrgIds))
-        {
-            protocolMappers.Add(
-                new()
-                {
-                    Name = "Education Organization Ids",
-                    Protocol = "openid-connect",
-                    ProtocolMapper = "oidc-hardcoded-claim-mapper",
-                    Config = new Dictionary<string, string>
-                    {
-                        { "access.token.claim", "true" },
-                        { "claim.name", "educationOrganizationIds" },
-                        { "claim.value", educationOrgIds },
-                        { "id.token.claim", "true" },
-                        { "introspection.token.claim", "true" },
-                        { "jsonType.label", "String" },
-                        { "lightweight.claim", "false" },
-                        { "userinfo.token.claim", "true" },
-                    },
-                }
-            );
-        }
-
         return protocolMappers;
     }
 }
