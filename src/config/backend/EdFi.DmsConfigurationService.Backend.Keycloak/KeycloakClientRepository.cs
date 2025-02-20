@@ -121,32 +121,30 @@ public class KeycloakClientRepository(
         try
         {
             var client = await _keycloakClient.GetClientAsync(_realm, clientUuid);
-            if (client != null)
-            {
-                // Delete the existing client
-                await _keycloakClient.DeleteClientAsync(_realm, clientUuid);
 
-                var protocolMappers = ConfigServiceRoleProtocolMapper();
-                protocolMappers.Add(NamespacePrefixProtocolMapper(namespacePrefixes));
-                Client newClient = new()
-                {
-                    ClientId = client.ClientId,
-                    Enabled = true,
-                    Secret = client.Secret,
-                    Name = client.Name,
-                    ServiceAccountsEnabled = true,
-                    DefaultClientScopes = client.DefaultClientScopes,
-                    ProtocolMappers = protocolMappers,
-                };
-                // Re-create the client
-                string? newClientId = await _keycloakClient.CreateClientAndRetrieveClientIdAsync(
-                    _realm,
-                    newClient
-                );
-                if (!string.IsNullOrEmpty(newClientId))
-                {
-                    return new ClientUpdateResult.Success(Guid.Parse(newClientId));
-                }
+            // Delete the existing client
+            await _keycloakClient.DeleteClientAsync(_realm, clientUuid);
+
+            var protocolMappers = ConfigServiceRoleProtocolMapper();
+            protocolMappers.Add(NamespacePrefixProtocolMapper(namespacePrefixes));
+            Client newClient = new()
+            {
+                ClientId = client.ClientId,
+                Enabled = true,
+                Secret = client.Secret,
+                Name = client.Name,
+                ServiceAccountsEnabled = true,
+                DefaultClientScopes = client.DefaultClientScopes,
+                ProtocolMappers = protocolMappers,
+            };
+            // Re-create the client
+            string? newClientId = await _keycloakClient.CreateClientAndRetrieveClientIdAsync(
+                _realm,
+                newClient
+            );
+            if (!string.IsNullOrEmpty(newClientId))
+            {
+                return new ClientUpdateResult.Success(Guid.Parse(newClientId));
             }
 
             logger.LogError("Update client failure");
@@ -280,43 +278,40 @@ public class KeycloakClientRepository(
         try
         {
             var client = await _keycloakClient.GetClientAsync(_realm, clientUuid);
-            if (client != null)
+            await CheckAndCreateClientScopeAsync(scope);
+            var scopeExists = await ClientScopeExistsAsync(scope);
+            if (scopeExists)
             {
-                await CheckAndCreateClientScopeAsync(scope);
-                var scopeExists = await ClientScopeExistsAsync(scope);
-                if (scopeExists)
+                // Delete the existing client
+                await _keycloakClient.DeleteClientAsync(_realm, clientUuid);
+                CheckAndUpdateEducationOrganizationIds(client.ProtocolMappers.ToList());
+                Client newClient = new()
                 {
-                    // Delete the existing client
-                    await _keycloakClient.DeleteClientAsync(_realm, clientUuid);
-                    CheckAndUpdateEducationOrganizationIds(client.ProtocolMappers.ToList());
-                    Client newClient = new()
-                    {
-                        ClientId = client.ClientId,
-                        Enabled = true,
-                        Secret = client.Secret,
-                        Name = displayName,
-                        ServiceAccountsEnabled = true,
-                        DefaultClientScopes = [scope],
-                        ProtocolMappers = client.ProtocolMappers,
-                    };
-                    // Re-create the client
-                    string? newClientId = await _keycloakClient.CreateClientAndRetrieveClientIdAsync(
-                        _realm,
-                        newClient
-                    );
-                    if (!string.IsNullOrEmpty(newClientId))
-                    {
-                        return new ClientUpdateResult.Success(Guid.Parse(newClientId));
-                    }
-                }
-                else
+                    ClientId = client.ClientId,
+                    Enabled = true,
+                    Secret = client.Secret,
+                    Name = displayName,
+                    ServiceAccountsEnabled = true,
+                    DefaultClientScopes = [scope],
+                    ProtocolMappers = client.ProtocolMappers,
+                };
+                // Re-create the client
+                string? newClientId = await _keycloakClient.CreateClientAndRetrieveClientIdAsync(
+                    _realm,
+                    newClient
+                );
+                if (!string.IsNullOrEmpty(newClientId))
                 {
-                    var scopeNotFound = $"Scope {scope} not found";
-                    logger.LogError(message: scopeNotFound);
-                    return new ClientUpdateResult.FailureIdentityProvider(
-                        new IdentityProviderError(scopeNotFound)
-                    );
+                    return new ClientUpdateResult.Success(Guid.Parse(newClientId));
                 }
+            }
+            else
+            {
+                var scopeNotFound = $"Scope {scope} not found";
+                logger.LogError(message: scopeNotFound);
+                return new ClientUpdateResult.FailureIdentityProvider(
+                    new IdentityProviderError(scopeNotFound)
+                );
             }
 
             logger.LogError("Update client failure");
