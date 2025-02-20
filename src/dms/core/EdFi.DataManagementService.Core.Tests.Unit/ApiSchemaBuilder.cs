@@ -18,25 +18,17 @@ namespace EdFi.DataManagementService.Core.Tests.Unit;
 /// </summary>
 public class ApiSchemaBuilder
 {
-    private readonly JsonNode _apiSchemaRootNode;
-
-    public JsonNode RootNode => _apiSchemaRootNode;
-
     private JsonNode? _currentProjectNode = null;
+    private bool _isCoreProject = false;
+
+    private JsonNode? _coreProjectNode = null;
+    private readonly List<JsonNode> _extensionProjectNodes = [];
+
     private JsonNode? _currentResourceNode = null;
 
     private JsonNode? _currentDocumentPathsMappingNode = null;
 
     private JsonNode? _currentQueryFieldMappingNode = null;
-
-    public ApiSchemaBuilder()
-    {
-        _apiSchemaRootNode = new JsonObject
-        {
-            ["projectNameMapping"] = new JsonObject(),
-            ["projectSchemas"] = new JsonObject(),
-        };
-    }
 
     /// <summary>
     /// A naive decapitalizer and pluralizer, which should be adequate for tests
@@ -53,19 +45,39 @@ public class ApiSchemaBuilder
     }
 
     /// <summary>
-    /// Returns an ApiSchemaDocument for the current api schema state
+    /// Returns a project JsonNode wrapped with an ApiSchema root JsonNode.
     /// </summary>
-    internal ApiSchemaDocument ToApiSchemaDocument()
+    internal static JsonNode ToApiSchemaRootNode(JsonNode projectNode)
     {
-        return new ApiSchemaDocument(RootNode, NullLogger.Instance);
+        return new JsonObject { ["apiSchemaVersion"] = "1.0.0", ["projectSchema"] = projectNode };
     }
 
     /// <summary>
-    /// Returns the root JsonNode for the current api schema state
+    /// Returns an ApiSchemaDocuments for the current api schema state
     /// </summary>
-    internal JsonNode AsRootJsonNode()
+    internal ApiSchemaDocuments ToApiSchemaDocuments()
     {
-        return RootNode.DeepClone();
+        IEnumerable<JsonNode> extensionApiSchemaRootNodes = _extensionProjectNodes.Select(
+            ToApiSchemaRootNode
+        );
+        return new ApiSchemaDocuments(
+            ToApiSchemaRootNode(_coreProjectNode!),
+            [.. extensionApiSchemaRootNodes],
+            NullLogger.Instance
+        );
+    }
+
+    /// <summary>
+    /// Returns the first project as an ApiSchema root node
+    /// </summary>
+    internal JsonNode AsSingleApiSchemaRootNode()
+    {
+        if (_coreProjectNode != null)
+        {
+            return ToApiSchemaRootNode(_coreProjectNode);
+        }
+
+        return ToApiSchemaRootNode(_extensionProjectNodes.ToArray()[0]);
     }
 
     /// <summary>
@@ -82,20 +94,21 @@ public class ApiSchemaBuilder
             throw new InvalidOperationException();
         }
 
+        _isCoreProject = projectName.ToLower() == "ed-fi";
+
         _currentProjectNode = new JsonObject
         {
             ["abstractResources"] = new JsonObject(),
             ["caseInsensitiveEndpointNameMapping"] = new JsonObject(),
             ["description"] = $"{projectName} description",
-            ["isExtensionProject"] = projectName.ToLower() != "ed-fi",
+            ["isExtensionProject"] = !_isCoreProject,
             ["projectName"] = projectName,
             ["projectVersion"] = projectVersion,
+            ["projectEndpointName"] = projectName.ToLower(),
             ["resourceNameMapping"] = new JsonObject(),
             ["resourceSchemas"] = new JsonObject(),
         };
 
-        _apiSchemaRootNode["projectNameMapping"]![projectName] = projectName.ToLower();
-        _apiSchemaRootNode["projectSchemas"]![projectName.ToLower()] = _currentProjectNode;
         return this;
     }
 
@@ -625,6 +638,15 @@ public class ApiSchemaBuilder
         if (_currentProjectNode == null)
         {
             throw new InvalidOperationException();
+        }
+
+        if (_isCoreProject)
+        {
+            _coreProjectNode = _currentProjectNode;
+        }
+        else
+        {
+            _extensionProjectNodes.Add(_currentProjectNode);
         }
 
         _currentProjectNode = null;

@@ -20,22 +20,18 @@ public class DependencyCalculatorTests
     {
         private readonly string _sampleSchema = """
             {
-              "projectNameMapping": {
-                "Ed-Fi": "ed-fi"
-              },
-              "projectSchemas": {
-                "ed-fi": {
-                  "resourceNameMapping": {
+              "projectSchema": {
+                "projectEndpointName": "ed-fi",
+                "resourceNameMapping": {
                     "AbsenceEventCategory": "absenceEventCategoryDescriptors"
-                  },
-                  "resourceSchemas": {
+                },
+                "resourceSchemas": {
                     "absenceEventCategoryDescriptors": {
-                      "documentPathsMapping": {
-                      },
-                      "isSchoolYearEnumeration": false,
-                      "resourceName": "AbsenceEventCategoryDescriptor"
+                        "documentPathsMapping": {
+                        },
+                        "isSchoolYearEnumeration": false,
+                        "resourceName": "AbsenceEventCategoryDescriptor"
                     }
-                  }
                 }
               }
             }
@@ -83,11 +79,8 @@ public class DependencyCalculatorTests
     {
         private readonly string _sampleSchema = """
             {
-                "projectNameMapping": {
-                  "Ed-Fi": "ed-fi"
-                },
-                "projectSchemas": {
-                  "ed-fi": {
+                "projectSchema": {
+                    "projectEndpointName": "ed-fi",
                     "resourceNameMapping": {
                       "EducationOrganizationCategory": "educationOrganizationCategoryDescriptors",
                       "LocalEducationAgency": "localEducationAgencies",
@@ -148,7 +141,6 @@ public class DependencyCalculatorTests
                       "superclassProjectName": "Ed-Fi",
                       "superclassResourceName": "EducationOrganization"
                     }
-                  }
                 }
               }
             }
@@ -211,11 +203,8 @@ public class DependencyCalculatorTests
     {
         private readonly string _sampleSchema = """
             {
-                "projectNameMapping": {
-                  "Ed-Fi": "ed-fi"
-                },
-                "projectSchemas": {
-                  "ed-fi": {
+                "projectSchema": {
+                    "projectEndpointName": "ed-fi",
                     "resourceNameMapping": {
                       "EducationOrganizationCategory": "educationOrganizationCategoryDescriptors",
                       "LocalEducationAgency": "localEducationAgencies",
@@ -286,7 +275,6 @@ public class DependencyCalculatorTests
                     }
                   }
                 }
-              }
             }
             """;
 

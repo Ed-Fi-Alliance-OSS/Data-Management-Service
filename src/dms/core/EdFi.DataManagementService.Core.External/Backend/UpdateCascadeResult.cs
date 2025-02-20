@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.External.Backend;
 
@@ -34,11 +35,11 @@ public record UpdateCascadeResult(
     /// <summary>
     /// The project name of the referencing resource
     /// </summary>
-    string ProjectName,
+    ProjectName ProjectName,
     /// <summary>
     /// The name of the referencing resource
     /// </summary>
-    string ResourceName,
+    ResourceName ResourceName,
     /// <summary>
     /// Identifies whether this update was itself an identity update
     /// requiring a recursive cascading update

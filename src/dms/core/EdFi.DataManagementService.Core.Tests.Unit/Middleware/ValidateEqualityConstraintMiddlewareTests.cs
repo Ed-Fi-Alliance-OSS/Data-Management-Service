@@ -26,7 +26,7 @@ public class ValidateEqualityConstraintMiddlewareTests
         return () => Task.CompletedTask;
     }
 
-    internal static ApiSchemaDocument SchemaDocument()
+    internal static ApiSchemaDocuments SchemaDocuments()
     {
         var equalityConstraints = new EqualityConstraint[]
         {
@@ -42,7 +42,7 @@ public class ValidateEqualityConstraintMiddlewareTests
             .WithEqualityConstraints(equalityConstraints)
             .WithEndResource()
             .WithEndProject()
-            .ToApiSchemaDocument();
+            .ToApiSchemaDocuments();
     }
 
     internal static IPipelineStep Middleware()
@@ -53,22 +53,21 @@ public class ValidateEqualityConstraintMiddlewareTests
 
     internal PipelineContext Context(FrontendRequest frontendRequest, RequestMethod method)
     {
-        PipelineContext _context =
-            new(frontendRequest, method)
-            {
-                ApiSchemaDocument = SchemaDocument(),
-                PathComponents = new(
-                    ProjectNamespace: new("ed-fi"),
-                    EndpointName: new("bellSchedules"),
-                    DocumentUuid: No.DocumentUuid
-                ),
-            };
-        _context.ProjectSchema = new ProjectSchema(
-            _context.ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
-            NullLogger.Instance
-        );
+        PipelineContext _context = new(frontendRequest, method)
+        {
+            ApiSchemaDocuments = SchemaDocuments(),
+            PathComponents = new(
+                ProjectNamespace: new("ed-fi"),
+                EndpointName: new("bellSchedules"),
+                DocumentUuid: No.DocumentUuid
+            ),
+        };
+        _context.ProjectSchema = _context.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+            new("ed-fi")
+        )!;
         _context.ResourceSchema = new ResourceSchema(
-            _context.ProjectSchema.FindResourceSchemaNode(new("bellSchedules")) ?? new JsonObject()
+            _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("bellSchedules"))
+                ?? new JsonObject()
         );
         return _context;
     }

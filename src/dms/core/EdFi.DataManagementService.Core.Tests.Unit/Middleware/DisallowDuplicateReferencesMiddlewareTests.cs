@@ -20,7 +20,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [TestFixture]
 public class DisallowDuplicateReferencesMiddlewareTests
 {
-    internal static ApiSchemaDocument DocRefSchemaDocument()
+    internal static ApiSchemaDocuments DocRefSchemaDocuments()
     {
         var result = new ApiSchemaBuilder()
             .WithStartProject()
@@ -36,7 +36,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
             .WithEndDocumentPathsMapping()
             .WithEndResource()
             .WithEndProject()
-            .ToApiSchemaDocument();
+            .ToApiSchemaDocuments();
 
         return result;
     }
@@ -45,19 +45,19 @@ public class DisallowDuplicateReferencesMiddlewareTests
     {
         PipelineContext docRefContext = new(frontendRequest, method)
         {
-            ApiSchemaDocument = DocRefSchemaDocument(),
+            ApiSchemaDocuments = DocRefSchemaDocuments(),
             PathComponents = new(
                 ProjectNamespace: new("ed-fi"),
                 EndpointName: new("bellschedules"),
                 DocumentUuid: No.DocumentUuid
             ),
         };
-        docRefContext.ProjectSchema = new ProjectSchema(
-            docRefContext.ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
-            NullLogger.Instance
-        );
+        docRefContext.ProjectSchema = docRefContext.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+            new("ed-fi")
+        )!;
         docRefContext.ResourceSchema = new ResourceSchema(
-            docRefContext.ProjectSchema.FindResourceSchemaNode(new("bellschedules")) ?? new JsonObject()
+            docRefContext.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("bellschedules"))
+                ?? new JsonObject()
         );
 
         if (docRefContext.FrontendRequest.Body != null)
@@ -225,7 +225,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
     }
 
     // Descriptor Reference evaluation
-    internal static ApiSchemaDocument DescRefSchemaDocument()
+    internal static ApiSchemaDocuments DescRefSchemaDocuments()
     {
         var result = new ApiSchemaBuilder()
             .WithStartProject()
@@ -235,7 +235,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
             .WithEndDocumentPathsMapping()
             .WithEndResource()
             .WithEndProject()
-            .ToApiSchemaDocument();
+            .ToApiSchemaDocuments();
 
         return result;
     }
@@ -244,19 +244,19 @@ public class DisallowDuplicateReferencesMiddlewareTests
     {
         PipelineContext descRefContext = new(frontendRequest, method)
         {
-            ApiSchemaDocument = DescRefSchemaDocument(),
+            ApiSchemaDocuments = DescRefSchemaDocuments(),
             PathComponents = new(
                 ProjectNamespace: new("ed-fi"),
                 EndpointName: new("schools"),
                 DocumentUuid: No.DocumentUuid
             ),
         };
-        descRefContext.ProjectSchema = new ProjectSchema(
-            descRefContext.ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
-            NullLogger.Instance
-        );
+        descRefContext.ProjectSchema = descRefContext.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+            new("ed-fi")
+        )!;
         descRefContext.ResourceSchema = new ResourceSchema(
-            descRefContext.ProjectSchema.FindResourceSchemaNode(new("schools")) ?? new JsonObject()
+            descRefContext.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+                ?? new JsonObject()
         );
 
         if (descRefContext.FrontendRequest.Body != null)
@@ -272,7 +272,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
     }
 
     // Duplicate Descriptor Reference evaluation
-    internal static ApiSchemaDocument DuplicateDescRefSchemaDocument()
+    internal static ApiSchemaDocuments DuplicateDescRefSchemaDocuments()
     {
         var result = new ApiSchemaBuilder()
             .WithStartProject()
@@ -301,7 +301,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
             .WithEndDocumentPathsMapping()
             .WithEndResource()
             .WithEndProject()
-            .ToApiSchemaDocument();
+            .ToApiSchemaDocuments();
 
         return result;
     }
@@ -310,19 +310,19 @@ public class DisallowDuplicateReferencesMiddlewareTests
     {
         PipelineContext refContext = new(frontendRequest, method)
         {
-            ApiSchemaDocument = DuplicateDescRefSchemaDocument(),
+            ApiSchemaDocuments = DuplicateDescRefSchemaDocuments(),
             PathComponents = new(
                 ProjectNamespace: new("ed-fi"),
                 EndpointName: new("assessments"),
                 DocumentUuid: No.DocumentUuid
             ),
         };
-        refContext.ProjectSchema = new ProjectSchema(
-            refContext.ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
-            NullLogger.Instance
-        );
+        refContext.ProjectSchema = refContext.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+            new("ed-fi")
+        )!;
         refContext.ResourceSchema = new ResourceSchema(
-            refContext.ProjectSchema.FindResourceSchemaNode(new("assessments")) ?? new JsonObject()
+            refContext.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("assessments"))
+                ?? new JsonObject()
         );
 
         if (refContext.FrontendRequest.Body != null)

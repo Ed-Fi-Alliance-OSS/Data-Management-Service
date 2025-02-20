@@ -162,7 +162,7 @@ public class ValidateQueryMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
-        private static ApiSchemaDocument NewApiSchemaDocument()
+        private static ApiSchemaDocuments NewApiSchemaDocuments()
         {
             var result = new ApiSchemaBuilder()
                 .WithStartProject()
@@ -177,7 +177,7 @@ public class ValidateQueryMiddlewareTests
                 .WithEndQueryFieldMapping()
                 .WithEndResource()
                 .WithEndProject()
-                .ToApiSchemaDocument();
+                .ToApiSchemaDocuments();
 
             return result;
         }
@@ -189,19 +189,18 @@ public class ValidateQueryMiddlewareTests
         {
             PipelineContext docRefContext = new(frontendRequest, method)
             {
-                ApiSchemaDocument = NewApiSchemaDocument(),
+                ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
                     ProjectNamespace: new("ed-fi"),
                     EndpointName: new("academicWeeks"),
                     DocumentUuid: No.DocumentUuid
                 ),
             };
-            docRefContext.ProjectSchema = new ProjectSchema(
-                docRefContext.ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
-                NullLogger.Instance
-            );
+            docRefContext.ProjectSchema =
+                docRefContext.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
             docRefContext.ResourceSchema = new ResourceSchema(
-                docRefContext.ProjectSchema.FindResourceSchemaNode(new("academicWeeks")) ?? new JsonObject()
+                docRefContext.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicWeeks"))
+                    ?? new JsonObject()
             );
 
             if (docRefContext.FrontendRequest.Body != null)
@@ -313,7 +312,7 @@ public class ValidateQueryMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
-        private static ApiSchemaDocument NewApiSchemaDocument()
+        private static ApiSchemaDocuments NewApiSchemaDocuments()
         {
             var result = new ApiSchemaBuilder()
                 .WithStartProject()
@@ -328,7 +327,7 @@ public class ValidateQueryMiddlewareTests
                 .WithEndQueryFieldMapping()
                 .WithEndResource()
                 .WithEndProject()
-                .ToApiSchemaDocument();
+                .ToApiSchemaDocuments();
 
             return result;
         }
@@ -340,19 +339,18 @@ public class ValidateQueryMiddlewareTests
         {
             PipelineContext docRefContext = new(frontendRequest, method)
             {
-                ApiSchemaDocument = NewApiSchemaDocument(),
+                ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
                     ProjectNamespace: new("ed-fi"),
                     EndpointName: new("academicWeeks"),
                     DocumentUuid: No.DocumentUuid
                 ),
             };
-            docRefContext.ProjectSchema = new ProjectSchema(
-                docRefContext.ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
-                NullLogger.Instance
-            );
+            docRefContext.ProjectSchema =
+                docRefContext.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
             docRefContext.ResourceSchema = new ResourceSchema(
-                docRefContext.ProjectSchema.FindResourceSchemaNode(new("academicWeeks")) ?? new JsonObject()
+                docRefContext.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicWeeks"))
+                    ?? new JsonObject()
             );
 
             if (docRefContext.FrontendRequest.Body != null)
@@ -410,7 +408,7 @@ public class ValidateQueryMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
-        private static ApiSchemaDocument NewApiSchemaDocument()
+        private static ApiSchemaDocuments NewApiSchemaDocuments()
         {
             var result = new ApiSchemaBuilder()
                 .WithStartProject()
@@ -420,7 +418,7 @@ public class ValidateQueryMiddlewareTests
                 .WithEndQueryFieldMapping()
                 .WithEndResource()
                 .WithEndProject()
-                .ToApiSchemaDocument();
+                .ToApiSchemaDocuments();
 
             return result;
         }
@@ -432,19 +430,18 @@ public class ValidateQueryMiddlewareTests
         {
             PipelineContext docRefContext = new(frontendRequest, method)
             {
-                ApiSchemaDocument = NewApiSchemaDocument(),
+                ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
                     ProjectNamespace: new("ed-fi"),
                     EndpointName: new("academicWeeks"),
                     DocumentUuid: No.DocumentUuid
                 ),
             };
-            docRefContext.ProjectSchema = new ProjectSchema(
-                docRefContext.ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
-                NullLogger.Instance
-            );
+            docRefContext.ProjectSchema =
+                docRefContext.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
             docRefContext.ResourceSchema = new ResourceSchema(
-                docRefContext.ProjectSchema.FindResourceSchemaNode(new("academicWeeks")) ?? new JsonObject()
+                docRefContext.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicWeeks"))
+                    ?? new JsonObject()
             );
 
             if (docRefContext.FrontendRequest.Body != null)
@@ -495,7 +492,7 @@ public class ValidateQueryMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
-        private static ApiSchemaDocument NewApiSchemaDocument()
+        private static ApiSchemaDocuments NewApiSchemaDocuments()
         {
             var result = new ApiSchemaBuilder()
                 .WithStartProject()
@@ -505,7 +502,7 @@ public class ValidateQueryMiddlewareTests
                 .WithEndQueryFieldMapping()
                 .WithEndResource()
                 .WithEndProject()
-                .ToApiSchemaDocument();
+                .ToApiSchemaDocuments();
 
             return result;
         }
@@ -517,19 +514,18 @@ public class ValidateQueryMiddlewareTests
         {
             PipelineContext docRefContext = new(frontendRequest, method)
             {
-                ApiSchemaDocument = NewApiSchemaDocument(),
+                ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
                     ProjectNamespace: new("ed-fi"),
                     EndpointName: new("academicWeeks"),
                     DocumentUuid: No.DocumentUuid
                 ),
             };
-            docRefContext.ProjectSchema = new ProjectSchema(
-                docRefContext.ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
-                NullLogger.Instance
-            );
+            docRefContext.ProjectSchema =
+                docRefContext.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
             docRefContext.ResourceSchema = new ResourceSchema(
-                docRefContext.ProjectSchema.FindResourceSchemaNode(new("academicWeeks")) ?? new JsonObject()
+                docRefContext.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicWeeks"))
+                    ?? new JsonObject()
             );
 
             if (docRefContext.FrontendRequest.Body != null)

@@ -31,19 +31,16 @@ public class BuildResourceInfoMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
+            ApiSchemaDocuments apiSchemaDocument = new ApiSchemaBuilder()
                 .WithStartProject("Ed-Fi", "5.0.0")
                 .WithStartResource("School")
                 .WithEndResource()
                 .WithEndProject()
-                .ToApiSchemaDocument();
+                .ToApiSchemaDocuments();
 
-            context.ProjectSchema = new ProjectSchema(
-                apiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
-                NullLogger.Instance
-            );
+            context.ProjectSchema = apiSchemaDocument.FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
             context.ResourceSchema = new ResourceSchema(
-                context.ProjectSchema.FindResourceSchemaNode(new("schools")) ?? new JsonObject()
+                context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools")) ?? new JsonObject()
             );
 
             await BuildMiddleware([]).Execute(context, NullNext);
@@ -61,26 +58,24 @@ public class BuildResourceInfoMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_Pipeline_Context_Has_Project_And_Resource_Schemas_And_Overrides_Allow_Identity_Updates : BuildResourceInfoMiddlewareTests
+    public class Given_Pipeline_Context_Has_Project_And_Resource_Schemas_And_Overrides_Allow_Identity_Updates
+        : BuildResourceInfoMiddlewareTests
     {
         private readonly PipelineContext context = No.PipelineContext();
 
         [SetUp]
         public async Task Setup()
         {
-            ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
+            ApiSchemaDocuments apiSchemaDocument = new ApiSchemaBuilder()
                 .WithStartProject("Ed-Fi", "5.0.0")
                 .WithStartResource("School")
                 .WithEndResource()
                 .WithEndProject()
-                .ToApiSchemaDocument();
+                .ToApiSchemaDocuments();
 
-            context.ProjectSchema = new ProjectSchema(
-                apiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
-                NullLogger.Instance
-            );
+            context.ProjectSchema = apiSchemaDocument.FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
             context.ResourceSchema = new ResourceSchema(
-                context.ProjectSchema.FindResourceSchemaNode(new("schools")) ?? new JsonObject()
+                context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools")) ?? new JsonObject()
             );
 
             await BuildMiddleware(["School"]).Execute(context, NullNext);

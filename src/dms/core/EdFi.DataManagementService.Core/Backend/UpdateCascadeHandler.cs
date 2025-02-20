@@ -7,72 +7,95 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
-using EdFi.DataManagementService.Core.ApiSchema.Extensions;
+using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 using Json.More;
 using Json.Path;
 using Microsoft.Extensions.Logging;
+using JsonPath = Json.Path.JsonPath;
 
 namespace EdFi.DataManagementService.Core.Backend;
 
 public class UpdateCascadeHandler(IApiSchemaProvider _apiSchemaProvider, ILogger _logger)
     : IUpdateCascadeHandler
 {
+    private static JsonNode? FindResourceNode(
+        ApiSchemaDocuments apiSchemaDocuments,
+        ProjectName projectName,
+        ResourceName resourceName
+    )
+    {
+        ProjectSchema? projectSchema = apiSchemaDocuments.FindProjectSchemaForProjectName(projectName);
+        if (projectSchema == null)
+        {
+            return null;
+        }
+
+        return projectSchema.FindResourceSchemaNodeByResourceName(resourceName);
+    }
+
     public UpdateCascadeResult Cascade(
         JsonElement originalEdFiDoc,
-        string originalDocumentProjectName,
-        string originalDocumentResourceName,
+        ProjectName originalDocumentProjectName,
+        ResourceName originalDocumentResourceName,
         JsonNode modifiedEdFiDoc,
         JsonNode referencingEdFiDoc,
         long referencingDocumentId,
         short referencingDocumentPartitionKey,
         Guid referencingDocumentUuid,
-        string referencingProjectName,
-        string referencingResourceName
+        ProjectName referencingProjectName,
+        ResourceName referencingResourceName
     )
     {
         var isIdentityUpdate = false;
         JsonNode returnEdFiDoc = referencingEdFiDoc.DeepClone();
 
-        var apiSchemaDocument = new ApiSchemaDocument(_apiSchemaProvider.CoreApiSchemaRootNode, _logger);
+        ApiSchemaDocuments apiSchemaDocuments = new(
+            _apiSchemaProvider.CoreApiSchemaRootNode,
+            _apiSchemaProvider.ExtensionApiSchemaRootNodes,
+            _logger
+        );
 
-        var originalResourceNode =
-            apiSchemaDocument.FindResourceNode(originalDocumentProjectName, originalDocumentResourceName)
+        JsonNode originalResourceNode =
+            FindResourceNode(apiSchemaDocuments, originalDocumentProjectName, originalDocumentResourceName)
             ?? throw new InvalidOperationException(
-                $"ResourceSchema not found for {originalDocumentProjectName}.{originalDocumentResourceName}"
+                $"ResourceSchema not found for {originalDocumentProjectName.Value}.{originalDocumentResourceName.Value}"
             );
 
         var originalIdentityJsonPaths = (
             originalResourceNode.SelectNodeFromPath("$.identityJsonPaths", _logger)
             ?? throw new InvalidOperationException(
-                $"{originalDocumentResourceName} identityJsonPaths not found"
+                $"{originalDocumentResourceName.Value} identityJsonPaths not found"
             )
         ).AsArray();
 
-        var referencingResourceNode =
-            apiSchemaDocument.FindResourceNode(referencingProjectName, referencingResourceName)
+        JsonNode referencingResourceNode =
+            FindResourceNode(apiSchemaDocuments, referencingProjectName, referencingResourceName)
             ?? throw new InvalidOperationException(
-                $"ResourceSchema not found for {referencingProjectName}.{referencingResourceName}"
+                $"ResourceSchema not found for {referencingProjectName.Value}.{referencingResourceName.Value}"
             );
 
-        var referencingIdentityJsonPaths = (
+        JsonArray referencingIdentityJsonPaths = (
             referencingResourceNode.SelectNodeFromPath("$.identityJsonPaths", _logger)
-            ?? throw new InvalidOperationException($"{referencingResourceName} identityJsonPaths not found")
+            ?? throw new InvalidOperationException(
+                $"{referencingResourceName.Value} identityJsonPaths not found"
+            )
         ).AsArray();
 
-        var referencingDocumentPathsMapping =
+        JsonNode referencingDocumentPathsMapping =
             referencingResourceNode.SelectNodeFromPath(
-                $"$.documentPathsMapping[\"{originalDocumentResourceName}\"]",
+                $"$.documentPathsMapping[\"{originalDocumentResourceName.Value}\"]",
                 _logger
             )
             ?? throw new InvalidOperationException(
-                $"{referencingResourceName} documentPathsMapping not found"
+                $"{referencingResourceName.Value} documentPathsMapping not found"
             );
 
-        var referencingReferenceJsonPaths = (
+        JsonArray referencingReferenceJsonPaths = (
             referencingDocumentPathsMapping.SelectNodeFromPath("$.referenceJsonPaths", _logger)
             ?? throw new InvalidOperationException(
-                $"{referencingResourceName} {originalDocumentResourceName} referenceJsonPaths not found"
+                $"{referencingResourceName.Value} {originalDocumentResourceName.Value} referenceJsonPaths not found"
             )
         ).AsArray();
 
@@ -80,7 +103,7 @@ public class UpdateCascadeHandler(IApiSchemaProvider _apiSchemaProvider, ILogger
             .Select(o => o?.GetValue<string>())
             .Any(o => referencingIdentityJsonPaths.Select(a => a?.GetValue<string>()).Contains(o));
 
-        var isList = referencingReferenceJsonPaths.Any(x =>
+        bool isList = referencingReferenceJsonPaths.Any(x =>
             x != null && x.SelectNodeFromPathAs<string>("$.referenceJsonPath", _logger)!.Contains("[*]")
         );
 
@@ -95,27 +118,27 @@ public class UpdateCascadeHandler(IApiSchemaProvider _apiSchemaProvider, ILogger
             var firstSegment = "";
 
             foreach (
-                var originalIdentityJsonPath in originalIdentityJsonPaths
+                JsonPath originalIdentityJsonPath in originalIdentityJsonPaths
                     .Where(x => x != null)
                     .Select(x => JsonPath.Parse(x!.GetValue<string>()))
             )
             {
-                var referenceJsonPath =
+                JsonNode referenceJsonPath =
                     referencingReferenceJsonPaths.Single(a =>
                         a != null
                         && a.SelectNodeFromPathAs<string>("$.identityJsonPath", _logger)
                             == originalIdentityJsonPath.ToString()
                     )
                     ?? throw new InvalidOperationException(
-                        $"Unexpected null finding {referencingResourceName}.documentPathsMapping.{originalDocumentResourceName}.identityJsonPath = {originalIdentityJsonPath}"
+                        $"Unexpected null finding {referencingResourceName.Value}.documentPathsMapping.{originalDocumentResourceName.Value}.identityJsonPath = {originalIdentityJsonPath}"
                     );
 
-                var referenceJsonPathString =
+                string referenceJsonPathString =
                     referenceJsonPath.SelectNodeFromPathAs<string>("$.referenceJsonPath", _logger)
                     ?? string.Empty;
 
                 // split at the array marker
-                var split = referenceJsonPathString.Split("[*]");
+                string[] split = referenceJsonPathString.Split("[*]");
                 if (firstSegment == string.Empty)
                 {
                     firstSegment = split[0];
@@ -146,8 +169,8 @@ public class UpdateCascadeHandler(IApiSchemaProvider _apiSchemaProvider, ILogger
             var filterExpression = $"{firstSegment}[?({string.Join(" && ", filters)})]";
 
             // Evaluate
-            var filterPath = JsonPath.Parse(filterExpression);
-            var pathResult = filterPath.Evaluate(returnEdFiDoc);
+            JsonPath? filterPath = JsonPath.Parse(filterExpression);
+            PathResult pathResult = filterPath.Evaluate(returnEdFiDoc);
             // should have at least one match
             if (pathResult == null || pathResult.Matches.Count == 0)
             {
@@ -169,7 +192,7 @@ public class UpdateCascadeHandler(IApiSchemaProvider _apiSchemaProvider, ILogger
 
                 // now do the update
                 foreach (
-                    var originalIdentityJsonPath in originalIdentityJsonPaths
+                    JsonPath originalIdentityJsonPath in originalIdentityJsonPaths
                         .Where(x => x != null)
                         .Select(x => JsonPath.Parse(x!.GetValue<string>()))
                 )
@@ -187,7 +210,7 @@ public class UpdateCascadeHandler(IApiSchemaProvider _apiSchemaProvider, ILogger
         else
         {
             foreach (
-                var originalIdentityJsonPath in originalIdentityJsonPaths
+                JsonPath originalIdentityJsonPath in originalIdentityJsonPaths
                     .Where(x => x != null)
                     .Select(x => JsonPath.Parse(x!.GetValue<string>()))
             )
@@ -230,7 +253,7 @@ public class UpdateCascadeHandler(IApiSchemaProvider _apiSchemaProvider, ILogger
         string? listLocation = null
     )
     {
-        var referenceJsonPath =
+        JsonNode referenceJsonPath =
             referencingReferenceJsonPaths.Single(a =>
                 a != null
                 && a.SelectNodeFromPathAs<string>("$.identityJsonPath", _logger)
@@ -246,7 +269,7 @@ public class UpdateCascadeHandler(IApiSchemaProvider _apiSchemaProvider, ILogger
         if (!string.IsNullOrEmpty(listLocation))
         {
             // list location will be the path to a specific array element. eg $['classPeriods'][2]
-            var split = referenceJsonPathString.Split("[*]");
+            string[] split = referenceJsonPathString.Split("[*]");
             // eg $['classPeriods'][2].classPeriodReference.classPeriodName
             referenceJsonPathString = $"{listLocation}{split[1]}";
         }

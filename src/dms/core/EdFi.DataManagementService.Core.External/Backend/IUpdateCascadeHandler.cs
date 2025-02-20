@@ -5,6 +5,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.External.Backend;
 
@@ -26,11 +27,11 @@ public interface IUpdateCascadeHandler
         /// <summary>
         /// The project name of the referenced resource
         /// </summary>
-        string originalDocumentProjectName,
+        ProjectName originalDocumentProjectName,
         /// <summary>
         /// The name of the referenced resource
         /// </summary>
-        string originalDocumentResourceName,
+        ResourceName originalDocumentResourceName,
         /// <summary>
         /// The modified edfi doc
         /// </summary>
@@ -54,10 +55,10 @@ public interface IUpdateCascadeHandler
         /// <summary>
         /// The project name of the referencing resource
         /// </summary>
-        string referencingProjectName,
+        ProjectName referencingProjectName,
         /// <summary>
         /// The resource name of the referencing resource
         /// </summary>
-        string referencingResourceName
+        ResourceName referencingResourceName
     );
 }

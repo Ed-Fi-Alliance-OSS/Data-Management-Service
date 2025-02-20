@@ -33,7 +33,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("Assessment")
                 .WithNamespaceSecurityElements(["$.namespace"])
@@ -43,9 +43,9 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                 .WithEndDocumentPathsMapping()
                 .WithEndResource()
                 .WithEndProject()
-                .ToApiSchemaDocument();
+                .ToApiSchemaDocuments();
 
-            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "assessments");
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "assessments");
 
             string body = """{"assessmentIdentifier": "123", "namespace": "abc"}""";
 

@@ -6,7 +6,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
-using EdFi.DataManagementService.Core.ApiSchema.Extensions;
+using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
@@ -26,7 +26,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
             return () => Task.CompletedTask;
         }
 
-        internal static ApiSchemaDocument SchemaDocument()
+        internal static ApiSchemaDocuments SchemaDocuments()
         {
             var builder = new JsonSchemaBuilder();
             builder.Title("Ed-Fi.School");
@@ -66,7 +66,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 .WithNumericJsonPaths(new[] { "$.schoolId" })
                 .WithEndResource()
                 .WithEndProject()
-                .ToApiSchemaDocument();
+                .ToApiSchemaDocuments();
         }
 
         internal static IPipelineStep Middleware()
@@ -78,19 +78,19 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         {
             PipelineContext _context = new(frontendRequest, method)
             {
-                ApiSchemaDocument = SchemaDocument(),
+                ApiSchemaDocuments = SchemaDocuments(),
                 PathComponents = new(
                     ProjectNamespace: new("ed-fi"),
                     EndpointName: new("schools"),
                     DocumentUuid: No.DocumentUuid
                 ),
             };
-            _context.ProjectSchema = new ProjectSchema(
-                _context.ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
-                NullLogger.Instance
-            );
+            _context.ProjectSchema = _context.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+                new("ed-fi")
+            )!;
             _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNode(new("schools")) ?? new JsonObject()
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+                    ?? new JsonObject()
             );
 
             if (_context.FrontendRequest.Body != null)
