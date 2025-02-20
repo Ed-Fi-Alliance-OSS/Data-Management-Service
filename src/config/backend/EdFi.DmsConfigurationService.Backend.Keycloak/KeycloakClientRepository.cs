@@ -32,11 +32,16 @@ public class KeycloakClientRepository(
         string role,
         string displayName,
         string scope,
-        string namespacePrefixes
+        string namespacePrefixes,
+        string educationOrganizationIds
     )
     {
         try
         {
+            var protocolMappers = ConfigServiceRoleProtocolMapper();
+            protocolMappers.Add(NamespacePrefixProtocolMapper(namespacePrefixes));
+            protocolMappers.Add(EducationOrganizationProtocolMapper(educationOrganizationIds));
+
             Client client = new()
             {
                 ClientId = clientId,
@@ -45,7 +50,7 @@ public class KeycloakClientRepository(
                 Name = displayName,
                 ServiceAccountsEnabled = true,
                 DefaultClientScopes = [scope],
-                ProtocolMappers = ConfigServiceProtocolMapper(namespacePrefixes),
+                ProtocolMappers = protocolMappers,
             };
 
             // Read role from the realm
@@ -116,29 +121,30 @@ public class KeycloakClientRepository(
         try
         {
             var client = await _keycloakClient.GetClientAsync(_realm, clientUuid);
-            if (client != null)
+
+            // Delete the existing client
+            await _keycloakClient.DeleteClientAsync(_realm, clientUuid);
+
+            var protocolMappers = ConfigServiceRoleProtocolMapper();
+            protocolMappers.Add(NamespacePrefixProtocolMapper(namespacePrefixes));
+            Client newClient = new()
             {
-                // Delete the existing client
-                await _keycloakClient.DeleteClientAsync(_realm, clientUuid);
-                Client newClient = new()
-                {
-                    ClientId = client.ClientId,
-                    Enabled = true,
-                    Secret = client.Secret,
-                    Name = client.Name,
-                    ServiceAccountsEnabled = true,
-                    DefaultClientScopes = client.DefaultClientScopes,
-                    ProtocolMappers = ConfigServiceProtocolMapper(namespacePrefixes),
-                };
-                // Re-create the client
-                string? newClientId = await _keycloakClient.CreateClientAndRetrieveClientIdAsync(
-                    _realm,
-                    newClient
-                );
-                if (!string.IsNullOrEmpty(newClientId))
-                {
-                    return new ClientUpdateResult.Success(Guid.Parse(newClientId));
-                }
+                ClientId = client.ClientId,
+                Enabled = true,
+                Secret = client.Secret,
+                Name = client.Name,
+                ServiceAccountsEnabled = true,
+                DefaultClientScopes = client.DefaultClientScopes,
+                ProtocolMappers = protocolMappers,
+            };
+            // Re-create the client
+            string? newClientId = await _keycloakClient.CreateClientAndRetrieveClientIdAsync(
+                _realm,
+                newClient
+            );
+            if (!string.IsNullOrEmpty(newClientId))
+            {
+                return new ClientUpdateResult.Success(Guid.Parse(newClientId));
             }
 
             logger.LogError("Update client failure");
@@ -265,48 +271,47 @@ public class KeycloakClientRepository(
     public async Task<ClientUpdateResult> UpdateClientAsync(
         string clientUuid,
         string displayName,
-        string scope
+        string scope,
+        string educationOrganizationIds
     )
     {
         try
         {
             var client = await _keycloakClient.GetClientAsync(_realm, clientUuid);
-            if (client != null)
+            await CheckAndCreateClientScopeAsync(scope);
+            var scopeExists = await ClientScopeExistsAsync(scope);
+            if (scopeExists)
             {
-                await CheckAndCreateClientScopeAsync(scope);
-                var scopeExists = await ClientScopeExistsAsync(scope);
-                if (scopeExists)
+                // Delete the existing client
+                await _keycloakClient.DeleteClientAsync(_realm, clientUuid);
+                CheckAndUpdateEducationOrganizationIds(client.ProtocolMappers.ToList());
+                Client newClient = new()
                 {
-                    // Delete the existing client
-                    await _keycloakClient.DeleteClientAsync(_realm, clientUuid);
-                    Client newClient = new()
-                    {
-                        ClientId = client.ClientId,
-                        Enabled = true,
-                        Secret = client.Secret,
-                        Name = displayName,
-                        ServiceAccountsEnabled = true,
-                        DefaultClientScopes = [scope],
-                        ProtocolMappers = client.ProtocolMappers,
-                    };
-                    // Re-create the client
-                    string? newClientId = await _keycloakClient.CreateClientAndRetrieveClientIdAsync(
-                        _realm,
-                        newClient
-                    );
-                    if (!string.IsNullOrEmpty(newClientId))
-                    {
-                        return new ClientUpdateResult.Success(Guid.Parse(newClientId));
-                    }
-                }
-                else
+                    ClientId = client.ClientId,
+                    Enabled = true,
+                    Secret = client.Secret,
+                    Name = displayName,
+                    ServiceAccountsEnabled = true,
+                    DefaultClientScopes = [scope],
+                    ProtocolMappers = client.ProtocolMappers,
+                };
+                // Re-create the client
+                string? newClientId = await _keycloakClient.CreateClientAndRetrieveClientIdAsync(
+                    _realm,
+                    newClient
+                );
+                if (!string.IsNullOrEmpty(newClientId))
                 {
-                    var scopeNotFound = $"Scope {scope} not found";
-                    logger.LogError(message: scopeNotFound);
-                    return new ClientUpdateResult.FailureIdentityProvider(
-                        new IdentityProviderError(scopeNotFound)
-                    );
+                    return new ClientUpdateResult.Success(Guid.Parse(newClientId));
                 }
+            }
+            else
+            {
+                var scopeNotFound = $"Scope {scope} not found";
+                logger.LogError(message: scopeNotFound);
+                return new ClientUpdateResult.FailureIdentityProvider(
+                    new IdentityProviderError(scopeNotFound)
+                );
             }
 
             logger.LogError("Update client failure");
@@ -322,9 +327,51 @@ public class KeycloakClientRepository(
             logger.LogError(ex, "Update client failure");
             return new ClientUpdateResult.FailureUnknown(ex.Message);
         }
+
+        void CheckAndUpdateEducationOrganizationIds(List<ClientProtocolMapper> protocolMappers)
+        {
+            var edOrgClaim = protocolMappers.FirstOrDefault(x =>
+                x.Config["claim.name"].Equals("educationOrganizationIds")
+            );
+            if (edOrgClaim != null)
+            {
+                edOrgClaim.Config["claim.value"] = educationOrganizationIds;
+            }
+        }
     }
 
-    private List<ClientProtocolMapper> ConfigServiceProtocolMapper(string namespacePrefixes)
+    private ClientProtocolMapper NamespacePrefixProtocolMapper(string value)
+    {
+        return ProtocolMapper("Namespace Prefixes", "namespacePrefixes", value);
+    }
+
+    private ClientProtocolMapper EducationOrganizationProtocolMapper(string value)
+    {
+        return ProtocolMapper("Education Organization Ids", "educationOrganizationIds", value);
+    }
+
+    private ClientProtocolMapper ProtocolMapper(string name, string claimName, string value)
+    {
+        return new()
+        {
+            Name = name,
+            Protocol = "openid-connect",
+            ProtocolMapper = "oidc-hardcoded-claim-mapper",
+            Config = new Dictionary<string, string>
+            {
+                { "access.token.claim", "true" },
+                { "claim.name", claimName },
+                { "claim.value", value },
+                { "id.token.claim", "true" },
+                { "introspection.token.claim", "true" },
+                { "jsonType.label", "String" },
+                { "lightweight.claim", "false" },
+                { "userinfo.token.claim", "true" },
+            },
+        };
+    }
+
+    private List<ClientProtocolMapper> ConfigServiceRoleProtocolMapper()
     {
         List<ClientProtocolMapper> protocolMappers =
         [
@@ -345,30 +392,6 @@ public class KeycloakClientRepository(
                 },
             },
         ];
-
-        if (namespacePrefixes != string.Empty)
-        {
-            protocolMappers.Add(
-                new()
-                {
-                    Name = "Namespace Prefixes",
-                    Protocol = "openid-connect",
-                    ProtocolMapper = "oidc-hardcoded-claim-mapper",
-                    Config = new Dictionary<string, string>
-                    {
-                        { "access.token.claim", "true" },
-                        { "claim.name", "namespacePrefixes" },
-                        { "claim.value", namespacePrefixes },
-                        { "id.token.claim", "true" },
-                        { "introspection.token.claim", "true" },
-                        { "jsonType.label", "String" },
-                        { "lightweight.claim", "false" },
-                        { "userinfo.token.claim", "true" },
-                    },
-                }
-            );
-        }
-
         return protocolMappers;
     }
 }

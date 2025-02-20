@@ -142,6 +142,7 @@ public class ApplicationModuleTests
                             A<string>.Ignored,
                             A<string>.Ignored,
                             A<string>.Ignored,
+                            A<string>.Ignored,
                             A<string>.Ignored
                         )
                 )
@@ -153,6 +154,7 @@ public class ApplicationModuleTests
             A.CallTo(
                     () =>
                         _clientRepository.UpdateClientAsync(
+                            A<string>.Ignored,
                             A<string>.Ignored,
                             A<string>.Ignored,
                             A<string>.Ignored
@@ -397,6 +399,7 @@ public class ApplicationModuleTests
                             A<string>.Ignored,
                             A<string>.Ignored,
                             A<string>.Ignored,
+                            A<string>.Ignored,
                             A<string>.Ignored
                         )
                 )
@@ -617,6 +620,7 @@ public class ApplicationModuleTests
                             A<string>.Ignored,
                             A<string>.Ignored,
                             A<string>.Ignored,
+                            A<string>.Ignored,
                             A<string>.Ignored
                         )
                 )
@@ -646,6 +650,7 @@ public class ApplicationModuleTests
             A.CallTo(
                     () =>
                         _clientRepository.UpdateClientAsync(
+                            A<string>.Ignored,
                             A<string>.Ignored,
                             A<string>.Ignored,
                             A<string>.Ignored
@@ -758,6 +763,7 @@ public class ApplicationModuleTests
             A.CallTo(
                     () =>
                         _clientRepository.CreateClientAsync(
+                            A<string>.Ignored,
                             A<string>.Ignored,
                             A<string>.Ignored,
                             A<string>.Ignored,

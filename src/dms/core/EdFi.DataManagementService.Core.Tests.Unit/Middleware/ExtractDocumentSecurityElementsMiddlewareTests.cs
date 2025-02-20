@@ -37,6 +37,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                 .WithStartProject()
                 .WithStartResource("Assessment")
                 .WithNamespaceSecurityElements(["$.namespace"])
+                .WithEducationOrganizationSecurityElements([])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("Namespace", "$.namespace")
                 .WithEndDocumentPathsMapping()
@@ -76,6 +77,68 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
         {
             context.DocumentSecurityElements.Namespace.Should().HaveCount(1);
             context.DocumentSecurityElements.Namespace[0].Should().Be("abc");
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_academicWeeks_resource_that_has_a_educationOrganization
+        : ExtractDocumentSecurityElementsMiddlewareTests
+    {
+        private PipelineContext context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("AcademicWeek")
+                .WithNamespaceSecurityElements([])
+                .WithEducationOrganizationSecurityElements(["$.schoolReference.schoolId"])
+                .WithStartDocumentPathsMapping()
+                .WithDocumentPathScalar("EducationOrganization", "$.schoolReference.schoolId")
+                .WithEndDocumentPathsMapping()
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocument();
+
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "academicWeeks");
+
+            string body = """
+                {"weekIdentifier": "123",
+                    "schoolReference": {
+                        "schoolId": 12345
+                        }
+                }
+                """;
+
+            context = new(
+                new(
+                    Body: body,
+                    QueryParameters: [],
+                    Path: "/ed-fi/academicWeeks",
+                    TraceId: new TraceId("123"),
+                    ClientAuthorizations: new ClientAuthorizations(
+                        TokenId: "",
+                        ClaimSetName: "",
+                        EducationOrganizationIds: [],
+                        NamespacePrefixes: []
+                    )
+                ),
+                RequestMethod.POST
+            )
+            {
+                ResourceSchema = resourceSchema,
+                ParsedBody = JsonNode.Parse(body)!,
+            };
+
+            await BuildMiddleware().Execute(context, NullNext);
+        }
+
+        [Test]
+        public void It_has_extracted_the_educationOrganization()
+        {
+            context.DocumentSecurityElements.EducationOrganization.Should().HaveCount(1);
+            context.DocumentSecurityElements.EducationOrganization[0].Should().Be("12345");
         }
     }
 }

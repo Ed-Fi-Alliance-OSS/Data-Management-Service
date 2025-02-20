@@ -296,6 +296,19 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         namespaceResponse.Should().BeTrue();
     }
 
+    [Then("the token should have {string} scope and {string} edOrgIds")]
+    public async Task ThenValidateTheScopeAndClaim(string claimset, string edOrgIds)
+    {
+        await GetClientAccessToken(_applicationKey, _applicationSecret, claimset);
+        await TokenReceived();
+        _token.Should().NotBeNull();
+        var claimsetResponse = JwtTokenValidator.ValidateClaimset(_token, claimset);
+        claimsetResponse.Should().BeTrue();
+
+        var edOrgResponse = JwtTokenValidator.ValidateEdOrgIds(_token, edOrgIds);
+        edOrgResponse.Should().BeTrue();
+    }
+
     private async Task ResponseBodyIs(string expectedBody)
     {
         // Parse the API response to JsonNode

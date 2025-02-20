@@ -113,7 +113,7 @@ internal static class No
     /// <summary>
     /// The null object for DocumentSecurityElements
     /// </summary>
-    public static readonly DocumentSecurityElements DocumentSecurityElements = new([]);
+    public static readonly DocumentSecurityElements DocumentSecurityElements = new([], []);
 
     /// <summary>
     /// The null object for ResourceClaim
