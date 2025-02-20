@@ -4,8 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Core.ApiSchema;
-using EdFi.DataManagementService.Core.ApiSchema.Extensions;
+using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.OpenApi;
@@ -169,24 +168,39 @@ public class OpenApiDocument(ILogger _logger)
     }
 
     /// <summary>
+    /// Finds the CoreOpenApiSpecification in an Core ApiSchema document.
+    /// </summary>
+    public JsonNode FindCoreOpenApiSpecification(JsonNode coreApiSchemaRootNode)
+    {
+        return coreApiSchemaRootNode.SelectRequiredNodeFromPath(
+            "$.projectSchema.coreOpenApiSpecification",
+            _logger
+        );
+    }
+
+    /// <summary>
+    /// Finds the OpenApiExtensionFragments in an extension ApiSchemaDocument.
+    /// </summary>
+    public JsonNode FindOpenApiExtensionFragments(JsonNode extensionApiSchemaRootNode)
+    {
+        return extensionApiSchemaRootNode.SelectRequiredNodeFromPath(
+            "$.projectSchema.openApiExtensionFragments",
+            _logger
+        );
+    }
+
+    /// <summary>
     /// Creates an OpenAPI specification derived from the given core and extension ApiSchemas
     /// </summary>
     public JsonNode CreateDocument(JsonNode coreApiSchemaRootNode, JsonNode[] extensionApiSchemaRootNodes)
     {
-        ApiSchemaDocument coreApiSchemaDocument = new(coreApiSchemaRootNode, _logger);
-
         // Get the core OpenAPI spec as a copy since we are going to modify it
-        JsonNode openApiSpecification =
-            coreApiSchemaDocument.FindCoreOpenApiSpecification()?.DeepClone()
-            ?? throw new InvalidOperationException("Expected CoreOpenApiSpecification node to exist.");
+        JsonNode openApiSpecification = FindCoreOpenApiSpecification(coreApiSchemaRootNode).DeepClone();
 
         // Get each extension OpenAPI fragment to insert into core OpenAPI spec
         foreach (JsonNode extensionApiSchemaRootNode in extensionApiSchemaRootNodes)
         {
-            ApiSchemaDocument extensionApiSchemaDocument = new(extensionApiSchemaRootNode, _logger);
-            JsonNode extensionFragments =
-                extensionApiSchemaDocument.FindOpenApiExtensionFragments()
-                ?? throw new InvalidOperationException("Expected OpenApiExtensionFragments node to exist.");
+            JsonNode extensionFragments = FindOpenApiExtensionFragments(extensionApiSchemaRootNode);
 
             InsertExts(
                 extensionFragments.SelectRequiredNodeFromPath("$.exts", _logger).AsObject(),

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
@@ -23,10 +24,11 @@ internal class ValidateEndpointMiddleware(ILogger _logger) : IPipelineStep
             context.FrontendRequest.TraceId.Value
         );
 
-        JsonNode? projectSchemaNode = context.ApiSchemaDocument.FindProjectSchemaNode(
+        ProjectSchema? projectSchema = context.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
             context.PathComponents.ProjectNamespace
         );
-        if (projectSchemaNode == null)
+
+        if (projectSchema == null)
         {
             _logger.LogDebug(
                 "Invalid resource project namespace in '{EndpointName}' - {TraceId}",
@@ -41,9 +43,9 @@ internal class ValidateEndpointMiddleware(ILogger _logger) : IPipelineStep
             return;
         }
 
-        context.ProjectSchema = new(projectSchemaNode, _logger);
+        context.ProjectSchema = projectSchema;
 
-        JsonNode? resourceSchemaNode = context.ProjectSchema.FindResourceSchemaNode(
+        JsonNode? resourceSchemaNode = context.ProjectSchema.FindResourceSchemaNodeByEndpointName(
             context.PathComponents.EndpointName
         );
 

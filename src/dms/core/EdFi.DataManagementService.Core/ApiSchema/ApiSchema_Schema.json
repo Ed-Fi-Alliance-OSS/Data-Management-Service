@@ -1,29 +1,18 @@
 {
     "type": "object",
     "properties": {
-        "projectNameMapping": {
-            "type": "object",
-            "patternProperties": {
-                "^.*$": {
-                    "type": "string"
-                }
-            },
-            "additionalProperties": false
+        "apiSchemaVersion": {
+            "type": "string"
         },
-        "projectSchemas": {
-            "type": "object",
-            "patternProperties": {
-                "^.*$": {
-                    "$ref": "#/definitions/ProjectSchemas"
-                }
-            },
-            "additionalProperties": false
+        "projectSchema": {
+            "$ref": "#/definitions/ProjectSchema"
         }
     },
     "required": [
-        "projectNameMapping",
-        "projectSchemas"
+        "apiSchemaVersion",
+        "projectSchema"
     ],
+    "additionalProperties": false,
     "definitions": {
         "CoreOpenApiSpecification": {
             "type": "object",
@@ -67,7 +56,7 @@
             },
             "additionalProperties": false
         },
-        "ProjectSchemas": {
+        "ProjectSchema": {
             "type": "object",
             "properties": {
                 "abstractResources": {
@@ -113,6 +102,9 @@
                 "projectVersion": {
                     "type": "string"
                 },
+                "projectEndpointName": {
+                    "type": "string"
+                },
                 "resourceNameMapping": {
                     "type": "object",
                     "patternProperties": {
@@ -133,6 +125,7 @@
                 "isExtensionProject",
                 "projectName",
                 "projectVersion",
+                "projectEndpointName",
                 "resourceNameMapping",
                 "resourceSchemas"
             ],
@@ -185,14 +178,16 @@
                         "securityElements": {
                             "type": "object",
                             "properties": {
-                                "Namespace" : {
+                                "Namespace": {
                                     "type": "array",
                                     "items": {
                                         "$ref": "#/definitions/JsonPath"
                                     }
                                 }
                             },
-                            "required": [ "Namespace" ]
+                            "required": [
+                                "Namespace"
+                            ]
                         },
                         "subclassType": {
                             "type": "string"

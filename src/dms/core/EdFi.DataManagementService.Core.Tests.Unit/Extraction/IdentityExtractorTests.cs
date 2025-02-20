@@ -25,7 +25,7 @@ public class ExtractDocumentIdentityTests
         [SetUp]
         public void Setup()
         {
-            ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("Section")
                 .WithIdentityJsonPaths(
@@ -51,9 +51,9 @@ public class ExtractDocumentIdentityTests
                 .WithEndDocumentPathsMapping()
                 .WithEndResource()
                 .WithEndProject()
-                .ToApiSchemaDocument();
+                .ToApiSchemaDocuments();
 
-            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "sections");
 
             (documentIdentity, _) = resourceSchema.ExtractIdentities(
                 JsonNode.Parse(
@@ -114,7 +114,7 @@ public class ExtractDocumentIdentityTests
         [SetUp]
         public void Setup()
         {
-            ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("StaffEducationOrganizationAssignmentAssociation")
                 .WithIdentityJsonPaths(["$.staffClassificationDescriptor"])
@@ -124,10 +124,10 @@ public class ExtractDocumentIdentityTests
                 .WithEndDocumentPathsMapping()
                 .WithEndResource()
                 .WithEndProject()
-                .ToApiSchemaDocument();
+                .ToApiSchemaDocuments();
 
             ResourceSchema resourceSchema = BuildResourceSchema(
-                apiSchemaDocument,
+                apiSchemaDocuments,
                 "staffEducationOrganizationAssignmentAssociations"
             );
 
@@ -168,7 +168,7 @@ public class ExtractDocumentIdentityTests
         [SetUp]
         public void Setup()
         {
-            ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("GradingPeriod")
                 .WithIdentityJsonPaths(["$.schoolYearTypeReference.schoolYear"])
@@ -178,9 +178,9 @@ public class ExtractDocumentIdentityTests
                 .WithEndDocumentPathsMapping()
                 .WithEndResource()
                 .WithEndProject()
-                .ToApiSchemaDocument();
+                .ToApiSchemaDocuments();
 
-            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "gradingPeriods");
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "gradingPeriods");
 
             (documentIdentity, _) = resourceSchema.ExtractIdentities(
                 JsonNode.Parse(

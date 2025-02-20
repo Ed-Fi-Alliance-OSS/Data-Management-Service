@@ -5,7 +5,6 @@
 
 using System.Data;
 using System.Text.Json.Nodes;
-using System.Transactions;
 using EdFi.DataManagementService.Backend.Postgresql.Operation;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
@@ -27,11 +26,14 @@ public abstract class DatabaseTest : DatabaseTestBase
         JsonNode.Parse(
             """
             {
-              "projectNameMapping": {
-                "ProjectName": "project-name"
-              },
-              "projectSchemas": {
-                "project-name": {
+              "projectSchema": {
+                  "caseInsensitiveEndpointNameMapping": {
+                    "courseofferings": "courseOfferings",
+                    "sessions": "sessions",
+                    "sections": "sections"
+                  },
+                  "projectEndpointName": "projectName",
+                  "projectName": "ProjectName",
                   "resourceNameMapping": {
                     "CourseOffering": "courseOfferings",
                     "Section": "sections",
@@ -100,7 +102,6 @@ public abstract class DatabaseTest : DatabaseTestBase
                       ]
                     }
                   }
-                }
               }
             }
             """

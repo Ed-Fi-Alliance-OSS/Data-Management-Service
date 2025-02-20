@@ -21,9 +21,10 @@ internal static class No
     /// <summary>
     /// The null object for ApiSchemaDocument
     /// </summary>
-    public static readonly ApiSchemaDocument ApiSchemaDocument = new(
+    public static readonly ApiSchemaDocuments ApiSchemaDocument = new(
         new JsonObject(),
-        NullLogger<ApiSchemaDocument>.Instance
+        [],
+        NullLogger<ApiSchemaDocuments>.Instance
     );
 
     /// <summary>

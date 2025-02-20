@@ -17,6 +17,7 @@ using EdFi.DataManagementService.Core.OpenApi;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Validation;
+using Microsoft.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -303,16 +304,22 @@ internal class ApiService(
     /// </summary>
     public IList<IDataModelInfo> GetDataModelInfo()
     {
-        ApiSchemaDocument apiSchemaDocument = new(_apiSchemaProvider.CoreApiSchemaRootNode, _logger);
+        ApiSchemaDocuments apiSchemaDocuments = new(
+            _apiSchemaProvider.CoreApiSchemaRootNode,
+            _apiSchemaProvider.ExtensionApiSchemaRootNodes,
+            _logger
+        );
 
         IList<IDataModelInfo> result = [];
-        foreach (JsonNode projectSchemaNode in apiSchemaDocument.GetAllProjectSchemaNodes())
+        foreach (ProjectSchema projectSchema in apiSchemaDocuments.GetAllProjectSchemas())
         {
-            string projectName = projectSchemaNode?["projectName"]?.GetValue<string>() ?? string.Empty;
-            string projectVersion = projectSchemaNode?["projectVersion"]?.GetValue<string>() ?? string.Empty;
-            string description = projectSchemaNode?["description"]?.GetValue<string>() ?? string.Empty;
-
-            result.Add(new DataModelInfo(projectName, projectVersion, description));
+            result.Add(
+                new DataModelInfo(
+                    projectSchema.ProjectName.Value,
+                    projectSchema.ResourceVersion.Value,
+                    projectSchema.Description
+                )
+            );
         }
         return result;
     }

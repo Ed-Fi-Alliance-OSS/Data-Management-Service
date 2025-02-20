@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.ApiSchema;
@@ -12,60 +13,59 @@ internal class DependencyCalculator(JsonNode _apiSchemaRootNode, ILogger _logger
 {
     public JsonArray GetDependenciesFromResourceSchema()
     {
-        var apiSchemaDocument = new ApiSchemaDocument(_apiSchemaRootNode, _logger);
-        var dependenciesJsonArray = new JsonArray();
-        foreach (JsonNode projectSchemaNode in apiSchemaDocument.GetAllProjectSchemaNodes())
+        ApiSchemaDocuments apiSchemaDocuments = new(_apiSchemaRootNode, [], _logger);
+        JsonArray dependenciesJsonArray = [];
+        ProjectSchema coreProjectSchema = apiSchemaDocuments.GetCoreProjectSchema();
+        JsonNode projectSchemaNode = coreProjectSchema.getRawNodeRemoveMe();
+        List<ResourceSchema> resourceSchemas = coreProjectSchema
+            .GetAllResourceSchemaNodes()
+            .Select(node => new ResourceSchema(node))
+            .ToList();
+
+        Dictionary<string, List<string>> resources = resourceSchemas.ToDictionary(
+            rs => rs.ResourceName.Value,
+            rs =>
+                rs.DocumentPaths.Where(d => d.IsReference)
+                    .Select(d => ReplaceAbstractResourceNames(d.ResourceName.Value))
+                    .ToList()
+        );
+
+        var orderedResources = GetDependencies(resources);
+
+        string ResourceNameMapping(string resourceName)
         {
-            var resourceSchemas = projectSchemaNode["resourceSchemas"]
-                ?.AsObject()
-                .Select(x => new ResourceSchema(x.Value!))
-                .ToList()!;
+            var resourceNameNode = projectSchemaNode["resourceNameMapping"];
+            if (resourceNameNode == null)
+            {
+                throw new InvalidOperationException("ResourceNameMapping missing");
+            }
 
-            Dictionary<string, List<string>> resources = resourceSchemas.ToDictionary(
-                rs => rs.ResourceName.Value,
-                rs =>
-                    rs.DocumentPaths.Where(d => d.IsReference)
-                        .Select(d => ReplaceAbstractResourceNames(d.ResourceName.Value))
-                        .ToList()
+            if (resourceName.EndsWith("Descriptor"))
+            {
+                resourceName = resourceName.Replace("Descriptor", string.Empty);
+            }
+
+            var resourceNode = resourceNameNode[resourceName];
+            if (resourceNode == null)
+            {
+                throw new InvalidOperationException($"No resource name mapping for {resourceName}");
+            }
+
+            return resourceNode.GetValue<string>();
+        }
+
+        foreach (var orderedResource in orderedResources.OrderBy(o => o.Value).ThenBy(o => o.Key))
+        {
+            string resourceName = ResourceNameMapping(orderedResource.Key);
+
+            dependenciesJsonArray.Add(
+                new
+                {
+                    resource = $"/{projectSchemaNode.SelectRequiredNodeFromPathCoerceToString("$.projectEndpointName", _logger)}/{resourceName}",
+                    order = orderedResource.Value,
+                    operations = new[] { "Create", "Update" },
+                }
             );
-
-            var orderedResources = GetDependencies(resources);
-
-            string ResourceNameMapping(string resourceName)
-            {
-                var resourceNameNode = projectSchemaNode["resourceNameMapping"];
-                if (resourceNameNode == null)
-                {
-                    throw new InvalidOperationException("ResourceNameMapping missing");
-                }
-
-                if (resourceName.EndsWith("Descriptor"))
-                {
-                    resourceName = resourceName.Replace("Descriptor", string.Empty);
-                }
-
-                var resourceNode = resourceNameNode[resourceName];
-                if (resourceNode == null)
-                {
-                    throw new InvalidOperationException($"No resource name mapping for {resourceName}");
-                }
-
-                return resourceNode.GetValue<string>();
-            }
-
-            foreach (var orderedResource in orderedResources.OrderBy(o => o.Value).ThenBy(o => o.Key))
-            {
-                string resourceName = ResourceNameMapping(orderedResource.Key);
-
-                dependenciesJsonArray.Add(
-                    new
-                    {
-                        resource = $"/{projectSchemaNode!.GetPropertyName()}/{resourceName}",
-                        order = orderedResource.Value,
-                        operations = new[] { "Create", "Update" },
-                    }
-                );
-            }
         }
 
         return dependenciesJsonArray;

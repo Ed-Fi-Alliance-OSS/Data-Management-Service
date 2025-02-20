@@ -41,9 +41,9 @@ internal class PipelineContext(FrontendRequest _frontendRequest, RequestMethod _
     public PathComponents PathComponents { get; set; } = No.PathComponents;
 
     /// <summary>
-    /// Provides information from an ApiSchema.json document
+    /// Provides information from a set of ApiSchema.json documents
     /// </summary>
-    public ApiSchemaDocument ApiSchemaDocument { get; set; } = No.ApiSchemaDocument;
+    public ApiSchemaDocuments ApiSchemaDocuments { get; set; } = No.ApiSchemaDocument;
 
     /// <summary>
     /// Provides information from the ProjectSchema portion of an ApiSchema.json document

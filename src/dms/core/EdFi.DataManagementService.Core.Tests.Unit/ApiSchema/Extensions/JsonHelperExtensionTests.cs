@@ -9,7 +9,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 
-namespace EdFi.DataManagementService.Core.ApiSchema.Extensions.Tests;
+namespace EdFi.DataManagementService.Core.ApiSchema.Helpers.Tests;
 
 [TestFixture]
 public class JsonHelperExtensionsTests
@@ -288,7 +288,10 @@ public class JsonHelperExtensionsTests
     [TestFixture]
     public class When_selecting_paths_and_coercing_to_string
     {
-        private static IEnumerable<string> SelectNodesFromArrayPathCoerceToStrings(JsonNode jsonNode, string jsonPathString)
+        private static IEnumerable<string> SelectNodesFromArrayPathCoerceToStrings(
+            JsonNode jsonNode,
+            string jsonPathString
+        )
         {
             var logger = A.Fake<ILogger>();
             return jsonNode.SelectNodesFromArrayPathCoerceToStrings(jsonPathString, logger);
@@ -421,8 +424,7 @@ public class JsonHelperExtensionsTests
         public void Given_item_is_an_int__Then_return_an_int()
         {
             // Arrange
-            string jsonString =
-                @"{ ""value"": 1 }";
+            string jsonString = @"{ ""value"": 1 }";
             JsonNode jsonNode = JsonNode.Parse(jsonString)!;
             string jsonPath = "$.value";
 
@@ -438,8 +440,7 @@ public class JsonHelperExtensionsTests
         public void Given_item_is_a_decimal_Then_return_a_decimal()
         {
             // Arrange
-            string jsonString =
-                @"{ ""value"": 1.0003 }";
+            string jsonString = @"{ ""value"": 1.0003 }";
             JsonNode jsonNode = JsonNode.Parse(jsonString)!;
             string jsonPath = "$.value";
 
@@ -455,8 +456,7 @@ public class JsonHelperExtensionsTests
         public void Given_item_is_a_Boolean_Then_return_a_Boolean()
         {
             // Arrange
-            string jsonString =
-                @"{ ""value"": true }";
+            string jsonString = @"{ ""value"": true }";
             JsonNode jsonNode = JsonNode.Parse(jsonString)!;
             string jsonPath = "$.value";
 
@@ -472,8 +472,7 @@ public class JsonHelperExtensionsTests
         public void Given_item_is_an_object__Then_throw_exception()
         {
             // Arrange
-            string jsonString =
-                @"{ ""value"": { ""nested"": true } }";
+            string jsonString = @"{ ""value"": { ""nested"": true } }";
             JsonNode jsonNode = JsonNode.Parse(jsonString)!;
             string jsonPath = "$.value";
 
@@ -488,8 +487,7 @@ public class JsonHelperExtensionsTests
         public void Given_item_is_a_string_but_Boolean_requested__Then_throw_an_exception()
         {
             // Arrange
-            string jsonString =
-                @"{ ""value"": ""string"" }";
+            string jsonString = @"{ ""value"": ""string"" }";
             JsonNode jsonNode = JsonNode.Parse(jsonString)!;
             string jsonPath = "$.value";
 
@@ -504,7 +502,10 @@ public class JsonHelperExtensionsTests
     [TestFixture]
     public class When_selecting_a_required_node_from_path_as_string
     {
-        private static string SelectRequiredNodeFromPathCoerceToString(JsonNode jsonNode, string jsonPathString)
+        private static string SelectRequiredNodeFromPathCoerceToString(
+            JsonNode jsonNode,
+            string jsonPathString
+        )
         {
             var logger = A.Fake<ILogger>();
             return jsonNode.SelectRequiredNodeFromPathCoerceToString(jsonPathString, logger);
@@ -534,8 +535,7 @@ public class JsonHelperExtensionsTests
         public void Given_item_is_an_int__Then_return_an_int()
         {
             // Arrange
-            string jsonString =
-                @"{ ""value"": 1 }";
+            string jsonString = @"{ ""value"": 1 }";
             JsonNode jsonNode = JsonNode.Parse(jsonString)!;
             string jsonPath = "$.value";
 
@@ -550,8 +550,7 @@ public class JsonHelperExtensionsTests
         public void Given_item_is_a_decimal_Then_return_a_decimal()
         {
             // Arrange
-            string jsonString =
-                @"{ ""value"": 1.0003 }";
+            string jsonString = @"{ ""value"": 1.0003 }";
             JsonNode jsonNode = JsonNode.Parse(jsonString)!;
             string jsonPath = "$.value";
 
@@ -566,8 +565,7 @@ public class JsonHelperExtensionsTests
         public void Given_item_is_a_Boolean_Then_return_a_Boolean()
         {
             // Arrange
-            string jsonString =
-                @"{ ""value"": true }";
+            string jsonString = @"{ ""value"": true }";
             JsonNode jsonNode = JsonNode.Parse(jsonString)!;
             string jsonPath = "$.value";
 
@@ -582,8 +580,7 @@ public class JsonHelperExtensionsTests
         public void Given_item_is_an_object__Then_throw_exception()
         {
             // Arrange
-            string jsonString =
-                @"{ ""value"": { ""nested"": true } }";
+            string jsonString = @"{ ""value"": { ""nested"": true } }";
             JsonNode jsonNode = JsonNode.Parse(jsonString)!;
             string jsonPath = "$.value";
 
@@ -628,8 +625,7 @@ public class JsonHelperExtensionsTests
         public void Given_integer_value__Then_return_integer()
         {
             // Arrange
-            string jsonString =
-                @"{ ""value"": 1 }";
+            string jsonString = @"{ ""value"": 1 }";
             JsonNode jsonNode = JsonNode.Parse(jsonString)!;
             string jsonPath = "$.value";
 

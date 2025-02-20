@@ -17,7 +17,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Extraction;
 [TestFixture]
 public class ExtractDocumentReferencesTests
 {
-    internal static ApiSchemaDocument BuildApiSchemaDocument()
+    internal static ApiSchemaDocuments BuildApiSchemaDocuments()
     {
         return new ApiSchemaBuilder()
             .WithStartProject()
@@ -52,7 +52,7 @@ public class ExtractDocumentReferencesTests
             .WithEndDocumentPathsMapping()
             .WithEndResource()
             .WithEndProject()
-            .ToApiSchemaDocument();
+            .ToApiSchemaDocuments();
     }
 
     [TestFixture]
@@ -64,7 +64,7 @@ public class ExtractDocumentReferencesTests
         [SetUp]
         public void Setup()
         {
-            ApiSchemaDocument apiSchemaDocument = BuildApiSchemaDocument();
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
             documentReferences = resourceSchema.ExtractReferences(
@@ -166,7 +166,7 @@ public class ExtractDocumentReferencesTests
         [SetUp]
         public void Setup()
         {
-            ApiSchemaDocument apiSchemaDocument = BuildApiSchemaDocument();
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
             documentReferences = resourceSchema.ExtractReferences(
                 JsonNode.Parse(
@@ -240,7 +240,7 @@ public class ExtractDocumentReferencesTests
         [SetUp]
         public void Setup()
         {
-            ApiSchemaDocument apiSchemaDocument = BuildApiSchemaDocument();
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
             documentReferences = resourceSchema.ExtractReferences(
@@ -294,7 +294,7 @@ public class ExtractDocumentReferencesTests
         [SetUp]
         public void Setup()
         {
-            ApiSchemaDocument apiSchemaDocument = BuildApiSchemaDocument();
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
             documentReferences = resourceSchema.ExtractReferences(
@@ -327,7 +327,7 @@ public class ExtractDocumentReferencesTests
         [SetUp]
         public void Setup()
         {
-            ApiSchemaDocument apiSchemaDocument = BuildApiSchemaDocument();
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
             documentReferences = resourceSchema.ExtractReferences(
@@ -385,7 +385,7 @@ public class ExtractDocumentReferencesTests
         [SetUp]
         public void Setup()
         {
-            ApiSchemaDocument apiSchemaDocument = BuildApiSchemaDocument();
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
             documentReferences = resourceSchema.ExtractReferences(

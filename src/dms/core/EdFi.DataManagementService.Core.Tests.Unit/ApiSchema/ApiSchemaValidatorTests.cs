@@ -35,8 +35,8 @@ public class ApiSchemaValidatorTests
 
             response[0].FailureMessages.Count.Should().Be(1);
             response[0].FailureMessages[0].Should().Contain("Required properties");
-            response[0].FailureMessages[0].Should().Contain("projectNameMapping");
-            response[0].FailureMessages[0].Should().Contain("projectSchemas");
+            response[0].FailureMessages[0].Should().Contain("apiSchemaVersion");
+            response[0].FailureMessages[0].Should().Contain("projectSchema");
         }
     }
 
@@ -45,7 +45,7 @@ public class ApiSchemaValidatorTests
     {
         private readonly JsonNode _apiSchemaRootNode =
             JsonNode.Parse(
-                "{\"projectNameMapping\":{}, \"projectSchemas\": { \"ed-fi\": {\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{}} } }"
+                "{\"apiSchemaVersion\":\"1.0.0\", \"projectSchema\": { \"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectEndpointName\":\"ed-fi\",\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{}} }"
             ) ?? new JsonObject();
 
         [Test]
@@ -68,7 +68,7 @@ public class ApiSchemaValidatorTests
     {
         private readonly JsonNode _apiSchemaRootNode =
             JsonNode.Parse(
-                "{\"projectNameMapping\":{}, \"projectSchemas\": { \"ed-fi\":{\"caseInsensitiveEndpointNameMapping\":{}, \"abstractResources\":{\"educationOrg\":{ \"identityJsonPaths\": [\"educationOrganizationId\"]} },\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{}} } }"
+                "{\"apiSchemaVersion\":\"1.0.0\", \"projectSchema\": {\"caseInsensitiveEndpointNameMapping\":{}, \"abstractResources\":{\"educationOrg\":{ \"identityJsonPaths\": [\"educationOrganizationId\"]} },\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectEndpointName\":\"ed-fi\",\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{}} }"
             ) ?? new JsonObject();
 
         [Test]
@@ -81,7 +81,8 @@ public class ApiSchemaValidatorTests
 
             response[0].FailureMessages.Count.Should().Be(1);
             response[0].FailurePath.Value.Should().Contain("educationOrg.identityJsonPaths");
-            response[0].FailureMessages[0]
+            response[0]
+                .FailureMessages[0]
                 .Should()
                 .Contain("The string value is not a match for the indicated regular expression");
         }
@@ -92,10 +93,10 @@ public class ApiSchemaValidatorTests
     {
         private readonly JsonNode _apiSchemaRootNode =
             JsonNode.Parse(
-                "{\"projectNameMapping\":{}, \"projectSchemas\": { \"ed-fi\":{\"caseInsensitiveEndpointNameMapping\":{}, "
-                    + "\"abstractResources\":{ },\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\","
+                "{\"apiSchemaVersion\":\"1.0.0\",  \"projectSchema\": { \"caseInsensitiveEndpointNameMapping\":{}, "
+                    + "\"abstractResources\":{ },\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectEndpointName\":\"ed-fi\","
                     + "\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{\"Students\":{\"allowIdentityUpdates\":false, "
-                    + "\"documentPathsMapping\":{}, \"identityJsonPaths\":[], \"isDescriptor\":false, \"jsonSchemaForInsert\":{}, \"resourceName\":\"Student\"}}} } }"
+                    + "\"documentPathsMapping\":{}, \"identityJsonPaths\":[], \"isDescriptor\":false, \"jsonSchemaForInsert\":{}, \"resourceName\":\"Student\"}}} }"
             ) ?? new JsonObject();
 
         [Test]
@@ -107,7 +108,7 @@ public class ApiSchemaValidatorTests
             response[0].Should().NotBeNull();
 
             response[0].FailureMessages.Count.Should().Be(1);
-            response[0].FailurePath.Value.Should().Contain("ed-fi.resourceSchemas.Students");
+            response[0].FailurePath.Value.Should().Contain("resourceSchemas.Students");
             response[0].FailureMessages[0].Should().Contain("Required properties");
             response[0].FailureMessages[0].Should().Contain("isSchoolYearEnumeration");
             response[0].FailureMessages[0].Should().Contain("equalityConstraints");
@@ -116,15 +117,15 @@ public class ApiSchemaValidatorTests
     }
 
     [TestFixture]
-    public class Given_A_ResourceSchema_With_Invalid_DocumentPathSmapping : ApiSchemaValidatorTests
+    public class Given_A_ResourceSchema_With_Invalid_DocumentPathsMapping : ApiSchemaValidatorTests
     {
         private readonly JsonNode _apiSchemaRootNode =
             JsonNode.Parse(
-                "{\"projectNameMapping\":{}, \"projectSchemas\": { \"ed-fi\":{\"caseInsensitiveEndpointNameMapping\":{}, "
-                    + "\"abstractResources\":{ },\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\","
+                "{\"apiSchemaVersion\":\"1.0.0\",  \"projectSchema\": { \"caseInsensitiveEndpointNameMapping\":{}, "
+                    + "\"abstractResources\":{ },\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectEndpointName\":\"ed-fi\","
                     + "\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{\"Students\":{\"allowIdentityUpdates\":false, "
                     + "\"documentPathsMapping\":{\"begindate\":{}}, \"identityJsonPaths\":[],\"isSchoolYearEnumeration\":false,\"isSubclass\":false,\"equalityConstraints\":[],"
-                    + "\"isDescriptor\":false, \"jsonSchemaForInsert\":{}, \"resourceName\":\"Student\"}}} } }"
+                    + "\"isDescriptor\":false, \"jsonSchemaForInsert\":{}, \"resourceName\":\"Student\"}}} }"
             ) ?? new JsonObject();
 
         [Test]
@@ -136,8 +137,9 @@ public class ApiSchemaValidatorTests
             response[0].Should().NotBeNull();
 
             response[0].FailureMessages.Count.Should().Be(1);
-            response[0].FailurePath.Value.Should()
-                .Contain("ed-fi.resourceSchemas.Students.documentPathsMapping.begindate");
+            response[0]
+                .FailurePath.Value.Should()
+                .Contain("resourceSchemas.Students.documentPathsMapping.begindate");
             response[0].FailureMessages[0].Should().Contain("Required properties");
             response[0].FailureMessages[0].Should().Contain("isReference");
         }
@@ -148,19 +150,17 @@ public class ApiSchemaValidatorTests
     {
         private readonly JsonNode _apiSchemaRootNode =
             JsonNode.Parse(
-                "{\"projectNameMapping\":{}, \"projectSchemas\": { \"ed-fi\":{\"caseInsensitiveEndpointNameMapping\":{}, "
-                    + "\"abstractResources\":{ },\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\","
+                "{\"apiSchemaVersion\":\"1.0.0\",  \"projectSchema\": {\"caseInsensitiveEndpointNameMapping\":{}, "
+                    + "\"abstractResources\":{ },\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectEndpointName\":\"ed-fi\","
                     + "\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{\"Students\":{\"allowIdentityUpdates\":false, "
                     + "\"documentPathsMapping\":{\"begindate\":{\"isReference\":false }}, \"identityJsonPaths\":[],\"isSchoolYearEnumeration\":false,\"isSubclass\":false,\"equalityConstraints\":[],"
-                    + "\"isDescriptor\":false, \"jsonSchemaForInsert\":{}, \"resourceName\":\"Student\"}}} } }"
+                    + "\"isDescriptor\":false, \"jsonSchemaForInsert\":{}, \"resourceName\":\"Student\"}}} }"
             ) ?? new JsonObject();
 
         [Test]
         public void It_has_no_validation_errors()
         {
-            var response = _validator!.Validate(_apiSchemaRootNode).Value;
-            response.Should().NotBeNull();
-            response.Count.Should().Be(0);
+            _validator!.Validate(_apiSchemaRootNode).Value.Count.Should().Be(0);
         }
     }
 }

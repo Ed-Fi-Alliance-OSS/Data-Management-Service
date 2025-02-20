@@ -33,7 +33,7 @@ public class ExtractDocumentInfoMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("School")
                 .WithIdentityJsonPaths(["$.schoolId"])
@@ -47,9 +47,9 @@ public class ExtractDocumentInfoMiddlewareTests
                 )
                 .WithEndResource()
                 .WithEndProject()
-                .ToApiSchemaDocument();
+                .ToApiSchemaDocuments();
 
-            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "schools");
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "schools");
 
             string body = """{"schoolId": "123"}""";
 

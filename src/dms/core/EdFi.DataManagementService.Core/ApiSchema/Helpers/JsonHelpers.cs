@@ -10,9 +10,9 @@ using System.Text.Json.Nodes;
 using Json.Path;
 using Microsoft.Extensions.Logging;
 
-namespace EdFi.DataManagementService.Core.ApiSchema.Extensions;
+namespace EdFi.DataManagementService.Core.ApiSchema.Helpers;
 
-internal static class JsonHelperExtensions
+internal static class JsonHelpers
 {
     /// <summary>
     /// Helper to go from a scalar JSONPath selection directly to the selected JsonNode,
@@ -342,12 +342,9 @@ internal static class JsonHelperExtensions
     /// </summary>
     public static List<JsonNode> SelectNodesFromPropertyValues(this JsonNode jsonNode)
     {
-        KeyValuePair<string, JsonNode?>[]? nodeKeys = jsonNode?.AsObject().ToArray();
-
-        if (nodeKeys == null)
-        {
-            throw new InvalidOperationException("Unexpected null");
-        }
+        KeyValuePair<string, JsonNode?>[]? nodeKeys =
+            (jsonNode?.AsObject().ToArray())
+            ?? throw new InvalidOperationException("Unexpected null in SelectNodesFromPropertyValues");
 
         return nodeKeys.Where(x => x.Value != null).Select(x => x.Value ?? new JsonObject()).ToList();
     }

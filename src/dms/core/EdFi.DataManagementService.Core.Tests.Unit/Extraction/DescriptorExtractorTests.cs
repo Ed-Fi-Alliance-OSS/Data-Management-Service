@@ -17,7 +17,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Extraction;
 [TestFixture]
 public class DescriptorExtractorTests
 {
-    internal static ApiSchemaDocument BuildApiSchemaDocument()
+    internal static ApiSchemaDocuments BuildApiSchemaDocuments()
     {
         return new ApiSchemaBuilder()
             .WithStartProject()
@@ -35,7 +35,7 @@ public class DescriptorExtractorTests
             .WithEndDocumentPathsMapping()
             .WithEndResource()
             .WithEndProject()
-            .ToApiSchemaDocument();
+            .ToApiSchemaDocuments();
     }
 
     [TestFixture]
@@ -47,7 +47,7 @@ public class DescriptorExtractorTests
         [SetUp]
         public void Setup()
         {
-            ApiSchemaDocument apiSchemaDocument = BuildApiSchemaDocument();
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "slimCourses");
 
             descriptorReferences = resourceSchema.ExtractDescriptors(
@@ -134,7 +134,7 @@ public class DescriptorExtractorTests
         [SetUp]
         public void Setup()
         {
-            ApiSchemaDocument apiSchemaDocument = BuildApiSchemaDocument();
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "slimCourses");
 
             descriptorReferences = resourceSchema.ExtractDescriptors(
@@ -198,7 +198,7 @@ public class DescriptorExtractorTests
         [SetUp]
         public void Setup()
         {
-            ApiSchemaDocument apiSchemaDocument = BuildApiSchemaDocument();
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "slimCourses");
             descriptorReferences = resourceSchema.ExtractDescriptors(
                 JsonNode.Parse(
@@ -268,7 +268,7 @@ public class DescriptorExtractorTests
         [SetUp]
         public void Setup()
         {
-            ApiSchemaDocument apiSchemaDocument = BuildApiSchemaDocument();
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "slimCourses");
             descriptorReferences = resourceSchema.ExtractDescriptors(
                 JsonNode.Parse(
@@ -319,7 +319,7 @@ public class DescriptorExtractorTests
         [SetUp]
         public void Setup()
         {
-            ApiSchemaDocument apiSchemaDocument = BuildApiSchemaDocument();
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "slimCourses");
 
             descriptorReferences = resourceSchema.ExtractDescriptors(
@@ -352,7 +352,7 @@ public class DescriptorExtractorTests
         [SetUp]
         public void Setup()
         {
-            ApiSchemaDocument apiSchemaDocument = BuildApiSchemaDocument();
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "slimCourses");
 
             descriptorReferences = resourceSchema.ExtractDescriptors(
@@ -399,7 +399,7 @@ public class DescriptorExtractorTests
         [SetUp]
         public void Setup()
         {
-            ApiSchemaDocument apiSchemaDocument = BuildApiSchemaDocument();
+            ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "slimCourses");
 
             descriptorReferences = resourceSchema.ExtractDescriptors(

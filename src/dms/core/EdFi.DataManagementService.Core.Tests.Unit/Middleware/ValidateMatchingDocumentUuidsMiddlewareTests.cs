@@ -24,14 +24,14 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
             return () => Task.CompletedTask;
         }
 
-        internal static ApiSchemaDocument SchemaDocument()
+        internal static ApiSchemaDocuments SchemaDocuments()
         {
             return new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("AcademicWeek")
                 .WithEndResource()
                 .WithEndProject()
-                .ToApiSchemaDocument();
+                .ToApiSchemaDocuments();
         }
 
         internal static IPipelineStep Middleware()
@@ -45,22 +45,21 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
 
         internal PipelineContext Context(FrontendRequest frontendRequest, RequestMethod method)
         {
-            PipelineContext _context =
-                new(frontendRequest, method)
-                {
-                    ApiSchemaDocument = SchemaDocument(),
-                    PathComponents = new(
-                        ProjectNamespace: new("ed-fi"),
-                        EndpointName: new("academicweeks"),
-                        DocumentUuid: No.DocumentUuid
-                    )
-                };
-            _context.ProjectSchema = new ProjectSchema(
-                _context.ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
-                NullLogger.Instance
-            );
+            PipelineContext _context = new(frontendRequest, method)
+            {
+                ApiSchemaDocuments = SchemaDocuments(),
+                PathComponents = new(
+                    ProjectNamespace: new("ed-fi"),
+                    EndpointName: new("academicweeks"),
+                    DocumentUuid: No.DocumentUuid
+                ),
+            };
+            _context.ProjectSchema = _context.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+                new("ed-fi")
+            )!;
             _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNode(new("academicweeks")) ?? new JsonObject()
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicweeks"))
+                    ?? new JsonObject()
             );
             return _context;
         }
@@ -106,7 +105,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 _context.ParsedBody = JsonNode.Parse(jsonData)!;
                 _context.PathComponents = _context.PathComponents with
                 {
-                    DocumentUuid = new DocumentUuid(new(id))
+                    DocumentUuid = new DocumentUuid(new(id)),
                 };
 
                 await Middleware().Execute(_context, Next());
@@ -161,7 +160,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 _context.ParsedBody = JsonNode.Parse(jsonData)!;
                 _context.PathComponents = _context.PathComponents with
                 {
-                    DocumentUuid = new DocumentUuid(new(differentId))
+                    DocumentUuid = new DocumentUuid(new(differentId)),
                 };
 
                 await Middleware().Execute(_context, Next());
@@ -224,7 +223,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 _context.ParsedBody = JsonNode.Parse(jsonData)!;
                 _context.PathComponents = _context.PathComponents with
                 {
-                    DocumentUuid = new DocumentUuid(new(id))
+                    DocumentUuid = new DocumentUuid(new(id)),
                 };
 
                 await Middleware().Execute(_context, Next());
@@ -287,7 +286,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 _context.ParsedBody = JsonNode.Parse(jsonData)!;
                 _context.PathComponents = _context.PathComponents with
                 {
-                    DocumentUuid = new DocumentUuid(new(id))
+                    DocumentUuid = new DocumentUuid(new(id)),
                 };
 
                 await Middleware().Execute(_context, Next());

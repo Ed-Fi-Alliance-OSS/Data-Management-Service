@@ -5,7 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
-using EdFi.DataManagementService.Core.ApiSchema.Extensions;
+using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
