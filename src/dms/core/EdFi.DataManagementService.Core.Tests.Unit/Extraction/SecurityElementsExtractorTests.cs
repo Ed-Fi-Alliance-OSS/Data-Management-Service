@@ -157,7 +157,7 @@ public class ExtractSecurityElementsTests
         [SetUp]
         public void Setup()
         {
-            ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("AcademicWeek")
                 .WithNamespaceSecurityElements([])
@@ -167,9 +167,9 @@ public class ExtractSecurityElementsTests
                 .WithEndDocumentPathsMapping()
                 .WithEndResource()
                 .WithEndProject()
-                .ToApiSchemaDocument();
+                .ToApiSchemaDocuments();
 
-            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "academicWeeks");
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "academicWeeks");
 
             string body = """
                 {"weekIdentifier": "123",
@@ -202,7 +202,7 @@ public class ExtractSecurityElementsTests
         [SetUp]
         public void Setup()
         {
-            ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("AcademicWeek")
                 .WithNamespaceSecurityElements([])
@@ -212,9 +212,9 @@ public class ExtractSecurityElementsTests
                 .WithEndDocumentPathsMapping()
                 .WithEndResource()
                 .WithEndProject()
-                .ToApiSchemaDocument();
+                .ToApiSchemaDocuments();
 
-            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "academicWeeks");
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "academicWeeks");
 
             string body = """
                 {
@@ -244,7 +244,7 @@ public class ExtractSecurityElementsTests
         [SetUp]
         public void Setup()
         {
-            ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("AcademicWeek")
                 .WithNamespaceSecurityElements([])
@@ -254,9 +254,9 @@ public class ExtractSecurityElementsTests
                 .WithEndDocumentPathsMapping()
                 .WithEndResource()
                 .WithEndProject()
-                .ToApiSchemaDocument();
+                .ToApiSchemaDocuments();
 
-            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "academicWeeks");
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "academicWeeks");
 
             string body = """
                 {"weekIdentifier": "123",

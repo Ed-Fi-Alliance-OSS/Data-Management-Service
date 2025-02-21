@@ -89,7 +89,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("AcademicWeek")
                 .WithNamespaceSecurityElements([])
@@ -99,9 +99,9 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                 .WithEndDocumentPathsMapping()
                 .WithEndResource()
                 .WithEndProject()
-                .ToApiSchemaDocument();
+                .ToApiSchemaDocuments();
 
-            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "academicWeeks");
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "academicWeeks");
 
             string body = """
                 {"weekIdentifier": "123",
