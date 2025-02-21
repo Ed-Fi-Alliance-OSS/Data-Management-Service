@@ -7,4 +7,8 @@ CREATE TABLE dms.EducationOrganizationHierarchyTermsLookup(
     PrimaryKey BIGINT UNIQUE  GENERATED ALWAYS AS IDENTITY(START WITH 1 INCREMENT BY 1),
     Id TEXT NOT NULL UNIQUE,
     Hierarchy JSONB NOT NULL
-)
+);
+
+-- Set REPLICA IDENTITY FULL so all columns are
+-- available through replication to e.g. Debezium
+ALTER TABLE dms.EducationOrganizationHierarchyTermsLookup REPLICA IDENTITY FULL;
