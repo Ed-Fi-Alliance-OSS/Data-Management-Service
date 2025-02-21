@@ -7,6 +7,7 @@ CREATE OR REPLACE FUNCTION dms.EducationOrganizationHierarchyTriggerFunction()
 RETURNS TRIGGER
 AS $$
 BEGIN
+ IF (TG_OP = 'INSERT') THEN
     INSERT INTO dms.EducationOrganizationHierarchyTermsLookup(Id, Hierarchy)
     VALUES (NEW.EducationOrganizationId, jsonb_build_array(NEW.EducationOrganizationId));
 
@@ -16,12 +17,40 @@ BEGIN
         '{-1}',
         to_jsonb(NEW.EducationOrganizationId), true)
     WHERE Id = (SELECT EducationOrganizationId FROM dms.EducationOrganizationHierarchy WHERE Id = NEW.ParentId);
+ ELSIF( TG_OP = 'UPDATE' AND NEW.ParentId <> OLD.ParentId ) THEN
+    -- Remove from the old parent
+    UPDATE dms.EducationOrganizationHierarchyTermsLookup
+    SET Hierarchy = (
+            SELECT jsonb_agg(elem)
+            FROM jsonb_array_elements(Hierarchy) elem
+            WHERE elem <> to_jsonb(OLD.EducationOrganizationId)
+        )
+    WHERE Id = (SELECT EducationOrganizationId FROM dms.EducationOrganizationHierarchy WHERE Id = OLD.ParentId);
 
-RETURN NEW;
+    -- Add to the new parent
+    UPDATE dms.EducationOrganizationHierarchyTermsLookup
+    SET Hierarchy = jsonb_insert(
+        Hierarchy,
+        '{-1}',
+        to_jsonb(NEW.EducationOrganizationId), true)
+    WHERE Id = (SELECT EducationOrganizationId FROM dms.EducationOrganizationHierarchy WHERE Id = NEW.ParentId);
+ ELSIF (TG_OP = 'DELETE') THEN
+	DELETE FROM dms.EducationOrganizationHierarchyTermsLookup
+	WHERE Id = OLD.EducationOrganizationId;
+
+	UPDATE dms.EducationOrganizationHierarchyTermsLookup
+    SET Hierarchy = (
+            SELECT jsonb_agg(elem)
+            FROM jsonb_array_elements(Hierarchy) elem
+            WHERE elem <> to_jsonb(OLD.EducationOrganizationId)
+        )
+    WHERE Id = (SELECT EducationOrganizationId FROM dms.EducationOrganizationHierarchy WHERE Id = OLD.ParentId);
+ END IF;
+RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE TRIGGER EducationOrganizationHierarchyTrigger
-AFTER INSERT ON dms.EducationOrganizationHierarchy
+AFTER INSERT OR UPDATE OR DELETE ON dms.EducationOrganizationHierarchy
     FOR EACH ROW
     EXECUTE PROCEDURE dms.EducationOrganizationHierarchyTriggerFunction()
