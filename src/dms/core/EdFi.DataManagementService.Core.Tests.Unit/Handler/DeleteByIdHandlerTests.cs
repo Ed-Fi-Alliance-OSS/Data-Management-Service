@@ -30,7 +30,7 @@ public class DeleteByIdHandlerTests
 
     internal static ResourceSchema GetResourceSchema()
     {
-        ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
+        ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
             .WithStartProject()
             .WithStartResource("Assessment")
             .WithNamespaceSecurityElements(["$.namespace"])
@@ -39,9 +39,9 @@ public class DeleteByIdHandlerTests
             .WithEndDocumentPathsMapping()
             .WithEndResource()
             .WithEndProject()
-            .ToApiSchemaDocument();
+            .ToApiSchemaDocuments();
 
-        ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "assessments");
+        ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "assessments");
         return resourceSchema;
     }
 
