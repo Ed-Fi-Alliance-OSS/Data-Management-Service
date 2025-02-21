@@ -30,15 +30,18 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
             return schemaNodes;
         }
 
-
-        string[] schemaFiles = { "ApiSchema.json", "ApiSchema.Extension.json" };
+        string[] schemaFiles = ["ApiSchema.json", "ApiSchema.Extension.json"];
 
         foreach (string fileName in schemaFiles)
         {
             string filePath = Path.Combine(basePath, fileName);
             if (!File.Exists(filePath))
             {
-                _logger.LogInformation("Schema file '{FileName}' not found in '{BasePath}'.", fileName, basePath);
+                _logger.LogInformation(
+                    "Schema file '{FileName}' not found in '{BasePath}'.",
+                    fileName,
+                    basePath
+                );
                 continue;
             }
 
@@ -55,14 +58,20 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to load schema file '{FileName}' from '{BasePath}'", fileName, basePath);
+                _logger.LogError(
+                    ex,
+                    "Failed to load schema file '{FileName}' from '{BasePath}'",
+                    fileName,
+                    basePath
+                );
             }
         }
 
         return schemaNodes;
     });
 
-    public JsonNode CoreApiSchemaRootNode => _apiSchemaNodes.Value.TryGetValue("ApiSchema.json", out var node) ? node : new JsonArray();
+    public JsonNode CoreApiSchemaRootNode =>
+        _apiSchemaNodes.Value.TryGetValue("ApiSchema.json", out var node) ? node : new JsonArray();
 
     public JsonNode[] ExtensionApiSchemaRootNodes =>
         _apiSchemaNodes.Value.TryGetValue("ApiSchema.Extension.json", out var node) ? [node] : [];
