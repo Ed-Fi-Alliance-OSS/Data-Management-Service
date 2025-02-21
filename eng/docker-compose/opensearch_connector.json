@@ -2,7 +2,7 @@
   "name":"opensearch-sink",
   "config": {
     "connector.class": "io.aiven.kafka.connect.opensearch.OpensearchSinkConnector",
-    "topics": "edfi.dms.document",
+    "topics": "edfi.dms.document,edfi.dms.educationorganizationhierarchytermslookup",
     "type_name": "_doc",
 
     "connection.url": "http://dms-search:9200",
