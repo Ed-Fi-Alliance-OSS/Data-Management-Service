@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using Microsoft.Extensions.Logging;
 
@@ -192,13 +193,14 @@ public class OpenApiDocument(ILogger _logger)
     /// <summary>
     /// Creates an OpenAPI specification derived from the given core and extension ApiSchemas
     /// </summary>
-    public JsonNode CreateDocument(JsonNode coreApiSchemaRootNode, JsonNode[] extensionApiSchemaRootNodes)
+    public JsonNode CreateDocument(ApiSchemaNodes apiSchemas)
     {
         // Get the core OpenAPI spec as a copy since we are going to modify it
-        JsonNode openApiSpecification = FindCoreOpenApiSpecification(coreApiSchemaRootNode).DeepClone();
+        JsonNode openApiSpecification = FindCoreOpenApiSpecification(apiSchemas.CoreApiSchemaRootNode)
+            .DeepClone();
 
         // Get each extension OpenAPI fragment to insert into core OpenAPI spec
-        foreach (JsonNode extensionApiSchemaRootNode in extensionApiSchemaRootNodes)
+        foreach (JsonNode extensionApiSchemaRootNode in apiSchemas.ExtensionApiSchemaRootNodes)
         {
             JsonNode extensionFragments = FindOpenApiExtensionFragments(extensionApiSchemaRootNode);
 

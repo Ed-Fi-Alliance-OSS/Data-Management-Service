@@ -13,7 +13,7 @@ internal class DependencyCalculator(JsonNode _apiSchemaRootNode, ILogger _logger
 {
     public JsonArray GetDependenciesFromResourceSchema()
     {
-        ApiSchemaDocuments apiSchemaDocuments = new(_apiSchemaRootNode, [], _logger);
+        ApiSchemaDocuments apiSchemaDocuments = new(new(_apiSchemaRootNode, []), _logger);
         JsonArray dependenciesJsonArray = [];
         ProjectSchema coreProjectSchema = apiSchemaDocuments.GetCoreProjectSchema();
         JsonNode projectSchemaNode = coreProjectSchema.getRawNodeRemoveMe();

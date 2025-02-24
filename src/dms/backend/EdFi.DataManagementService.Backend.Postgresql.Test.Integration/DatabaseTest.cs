@@ -109,8 +109,10 @@ public abstract class DatabaseTest : DatabaseTestBase
 
     internal class ApiSchemaProvider : IApiSchemaProvider
     {
-        public JsonNode CoreApiSchemaRootNode => _apiSchemaRootNode;
-        public JsonNode[] ExtensionApiSchemaRootNodes => [];
+        public ApiSchemaNodes GetApiSchemaNodes()
+        {
+            return new(_apiSchemaRootNode, []);
+        }
     }
 
     [SetUp]
@@ -345,7 +347,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                 ResourceInfo = CreateResourceInfo(resourceName),
                 TraceId = traceId,
                 DocumentUuid = new DocumentUuid(documentUuidGuid),
-                ResourceAuthorizationHandler = new ResourceAuthorizationHandler([], NullLogger.Instance)
+                ResourceAuthorizationHandler = new ResourceAuthorizationHandler([], NullLogger.Instance),
             }
         ).ActLike<IGetRequest>();
     }

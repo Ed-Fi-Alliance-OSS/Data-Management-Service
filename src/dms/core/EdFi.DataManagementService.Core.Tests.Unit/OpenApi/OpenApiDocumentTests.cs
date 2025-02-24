@@ -164,7 +164,7 @@ public class OpenApiDocumentTests
         {
             JsonNode coreSchemaRootNode = CoreSchemaRootNode();
             OpenApiDocument openApiDocument = new(NullLogger.Instance);
-            openApiDocumentResult = openApiDocument.CreateDocument(coreSchemaRootNode, []);
+            openApiDocumentResult = openApiDocument.CreateDocument(new(coreSchemaRootNode, []));
         }
 
         [Test]
@@ -242,8 +242,7 @@ public class OpenApiDocumentTests
             ];
             OpenApiDocument openApiDocument = new(NullLogger.Instance);
             openApiDocumentResult = openApiDocument.CreateDocument(
-                coreSchemaRootNode,
-                extensionSchemaRootNodes
+                new(coreSchemaRootNode, extensionSchemaRootNodes)
             );
         }
 

@@ -50,7 +50,7 @@ public class APISchemaFileTests
                 new MatchingDocumentUuidsValidator(),
                 new EqualityConstraintValidator(),
                 NullLogger<ApiService>.Instance,
-                Options.Create(new AppSettings { AllowIdentityUpdateOverrides = "", ApiSchemaFolder = "\\..\\..\\EdFi.DataStandard51.ApiSchema\\" }),
+                Options.Create(new AppSettings { AllowIdentityUpdateOverrides = "" }),
                 new AuthorizationStrategiesProvider(),
                 new NamedAuthorizationServiceFactory(serviceProvider),
                 ResiliencePipeline.Empty
@@ -64,7 +64,8 @@ public class APISchemaFileTests
         {
             var schemaContent = JsonNode.Parse(File.ReadAllText("ApiSchema/InvalidResourceSchemas.json"));
             apiSchemaProvider = A.Fake<IApiSchemaProvider>();
-            A.CallTo(() => apiSchemaProvider.CoreApiSchemaRootNode).Returns(schemaContent!);
+            A.CallTo(() => apiSchemaProvider.GetApiSchemaNodes())
+                .Returns(new ApiSchemaNodes(schemaContent!, []));
         }
 
         [TestFixture]

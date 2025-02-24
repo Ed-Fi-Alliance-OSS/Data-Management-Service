@@ -13,11 +13,7 @@ namespace EdFi.DataManagementService.Core.ApiSchema;
 /// <summary>
 /// Provides information from loaded ApiSchema.json documents
 /// </summary>
-internal class ApiSchemaDocuments(
-    JsonNode _coreApiSchemaRootNode,
-    JsonNode[] _extensionApiSchemaRootNodes,
-    ILogger _logger
-)
+internal class ApiSchemaDocuments(ApiSchemaNodes _apiSchemaNodes, ILogger _logger)
 {
     /// <summary>
     /// Gets the core ProjectSchema node in the document.
@@ -25,7 +21,7 @@ internal class ApiSchemaDocuments(
     public ProjectSchema GetCoreProjectSchema()
     {
         JsonNode projectSchemaNode =
-            _coreApiSchemaRootNode["projectSchema"]
+            _apiSchemaNodes.CoreApiSchemaRootNode["projectSchema"]
             ?? throw new InvalidOperationException("Expected projectSchema node to exist.");
         return new ProjectSchema(projectSchemaNode, _logger);
     }
@@ -35,8 +31,8 @@ internal class ApiSchemaDocuments(
     /// </summary>
     public ProjectSchema[] GetExtensionProjectSchemas()
     {
-        return _extensionApiSchemaRootNodes
-            .Select(node =>
+        return _apiSchemaNodes
+            .ExtensionApiSchemaRootNodes.Select(node =>
                 node["projectSchema"]
                 ?? throw new InvalidOperationException("Expected projectSchema node to exist.")
             )

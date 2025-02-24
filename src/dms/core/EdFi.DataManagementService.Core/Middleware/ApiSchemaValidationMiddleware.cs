@@ -19,7 +19,9 @@ internal class ApiSchemaValidationMiddleware(
 {
     private readonly Lazy<List<SchemaValidationFailure>> _schemaValidationFailures = new(() =>
     {
-        var validationErrors = _apiSchemaValidator.Validate(_apiSchemaProvider.CoreApiSchemaRootNode).Value;
+        var validationErrors = _apiSchemaValidator
+            .Validate(_apiSchemaProvider.GetApiSchemaNodes().CoreApiSchemaRootNode)
+            .Value;
         if (validationErrors.Any())
         {
             _logger.LogCritical("Api schema validation failed.");

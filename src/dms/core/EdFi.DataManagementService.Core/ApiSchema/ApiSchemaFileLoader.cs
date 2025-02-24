@@ -3,7 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Reflection;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -16,63 +18,123 @@ namespace EdFi.DataManagementService.Core.ApiSchema;
 internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOptions<AppSettings> appSettings)
     : IApiSchemaProvider
 {
-    private readonly Lazy<Dictionary<string, JsonNode>> _apiSchemaNodes = new(() =>
+    /// <summary>
+    /// Loads the resource with the given resourceName from the assembly as a JsonNode
+    /// </summary>
+    private static JsonNode LoadFromAssembly(string resourceName, Assembly assembly)
     {
-        _logger.LogDebug("Entering ApiSchemaFileLoader._apiSchemaNodes");
+        using Stream stream =
+            assembly.GetManifestResourceStream(resourceName)
+            ?? throw new InvalidOperationException(
+                $"Could not load assembly-bundled ApiSchema file '{resourceName}'"
+            );
 
-        var schemaNodes = new Dictionary<string, JsonNode>();
+        using StreamReader reader = new(stream);
 
-        string basePath = Path.GetFullPath(appSettings.Value.ApiSchemaFolder);
+        string? jsonContent = reader.ReadToEnd();
 
-        if (!Directory.Exists(basePath))
+        return JsonNode.Parse(jsonContent)
+            ?? throw new InvalidOperationException(
+                $"Unable to parse assembly-bundled ApiSchema file '{resourceName}'"
+            );
+    }
+
+    /// <summary>
+    /// Finds and reads all ApiSchema*.json files in the given directory path.
+    /// Returns the parsed files as JsonNodes
+    /// </summary>
+    private static List<JsonNode> ReadApiSchemaFiles(string directoryPath)
+    {
+        List<JsonNode> fileContents = [];
+
+        try
         {
-            _logger.LogError("ApiSchema folder '{BasePath}' does not exist.", basePath);
-            return schemaNodes;
-        }
+            IEnumerable<string> matchingFilePaths = Directory.EnumerateFiles(
+                directoryPath,
+                "ApiSchema*.json",
+                SearchOption.AllDirectories
+            );
 
-        string[] schemaFiles = ["ApiSchema.json", "ApiSchema.Extension.json"];
-
-        foreach (string fileName in schemaFiles)
-        {
-            string filePath = Path.Combine(basePath, fileName);
-            if (!File.Exists(filePath))
+            foreach (string filePath in matchingFilePaths)
             {
-                _logger.LogInformation(
-                    "Schema file '{FileName}' not found in '{BasePath}'.",
-                    fileName,
-                    basePath
-                );
-                continue;
-            }
-
-            try
-            {
-                string jsonContent = File.ReadAllText(filePath);
-                JsonNode? rootNode = JsonNode.Parse(jsonContent);
-                if (rootNode == null)
+                try
                 {
-                    throw new InvalidOperationException($"Unable to parse '{fileName}'");
-                }
+                    // Read all text from the file into a string.
+                    string fileContent = File.ReadAllText(filePath);
 
-                schemaNodes[fileName] = rootNode;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(
-                    ex,
-                    "Failed to load schema file '{FileName}' from '{BasePath}'",
-                    fileName,
-                    basePath
-                );
+                    JsonNode parsedFileContent =
+                        JsonNode.Parse(fileContent)
+                        ?? throw new InvalidOperationException(
+                            $"Unable to parse ApiSchema file at '{filePath}'"
+                        );
+
+                    fileContents.Add(parsedFileContent);
+                }
+                catch (IOException ex)
+                {
+                    throw new InvalidOperationException($"Error reading file '{filePath}'", ex);
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    throw new InvalidOperationException($"Access denied to file '{filePath}'", ex);
+                }
             }
         }
+        catch (DirectoryNotFoundException ex)
+        {
+            throw new InvalidOperationException($"Directory not found: '{directoryPath}'", ex);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            throw new InvalidOperationException($"Access denied to directory '{directoryPath}'", ex);
+        }
 
-        return schemaNodes;
+        return fileContents;
+    }
+
+    /// <summary>
+    /// Returns core and extension ApiSchema JsonNodes
+    /// </summary>
+    private readonly Lazy<ApiSchemaNodes> _apiSchemaNodes = new(() =>
+    {
+        if (appSettings.Value.UseApiSchemaPath)
+        {
+            string apiSchemaPath =
+                appSettings.Value.ApiSchemaPath
+                ?? throw new InvalidOperationException("No ApiSchemaPath configuration is set");
+            List<JsonNode> apiSchemaNodes = ReadApiSchemaFiles(apiSchemaPath);
+
+            JsonNode coreApiSchemaNode = apiSchemaNodes.First(node =>
+                !node.SelectRequiredNodeFromPathAs<bool>("$.projectSchema.isExtensionProject", _logger)
+            );
+
+            JsonNode[] extensionApiSchemaNodes = apiSchemaNodes
+                .Where(node =>
+                    node.SelectRequiredNodeFromPathAs<bool>("$.projectSchema.isExtensionProject", _logger)
+                )
+                .ToArray();
+
+            return new(coreApiSchemaNode, extensionApiSchemaNodes);
+        }
+        else
+        {
+            Assembly assembly =
+                Assembly.GetAssembly(typeof(DataStandard51.ApiSchema.Marker))
+                ?? throw new InvalidOperationException("Could not load assembly-bundled ApiSchema file");
+
+            string? resourceName = assembly
+                .GetManifestResourceNames()
+                .Single(str => str.EndsWith("ApiSchema.json"));
+
+            return new(LoadFromAssembly(resourceName, assembly), []);
+        }
     });
 
-    public JsonNode CoreApiSchemaRootNode =>
-        _apiSchemaNodes.Value.TryGetValue("ApiSchema.json", out var node) ? node : new JsonArray();
-
-    public JsonNode[] ExtensionApiSchemaRootNodes =>
-        _apiSchemaNodes.Value.TryGetValue("ApiSchema.Extension.json", out var node) ? [node] : [];
+    /// <summary>
+    /// Returns core and extension ApiSchema JsonNodes
+    /// </summary>
+    public ApiSchemaNodes GetApiSchemaNodes()
+    {
+        return _apiSchemaNodes.Value;
+    }
 }

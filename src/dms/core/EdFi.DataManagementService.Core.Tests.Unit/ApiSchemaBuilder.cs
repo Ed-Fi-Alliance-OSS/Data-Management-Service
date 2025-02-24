@@ -61,8 +61,7 @@ public class ApiSchemaBuilder
             ToApiSchemaRootNode
         );
         return new ApiSchemaDocuments(
-            ToApiSchemaRootNode(_coreProjectNode!),
-            [.. extensionApiSchemaRootNodes],
+            new(ToApiSchemaRootNode(_coreProjectNode!), [.. extensionApiSchemaRootNodes]),
             NullLogger.Instance
         );
     }

@@ -304,11 +304,7 @@ internal class ApiService(
     /// </summary>
     public IList<IDataModelInfo> GetDataModelInfo()
     {
-        ApiSchemaDocuments apiSchemaDocuments = new(
-            _apiSchemaProvider.CoreApiSchemaRootNode,
-            _apiSchemaProvider.ExtensionApiSchemaRootNodes,
-            _logger
-        );
+        ApiSchemaDocuments apiSchemaDocuments = new(_apiSchemaProvider.GetApiSchemaNodes(), _logger);
 
         IList<IDataModelInfo> result = [];
         foreach (ProjectSchema projectSchema in apiSchemaDocuments.GetAllProjectSchemas())
@@ -330,7 +326,10 @@ internal class ApiService(
     /// <returns>JSON array ordered by dependency sequence</returns>
     public JsonArray GetDependencies()
     {
-        DependencyCalculator dependencyCalculator = new(_apiSchemaProvider.CoreApiSchemaRootNode, _logger);
+        DependencyCalculator dependencyCalculator = new(
+            _apiSchemaProvider.GetApiSchemaNodes().CoreApiSchemaRootNode,
+            _logger
+        );
         return dependencyCalculator.GetDependenciesFromResourceSchema();
     }
 
@@ -340,10 +339,7 @@ internal class ApiService(
     private readonly Lazy<JsonNode> _openApiSpecification = new(() =>
     {
         OpenApiDocument openApiDocument = new(_logger);
-        return openApiDocument.CreateDocument(
-            _apiSchemaProvider.CoreApiSchemaRootNode,
-            _apiSchemaProvider.ExtensionApiSchemaRootNodes
-        );
+        return openApiDocument.CreateDocument(_apiSchemaProvider.GetApiSchemaNodes());
     });
 
     /// <summary>
