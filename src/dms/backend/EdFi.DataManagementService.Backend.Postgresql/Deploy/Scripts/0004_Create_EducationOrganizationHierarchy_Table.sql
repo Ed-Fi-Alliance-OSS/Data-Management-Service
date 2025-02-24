@@ -7,6 +7,6 @@ CREATE TABLE dms.EducationOrganizationHierarchy(
     Id BIGINT UNIQUE GENERATED ALWAYS AS IDENTITY(START WITH 1 INCREMENT BY 1),
     ProjectName VARCHAR(256) NOT NULL,
     ResourceName VARCHAR(256) NOT NULL,
-    EducationOrganizationId TEXT NOT NULL UNIQUE,
+    EducationOrganizationId VARCHAR(256) NOT NULL UNIQUE,
     ParentId BIGINT REFERENCES dms.EducationOrganizationHierarchy(Id) ON DELETE CASCADE
 )
