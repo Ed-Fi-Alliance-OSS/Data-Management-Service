@@ -63,7 +63,8 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader.Tests.Unit
             {
                 // Arrange
                 string packageId = "EdFi.DataStandard51.ApiSchema";
-                string feedUrl = "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json";
+                string feedUrl =
+                    "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json";
 
                 // Act
                 string packagePath = await _downloader.DownloadNuGetPackageAsync(
@@ -87,7 +88,8 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader.Tests.Unit
                 // Arrange
                 string packageId = "EdFi.DataStandard51.ApiSchema";
                 string packageVersion = "1.0.40";
-                string feedUrl = "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json";
+                string feedUrl =
+                    "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json";
 
                 // Act
                 string packagePath = await _downloader.DownloadNuGetPackageAsync(
