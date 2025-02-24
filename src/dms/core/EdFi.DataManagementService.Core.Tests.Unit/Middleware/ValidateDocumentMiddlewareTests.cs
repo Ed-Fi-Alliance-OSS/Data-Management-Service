@@ -75,16 +75,6 @@ public class ValidateDocumentMiddlewareTests
                                 .AdditionalProperties(false)
                         )
                         .MinItems(1)
-                ),
-                (
-                    "collection",
-                    new JsonSchemaBuilder()
-                        .Type(SchemaValueType.Object)
-                        .Properties(
-                            ("item", new JsonSchemaBuilder().Type(SchemaValueType.String))
-                        )
-                        .Required("item")
-                        .AdditionalProperties(false)
                 )
             )
             .Required("schoolId", "gradeLevels", "nameOfInstitution");
