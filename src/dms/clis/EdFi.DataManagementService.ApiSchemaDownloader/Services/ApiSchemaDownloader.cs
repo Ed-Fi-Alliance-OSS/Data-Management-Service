@@ -123,7 +123,9 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader.Services
                         false,
                         cacheContext,
                         NullLogger.Instance,
-                        CancellationToken.None))
+                        CancellationToken.None
+                    )
+                )
                     .OrderByDescending(p => p.Identity.Version)
                     .FirstOrDefault();
 
@@ -146,8 +148,9 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader.Services
                     false,
                     cacheContext,
                     NullLogger.Instance,
-                    CancellationToken.None))
-                .FirstOrDefault(p => p.Identity.Version == packageIdentity.Version);
+                    CancellationToken.None
+                )
+            ).FirstOrDefault(p => p.Identity.Version == packageIdentity.Version);
 
             if (packageMetadata == null)
             {

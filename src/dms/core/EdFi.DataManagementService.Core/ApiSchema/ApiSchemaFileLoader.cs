@@ -40,7 +40,7 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
     }
 
     /// <summary>
-    /// Finds and reads all ApiSchema*.json files in the given directory path.
+    /// Finds and reads all *.ApiSchema.json files in the given directory path.
     /// Returns the parsed files as JsonNodes
     /// </summary>
     private static List<JsonNode> ReadApiSchemaFiles(string directoryPath)
@@ -51,7 +51,7 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
         {
             IEnumerable<string> matchingFilePaths = Directory.EnumerateFiles(
                 directoryPath,
-                "ApiSchema*.json",
+                "*.ApiSchema.json",
                 SearchOption.AllDirectories
             );
 

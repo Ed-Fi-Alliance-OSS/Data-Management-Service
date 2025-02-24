@@ -5,7 +5,6 @@
 
 using System.Net;
 using System.Security.Claims;
-using System.Text.Json;
 using System.Threading.RateLimiting;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Deploy;

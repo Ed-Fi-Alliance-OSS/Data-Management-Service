@@ -4,13 +4,12 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 
+using CommandLine;
+using EdFi.DataManagementService.ApiSchemaDownloader;
+using EdFi.DataManagementService.ApiSchemaDownloader.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Serilog;
-using CommandLine;
-using EdFi.DataManagementService.ApiSchemaDownloader.Services;
-using EdFi.DataManagementService.ApiSchemaDownloader;
-
 
 var serviceCollection = new ServiceCollection();
 ConfigureServices(serviceCollection);
@@ -40,6 +39,11 @@ try
             logger.LogCritical("Error: packageId is required.");
         }
 
+        if (string.IsNullOrWhiteSpace(options.ApiSchemaFolder))
+        {
+            logger.LogCritical("Error: apiSchemaFolder is required.");
+        }
+
         string packageId = options.PackageId;
         string? packageVersion = options.PackageVersion;
         string feedUrl = options.FeedUrl;
@@ -58,15 +62,16 @@ try
         Console.WriteLine($"Package downloaded to: {packagePath}");
         logger.LogInformation("Package downloaded to: {PackagePath}", packagePath);
 
-
-
         // Ensure the output directory for API schema extraction exists
         Directory.CreateDirectory(options.ApiSchemaFolder);
 
         // Extract the API schema
         downloader.ExtractApiSchemaJsonFromAssembly(packageId, packagePath, options.ApiSchemaFolder);
         Console.WriteLine($"ApiSchema.json extracted to folder: {options.ApiSchemaFolder}");
-        logger.LogInformation("ApiSchema.json extracted to folder: {ApiSchemaFolder}", options.ApiSchemaFolder);
+        logger.LogInformation(
+            "ApiSchema.json extracted to folder: {ApiSchemaFolder}",
+            options.ApiSchemaFolder
+        );
     });
 
     return 0;
@@ -77,7 +82,7 @@ catch (Exception ex)
     return 1;
 }
 
-void ConfigureServices(IServiceCollection services)
+static void ConfigureServices(IServiceCollection services)
 {
     var logConfiguration = new LoggerConfiguration().MinimumLevel.Debug();
 
@@ -102,5 +107,4 @@ void ConfigureServices(IServiceCollection services)
     services.AddSingleton(typeof(ILogger<>), typeof(Logger<>));
 
     services.AddSingleton<IApiSchemaDownloader, ApiSchemaDownloader>();
-
 }
