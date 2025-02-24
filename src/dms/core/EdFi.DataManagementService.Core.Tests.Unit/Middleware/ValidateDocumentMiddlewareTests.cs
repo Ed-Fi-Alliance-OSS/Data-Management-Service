@@ -75,6 +75,16 @@ public class ValidateDocumentMiddlewareTests
                                 .AdditionalProperties(false)
                         )
                         .MinItems(1)
+                ),
+                (
+                    "collection",
+                    new JsonSchemaBuilder()
+                        .Type(SchemaValueType.Object)
+                        .Properties(
+                            ("item", new JsonSchemaBuilder().Type(SchemaValueType.String))
+                        )
+                        .Required("item")
+                        .AdditionalProperties(false)
                 )
             )
             .Required("schoolId", "gradeLevels", "nameOfInstitution");
@@ -796,6 +806,56 @@ public class ValidateDocumentMiddlewareTests
         public void It_should_not_have_response()
         {
             _context.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    [TestFixture]
+    public class Given_An_Insert_Request_With_Empty_NonRequired_Collection
+    : ValidateDocumentMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            string jsonData =
+                """{"schoolId": 7687,"gradeLevels":{"gradeLevelDescriptor": "grade1"},"collection": [{}]}""";
+
+            var frontEndRequest = new FrontendRequest(
+                "ed-fi/schools",
+                Body: jsonData,
+                QueryParameters: [],
+                TraceId: new TraceId("traceId"),
+                ClientAuthorizations: new ClientAuthorizations(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
+            );
+            _context = Context(frontEndRequest, RequestMethod.POST);
+            await Middleware().Execute(_context, Next());
+        }
+
+        [Test]
+        public void It_should_not_have_collection_in_get_response()
+        {
+            var getContext = Context(new FrontendRequest(
+                "ed-fi/schools/7687",
+                Body: null,
+                QueryParameters: [],
+                TraceId: new TraceId("traceId"),
+                ClientAuthorizations: new ClientAuthorizations(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
+            ), RequestMethod.GET);
+
+            Middleware().Execute(getContext, Next()).Wait();
+
+            getContext.FrontendResponse.Body?.ToJsonString().Should().NotContain("collection");
         }
     }
 }
