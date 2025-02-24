@@ -21,13 +21,15 @@ Feature: Resources "Create" Operation validations
               And the response body is
                   """
                   {
-                    "detail": "The request could not be processed. See 'errors' for details.",
-                    "type": "urn:ed-fi:api:bad-request",
-                    "title": "Bad Request",
-                    "status": 400,
-                    "correlationId": null,
-                    "validationErrors": {},
-                    "errors": ["A non-empty request body is required."]
+                      "detail": "The request could not be processed. See 'errors' for details.",
+                      "type": "urn:ed-fi:api:bad-request",
+                      "title": "Bad Request",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": [
+                          "A non-empty request body is required."
+                      ]
                   }
                   """
 
@@ -35,145 +37,144 @@ Feature: Resources "Create" Operation validations
         Scenario: 02 Post using an empty JSON body (Resource)
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
-                    {
-                    }
+                  {}
                   """
              Then it should respond with 400
               And the response body is
                   """
-                    {
+                  {
                       "detail": "Data validation failed. See 'validationErrors' for details.",
                       "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                       "title": "Data Validation Failed",
                       "status": 400,
                       "correlationId": null,
                       "validationErrors": {
-                        "$.weekIdentifier": [
-                          "weekIdentifier is required."
-                        ],
-                        "$.schoolReference": [
-                          "schoolReference is required."
-                        ],
-                        "$.beginDate": [
-                          "beginDate is required."
-                        ],
-                        "$.endDate": [
-                          "endDate is required."
-                        ],
-                        "$.totalInstructionalDays": [
-                          "totalInstructionalDays is required."
-                        ]
+                          "$.weekIdentifier": [
+                              "weekIdentifier is required."
+                          ],
+                          "$.schoolReference": [
+                              "schoolReference is required."
+                          ],
+                          "$.beginDate": [
+                              "beginDate is required."
+                          ],
+                          "$.endDate": [
+                              "endDate is required."
+                          ],
+                          "$.totalInstructionalDays": [
+                              "totalInstructionalDays is required."
+                          ]
                       },
                       "errors": []
-                    }
+                  }
                   """
 
         @API-154 @POST
         Scenario: 03 Create a document with spaces in identity fields (Resource)
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
-                    {
-                        "weekIdentifier": "             ",
-                        "schoolReference": {
-                            "schoolId": 255901
-                        },
-                        "beginDate": "2024-07-10",
-                        "endDate": "2024-07-30",
-                        "totalInstructionalDays": 20
-                    }
+                  {
+                      "weekIdentifier": "             ",
+                      "schoolReference": {
+                          "schoolId": 255901
+                      },
+                      "beginDate": "2024-07-10",
+                      "endDate": "2024-07-30",
+                      "totalInstructionalDays": 20
+                  }
                   """
              Then it should respond with 400
               And the response body is
                   """
-                    {
-                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                     "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-                     "title": "Data Validation Failed",
-                     "status": 400,
-                     "correlationId": null,
-                     "validationErrors": {
-                         "$.weekIdentifier": [
-                             "weekIdentifier cannot contain leading or trailing spaces."
-                         ]
-                     },
-                     "errors": []
-                    }
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                          "$.weekIdentifier": [
+                              "weekIdentifier cannot contain leading or trailing spaces."
+                          ]
+                      },
+                      "errors": []
+                  }
                   """
 
         @API-155 @POST
         Scenario: 04 Create a document with leading spaces in identity fields (Resource)
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
-                    {
-                        "weekIdentifier": "             a",
-                        "schoolReference": {
-                        "schoolId": 255901
-                        },
-                        "beginDate": "2024-07-10",
-                        "endDate": "2024-07-30",
-                        "totalInstructionalDays": 20
-                    }
+                  {
+                      "weekIdentifier": "             a",
+                      "schoolReference": {
+                          "schoolId": 255901
+                      },
+                      "beginDate": "2024-07-10",
+                      "endDate": "2024-07-30",
+                      "totalInstructionalDays": 20
+                  }
                   """
              Then it should respond with 400
               And the response body is
                   """
-                    {
-                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                     "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-                     "title": "Data Validation Failed",
-                     "status": 400,
-                     "correlationId": null,
-                     "validationErrors": {
-                         "$.weekIdentifier": [
-                             "weekIdentifier cannot contain leading or trailing spaces."
-                         ]
-                     },
-                     "errors": []
-                    }
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                          "$.weekIdentifier": [
+                              "weekIdentifier cannot contain leading or trailing spaces."
+                          ]
+                      },
+                      "errors": []
+                  }
                   """
 
         @API-156 @POST
         Scenario: 05 Create a document with trailing spaces in identity fields (Resource)
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
-                    {
-                        "weekIdentifier": "a             ",
-                        "schoolReference": {
-                        "schoolId": 255901
-                        },
-                        "beginDate": "2024-07-10",
-                        "endDate": "2024-07-30",
-                        "totalInstructionalDays": 20
-                    }
+                  {
+                      "weekIdentifier": "a             ",
+                      "schoolReference": {
+                          "schoolId": 255901
+                      },
+                      "beginDate": "2024-07-10",
+                      "endDate": "2024-07-30",
+                      "totalInstructionalDays": 20
+                  }
                   """
              Then it should respond with 400
               And the response body is
                   """
-                    {
-                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                     "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-                     "title": "Data Validation Failed",
-                     "status": 400,
-                     "correlationId": null,
-                     "validationErrors": {
-                         "$.weekIdentifier": [
-                             "weekIdentifier cannot contain leading or trailing spaces."
-                         ]
-                     },
-                     "errors": []
-                    }
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                          "$.weekIdentifier": [
+                              "weekIdentifier cannot contain leading or trailing spaces."
+                          ]
+                      },
+                      "errors": []
+                  }
                   """
 
         @API-157 @POST
         Scenario: 07 Create a document with a required, non-identity, property's value containing leading and trailing white spaces (Resource)
              When a POST request is made to "/ed-fi/students" with
                   """
-                    {
-                        "studentUniqueId":"8989",
-                        "birthDate":  "2017-08-23",
-                        "firstName": "first name",
-                        "lastSurname": "      last name            "
-                    }
+                  {
+                      "studentUniqueId": "8989",
+                      "birthDate": "2017-08-23",
+                      "firstName": "first name",
+                      "lastSurname": "      last name            "
+                  }
                   """
              Then it should respond with 201
 
@@ -181,15 +182,15 @@ Feature: Resources "Create" Operation validations
         Scenario: 08 Create a document with optional property's value containing only white spaces (Resource)
              When a POST request is made to "/ed-fi/students" with
                   """
-                    {
-                        "studentUniqueId":"8989",
-                        "birthDate":  "2017-08-23",
-                        "firstName": "first name",
-                        "lastSurname": "last name",
-                        "middleName": "                        "
-                    }
+                  {
+                      "studentUniqueId": "8989",
+                      "birthDate": "2017-08-23",
+                      "firstName": "first name",
+                      "lastSurname": "last name",
+                      "middleName": "                        "
+                  }
                   """
-             # 200 because this is updating the document stored with the scenario above.
+            # 200 because this is updating the document stored with the scenario above.
              Then it should respond with 200
 
         @API-159 @POST
@@ -198,30 +199,30 @@ Feature: Resources "Create" Operation validations
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
                   {
-                    "id": "3a93cdce-157d-4cfe-b6f8-d5caa88c986b",
-                    "weekIdentifier": "abcdef",
-                    "schoolReference": {
-                        "schoolId": 255901001
-                    },
-                    "beginDate": "2024-04-04",
-                    "endDate": "2024-04-04",
-                    "totalInstructionalDays": 300
+                      "id": "3a93cdce-157d-4cfe-b6f8-d5caa88c986b",
+                      "weekIdentifier": "abcdef",
+                      "schoolReference": {
+                          "schoolId": 255901001
+                      },
+                      "beginDate": "2024-04-04",
+                      "endDate": "2024-04-04",
+                      "totalInstructionalDays": 300
                   }
                   """
              Then it should respond with 400
               And the response body is
                   """
-                    {
-                        "detail": "The request data was constructed incorrectly.",
-                        "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-                        "title": "Data Validation Failed",
-                        "status": 400,
-                        "correlationId": null,
-                        "errors": [
-                            "Resource identifiers cannot be assigned by the client. The 'id' property should not be included in the request body."
-                        ],
-                        "validationErrors": {}
-                    }
+                  {
+                      "detail": "The request data was constructed incorrectly.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "errors": [
+                          "Resource identifiers cannot be assigned by the client. The 'id' property should not be included in the request body."
+                      ],
+                      "validationErrors": {}
+                  }
                   """
 
         @API-160 @API-233 @POST
@@ -229,26 +230,26 @@ Feature: Resources "Create" Operation validations
              When a POST request is made to "/ed-fi/educationContents" with
                   """
                   {
-                    "contentIdentifier": "Testing",
-                    "namespace": "Testing",
-                    "shortDescription": "Testing",
-                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
-                    "learningResourceMetadataURI": "Testing",
-                    "objectOverpost": {
-                      "x": 1
-                    }
+                      "contentIdentifier": "Testing",
+                      "namespace": "Testing",
+                      "shortDescription": "Testing",
+                      "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                      "learningResourceMetadataURI": "Testing",
+                      "objectOverpost": {
+                          "x": 1
+                      }
                   }
                   """
              Then it should respond with 201
               And the record can be retrieved with a GET request
                   """
                   {
-                    "id": "{id}",
-                    "contentIdentifier": "Testing",
-                    "namespace": "Testing",
-                    "shortDescription": "Testing",
-                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
-                    "learningResourceMetadataURI": "Testing"
+                      "id": "{id}",
+                      "contentIdentifier": "Testing",
+                      "namespace": "Testing",
+                      "shortDescription": "Testing",
+                      "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                      "learningResourceMetadataURI": "Testing"
                   }
                   """
 
@@ -257,31 +258,31 @@ Feature: Resources "Create" Operation validations
              When a POST request is made to "/ed-fi/educationContents" with
                   """
                   {
-                    "contentIdentifier": "Testing1",
-                    "namespace": "Testing1",
-                    "shortDescription": "Testing1",
-                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
-                    "learningResourceMetadataURI": "Testing1",
-                    "cost": null
+                      "contentIdentifier": "Testing1",
+                      "namespace": "Testing1",
+                      "shortDescription": "Testing1",
+                      "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                      "learningResourceMetadataURI": "Testing1",
+                      "cost": null
                   }
                   """
              Then it should respond with 201
               And the record can be retrieved with a GET request
                   """
                   {
-                    "id": "{id}",
-                    "contentIdentifier": "Testing1",
-                    "namespace": "Testing1",
-                    "shortDescription": "Testing1",
-                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
-                    "learningResourceMetadataURI": "Testing1"
+                      "id": "{id}",
+                      "contentIdentifier": "Testing1",
+                      "namespace": "Testing1",
+                      "shortDescription": "Testing1",
+                      "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                      "learningResourceMetadataURI": "Testing1"
                   }
                   """
 
         @API-162 @POST
         Scenario: 12 Post an numeric and boolean fields as strings are coerced (Resource)
-                  # In this example schoolId is numeric and doNotPublishIndicator are boolean, yet posted in quotes as strings
-                  # In the GET request you can see they are coerced to their proper types
+            # In this example schoolId is numeric and doNotPublishIndicator are boolean, yet posted in quotes as strings
+            # In the GET request you can see they are coerced to their proper types
              When a POST request is made to "/ed-fi/schools/" with
                   """
                   {
@@ -289,63 +290,63 @@ Feature: Resources "Create" Operation validations
                       "nameOfInstitution": "UT Austin College of Education Graduate",
                       "addresses": [
                           {
-                          "addressTypeDescriptor": "uri://ed-fi.org/AddressTypeDescriptor#Physical",
-                          "city": "Austin",
-                          "postalCode": "78712",
-                          "stateAbbreviationDescriptor": "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
-                          "streetNumberName": "1912 Speedway Stop D5000",
-                          "nameOfCounty": "Travis",
-                          "doNotPublishIndicator": "true"
+                              "addressTypeDescriptor": "uri://ed-fi.org/AddressTypeDescriptor#Physical",
+                              "city": "Austin",
+                              "postalCode": "78712",
+                              "stateAbbreviationDescriptor": "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
+                              "streetNumberName": "1912 Speedway Stop D5000",
+                              "nameOfCounty": "Travis",
+                              "doNotPublishIndicator": "true"
                           }
                       ],
                       "educationOrganizationCategories": [
                           {
-                          "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"
+                              "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"
                           }
                       ],
                       "schoolCategories": [],
                       "gradeLevels": [
                           {
-                          "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
                           }
                       ]
-                    }
+                  }
                   """
              Then it should respond with 201
               And the response headers include
                   """
-                    {
-                        "location": "/ed-fi/schools/{id}"
-                    }
+                  {
+                      "location": "/ed-fi/schools/{id}"
+                  }
                   """
               And the record can be retrieved with a GET request
                   """
                   {
-                    "id": "{id}",
-                    "schoolId": 99,
-                    "addresses": [
-                        {
-                            "city": "Austin",
-                            "postalCode": "78712",
-                            "nameOfCounty": "Travis",
-                            "streetNumberName": "1912 Speedway Stop D5000",
-                            "addressTypeDescriptor": "uri://ed-fi.org/AddressTypeDescriptor#Physical",
-                            "doNotPublishIndicator": true,
-                            "stateAbbreviationDescriptor": "uri://ed-fi.org/StateAbbreviationDescriptor#TX"
-                        }
-                    ],
-                    "gradeLevels": [
-                        {
-                            "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
-                        }
-                    ],
-                    "schoolCategories": [],
-                    "nameOfInstitution": "UT Austin College of Education Graduate",
-                    "educationOrganizationCategories": [
-                        {
-                            "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"
-                        }
-                    ]
+                      "id": "{id}",
+                      "schoolId": 99,
+                      "addresses": [
+                          {
+                              "city": "Austin",
+                              "postalCode": "78712",
+                              "nameOfCounty": "Travis",
+                              "streetNumberName": "1912 Speedway Stop D5000",
+                              "addressTypeDescriptor": "uri://ed-fi.org/AddressTypeDescriptor#Physical",
+                              "doNotPublishIndicator": true,
+                              "stateAbbreviationDescriptor": "uri://ed-fi.org/StateAbbreviationDescriptor#TX"
+                          }
+                      ],
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
+                          }
+                      ],
+                      "schoolCategories": [],
+                      "nameOfInstitution": "UT Austin College of Education Graduate",
+                      "educationOrganizationCategories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"
+                          }
+                      ]
                   }
                   """
 
@@ -354,13 +355,13 @@ Feature: Resources "Create" Operation validations
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
                   {
-                   "weekIdentifier": "one",
-                   "schoolReference": {
-                     "schoolId": 17012391
-                   },
-                   "beginDate": "2023-09-11",
-                   "endDate": "2023-09-11",
-                   "totalInstructionalDays": 300
+                      "weekIdentifier": "one",
+                      "schoolReference": {
+                          "schoolId": 17012391
+                      },
+                      "beginDate": "2023-09-11",
+                      "endDate": "2023-09-11",
+                      "totalInstructionalDays": 300
                   }
                   """
              Then it should respond with 400
@@ -373,12 +374,12 @@ Feature: Resources "Create" Operation validations
                       "status": 400,
                       "correlationId": null,
                       "validationErrors": {
-                        "$.weekIdentifier": [
-                          "weekIdentifier Value should be at least 5 characters"
-                        ]
+                          "$.weekIdentifier": [
+                              "weekIdentifier Value should be at least 5 characters"
+                          ]
                       },
                       "errors": []
-                    }
+                  }
                   """
 
         @API-164 @POST
@@ -386,30 +387,30 @@ Feature: Resources "Create" Operation validations
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
                   {
-                   "weekIdentifier": "oneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneone",
-                   "schoolReference": {
-                     "schoolId": 17012391
-                   },
-                   "beginDate": "2023-09-11",
-                   "endDate": "2023-09-11",
-                   "totalInstructionalDays": 300
+                      "weekIdentifier": "oneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneoneone",
+                      "schoolReference": {
+                          "schoolId": 17012391
+                      },
+                      "beginDate": "2023-09-11",
+                      "endDate": "2023-09-11",
+                      "totalInstructionalDays": 300
                   }
                   """
              Then it should respond with 400
               And the response body is
                   """
                   {
-                    "validationErrors": {
-                        "$.weekIdentifier": [
-                        "weekIdentifier Value should be at most 80 characters"
-                        ]
-                    },
-                    "errors": [],
-                    "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-                    "title": "Data Validation Failed",
-                    "status": 400,
-                    "correlationId": null
+                      "validationErrors": {
+                          "$.weekIdentifier": [
+                              "weekIdentifier Value should be at most 80 characters"
+                          ]
+                      },
+                      "errors": [],
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null
                   }
                   """
 
@@ -418,63 +419,13 @@ Feature: Resources "Create" Operation validations
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
                   {
-                    "weekIdentifier": "seven",
-                    "schoolReference": {
-                        "__schoolId": 999
-                    },
-                    "beginDate": "2023-09-11",
-                    "endDate": "2023-09-11",
-                    "__totalInstructionalDays": 10
-                  }
-                  """
-             Then it should respond with 400
-              And the response body is
-                  """
-                  {
-                        "detail": "Data validation failed. See 'validationErrors' for details.",
-                        "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-                        "title": "Data Validation Failed",
-                        "status": 400,
-                        "correlationId": null,
-                        "validationErrors": {
-                        "$.totalInstructionalDays": [
-                            "totalInstructionalDays is required."
-                        ],
-                        "$.schoolReference.schoolId": [
-                            "schoolId is required."
-                        ]
-                        },
-                        "errors": []
-                    }
-                  """
-
-        @API-166 @POST
-        Scenario: 16 Post a new document (Resource)
-              And a POST request is made to "/ed-fi/educationContents" with
-                  """
-                  {
-                    "contentIdentifier": "Testing",
-                    "namespace": "Testing",
-                    "shortDescription": "Testing",
-                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
-                    "learningResourceMetadataURI": "Testing"
-                  }
-                  """
-             # Was already created somewhere above
-             Then it should respond with 200
-
-        @API-167 @POST
-        Scenario: 17 Post a request with a duplicated value (Resource)
-             When a POST request is made to "/ed-fi/educationContents" with
-                  """
-                  {
-                    "contentIdentifier": "Testing",
-                    "namespace": "Testing",
-                    "shortDescription": "Testing",
-                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
-                    "learningResourceMetadataURI": "Testing",
-                    "publisher": "publisherpublisherpublisherpublisherpublisherpublisherpublisher",
-                    "learningResourceMetadataURI": "uri"
+                      "weekIdentifier": "seven",
+                      "schoolReference": {
+                          "__schoolId": 999
+                      },
+                      "beginDate": "2023-09-11",
+                      "endDate": "2023-09-11",
+                      "__totalInstructionalDays": 10
                   }
                   """
              Then it should respond with 400
@@ -487,53 +438,102 @@ Feature: Resources "Create" Operation validations
                       "status": 400,
                       "correlationId": null,
                       "validationErrors": {
-                        "$.learningResourceMetadataURI": [
-                          "An item with the same key has already been added."
-                        ]
+                          "$.totalInstructionalDays": [
+                              "totalInstructionalDays is required."
+                          ],
+                          "$.schoolReference.schoolId": [
+                              "schoolId is required."
+                          ]
                       },
                       "errors": []
-                    }
+                  }
+                  """
+
+        @API-166 @POST
+        Scenario: 16 Post a new document (Resource)
+              And a POST request is made to "/ed-fi/educationContents" with
+                  """
+                  {
+                      "contentIdentifier": "Testing",
+                      "namespace": "Testing",
+                      "shortDescription": "Testing",
+                      "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                      "learningResourceMetadataURI": "Testing"
+                  }
+                  """
+            # Was already created somewhere above
+             Then it should respond with 200
+
+        @API-167 @POST
+        Scenario: 17 Post a request with a duplicated value (Resource)
+             When a POST request is made to "/ed-fi/educationContents" with
+                  """
+                  {
+                      "contentIdentifier": "Testing",
+                      "namespace": "Testing",
+                      "shortDescription": "Testing",
+                      "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                      "learningResourceMetadataURI": "uri",
+                      "publisher": "publisherpublisherpublisherpublisherpublisherpublisherpublisher"
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                          "$.learningResourceMetadataURI": [
+                              "An item with the same key has already been added."
+                          ]
+                      },
+                      "errors": []
+                  }
                   """
 
         @API-168 @POST
         Scenario: 18 Create a document with empty value in identity fields (Resource)
              When a POST request is made to "/ed-fi/students" with
                   """
-                   {
-                        "studentUniqueId":"",
-                        "birthDate": "2016-08-07",
-                        "firstName": "firstName    ",
-                        "lastSurname": "lastSurname"
-                   }
+                  {
+                      "studentUniqueId": "",
+                      "birthDate": "2016-08-07",
+                      "firstName": "firstName    ",
+                      "lastSurname": "lastSurname"
+                  }
                   """
              Then it should respond with 400
               And the response body is
                   """
-                    {
-                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                     "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-                     "title": "Data Validation Failed",
-                     "status": 400,
-                     "correlationId": null,
-                     "validationErrors": {
-                         "$.studentUniqueId": [
-                             "studentUniqueId is required and should not be left empty."
-                         ]
-                     },
-                     "errors": []
-                    }
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                          "$.studentUniqueId": [
+                              "studentUniqueId is required and should not be left empty."
+                          ]
+                      },
+                      "errors": []
+                  }
                   """
 
         @API-169 @POST
         Scenario: 19 Create a document with leading and trailing spaces in required fields (Resource)
              When a POST request is made to "/ed-fi/students" with
                   """
-                   {
-                        "studentUniqueId":"87878787",
-                        "birthDate": "2016-08-07",
-                        "firstName": "    firstName    ",
-                        "lastSurname": "lastSurname"
-                   }
+                  {
+                      "studentUniqueId": "87878787",
+                      "birthDate": "2016-08-07",
+                      "firstName": "    firstName    ",
+                      "lastSurname": "lastSurname"
+                  }
                   """
              Then it should respond with 201 or 200
 
@@ -541,58 +541,58 @@ Feature: Resources "Create" Operation validations
         Scenario: 20 Create a document with just spaces in required fields (Resource)
              When a POST request is made to "/ed-fi/students" with
                   """
-                   {
-                        "studentUniqueId":"878787383",
-                        "birthDate": "2016-08-07",
-                        "firstName": "    ",
-                        "lastSurname": "lastSurname"
-                   }
+                  {
+                      "studentUniqueId": "878787383",
+                      "birthDate": "2016-08-07",
+                      "firstName": "    ",
+                      "lastSurname": "lastSurname"
+                  }
                   """
              Then it should respond with 400
               And the response body is
                   """
-                    {
-                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                     "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-                     "title": "Data Validation Failed",
-                     "status": 400,
-                     "correlationId": null,
-                     "validationErrors": {
-                         "$.firstName": [
-                             "firstName cannot contain leading or trailing spaces."
-                         ]
-                     },
-                     "errors": []
-                    }
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                          "$.firstName": [
+                              "firstName cannot contain leading or trailing spaces."
+                          ]
+                      },
+                      "errors": []
+                  }
                   """
 
         @API-171 @POST
         Scenario: 21 Create a document with empty required fields (Resource)
              When a POST request is made to "/ed-fi/students" with
                   """
-                   {
-                        "studentUniqueId":"878787383",
-                        "birthDate": "2016-08-07",
-                        "firstName": "",
-                        "lastSurname": "lastSurname"
-                   }
+                  {
+                      "studentUniqueId": "878787383",
+                      "birthDate": "2016-08-07",
+                      "firstName": "",
+                      "lastSurname": "lastSurname"
+                  }
                   """
              Then it should respond with 400
               And the response body is
                   """
-                    {
-                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                     "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-                     "title": "Data Validation Failed",
-                     "status": 400,
-                     "correlationId": null,
-                     "validationErrors": {
-                         "$.firstName": [
-                             "firstName is required and should not be left empty."
-                         ]
-                     },
-                     "errors": []
-                    }
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                          "$.firstName": [
+                              "firstName is required and should not be left empty."
+                          ]
+                      },
+                      "errors": []
+                  }
                   """
 
         @API-172 @APIConventions @POST
@@ -611,9 +611,9 @@ Feature: Resources "Create" Operation validations
              Then it should respond with 201
               And the response headers include
                   """
-                    {
-                        "location": "/ed-fi/students/{id}"
-                    }
+                  {
+                      "location": "/ed-fi/students/{id}"
+                  }
                   """
 
         @API-173 @ignore @APIConventions @POST
@@ -689,9 +689,9 @@ Feature: Resources "Create" Operation validations
              Then it should respond with 201
               And the response headers include
                   """
-                    {
-                        "location": "/ed-fi/students/{id}"
-                    }
+                  {
+                      "location": "/ed-fi/students/{id}"
+                  }
                   """
 
         @API-175 @POST
@@ -699,57 +699,92 @@ Feature: Resources "Create" Operation validations
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
                   {
-                    "weekIdentifier": "abcdef",
-                    "schoolReference": {
-                        "schoolId": 255901001
-                    }
-                    "beginDate": "2024-04-04",
-                    "endDate": "2024-04-04",
-                    "totalInstructionalDays": 300
+                  "weekIdentifier": "abcdef",
+                  "schoolReference": {
+                  "schoolId": 255901001
+                  }
+                  "beginDate": "2024-04-04",
+                  "endDate": "2024-04-04",
+                  "totalInstructionalDays": 300
                   }
                   """
              Then it should respond with 400
               And the response body is
                   """
                   {
-                    "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-                    "title": "Data Validation Failed",
-                    "status": 400,
-                    "correlationId": null,
-                    "validationErrors": {
-                        "$.": [
-                            "'\"' is invalid after a value. Expected either ',', '}', or ']'. LineNumber: 5 | BytePositionInLine: 2."
-                        ]
-                    },
-                    "errors": []
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                          "$.": [
+                              "'\"' is invalid after a value. Expected either ',', '}', or ']'. LineNumber: 5 | BytePositionInLine: 2."
+                          ]
+                      },
+                      "errors": []
                   }
                   """
 
         Scenario: 28 Ensure the location header has correct path when a path base is provided
              When a POST request is made to "/ed-fi/students" with path base "api"
                   """
-                    {
-                        "studentUniqueId":"89898677",
-                        "birthDate":  "2017-08-23",
-                        "firstName": "first name",
-                        "lastSurname": "last name"
-                    }
+                  {
+                      "studentUniqueId": "89898677",
+                      "birthDate": "2017-08-23",
+                      "firstName": "first name",
+                      "lastSurname": "last name"
+                  }
                   """
              Then it should respond with 201
               And the response headers include
                   """
-                    {
-                        "location": "api/data/ed-fi/students/{id}"
-                    }
+                  {
+                      "location": "api/data/ed-fi/students/{id}"
+                  }
                   """
               And the record can be retrieved with a GET request
                   """
                   {
-                    "id": "{id}",
-                    "studentUniqueId": "89898677",
-                    "birthDate":  "2017-08-23",
-                    "firstName": "first name",
-                    "lastSurname": "last name"
+                      "id": "{id}",
+                      "studentUniqueId": "89898677",
+                      "birthDate": "2017-08-23",
+                      "firstName": "first name",
+                      "lastSurname": "last name"
+                  }
+                  """
+
+        @addwait
+        Scenario: 29 Ensure prunning of an empty collection
+            Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ed-fi.org"
+              And the system has these descriptors
+                  | descriptorValue                                       |
+                  | uri://ed-fi.org/StateAbbreviationDescriptor#TX        |
+                  | uri://ed-fi.org/CredentialTypeDescriptor#Registration |
+              And a POST request is made to "/ed-fi/credentials" with
+                  """
+                  {
+                      "credentialIdentifier": "554115575749",
+                      "stateOfIssueStateAbbreviationDescriptor": "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
+                      "credentialTypeDescriptor": "uri://ed-fi.org/CredentialTypeDescriptor#Registration",
+                      "issuanceDate": "1996-05-20",
+                      "namespace": "uri://ed-fi.org",
+                      "gradeLevels": [
+                          {}
+                      ]
+                  }
+                  """
+             Then it should respond with 200 or 201
+             When a GET request is made to "/ed-fi/credentials/{id}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                      "id": "{id}",
+                      "credentialIdentifier": "554115575749",
+                      "stateOfIssueStateAbbreviationDescriptor": "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
+                      "credentialTypeDescriptor": "uri://ed-fi.org/CredentialTypeDescriptor#Registration",
+                      "issuanceDate": "1996-05-20",
+                      "namespace": "uri://ed-fi.org"
                   }
                   """
