@@ -18,8 +18,8 @@ public class ApiSchemaValidatorTests
     [SetUp]
     public void Setup()
     {
-        var logger = NullLogger<ApiSchemaSchemaProvider>.Instance;
-        _validator = new ApiSchemaValidator(new ApiSchemaSchemaProvider(logger));
+        var logger = NullLogger<JsonSchemaForApiSchemaProvider>.Instance;
+        _validator = new ApiSchemaValidator(new JsonSchemaForApiSchemaProvider(logger));
     }
 
     [TestFixture]

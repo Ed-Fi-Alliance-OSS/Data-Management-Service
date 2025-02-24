@@ -53,7 +53,7 @@ public class DependencyCalculatorTests
         [SetUp]
         public void Setup()
         {
-            var logger = NullLogger<ApiSchemaSchemaProvider>.Instance;
+            var logger = NullLogger<JsonSchemaForApiSchemaProvider>.Instance;
             _dependencyCalculator = new DependencyCalculator(JsonNode.Parse(_sampleSchema)!, logger);
         }
 
@@ -178,7 +178,7 @@ public class DependencyCalculatorTests
         [SetUp]
         public void Setup()
         {
-            var logger = NullLogger<ApiSchemaSchemaProvider>.Instance;
+            var logger = NullLogger<JsonSchemaForApiSchemaProvider>.Instance;
             _dependencyCalculator = new DependencyCalculator(JsonNode.Parse(_sampleSchema)!, logger);
         }
 
@@ -318,7 +318,7 @@ public class DependencyCalculatorTests
         [SetUp]
         public void Setup()
         {
-            var logger = NullLogger<ApiSchemaSchemaProvider>.Instance;
+            var logger = NullLogger<JsonSchemaForApiSchemaProvider>.Instance;
             _dependencyCalculator = new DependencyCalculator(JsonNode.Parse(_sampleSchema)!, logger);
         }
 
@@ -352,7 +352,7 @@ public class DependencyCalculatorTests
         [SetUp]
         public void Setup()
         {
-            var logger = NullLogger<ApiSchemaSchemaProvider>.Instance;
+            var logger = NullLogger<JsonSchemaForApiSchemaProvider>.Instance;
             _dependencyCalculator = new DependencyCalculator(JsonNode.Parse(_sampleSchema)!, logger);
         }
 

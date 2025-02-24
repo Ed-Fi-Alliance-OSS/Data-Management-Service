@@ -12,28 +12,29 @@ namespace EdFi.DataManagementService.Core.ApiSchema;
 /// <summary>
 /// Api schema schema provider
 /// </summary>
-internal interface IApiSchemaSchemaProvider
+internal interface IJsonSchemaForApiSchemaProvider
 {
     /// <summary>
-    /// Provides ApiSchema schema
+    /// Provides JsonSchema for ApiSchema
     /// </summary>
-    JsonSchema ApiSchemaSchema { get; }
+    JsonSchema JsonSchemaForApiSchema { get; }
 }
 
 /// <summary>
-/// Loads and parses Api schema schema json
+/// Loads and parses JsonSchema for ApiSchema
 /// </summary>
-internal class ApiSchemaSchemaProvider(ILogger<ApiSchemaSchemaProvider> _logger) : IApiSchemaSchemaProvider
+internal class JsonSchemaForApiSchemaProvider(ILogger<JsonSchemaForApiSchemaProvider> _logger)
+    : IJsonSchemaForApiSchemaProvider
 {
-    private readonly Lazy<JsonSchema> _apiSchemaSchema = new(() =>
+    private readonly Lazy<JsonSchema> _jsonSchemaForApiSchema = new(() =>
     {
-        _logger.LogDebug("Entering ApiSchemaSchemaProvider");
+        _logger.LogDebug("Entering _jsonSchemaForApiSchema");
 
         string schemaContent = File.ReadAllText(
             Path.Combine(
                 Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? "",
                 "ApiSchema",
-                "ApiSchema_Schema.json"
+                "JsonSchemaForApiSchema.json"
             )
         );
         var schema = JsonSchema.FromText(schemaContent);
@@ -41,5 +42,5 @@ internal class ApiSchemaSchemaProvider(ILogger<ApiSchemaSchemaProvider> _logger)
         return schema;
     });
 
-    public JsonSchema ApiSchemaSchema => _apiSchemaSchema.Value;
+    public JsonSchema JsonSchemaForApiSchema => _jsonSchemaForApiSchema.Value;
 }

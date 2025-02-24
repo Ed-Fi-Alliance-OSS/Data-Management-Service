@@ -41,7 +41,7 @@ public class APISchemaFileTests
             return new ApiService(
                 apiSchemaProvider,
                 new ApiSchemaValidator(
-                    new ApiSchemaSchemaProvider(NullLogger<ApiSchemaSchemaProvider>.Instance)
+                    new JsonSchemaForApiSchemaProvider(NullLogger<JsonSchemaForApiSchemaProvider>.Instance)
                 ),
                 new SuccessDocumentStoreRepository(NullLogger<SuccessDocumentStoreRepository>.Instance),
                 new NoClaimsClaimSetCacheService(NullLogger.Instance),

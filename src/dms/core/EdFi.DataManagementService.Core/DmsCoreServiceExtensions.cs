@@ -37,7 +37,7 @@ public static class DmsCoreServiceExtensions
     {
         services
             .AddSingleton<IApiSchemaProvider, ApiSchemaFileLoader>()
-            .AddSingleton<IApiSchemaSchemaProvider, ApiSchemaSchemaProvider>()
+            .AddSingleton<IJsonSchemaForApiSchemaProvider, JsonSchemaForApiSchemaProvider>()
             .AddSingleton<IApiSchemaValidator, ApiSchemaValidator>()
             .AddSingleton<IApiService, ApiService>()
             .AddTransient<IDocumentValidator, DocumentValidator>()

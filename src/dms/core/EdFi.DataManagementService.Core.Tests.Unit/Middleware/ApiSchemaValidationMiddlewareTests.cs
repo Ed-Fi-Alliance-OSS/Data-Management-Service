@@ -21,7 +21,7 @@ public class ApiSchemaValidationMiddlewareTests
     internal static IPipelineStep ProvideMiddleware(IApiSchemaProvider provider)
     {
         var apiValidator = new ApiSchemaValidator(
-            new ApiSchemaSchemaProvider(NullLogger<ApiSchemaSchemaProvider>.Instance)
+            new JsonSchemaForApiSchemaProvider(NullLogger<JsonSchemaForApiSchemaProvider>.Instance)
         );
         return new ApiSchemaValidationMiddleware(provider, apiValidator, NullLogger.Instance);
     }
