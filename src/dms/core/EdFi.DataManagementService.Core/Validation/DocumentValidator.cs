@@ -25,7 +25,7 @@ internal interface IDocumentValidator
     (string[], Dictionary<string, string[]>) Validate(PipelineContext context);
 }
 
-internal class DocumentValidator : IDocumentValidator
+internal class DocumentValidator() : IDocumentValidator
 {
     private static JsonSchema GetSchema(ResourceSchema resourceSchema, RequestMethod method)
     {
@@ -36,11 +36,8 @@ internal class DocumentValidator : IDocumentValidator
 
     public (string[], Dictionary<string, string[]>) Validate(PipelineContext context)
     {
-        EvaluationOptions validatorEvaluationOptions = new()
-        {
-            OutputFormat = OutputFormat.List,
-            RequireFormatValidation = true,
-        };
+        EvaluationOptions validatorEvaluationOptions =
+            new() { OutputFormat = OutputFormat.List, RequireFormatValidation = true };
 
         var resourceSchemaValidator = GetSchema(context.ResourceSchema, context.Method);
         var results = resourceSchemaValidator.Evaluate(context.ParsedBody, validatorEvaluationOptions);
@@ -50,7 +47,7 @@ internal class DocumentValidator : IDocumentValidator
         if (overpostPruneResult is PruneResult.Pruned pruned)
         {
             // Used pruned body for the remainder of pipeline
-            context.ParsedBody = pruned.PrunedDocumentBody;
+            context.ParsedBody = pruned.prunedDocumentBody;
 
             // Now re-evaluate the pruned body
             results = resourceSchemaValidator.Evaluate(context.ParsedBody, validatorEvaluationOptions);
@@ -61,7 +58,7 @@ internal class DocumentValidator : IDocumentValidator
         if (nullPruneResult is PruneResult.Pruned nullPruned)
         {
             // Used pruned body for the remainder of pipeline
-            context.ParsedBody = nullPruned.PrunedDocumentBody;
+            context.ParsedBody = nullPruned.prunedDocumentBody;
 
             // Now re-evaluate the pruned body
             results = resourceSchemaValidator.Evaluate(context.ParsedBody, validatorEvaluationOptions);
@@ -118,6 +115,7 @@ internal class DocumentValidator : IDocumentValidator
             return false;
         }
 
+
         PruneResult PruneNullData(JsonNode? documentBody, EvaluationResults evaluationResults)
         {
             if (documentBody == null)
@@ -148,13 +146,13 @@ internal class DocumentValidator : IDocumentValidator
             return new PruneResult.Pruned(documentBody);
         }
 
-        Dictionary<string, string[]> ValidationErrorsFrom(EvaluationResults evaluationResults)
+        Dictionary<string, string[]> ValidationErrorsFrom(EvaluationResults results)
         {
             var validationErrors = new Dictionary<string, string[]>();
-            foreach (var detail in evaluationResults.Details)
+            foreach (var detail in results.Details)
             {
-                string propertyName = string.Empty;
-                if (detail.InstanceLocation.Count != 0)
+                var propertyName = string.Empty;
+                if (detail.InstanceLocation != null && detail.InstanceLocation.Count != 0)
                 {
                     propertyName = $"{detail.InstanceLocation[^1]}";
                 }
@@ -163,7 +161,7 @@ internal class DocumentValidator : IDocumentValidator
                     foreach (var errorDetail in detail.Errors)
                     {
                         // Custom validation error for strings with white spaces
-                        string error = errorDetail.Value;
+                        var error = errorDetail.Value;
                         if (
                             errorDetail.Key.Equals("pattern", StringComparison.InvariantCultureIgnoreCase)
                             && error.Contains(
@@ -179,7 +177,7 @@ internal class DocumentValidator : IDocumentValidator
                             }
                         }
 
-                        Dictionary<string, string[]> splitErrors = SplitErrorDetail(error, propertyName);
+                        var splitErrors = SplitErrorDetail(error, propertyName);
 
                         foreach (var splitError in splitErrors)
                         {
@@ -206,7 +204,7 @@ internal class DocumentValidator : IDocumentValidator
                     return false;
                 }
 
-                JsonObject jsonObject = context.ParsedBody.AsObject();
+                var jsonObject = context.ParsedBody.AsObject();
                 string propertyName = instanceLocation[^1];
                 bool propertyExists = jsonObject.TryGetPropertyValue(propertyName, out var value);
 
@@ -233,7 +231,7 @@ internal class DocumentValidator : IDocumentValidator
             {
                 var value = new List<string>();
                 value.Add($"{hit[1].Value} is required.");
-                string additional =
+                var additional =
                     propertyName == string.Empty ? "" : propertyName.Replace(":", "").TrimEnd() + ".";
                 validations.Add("$." + additional + hit[1].Value, value.ToArray());
             }
@@ -254,9 +252,9 @@ internal class DocumentValidator : IDocumentValidator
 /// </summary>
 internal abstract record PruneResult
 {
-    public record NotPruned : PruneResult;
+    public record NotPruned() : PruneResult;
 
-    public record Pruned(JsonNode PrunedDocumentBody) : PruneResult;
+    public record Pruned(JsonNode prunedDocumentBody) : PruneResult;
 }
 
 internal static class JsonObjectExtensions
@@ -274,9 +272,9 @@ internal static class JsonObjectExtensions
             return jsonObject;
         }
 
-        string currentSegment = segments[0];
-        string[] remainingSegments = segments.Skip(1).ToArray();
-        JsonNode? node = jsonObject[currentSegment];
+        var currentSegment = segments[0];
+        var remainingSegments = segments.Skip(1).ToArray();
+        var node = jsonObject[currentSegment];
 
         Trace.Assert(node != null, $"PointerSegment '{currentSegment}' not found on JsonObject");
 

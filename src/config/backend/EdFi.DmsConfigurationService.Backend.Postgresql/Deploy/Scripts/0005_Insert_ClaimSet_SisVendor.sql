@@ -67,7 +67,7 @@ WITH resource_names AS (
 		'resultDatatypeTypeDescriptors',
 		'termDescriptors',
 		'stateAbbreviationDescriptors',
-		'credentialTypeDescriptors'
+        'credentialTypeDescriptors'
     ] AS names
 )
 INSERT INTO resource_claims (name)
