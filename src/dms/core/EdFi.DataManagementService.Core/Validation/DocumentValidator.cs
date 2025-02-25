@@ -21,7 +21,6 @@ internal interface IDocumentValidator
     /// Validates a document body against a JSON Schema
     /// </summary>
     /// <param name="context"></param>
-    /// <param name="validatorContext"></param>
     /// <returns></returns>
     (string[], Dictionary<string, string[]>) Validate(PipelineContext context);
 }
@@ -77,6 +76,7 @@ internal class DocumentValidator() : IDocumentValidator
             var additionalProperties = evaluationResults
                 .Details.Where(r =>
                     r.EvaluationPath.Count > 0 && r.EvaluationPath[^1] == "additionalProperties"
+                    || IsEmptyArray(documentBody, r.InstanceLocation)
                 )
                 .ToList();
 
@@ -96,6 +96,25 @@ internal class DocumentValidator() : IDocumentValidator
 
             return new PruneResult.Pruned(documentBody);
         }
+
+        bool IsEmptyArray(JsonNode documentBody, JsonPointer instanceLocation)
+        {
+            if (instanceLocation.Count == 0)
+            {
+                return false;
+            }
+
+            JsonObject jsonObject = documentBody.AsObject();
+            string propertyName = instanceLocation[^1];
+
+            if (jsonObject.TryGetPropertyValue(propertyName, out var value) && value is JsonArray jsonArray)
+            {
+                return jsonArray.Count == 0 || jsonArray.All(x => x is JsonObject { Count: 0 });
+            }
+
+            return false;
+        }
+
 
         PruneResult PruneNullData(JsonNode? documentBody, EvaluationResults evaluationResults)
         {

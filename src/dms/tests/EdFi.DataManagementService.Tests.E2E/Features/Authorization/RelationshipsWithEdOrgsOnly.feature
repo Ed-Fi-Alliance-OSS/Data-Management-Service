@@ -113,9 +113,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                                   "schoolId": 255901001
                               }
                           }
-                      ],
-                      "dates": [],
-                      "gradeLevels": []
+                      ]
                   }
              """
 
@@ -429,9 +427,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                                   "schoolId": 255901001
                               }
                           }
-                      ],
-                      "dates": [],
-                      "gradeLevels": []
+                      ]
                   }
              """
 
