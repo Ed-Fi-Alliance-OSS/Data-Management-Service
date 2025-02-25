@@ -119,7 +119,7 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
         else
         {
             Assembly assembly =
-                Assembly.GetAssembly(typeof(DataStandard51.ApiSchema.Marker))
+                Assembly.GetAssembly(typeof(DataStandard52.ApiSchema.Marker))
                 ?? throw new InvalidOperationException("Could not load assembly-bundled ApiSchema file");
 
             string? resourceName = assembly

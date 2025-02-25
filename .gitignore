@@ -431,5 +431,5 @@ sdk/
 **/ApiSchema.json
 **/ApiSchema.Extension.json
 
-src/dms/EdFi.DataStandard51.ApiSchema/
+src/dms/EdFi.DataStandard52.ApiSchema/
 

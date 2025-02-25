@@ -10,7 +10,7 @@
   <ItemGroup>
     <Content Include="EdFi.DataManagementService.Frontend.AspNetCore.nuspec" CopyToPublishDirectory="Always" CopyToOutputDirectory="Never" />
     <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
-    <PackageReference Include="EdFi.DataStandard51.ApiSchema" />
+    <PackageReference Include="EdFi.DataStandard52.ApiSchema.Core" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.CodeAnalysis" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle">
