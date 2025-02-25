@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Data;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Operation;
 using EdFi.DataManagementService.Core.ApiSchema;
@@ -165,14 +164,25 @@ public abstract class DatabaseTest : DatabaseTestBase
         return (new { Value = value }).ActLike<T>();
     }
 
-    protected static ResourceInfo CreateResourceInfo(string resourceName, bool allowIdentityUpdates = false)
+    protected static ResourceInfo CreateResourceInfo(
+        string resourceName,
+        bool allowIdentityUpdates = false,
+        bool isInEducationOrganizationHierarchy = false,
+        string educationOrganizationId = "",
+        string? parentEducationOrganizationId = null
+    )
     {
         return new(
             ResourceVersion: new("5.0.0"),
             AllowIdentityUpdates: allowIdentityUpdates,
             ProjectName: new("ProjectName"),
             ResourceName: new(resourceName),
-            IsDescriptor: false
+            IsDescriptor: false,
+            EducationOrganizationHierarchyInfo: new(
+                isInEducationOrganizationHierarchy,
+                educationOrganizationId,
+                parentEducationOrganizationId
+            )
         );
     }
 
@@ -246,6 +256,9 @@ public abstract class DatabaseTest : DatabaseTestBase
         bool allowIdentityUpdates = false,
         DocumentIdentityElement[]? documentIdentityElements = null,
         DocumentSecurityElements? documentSecurityElements = null,
+        bool isInEducationOrganizationHierarchy = false,
+        string educationOrganizationId = "",
+        string? parentEducationOrganizationId = null,
         TraceId? traceId = null
     )
     {
@@ -260,7 +273,13 @@ public abstract class DatabaseTest : DatabaseTestBase
         return (
             new
             {
-                ResourceInfo = CreateResourceInfo(resourceName, allowIdentityUpdates),
+                ResourceInfo = CreateResourceInfo(
+                    resourceName,
+                    allowIdentityUpdates,
+                    isInEducationOrganizationHierarchy,
+                    educationOrganizationId,
+                    parentEducationOrganizationId
+                ),
                 DocumentInfo = CreateDocumentInfo(
                     referentialIdGuid,
                     documentReferences,

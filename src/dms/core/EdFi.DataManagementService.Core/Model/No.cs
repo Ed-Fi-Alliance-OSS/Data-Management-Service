@@ -70,7 +70,8 @@ internal static class No
         ResourceName: new ResourceName(""),
         IsDescriptor: false,
         ResourceVersion: new SemVer(""),
-        AllowIdentityUpdates: false
+        AllowIdentityUpdates: false,
+        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, string.Empty, null)
     );
 
     /// <summary>
