@@ -149,6 +149,7 @@ public static class WebApplicationBuilderExtensions
 
         string metadataAddress = $"{identitySettings.Authority}/.well-known/openid-configuration";
 
+        // Set up authentication using JWT bearer tokens
         webAppBuilder
             .Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(

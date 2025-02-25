@@ -119,6 +119,7 @@ public static class WebApplicationBuilderExtensions
             .Services.Configure<IdentitySettings>(config.GetSection("IdentitySettings"))
             .AddSingleton<IValidateOptions<IdentitySettings>, IdentitySettingsValidator>();
 
+        // Set up authentication using JWT bearer tokens
         webApplicationBuilder
             .Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(
