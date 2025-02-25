@@ -340,7 +340,6 @@ Feature: Resources "Create" Operation validations
                               "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
                           }
                       ],
-                      "schoolCategories": [],
                       "nameOfInstitution": "UT Austin College of Education Graduate",
                       "educationOrganizationCategories": [
                           {
@@ -473,8 +472,9 @@ Feature: Resources "Create" Operation validations
                       "namespace": "Testing",
                       "shortDescription": "Testing",
                       "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                      "learningResourceMetadataURI": "Testing",
                       "learningResourceMetadataURI": "uri",
-                      "publisher": "publisherpublisherpublisherpublisherpublisherpublisherpublisher"
+                      "publisher": "publisherpublisherpublisherpublisher"
                   }
                   """
              Then it should respond with 400
@@ -699,13 +699,13 @@ Feature: Resources "Create" Operation validations
              When a POST request is made to "/ed-fi/academicWeeks" with
                   """
                   {
-                  "weekIdentifier": "abcdef",
-                  "schoolReference": {
-                  "schoolId": 255901001
+                    "weekIdentifier": "abcdef",
+                    "schoolReference": {
+                    "schoolId": 255901001
                   }
-                  "beginDate": "2024-04-04",
-                  "endDate": "2024-04-04",
-                  "totalInstructionalDays": 300
+                    "beginDate": "2024-04-04",
+                    "endDate": "2024-04-04",
+                    "totalInstructionalDays": 300
                   }
                   """
              Then it should respond with 400
@@ -756,7 +756,7 @@ Feature: Resources "Create" Operation validations
 
         @addwait
         Scenario: 29 Ensure prunning of an empty collection
-            Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ed-fi.org"
+            Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
               And the system has these descriptors
                   | descriptorValue                                       |
                   | uri://ed-fi.org/StateAbbreviationDescriptor#TX        |
@@ -769,9 +769,7 @@ Feature: Resources "Create" Operation validations
                       "credentialTypeDescriptor": "uri://ed-fi.org/CredentialTypeDescriptor#Registration",
                       "issuanceDate": "1996-05-20",
                       "namespace": "uri://ed-fi.org",
-                      "gradeLevels": [
-                          {}
-                      ]
+                      "gradeLevels": [{}]
                   }
                   """
              Then it should respond with 200 or 201
