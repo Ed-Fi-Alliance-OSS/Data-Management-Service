@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 
@@ -27,7 +28,12 @@ internal class BuildResourceInfoMiddleware(ILogger _logger, List<string> _allowI
             ResourceName: context.ResourceSchema.ResourceName,
             IsDescriptor: context.ResourceSchema.IsDescriptor,
             AllowIdentityUpdates: context.ResourceSchema.AllowIdentityUpdates
-                || _allowIdentityUpdateOverrides.Contains(context.ResourceSchema.ResourceName.Value)
+                || _allowIdentityUpdateOverrides.Contains(context.ResourceSchema.ResourceName.Value),
+            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(
+                false,
+                string.Empty,
+                null
+            )
         );
 
         await next();
