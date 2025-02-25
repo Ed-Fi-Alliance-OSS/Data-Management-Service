@@ -125,4 +125,13 @@ public interface ISqlAction
         NpgsqlTransaction transaction,
         TraceId traceId
     );
+
+    public Task<int> InsertEducationOrganizationHierarchy(
+        string projectName,
+        string resourceName,
+        string educationOrganizationId,
+        string? parentEducationOrganizationId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
 }

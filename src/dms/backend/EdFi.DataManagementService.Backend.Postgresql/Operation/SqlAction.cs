@@ -94,7 +94,9 @@ public class SqlAction() : ISqlAction
 
         return new DocumentSummary(
             EdfiDoc: await reader.GetFieldValueAsync<JsonElement>(reader.GetOrdinal("EdfiDoc")),
-            SecurityElements: await reader.GetFieldValueAsync<JsonElement>(reader.GetOrdinal("SecurityElements")),
+            SecurityElements: await reader.GetFieldValueAsync<JsonElement>(
+                reader.GetOrdinal("SecurityElements")
+            ),
             LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt")),
             LastModifiedTraceId: reader.GetString(reader.GetOrdinal("LastModifiedTraceId"))
         );
@@ -577,5 +579,33 @@ public class SqlAction() : ISqlAction
         }
 
         return documents.ToArray();
+    }
+
+    public async Task<int> InsertEducationOrganizationHierarchy(
+        string projectName,
+        string resourceName,
+        string educationOrganizationId,
+        string? parentEducationOrganizationId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command = new(
+            $@"INSERT INTO dms.EducationOrganizationHierarchy(ProjectName, ResourceName, EducationOrganizationId, ParentId)
+	        VALUES ($1, $2, $3, (SELECT Id FROM dms.EducationOrganizationHierarchy WHERE EducationOrganizationId = $4));",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = projectName },
+                new() { Value = resourceName },
+                new() { Value = educationOrganizationId },
+                new() { Value = parentEducationOrganizationId ?? (object)DBNull.Value },
+            },
+        };
+        await command.PrepareAsync();
+        return await command.ExecuteNonQueryAsync();
     }
 }
