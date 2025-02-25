@@ -26,7 +26,7 @@ public class DeriveSuperclassIdentityFromTests
         [SetUp]
         public void Setup()
         {
-            ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("School")
                 .WithIdentityJsonPaths(["$.schoolId"])
@@ -40,9 +40,9 @@ public class DeriveSuperclassIdentityFromTests
                 )
                 .WithEndResource()
                 .WithEndProject()
-                .ToApiSchemaDocument();
+                .ToApiSchemaDocuments();
 
-            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "schools");
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "schools");
 
             (_, superclassIdentity) = resourceSchema.ExtractIdentities(
                 JsonNode.Parse(
@@ -51,8 +51,9 @@ public class DeriveSuperclassIdentityFromTests
                         "schoolId": "123"
                     }
 """
-                )!
-            , NullLogger.Instance);
+                )!,
+                NullLogger.Instance
+            );
         }
 
         [Test]
@@ -81,7 +82,7 @@ public class DeriveSuperclassIdentityFromTests
         [SetUp]
         public void Setup()
         {
-            ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
+            ApiSchemaDocuments apiSchemaDocument = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("Section")
                 .WithIdentityJsonPaths(["$.schoolId"])
@@ -90,7 +91,7 @@ public class DeriveSuperclassIdentityFromTests
                 .WithEndDocumentPathsMapping()
                 .WithEndResource()
                 .WithEndProject()
-                .ToApiSchemaDocument();
+                .ToApiSchemaDocuments();
 
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
@@ -101,8 +102,9 @@ public class DeriveSuperclassIdentityFromTests
                         "schoolId": "123"
                     }
 """
-                )!
-            , NullLogger.Instance);
+                )!,
+                NullLogger.Instance
+            );
         }
 
         [Test]

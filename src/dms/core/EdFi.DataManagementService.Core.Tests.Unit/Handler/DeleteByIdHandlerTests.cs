@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
@@ -31,7 +30,7 @@ public class DeleteByIdHandlerTests
 
     internal static ResourceSchema GetResourceSchema()
     {
-        ApiSchemaDocument apiSchemaDocument = new ApiSchemaBuilder()
+        ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
             .WithStartProject()
             .WithStartResource("Assessment")
             .WithNamespaceSecurityElements(["$.namespace"])
@@ -40,9 +39,9 @@ public class DeleteByIdHandlerTests
             .WithEndDocumentPathsMapping()
             .WithEndResource()
             .WithEndProject()
-            .ToApiSchemaDocument();
+            .ToApiSchemaDocuments();
 
-        ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "assessments");
+        ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "assessments");
         return resourceSchema;
     }
 

@@ -22,7 +22,8 @@ internal interface IApiSchemaValidator
     Lazy<List<SchemaValidationFailure>> Validate(JsonNode apiSchemaContent);
 }
 
-internal class ApiSchemaValidator(IApiSchemaSchemaProvider _apiSchemaSchemaProvider) : IApiSchemaValidator
+internal class ApiSchemaValidator(IJsonSchemaForApiSchemaProvider _apiSchemaSchemaProvider)
+    : IApiSchemaValidator
 {
     public Lazy<List<SchemaValidationFailure>> Validate(JsonNode apiSchemaContent)
     {
@@ -34,7 +35,7 @@ internal class ApiSchemaValidator(IApiSchemaSchemaProvider _apiSchemaSchemaProvi
             RequireFormatValidation = true,
         };
 
-        var schema = _apiSchemaSchemaProvider.ApiSchemaSchema;
+        var schema = _apiSchemaSchemaProvider.JsonSchemaForApiSchema;
 
         var results = schema.Evaluate(apiSchemaContent, validatorEvaluationOptions);
         ValidationErrorsFrom(results);

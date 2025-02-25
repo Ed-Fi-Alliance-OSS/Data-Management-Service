@@ -21,14 +21,20 @@ namespace EdFi.DataManagementService.Core.Configuration
         public bool MaskRequestBodyInLogs { get; set; }
 
         /// <summary>
-        /// When true the application will use \ApiSchema\ApiSchema.json
-        /// instead of the published package.
-        /// </summary>
-        public bool UseLocalApiSchemaJson { get; set; }
-
-        /// <summary>
         /// Indicates the maximum number of items that should be returned in the results
         /// </summary>
         public int MaximumPageSize { get; set; }
+
+        /// <summary>
+        /// If true, uses the UseApiSchemaPath file system path to find and load ApiSchema.json
+        /// files. Otherwise, the bundled ApiSchema.json files will be loaded.
+        /// </summary>
+        public bool UseApiSchemaPath { get; set; }
+
+        /// <summary>
+        /// Provides the file system path for ApiSchema.json files loaded at startup,
+        /// including both core and extension files.
+        /// </summary>
+        public string? ApiSchemaPath { get; set; }
     }
 }

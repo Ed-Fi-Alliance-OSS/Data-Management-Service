@@ -57,19 +57,18 @@ public class RequestDataBodyLoggingMiddlewareTests
 
             _logger = new SerilogLoggerFactory(Log.Logger).CreateLogger<RequestDataBodyLoggingMiddleware>();
 
-            FrontendRequest frontEndRequest =
-                new(
-                    Path: "ed-fi/schools",
-                    Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
-                    QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
-                );
+            FrontendRequest frontEndRequest = new(
+                Path: "ed-fi/schools",
+                Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
+                QueryParameters: [],
+                TraceId: new TraceId("traceId"),
+                ClientAuthorizations: new ClientAuthorizations(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
+            );
 
             _context = new(frontEndRequest, RequestMethod.POST);
 
@@ -104,23 +103,25 @@ public class RequestDataBodyLoggingMiddlewareTests
                 File.Delete(LogFilePath);
             }
 
-            Log.Logger = new LoggerConfiguration().MinimumLevel.Debug().WriteTo.File(LogFilePath).CreateLogger();
+            Log.Logger = new LoggerConfiguration()
+                .MinimumLevel.Debug()
+                .WriteTo.File(LogFilePath)
+                .CreateLogger();
 
             _logger = new SerilogLoggerFactory(Log.Logger).CreateLogger<RequestDataBodyLoggingMiddleware>();
 
-            FrontendRequest frontEndRequest =
-                new(
-                    Path: "ed-fi/schools",
-                    Body: """{"schoolId":"12345","nameOfInstitution":"School Test"}""",
-                    QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
-                );
+            FrontendRequest frontEndRequest = new(
+                Path: "ed-fi/schools",
+                Body: """{"schoolId":"12345","nameOfInstitution":"School Test"}""",
+                QueryParameters: [],
+                TraceId: new TraceId("traceId"),
+                ClientAuthorizations: new ClientAuthorizations(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
+            );
 
             _context = new(frontEndRequest, RequestMethod.POST);
 
@@ -164,19 +165,18 @@ public class RequestDataBodyLoggingMiddlewareTests
 
             _logger = new SerilogLoggerFactory(Log.Logger).CreateLogger<RequestDataBodyLoggingMiddleware>();
 
-            FrontendRequest frontEndRequest =
-                new(
-                    Path: "ed-fi/schools",
-                    Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
-                    QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
-                );
+            FrontendRequest frontEndRequest = new(
+                Path: "ed-fi/schools",
+                Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
+                QueryParameters: [],
+                TraceId: new TraceId("traceId"),
+                ClientAuthorizations: new ClientAuthorizations(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
+            );
 
             _context = new(frontEndRequest, RequestMethod.POST);
 
@@ -218,19 +218,18 @@ public class RequestDataBodyLoggingMiddlewareTests
 
             _logger = new SerilogLoggerFactory(Log.Logger).CreateLogger<RequestDataBodyLoggingMiddleware>();
 
-            FrontendRequest frontEndRequest =
-                new(
-                    Path: "ed-fi/schools",
-                    Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
-                    QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
-                );
+            FrontendRequest frontEndRequest = new(
+                Path: "ed-fi/schools",
+                Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
+                QueryParameters: [],
+                TraceId: new TraceId("traceId"),
+                ClientAuthorizations: new ClientAuthorizations(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
+            );
 
             _context = new(frontEndRequest, RequestMethod.POST);
 

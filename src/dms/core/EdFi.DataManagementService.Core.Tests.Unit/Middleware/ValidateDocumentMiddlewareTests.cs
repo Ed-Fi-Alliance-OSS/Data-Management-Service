@@ -25,7 +25,7 @@ public class ValidateDocumentMiddlewareTests
         return () => Task.CompletedTask;
     }
 
-    internal static ApiSchemaDocument SchemaDocument()
+    internal static ApiSchemaDocuments SchemaDocuments()
     {
         var builder = new JsonSchemaBuilder();
         builder.Title("Ed-Fi.School");
@@ -85,7 +85,7 @@ public class ValidateDocumentMiddlewareTests
             .WithJsonSchemaForInsert(builder.Build()!)
             .WithEndResource()
             .WithEndProject()
-            .ToApiSchemaDocument();
+            .ToApiSchemaDocuments();
     }
 
     internal static IPipelineStep Middleware()
@@ -98,19 +98,18 @@ public class ValidateDocumentMiddlewareTests
     {
         PipelineContext _context = new(frontendRequest, method)
         {
-            ApiSchemaDocument = SchemaDocument(),
+            ApiSchemaDocuments = SchemaDocuments(),
             PathComponents = new(
                 ProjectNamespace: new("ed-fi"),
                 EndpointName: new("schools"),
                 DocumentUuid: No.DocumentUuid
             ),
         };
-        _context.ProjectSchema = new ProjectSchema(
-            _context.ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi")) ?? new JsonObject(),
-            NullLogger.Instance
-        );
+        _context.ProjectSchema = _context.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+            new("ed-fi")
+        )!;
         _context.ResourceSchema = new ResourceSchema(
-            _context.ProjectSchema.FindResourceSchemaNode(new("schools")) ?? new JsonObject()
+            _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools")) ?? new JsonObject()
         );
 
         if (_context.FrontendRequest.Body != null)

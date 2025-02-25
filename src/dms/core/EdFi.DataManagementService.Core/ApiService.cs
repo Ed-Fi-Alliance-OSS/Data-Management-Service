@@ -303,16 +303,18 @@ internal class ApiService(
     /// </summary>
     public IList<IDataModelInfo> GetDataModelInfo()
     {
-        ApiSchemaDocument apiSchemaDocument = new(_apiSchemaProvider.CoreApiSchemaRootNode, _logger);
+        ApiSchemaDocuments apiSchemaDocuments = new(_apiSchemaProvider.GetApiSchemaNodes(), _logger);
 
         IList<IDataModelInfo> result = [];
-        foreach (JsonNode projectSchemaNode in apiSchemaDocument.GetAllProjectSchemaNodes())
+        foreach (ProjectSchema projectSchema in apiSchemaDocuments.GetAllProjectSchemas())
         {
-            string projectName = projectSchemaNode?["projectName"]?.GetValue<string>() ?? string.Empty;
-            string projectVersion = projectSchemaNode?["projectVersion"]?.GetValue<string>() ?? string.Empty;
-            string description = projectSchemaNode?["description"]?.GetValue<string>() ?? string.Empty;
-
-            result.Add(new DataModelInfo(projectName, projectVersion, description));
+            result.Add(
+                new DataModelInfo(
+                    projectSchema.ProjectName.Value,
+                    projectSchema.ResourceVersion.Value,
+                    projectSchema.Description
+                )
+            );
         }
         return result;
     }
@@ -323,7 +325,10 @@ internal class ApiService(
     /// <returns>JSON array ordered by dependency sequence</returns>
     public JsonArray GetDependencies()
     {
-        DependencyCalculator dependencyCalculator = new(_apiSchemaProvider.CoreApiSchemaRootNode, _logger);
+        DependencyCalculator dependencyCalculator = new(
+            _apiSchemaProvider.GetApiSchemaNodes().CoreApiSchemaRootNode,
+            _logger
+        );
         return dependencyCalculator.GetDependenciesFromResourceSchema();
     }
 
@@ -333,10 +338,7 @@ internal class ApiService(
     private readonly Lazy<JsonNode> _openApiSpecification = new(() =>
     {
         OpenApiDocument openApiDocument = new(_logger);
-        return openApiDocument.CreateDocument(
-            _apiSchemaProvider.CoreApiSchemaRootNode,
-            _apiSchemaProvider.ExtensionApiSchemaRootNodes
-        );
+        return openApiDocument.CreateDocument(_apiSchemaProvider.GetApiSchemaNodes());
     });
 
     /// <summary>

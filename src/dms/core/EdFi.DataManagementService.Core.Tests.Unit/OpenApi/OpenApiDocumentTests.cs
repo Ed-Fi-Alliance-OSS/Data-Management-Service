@@ -53,7 +53,7 @@ public class OpenApiDocumentTests
             .WithStartProject("ed-fi", "5.0.0")
             .WithCoreOpenApiSpecification(schemas, paths, tags)
             .WithEndProject()
-            .AsRootJsonNode();
+            .AsSingleApiSchemaRootNode();
     }
 
     internal static JsonNode FirstExtensionSchemaRootNode()
@@ -102,7 +102,7 @@ public class OpenApiDocumentTests
             .WithStartProject("tpdm", "5.0.0")
             .WithOpenApiExtensionFragments(exts, newPaths, newSchemas, newTags)
             .WithEndProject()
-            .AsRootJsonNode();
+            .AsSingleApiSchemaRootNode();
     }
 
     internal static JsonNode SecondExtensionSchemaRootNode()
@@ -151,7 +151,7 @@ public class OpenApiDocumentTests
             .WithStartProject("tpdm", "5.0.0")
             .WithOpenApiExtensionFragments(exts, newPaths, newSchemas, newTags)
             .WithEndProject()
-            .AsRootJsonNode();
+            .AsSingleApiSchemaRootNode();
     }
 
     [TestFixture]
@@ -164,7 +164,7 @@ public class OpenApiDocumentTests
         {
             JsonNode coreSchemaRootNode = CoreSchemaRootNode();
             OpenApiDocument openApiDocument = new(NullLogger.Instance);
-            openApiDocumentResult = openApiDocument.CreateDocument(coreSchemaRootNode, []);
+            openApiDocumentResult = openApiDocument.CreateDocument(new(coreSchemaRootNode, []));
         }
 
         [Test]
@@ -242,8 +242,7 @@ public class OpenApiDocumentTests
             ];
             OpenApiDocument openApiDocument = new(NullLogger.Instance);
             openApiDocumentResult = openApiDocument.CreateDocument(
-                coreSchemaRootNode,
-                extensionSchemaRootNodes
+                new(coreSchemaRootNode, extensionSchemaRootNodes)
             );
         }
 

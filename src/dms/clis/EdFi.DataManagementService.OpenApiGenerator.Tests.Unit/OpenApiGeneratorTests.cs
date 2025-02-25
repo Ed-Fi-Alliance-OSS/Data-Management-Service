@@ -6,7 +6,7 @@
 using FakeItEasy;
 using Microsoft.Extensions.Logging;
 
-namespace EdFi.DataManagementService.OpenApiGenerator.Tests.Unit;
+namespace EdFi.DataManagementService.OpenApiGenerator.Tests.Integration;
 
 [TestFixture]
 public class OpenApiGeneratorTests
@@ -31,10 +31,7 @@ public class OpenApiGeneratorTests
             // Act & Assert
             var ex = Assert.Throws<ArgumentException>(() => _generator.Generate("", ""));
 
-            Assert.That(
-                ex?.Message,
-                Is.EqualTo("Core schema path is required.")
-            );
+            Assert.That(ex?.Message, Is.EqualTo("Core schema path is required."));
         }
     }
 
@@ -71,7 +68,7 @@ public class OpenApiGeneratorTests
             // Assert
             Assert.That(
                 ex?.Message,
-                Is.EqualTo("Node at path '$.projectSchemas['ed-fi'].coreOpenApiSpecification' not found")
+                Is.EqualTo("Node at path '$.projectSchema.coreOpenApiSpecification' not found")
             );
 
             // Cleanup

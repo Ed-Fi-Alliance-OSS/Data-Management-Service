@@ -10,11 +10,8 @@ using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.OpenApiGenerator.Services;
 
-public class OpenApiGenerator(ILogger<OpenApiGenerator> logger)
+public class OpenApiGenerator(ILogger<OpenApiGenerator> _logger)
 {
-    private readonly ILogger<OpenApiGenerator> _logger =
-        logger ?? throw new ArgumentNullException(nameof(logger));
-
     public string Generate(string coreSchemaPath, string? extensionSchemaPath)
     {
         _logger.LogInformation("Starting OpenAPI generation...");
@@ -26,24 +23,25 @@ public class OpenApiGenerator(ILogger<OpenApiGenerator> logger)
         }
 
         _logger.LogDebug("Loading core schema from: {CoreSchemaPath}", coreSchemaPath);
-        var coreSchema =
+
+        JsonNode coreSchema =
             JsonNode.Parse(File.ReadAllText(coreSchemaPath))
             ?? throw new InvalidOperationException("Invalid core schema file.");
 
-        JsonNode[] extensionSchema = Array.Empty<JsonNode>();
+        JsonNode[] extensionSchemas = [];
         if (!string.IsNullOrWhiteSpace(extensionSchemaPath))
         {
             _logger.LogDebug("Loading extension schema from: {ExtensionSchemaPath}", extensionSchemaPath);
             string content = File.ReadAllText(extensionSchemaPath);
-            var parsedNode =
+            JsonNode parsedNode =
                 JsonNode.Parse(content)
                 ?? throw new InvalidOperationException("Invalid extension schema file.");
-            extensionSchema = new[] { parsedNode };
+            extensionSchemas = [parsedNode];
         }
 
         _logger.LogDebug("Combining core and extension schemas.");
         OpenApiDocument openApiDocument = new(_logger);
-        var combinedSchema = openApiDocument.CreateDocument(coreSchema, extensionSchema);
+        JsonNode combinedSchema = openApiDocument.CreateDocument(new(coreSchema, extensionSchemas));
 
         _logger.LogInformation("OpenAPI generation completed successfully.");
         return combinedSchema.ToJsonString(new JsonSerializerOptions { WriteIndented = true });

@@ -20,14 +20,14 @@ public class ValidateEndpointMiddlewareTests
         return () => Task.CompletedTask;
     }
 
-    internal static ApiSchemaDocument SchemaDocument()
+    internal static ApiSchemaDocuments SchemaDocuments()
     {
         return new ApiSchemaBuilder()
             .WithStartProject("Ed-Fi", "5.0.0")
             .WithStartResource("School")
             .WithEndResource()
             .WithEndProject()
-            .ToApiSchemaDocument();
+            .ToApiSchemaDocuments();
     }
 
     internal static IPipelineStep Middleware()
@@ -43,7 +43,7 @@ public class ValidateEndpointMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            _context.ApiSchemaDocument = SchemaDocument();
+            _context.ApiSchemaDocuments = SchemaDocuments();
             _context.PathComponents = new(
                 ProjectNamespace: new("not-ed-fi"),
                 EndpointName: new("schools"),
@@ -91,7 +91,7 @@ public class ValidateEndpointMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            _context.ApiSchemaDocument = SchemaDocument();
+            _context.ApiSchemaDocuments = SchemaDocuments();
             _context.PathComponents = new(
                 ProjectNamespace: new("ed-fi"),
                 EndpointName: new("notschools"),
@@ -115,7 +115,10 @@ public class ValidateEndpointMiddlewareTests
         [Test]
         public void It_returns_message_body()
         {
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("The specified data could not be found.");
+            _context
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("The specified data could not be found.");
         }
 
         [Test]
@@ -145,7 +148,7 @@ public class ValidateEndpointMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            _context.ApiSchemaDocument = SchemaDocument();
+            _context.ApiSchemaDocuments = SchemaDocuments();
             _context.PathComponents = new(
                 ProjectNamespace: new("ed-fi"),
                 EndpointName: new("schools"),

@@ -234,17 +234,17 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
 
                         foreach (Document referencingDocument in referencingDocuments)
                         {
-                            var cascadeResult = updateRequest.UpdateCascadeHandler.Cascade(
+                            UpdateCascadeResult cascadeResult = updateRequest.UpdateCascadeHandler.Cascade(
                                 originalReferencedDocument.EdfiDoc,
-                                originalReferencedDocument.ProjectName,
-                                originalReferencedDocument.ResourceName,
+                                new(originalReferencedDocument.ProjectName),
+                                new(originalReferencedDocument.ResourceName),
                                 modifiedReferencedEdFiDoc,
                                 referencingDocument.EdfiDoc.AsNode()!,
                                 referencingDocument.Id.GetValueOrDefault(),
                                 referencingDocument.DocumentPartitionKey,
                                 referencingDocument.DocumentUuid,
-                                referencingDocument.ProjectName,
-                                referencingDocument.ResourceName
+                                new(referencingDocument.ProjectName),
+                                new(referencingDocument.ResourceName)
                             );
 
                             if (cascadeResult.isIdentityUpdate)

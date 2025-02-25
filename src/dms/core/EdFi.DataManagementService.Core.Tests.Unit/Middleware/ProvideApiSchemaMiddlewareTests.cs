@@ -29,13 +29,15 @@ public class ProvideApiSchemaMiddlewareTests
         private readonly PipelineContext _context = No.PipelineContext();
         private static readonly JsonNode _apiSchemaRootNode =
             JsonNode.Parse(
-                "{\"projectNameMapping\":{}, \"projectSchemas\": { \"ed-fi\": {\"abstractResources\":{},\"caseInsensitiveEndpointNameMapping\":{},\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{}} } }"
+                "{\"projectSchema\": { \"abstractResources\":{},\"caseInsensitiveEndpointNameMapping\":{},\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectEndpointName\":\"ed-fi\",\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{}} }"
             ) ?? new JsonObject();
 
-        public class Provider : IApiSchemaProvider
+        internal class Provider : IApiSchemaProvider
         {
-            public JsonNode CoreApiSchemaRootNode => _apiSchemaRootNode;
-            public JsonNode[] ExtensionApiSchemaRootNodes => [];
+            public ApiSchemaNodes GetApiSchemaNodes()
+            {
+                return new(_apiSchemaRootNode, []);
+            }
         }
 
         [SetUp]
@@ -48,10 +50,9 @@ public class ProvideApiSchemaMiddlewareTests
         public void It_has_the_root_node_from_the_provider()
         {
             _context
-                .ApiSchemaDocument.FindProjectSchemaNode(new("ed-fi"))
-                ?.ToString()
+                .ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(new("ed-fi"))
                 .Should()
-                .Contain("abstractResources");
+                .NotBeNull();
         }
     }
 }

@@ -41,7 +41,7 @@ public class APISchemaFileTests
             return new ApiService(
                 apiSchemaProvider,
                 new ApiSchemaValidator(
-                    new ApiSchemaSchemaProvider(NullLogger<ApiSchemaSchemaProvider>.Instance)
+                    new JsonSchemaForApiSchemaProvider(NullLogger<JsonSchemaForApiSchemaProvider>.Instance)
                 ),
                 new SuccessDocumentStoreRepository(NullLogger<SuccessDocumentStoreRepository>.Instance),
                 new NoClaimsClaimSetCacheService(NullLogger.Instance),
@@ -64,7 +64,8 @@ public class APISchemaFileTests
         {
             var schemaContent = JsonNode.Parse(File.ReadAllText("ApiSchema/InvalidResourceSchemas.json"));
             apiSchemaProvider = A.Fake<IApiSchemaProvider>();
-            A.CallTo(() => apiSchemaProvider.CoreApiSchemaRootNode).Returns(schemaContent!);
+            A.CallTo(() => apiSchemaProvider.GetApiSchemaNodes())
+                .Returns(new ApiSchemaNodes(schemaContent!, []));
         }
 
         [TestFixture]
