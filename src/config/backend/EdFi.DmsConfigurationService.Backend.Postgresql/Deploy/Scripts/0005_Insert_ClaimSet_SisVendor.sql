@@ -43,6 +43,7 @@ WITH resource_names AS (
 		'studentSchoolAssociations',
 		'studentSectionAssociations',
         'surveys',
+        'credentials',
 	--descriptors:
 		'absenceEventCategoryDescriptors',
 --		'academicHonorCategoryDescriptors',
@@ -65,7 +66,8 @@ WITH resource_names AS (
 		'programTypeDescriptors',
 		'resultDatatypeTypeDescriptors',
 		'termDescriptors',
-		'stateAbbreviationDescriptors'
+		'stateAbbreviationDescriptors',
+        'credentialTypeDescriptors'
     ] AS names
 )
 INSERT INTO resource_claims (name)
