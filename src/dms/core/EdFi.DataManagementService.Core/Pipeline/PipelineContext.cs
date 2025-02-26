@@ -105,4 +105,10 @@ internal class PipelineContext(FrontendRequest _frontendRequest, RequestMethod _
     /// ResourceActionAuthStrategies for the request
     /// </summary>
     public IReadOnlyList<string> ResourceActionAuthStrategies { get; set; } = [];
+
+    /// <summary>
+    /// EducationOrganizationHierarchyInfo for the submitted document
+    /// </summary>
+    public EducationOrganizationHierarchyInfo EducationOrganizationHierarchyInfo { get; set; } =
+        No.EducationOrganizationHierarchyInfo;
 }
