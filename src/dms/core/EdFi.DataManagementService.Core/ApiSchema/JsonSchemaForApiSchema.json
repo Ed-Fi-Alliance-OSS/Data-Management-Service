@@ -90,7 +90,18 @@
                 "description": {
                     "type": "string"
                 },
-                "educationOrganizationHierarchy": true,
+                "educationOrganizationHierarchy": {
+                    "type": "object",
+                    "patternProperties": {
+                        "^[a-zA-Z0-9]+$": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "additionalProperties": false
+                },
                 "isExtensionProject": {
                     "type": "boolean"
                 },

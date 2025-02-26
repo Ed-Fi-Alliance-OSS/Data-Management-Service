@@ -115,6 +115,23 @@ internal class ProjectSchema(JsonNode _projectSchemaNode, ILogger _logger)
         return resourceSchemasNode.SelectNodesFromPropertyValues();
     }
 
+    public Dictionary<string, string[]> EducationOrganizationHierarchy =>
+        _educationOrganizationHierarchy.Value;
+    private readonly Lazy<Dictionary<string, string[]>> _educationOrganizationHierarchy = new(() =>
+    {
+        JsonNode edOrgHierarchyNode = _projectSchemaNode.SelectRequiredNodeFromPath(
+            "$.educationOrganizationHierarchy",
+            _logger
+        );
+
+        return edOrgHierarchyNode
+            .AsObject()
+            .ToDictionary(
+                kvp => kvp.Key,
+                kvp => kvp.Value?.AsArray().Select(v => v?.ToString() ?? string.Empty).ToArray() ?? []
+            );
+    });
+
     /// TODO: Remove this in DMS-542
     public JsonNode getRawNodeRemoveMe()
     {
