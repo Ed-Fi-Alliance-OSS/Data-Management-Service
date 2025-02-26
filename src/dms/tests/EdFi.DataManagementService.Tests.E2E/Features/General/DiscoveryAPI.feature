@@ -12,8 +12,8 @@ Feature: The Discovery API provides information about the application version, s
                       "dataModels": [
                           {
                               "name": "Ed-Fi",
-                              "version": "5.1.0",
-                              "informationalVersion": "The Ed-Fi Data Standard v5.1"
+                              "version": "5.2.0",
+                              "informationalVersion": "The Ed-Fi Data Standard v5.2.0"
                           }
                       ],
                       "urls": {
