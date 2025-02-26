@@ -90,6 +90,7 @@
                 "description": {
                     "type": "string"
                 },
+                "educationOrganizationHierarchy": true,
                 "isExtensionProject": {
                     "type": "boolean"
                 },
