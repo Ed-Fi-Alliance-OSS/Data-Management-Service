@@ -127,6 +127,13 @@ internal static class No
         DefaultAuthorizationStrategiesForCrud = [],
     };
 
+    public static readonly EducationOrganizationHierarchyInfo EducationOrganizationHierarchyInfo =
+        new EducationOrganizationHierarchyInfo(
+            IsInEducationOrganizationHierarchy: false,
+            EducationOrganizationId: string.Empty,
+            ParentEducationOrganizationId: null
+        );
+
     /// <summary>
     /// A constructor of a PipelineContext initialized with null objects
     /// </summary>
