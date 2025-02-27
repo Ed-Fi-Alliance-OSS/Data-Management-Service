@@ -35,10 +35,9 @@ internal class ResourceUpsertAuthorizationMiddleware(
 
             foreach (string authorizationStrategy in context.ResourceActionAuthStrategies)
             {
-                var authStrategyHandler =
-                    _authorizationServiceFactory.GetByName<IAuthorizationValidator>(
-                        authorizationStrategy
-                    );
+                var authStrategyHandler = _authorizationServiceFactory.GetByName<IAuthorizationValidator>(
+                    authorizationStrategy
+                );
                 if (authStrategyHandler == null)
                 {
                     context.FrontendResponse = new FrontendResponse(
