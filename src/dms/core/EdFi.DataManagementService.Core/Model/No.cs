@@ -71,7 +71,7 @@ internal static class No
         IsDescriptor: false,
         ResourceVersion: new SemVer(""),
         AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, string.Empty, null)
+        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, [])
     );
 
     /// <summary>
@@ -130,8 +130,8 @@ internal static class No
     public static readonly EducationOrganizationHierarchyInfo EducationOrganizationHierarchyInfo =
         new EducationOrganizationHierarchyInfo(
             IsInEducationOrganizationHierarchy: false,
-            EducationOrganizationId: string.Empty,
-            ParentEducationOrganizationId: null
+            Id: default,
+            ParentIds: []
         );
 
     /// <summary>

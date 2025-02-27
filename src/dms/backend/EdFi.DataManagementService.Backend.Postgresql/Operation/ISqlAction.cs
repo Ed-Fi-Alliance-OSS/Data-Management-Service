@@ -129,8 +129,8 @@ public interface ISqlAction
     public Task<int> InsertEducationOrganizationHierarchy(
         string projectName,
         string resourceName,
-        string educationOrganizationId,
-        string? parentEducationOrganizationId,
+        int educationOrganizationId,
+        int[] parentEducationOrganizationIds,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     );
