@@ -19,9 +19,13 @@ internal static class SecurityHelper
         return JsonSerializer.Deserialize<JsonElement>(
             new JsonObject
             {
-                ["Namespace"] = new JsonArray([.. documentSecurityElements.Namespace]),
+                ["Namespace"] = new JsonArray(
+                    documentSecurityElements.Namespace.Select(ns => JsonValue.Create(ns)).ToArray<JsonNode?>()
+                ),
                 ["EducationOrganization"] = new JsonArray(
-                    [.. documentSecurityElements.EducationOrganization]
+                    documentSecurityElements
+                        .EducationOrganization.Select(eo => JsonValue.Create(eo))
+                        .ToArray<JsonNode?>()
                 ),
             }
         );

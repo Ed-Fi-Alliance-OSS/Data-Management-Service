@@ -20,28 +20,27 @@ public class RelationshipsWithEdOrgsOnlyValidator : IAuthorizationValidator
         ClientAuthorizations authorizations
     )
     {
-        var edOrgIdsFromClaim = authorizations.EducationOrganizationIds;
-        var edOrgsFromRequest = securityElements.EducationOrganization;
+        List<EducationOrganizationId> edOrgIdsFromClaim = authorizations.EducationOrganizationIds;
+        List<EducationOrganizationId> edOrgsFromRequest = securityElements
+            .EducationOrganization.Select(e => e.Id)
+            .ToList();
 
-        if (edOrgsFromRequest.Length == 0)
+        if (!edOrgsFromRequest.Any())
         {
-            var error =
+            string error =
                 "No 'EducationOrganizationIds' property could be found on the resource in order to perform authorization. Should a different authorization strategy be used?";
             return new AuthorizationResult(false, error);
         }
         if (edOrgIdsFromClaim.Count == 0)
         {
-            var noRequiredClaimError =
+            string noRequiredClaimError =
                 $"The API client has been given permissions on a resource that uses the '{AuthorizationStrategyName}' authorization strategy but the client doesn't have any education organizations assigned.";
             return new AuthorizationResult(false, noRequiredClaimError);
         }
-        var allMatching = edOrgsFromRequest
-            .ToList()
-            .TrueForAll(fromRequest =>
-                edOrgIdsFromClaim.Exists(fromClaim =>
-                    fromRequest.Equals(fromClaim.Value, StringComparison.InvariantCultureIgnoreCase)
-                )
-            );
+
+        bool allMatching = edOrgsFromRequest.TrueForAll(fromRequest =>
+            edOrgIdsFromClaim.Exists(fromClaim => fromRequest.Value == fromClaim.Value)
+        );
 
         if (!allMatching)
         {
