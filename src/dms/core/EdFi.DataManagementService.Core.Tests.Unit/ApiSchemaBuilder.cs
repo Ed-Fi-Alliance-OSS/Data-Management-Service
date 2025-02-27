@@ -271,7 +271,7 @@ public class ApiSchemaBuilder
     /// <summary>
     /// Adds a EducationOrganizationSecurityElements section to a resource
     /// </summary>
-    public ApiSchemaBuilder WithEducationOrganizationSecurityElements(string[] jsonPaths)
+    public ApiSchemaBuilder WithEducationOrganizationSecurityElements((string, string)[] jsonPaths)
     {
         if (_currentProjectNode == null)
         {
@@ -283,7 +283,9 @@ public class ApiSchemaBuilder
         }
 
         _currentResourceNode["securityElements"]!["EducationOrganization"] = new JsonArray(
-            jsonPaths.Select(x => JsonValue.Create(x)).ToArray()
+            jsonPaths
+                .Select(x => new JsonObject { ["metaEdName"] = x.Item1, ["jsonPath"] = x.Item2 })
+                .ToArray()
         );
 
         return this;

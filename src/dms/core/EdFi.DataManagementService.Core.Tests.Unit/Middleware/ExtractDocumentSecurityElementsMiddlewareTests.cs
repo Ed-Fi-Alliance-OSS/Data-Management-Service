@@ -93,7 +93,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                 .WithStartProject()
                 .WithStartResource("AcademicWeek")
                 .WithNamespaceSecurityElements([])
-                .WithEducationOrganizationSecurityElements(["$.schoolReference.schoolId"])
+                .WithEducationOrganizationSecurityElements([("School", "$.schoolReference.schoolId")])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("EducationOrganization", "$.schoolReference.schoolId")
                 .WithEndDocumentPathsMapping()
@@ -138,7 +138,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
         public void It_has_extracted_the_educationOrganization()
         {
             context.DocumentSecurityElements.EducationOrganization.Should().HaveCount(1);
-            context.DocumentSecurityElements.EducationOrganization[0].Should().Be("12345");
+            context.DocumentSecurityElements.EducationOrganization[0].Id.Value.Should().Be(12345);
         }
     }
 }

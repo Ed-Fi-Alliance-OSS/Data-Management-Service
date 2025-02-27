@@ -25,7 +25,7 @@ public class RelationshipsWithEdOrgsOnlyFiltersProviderTests
                 new ClientAuthorizations(
                     "",
                     "",
-                    [new EducationOrganizationId("255901"), new EducationOrganizationId("255902")],
+                    [new EducationOrganizationId(255901), new EducationOrganizationId(255902)],
                     []
                 )
             );
