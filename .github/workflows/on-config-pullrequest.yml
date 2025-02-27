@@ -14,6 +14,7 @@ on:
       - "src/config/**/*.cs"
       - "src/config/**/*.csproj"
       - "src/config/Directory.Packages.props"
+      - "src/Directory.Packages.props"      
   pull_request:
     branches:
       - main
@@ -22,6 +23,7 @@ on:
       - "src/config/**/*.csproj"
       - ".github/**/*config*.yml"
       - "src/config/Directory.Packages.props"
+      - "src/Directory.Packages.props"      
   workflow_dispatch:
 
 concurrency:
