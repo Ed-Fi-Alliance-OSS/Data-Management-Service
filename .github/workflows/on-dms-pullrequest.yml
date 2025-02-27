@@ -13,8 +13,7 @@ on:
     paths:
       - "src/dms/**/*.cs"
       - "src/dms/**/*.csproj"
-      - "src/dms/Directory.Packages.props"
-      - "src/Directory.Packages.props"
+      - "src/**/Directory.Packages.props"
   pull_request:
     branches:
       - main
@@ -22,8 +21,7 @@ on:
       - "src/dms/**/*.cs"
       - "src/dms/**/*.csproj"
       - ".github/**/*dms*.yml"
-      - "src/dms/Directory.Packages.props"
-      - "src/Directory.Packages.props"      
+      - "src/**/Directory.Packages.props"
   workflow_dispatch:
 
 concurrency:

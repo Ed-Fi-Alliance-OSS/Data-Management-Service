@@ -23,7 +23,7 @@ public class RelationshipsWithEdOrgsOnlyFiltersProvider : IAuthorizationFiltersP
             filters.Add(
                 new AuthorizationFilter(
                     "EducationOrganization",
-                    edOrgId.Value,
+                    edOrgId.Value.ToString(),
                     "Access to the resource item could not be authorized based on the caller's EducationOrganizationIds claims: {claims}.",
                     FilterComparison.Equals
                 )

@@ -27,7 +27,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                 new ClientAuthorizations(
                     "",
                     "",
-                    [new EducationOrganizationId("299501")],
+                    [new EducationOrganizationId(299501)],
                     [new NamespacePrefix("uri://namespace")]
                 )
             );
@@ -57,7 +57,15 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
         {
             var validator = new RelationshipsWithEdOrgsOnlyValidator();
             _expectedResult = validator.ValidateAuthorization(
-                new DocumentSecurityElements([], ["255901"]),
+                new DocumentSecurityElements(
+                    [],
+                    [
+                        new EducationOrganizationSecurityElement(
+                            new ResourceName("School"),
+                            new EducationOrganizationId(255901)
+                        ),
+                    ]
+                ),
                 new ClientAuthorizations("", "", [], [])
             );
         }
@@ -86,8 +94,16 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
         {
             var validator = new RelationshipsWithEdOrgsOnlyValidator();
             _expectedResult = validator.ValidateAuthorization(
-                new DocumentSecurityElements([], ["255901"]),
-                new ClientAuthorizations("", "", [new EducationOrganizationId("255901")], [])
+                new DocumentSecurityElements(
+                    [],
+                    [
+                        new EducationOrganizationSecurityElement(
+                            new ResourceName("School"),
+                            new EducationOrganizationId(255901)
+                        ),
+                    ]
+                ),
+                new ClientAuthorizations("", "", [new EducationOrganizationId(255901)], [])
             );
         }
 
@@ -110,11 +126,19 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
         {
             var validator = new RelationshipsWithEdOrgsOnlyValidator();
             _expectedResult = validator.ValidateAuthorization(
-                new DocumentSecurityElements(["uri://not-matching/resource"], ["289766"]),
+                new DocumentSecurityElements(
+                    ["uri://not-matching/resource"],
+                    [
+                        new EducationOrganizationSecurityElement(
+                            new ResourceName("School"),
+                            new EducationOrganizationId(289766)
+                        ),
+                    ]
+                ),
                 new ClientAuthorizations(
                     "",
                     "",
-                    [new EducationOrganizationId("2455")],
+                    [new EducationOrganizationId(2455)],
                     [new NamespacePrefix("uri://namespace")]
                 )
             );
@@ -144,11 +168,23 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
         {
             var validator = new RelationshipsWithEdOrgsOnlyValidator();
             _expectedResult = validator.ValidateAuthorization(
-                new DocumentSecurityElements([], ["233", "244"]),
+                new DocumentSecurityElements(
+                    [],
+                    [
+                        new EducationOrganizationSecurityElement(
+                            new ResourceName("School"),
+                            new EducationOrganizationId(233)
+                        ),
+                        new EducationOrganizationSecurityElement(
+                            new ResourceName("School"),
+                            new EducationOrganizationId(244)
+                        ),
+                    ]
+                ),
                 new ClientAuthorizations(
                     "",
                     "",
-                    [new EducationOrganizationId("566"), new EducationOrganizationId("567")],
+                    [new EducationOrganizationId(566), new EducationOrganizationId(567)],
                     []
                 )
             );

@@ -343,21 +343,25 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
     /// </summary>
     public IEnumerable<JsonPath> NamespaceSecurityElementPaths => _namespaceSecurityElementPaths.Value;
 
-    private readonly Lazy<IEnumerable<JsonPath>> _educationOrganizationSecurityElementPaths = new(() =>
+    private readonly Lazy<
+        IEnumerable<EducationOrganizationSecurityElementPath>
+    > _educationOrganizationSecurityElementPaths = new(() =>
     {
         return _resourceSchemaNode["securityElements"]
                 ?["EducationOrganization"]?.AsArray()
-                .GetValues<string>()
-                .Select(x => new JsonPath(x))
+                .Select(x => new EducationOrganizationSecurityElementPath(
+                    new ResourceName(x!["metaEdName"]!.GetValue<string>()),
+                    new JsonPath(x!["jsonPath"]!.GetValue<string>())
+                ))
             ?? throw new InvalidOperationException(
                 "Expected securityElements.EducationOrganization to be on ResourceSchema, invalid ApiSchema"
             );
     });
 
     /// <summary>
-    /// A list of the JsonPaths that are education organization security elements, for authorization.
+    /// A list of the ResourceNames and JsonPaths that are education organization security elements, for authorization.
     /// Note these can be array paths.
     /// </summary>
-    public IEnumerable<JsonPath> EducationOrganizationSecurityElementPaths =>
+    public IEnumerable<EducationOrganizationSecurityElementPath> EducationOrganizationSecurityElementPaths =>
         _educationOrganizationSecurityElementPaths.Value;
 }

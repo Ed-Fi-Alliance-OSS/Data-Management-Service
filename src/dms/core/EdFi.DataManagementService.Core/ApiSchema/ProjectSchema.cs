@@ -115,6 +115,49 @@ internal class ProjectSchema(JsonNode _projectSchemaNode, ILogger _logger)
         return resourceSchemasNode.SelectNodesFromPropertyValues();
     }
 
+    /// <summary>
+    /// Returns a dictionary where they Key is an EducationOrganization and the value is
+    /// a list of the parent EducationOrganization ResourceNames.
+    /// </summary>
+    public Dictionary<ResourceName, ResourceName[]> EducationOrganizationHierarchy =>
+        _educationOrganizationHierarchy.Value;
+    private readonly Lazy<Dictionary<ResourceName, ResourceName[]>> _educationOrganizationHierarchy = new(
+        () =>
+        {
+            JsonNode edOrgHierarchyNode = _projectSchemaNode.SelectRequiredNodeFromPath(
+                "$.educationOrganizationHierarchy",
+                _logger
+            );
+
+            return edOrgHierarchyNode
+                .AsObject()
+                .ToDictionary(
+                    kvp => new ResourceName(kvp.Key),
+                    kvp =>
+                        kvp.Value?.AsArray()
+                            .Select(v => new ResourceName(v?.ToString() ?? string.Empty))
+                            .ToArray() ?? []
+                );
+        }
+    );
+
+    /// <summary>
+    /// Returns the list of EducationOrganization resource names
+    /// </summary>
+    public ResourceName[] EducationOrganizationTypes => _educationOrganizationTypes.Value;
+    private readonly Lazy<ResourceName[]> _educationOrganizationTypes = new(() =>
+    {
+        JsonNode edOrgTypesNode = _projectSchemaNode.SelectRequiredNodeFromPath(
+            "$.educationOrganizationTypes",
+            _logger
+        );
+
+        return edOrgTypesNode
+            .AsArray()
+            .Select(v => new ResourceName(v?.ToString() ?? string.Empty))
+            .ToArray();
+    });
+
     /// TODO: Remove this in DMS-542
     public JsonNode getRawNodeRemoveMe()
     {

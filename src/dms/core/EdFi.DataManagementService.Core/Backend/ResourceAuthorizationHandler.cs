@@ -34,10 +34,22 @@ public class ResourceAuthorizationHandler(
             foreach (var filter in evaluator.Filters)
             {
                 logger.LogDebug("Evaluating filter: {Filter}", filter);
+
                 JsonArray? valuesArray = securityElements[filter.FilterPath]?.AsArray();
-                string[] valuesStrings =
-                    valuesArray?.Select(v => v?.ToString() ?? string.Empty).ToArray()
-                    ?? Array.Empty<string>();
+                string[] valuesStrings;
+                // TODO IMPROVE THIS
+                if (filter.FilterPath == "Namespace")
+                {
+                    valuesStrings =
+                        valuesArray?.Select(v => v?.ToString() ?? string.Empty).ToArray()
+                        ?? Array.Empty<string>();
+                }
+                else
+                {
+                    valuesStrings =
+                        valuesArray?.Select(v => v!["Id"]!["Value"]?.ToString() ?? string.Empty).ToArray()
+                        ?? Array.Empty<string>();
+                }
 
                 switch (filter.Comparison)
                 {

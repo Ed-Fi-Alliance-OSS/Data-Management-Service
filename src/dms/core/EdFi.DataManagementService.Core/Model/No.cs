@@ -70,7 +70,8 @@ internal static class No
         ResourceName: new ResourceName(""),
         IsDescriptor: false,
         ResourceVersion: new SemVer(""),
-        AllowIdentityUpdates: false
+        AllowIdentityUpdates: false,
+        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, [])
     );
 
     /// <summary>
@@ -125,6 +126,13 @@ internal static class No
         Children = [],
         DefaultAuthorizationStrategiesForCrud = [],
     };
+
+    public static readonly EducationOrganizationHierarchyInfo EducationOrganizationHierarchyInfo =
+        new EducationOrganizationHierarchyInfo(
+            IsInEducationOrganizationHierarchy: false,
+            Id: default,
+            ParentIds: []
+        );
 
     /// <summary>
     /// A constructor of a PipelineContext initialized with null objects
