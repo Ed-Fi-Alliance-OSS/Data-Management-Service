@@ -19,26 +19,21 @@ internal class ProvideEducationOrganizationHierarchyMiddleware(ILogger _logger) 
             context.FrontendRequest.TraceId.Value
         );
 
-        bool isEdOrgHierarchy = context
-            .ProjectSchema.EducationOrganizationHierarchy["EducationOrganization"]
-            .Contains(context.ResourceInfo.ResourceName.Value);
-        string educationOrganizationId = "";
-        string? parentEducationOrganizationId = null;
+        bool isEdOrgHierarchy = context.ProjectSchema.EducationOrganizationTypes.Contains(
+            context.ResourceInfo.ResourceName
+        );
+        int educationOrganizationId = default;
 
         if (isEdOrgHierarchy)
         {
-            var (documentIdentity, _) = context.ResourceSchema.ExtractIdentities(
-                context.ParsedBody,
-                _logger
-            );
-            educationOrganizationId = documentIdentity.DocumentIdentityElements[0].IdentityValue;
-            parentEducationOrganizationId = null;
+            var (documentIdentity, _) = context.ResourceSchema.ExtractIdentities(context.ParsedBody, _logger);
+            educationOrganizationId = int.Parse(documentIdentity.DocumentIdentityElements[0].IdentityValue);
         }
 
         context.EducationOrganizationHierarchyInfo = new EducationOrganizationHierarchyInfo(
             isEdOrgHierarchy,
             educationOrganizationId,
-            parentEducationOrganizationId
+            []
         );
 
         await next();

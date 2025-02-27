@@ -7,7 +7,7 @@
 -- The hierarchy is stored as a JSONB array of ids with its own id as the first element in the array.
 CREATE TABLE dms.EducationOrganizationHierarchyTermsLookup(
     PrimaryKey BIGINT UNIQUE  GENERATED ALWAYS AS IDENTITY(START WITH 1 INCREMENT BY 1),
-    Id VARCHAR(256) NOT NULL UNIQUE,
+    Id INT NOT NULL UNIQUE,
     Hierarchy JSONB NOT NULL
 );
 

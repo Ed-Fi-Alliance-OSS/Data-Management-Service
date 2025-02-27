@@ -10,6 +10,6 @@ namespace EdFi.DataManagementService.Core.External.Model;
 /// </summary>
 public record EducationOrganizationHierarchyInfo(
     bool IsInEducationOrganizationHierarchy,
-    string EducationOrganizationId,
-    string? ParentEducationOrganizationId
+    int Id,
+    int[] ParentIds
 );

@@ -159,8 +159,8 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             await _sqlAction.InsertEducationOrganizationHierarchy(
                 upsertRequest.ResourceInfo.ProjectName.Value,
                 upsertRequest.ResourceInfo.ResourceName.Value,
-                upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.EducationOrganizationId,
-                upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.ParentEducationOrganizationId,
+                upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.Id,
+                upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.ParentIds,
                 connection,
                 transaction
             );

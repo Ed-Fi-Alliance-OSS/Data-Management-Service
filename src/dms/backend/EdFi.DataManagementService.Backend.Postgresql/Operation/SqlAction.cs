@@ -584,15 +584,15 @@ public class SqlAction() : ISqlAction
     public async Task<int> InsertEducationOrganizationHierarchy(
         string projectName,
         string resourceName,
-        string educationOrganizationId,
-        string? parentEducationOrganizationId,
+        int educationOrganizationId,
+        int[] parentEducationOrganizationIds,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     )
     {
         await using NpgsqlCommand command = new(
             $@"INSERT INTO dms.EducationOrganizationHierarchy(ProjectName, ResourceName, EducationOrganizationId, ParentId)
-	        VALUES ($1, $2, $3, (SELECT Id FROM dms.EducationOrganizationHierarchy WHERE EducationOrganizationId = $4));",
+	            VALUES ($1, $2, $3, (SELECT Id FROM dms.EducationOrganizationHierarchy WHERE EducationOrganizationId = ANY($4)));",
             connection,
             transaction
         )
@@ -602,7 +602,7 @@ public class SqlAction() : ISqlAction
                 new() { Value = projectName },
                 new() { Value = resourceName },
                 new() { Value = educationOrganizationId },
-                new() { Value = parentEducationOrganizationId ?? (object)DBNull.Value },
+                new() { Value = parentEducationOrganizationIds },
             },
         };
         await command.PrepareAsync();
