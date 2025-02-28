@@ -27,16 +27,29 @@ internal class ProvideEducationOrganizationHierarchyMiddleware(ILogger _logger) 
     private EducationOrganizationHierarchyInfo GetHierarchyInfo(PipelineContext context)
     {
         bool isEdOrgHierarchy = context.ProjectSchema.EducationOrganizationTypes.Contains(
-            context.ResourceInfo.ResourceName
+            context.ResourceSchema.ResourceName
         );
 
         if (!isEdOrgHierarchy)
         {
+            _logger.LogDebug(
+                "Resource {ResourceName} IS NOT in EducationOrganizationHierarchy - {TraceId}",
+                context.ResourceSchema.ResourceName,
+                context.FrontendRequest.TraceId.Value
+            );
             return new EducationOrganizationHierarchyInfo(false, default, []);
         }
 
         int educationOrganizationId = ExtractEducationOrganizationId(context);
         int[] parentIds = FindParentEducationOrganizationIds(context);
+
+        _logger.LogDebug(
+            "Resource {ResourceName} with Id: {Id} IS in EducationOrganizationHierarchy and has parentIds: [{ParentIds}] - {TraceId}",
+            context.ResourceSchema.ResourceName.Value,
+            educationOrganizationId,
+            string.Join(',', parentIds),
+            context.FrontendRequest.TraceId.Value
+        );
 
         return new EducationOrganizationHierarchyInfo(true, educationOrganizationId, parentIds);
     }
