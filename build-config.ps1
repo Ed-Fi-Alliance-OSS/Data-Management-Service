@@ -101,7 +101,15 @@ function DotNetClean {
 }
 
 function Restore {
-    Invoke-Execute { dotnet restore $defaultSolution }
+    Invoke-Execute {
+        try {
+            Push-Location $PSScriptRoot/src
+            dotnet restore "config/EdFi.DmsConfigurationService.sln"
+        }
+        finally {
+            Pop-Location
+        }
+    }
 }
 
 function SetDMSAssemblyInfo {
