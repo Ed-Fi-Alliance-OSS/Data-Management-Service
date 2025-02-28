@@ -63,6 +63,17 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
                 return new DeleteResult.DeleteFailureNotAuthorized(notAuthorized.ErrorMessages);
             }
 
+            if (deleteRequest.ResourceInfo.EducationOrganizationHierarchyInfo.IsInEducationOrganizationHierarchy)
+            {
+                await _sqlAction.DeleteEducationOrganizationHierarchy(
+                    deleteRequest.ResourceInfo.ProjectName.Value,
+                    deleteRequest.ResourceInfo.ResourceName.Value,
+                    deleteRequest.ResourceInfo.EducationOrganizationHierarchyInfo.Id,
+                    connection,
+                    transaction
+                );
+            }
+
             int rowsAffectedOnDocumentDelete = await _sqlAction.DeleteDocumentByDocumentUuid(
                 documentPartitionKey,
                 deleteRequest.DocumentUuid,

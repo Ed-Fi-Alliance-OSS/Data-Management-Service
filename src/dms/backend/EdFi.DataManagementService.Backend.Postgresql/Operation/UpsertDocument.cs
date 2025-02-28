@@ -225,6 +225,18 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             }
         }
 
+        if (upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.IsInEducationOrganizationHierarchy)
+        {
+            await _sqlAction.UpdateEducationOrganizationHierarchy(
+                upsertRequest.ResourceInfo.ProjectName.Value,
+                upsertRequest.ResourceInfo.ResourceName.Value,
+                upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.Id,
+                upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.ParentIds,
+                connection,
+                transaction
+            );
+        }
+
         _logger.LogDebug("Upsert success as update - {TraceId}", upsertRequest.TraceId.Value);
         return new UpsertResult.UpdateSuccess(new(documentUuid));
     }

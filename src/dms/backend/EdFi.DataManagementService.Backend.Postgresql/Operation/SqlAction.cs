@@ -608,4 +608,97 @@ public class SqlAction() : ISqlAction
         await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
+
+    public async Task<int> UpdateEducationOrganizationHierarchy(
+        string projectName,
+        string resourceName,
+        int educationOrganizationId,
+        int[] parentEducationOrganizationIds,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand deleteDommand = new(
+            $@"DELETE FROM dms.EducationOrganizationHierarchy
+	            WHERE ProjectName = $1
+                AND ResourceName = $2
+                AND EducationOrganizationId = $3
+                AND NOT (ParentId = ANY($4));",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = projectName },
+                new() { Value = resourceName },
+                new() { Value = educationOrganizationId },
+                new() { Value = parentEducationOrganizationIds },
+            },
+        };
+        await deleteDommand.PrepareAsync();
+        await deleteDommand.ExecuteNonQueryAsync();
+
+        await using NpgsqlCommand updateCommand = new(
+            @"WITH existing_relationships AS (
+                SELECT ParentId
+                FROM dms.EducationOrganizationHierarchy
+                WHERE ProjectName = $1
+                AND ResourceName = $2
+                AND EducationOrganizationId = $3
+            ),
+            eligible_parents AS (
+                SELECT Id
+                FROM dms.EducationOrganizationHierarchy
+                WHERE EducationOrganizationId = ANY($4)
+            )
+            INSERT INTO dms.EducationOrganizationHierarchy(ProjectName, ResourceName, EducationOrganizationId, ParentId)
+            SELECT $1, $2, $3, ep.Id
+            FROM eligible_parents ep
+            WHERE NOT EXISTS (
+                SELECT 1 FROM existing_relationships er WHERE er.ParentId = ep.Id
+            );",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = projectName },
+                new() { Value = resourceName },
+                new() { Value = educationOrganizationId },
+                new() { Value = parentEducationOrganizationIds },
+            },
+        };
+        await updateCommand.PrepareAsync();
+        return await updateCommand.ExecuteNonQueryAsync();
+    }
+
+    public async Task<int> DeleteEducationOrganizationHierarchy(
+        string projectName,
+        string resourceName,
+        int educationOrganizationId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command = new(
+            $@"DELETE FROM dms.EducationOrganizationHierarchy
+	            WHERE ProjectName = $1
+                AND ResourceName = $2
+                AND EducationOrganizationId = $3;",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = projectName },
+                new() { Value = resourceName },
+                new() { Value = educationOrganizationId },
+            },
+        };
+        await command.PrepareAsync();
+        return await command.ExecuteNonQueryAsync();
+    }
 }
