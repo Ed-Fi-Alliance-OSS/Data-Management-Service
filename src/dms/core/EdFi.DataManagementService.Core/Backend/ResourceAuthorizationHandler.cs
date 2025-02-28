@@ -15,8 +15,6 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// interrogates a resources securityElements to determine if the
 /// filters in the provided authorizationStrategy are satisfied.
 /// </summary>
-/// <param name="authorizationStrategyEvaluators"></param>
-/// <param name="logger"></param>
 public class ResourceAuthorizationHandler(
     AuthorizationStrategyEvaluator[] authorizationStrategyEvaluators,
     ILogger logger
@@ -24,90 +22,78 @@ public class ResourceAuthorizationHandler(
 {
     public ResourceAuthorizationResult Authorize(JsonNode securityElements)
     {
-        List<KeyValuePair<AuthorizationFilter, bool>> andFilterEvaluations =
-            new List<KeyValuePair<AuthorizationFilter, bool>>();
-        List<KeyValuePair<AuthorizationFilter, bool>> orFilterEvaluations =
-            new List<KeyValuePair<AuthorizationFilter, bool>>();
+        var andFilters = new List<(AuthorizationFilter Filter, bool IsAuthorized)>();
+        var orFilters = new List<(AuthorizationFilter Filter, bool IsAuthorized)>();
 
         foreach (var evaluator in authorizationStrategyEvaluators)
         {
             foreach (var filter in evaluator.Filters)
             {
                 logger.LogDebug("Evaluating filter: {Filter}", filter);
-                JsonArray? valuesArray = securityElements[filter.FilterPath]?.AsArray();
-                string[] valuesStrings =
-                    valuesArray?.Select(v => v?.ToString() ?? string.Empty).ToArray()
-                    ?? Array.Empty<string>();
+                bool isAuthorized = EvaluateFilter(filter, securityElements);
 
-                switch (filter.Comparison)
+                if (evaluator.Operator == FilterOperator.And)
                 {
-                    case FilterComparison.Equals:
-                        if (evaluator.Operator == FilterOperator.And)
-                        {
-                            andFilterEvaluations.Add(
-                                new KeyValuePair<AuthorizationFilter, bool>(
-                                    filter,
-                                    Array.FindIndex(valuesStrings, v => v.Equals(filter.Value)) >= 0
-                                )
-                            );
-                        }
-                        else
-                        {
-                            orFilterEvaluations.Add(
-                                new KeyValuePair<AuthorizationFilter, bool>(
-                                    filter,
-                                    Array.FindIndex(valuesStrings, v => v.Equals(filter.Value)) >= 0
-                                )
-                            );
-                        }
-                        break;
-                    case FilterComparison.StartsWith:
-                        if (evaluator.Operator == FilterOperator.And)
-                        {
-                            andFilterEvaluations.Add(
-                                new KeyValuePair<AuthorizationFilter, bool>(
-                                    filter,
-                                    Array.FindIndex(valuesStrings, v => v.StartsWith(filter.Value)) >= 0
-                                )
-                            );
-                        }
-                        else
-                        {
-                            orFilterEvaluations.Add(
-                                new KeyValuePair<AuthorizationFilter, bool>(
-                                    filter,
-                                    Array.FindIndex(valuesStrings, v => v.StartsWith(filter.Value)) >= 0
-                                )
-                            );
-                        }
-                        break;
+                    andFilters.Add((filter, isAuthorized));
+                }
+                else
+                {
+                    orFilters.Add((filter, isAuthorized));
                 }
             }
         }
 
-        if (andFilterEvaluations.Exists(e => !e.Value))
+        if (andFilters.Exists(f => !f.IsAuthorized))
         {
-            return reportErrors(andFilterEvaluations);
+            return CreateNotAuthorizedResult(andFilters);
         }
 
-        if (orFilterEvaluations.Any() && orFilterEvaluations.TrueForAll(e => !e.Value))
+        if (orFilters.Any() && orFilters.TrueForAll(f => !f.IsAuthorized))
         {
-            return reportErrors(orFilterEvaluations);
+            return CreateNotAuthorizedResult(orFilters);
         }
 
         return new ResourceAuthorizationResult.Authorized();
+    }
 
-        ResourceAuthorizationResult reportErrors(List<KeyValuePair<AuthorizationFilter, bool>> evaluations)
+    private static bool EvaluateFilter(AuthorizationFilter filter, JsonNode securityElements)
+    {
+        var valuesArray = securityElements[filter.FilterPath]?.AsArray();
+        if (valuesArray == null)
         {
-            var values = authorizationStrategyEvaluators
-                .SelectMany(e => e.Filters.Select(f => $"'{f.Value}'"))
-                .Distinct();
-
-            var errors = evaluations
-                .Where(e => !e.Value)
-                .Select(e => e.Key.ErrorMessageTemplate.Replace("{claims}", string.Join(", ", values)));
-
-            return new ResourceAuthorizationResult.NotAuthorized(errors.ToArray());
+            return false;
         }
+
+        string[] values = ExtractValuesFromSecurityElements(filter.FilterPath, valuesArray);
+
+        return filter.Comparison switch
+        {
+            FilterComparison.Equals => Array.Exists(values, v => v.Equals(filter.Value)),
+            FilterComparison.StartsWith => Array.Exists(values, v => v.StartsWith(filter.Value)),
+            _ => false,
+        };
+    }
+
+    private static string[] ExtractValuesFromSecurityElements(string filterPath, JsonArray valuesArray)
+    {
+        return filterPath == "Namespace"
+            ? valuesArray.Select(v => v?.ToString() ?? string.Empty).ToArray()
+            : valuesArray.Select(v => v?["Id"]?["Value"]?.ToString() ?? string.Empty).ToArray();
+    }
+
+    private ResourceAuthorizationResult.NotAuthorized CreateNotAuthorizedResult(
+        IEnumerable<(AuthorizationFilter Filter, bool IsAuthorized)> evaluations
+    )
+    {
+        var claimValues = authorizationStrategyEvaluators
+            .SelectMany(e => e.Filters.Select(f => $"'{f.Value}'"))
+            .Distinct();
+
+        var errorMessages = evaluations
+            .Where(e => !e.IsAuthorized)
+            .Select(e => e.Filter.ErrorMessageTemplate.Replace("{claims}", string.Join(", ", claimValues)))
+            .ToArray();
+
+        return new ResourceAuthorizationResult.NotAuthorized(errorMessages);
     }
 }

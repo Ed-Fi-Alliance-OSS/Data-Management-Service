@@ -79,6 +79,7 @@ internal class ApiService(
                 new ValidateDocumentMiddleware(_logger, _documentValidator),
                 new ExtractDocumentSecurityElementsMiddleware(_logger),
                 new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
+                new ProvideEducationOrganizationHierarchyMiddleware(_logger),
                 new BuildResourceInfoMiddleware(
                     _logger,
                     _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
@@ -190,6 +191,7 @@ internal class ApiService(
                 new ExtractDocumentSecurityElementsMiddleware(_logger),
                 new ValidateMatchingDocumentUuidsMiddleware(_logger, _matchingDocumentUuidsValidator),
                 new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
+                new ProvideEducationOrganizationHierarchyMiddleware(_logger),
                 new BuildResourceInfoMiddleware(
                     _logger,
                     _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()

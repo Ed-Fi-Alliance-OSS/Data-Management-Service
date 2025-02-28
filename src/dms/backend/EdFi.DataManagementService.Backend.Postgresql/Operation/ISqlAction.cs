@@ -125,4 +125,30 @@ public interface ISqlAction
         NpgsqlTransaction transaction,
         TraceId traceId
     );
+
+    public Task<int> InsertEducationOrganizationHierarchy(
+        string projectName,
+        string resourceName,
+        int educationOrganizationId,
+        int[] parentEducationOrganizationIds,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    public Task<int> UpdateEducationOrganizationHierarchy(
+        string projectName,
+        string resourceName,
+        int educationOrganizationId,
+        int[] parentEducationOrganizationIds,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    public Task<int> DeleteEducationOrganizationHierarchy(
+        string projectName,
+        string resourceName,
+        int educationOrganizationId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
 }
