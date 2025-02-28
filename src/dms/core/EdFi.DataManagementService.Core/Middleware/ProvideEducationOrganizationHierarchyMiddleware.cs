@@ -19,23 +19,52 @@ internal class ProvideEducationOrganizationHierarchyMiddleware(ILogger _logger) 
             context.FrontendRequest.TraceId.Value
         );
 
+        context.EducationOrganizationHierarchyInfo = GetHierarchyInfo(context);
+
+        await next();
+    }
+
+    private EducationOrganizationHierarchyInfo GetHierarchyInfo(PipelineContext context)
+    {
         bool isEdOrgHierarchy = context.ProjectSchema.EducationOrganizationTypes.Contains(
             context.ResourceInfo.ResourceName
         );
-        int educationOrganizationId = default;
 
-        if (isEdOrgHierarchy)
+        if (!isEdOrgHierarchy)
         {
-            var (documentIdentity, _) = context.ResourceSchema.ExtractIdentities(context.ParsedBody, _logger);
-            educationOrganizationId = int.Parse(documentIdentity.DocumentIdentityElements[0].IdentityValue);
+            return new EducationOrganizationHierarchyInfo(false, default, []);
         }
 
-        context.EducationOrganizationHierarchyInfo = new EducationOrganizationHierarchyInfo(
-            isEdOrgHierarchy,
-            educationOrganizationId,
-            []
+        int educationOrganizationId = ExtractEducationOrganizationId(context);
+        int[] parentIds = FindParentEducationOrganizationIds(context);
+
+        return new EducationOrganizationHierarchyInfo(true, educationOrganizationId, parentIds);
+    }
+
+    private int ExtractEducationOrganizationId(PipelineContext context)
+    {
+        (DocumentIdentity documentIdentity, _) = context.ResourceSchema.ExtractIdentities(
+            context.ParsedBody,
+            logger: _logger
         );
 
-        await next();
+        return int.Parse(documentIdentity.DocumentIdentityElements[0].IdentityValue);
+    }
+
+    private static int[] FindParentEducationOrganizationIds(PipelineContext context)
+    {
+        if (context.DocumentSecurityElements?.EducationOrganization == null)
+        {
+            return [];
+        }
+
+        var parentTypes = context.ProjectSchema.EducationOrganizationHierarchy[
+            context.ResourceSchema.ResourceName
+        ];
+
+        return context
+            .DocumentSecurityElements.EducationOrganization.Where(e => parentTypes.Contains(e.ResourceName))
+            .Select(e => e.Id.Value)
+            .ToArray();
     }
 }
