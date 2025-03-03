@@ -98,6 +98,8 @@ public abstract class ContainerSetupBase
         await DeleteData("dms.Reference");
         await DeleteData("dms.Alias");
         await DeleteData("dms.Document");
+        await DeleteData("dms.EducationOrganizationHierarchyTermsLookup");
+        await DeleteData("dms.EducationOrganizationHierarchy");
 
         async Task DeleteData(string tableName)
         {
