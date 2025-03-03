@@ -179,6 +179,7 @@ public static class WebApplicationBuilderExtensions
                         },
                         OnTokenValidated = context =>
                         {
+                            // Add token claims to HttpContext
                             if (context.Principal != null)
                             {
                                 var apiClientDetailsProvider =

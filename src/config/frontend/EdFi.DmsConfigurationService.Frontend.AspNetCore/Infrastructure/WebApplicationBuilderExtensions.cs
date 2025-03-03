@@ -151,6 +151,8 @@ public static class WebApplicationBuilderExtensions
                     };
                 }
             );
+
+        // Add service policy for role validation
         webApplicationBuilder.Services.AddAuthorization(options =>
             options.AddPolicy(
                 SecurityConstants.ServicePolicy,
