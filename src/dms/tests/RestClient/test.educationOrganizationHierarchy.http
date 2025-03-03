@@ -1,8 +1,8 @@
 #5126 or 8081
-@configPort=5126
+@configPort=8081
 
 #5198 or 8080
-@dmsPort=5198
+@dmsPort=8080
 @sysAdminId=sys-admin
 @sysAdminSecret=SdfH)98&Jk
 @encodedSysAdminSecret=SdfH%2998%26Jk
@@ -100,61 +100,58 @@ grant_type=client_credentials
 ###
 @dmsToken={{dmsTokenRequest.response.body.access_token}}
 
-### Create a new descriptor
-# @name createDescriptor
+### Create descriptor
+#
 POST {{dataApi}}/ed-fi/educationOrganizationCategoryDescriptors
 Authorization: bearer {{dmsToken}}
 Content-Type: application/json
 
 {
     "namespace": "uri://ed-fi.org/educationOrganizationCategoryDescriptor",
-    "codeValue": "SEA",
-    "shortDescription": "SEA"
+    "codeValue": "XYZ",
+    "shortDescription": "XYZ"
 }
 
-### Create a new descriptor
-#
+### Create descriptor
 POST {{dataApi}}/ed-fi/localEducationAgencyCategoryDescriptors
 Authorization: bearer {{dmsToken}}
 Content-Type: application/json
 
 {
     "namespace": "uri://ed-fi.org/localEducationAgencyCategoryDescriptor",
-    "codeValue": "Something",
-    "shortDescription": "Something"
+    "codeValue": "ABC",
+    "shortDescription": "ABC"
 }
 
 ### Create State Education Agency
-#
 POST {{dataApi}}/ed-fi/stateEducationAgencies
 Authorization: bearer {{dmsToken}}
 
 {
     "stateEducationAgencyId": 400,
-    "nameOfInstitution": "California Department of Education",
+    "nameOfInstitution": "Hawaii Department of Education",
     "categories": [
         {
-            "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/educationOrganizationCategoryDescriptor#SEA"
+            "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/educationOrganizationCategoryDescriptor#XYZ"
         }
     ]
 }
 
 ### Create State Education Agency
-#
 POST {{dataApi}}/ed-fi/stateEducationAgencies
 Authorization: bearer {{dmsToken}}
 
 {
     "stateEducationAgencyId": 600,
-    "nameOfInstitution": "Hawaii Department of Education",
+    "nameOfInstitution": "California Department of Education",
     "categories": [
         {
-            "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/educationOrganizationCategoryDescriptor#SEA"
+            "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/educationOrganizationCategoryDescriptor#XYZ"
         }
     ]
 }
 
-### Create State Education Agency
+### Create Local Education Agency
 # @name createLEA
 POST {{dataApi}}/ed-fi/localEducationAgencies
 Authorization: bearer {{dmsToken}}
@@ -164,13 +161,13 @@ Authorization: bearer {{dmsToken}}
     "nameOfInstitution": "LA Public Schools",
     "categories": [
         {
-            "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/educationOrganizationCategoryDescriptor#SEA"
+            "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/educationOrganizationCategoryDescriptor#XYZ"
         }
     ],
     "stateEducationAgencyReference": {
         "stateEducationAgencyId": 600
     },
-    "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#Something"
+    "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC"
 }
 
 ###
@@ -180,7 +177,7 @@ Authorization: bearer {{dmsToken}}
 GET {{leaLocation}}
 Authorization: bearer {{dmsToken}}
 
-###
+### Update LEA - change parent SEA
 # @name putLEA
 PUT {{leaLocation}}
 Authorization: bearer {{dmsToken}}
@@ -191,11 +188,45 @@ Authorization: bearer {{dmsToken}}
     "nameOfInstitution": "LA Public Schools",
     "categories": [
         {
-            "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/educationOrganizationCategoryDescriptor#SEA"
+            "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/educationOrganizationCategoryDescriptor#XYZ"
         }
     ],
     "stateEducationAgencyReference": {
         "stateEducationAgencyId": 400
     },
-    "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#Something"
+    "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC"
+}
+
+### Create descriptor
+POST {{dataApi}}/ed-fi/gradeLevelDescriptors
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org/gradeLevelDescriptor",
+    "codeValue": "Tenth Grade",
+    "shortDescription": "Tenth Grade"
+}
+
+### Create School
+# @name createSchool
+POST {{dataApi}}/ed-fi/schools
+Authorization: bearer {{dmsToken}}
+
+{
+    "schoolId": 6001010,
+    "nameOfInstitution": "Bayside High School",
+    "educationOrganizationCategories": [
+        {
+            "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/educationOrganizationCategoryDescriptor#XYZ"
+        }
+    ],
+    "gradeLevels": [
+        {
+            "gradeLevelDescriptor": "uri://ed-fi.org/gradeLevelDescriptor#Tenth Grade"
+        }
+    ],
+    "localEducationAgencyReference": {
+        "localEducationAgencyId": 60010
+    }
 }
