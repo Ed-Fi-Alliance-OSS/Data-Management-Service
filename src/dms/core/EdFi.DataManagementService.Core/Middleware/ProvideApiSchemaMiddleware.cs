@@ -40,6 +40,7 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
             InsertJsonPathsExts(extensionResourceSchemas, coreResourceSchemas, "booleanJsonPaths");
             InsertJsonPathsExts(extensionResourceSchemas, coreResourceSchemas, "numericJsonPaths");
         }
+
         context.ApiSchemaDocuments = new ApiSchemaDocuments(ApiSchemaNodes, _logger);
         await next();
     }
@@ -54,12 +55,12 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
 
     private void InsertJsonPathsExts(JsonObject extList, JsonObject coreResourceSchemas, string jsonPathKey)
     {
-        var validExtensionSchemas = extList
+        var validExtensionResourceSchemas = extList
             .Where(ext => ext.Value?["isResourceExtension"]?.GetValue<bool>() == true)
             .Where(ext => ext.Value?[jsonPathKey] is JsonArray { Count: > 0 })
             .ToList();
 
-        foreach (var (extensionResourceName, extSchema) in validExtensionSchemas)
+        foreach (var (extensionResourceName, extSchema) in validExtensionResourceSchemas)
         {
             if (extSchema != null)
             {
