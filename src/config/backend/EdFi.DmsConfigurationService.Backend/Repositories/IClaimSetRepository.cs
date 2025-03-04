@@ -12,7 +12,7 @@ namespace EdFi.DmsConfigurationService.Backend.Repositories;
 public interface IClaimSetRepository
 {
     IEnumerable<Action> GetActions();
-    IEnumerable<AuthorizationStrategy> GetAuthorizationStrategies();
+    Task<AuthorizationStrategyGetResult> GetAuthorizationStrategies();
     Task<ClaimSetInsertResult> InsertClaimSet(ClaimSetInsertCommand command);
     Task<ClaimSetQueryResult> QueryClaimSet(PagingQuery query, bool verbose);
     Task<ClaimSetGetResult> GetClaimSet(long id, bool verbose);
@@ -159,4 +159,11 @@ public record ClaimSetImportResult
     /// ClaimSetName must be unique
     /// </summary>
     public record FailureDuplicateClaimSetName() : ClaimSetImportResult();
+}
+
+public record AuthorizationStrategyGetResult
+{
+    public record Success(IEnumerable<AuthorizationStrategy> AuthorizationStrategy) : AuthorizationStrategyGetResult();
+
+    public record FailureUnknown(string FailureMessage) : AuthorizationStrategyGetResult();
 }

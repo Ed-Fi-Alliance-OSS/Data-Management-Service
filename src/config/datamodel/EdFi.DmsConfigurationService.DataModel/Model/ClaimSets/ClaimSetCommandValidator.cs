@@ -36,7 +36,7 @@ public class ClaimSetCommandValidator<T> : AbstractValidator<T>
 
         var resourceClaimValidator = new ResourceClaimValidator();
         List<string> dbActions = claimSetDataProvider.GetActions();
-        List<string> dbAuthStrategies = claimSetDataProvider.GetAuthorizationStrategies();
+        List<string> dbAuthStrategies = claimSetDataProvider.GetAuthorizationStrategies().Result;
 
         RuleForEach(c => c.ResourceClaims)
             .Custom(
