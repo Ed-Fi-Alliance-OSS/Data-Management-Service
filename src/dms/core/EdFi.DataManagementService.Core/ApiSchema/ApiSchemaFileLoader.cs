@@ -155,7 +155,7 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
                 })
                 .Single();
 
-            var extensionApiSchemaNode = tpdmAssembly
+            var extensionApiSchemaNodes = tpdmAssembly
                 .GetManifestResourceNames()
                 .Where(str => str.EndsWith("ApiSchema-EXTENSION.json"))
                 .Select(resourceName =>
@@ -165,7 +165,7 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
                 })
                 .ToArray();
 
-            return new(coreApiSchemaNode, extensionApiSchemaNode);
+            return new(coreApiSchemaNode, extensionApiSchemaNodes);
         }
     });
 
