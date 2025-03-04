@@ -2,7 +2,7 @@
   "name":"elasticsearch-sink",
   "config": {
     "connector.class": "io.aiven.connect.elasticsearch.ElasticsearchSinkConnector",
-    "topics": "edfi.dms.document",
+    "topics": "edfi.dms.document,edfi.dms.educationorganizationhierarchytermslookup",
     "type.name": "_doc",
 
     "connection.url": "http://dms-search:9200",
@@ -21,7 +21,13 @@
     "transforms": "removeId, toOpenSearchIndex, deletedToTombstone",
     "transforms.removeId.type": "org.apache.kafka.connect.transforms.ReplaceField$Value",
     "transforms.removeId.exclude": "id",
+    
     "transforms.toOpenSearchIndex.type":"org.edfi.kafka.connect.transforms.RenameDmsTopicToOpenSearchIndex",
+    "transforms.toOpenSearchIndex.predicate": "documentTopicOnly",
+    "predicates": "documentTopicOnly",
+    "predicates.documentTopicOnly.type": "org.apache.kafka.connect.transforms.predicates.TopicNameMatches",
+    "predicates.documentTopicOnly.pattern": "edfi\\.dms\\.document",
+
     "transforms.deletedToTombstone.type": "org.edfi.kafka.connect.transforms.DebeziumDeletedToTombstone",
 
     "behavior.on.version.conflict": "ignore",
