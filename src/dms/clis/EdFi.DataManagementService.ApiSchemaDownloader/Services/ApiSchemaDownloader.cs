@@ -32,7 +32,9 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader.Services
             try
             {
                 using var packageReader = new PackageArchiveReader(packagePath);
-                var dllPath = packageReader.GetFiles().FirstOrDefault(f => f.EndsWith("ApiSchema.dll"));
+                var dllPath = packageReader
+                    .GetFiles()
+                    .FirstOrDefault(f => f.Contains(packageId) && f.EndsWith(".dll"));
                 if (dllPath == null)
                 {
                     _logger.LogError("No DLL found in the package {PackageId}", packageId);
@@ -78,7 +80,7 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader.Services
                 {
                     string outputFilePath = Path.Combine(
                         outputDir,
-                        resourceName.Replace(packageName + ".", "")
+                        resourceName.Replace(packageId + ".", "")
                     );
 
                     if (resourceName.EndsWith(".xsd"))

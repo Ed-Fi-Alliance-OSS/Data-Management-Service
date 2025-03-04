@@ -47,7 +47,7 @@ public interface IContentProvider
 /// </summary>
 public class ContentProvider(ILogger<ContentProvider> _logger, IAssemblyProvider _assemblyProvider) : IContentProvider
 {
-    private readonly Type _dataStandardMarker = typeof(DataStandard52.ApiSchema.Marker);
+    private readonly Type _dataStandardMarker = typeof(DataStandard52.ApiSchema.Core.Marker);
 
     public IEnumerable<string> Files(string fileNamePattern, string fileExtension)
     {
