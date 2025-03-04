@@ -21,7 +21,9 @@ internal static class SecurityHelper
             {
                 ["Namespace"] = new JsonArray([.. documentSecurityElements.Namespace]),
                 ["EducationOrganization"] = new JsonArray(
-                    [.. documentSecurityElements.EducationOrganization]
+                    documentSecurityElements
+                        .EducationOrganization.Select(eo => JsonValue.Create(eo))
+                        .ToArray<JsonNode?>()
                 ),
             }
         );

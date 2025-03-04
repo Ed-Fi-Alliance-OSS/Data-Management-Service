@@ -73,8 +73,16 @@ public class NamedAuthorizationServiceFactoryTests
                 as RelationshipsWithEdOrgsOnlyValidator;
             handler.Should().NotBeNull();
             var authResult = handler!.ValidateAuthorization(
-                new DocumentSecurityElements([], ["255901"]),
-                new ClientAuthorizations("", "", [new EducationOrganizationId("255901")], [])
+                new DocumentSecurityElements(
+                    [],
+                    [
+                        new EducationOrganizationSecurityElement(
+                            new ResourceName("School"),
+                            new EducationOrganizationId(255901)
+                        ),
+                    ]
+                ),
+                new ClientAuthorizations("", "", [new EducationOrganizationId(255901)], [])
             );
             authResult.Should().NotBeNull();
             authResult.IsAuthorized.Should().BeTrue();
@@ -163,7 +171,7 @@ public class NamedAuthorizationServiceFactoryTests
                 as RelationshipsWithEdOrgsOnlyFiltersProvider;
             handler.Should().NotBeNull();
             var filters = handler!.GetFilters(
-                new ClientAuthorizations("", "", [new EducationOrganizationId("255901")], [])
+                new ClientAuthorizations("", "", [new EducationOrganizationId(255901)], [])
             );
             filters.Should().NotBeNull();
             filters.Filters.Should().NotBeEmpty();

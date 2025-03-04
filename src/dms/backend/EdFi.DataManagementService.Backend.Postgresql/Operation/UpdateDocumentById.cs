@@ -155,6 +155,18 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 updateRequest.TraceId
             );
 
+            if (updateRequest.ResourceInfo.EducationOrganizationHierarchyInfo.IsInEducationOrganizationHierarchy)
+            {
+                await _sqlAction.UpdateEducationOrganizationHierarchy(
+                    updateRequest.ResourceInfo.ProjectName.Value,
+                    updateRequest.ResourceInfo.ResourceName.Value,
+                    updateRequest.ResourceInfo.EducationOrganizationHierarchyInfo.Id,
+                    updateRequest.ResourceInfo.EducationOrganizationHierarchyInfo.ParentIds,
+                    connection,
+                    transaction
+                );
+            }
+
             switch (rowsAffected)
             {
                 case 1:

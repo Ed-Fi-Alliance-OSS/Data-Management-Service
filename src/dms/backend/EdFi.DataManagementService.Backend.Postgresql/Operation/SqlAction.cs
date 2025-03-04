@@ -94,7 +94,9 @@ public class SqlAction() : ISqlAction
 
         return new DocumentSummary(
             EdfiDoc: await reader.GetFieldValueAsync<JsonElement>(reader.GetOrdinal("EdfiDoc")),
-            SecurityElements: await reader.GetFieldValueAsync<JsonElement>(reader.GetOrdinal("SecurityElements")),
+            SecurityElements: await reader.GetFieldValueAsync<JsonElement>(
+                reader.GetOrdinal("SecurityElements")
+            ),
             LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt")),
             LastModifiedTraceId: reader.GetString(reader.GetOrdinal("LastModifiedTraceId"))
         );
@@ -577,5 +579,108 @@ public class SqlAction() : ISqlAction
         }
 
         return documents.ToArray();
+    }
+
+    public async Task<int> InsertEducationOrganizationHierarchy(
+        string projectName,
+        string resourceName,
+        int educationOrganizationId,
+        int[] parentEducationOrganizationIds,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command = new(
+            $@"INSERT INTO dms.EducationOrganizationHierarchy(ProjectName, ResourceName, EducationOrganizationId, ParentId)
+	            VALUES ($1, $2, $3, (SELECT Id FROM dms.EducationOrganizationHierarchy WHERE EducationOrganizationId = ANY($4)));",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = projectName },
+                new() { Value = resourceName },
+                new() { Value = educationOrganizationId },
+                new() { Value = parentEducationOrganizationIds },
+            },
+        };
+        await command.PrepareAsync();
+        return await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task<int> UpdateEducationOrganizationHierarchy(
+        string projectName,
+        string resourceName,
+        int educationOrganizationId,
+        int[] parentEducationOrganizationIds,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand deleteCommand = new(
+            $@"DELETE FROM dms.EducationOrganizationHierarchy
+	            WHERE ProjectName = $1
+                AND ResourceName = $2
+                AND EducationOrganizationId = $3",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = projectName },
+                new() { Value = resourceName },
+                new() { Value = educationOrganizationId }
+            },
+        };
+        await deleteCommand.PrepareAsync();
+        await deleteCommand.ExecuteNonQueryAsync();
+
+        await using NpgsqlCommand insertCommand = new(
+            $@"INSERT INTO dms.EducationOrganizationHierarchy(ProjectName, ResourceName, EducationOrganizationId, ParentId)
+	            VALUES ($1, $2, $3, (SELECT Id FROM dms.EducationOrganizationHierarchy WHERE EducationOrganizationId = ANY($4)));",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = projectName },
+                new() { Value = resourceName },
+                new() { Value = educationOrganizationId },
+                new() { Value = parentEducationOrganizationIds },
+            },
+        };
+        await insertCommand.PrepareAsync();
+        return await insertCommand.ExecuteNonQueryAsync();
+    }
+
+    public async Task<int> DeleteEducationOrganizationHierarchy(
+        string projectName,
+        string resourceName,
+        int educationOrganizationId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command = new(
+            $@"DELETE FROM dms.EducationOrganizationHierarchy
+	            WHERE ProjectName = $1
+                AND ResourceName = $2
+                AND EducationOrganizationId = $3;",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = projectName },
+                new() { Value = resourceName },
+                new() { Value = educationOrganizationId },
+            },
+        };
+        await command.PrepareAsync();
+        return await command.ExecuteNonQueryAsync();
     }
 }

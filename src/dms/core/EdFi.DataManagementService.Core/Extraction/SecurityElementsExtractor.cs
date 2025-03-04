@@ -37,11 +37,18 @@ internal static class SecurityElementsExtractor
             );
         }
 
-        HashSet<string> edOrgSecurityElements = [];
-        foreach (JsonPath securityElementPath in resourceSchema.EducationOrganizationSecurityElementPaths)
+        HashSet<EducationOrganizationSecurityElement> edOrgSecurityElements = [];
+        foreach (
+            EducationOrganizationSecurityElementPath securityElementPath in resourceSchema.EducationOrganizationSecurityElementPaths
+        )
         {
             edOrgSecurityElements.UnionWith(
-                documentBody.SelectNodesFromArrayPathCoerceToStrings(securityElementPath.Value, logger)
+                documentBody
+                    .SelectNodesFromArrayPathCoerceToStrings(securityElementPath.Path.Value, logger)
+                    .Select(x => new EducationOrganizationSecurityElement(
+                        securityElementPath.ResourceName,
+                        new EducationOrganizationId(int.Parse(x))
+                    ))
             );
         }
 

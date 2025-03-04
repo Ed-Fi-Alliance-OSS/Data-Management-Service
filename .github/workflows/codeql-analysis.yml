@@ -12,14 +12,12 @@ on:
       - "src/**/*.cs"
       - "src/**/*.csproj"
       - "src/**/Directory.Packages.props"
-      - "src/Directory.Packages.props"      
   pull_request:
     branches: [ "main" ]
     paths:
       - "src/**/*.cs"
       - "src/**/*.csproj"
       - "src/**/Directory.Packages.props"
-      - "src/Directory.Packages.props"      
 
 permissions: read-all
 

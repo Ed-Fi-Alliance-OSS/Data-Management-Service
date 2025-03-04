@@ -161,7 +161,7 @@ public class ExtractSecurityElementsTests
                 .WithStartProject()
                 .WithStartResource("AcademicWeek")
                 .WithNamespaceSecurityElements([])
-                .WithEducationOrganizationSecurityElements(["$.schoolReference.schoolId"])
+                .WithEducationOrganizationSecurityElements([("School", "$.schoolReference.schoolId")])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("EducationOrganization", "$.schoolReference.schoolId")
                 .WithEndDocumentPathsMapping()
@@ -189,7 +189,8 @@ public class ExtractSecurityElementsTests
         public void It_has_extracted_educationOrganization()
         {
             documentSecurityElements.EducationOrganization.Should().HaveCount(1);
-            documentSecurityElements.EducationOrganization[0].Should().Be("12345");
+            documentSecurityElements.EducationOrganization[0].Id.Value.Should().Be(12345);
+
         }
     }
 
@@ -206,7 +207,7 @@ public class ExtractSecurityElementsTests
                 .WithStartProject()
                 .WithStartResource("AcademicWeek")
                 .WithNamespaceSecurityElements([])
-                .WithEducationOrganizationSecurityElements(["$.schoolReference.schoolId"])
+                .WithEducationOrganizationSecurityElements([("school", "$.schoolReference.schoolId")])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("EducationOrganization", "$.schoolReference.schoolId")
                 .WithEndDocumentPathsMapping()

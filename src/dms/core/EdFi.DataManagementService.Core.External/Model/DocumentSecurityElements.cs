@@ -13,5 +13,15 @@ public record DocumentSecurityElements(
     // Namespace values and not simply prefixes
     string[] Namespace,
     // A list of the EducationOrganizations extracted from the document
-    string[] EducationOrganization
+    EducationOrganizationSecurityElement[] EducationOrganization
 );
+
+/// <summary>
+/// The ResourceName and Id of an EducationOrganization type referenced by a document
+/// </summary>
+public record EducationOrganizationSecurityElement(ResourceName ResourceName, EducationOrganizationId Id);
+
+/// <summary>
+/// The ResourceName and JsonPath of an EducationOrganization type referenced by a document
+/// </summary>
+public record EducationOrganizationSecurityElementPath(ResourceName ResourceName, JsonPath Path);

@@ -90,7 +90,24 @@
                 "description": {
                     "type": "string"
                 },
-                "educationOrganizationHierarchy": true,
+                "educationOrganizationHierarchy": {
+                    "type": "object",
+                    "patternProperties": {  
+                        "^[a-zA-Z0-9]+$": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                "educationOrganizationTypes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "isExtensionProject": {
                     "type": "boolean"
                 },
@@ -123,6 +140,8 @@
                 "abstractResources",
                 "caseInsensitiveEndpointNameMapping",
                 "description",
+                "educationOrganizationHierarchy",
+                "educationOrganizationTypes",
                 "isExtensionProject",
                 "projectName",
                 "projectVersion",
