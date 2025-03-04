@@ -118,38 +118,40 @@ public static partial class QueryOpenSearch
                 }
             }
 
-            foreach (var strategyEvaluator in queryRequest.AuthorizationStrategyEvaluators)
-            {
-                if (strategyEvaluator.Filters.Length != 0)
+            IEnumerable<JsonObject?> authorizationFilters = queryRequest
+                .AuthorizationStrategyEvaluators.Select(strategyEvaluator =>
                 {
-                    JsonObject[] possibleFilters = strategyEvaluator
-                        .Filters.Select(filter => new JsonObject
+                    var namespaceFilters = strategyEvaluator
+                        .Filters.Where(f => f.FilterPath == "Namespace")
+                        .Select(filter => new JsonObject
                         {
                             ["match_phrase"] = new JsonObject
                             {
-                                [$@"securityelements.{filter.FilterPath}"] = filter.Value,
+                                [$"securityelements.{filter.FilterPath}"] = filter.Value,
                             },
                         })
                         .ToArray();
-                    if (strategyEvaluator.Operator.Equals(FilterOperator.Or))
+
+                    // Only add if we have namespace filters
+                    if (namespaceFilters.Any())
                     {
-                        terms.Add(
-                            new JsonObject
-                            {
-                                ["bool"] = new JsonObject { ["should"] = new JsonArray(possibleFilters) },
-                            }
-                        );
+                        // Use the appropriate boolean operator based on the strategy
+                        string boolOperator =
+                            strategyEvaluator.Operator == FilterOperator.Or ? "should" : "must";
+
+                        return new JsonObject
+                        {
+                            ["bool"] = new JsonObject { [boolOperator] = new JsonArray(namespaceFilters) },
+                        };
                     }
-                    if (strategyEvaluator.Operator.Equals(FilterOperator.And))
-                    {
-                        terms.Add(
-                            new JsonObject
-                            {
-                                ["bool"] = new JsonObject { ["must"] = new JsonArray(possibleFilters) },
-                            }
-                        );
-                    }
-                }
+
+                    return null;
+                })
+                .Where(filter => filter != null);
+
+            foreach (var filter in authorizationFilters)
+            {
+                terms.Add(filter);
             }
 
             JsonObject query = new()
