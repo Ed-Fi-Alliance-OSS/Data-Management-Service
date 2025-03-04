@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+services:
+  config:
+    image: edfialliance/dms-configuration-service:${DMS_IMAGE_TAG:-pre}
+    hostname: config
+    container_name: dms-config-service
+    ports:
+      - ${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}
+    restart: unless-stopped
+    healthcheck:
+      test: curl -s http://localhost:8081/health >/dev/null || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 50
+    environment:
+      ASPNETCORE_HTTP_PORTS: ${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}
+      OAUTH_TOKEN_ENDPOINT: ${OAUTH_TOKEN_ENDPOINT:-http://localhost:8045/realms/edfi/protocol/openid-connect/token}
+      DMS_CONFIG_DATASTORE: ${DMS_CONFIG_DATASTORE:-postgresql}
+      DMS_CONFIG_DATABASE_CONNECTION_STRING: ${DMS_CONFIG_DATABASE_CONNECTION_STRING:-host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;}
+      DMS_CONFIG_IDENTITY_ALLOW_REGISTRATION: ${DMS_CONFIG_IDENTITY_ALLOW_REGISTRATION:-false}
+      DMS_CONFIG_IDENTITY_SERVICE_ROLE: ${DMS_CONFIG_IDENTITY_SERVICE_ROLE:-config-service-app}
+      DMS_CONFIG_IDENTITY_CLIENT_ROLE: ${DMS_CONFIG_IDENTITY_CLIENT_ROLE:-dms-client}
+      DMS_CONFIG_IDENTITY_AUTHORITY: ${DMS_CONFIG_IDENTITY_AUTHORITY:-http://localhost:8045/realms/edfi}
+      DMS_CONFIG_IDENTITY_AUDIENCE: ${DMS_CONFIG_IDENTITY_AUDIENCE:-account}
+      DMS_CONFIG_IDENTITY_CLIENT_ID: ${DMS_CONFIG_IDENTITY_CLIENT_ID:-DmsConfigurationService}
+      DMS_CONFIG_IDENTITY_CLIENT_SECRET: ${DMS_CONFIG_IDENTITY_CLIENT_SECRET}
+      DMS_CONFIG_IDENTITY_REQUIRE_HTTPS: ${DMS_CONFIG_IDENTITY_REQUIRE_HTTPS:-false}
+      DMS_CONFIG_IDENTITY_ROLE_CLAIM_TYPE: ${DMS_CONFIG_IDENTITY_ROLE_CLAIM_TYPE:-http://schemas\\.microsoft\\.com/ws/2008/06/identity/claims/role}
+      DMS_CONFIG_IDENTITY_SCOPE: ${DMS_CONFIG_IDENTITY_SCOPE:-edfi_admin_api/full_access}
+      DMS_CONFIG_LOG_LEVEL: ${DMS_CONFIG_LOG_LEVEL:-Information}
+      DMS_CONFIG_DEPLOY_DATABASE: ${DMS_CONFIG_DEPLOY_DATABASE:-true}
+      DMS_CONFIG_IDENTITY_PROVIDER: ${DMS_CONFIG_IDENTITY_PROVIDER:-keycloak}
+      KEYCLOAK_URL: ${KEYCLOAK_URL:-http://localhost:8045}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-edfi}
+      # Segment of the url to use as base for all request. The default path base is deliberately blank on the following line
+      DMS_CONFIG_PATH_BASE: ${DMS_CONFIG_PATH_BASE:-}
+    networks:
+      - dms
+
+networks:
+  dms:
+    external: true

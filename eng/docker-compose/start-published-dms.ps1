@@ -19,7 +19,11 @@ param (
 
     # Enable KafkaUI and OpenSearch Dashboard
     [Switch]
-    $EnableOpenSearchUI
+    $EnableOpenSearchUI,
+
+    # Enable the DMS Configuration Service
+    [Switch]
+    $EnableConfig
 )
 
 $files = @(
@@ -28,12 +32,18 @@ $files = @(
     "-f",
     "kafka-opensearch.yml",
     "-f",
-    "published-dms.yml"
+    "published-dms.yml",
+    "-f",
+    "keycloak.yml"
 )
 
 if($EnableOpenSearchUI)
 {
     $files += @("-f", "kafka-opensearch-ui.yml")
+}
+
+if ($EnableConfig) {
+    $files += @("-f", "published-config.yml")
 }
 
 if ($d) {
