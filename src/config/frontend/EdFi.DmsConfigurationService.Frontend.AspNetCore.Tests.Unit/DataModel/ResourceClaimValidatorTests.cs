@@ -77,8 +77,8 @@ public class ResourceClaimValidatorTests
                             {
                                 new()
                                 {
-                                    AuthStrategyId = 1,
-                                    AuthStrategyName = "AuthStrategy1",
+                                    Id = 1,
+                                    AuthorizationStrategyName = "AuthStrategy1",
                                     DisplayName = "AuthStrategy1",
                                 },
                             },
@@ -97,8 +97,8 @@ public class ResourceClaimValidatorTests
                             {
                                 new()
                                 {
-                                    AuthStrategyId = 1,
-                                    AuthStrategyName = "AuthStrategy1",
+                                    Id = 1,
+                                    AuthorizationStrategyName = "AuthStrategy1",
                                     DisplayName = "AuthStrategy1",
                                 },
                             },
@@ -135,8 +135,8 @@ public class ResourceClaimValidatorTests
                             [
                                 new()
                                 {
-                                    AuthStrategyId = 1,
-                                    AuthStrategyName = "AuthStrategy1",
+                                    Id = 1,
+                                    AuthorizationStrategyName = "AuthStrategy1",
                                     DisplayName = "AuthStrategy1",
                                 },
                             ],
@@ -155,8 +155,8 @@ public class ResourceClaimValidatorTests
                             [
                                 new()
                                 {
-                                    AuthStrategyId = 1,
-                                    AuthStrategyName = "AuthStrategy1",
+                                    Id = 1,
+                                    AuthorizationStrategyName = "AuthStrategy1",
                                     DisplayName = "AuthStrategy1",
                                 },
                             ],
@@ -200,8 +200,8 @@ public class ResourceClaimValidatorTests
                             [
                                 new()
                                 {
-                                    AuthStrategyId = 1,
-                                    AuthStrategyName = "AuthStrategy1",
+                                    Id = 1,
+                                    AuthorizationStrategyName = "AuthStrategy1",
                                     DisplayName = "AuthStrategy1",
                                 },
                             ],
@@ -243,8 +243,8 @@ public class ResourceClaimValidatorTests
                             [
                                 new()
                                 {
-                                    AuthStrategyId = 1,
-                                    AuthStrategyName = "InvalidAuthStrategy",
+                                    Id = 1,
+                                    AuthorizationStrategyName = "InvalidAuthStrategy",
                                     DisplayName = "InvalidAuthStrategy",
                                 },
                             ],
@@ -288,8 +288,8 @@ public class ResourceClaimValidatorTests
                             [
                                 new()
                                 {
-                                    AuthStrategyId = 1,
-                                    AuthStrategyName = "AuthStrategy1",
+                                    Id = 1,
+                                    AuthorizationStrategyName = "AuthStrategy1",
                                     DisplayName = "AuthStrategy1",
                                 },
                             ],
@@ -309,8 +309,8 @@ public class ResourceClaimValidatorTests
                                     [
                                         new()
                                         {
-                                            AuthStrategyId = 1,
-                                            AuthStrategyName = "AuthStrategy1",
+                                            Id = 1,
+                                            AuthorizationStrategyName = "AuthStrategy1",
                                             DisplayName = "AuthStrategy1",
                                         },
                                     ],
@@ -329,8 +329,8 @@ public class ResourceClaimValidatorTests
                                     [
                                         new()
                                         {
-                                            AuthStrategyId = 1,
-                                            AuthStrategyName = "AuthStrategy1",
+                                            Id = 1,
+                                            AuthorizationStrategyName = "AuthStrategy1",
                                             DisplayName = "AuthStrategy1",
                                         },
                                     ],
@@ -376,8 +376,8 @@ public class ResourceClaimValidatorTests
                             [
                                 new()
                                 {
-                                    AuthStrategyId = 1,
-                                    AuthStrategyName = "AuthStrategy1",
+                                    Id = 1,
+                                    AuthorizationStrategyName = "AuthStrategy1",
                                     DisplayName = "AuthStrategy1",
                                 },
                             ],
@@ -397,8 +397,8 @@ public class ResourceClaimValidatorTests
                                     [
                                         new()
                                         {
-                                            AuthStrategyId = 1,
-                                            AuthStrategyName = "AuthStrategy1",
+                                            Id = 1,
+                                            AuthorizationStrategyName = "AuthStrategy1",
                                             DisplayName = "AuthStrategy1",
                                         },
                                     ],
@@ -419,8 +419,8 @@ public class ResourceClaimValidatorTests
                             [
                                 new()
                                 {
-                                    AuthStrategyId = 1,
-                                    AuthStrategyName = "AuthStrategy1",
+                                    Id = 1,
+                                    AuthorizationStrategyName = "AuthStrategy1",
                                     DisplayName = "AuthStrategy1",
                                 },
                             ],
@@ -457,8 +457,8 @@ public class ResourceClaimValidatorTests
                             [
                                 new()
                                 {
-                                    AuthStrategyId = 1,
-                                    AuthStrategyName = "AuthStrategy1",
+                                    Id = 1,
+                                    AuthorizationStrategyName = "AuthStrategy1",
                                     DisplayName = "AuthStrategy1",
                                 },
                             ],
@@ -478,8 +478,8 @@ public class ResourceClaimValidatorTests
                                     [
                                         new()
                                         {
-                                            AuthStrategyId = 1,
-                                            AuthStrategyName = "InvalidAuthStrategy",
+                                            Id = 1,
+                                            AuthorizationStrategyName = "InvalidAuthStrategy",
                                             DisplayName = "InvalidAuthStrategy",
                                         },
                                     ],

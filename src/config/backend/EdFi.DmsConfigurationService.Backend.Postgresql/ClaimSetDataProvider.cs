@@ -15,8 +15,16 @@ public class ClaimSetDataProvider(IClaimSetRepository repository) : IClaimSetDat
         return repository.GetActions().Select(a => a.Name).ToList();
     }
 
-    public List<string> GetAuthorizationStrategies()
+    public async Task<List<string>> GetAuthorizationStrategies()
     {
-        return repository.GetAuthorizationStrategies().Select(a => a.AuthStrategyName).ToList();
+        var result = await repository.GetAuthorizationStrategies();
+
+        return result switch
+        {
+            AuthorizationStrategyGetResult.Success success => success
+                .AuthorizationStrategy.Select(a => a.AuthorizationStrategyName)
+                .ToList(),
+            _ => new List<string>(),
+        };
     }
 }

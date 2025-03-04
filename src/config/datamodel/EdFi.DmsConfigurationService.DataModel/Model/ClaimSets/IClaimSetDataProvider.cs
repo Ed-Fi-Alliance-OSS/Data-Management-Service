@@ -8,5 +8,5 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 public interface IClaimSetDataProvider
 {
     List<string> GetActions();
-    List<string> GetAuthorizationStrategies();
+    Task<List<string>> GetAuthorizationStrategies();
 }
