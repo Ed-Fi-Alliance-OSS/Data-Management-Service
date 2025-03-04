@@ -22,3 +22,5 @@ VALUES
     (13, 'RelationshipsWithStudentsOnlyThroughResponsibilityIncludingDeletes', 'Relationships with Students only (through StudentEducationOrganizationResponsibilityAssociation, including deletes)');
 
 ALTER TABLE dmscs.AuthorizationStrategy ALTER COLUMN Id ADD GENERATED ALWAYS AS IDENTITY;
+
+SELECT setval('dmscs.authorizationstrategy_id_seq', (SELECT MAX(Id) FROM dmscs.AuthorizationStrategy));
