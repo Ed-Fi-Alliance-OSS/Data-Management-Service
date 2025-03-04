@@ -3,15 +3,16 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Serialization;
+
 namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 
 public class AuthorizationStrategy
 {
-    public int AuthStrategyId { get; set; }
+    public long Id { get; set; }
 
-    public required string AuthStrategyName { get; set; }
+    [JsonPropertyName("name")]
+    public required string AuthorizationStrategyName { get; set; }
 
     public string? DisplayName { get; set; }
-
-    public bool IsInheritedFromParent { get; set; }
 }

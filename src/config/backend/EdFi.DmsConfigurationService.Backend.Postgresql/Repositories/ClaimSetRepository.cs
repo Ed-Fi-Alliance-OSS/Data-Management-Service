@@ -52,86 +52,34 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         return actions;
     }
 
-    public IEnumerable<AuthorizationStrategy> GetAuthorizationStrategies()
+    public async Task<AuthorizationStrategyGetResult> GetAuthorizationStrategies()
     {
-        var authStrategies = new AuthorizationStrategy[]
+        await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+        try
         {
-            new()
-            {
-                AuthStrategyId = 1,
-                AuthStrategyName = "NoFurtherAuthorizationRequired",
-                DisplayName = "No Further Authorization Required",
-            },
-            new()
-            {
-                AuthStrategyId = 2,
-                AuthStrategyName = "RelationshipsWithEdOrgsAndPeople",
-                DisplayName = "Relationships with Education Organizations and People",
-            },
-            new()
-            {
-                AuthStrategyId = 3,
-                AuthStrategyName = "RelationshipsWithEdOrgsOnly",
-                DisplayName = "Relationships with Education Organizations only",
-            },
-            new()
-            {
-                AuthStrategyId = 4,
-                AuthStrategyName = "NamespaceBased",
-                DisplayName = "Namespace Based",
-            },
-            new()
-            {
-                AuthStrategyId = 5,
-                AuthStrategyName = "RelationshipsWithPeopleOnly",
-                DisplayName = "Relationships with People only",
-            },
-            new()
-            {
-                AuthStrategyId = 6,
-                AuthStrategyName = "RelationshipsWithStudentsOnly",
-                DisplayName = "Relationships with Students only",
-            },
-            new()
-            {
-                AuthStrategyId = 7,
-                AuthStrategyName = "RelationshipsWithStudentsOnlyThroughResponsibility",
-                DisplayName =
-                    "Relationships with Students only (through StudentEducationOrganizationResponsibilityAssociation)",
-            },
-            new()
-            {
-                AuthStrategyId = 8,
-                AuthStrategyName = "OwnershipBased",
-                DisplayName = "Ownership Based",
-            },
-            new()
-            {
-                AuthStrategyId = 9,
-                AuthStrategyName = "RelationshipsWithEdOrgsAndPeopleIncludingDeletes",
-                DisplayName = "Relationships with Education Organizations and People (including deletes)",
-            },
-            new()
-            {
-                AuthStrategyId = 10,
-                AuthStrategyName = "RelationshipsWithEdOrgsOnlyInverted",
-                DisplayName = "Relationships with Education Organizations only (Inverted)",
-            },
-            new()
-            {
-                AuthStrategyId = 11,
-                AuthStrategyName = "RelationshipsWithEdOrgsAndPeopleInverted",
-                DisplayName = "Relationships with Education Organizations and People (Inverted)",
-            },
-            new()
-            {
-                AuthStrategyId = 12,
-                AuthStrategyName = "RelationshipsWithStudentsOnlyThroughResponsibilityIncludingDeletes",
-                DisplayName =
-                    "Relationships with Students only (through StudentEducationOrganizationResponsibilityAssociation, including deletes)",
-            },
-        };
-        return authStrategies;
+            string sql = """
+                  SELECT Id, AuthorizationStrategyName, DisplayName
+                  FROM dmscs.AuthorizationStrategy;
+                """;
+
+            var authorizationStrategies = await connection.QueryAsync(sql);
+
+            var authStratResponse = authorizationStrategies
+                .Select(row => new AuthorizationStrategy
+                {
+                    Id = row.id,
+                    AuthorizationStrategyName = row.authorizationstrategyname,
+                    DisplayName = row.displayname,
+                })
+                .ToList();
+
+            return new AuthorizationStrategyGetResult.Success(authStratResponse);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Get Authorization Strategies failure");
+            return new AuthorizationStrategyGetResult.FailureUnknown(ex.Message);
+        }
     }
 
     private static string SerializeResourceClaim(List<ResourceClaim>? resourceClaims)
