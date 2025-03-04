@@ -13,6 +13,9 @@ on:
       - "src/dms/**/*.csproj"
       - "src/dms/Directory.Packages.props"
       - "src/Directory.Packages.props"
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 env:
