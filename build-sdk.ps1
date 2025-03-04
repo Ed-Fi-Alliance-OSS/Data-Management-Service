@@ -86,7 +86,7 @@ function GenerateSdk {
         $Endpoint
     )
 
-    java -jar openApi-codegen-cli.jar generate -g csharp -i $Endpoint `
+    &java -jar openApi-codegen-cli.jar generate -g csharp -i $Endpoint `
     --api-package Api.$Namespace --model-package Models.$Namespace -o $OutputFolder `
     --additional-properties "packageName=$packageName,targetFramework=net8.0,netCoreProjectFile=true" `
     --global-property modelTests=false --global-property apiTests=false --global-property apiDocs=false --global-property modelDocs=false --skip-validate-spec
@@ -97,9 +97,6 @@ function BuildSdk {
 }
 
 function BuildPackage {
-
-    Invoke-Step { BuildSdk }
-
     Invoke-Step { RunNuGetPack }
 }
 
@@ -109,7 +106,7 @@ function RunNuGetPack {
     # NU5100 is the warning about DLLs outside of a "lib" folder. We're
     # deliberately using that pattern, therefore we bypass the
     # warning.
-    dotnet pack $projectPath `
+    &dotnet pack $projectPath `
         --no-build `
         --no-restore `
         --output $PSScriptRoot `
@@ -123,8 +120,11 @@ function RunNuGetPack {
 function Invoke-BuildCore {
     Invoke-Step { DownloadCodeGen }
 
-    Invoke-Step { GenerateSdk -Namespace "Ed_Fi" -Endpoint "$DMSUrl/metadata/specifications/resources-spec.json" }
     Invoke-Step { GenerateSdk -Namespace "Ed_Fi" -Endpoint "$DMSUrl/metadata/specifications/descriptors-spec.json" }
+
+    Invoke-Step { GenerateSdk -Namespace "Ed_Fi" -Endpoint "$DMSUrl/metadata/specifications/resources-spec.json" }
+
+    Invoke-Step { BuildSdk }
 }
 
 function Invoke-PushPackage {
