@@ -1,0 +1,60 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+name: Data Management System SDK Generation
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/dms/**/*.cs"
+      - "src/dms/**/*.csproj"
+      - "src/dms/Directory.Packages.props"
+      - "src/Directory.Packages.props"
+  workflow_dispatch:
+
+env:
+  SDK_PACKAGE_NAME: "EdFi.DMS.SDK"
+
+permissions: read-all
+
+jobs:
+  build-sdk:
+    name: Build Core SDK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set SDK Version Numbers
+        id: versions
+        run: |
+          Import-Module ./package-helpers.psm1
+          Get-VersionNumber -projectPrefix "sdk"
+
+      - name: Build DMS Docker
+        run: ./build-dms.ps1 DockerBuild
+
+      - name: Run DMS Docker
+        run: ./build-dms.ps1 DockerRun
+
+      - name: Generate Core SDK
+        run: ./build-sdk.ps1 BuildCore
+
+      - name: Package Core SDK
+        run: |
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "sdk-v", ""
+
+          ./build-sdk.ps1 Package -DMSVersion $packageVersion
+
+      - name: Upload Core SDK Packages as Artifacts
+        if: success()
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+        with:
+          name: "${{ env.DMS_PACKAGE_NAME }}-NuGet"
+          path: ${{ github.workspace }}/*.nupkg
+          if-no-files-found: error
+          retention-days: 30
