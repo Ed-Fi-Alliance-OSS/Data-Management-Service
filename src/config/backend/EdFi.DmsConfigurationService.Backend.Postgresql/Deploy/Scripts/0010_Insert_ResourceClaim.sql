@@ -422,3 +422,5 @@ VALUES
     (421,'snapshot','http://ed-fi.org/ods/identity/claims/publishing/snapshot');
 
 ALTER TABLE dmscs.ResourceClaim ALTER COLUMN Id ADD GENERATED ALWAYS AS IDENTITY;
+
+SELECT setval('dmscs.resourceclaim_id_seq', (SELECT MAX(Id) FROM dmscs.ResourceClaim));
