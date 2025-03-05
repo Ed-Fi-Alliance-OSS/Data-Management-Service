@@ -110,7 +110,7 @@ function RunNuGetPack {
 
     $copyrightYear = (Get-Date).year
 
-    # This worksaround an issue using -p:NuspecProperties ()
+    # This worksaround an issue using -p:NuspecProperties (https://github.com/dotnet/sdk/issues/15482)
     # where only the first property is parsed correctly
     [xml] $xml = Get-Content $nuspecPath
     $xml.package.metadata.id = "$packageName.Standard.$StandardVersion"
