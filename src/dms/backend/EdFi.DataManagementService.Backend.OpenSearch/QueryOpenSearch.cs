@@ -171,6 +171,8 @@ public static partial class QueryOpenSearch
                 query.Add(new("from", queryRequest.PaginationParameters.Offset));
             }
 
+            logger.LogDebug("Query - {TraceId} - {Query}", queryRequest.TraceId.Value, query.ToJsonString());
+
             BytesResponse response = await client.Http.PostAsync<BytesResponse>(
                 $"/{indexName}/_search",
                 d => d.Body(query.ToJsonString())
