@@ -23,6 +23,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
       # Mask incoming HTTP POST and PUT request body structures in DEBUG logging
       MASK_REQUEST_BODY_IN_LOGS: ${MASK_REQUEST_BODY_IN_LOGS:-true}
+      MAXIMUM_PAGE_SIZE: ${MAXIMUM_PAGE_SIZE:-500}
       # The default correlation id header is deliberately blank on the following line
       CORRELATION_ID_HEADER: ${CORRELATION_ID_HEADER:-}
       DMS_DATASTORE: ${DMS_DATASTORE:-postgresql}
