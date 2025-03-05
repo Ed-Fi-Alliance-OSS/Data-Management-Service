@@ -30,9 +30,9 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
 
         JsonNode coreResourceSchemas = FindResourceSchemas(ApiSchemaNodes.CoreApiSchemaRootNode).DeepClone();
 
-        foreach (JsonNode extensionApiSchemaRootNode in ApiSchemaNodes.ExtensionApiSchemaRootNodes)
+        foreach (JsonNode extensionApiSchemas in ApiSchemaNodes.ExtensionApiSchemaRootNodes)
         {
-            JsonNode extensionResourceSchemas = FindResourceSchemas(extensionApiSchemaRootNode);
+            JsonNode extensionResourceSchemas = FindResourceSchemas(extensionApiSchemas);
 
             InsertTypeCoercionExts(extensionResourceSchemas, coreResourceSchemas, "dateTimeJsonPaths");
             InsertTypeCoercionExts(extensionResourceSchemas, coreResourceSchemas, "booleanJsonPaths");
@@ -51,10 +51,14 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
         );
     }
 
-    private void InsertTypeCoercionExts(JsonNode extensionResourceSchemas, JsonNode coreResourceSchemas, string jsonPathKey)
+    private void InsertTypeCoercionExts(
+        JsonNode extensionResourceSchemas,
+        JsonNode coreResourceSchemas,
+        string jsonPathKey
+    )
     {
-
-        var validExtensionResourceSchemas = extensionResourceSchemas.AsObject()
+        var validExtensionResourceSchemas = extensionResourceSchemas
+            .AsObject()
             .Where(ext => ext.Value?["isResourceExtension"]?.GetValue<bool>() == true)
             .Where(ext => ext.Value?[jsonPathKey] is JsonArray { Count: > 0 })
             .ToList();

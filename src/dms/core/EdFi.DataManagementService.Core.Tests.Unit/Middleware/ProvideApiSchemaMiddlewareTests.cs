@@ -27,42 +27,31 @@ public class ProvideApiSchemaMiddlewareTests
     public class Given_An_Api_Schema_Provider_Is_Injected : ParsePathMiddlewareTests
     {
         private readonly PipelineContext _context = No.PipelineContext();
-        private static readonly JsonNode _apiSchemaRootNode =
-            JsonNode.Parse(
-                "{\"projectSchema\": { "
-                    + "\"abstractResources\": {}, "
-                    + "\"caseInsensitiveEndpointNameMapping\": {}, "
-                    + "\"description\": \"The Ed-Fi Data Standard v5.0\", "
-                    + "\"isExtensionProject\": false, "
-                    + "\"projectName\": \"ed-fi\", "
-                    + "\"projectEndpointName\": \"ed-fi\", "
-                    + "\"projectVersion\": \"5.0.0\", "
-                    + "\"resourceNameMapping\": {}, "
-                    + "\"resourceSchemas\": {"
-                    + "\"credentials\": {"
-                    + "\"isResourceExtension\": true, "
-                    + "\"dateTimeJsonPaths\": [\"/dateTime/path1\"], "
-                    + "\"booleanJsonPaths\": [\"/boolean/path1\"]"
-                    + "}}}}"
-            ) ?? new JsonObject();
-
-        private static readonly JsonNode _extensionApiSchemaRootNode =
-            JsonNode.Parse(
-                "{\"projectSchema\": { "
-                    + "\"resourceSchemas\": { "
-                    + "\"credentials\": { "
-                    + "\"isResourceExtension\": true, "
-                    + "\"dateTimeJsonPaths\": [\"/dateTime/path1\"], "
-                    + "\"booleanJsonPaths\": [\"/boolean/path1\"] "
-                    + "} "
-                    + "} "
-                    + "}}"
-            ) ?? new JsonObject();
 
         internal class Provider : IApiSchemaProvider
         {
             public ApiSchemaNodes GetApiSchemaNodes()
             {
+                JsonNode _apiSchemaRootNode = new ApiSchemaBuilder()
+                    .WithStartProject("Ed-Fi", "5.0.0")
+                    .WithStartResource("School")
+                    .WithBooleanJsonPaths(new[] { "$.gradeLevels[*].isSecondary" })
+                    .WithNumericJsonPaths(new[] { "$.schoolId" })
+                    .WithDateTimeJsonPaths(new[] { "$.beginDate" })
+                    .WithEndResource()
+                    .WithEndProject()
+                    .AsSingleApiSchemaRootNode();
+
+                JsonNode _extensionApiSchemaRootNode = new ApiSchemaBuilder()
+                    .WithStartProject("tpdm", "5.0.0")
+                    .WithStartResource("School")
+                    .WithBooleanJsonPaths(new[] { "$.gradeLevels[*].isSecondary" })
+                    .WithNumericJsonPaths(new[] { "$.schoolId" })
+                    .WithDateTimeJsonPaths(new[] { "$.beginDate" })
+                    .WithEndResource()
+                    .WithEndProject()
+                    .AsSingleApiSchemaRootNode();
+
                 return new ApiSchemaNodes(_apiSchemaRootNode, new[] { _extensionApiSchemaRootNode });
             }
         }
@@ -107,20 +96,24 @@ public class ProvideApiSchemaMiddlewareTests
                 .ExtensionApiSchemaRootNodes[0]
                 ?["projectSchema"]
                 ?["resourceSchemas"]
-                ?["credentials"];
+                ?["schools"];
             extensionResourceSchema.Should().NotBeNull();
 
             var dateTimeJsonPaths = extensionResourceSchema?["dateTimeJsonPaths"] as JsonArray;
             var booleanJsonPaths = extensionResourceSchema?["booleanJsonPaths"] as JsonArray;
+            var numericJsonPaths = extensionResourceSchema?["numericJsonPaths"] as JsonArray;
 
             dateTimeJsonPaths.Should().NotBeNull();
             booleanJsonPaths.Should().NotBeNull();
+            numericJsonPaths.Should().NotBeNull();
 
             var dateTimePaths = dateTimeJsonPaths?.Select(p => p?.ToString()).ToList();
             var booleanPaths = booleanJsonPaths?.Select(p => p?.ToString()).ToList();
+            var numericPaths = numericJsonPaths?.Select(p => p?.ToString()).ToList();
 
-            dateTimePaths.Should().Contain("/dateTime/path1");
-            booleanPaths.Should().Contain("/boolean/path1");
+            dateTimePaths.Should().Contain("$.beginDate");
+            booleanPaths.Should().Contain("$.gradeLevels[*].isSecondary");
+            numericPaths.Should().Contain("$.schoolId");
         }
     }
 }
