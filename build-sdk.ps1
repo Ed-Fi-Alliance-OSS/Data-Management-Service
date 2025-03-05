@@ -55,6 +55,9 @@ param(
     [string]
     $PackageFile,
 
+    [bool]
+    $DryRun = $false,
+
     # Base DSM url
     [string]
     $DMSUrl = "http://localhost:8080",
@@ -115,6 +118,27 @@ function RunNuGetPack {
         -p:NuspecProperties="version=$SDKVersion;configuration=Release;;year=$copyrightYear" `
         --configuration Release `
         /p:NoWarn=NU5100
+}
+
+function PushPackage {
+    Invoke-Execute {
+        if (-not $NuGetApiKey) {
+            throw "Cannot push a NuGet package without providing an API key in the `NuGetApiKey` argument."
+        }
+
+        if (-not $EdFiNuGetFeed) {
+            throw "Cannot push a NuGet package without providing a feed in the `EdFiNuGetFeed` argument."
+        }
+
+        if ($DryRun) {
+            Write-Info "Dry run enabled, not pushing package."
+        }
+        else {
+            Write-Info ("Pushing $PackageFile to $EdFiNuGetFeed")
+
+            dotnet nuget push $PackageFile --api-key $NuGetApiKey --source $EdFiNuGetFeed
+        }
+    }
 }
 
 function Invoke-BuildCore {
