@@ -64,7 +64,10 @@ param(
 
     # Output Folder
     [string]
-    $OutputFolder = "./eng/sdkGen/csharp"
+    $OutputFolder = "./eng/sdkGen/csharp",
+
+    [string]
+    $StandardVersion = "5.2.0"
 )
 
 Import-Module -Name "$PSScriptRoot/eng/build-helpers.psm1" -Force
@@ -105,7 +108,15 @@ function BuildPackage {
 
 function RunNuGetPack {
 
-    $copyrightYear = ${(Get-Date).year)}
+    $copyrightYear = (Get-Date).year
+
+    # This worksaround an issue using -p:NuspecProperties ()
+    # where only the first property is parsed correctly
+    [xml] $xml = Get-Content $nuspecPath
+    $xml.package.metadata.id = "$packageName.Standard.$StandardVersion"
+    $xml.package.metadata.copyright = "Copyright @ $copyrightYear Ed-Fi Alliance, LLC and Contributors"
+    $xml.Save($nuspecPath)
+
     # NU5100 is the warning about DLLs outside of a "lib" folder. We're
     # deliberately using that pattern, therefore we bypass the
     # warning.
@@ -115,8 +126,7 @@ function RunNuGetPack {
         --output $PSScriptRoot `
         -p:NuspecFile=$nuspecPath `
         -p:NoDefaultExcludes=true `
-        -p:NuspecProperties="version=$SdkVersion;configuration=Release;;year=$copyrightYear" `
-        --configuration Release `
+        -p:NuspecProperties="version=$SdkVersion;configuration=Release;year=$copyrightYear" `
         /p:NoWarn=NU5100
 }
 
