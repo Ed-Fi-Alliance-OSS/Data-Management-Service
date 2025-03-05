@@ -9,6 +9,8 @@ CREATE TABLE dmscs.AuthorizationStrategy (
     DisplayName VARCHAR(255) NOT NULL
 );
 
+ALTER TABLE dmscs.AuthorizationStrategy ADD CONSTRAINT uq_AuthorizationStrategyName UNIQUE (AuthorizationStrategyName);
+
 COMMENT ON COLUMN dmscs.AuthorizationStrategy.Id IS 'Authorization Strategy Identifier.';
 COMMENT ON COLUMN dmscs.AuthorizationStrategy.AuthorizationStrategyName IS 'Authorization Strategy Name';
 COMMENT ON COLUMN dmscs.AuthorizationStrategy.DisplayName IS 'Display Name';

@@ -9,6 +9,8 @@ CREATE TABLE dmscs.ResourceClaim (
     ClaimName VARCHAR(255) NOT NULL
 );
 
+ALTER TABLE dmscs.ResourceClaim ADD CONSTRAINT uq_ClaimName UNIQUE (ClaimName);
+
 COMMENT ON COLUMN dmscs.ResourceClaim.Id IS 'Resource Claim Identifier';
 COMMENT ON COLUMN dmscs.ResourceClaim.ResourceName IS 'Resource Name';
 COMMENT ON COLUMN dmscs.ResourceClaim.ClaimName IS 'Claim Name';

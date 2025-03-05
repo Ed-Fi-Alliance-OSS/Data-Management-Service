@@ -10,7 +10,6 @@ CREATE TABLE dmscs.ClaimsHierarchy (
   Hierarchy JSONB NOT NULL
 );
 
-CREATE UNIQUE INDEX uq_ProjectName_Version ON dmscs.ClaimsHierarchy USING btree (ProjectName, Version);
 CREATE UNIQUE INDEX idx_ProjectName_Version ON dmscs.ClaimsHierarchy USING btree (ProjectName, Version);
 COMMENT ON COLUMN dmscs.ClaimsHierarchy.Id IS 'Claims hierarchy internal identifier.';
 COMMENT ON COLUMN dmscs.ClaimsHierarchy.ProjectName IS 'Project name, also known as the schema, of the model represented by the hierarchy.';
