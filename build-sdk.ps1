@@ -12,7 +12,7 @@
         Provides automation of the following tasks:
 
         * BuildCore: runs `dotnet clean`
-        * Package: builds package for the DMS SDK
+        * Package: builds package for the Data Management Service SDK
         * Push: uploads a NuGet package to the NuGet feed
     .EXAMPLE
         .\build-sdk.ps1 BuildCore
@@ -38,7 +38,7 @@ param(
     # current package number is configured in the build automation tool and
     # passed to this script.
     [string]
-    $SDKVersion = "0.1",
+    $SdkVersion = "0.1",
 
     # Ed-Fi's official NuGet package feed for package download and distribution.
     [string]
@@ -51,7 +51,7 @@ param(
 
     # Full path of a package file to push to the NuGet feed. Optional, only
     # applies with the Push command. If not set, then the script looks for a
-    # NuGet package corresponding to the provided $DMSVersion and $BuildCounter.
+    # NuGet package corresponding to the provided $DmsVersion and $BuildCounter.
     [string]
     $PackageFile,
 
@@ -60,7 +60,7 @@ param(
 
     # Base DSM url
     [string]
-    $DMSUrl = "http://localhost:8080",
+    $DmsUrl = "http://localhost:8080",
 
     # Output Folder
     [string]
@@ -69,10 +69,10 @@ param(
 
 Import-Module -Name "$PSScriptRoot/eng/build-helpers.psm1" -Force
 
-$packageName = "EdFi.DMS.Sdk"
+$packageName = "EdFi.Api.Sdk"
 $solutionRoot = "$PSScriptRoot/$OutputFolder"
 $projectPath = "$solutionRoot/src/$packageName/$packageName.csproj"
-$nuspecPath = "$PSScriptRoot/eng/sdkGen/EdFi.DMS.SDK.nuspec"
+$nuspecPath = "$PSScriptRoot/eng/sdkGen/$packageName.nuspec"
 
 function DownloadCodeGen {
     if (-not (Test-Path -Path openApi-codegen-cli.jar)) {
@@ -115,7 +115,7 @@ function RunNuGetPack {
         --output $PSScriptRoot `
         -p:NuspecFile=$nuspecPath `
         -p:NoDefaultExcludes=true `
-        -p:NuspecProperties="version=$SDKVersion;configuration=Release;;year=$copyrightYear" `
+        -p:NuspecProperties="version=$SdkVersion;configuration=Release;;year=$copyrightYear" `
         --configuration Release `
         /p:NoWarn=NU5100
 }
@@ -144,9 +144,9 @@ function PushPackage {
 function Invoke-BuildCore {
     Invoke-Step { DownloadCodeGen }
 
-    Invoke-Step { GenerateSdk -Namespace "Ed_Fi" -Endpoint "$DMSUrl/metadata/specifications/descriptors-spec.json" }
+    Invoke-Step { GenerateSdk -Namespace "Ed_Fi" -Endpoint "$DmsUrl/metadata/specifications/resources-spec.json" }
 
-    Invoke-Step { GenerateSdk -Namespace "Ed_Fi" -Endpoint "$DMSUrl/metadata/specifications/resources-spec.json" }
+    Invoke-Step { GenerateSdk -Namespace "Ed_Fi" -Endpoint "$DmsUrl/metadata/specifications/descriptors-spec.json" }
 
     Invoke-Step { BuildSdk }
 }

@@ -1,17 +1,17 @@
 <?xml version="1.0"?>
 <package>
   <metadata>
-    <id>EdFi.DMS.Sdk</id>
+    <id>EdFi.Api.Sdk</id>
     <version>$version$</version>
-    <title>EdFi.DMS.Sdk</title>
+    <title>EdFi.Api.Sdk</title>
     <authors>Ed-Fi Alliance</authors>
     <owners>Ed-Fi Alliance</owners>
     <projectUrl>https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service</projectUrl>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
-    <description>A pregenerated sdk for use with the Ed-Fi DMS Api.</description>
-    <releaseNotes>Packaged Ed-Fi DMS SDK.</releaseNotes>
+    <description>A pregenerated SDK for use with the Ed-Fi Data Management Service Api.</description>
+    <releaseNotes>Packaged Ed-Fi Data Management Service SDK.</releaseNotes>
     <copyright>Copyright @ $year$ Ed-Fi Alliance, LLC and Contributors</copyright>
-    <tags>Ed-Fi DMS SDK</tags>
+    <tags>Ed-Fi Data Management Service SDK</tags>
     <dependencies>
       <dependency id="NewtonSoft.Json" version="13.0.3" />
       <dependency id="JsonSubTypes" version="2.0.1" />
@@ -21,6 +21,6 @@
   </metadata>
   <files>
     <file src="readme.txt" target="" />
-    <file src="csharp\src\EdFi.DMS.Sdk\bin\Release\net8.0\EdFi.DMS.Sdk.dll" target="lib\net8.0" />
+    <file src="csharp\src\EdFi.Api.Sdk\bin\Release\net8.0\EdFi.Api.Sdk.dll" target="lib\net8.0" />
   </files>
 </package>
