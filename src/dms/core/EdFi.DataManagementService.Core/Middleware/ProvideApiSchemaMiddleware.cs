@@ -28,17 +28,15 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
             context.FrontendRequest.TraceId.Value
         );
 
-        var coreResourceSchemas = FindResourceSchemas(ApiSchemaNodes.CoreApiSchemaRootNode)
-            .DeepClone()
-            .AsObject();
+        JsonNode coreResourceSchemas = FindResourceSchemas(ApiSchemaNodes.CoreApiSchemaRootNode).DeepClone();
 
         foreach (JsonNode extensionApiSchemaRootNode in ApiSchemaNodes.ExtensionApiSchemaRootNodes)
         {
-            var extensionResourceSchemas = FindResourceSchemas(extensionApiSchemaRootNode).AsObject();
+            JsonNode extensionResourceSchemas = FindResourceSchemas(extensionApiSchemaRootNode);
 
-            InsertJsonPathsExts(extensionResourceSchemas, coreResourceSchemas, "dateTimeJsonPaths");
-            InsertJsonPathsExts(extensionResourceSchemas, coreResourceSchemas, "booleanJsonPaths");
-            InsertJsonPathsExts(extensionResourceSchemas, coreResourceSchemas, "numericJsonPaths");
+            InsertTypeCoercionExts(extensionResourceSchemas, coreResourceSchemas, "dateTimeJsonPaths");
+            InsertTypeCoercionExts(extensionResourceSchemas, coreResourceSchemas, "booleanJsonPaths");
+            InsertTypeCoercionExts(extensionResourceSchemas, coreResourceSchemas, "numericJsonPaths");
         }
 
         context.ApiSchemaDocuments = new ApiSchemaDocuments(ApiSchemaNodes, _logger);
@@ -53,35 +51,40 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
         );
     }
 
-    private void InsertJsonPathsExts(JsonObject extList, JsonObject coreResourceSchemas, string jsonPathKey)
+    private void InsertTypeCoercionExts(JsonNode extensionResourceSchemas, JsonNode coreResourceSchemas, string jsonPathKey)
     {
-        var validExtensionResourceSchemas = extList
+
+        var validExtensionResourceSchemas = extensionResourceSchemas.AsObject()
             .Where(ext => ext.Value?["isResourceExtension"]?.GetValue<bool>() == true)
             .Where(ext => ext.Value?[jsonPathKey] is JsonArray { Count: > 0 })
             .ToList();
 
-        foreach (var (extensionResourceName, extSchema) in validExtensionResourceSchemas)
+        foreach (KeyValuePair<string, JsonNode?> keyValueExtension in validExtensionResourceSchemas)
         {
+            string extensionResourceName = keyValueExtension.Key;
+            JsonNode? extSchema = keyValueExtension.Value;
             if (extSchema != null)
             {
-                var extensionJsonPaths = extSchema[jsonPathKey];
+                JsonNode? extensionJsonPaths = extSchema[jsonPathKey];
                 if (extensionJsonPaths is JsonArray extensionJsonArray)
                 {
-                    foreach (var (coreResourceName, coreSchema) in coreResourceSchemas)
+                    foreach (KeyValuePair<string, JsonNode?> keyValueCore in coreResourceSchemas.AsObject())
                     {
+                        string coreResourceName = keyValueCore.Key;
+                        JsonNode? coreSchema = keyValueCore.Value;
                         if (
                             extensionResourceName.Equals(coreResourceName, StringComparison.OrdinalIgnoreCase)
                             && coreSchema != null
                         )
                         {
-                            var coreJsonPaths = coreSchema[jsonPathKey] as JsonArray ?? new JsonArray();
+                            JsonArray coreJsonPaths = coreSchema[jsonPathKey] as JsonArray ?? new JsonArray();
                             bool pathsAdded = false;
 
                             foreach (var path in extensionJsonArray)
                             {
                                 if (path != null)
                                 {
-                                    var clonedPath = path.DeepClone();
+                                    JsonNode clonedPath = path.DeepClone();
 
                                     if (!coreJsonPaths.Contains(clonedPath))
                                     {
@@ -93,12 +96,12 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
 
                             if (pathsAdded && ApiSchemaNodes != null)
                             {
-                                var clonedCoreJsonPaths = coreJsonPaths.DeepClone();
+                                JsonNode clonedCoreJsonPaths = coreJsonPaths.DeepClone();
 
                                 coreSchema[jsonPathKey] = clonedCoreJsonPaths;
 
-                                var coreApiSchemaRootNode = ApiSchemaNodes.CoreApiSchemaRootNode;
-                                var resourceSchemasNode = coreApiSchemaRootNode["projectSchema"]?[
+                                JsonNode coreApiSchemaRootNode = ApiSchemaNodes.CoreApiSchemaRootNode;
+                                JsonNode? resourceSchemasNode = coreApiSchemaRootNode["projectSchema"]?[
                                     "resourceSchemas"
                                 ];
 

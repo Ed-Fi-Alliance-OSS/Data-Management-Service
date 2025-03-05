@@ -124,28 +124,13 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
         }
         else
         {
-            string baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
-
-            string coreAssemblyPath = Path.Combine(baseDirectory, "EdFi.DataStandard52.ApiSchema.Core.dll");
-            string tpdmAssemblyPath = Path.Combine(baseDirectory, "EdFi.DataStandard52.ApiSchema.TPDM.dll");
-
-            byte[] coreAssemblyBytes = File.ReadAllBytes(coreAssemblyPath);
-
             Assembly coreAssembly =
-                Assembly.Load(coreAssemblyBytes)
+                Assembly.GetAssembly(typeof(DataStandard52.ApiSchema.Core.Marker))
                 ?? throw new InvalidOperationException(
                     "Could not load assembly-bundled ApiSchema file for Core"
                 );
 
-            byte[] tpdmAssemblyBytes = File.ReadAllBytes(tpdmAssemblyPath);
-
-            Assembly tpdmAssembly =
-                Assembly.Load(tpdmAssemblyBytes)
-                ?? throw new InvalidOperationException(
-                    "Could not load assembly-bundled ApiSchema file for TPDM"
-                );
-
-            var coreApiSchemaNode = coreAssembly
+            JsonNode coreApiSchemaNode = coreAssembly
                 .GetManifestResourceNames()
                 .Where(str => str.EndsWith("ApiSchema.json"))
                 .Select(resourceName =>
@@ -155,7 +140,18 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
                 })
                 .Single();
 
-            var extensionApiSchemaNodes = tpdmAssembly
+            if (coreApiSchemaNode == null)
+            {
+                throw new InvalidOperationException("Core ApiSchema not found in the assembly.");
+            }
+
+            Assembly tpdmAssembly =
+                Assembly.GetAssembly(typeof(DataStandard52.ApiSchema.TPDM.Marker))
+                ?? throw new InvalidOperationException(
+                    "Could not load assembly-bundled ApiSchema file for TPDM"
+                );
+
+            JsonNode[] extensionApiSchemaNodes = tpdmAssembly
                 .GetManifestResourceNames()
                 .Where(str => str.EndsWith("ApiSchema-EXTENSION.json"))
                 .Select(resourceName =>
@@ -165,7 +161,12 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
                 })
                 .ToArray();
 
-            return new(coreApiSchemaNode, extensionApiSchemaNodes);
+            extensionApiSchemaNodes =
+                extensionApiSchemaNodes.Length > 0
+                    ? extensionApiSchemaNodes
+                    : throw new InvalidOperationException("ApiSchema-EXTENSION not found in the assembly.");
+
+            return new ApiSchemaNodes(coreApiSchemaNode, extensionApiSchemaNodes);
         }
     });
 
