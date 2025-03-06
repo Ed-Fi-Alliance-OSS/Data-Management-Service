@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "EdFi.DataManagementService.OpenApiGenerator": {
+        "commandName": "Project",
+        "commandLineArgs": "$(ProjectDir)\\..\\..\\EdFi.DataStandard52.ApiSchema\\ApiSchema.json $(ProjectDir)\\..\\..\\EdFi.DataStandard52.ApiSchema\\ApiSchema-EXTENSION.json"
+    }
+  }
+}

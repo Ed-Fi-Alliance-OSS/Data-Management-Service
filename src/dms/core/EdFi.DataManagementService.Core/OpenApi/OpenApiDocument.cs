@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json.Linq;
 
 namespace EdFi.DataManagementService.Core.OpenApi;
 
@@ -19,35 +20,38 @@ public class OpenApiDocument(ILogger _logger)
     /// Inserts exts from extension OpenAPI fragments into the _ext section of the corresponding
     /// core OpenAPI endpoint.
     /// </summary>
-    private void InsertExts(JsonObject extList, JsonNode openApiSpecification)
+    private void InsertExts(JsonObject extList, List<JsonNode> openApiSpecificationList)
     {
-        foreach ((string componentSchemaName, JsonNode? extObject) in extList)
+        foreach (JsonNode openApiSpecification in openApiSpecificationList)
         {
-            if (extObject == null)
+            foreach ((string componentSchemaName, JsonNode? extObject) in extList)
             {
-                throw new InvalidOperationException(
-                    $"OpenAPI extension fragment has empty exts schema name '{componentSchemaName}'. Extension fragment validation failed?"
-                );
+                if (extObject == null)
+                {
+                    throw new InvalidOperationException(
+                        $"OpenAPI extension fragment has empty exts schema name '{componentSchemaName}'. Extension fragment validation failed?"
+                    );
+                }
+
+                // Get the component.schema location for _ext insert
+                JsonObject locationForExt =
+                    openApiSpecification
+                        .SelectNodeFromPath($"$.components.schemas.{componentSchemaName}.properties", _logger)
+                        ?.AsObject()
+                    ?? throw new InvalidOperationException(
+                        $"OpenAPI extension fragment expects Core to have '$.components.schemas.EdFi_{componentSchemaName}.properties'. Extension fragment validation failed?"
+                    );
+
+                // If _ext has already been added by another extension, we don't support a second one
+                if (locationForExt["_ext"] != null)
+                {
+                    throw new InvalidOperationException(
+                        $"OpenAPI extension fragment tried to add a second _ext to '$.components.schemas.EdFi_{componentSchemaName}.properties', which is not supported. Extension fragment validation failed?"
+                    );
+                }
+
+                locationForExt.Add("_ext", extObject.DeepClone());
             }
-
-            // Get the component.schema location for _ext insert
-            JsonObject locationForExt =
-                openApiSpecification
-                    .SelectNodeFromPath($"$.components.schemas.{componentSchemaName}.properties", _logger)
-                    ?.AsObject()
-                ?? throw new InvalidOperationException(
-                    $"OpenAPI extension fragment expects Core to have '$.components.schemas.EdFi_{componentSchemaName}.properties'. Extension fragment validation failed?"
-                );
-
-            // If _ext has already been added by another extension, we don't support a second one
-            if (locationForExt["_ext"] != null)
-            {
-                throw new InvalidOperationException(
-                    $"OpenAPI extension fragment tried to add a second _ext to '$.components.schemas.EdFi_{componentSchemaName}.properties', which is not supported. Extension fragment validation failed?"
-                );
-            }
-
-            locationForExt.Add("_ext", extObject.DeepClone());
         }
     }
 
@@ -55,30 +59,33 @@ public class OpenApiDocument(ILogger _logger)
     /// Inserts new endpoint paths from extension OpenAPI fragments into the paths section of the corresponding
     /// core OpenAPI endpoint.
     /// </summary>
-    private void InsertNewPaths(JsonObject newPaths, JsonNode openApiSpecification)
+    private void InsertNewPaths(JsonObject newPaths, List<JsonNode> openApiSpecificationList)
     {
-        foreach ((string pathName, JsonNode? pathObject) in newPaths)
+        foreach (JsonNode openApiSpecification in openApiSpecificationList)
         {
-            if (pathObject == null)
+            foreach ((string pathName, JsonNode? pathObject) in newPaths)
             {
-                throw new InvalidOperationException(
-                    $"OpenAPI extension fragment has empty newPaths path name '{pathName}'. Extension fragment validation failed?"
-                );
+                if (pathObject == null)
+                {
+                    throw new InvalidOperationException(
+                        $"OpenAPI extension fragment has empty newPaths path name '{pathName}'. Extension fragment validation failed?"
+                    );
+                }
+
+                JsonObject locationForPaths = openApiSpecification
+                    .SelectRequiredNodeFromPath("$.paths", _logger)
+                    .AsObject();
+
+                // If pathName has already been added by another extension, we don't support a second one
+                if (locationForPaths[pathName] != null)
+                {
+                    throw new InvalidOperationException(
+                        $"OpenAPI extension fragment tried to add a second path '$.paths.{pathName}', which is not supported. Extension fragment validation failed?"
+                    );
+                }
+
+                locationForPaths.Add(pathName, pathObject.DeepClone());
             }
-
-            JsonObject locationForPaths = openApiSpecification
-                .SelectRequiredNodeFromPath("$.paths", _logger)
-                .AsObject();
-
-            // If pathName has already been added by another extension, we don't support a second one
-            if (locationForPaths[pathName] != null)
-            {
-                throw new InvalidOperationException(
-                    $"OpenAPI extension fragment tried to add a second path '$.paths.{pathName}', which is not supported. Extension fragment validation failed?"
-                );
-            }
-
-            locationForPaths.Add(pathName, pathObject.DeepClone());
         }
     }
 
@@ -86,30 +93,33 @@ public class OpenApiDocument(ILogger _logger)
     /// Inserts new schema objects from extension OpenAPI fragments into the components.schemas section of the
     /// core OpenAPI specification.
     /// </summary>
-    private void InsertNewSchemas(JsonObject newSchemas, JsonNode openApiSpecification)
+    private void InsertNewSchemas(JsonObject newSchemas, List<JsonNode> openApiSpecificationList)
     {
-        foreach ((string schemaName, JsonNode? schemaObject) in newSchemas)
+        foreach (JsonNode openApiSpecification in openApiSpecificationList)
         {
-            if (schemaObject == null)
+            foreach ((string schemaName, JsonNode? schemaObject) in newSchemas)
             {
-                throw new InvalidOperationException(
-                    $"OpenAPI extension fragment has empty newSchemas path name '{schemaName}'. Extension fragment validation failed?"
-                );
+                if (schemaObject == null)
+                {
+                    throw new InvalidOperationException(
+                        $"OpenAPI extension fragment has empty newSchemas path name '{schemaName}'. Extension fragment validation failed?"
+                    );
+                }
+
+                JsonObject locationForSchemas = openApiSpecification
+                    .SelectRequiredNodeFromPath("$.components.schemas", _logger)
+                    .AsObject();
+
+                // If schemaName has already been added by another extension, we don't support a second one
+                if (locationForSchemas[schemaName] != null)
+                {
+                    throw new InvalidOperationException(
+                        $"OpenAPI extension fragment tried to add a second schema '$.components.schemas.{schemaName}', which is not supported. Extension fragment validation failed?"
+                    );
+                }
+
+                locationForSchemas.Add(schemaName, schemaObject.DeepClone());
             }
-
-            JsonObject locationForSchemas = openApiSpecification
-                .SelectRequiredNodeFromPath("$.components.schemas", _logger)
-                .AsObject();
-
-            // If schemaName has already been added by another extension, we don't support a second one
-            if (locationForSchemas[schemaName] != null)
-            {
-                throw new InvalidOperationException(
-                    $"OpenAPI extension fragment tried to add a second schema '$.components.schemas.{schemaName}', which is not supported. Extension fragment validation failed?"
-                );
-            }
-
-            locationForSchemas.Add(schemaName, schemaObject.DeepClone());
         }
     }
 
@@ -117,77 +127,112 @@ public class OpenApiDocument(ILogger _logger)
     /// Inserts new global tag objects from extension OpenAPI fragments into the tags section of the
     /// core OpenAPI specification.
     /// </summary>
-    private void InsertNewTags(JsonArray newTagObjects, JsonNode openApiSpecification)
+    private void InsertNewTags(JsonArray newTagObjects, List<JsonNode> openApiSpecificationList)
     {
-        // This is where the extension tags will be added
-        JsonArray globalTags = openApiSpecification.SelectRequiredNodeFromPath("$.tags", _logger).AsArray();
-
-        // Helper to test for tag uniqueness
-        HashSet<string> existingTagNames = [];
-        foreach (JsonNode? globalTag in globalTags)
+        foreach (JsonNode openApiSpecification in openApiSpecificationList)
         {
-            if (globalTag == null)
+            // This is where the extension tags will be added
+            JsonArray globalTags = openApiSpecification
+                .SelectRequiredNodeFromPath("$.tags", _logger)
+                .AsArray();
+
+            // Helper to test for tag uniqueness
+            HashSet<string> existingTagNames = [];
+            foreach (JsonNode? globalTag in globalTags)
             {
-                throw new InvalidOperationException(
-                    $"OpenAPI specification has empty global tag. Extension fragment validation failed?"
-                );
+                if (globalTag == null)
+                {
+                    throw new InvalidOperationException(
+                        $"OpenAPI specification has empty global tag. Extension fragment validation failed?"
+                    );
+                }
+
+                string tagName =
+                    globalTag["name"]?.GetValue<string>()
+                    ?? throw new InvalidOperationException(
+                        $"OpenAPI specification has newTag with no name. Extension fragment validation failed?"
+                    );
+                existingTagNames.Add(tagName);
             }
 
-            string tagName =
-                globalTag["name"]?.GetValue<string>()
-                ?? throw new InvalidOperationException(
-                    $"OpenAPI specification has newTag with no name. Extension fragment validation failed?"
-                );
-            existingTagNames.Add(tagName);
-        }
-
-        foreach (JsonNode? newTagObject in newTagObjects)
-        {
-            if (newTagObject == null)
+            foreach (JsonNode? newTagObject in newTagObjects)
             {
-                throw new InvalidOperationException(
-                    $"OpenAPI extension fragment has empty newTag. Extension fragment validation failed?"
-                );
+                if (newTagObject == null)
+                {
+                    throw new InvalidOperationException(
+                        $"OpenAPI extension fragment has empty newTag. Extension fragment validation failed?"
+                    );
+                }
+
+                string tagObjectName =
+                    newTagObject["name"]?.GetValue<string>()
+                    ?? throw new InvalidOperationException(
+                        $"OpenAPI extension fragment has newTag with no name. Extension fragment validation failed?"
+                    );
+
+                // If tag has already been added by another extension, we don't support a second one
+                if (existingTagNames.Contains(tagObjectName))
+                {
+                    throw new InvalidOperationException(
+                        $"OpenAPI extension fragment tried to add a second tag named '{tagObjectName}', which is not supported. Extension fragment validation failed?"
+                    );
+                }
+
+                globalTags.Add(newTagObject.DeepClone());
             }
-
-            string tagObjectName =
-                newTagObject["name"]?.GetValue<string>()
-                ?? throw new InvalidOperationException(
-                    $"OpenAPI extension fragment has newTag with no name. Extension fragment validation failed?"
-                );
-
-            // If tag has already been added by another extension, we don't support a second one
-            if (existingTagNames.Contains(tagObjectName))
-            {
-                throw new InvalidOperationException(
-                    $"OpenAPI extension fragment tried to add a second tag named '{tagObjectName}', which is not supported. Extension fragment validation failed?"
-                );
-            }
-
-            globalTags.Add(newTagObject.DeepClone());
         }
     }
 
     /// <summary>
-    /// Finds the CoreOpenApiSpecification in an Core ApiSchema document.
+    /// Finds the openApiCoreResources and openApiCoreDescriptors in an Core ApiSchema document.
     /// </summary>
-    public JsonNode FindCoreOpenApiSpecification(JsonNode coreApiSchemaRootNode)
+    public List<JsonNode> FindCoreOpenApiSpecification(JsonNode coreApiSchemaRootNode)
     {
-        return coreApiSchemaRootNode.SelectRequiredNodeFromPath(
-            "$.projectSchema.coreOpenApiSpecification",
-            _logger
-        );
+        string[] paths = new string[]
+        {
+            "$.projectSchema.openApiCoreResources",
+            "$.projectSchema.openApiCoreDescriptors",
+        };
+
+        List<JsonNode> selectedNodes = new List<JsonNode>();
+
+        // Iterate over the paths and select the nodes
+        foreach (var path in paths)
+        {
+            JsonNode node = coreApiSchemaRootNode.SelectRequiredNodeFromPath(path, _logger);
+            if (node != null)
+            {
+                selectedNodes.Add(node.DeepClone());
+            }
+        }
+
+        return selectedNodes;
     }
 
     /// <summary>
-    /// Finds the OpenApiExtensionFragments in an extension ApiSchemaDocument.
+    /// Finds the openApiExtensionDescriptors and openApiExtensionResources in extension ApiSchemaDocument.
     /// </summary>
-    public JsonNode FindOpenApiExtensionFragments(JsonNode extensionApiSchemaRootNode)
+    public List<JsonNode> FindOpenApiExtensionFragments(JsonNode extensionApiSchemaRootNode)
     {
-        return extensionApiSchemaRootNode.SelectRequiredNodeFromPath(
-            "$.projectSchema.openApiExtensionFragments",
-            _logger
-        );
+        string[] paths = new string[]
+        {
+            "$.projectSchema.openApiExtensionResources",
+            "$.projectSchema.openApiExtensionDescriptors",
+        };
+
+        List<JsonNode> selectedNodes = new List<JsonNode>();
+
+        // Iterate over the paths and select the nodes
+        foreach (var path in paths)
+        {
+            JsonNode node = extensionApiSchemaRootNode.SelectRequiredNodeFromPath(path, _logger);
+            if (node != null)
+            {
+                selectedNodes.Add(node.DeepClone());
+            }
+        }
+
+        return selectedNodes;
     }
 
     /// <summary>
@@ -196,35 +241,49 @@ public class OpenApiDocument(ILogger _logger)
     public JsonNode CreateDocument(ApiSchemaNodes apiSchemas)
     {
         // Get the core OpenAPI spec as a copy since we are going to modify it
-        JsonNode openApiSpecification = FindCoreOpenApiSpecification(apiSchemas.CoreApiSchemaRootNode)
-            .DeepClone();
+        List<JsonNode> openApiSpecification = FindCoreOpenApiSpecification(apiSchemas.CoreApiSchemaRootNode);
 
         // Get each extension OpenAPI fragment to insert into core OpenAPI spec
         foreach (JsonNode extensionApiSchemaRootNode in apiSchemas.ExtensionApiSchemaRootNodes)
         {
-            JsonNode extensionFragments = FindOpenApiExtensionFragments(extensionApiSchemaRootNode);
+            List<JsonNode> extensionFragments = FindOpenApiExtensionFragments(extensionApiSchemaRootNode);
 
-            InsertExts(
-                extensionFragments.SelectRequiredNodeFromPath("$.exts", _logger).AsObject(),
-                openApiSpecification
-            );
+            foreach (JsonNode extensionFragment in extensionFragments)
+            {
+                InsertExts(
+                    extensionFragment.SelectRequiredNodeFromPath("$.exts", _logger).AsObject(),
+                    openApiSpecification
+                );
 
-            InsertNewPaths(
-                extensionFragments.SelectRequiredNodeFromPath("$.newPaths", _logger).AsObject(),
-                openApiSpecification
-            );
+                InsertNewPaths(
+                    extensionFragment.SelectRequiredNodeFromPath("$.newPaths", _logger).AsObject(),
+                    openApiSpecification
+                );
 
-            InsertNewSchemas(
-                extensionFragments.SelectRequiredNodeFromPath("$.newSchemas", _logger).AsObject(),
-                openApiSpecification
-            );
+                InsertNewSchemas(
+                    extensionFragment.SelectRequiredNodeFromPath("$.newSchemas", _logger).AsObject(),
+                    openApiSpecification
+                );
 
-            InsertNewTags(
-                extensionFragments.SelectRequiredNodeFromPath("$.newTags", _logger).AsArray(),
-                openApiSpecification
-            );
+                InsertNewTags(
+                    extensionFragment.SelectRequiredNodeFromPath("$.newTags", _logger).AsArray(),
+                    openApiSpecification
+                );
+            }
         }
 
-        return openApiSpecification;
+        return MergeJsonNodesIntoArray(openApiSpecification);
+    }
+
+    private static JsonNode MergeJsonNodesIntoArray(List<JsonNode> openApiSpecification)
+    {
+        JsonArray mergedArray = new JsonArray();
+
+        foreach (var node in openApiSpecification)
+        {
+            mergedArray.Add(node.DeepClone());
+        }
+
+        return mergedArray;
     }
 }
