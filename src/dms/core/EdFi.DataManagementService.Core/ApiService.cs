@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.ApiSchema.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -40,7 +41,8 @@ internal class ApiService(
     IOptions<AppSettings> _appSettings,
     IAuthorizationStrategiesProvider _authorizationStrategiesProvider,
     IAuthorizationServiceFactory _authorizationServiceFactory,
-    [FromKeyedServices("backendResiliencePipeline")] ResiliencePipeline _resiliencePipeline
+    [FromKeyedServices("backendResiliencePipeline")] ResiliencePipeline _resiliencePipeline,
+    Calculator _resourceLoadCalculator
 ) : IApiService
 {
     /// <summary>
@@ -327,11 +329,18 @@ internal class ApiService(
     /// <returns>JSON array ordered by dependency sequence</returns>
     public JsonArray GetDependencies()
     {
-        DependencyCalculator dependencyCalculator = new(
-            _apiSchemaProvider.GetApiSchemaNodes().CoreApiSchemaRootNode,
-            _logger
-        );
-        return dependencyCalculator.GetDependenciesFromResourceSchema();
+        var apiSchemaDocuments = new ApiSchemaDocuments(
+            new ApiSchemaNodes(_apiSchemaProvider.GetApiSchemaNodes().CoreApiSchemaRootNode,
+                _apiSchemaProvider.GetApiSchemaNodes().ExtensionApiSchemaRootNodes), _logger);
+
+        var loadOrder = _resourceLoadCalculator.GetGroupedLoadOrder(apiSchemaDocuments);
+
+        return new JsonArray(loadOrder.Select(r => JsonValue.Create(new
+        {
+            resource = r.Resource,
+            order = r.Order,
+            operations = r.Operations,
+        })).ToArray<JsonNode?>());
     }
 
     /// <summary>

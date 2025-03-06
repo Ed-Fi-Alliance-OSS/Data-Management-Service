@@ -86,18 +86,18 @@ public class ApiSchemaBuilder
     ///
     /// projectName should be the ProjectName for a project, e.g. Ed-Fi, TPDM, Michigan
     /// </summary>
-    public ApiSchemaBuilder WithStartProject(string projectName = "ed-fi", string projectVersion = "5.0.0")
+    public ApiSchemaBuilder WithStartProject(string projectName = "Ed-Fi", string projectVersion = "5.0.0", JsonObject? abstractResources = null)
     {
         if (_currentProjectNode != null)
         {
             throw new InvalidOperationException();
         }
 
-        _isCoreProject = projectName.ToLower() == "ed-fi";
+        _isCoreProject = projectName.Equals("Ed-Fi", StringComparison.OrdinalIgnoreCase);
 
         _currentProjectNode = new JsonObject
         {
-            ["abstractResources"] = new JsonObject(),
+            ["abstractResources"] = abstractResources ?? new JsonObject(),
             ["caseInsensitiveEndpointNameMapping"] = new JsonObject(),
             ["description"] = $"{projectName} description",
             ["isExtensionProject"] = !_isCoreProject,
@@ -122,7 +122,8 @@ public class ApiSchemaBuilder
         bool isSubclass = false,
         bool allowIdentityUpdates = false,
         bool isDescriptor = false,
-        bool isSchoolYearEnumeration = false
+        bool isSchoolYearEnumeration = false,
+        bool isResourceExtension = false
     )
     {
         if (_currentProjectNode == null)
@@ -141,6 +142,7 @@ public class ApiSchemaBuilder
             ["equalityConstraints"] = new JsonArray(),
             ["identityJsonPaths"] = new JsonArray(),
             ["isDescriptor"] = isDescriptor,
+            ["isResourceExtension"] = isResourceExtension,
             ["isSchoolYearEnumeration"] = isSchoolYearEnumeration,
             ["isSubclass"] = isSubclass,
             ["jsonSchemaForInsert"] = new JsonObject(),
@@ -150,10 +152,16 @@ public class ApiSchemaBuilder
         };
 
         string endpointName = ToEndpointName(resourceName);
-        _currentProjectNode["resourceNameMapping"]![resourceName] = endpointName;
+        _currentProjectNode["resourceNameMapping"]![RemoveDescriptorSuffix(resourceName)] = endpointName;
         _currentProjectNode["resourceSchemas"]![endpointName] = _currentResourceNode;
         _currentProjectNode["caseInsensitiveEndpointNameMapping"]![endpointName.ToLower()] = endpointName;
         return this;
+
+        #region Remove this workaround after DMS-543 gets closed
+        string RemoveDescriptorSuffix(string name) => isDescriptor
+            ? name[..^10]
+            : name;
+        #endregion
     }
 
     /// <summary>
@@ -450,7 +458,8 @@ public class ApiSchemaBuilder
     public ApiSchemaBuilder WithDocumentPathReference(
         string pathFullName,
         KeyValuePair<string, string>[] referenceJsonPaths,
-        string referenceProjectName = "Ed-Fi"
+        string referenceProjectName = "Ed-Fi",
+        bool isRequired = false
     )
     {
         if (_currentProjectNode == null)
@@ -469,6 +478,7 @@ public class ApiSchemaBuilder
         _currentDocumentPathsMappingNode[pathFullName] = new JsonObject
         {
             ["isReference"] = true,
+            ["isRequired"] = isRequired,
             ["isDescriptor"] = false,
             ["projectName"] = referenceProjectName,
             ["resourceName"] = pathFullName,

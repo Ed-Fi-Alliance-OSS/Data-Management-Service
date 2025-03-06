@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.ApiSchema.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
@@ -53,7 +54,8 @@ public class APISchemaFileTests
                 Options.Create(new AppSettings { AllowIdentityUpdateOverrides = "" }),
                 new AuthorizationStrategiesProvider(),
                 new NamedAuthorizationServiceFactory(serviceProvider),
-                ResiliencePipeline.Empty
+                ResiliencePipeline.Empty,
+                new Calculator(NullLogger<Calculator>.Instance, [], [])
             );
         }
 
