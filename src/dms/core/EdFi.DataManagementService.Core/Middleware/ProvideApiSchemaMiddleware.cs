@@ -30,9 +30,9 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
 
         JsonNode coreResourceSchemas = FindResourceSchemas(ApiSchemaNodes.CoreApiSchemaRootNode).DeepClone();
 
-        foreach (JsonNode extensionApiSchemas in ApiSchemaNodes.ExtensionApiSchemaRootNodes)
+        foreach (JsonNode extensionApiSchemaRootNode in ApiSchemaNodes.ExtensionApiSchemaRootNodes)
         {
-            JsonNode extensionResourceSchemas = FindResourceSchemas(extensionApiSchemas);
+            JsonNode extensionResourceSchemas = FindResourceSchemas(extensionApiSchemaRootNode);
 
             InsertTypeCoercionExts(extensionResourceSchemas, coreResourceSchemas, "dateTimeJsonPaths");
             InsertTypeCoercionExts(extensionResourceSchemas, coreResourceSchemas, "booleanJsonPaths");
@@ -43,12 +43,9 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
         await next();
     }
 
-    public JsonNode FindResourceSchemas(JsonNode extensionApiSchemaRootNode)
+    public JsonNode FindResourceSchemas(JsonNode CoreApiSchemaRootNode)
     {
-        return extensionApiSchemaRootNode.SelectRequiredNodeFromPath(
-            "$.projectSchema.resourceSchemas",
-            _logger
-        );
+        return CoreApiSchemaRootNode.SelectRequiredNodeFromPath("$.projectSchema.resourceSchemas", _logger);
     }
 
     private void InsertTypeCoercionExts(
