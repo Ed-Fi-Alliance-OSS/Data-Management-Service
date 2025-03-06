@@ -249,3 +249,92 @@ Authorization: bearer {{dmsToken}}
 ###
 GET {{dataApi}}/ed-fi/academicWeeks?weekIdentifier=ABCDE
 Authorization: bearer {{dmsToken}}
+
+### Create a new application
+# @name createApplication2
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "vendorId": {{vendorId}},
+    "applicationName": "Demo application 22",
+    "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
+    "educationOrganizationIds": [123456]
+}
+
+###
+@client2Key={{createApplication2.response.body.key}}
+@client2Secret={{createApplication2.response.body.secret}}
+@application2Location={{createApplication2.response.headers.location}}
+
+### Create a DMS token
+# @name dmsTokenRequest2
+POST http://localhost:{{dmsPort}}/oauth/token
+Authorization: basic {{client2Key}}:{{client2Secret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@dmsToken2={{dmsTokenRequest2.response.body.access_token}}
+
+### Create School
+# @name createSchool
+POST {{dataApi}}/ed-fi/schools
+Authorization: bearer {{dmsToken2}}
+
+{
+    "schoolId": 123456,
+    "nameOfInstitution": "Westside High School",
+    "educationOrganizationCategories": [
+        {
+            "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/educationOrganizationCategoryDescriptor#XYZ"
+        }
+    ],
+    "gradeLevels": [
+        {
+            "gradeLevelDescriptor": "uri://ed-fi.org/gradeLevelDescriptor#Tenth Grade"
+        }
+    ]
+}
+
+###
+POST {{dataApi}}/ed-fi/academicWeeks
+Authorization: bearer {{dmsToken2}}
+
+{
+    "schoolReference": {
+        "schoolId": 123456
+    },
+    "beginDate": "2023-08-01",
+    "endDate": "2023-08-07",
+    "totalInstructionalDays": 5,
+    "weekIdentifier": "FGHIJ"
+}
+
+### Should return the academic week just created
+GET {{dataApi}}/ed-fi/academicWeeks?weekIdentifier=FGHIJ
+Authorization: bearer {{dmsToken2}}
+
+### Should return [] this token does not have access to 6001010
+GET {{dataApi}}/ed-fi/academicWeeks?weekIdentifier=ABCDE
+Authorization: bearer {{dmsToken2}}
+
+###
+POST {{dataApi}}/ed-fi/academicWeeks
+Authorization: bearer {{dmsToken2}}
+
+{
+    "schoolReference": {
+        "schoolId": 123456
+    },
+    "beginDate": "2023-08-01",
+    "endDate": "2023-08-07",
+    "totalInstructionalDays": 5,
+    "weekIdentifier": "ABCDE"
+}
+
+### Should return two academic weeks
+GET {{dataApi}}/ed-fi/academicWeeks
+Authorization: bearer {{dmsToken2}}

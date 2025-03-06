@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -31,6 +32,21 @@ namespace EdFi.DataManagementService.Backend.OpenSearch;
 ///          {
 ///            "match_phrase": {
 ///              "edfidoc.currentSchoolYear": false
+///            }
+///          },
+///          {
+///            "bool": {
+///              "should": [
+///                {
+///                  "terms": {
+///                    "securityelements.EducationOrganization": {
+///                      "index": "edfi.dms.educationorganizationhierarchytermslookup",
+///                      "id": "6001010",
+///                      "path": "hierarchy.array"
+///                    }
+///                  }
+///                }
+///              ]
 ///            }
 ///          }
 ///        ]
@@ -121,7 +137,7 @@ public static partial class QueryOpenSearch
             IEnumerable<JsonObject?> authorizationFilters = queryRequest
                 .AuthorizationStrategyEvaluators.Select(strategyEvaluator =>
                 {
-                    var namespaceFilters = strategyEvaluator
+                    IEnumerable<JsonObject> namespaceFilters = strategyEvaluator
                         .Filters.Where(f => f.FilterPath == "Namespace")
                         .Select(filter => new JsonObject
                         {
@@ -129,11 +145,26 @@ public static partial class QueryOpenSearch
                             {
                                 [$"securityelements.{filter.FilterPath}"] = filter.Value,
                             },
-                        })
-                        .ToArray();
+                        });
 
-                    // Only add if we have namespace filters
-                    if (namespaceFilters.Any())
+                    IEnumerable<JsonObject> edOrgFilters = strategyEvaluator
+                        .Filters.Where(f => f.FilterPath == "EducationOrganization")
+                        .Select(filter => new JsonObject
+                        {
+                            ["terms"] = new JsonObject
+                            {
+                                [$"securityelements.{filter.FilterPath}"] = new JsonObject
+                                {
+                                    ["index"] = "edfi.dms.educationorganizationhierarchytermslookup",
+                                    ["id"] = filter.Value,
+                                    ["path"] = "hierarchy.array",
+                                },
+                            },
+                        });
+
+                    JsonObject[] strategyFilters = namespaceFilters.Union(edOrgFilters).ToArray();
+
+                    if (strategyFilters.Any())
                     {
                         // Use the appropriate boolean operator based on the strategy
                         string boolOperator =
@@ -141,7 +172,7 @@ public static partial class QueryOpenSearch
 
                         return new JsonObject
                         {
-                            ["bool"] = new JsonObject { [boolOperator] = new JsonArray(namespaceFilters) },
+                            ["bool"] = new JsonObject { [boolOperator] = new JsonArray(strategyFilters) },
                         };
                     }
 
@@ -149,7 +180,7 @@ public static partial class QueryOpenSearch
                 })
                 .Where(filter => filter != null);
 
-            foreach (var filter in authorizationFilters)
+            foreach (JsonObject? filter in authorizationFilters)
             {
                 terms.Add(filter);
             }
