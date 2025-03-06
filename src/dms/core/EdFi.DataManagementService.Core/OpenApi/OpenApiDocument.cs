@@ -216,8 +216,8 @@ public class OpenApiDocument(ILogger _logger)
     {
         string[] paths = new string[]
         {
-            "$.projectSchema.openApiExtensionResources",
-            "$.projectSchema.openApiExtensionDescriptors",
+            "$.projectSchema.openApiExtensionResourceFragments",
+            "$.projectSchema.openApiExtensionDescriptorFragments",
         };
 
         List<JsonNode> selectedNodes = new List<JsonNode>();
@@ -246,27 +246,27 @@ public class OpenApiDocument(ILogger _logger)
         // Get each extension OpenAPI fragment to insert into core OpenAPI spec
         foreach (JsonNode extensionApiSchemaRootNode in apiSchemas.ExtensionApiSchemaRootNodes)
         {
-            List<JsonNode> extensionFragments = FindOpenApiExtensionFragments(extensionApiSchemaRootNode);
+            List<JsonNode> openApiExtensionFragments = FindOpenApiExtensionFragments(extensionApiSchemaRootNode);
 
-            foreach (JsonNode extensionFragment in extensionFragments)
+            foreach (JsonNode openApiExtensionFragment in openApiExtensionFragments)
             {
                 InsertExts(
-                    extensionFragment.SelectRequiredNodeFromPath("$.exts", _logger).AsObject(),
+                    openApiExtensionFragment.SelectRequiredNodeFromPath("$.exts", _logger).AsObject(),
                     openApiSpecification
                 );
 
                 InsertNewPaths(
-                    extensionFragment.SelectRequiredNodeFromPath("$.newPaths", _logger).AsObject(),
+                    openApiExtensionFragment.SelectRequiredNodeFromPath("$.newPaths", _logger).AsObject(),
                     openApiSpecification
                 );
 
                 InsertNewSchemas(
-                    extensionFragment.SelectRequiredNodeFromPath("$.newSchemas", _logger).AsObject(),
+                    openApiExtensionFragment.SelectRequiredNodeFromPath("$.newSchemas", _logger).AsObject(),
                     openApiSpecification
                 );
 
                 InsertNewTags(
-                    extensionFragment.SelectRequiredNodeFromPath("$.newTags", _logger).AsArray(),
+                    openApiExtensionFragment.SelectRequiredNodeFromPath("$.newTags", _logger).AsArray(),
                     openApiSpecification
                 );
             }
