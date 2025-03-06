@@ -51,7 +51,7 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
         {
             IEnumerable<string> matchingFilePaths = Directory.EnumerateFiles(
                 directoryPath,
-                "*.ApiSchema.json",
+                "ApiSchema*.json",
                 SearchOption.AllDirectories
             );
 
@@ -102,6 +102,12 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
             string apiSchemaPath =
                 appSettings.Value.ApiSchemaPath
                 ?? throw new InvalidOperationException("No ApiSchemaPath configuration is set");
+
+            if (!Directory.Exists(apiSchemaPath))
+            {
+                throw new InvalidOperationException($"The directory {apiSchemaPath} does not exist.");
+            }
+
             List<JsonNode> apiSchemaNodes = ReadApiSchemaFiles(apiSchemaPath);
 
             JsonNode coreApiSchemaNode = apiSchemaNodes.First(node =>
@@ -118,15 +124,49 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
         }
         else
         {
-            Assembly assembly =
-                Assembly.GetAssembly(typeof(DataStandard52.ApiSchema.Marker))
-                ?? throw new InvalidOperationException("Could not load assembly-bundled ApiSchema file");
+            Assembly coreAssembly =
+                Assembly.GetAssembly(typeof(DataStandard52.ApiSchema.Core.Marker))
+                ?? throw new InvalidOperationException(
+                    "Could not load assembly-bundled ApiSchema file for Core"
+                );
 
-            string? resourceName = assembly
+            JsonNode coreApiSchemaNode = coreAssembly
                 .GetManifestResourceNames()
-                .Single(str => str.EndsWith("ApiSchema.json"));
+                .Where(str => str.EndsWith("ApiSchema.json"))
+                .Select(resourceName =>
+                {
+                    JsonNode coreSchemaNode = LoadFromAssembly(resourceName, coreAssembly);
+                    return coreSchemaNode;
+                })
+                .Single();
 
-            return new(LoadFromAssembly(resourceName, assembly), []);
+            if (coreApiSchemaNode == null)
+            {
+                throw new InvalidOperationException("Core ApiSchema not found in the assembly.");
+            }
+
+            Assembly tpdmAssembly =
+                Assembly.GetAssembly(typeof(DataStandard52.ApiSchema.TPDM.Marker))
+                ?? throw new InvalidOperationException(
+                    "Could not load assembly-bundled ApiSchema file for TPDM"
+                );
+
+            JsonNode[] extensionApiSchemaNodes = tpdmAssembly
+                .GetManifestResourceNames()
+                .Where(str => str.EndsWith("ApiSchema-EXTENSION.json"))
+                .Select(resourceName =>
+                {
+                    JsonNode coreSchemaNode = LoadFromAssembly(resourceName, tpdmAssembly);
+                    return coreSchemaNode;
+                })
+                .ToArray();
+
+            extensionApiSchemaNodes =
+                extensionApiSchemaNodes.Length > 0
+                    ? extensionApiSchemaNodes
+                    : throw new InvalidOperationException("ApiSchema-EXTENSION not found in the assembly.");
+
+            return new ApiSchemaNodes(coreApiSchemaNode, extensionApiSchemaNodes);
         }
     });
 

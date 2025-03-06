@@ -14,6 +14,11 @@ Feature: The Discovery API provides information about the application version, s
                               "name": "Ed-Fi",
                               "version": "5.2.0",
                               "informationalVersion": "The Ed-Fi Data Standard v5.2.0"
+                          },
+                          {
+                              "name": "TPDM",
+                              "version": "1.0.0",
+                              "informationalVersion": ""
                           }
                       ],
                       "urls": {
