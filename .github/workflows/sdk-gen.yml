@@ -54,7 +54,7 @@ jobs:
 
       - name: Package Core SDK
         run: |
-          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "sdk-v", ""
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "sdk-v", "sdk-pre-"
 
           ./build-sdk.ps1 Package -SDKVersion $packageVersion
 
