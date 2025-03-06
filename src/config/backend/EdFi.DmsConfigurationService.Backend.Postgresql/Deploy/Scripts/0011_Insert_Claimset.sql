@@ -6,15 +6,15 @@
 INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved, ResourceClaims)
 VALUES
     ('SISVendor', TRUE, '[]'::jsonb),
-    ('Ed-FiSandbox', TRUE, '[]'::jsonb),
+    ('EdFiSandbox', TRUE, '[]'::jsonb),
     ('RosterVendor', TRUE, '[]'::jsonb),
     ('AssessmentVendor', TRUE, '[]'::jsonb),
     ('AssessmentRead', TRUE, '[]'::jsonb),
     ('BootstrapDescriptorsandEdOrgs', TRUE, '[]'::jsonb),
     ('DistrictHostedSISVendor', TRUE, '[]'::jsonb),
-    ('Ed-FiODSAdminApp', TRUE, '[]'::jsonb),
+    ('EdFiODSAdminApp', TRUE, '[]'::jsonb),
     ('ABConnect', TRUE, '[]'::jsonb),
-    ('Ed-FiAPIPublisher-Reader', TRUE, '[]'::jsonb),
-    ('Ed-FiAPIPublisher-Writer', TRUE, '[]'::jsonb),
+    ('EdFiAPIPublisherReader', TRUE, '[]'::jsonb),
+    ('EdFiAPIPublisherWriter', TRUE, '[]'::jsonb),
     ('FinanceVendor', TRUE, '[]'::jsonb),
     ('EducationPreparationProgram', TRUE, '[]'::jsonb);

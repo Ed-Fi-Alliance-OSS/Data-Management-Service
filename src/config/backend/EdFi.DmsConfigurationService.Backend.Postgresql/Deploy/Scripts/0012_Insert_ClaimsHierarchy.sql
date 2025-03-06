@@ -30,7 +30,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiSandbox",
+        "name": "EdFiSandbox",
         "actions": [
           {
             "name": "Read"
@@ -54,7 +54,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiODSAdminApp",
+        "name": "EdFiODSAdminApp",
         "actions": [
           {
             "name": "Read",
@@ -67,7 +67,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Reader",
+        "name": "EdFiAPIPublisherReader",
         "actions": [
           {
             "name": "Read"
@@ -75,7 +75,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Writer",
+        "name": "EdFiAPIPublisherWriter",
         "actions": [
           {
             "name": "Create",
@@ -174,7 +174,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiSandbox",
+        "name": "EdFiSandbox",
         "actions": [
           {
             "name": "Create"
@@ -223,7 +223,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiODSAdminApp",
+        "name": "EdFiODSAdminApp",
         "actions": [
           {
             "name": "Create",
@@ -260,7 +260,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Reader",
+        "name": "EdFiAPIPublisherReader",
         "actions": [
           {
             "name": "Read"
@@ -271,7 +271,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Writer",
+        "name": "EdFiAPIPublisherWriter",
         "actions": [
           {
             "name": "Create",
@@ -1273,7 +1273,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiSandbox",
+        "name": "EdFiSandbox",
         "actions": [
           {
             "name": "Create"
@@ -1340,7 +1340,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiODSAdminApp",
+        "name": "EdFiODSAdminApp",
         "actions": [
           {
             "name": "Create",
@@ -1377,7 +1377,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Reader",
+        "name": "EdFiAPIPublisherReader",
         "actions": [
           {
             "name": "Read"
@@ -1388,7 +1388,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Writer",
+        "name": "EdFiAPIPublisherWriter",
         "actions": [
           {
             "name": "Create",
@@ -1512,7 +1512,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiSandbox",
+        "name": "EdFiSandbox",
         "actions": [
           {
             "name": "Create"
@@ -1561,7 +1561,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiODSAdminApp",
+        "name": "EdFiODSAdminApp",
         "actions": [
           {
             "name": "Create",
@@ -1598,7 +1598,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Reader",
+        "name": "EdFiAPIPublisherReader",
         "actions": [
           {
             "name": "Read"
@@ -1609,7 +1609,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Writer",
+        "name": "EdFiAPIPublisherWriter",
         "actions": [
           {
             "name": "Create"
@@ -1949,7 +1949,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiSandbox",
+        "name": "EdFiSandbox",
         "actions": [
           {
             "name": "Create"
@@ -1986,7 +1986,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Reader",
+        "name": "EdFiAPIPublisherReader",
         "actions": [
           {
             "name": "Read"
@@ -1997,7 +1997,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Writer",
+        "name": "EdFiAPIPublisherWriter",
         "actions": [
           {
             "name": "Create"
@@ -2210,7 +2210,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiSandbox",
+        "name": "EdFiSandbox",
         "actions": [
           {
             "name": "Create"
@@ -2255,7 +2255,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Reader",
+        "name": "EdFiAPIPublisherReader",
         "actions": [
           {
             "name": "Read"
@@ -2266,7 +2266,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Writer",
+        "name": "EdFiAPIPublisherWriter",
         "actions": [
           {
             "name": "Create"
@@ -2332,7 +2332,7 @@ INSERT INTO dmscs.claimshierarchy(
         },
         "claimSets": [
           {
-            "name": "Ed-FiSandbox",
+            "name": "EdFiSandbox",
             "actions": [
               {
                 "name": "Create"
@@ -2352,7 +2352,7 @@ INSERT INTO dmscs.claimshierarchy(
             ]
           },
           {
-            "name": "Ed-FiAPIPublisher-Writer",
+            "name": "EdFiAPIPublisherWriter",
             "actions": [
               {
                 "name": "Create",
@@ -2496,7 +2496,7 @@ INSERT INTO dmscs.claimshierarchy(
         "name": "http://ed-fi.org/ods/identity/claims/ed-fi/communityProviderLicense",
         "claimSets": [
           {
-            "name": "Ed-FiSandbox",
+            "name": "EdFiSandbox",
             "actions": [
               {
                 "name": "Create"
@@ -2526,7 +2526,7 @@ INSERT INTO dmscs.claimshierarchy(
             ]
           },
           {
-            "name": "Ed-FiAPIPublisher-Reader",
+            "name": "EdFiAPIPublisherReader",
             "actions": [
               {
                 "name": "Read",
@@ -2547,7 +2547,7 @@ INSERT INTO dmscs.claimshierarchy(
             ]
           },
           {
-            "name": "Ed-FiAPIPublisher-Writer",
+            "name": "EdFiAPIPublisherWriter",
             "actions": [
               {
                 "name": "Create",
@@ -2900,7 +2900,7 @@ INSERT INTO dmscs.claimshierarchy(
         },
         "claimSets": [
           {
-            "name": "Ed-FiAPIPublisher-Reader",
+            "name": "EdFiAPIPublisherReader",
             "actions": [
               {
                 "name": "Read"
@@ -3290,7 +3290,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiSandbox",
+        "name": "EdFiSandbox",
         "actions": [
           {
             "name": "Create"
@@ -3352,7 +3352,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Reader",
+        "name": "EdFiAPIPublisherReader",
         "actions": [
           {
             "name": "Read"
@@ -3363,7 +3363,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Writer",
+        "name": "EdFiAPIPublisherWriter",
         "actions": [
           {
             "name": "Create",
@@ -3486,7 +3486,7 @@ INSERT INTO dmscs.claimshierarchy(
     },
     "claimSets": [
       {
-        "name": "Ed-FiSandbox",
+        "name": "EdFiSandbox",
         "actions": [
           {
             "name": "Create"
@@ -3566,7 +3566,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiSandbox",
+        "name": "EdFiSandbox",
         "actions": [
           {
             "name": "Create"
@@ -3620,7 +3620,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Reader",
+        "name": "EdFiAPIPublisherReader",
         "actions": [
           {
             "name": "Read"
@@ -3631,7 +3631,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Writer",
+        "name": "EdFiAPIPublisherWriter",
         "actions": [
           {
             "name": "Create",
@@ -3863,7 +3863,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiSandbox",
+        "name": "EdFiSandbox",
         "actions": [
           {
             "name": "Create"
@@ -3900,7 +3900,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Reader",
+        "name": "EdFiAPIPublisherReader",
         "actions": [
           {
             "name": "Read"
@@ -3911,7 +3911,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Writer",
+        "name": "EdFiAPIPublisherWriter",
         "actions": [
           {
             "name": "Create"
@@ -4089,7 +4089,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiSandbox",
+        "name": "EdFiSandbox",
         "actions": [
           {
             "name": "Create"
@@ -4126,7 +4126,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Reader",
+        "name": "EdFiAPIPublisherReader",
         "actions": [
           {
             "name": "Read"
@@ -4137,7 +4137,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Writer",
+        "name": "EdFiAPIPublisherWriter",
         "actions": [
           {
             "name": "Create",
@@ -4179,7 +4179,7 @@ INSERT INTO dmscs.claimshierarchy(
     "name": "http://ed-fi.org/ods/identity/claims/domains/finance",
     "claimSets": [
       {
-        "name": "Ed-FiSandbox",
+        "name": "EdFiSandbox",
         "actions": [
           {
             "name": "Create"
@@ -4199,7 +4199,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Reader",
+        "name": "EdFiAPIPublisherReader",
         "actions": [
           {
             "name": "Read"
@@ -4210,7 +4210,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Writer",
+        "name": "EdFiAPIPublisherWriter",
         "actions": [
           {
             "name": "Create"
@@ -4476,7 +4476,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiSandbox",
+        "name": "EdFiSandbox",
         "actions": [
           {
             "name": "Create"
@@ -4504,7 +4504,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Reader",
+        "name": "EdFiAPIPublisherReader",
         "actions": [
           {
             "name": "Read"
@@ -4515,7 +4515,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Writer",
+        "name": "EdFiAPIPublisherWriter",
         "actions": [
           {
             "name": "Create"
@@ -4581,7 +4581,7 @@ INSERT INTO dmscs.claimshierarchy(
     },
     "claimSets": [
       {
-        "name": "Ed-FiSandbox",
+        "name": "EdFiSandbox",
         "actions": [
           {
             "name": "Create"
@@ -4601,7 +4601,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Reader",
+        "name": "EdFiAPIPublisherReader",
         "actions": [
           {
             "name": "Read"
@@ -4612,7 +4612,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Writer",
+        "name": "EdFiAPIPublisherWriter",
         "actions": [
           {
             "name": "Create"
@@ -4634,7 +4634,7 @@ INSERT INTO dmscs.claimshierarchy(
     "name": "http://ed-fi.org/ods/identity/claims/domains/tpdm",
     "claimSets": [
       {
-        "name": "Ed-FiSandbox",
+        "name": "EdFiSandbox",
         "actions": [
           {
             "name": "Create"
@@ -4654,7 +4654,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Reader",
+        "name": "EdFiAPIPublisherReader",
         "actions": [
           {
             "name": "Read"
@@ -4665,7 +4665,7 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       },
       {
-        "name": "Ed-FiAPIPublisher-Writer",
+        "name": "EdFiAPIPublisherWriter",
         "actions": [
           {
             "name": "Create"
@@ -4942,7 +4942,7 @@ INSERT INTO dmscs.claimshierarchy(
     "name": "http://ed-fi.org/ods/identity/claims/publishing/snapshot",
     "claimSets": [
       {
-        "name": "Ed-FiAPIPublisher-Reader",
+        "name": "EdFiAPIPublisherReader",
         "actions": [
           {
             "name": "Read",
