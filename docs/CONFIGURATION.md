@@ -21,6 +21,8 @@ file.
 | AllowIdentityUpdateOverrides | Comma separated list of resource names that allow identity updates, overriding the default behavior to reject identity updates.                                                                           |
 | MaskRequestBodyInLogs        | Controls whether to mask HTTP request bodies in log statements to avoid potentially logging PII. This setting only applies to `DEBUG` logging where requests are logged.                                  |
 | UseLocalApiSchemaJson        | When `true` the application will use `src\core\EdFi.DataManagementService.Core\ApiSchema\ApiSchema.json` instead of the published package. This file is gitignored and should be manually added if needed |
+| UseApiSchemaPath             | Set to true when the user has downloaded the EdFi.DataStandard52.ApiSchema.Core and EdFi.DataStandard52.ApiSchema.TPDM NuGet packages into the EdFi.DataStandard52.ApiSchema folder using the EdFi.DataManagementService.ApiSchemaDownloader project |
+| UseLocalApiSchemaJson        | Specifies the local path to the EdFi.DataStandard52.ApiSchema folder where both EdFi.DataStandard52.ApiSchema.Core and EdFi.DataStandard52.ApiSchema.TPDM NuGet packages are downloaded |
 
 ## ConnectionStrings
 
