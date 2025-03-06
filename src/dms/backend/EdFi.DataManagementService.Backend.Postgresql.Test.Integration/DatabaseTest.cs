@@ -168,8 +168,8 @@ public abstract class DatabaseTest : DatabaseTestBase
         string resourceName,
         bool allowIdentityUpdates = false,
         bool isInEducationOrganizationHierarchy = false,
-        int educationOrganizationId = 0,
-        int[]? parentEducationOrganizationIds = null
+        long educationOrganizationId = 0,
+        long[]? parentEducationOrganizationIds = null
     )
     {
         return new(
@@ -257,8 +257,8 @@ public abstract class DatabaseTest : DatabaseTestBase
         DocumentIdentityElement[]? documentIdentityElements = null,
         DocumentSecurityElements? documentSecurityElements = null,
         bool isInEducationOrganizationHierarchy = false,
-        int educationOrganizationId = 0,
-        int[]? parentEducationOrganizationIds = null,
+        long educationOrganizationId = 0,
+        long[]? parentEducationOrganizationIds = null,
         TraceId? traceId = null
     )
     {

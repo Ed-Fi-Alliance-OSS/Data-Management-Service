@@ -610,7 +610,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   | weekIdentifier | schoolReference       | beginDate  | endDate    | totalInstructionalDays |
                   | week 1         | { "schoolId": 20101 } | 2023-08-01 | 2023-08-07 | 5                      |
         @addwait
-        Scenario: 13 Ensure client with access to state education agency 244901 gets query results for school level classPeriods
+        Scenario: 13 Ensure client with access to state education agency 2 gets query results for school level classPeriods
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2"
              When a GET request is made to "/ed-fi/academicWeeks"
              Then it should respond with 200
@@ -625,6 +625,50 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                     "weekIdentifier": "week 1",
                     "schoolReference": {
                         "schoolId": 20101
+                     }
+                    }
+                  ]
+                  """
+
+    @ignore
+    Rule: Search for a resource in the EducationOrganizationHierarchy with RelationshipsWithEdOrgsOnly authorization and LONG schoolId
+        Background:
+            # Build a hierarchy
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2, 201, 201019999999"
+              And the system has these "stateEducationAgencies"
+                  | stateEducationAgencyId | nameOfInstitution | categories                                                                                                            |
+                  | 2                      | Test state        | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#State" }] |
+              And the system has these "localEducationAgencies"
+                  | localEducationAgencyId | nameOfInstitution | stateEducationAgencyReference   | categories                                                                                                               | localEducationAgencyCategoryDescriptor                       |
+                  | 201                    | Test LEA          | { "stateEducationAgencyId": 2 } | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#District" }] | "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC" |
+              And the system has these "schools"
+                  | schoolId     | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        | localEducationAgencyReference    |
+                  | 201019999999 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | { "localEducationAgencyId": 201} |
+              And the system has these "academicWeeks"
+                  | weekIdentifier | schoolReference              | beginDate  | endDate    | totalInstructionalDays |
+                  | week 1         | { "schoolId": 201019999999 } | 2023-08-01 | 2023-08-07 | 5                      |
+        @addwait
+        @ignore
+        # DMS-556
+        # Kafka bug when mixed INT and BIGINT in the hierarchy array
+        # SEA and LEA below have INT id's while School has BIGINT. This hierarchy row will not replicate to OpenSearch
+        # Couldn't process json field: array=BsonArray{values=[BsonInt32{value=2}, BsonInt32{value=201}, BsonInt64{value=201019999999}]}   [com.redhat.insights.expandjsonsmt.SchemaParser]
+        # org.apache.kafka.connect.errors.ConnectException: Field is not a homogenous array (BsonInt32{value=201} x INT64).
+        Scenario: 14 Ensure client with access to state education agency 244901 gets query results for school level classPeriods
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2"
+             When a GET request is made to "/ed-fi/academicWeeks"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [
+                   {
+                    "beginDate": "2023-08-01",
+                    "endDate": "2023-08-07",
+                    "totalInstructionalDays": 5,
+                    "id": "{id}",
+                    "weekIdentifier": "week 1",
+                    "schoolReference": {
+                        "schoolId": 201019999999
                      }
                     }
                   ]
