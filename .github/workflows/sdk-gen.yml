@@ -41,7 +41,7 @@ jobs:
         id: versions
         run: |
           Import-Module ./package-helpers.psm1
-          Get-VersionNumber -projectPrefix "sdk"
+          Get-VersionNumber -projectPrefix "dms" # Match the DMS version
 
       - name: Start DMS Docker
         run: |
@@ -54,7 +54,7 @@ jobs:
 
       - name: Package Core SDK
         run: |
-          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "sdk-v", "sdk-pre-"
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
 
           ./build-sdk.ps1 Package -SDKVersion $packageVersion
 
