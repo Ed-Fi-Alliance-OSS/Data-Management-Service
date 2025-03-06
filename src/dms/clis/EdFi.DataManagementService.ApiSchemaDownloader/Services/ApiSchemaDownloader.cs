@@ -80,7 +80,7 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader.Services
                 {
                     string outputFilePath = Path.Combine(
                         outputDir,
-                        resourceName.Replace(packageId + ".", "")
+                        resourceName.Replace(packageName + ".", "")
                     );
 
                     if (resourceName.EndsWith(".xsd"))
