@@ -12,12 +12,21 @@ public class AuthorizationStrategiesModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/authorizationStrategies", GetAuthorizationStrategies).RequireAuthorizationWithPolicy();
+        endpoints
+            .MapGet("/authorizationStrategies", GetAuthorizationStrategies)
+            .RequireAuthorizationWithPolicy();
     }
 
-    public IResult GetAuthorizationStrategies(IClaimSetRepository claimSetRepository)
+    public static async Task<IResult> GetAuthorizationStrategies(
+        IClaimSetRepository claimSetRepository,
+        HttpContext httpContext
+    )
     {
-        var authStrategyList = claimSetRepository.GetAuthorizationStrategies();
-        return Results.Ok(authStrategyList);
+        AuthorizationStrategyGetResult result = await claimSetRepository.GetAuthorizationStrategies();
+        return result switch
+        {
+            AuthorizationStrategyGetResult.Success success => Results.Json(success.AuthorizationStrategy),
+            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
+        };
     }
 }
