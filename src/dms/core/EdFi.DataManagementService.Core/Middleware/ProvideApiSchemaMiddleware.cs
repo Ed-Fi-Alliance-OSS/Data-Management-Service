@@ -43,9 +43,9 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
         await next();
     }
 
-    public JsonNode FindResourceSchemas(JsonNode CoreApiSchemaRootNode)
+    public JsonNode FindResourceSchemas(JsonNode coreApiSchemaRootNode)
     {
-        return CoreApiSchemaRootNode.SelectRequiredNodeFromPath("$.projectSchema.resourceSchemas", _logger);
+        return coreApiSchemaRootNode.SelectRequiredNodeFromPath("$.projectSchema.resourceSchemas", _logger);
     }
 
     private void InsertTypeCoercionExts(
