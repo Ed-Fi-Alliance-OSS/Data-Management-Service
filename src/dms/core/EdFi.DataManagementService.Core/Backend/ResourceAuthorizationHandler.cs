@@ -64,7 +64,7 @@ public class ResourceAuthorizationHandler(
             return false;
         }
 
-        string[] values = ExtractValuesFromSecurityElements(filter.FilterPath, valuesArray);
+        string[] values = ExtractValuesFromSecurityElements(valuesArray);
 
         return filter.Comparison switch
         {
@@ -74,11 +74,9 @@ public class ResourceAuthorizationHandler(
         };
     }
 
-    private static string[] ExtractValuesFromSecurityElements(string filterPath, JsonArray valuesArray)
+    private static string[] ExtractValuesFromSecurityElements(JsonArray valuesArray)
     {
-        return filterPath == "Namespace"
-            ? valuesArray.Select(v => v?.ToString() ?? string.Empty).ToArray()
-            : valuesArray.Select(v => v?["Id"]?["Value"]?.ToString() ?? string.Empty).ToArray();
+        return valuesArray.Select(v => v?.ToString() ?? string.Empty).ToArray();
     }
 
     private ResourceAuthorizationResult.NotAuthorized CreateNotAuthorizedResult(

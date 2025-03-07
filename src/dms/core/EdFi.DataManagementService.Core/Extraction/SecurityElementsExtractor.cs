@@ -47,7 +47,7 @@ internal static class SecurityElementsExtractor
                     .SelectNodesFromArrayPathCoerceToStrings(securityElementPath.Path.Value, logger)
                     .Select(x => new EducationOrganizationSecurityElement(
                         securityElementPath.ResourceName,
-                        new EducationOrganizationId(int.Parse(x))
+                        new EducationOrganizationId(long.Parse(x))
                     ))
             );
         }

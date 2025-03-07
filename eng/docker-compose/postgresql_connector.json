@@ -18,16 +18,34 @@
     "value.converter": "org.apache.kafka.connect.json.JsonConverter",
     "value.converter.schemas.enable": "false",
 
-    "transforms": "unwrap, extractId, expandJson",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "false",
+
+    "transforms": "unwrap, extractId, extractPlainId, expandDocumentJson, expandHierarchyJson",
+    "predicates": "isDocumentTable, isHierarchyTable",
+
+    "predicates.isDocumentTable.type": "org.apache.kafka.connect.transforms.predicates.TopicNameMatches",
+    "predicates.isDocumentTable.pattern": "edfi\\.dms\\.document",
+
+    "predicates.isHierarchyTable.type": "org.apache.kafka.connect.transforms.predicates.TopicNameMatches",
+    "predicates.isHierarchyTable.pattern": "edfi\\.dms\\.educationorganizationhierarchytermslookup",
 
     "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
     "transforms.unwrap.delete.tombstone.handling.mode": "rewrite",
     "transforms.unwrap.add.fields": "documentuuid",
 
-    "transforms.extractId.type": "org.apache.kafka.connect.transforms.ExtractField$Key",
-    "transforms.extractId.field": "id",
+    "transforms.extractId.type": "org.apache.kafka.connect.transforms.ValueToKey",
+    "transforms.extractId.fields": "id",
 
-    "transforms.expandJson.type": "com.redhat.insights.expandjsonsmt.ExpandJSON$Value",
-    "transforms.expandJson.sourceFields": "edfidoc, securityelements"
+    "transforms.extractPlainId.type": "org.apache.kafka.connect.transforms.ExtractField$Key",
+    "transforms.extractPlainId.field": "id",
+
+    "transforms.expandDocumentJson.type": "com.redhat.insights.expandjsonsmt.ExpandJSON$Value",
+    "transforms.expandDocumentJson.sourceFields": "edfidoc, securityelements",
+    "transforms.expandDocumentJson.predicate": "isDocumentTable",
+
+    "transforms.expandHierarchyJson.type": "com.redhat.insights.expandjsonsmt.ExpandJSON$Value",
+    "transforms.expandHierarchyJson.sourceFields": "hierarchy",
+    "transforms.expandHierarchyJson.predicate": "isHierarchyTable"
   }
 }

@@ -584,8 +584,8 @@ public class SqlAction() : ISqlAction
     public async Task<int> InsertEducationOrganizationHierarchy(
         string projectName,
         string resourceName,
-        int educationOrganizationId,
-        int[] parentEducationOrganizationIds,
+        long educationOrganizationId,
+        long[] parentEducationOrganizationIds,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     )
@@ -612,8 +612,8 @@ public class SqlAction() : ISqlAction
     public async Task<int> UpdateEducationOrganizationHierarchy(
         string projectName,
         string resourceName,
-        int educationOrganizationId,
-        int[] parentEducationOrganizationIds,
+        long educationOrganizationId,
+        long[] parentEducationOrganizationIds,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     )
@@ -631,7 +631,7 @@ public class SqlAction() : ISqlAction
             {
                 new() { Value = projectName },
                 new() { Value = resourceName },
-                new() { Value = educationOrganizationId }
+                new() { Value = educationOrganizationId },
             },
         };
         await deleteCommand.PrepareAsync();
@@ -659,7 +659,7 @@ public class SqlAction() : ISqlAction
     public async Task<int> DeleteEducationOrganizationHierarchy(
         string projectName,
         string resourceName,
-        int educationOrganizationId,
+        long educationOrganizationId,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     )
