@@ -630,6 +630,33 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   ]
                   """
 
+    Rule: Search for a resource up the EducationOrganizationHierarchy with RelationshipsWithEdOrgsOnly authorization
+        Background:
+            # Build a hierarchy
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2, 201, 20101"
+              And the system has these "stateEducationAgencies"
+                  | stateEducationAgencyId | nameOfInstitution | categories                                                                                                            |
+                  | 2                      | Test state        | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#State" }] |
+              And the system has these "localEducationAgencies"
+                  | localEducationAgencyId | nameOfInstitution | stateEducationAgencyReference   | categories                                                                                                               | localEducationAgencyCategoryDescriptor                       |
+                  | 201                    | Test LEA          | { "stateEducationAgencyId": 2 } | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#District" }] | "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC" |
+              And the system has these "schools"
+                  | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        | localEducationAgencyReference    |
+                  | 20101    | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | { "localEducationAgencyId": 201} |
+              And the system has these "academicWeeks"
+                  | weekIdentifier | schoolReference       | beginDate  | endDate    | totalInstructionalDays |
+                  | week 1         | { "schoolId": 20101 } | 2023-08-01 | 2023-08-07 | 5                      |
+        @addwait
+        Scenario: 14 Ensure client with access to school 20101 does not gets query results for LEA because it is up the hierarchy
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "20101"
+             When a GET request is made to "/ed-fi/localEducationAgencies"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [
+                  ]
+                  """
+
     @ignore
     Rule: Search for a resource in the EducationOrganizationHierarchy with RelationshipsWithEdOrgsOnly authorization and LONG schoolId
         Background:
