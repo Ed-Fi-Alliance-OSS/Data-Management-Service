@@ -63,6 +63,33 @@ internal class ProjectSchema(JsonNode _projectSchemaNode, ILogger _logger)
     /// </summary>
     public string Description => _description.Value;
 
+    private readonly Lazy<IEnumerable<AbstractResource>> _abstractResources = new(() =>
+    {
+        return _projectSchemaNode.SelectRequiredNodeFromPath("$.abstractResources", _logger)
+            .AsObject()
+            .Select(ar => new AbstractResource(new ResourceName(ar.Key),
+                ar.Value!.SelectNodesFromArrayPathCoerceToStrings("$.identityJsonPaths", _logger)
+                    .Select(ijp => new JsonPath(ijp))));
+    });
+
+    /// <summary>
+    /// The AbstractResources for this ProjectSchema, taken from abstractResources
+    /// </summary>
+    public IEnumerable<AbstractResource> AbstractResources => _abstractResources.Value;
+
+    /// <summary>
+    /// Returns the EndpointName that represents the given ResourceName.
+    /// </summary>
+    public EndpointName GetEndpointNameFromResourceName(ResourceName resourceName)
+    {
+        string endpointName = _projectSchemaNode.SelectRequiredNodeFromPathAs<string>(
+            $"$.resourceNameMapping[\"{resourceName.Value}\"]",
+            _logger
+        );
+
+        return new EndpointName(endpointName);
+    }
+
     /// <summary>
     /// Finds the ResourceSchemaNode that represents the given REST resource endpoint. Returns null if not found.
     /// </summary>
@@ -157,10 +184,4 @@ internal class ProjectSchema(JsonNode _projectSchemaNode, ILogger _logger)
             .Select(v => new ResourceName(v?.ToString() ?? string.Empty))
             .ToArray();
     });
-
-    /// TODO: Remove this in DMS-542
-    public JsonNode getRawNodeRemoveMe()
-    {
-        return _projectSchemaNode;
-    }
 }

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.ApiSchema.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -45,6 +46,10 @@ public static class DmsCoreServiceExtensions
             .AddTransient<IEqualityConstraintValidator, EqualityConstraintValidator>()
             .AddTransient<IAuthorizationStrategiesProvider, AuthorizationStrategiesProvider>()
             .AddSingleton<IAuthorizationServiceFactory, NamedAuthorizationServiceFactory>()
+            .AddSingleton<IGraphTransformer, PersonAuthorizationGraphTransformer>()
+            .AddSingleton<IOrderTransformer, PersonAuthorizationOrderTransformer>()
+            .AddSingleton<Calculator>()
+            .AddSingleton<PersonAuthorizationGraphTransformer>()
             .AddTransient<NoFurtherAuthorizationRequiredValidator>()
             .AddTransient<NamespaceBasedValidator>()
             .AddTransient<RelationshipsWithEdOrgsOnlyValidator>()

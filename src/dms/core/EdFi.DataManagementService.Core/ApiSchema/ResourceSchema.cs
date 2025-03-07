@@ -57,6 +57,19 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
     /// </summary>
     public bool IsDescriptor => _isDescriptor.Value;
 
+    private readonly Lazy<bool> _isResourceExtension = new(() =>
+    {
+        return _resourceSchemaNode["isResourceExtension"]?.GetValue<bool>()
+               ?? throw new InvalidOperationException(
+                   "Expected isResourceExtension to be on ResourceSchema, invalid ApiSchema"
+               );
+    });
+
+    /// <summary>
+    /// Whether the resource is extending another Resource, taken from isResourceExtension
+    /// </summary>
+    public bool IsResourceExtension => _isResourceExtension.Value;
+
     private readonly Lazy<bool> _allowIdentityUpdates = new(() =>
     {
         return _resourceSchemaNode["allowIdentityUpdates"]?.GetValue<bool>()

@@ -60,6 +60,26 @@ internal class DocumentPath(JsonNode _documentPathsNode)
     /// </summary>
     public bool IsReference => _isReference.Value;
 
+    private readonly Lazy<bool> _isRequired = new(() =>
+    {
+        #region Remove this workaround after DMS-530 gets closed
+        if (_documentPathsNode["isRequired"] == null)
+        {
+            return false;
+        }
+        #endregion
+
+        return _documentPathsNode["isRequired"]?.GetValue<bool>()
+               ?? throw new InvalidOperationException(
+                   "Expected isRequired to be on DocumentPath, invalid ApiSchema"
+               );
+    });
+
+    /// <summary>
+    /// Whether the path reference is required, taken from isRequired
+    /// </summary>
+    public bool IsRequired => _isRequired.Value;
+
     private readonly Lazy<JsonPath> _path = new(() =>
     {
         string jsonPathString =
