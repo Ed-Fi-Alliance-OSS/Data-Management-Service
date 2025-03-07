@@ -260,24 +260,17 @@ function E2ETests {
         }
     }
 
-    if ($EnableOpenSearch) {
-        Invoke-Execute {
-            try {
-                Push-Location eng/docker-compose/
-                ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "OpenSearch" -EnableConfig -r
-                Start-Sleep 20
-                ./setup-keycloak.ps1
-            }
-            finally {
-                Pop-Location
-            }
+    if ($EnableOpenSearch -or $EnableElasticSearch) {
+
+        $searchEngine = "OpenSearch"
+        if ($EnableElasticSearch) {
+            $searchEngine = "ElasticSearch"
         }
-    }
-    elseif ($EnableElasticSearch) {
+
         Invoke-Execute {
             try {
                 Push-Location eng/docker-compose/
-                ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "ElasticSearch" -EnableConfig -r
+                ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig -r
                 Start-Sleep 20
                 ./setup-keycloak.ps1
             }
