@@ -62,6 +62,13 @@ internal class DocumentPath(JsonNode _documentPathsNode)
 
     private readonly Lazy<bool> _isRequired = new(() =>
     {
+        #region Remove this workaround after DMS-530 gets closed
+        if (_documentPathsNode["isRequired"] == null)
+        {
+            return false;
+        }
+        #endregion
+
         return _documentPathsNode["isRequired"]?.GetValue<bool>()
                ?? throw new InvalidOperationException(
                    "Expected isRequired to be on DocumentPath, invalid ApiSchema"
