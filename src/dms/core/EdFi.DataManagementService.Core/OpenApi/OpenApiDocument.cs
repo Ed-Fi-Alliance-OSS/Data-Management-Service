@@ -204,7 +204,7 @@ public class OpenApiDocument(ILogger _logger)
             "$.projectSchema.openApiCoreResources",
             _logger
         );
-
+        JsonArray combinedSchema = new JsonArray();
         // Get each extension OpenAPI fragment to insert into core OpenAPI spec
         foreach (JsonNode extensionApiSchemaRootNode in apiSchemas.ExtensionApiSchemaRootNodes)
         {
@@ -234,11 +234,10 @@ public class OpenApiDocument(ILogger _logger)
                     openApiCoreResources
                 );
             }
+            combinedSchema.Add(extensionApiSchemaRootNode);
         }
 
-        JsonArray combinedSchema = new JsonArray();
         combinedSchema.Add(apiSchemas.CoreApiSchemaRootNode);
-        combinedSchema.Add(apiSchemas.ExtensionApiSchemaRootNodes);
         return combinedSchema;
     }
 }
