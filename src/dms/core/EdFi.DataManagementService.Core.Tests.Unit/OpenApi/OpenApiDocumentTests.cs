@@ -765,16 +765,15 @@ public class OpenApiDocumentTests
         )
         {
             JsonPath jsonPath = JsonPath.Parse(jsonPathSource);
-            JsonNode? openApiExtensionResourceFragments = null;
-            string resultString = string.Empty;
+            string result = string.Empty;
             foreach (JsonNode? openApiDocumentResultNode in openApiDocumentResult.AsArray())
             {
-                PathResult result = jsonPath.Evaluate(openApiDocumentResultNode);
+                PathResult pathResult = jsonPath.Evaluate(openApiDocumentResultNode);
 
-                if (result.Matches.Count == 1)
+                if (pathResult.Matches.Count == 1)
                 {
-                    openApiExtensionResourceFragments = result.Matches[0].Value;
-                    resultString = JsonSerializer.Serialize(
+                    JsonNode? openApiExtensionResourceFragments = pathResult.Matches[0].Value;
+                    result = JsonSerializer.Serialize(
                         openApiExtensionResourceFragments,
                         new JsonSerializerOptions { WriteIndented = true }
                     );
@@ -782,9 +781,9 @@ public class OpenApiDocumentTests
             }
 
             expectedResult = expectedResult.Replace("\r\n", "\n");
-            resultString = resultString.Replace("\r\n", "\n");
+            result = result.Replace("\r\n", "\n");
 
-            resultString.Should().Be(expectedResult);
+            result.Should().Be(expectedResult);
         }
     }
 }
