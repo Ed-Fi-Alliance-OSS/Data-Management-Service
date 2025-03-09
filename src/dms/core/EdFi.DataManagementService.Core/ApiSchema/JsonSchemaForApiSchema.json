@@ -62,7 +62,7 @@
             },
             "additionalProperties": false
         },
-        "openApiExtensionResources": {
+        "openApiExtensionResourceFragments": {
             "type": "object",
             "properties": {
                 "exts": {
@@ -80,7 +80,7 @@
             },
             "additionalProperties": false
         },
-        "openApiExtensionDescriptors": {
+        "openApiExtensionDescriptorFragments": {
             "type": "object",
             "properties": {
                 "exts": {
@@ -156,11 +156,11 @@
                 "isExtensionProject": {
                     "type": "boolean"
                 },
-                "openApiExtensionResources": {
-                    "$ref": "#/definitions/openApiExtensionResources"
+                "openApiExtensionResourceFragments": {
+                    "$ref": "#/definitions/openApiExtensionResourceFragments"
                 },
-                "openApiExtensionDescriptors": {
-                    "$ref": "#/definitions/openApiExtensionDescriptors"
+                "openApiExtensionDescriptorFragments": {
+                    "$ref": "#/definitions/openApiExtensionDescriptorFragments"
                 },
                 "projectName": {
                     "type": "string"
@@ -219,7 +219,7 @@
                             "type": "boolean"
                         },
                         "documentPathsMapping": {
-                            "$ref": "#/definitions/DocumentPathsMapping"
+                            "$ref": "#/definitions/documentPathsMapping"
                         },
                         "equalityConstraints": {
                             "type": "array",
@@ -285,7 +285,7 @@
             },
             "additionalProperties": false
         },
-        "DocumentPathsMapping": {
+        "documentPathsMapping": {
             "type": "object",
             "patternProperties": {
                 "^[A-Za-z0-9\\.]+$": {
@@ -331,10 +331,10 @@
                     "required": [
                         "isReference"
                     ],
-                    "additionalProperties": false
+                    "additionalProperties": true
                 }
             },
-            "additionalProperties": false
+            "additionalProperties": true
         }
     }
 }
