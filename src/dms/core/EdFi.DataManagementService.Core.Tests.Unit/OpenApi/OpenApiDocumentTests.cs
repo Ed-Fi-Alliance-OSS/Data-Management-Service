@@ -111,8 +111,8 @@ public class OpenApiDocumentTests
 
         return new ApiSchemaBuilder()
             .WithStartProject("ed-fi", "5.0.0")
-            .WithCoreOpenApiCoreDescriptors(descriptorSchemas, descriptorsPaths, descriptorsTags)
-            .WithCoreOpenApiCoreResources(schemas, paths, tags)
+            .WithOpenApiCoreDescriptors(descriptorSchemas, descriptorsPaths, descriptorsTags)
+            .WithOpenApiCoreResources(schemas, paths, tags)
             .WithEndProject()
             .AsSingleApiSchemaRootNode();
     }

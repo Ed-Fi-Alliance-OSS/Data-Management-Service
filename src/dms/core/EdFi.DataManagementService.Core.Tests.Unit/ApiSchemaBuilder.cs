@@ -678,7 +678,7 @@ public class ApiSchemaBuilder
     /// <summary>
     /// Adds a core OpenAPI CoreResources to a project definition.
     /// </summary>
-    public ApiSchemaBuilder WithCoreOpenApiCoreResources(JsonNode schemas, JsonNode paths, JsonArray tags)
+    public ApiSchemaBuilder WithOpenApiCoreResources(JsonNode schemas, JsonNode paths, JsonArray tags)
     {
         if (_currentProjectNode == null)
         {
@@ -697,7 +697,7 @@ public class ApiSchemaBuilder
     /// <summary>
     /// Adds a core OpenAPI Descriptors to a project definition.
     /// </summary>
-    public ApiSchemaBuilder WithCoreOpenApiCoreDescriptors(JsonNode schemas, JsonNode paths, JsonArray tags)
+    public ApiSchemaBuilder WithOpenApiCoreDescriptors(JsonNode schemas, JsonNode paths, JsonArray tags)
     {
         if (_currentProjectNode == null)
         {
