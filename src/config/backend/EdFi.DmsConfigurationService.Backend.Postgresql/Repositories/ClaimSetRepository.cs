@@ -13,6 +13,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using Action = EdFi.DmsConfigurationService.DataModel.Model.Action.Action;
+using AuthorizationStrategy = EdFi.DmsConfigurationService.DataModel.Model.ClaimSets.AuthorizationStrategy;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 
@@ -47,6 +48,12 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                 Name = "Delete",
                 Uri = "uri://ed-fi.org/api/actions/delete",
             },
+            new()
+            {
+                Id = 5,
+                Name = "ReadChanges",
+                Uri = "uri://ed-fi.org/api/actions/readChanges",
+            }
         };
 
         return actions;
@@ -140,8 +147,8 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         try
         {
             string baseSql = """
-                SELECT c.Id, c.ClaimSetName, c.IsSystemReserved 
-                    ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName)) 
+                SELECT c.Id, c.ClaimSetName, c.IsSystemReserved
+                    ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName))
                         FROM dmscs.application a WHERE a.ClaimSetName = c.ClaimSetName ) as applications
                     {0}
                 FROM dmscs.ClaimSet c
@@ -193,10 +200,10 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         try
         {
             string baseSql = """
-                SELECT c.Id, c.ClaimSetName, c.IsSystemReserved 
-                    ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName)) 
+                SELECT c.Id, c.ClaimSetName, c.IsSystemReserved
+                    ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName))
                         FROM dmscs.application a WHERE a.ClaimSetName = c.ClaimSetName ) as applications
-                    {0} 
+                    {0}
                 FROM dmscs.ClaimSet c
                 WHERE c.Id = @Id
                 """;
@@ -308,7 +315,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         {
             string sql = """
                 SELECT c.Id, c.ClaimSetName, c.IsSystemReserved, c.ResourceClaims
-                    ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName)) 
+                    ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName))
                         FROM dmscs.application a WHERE a.ClaimSetName = c.ClaimSetName ) as applications
                 FROM dmscs.ClaimSet c
                 WHERE c.Id = @Id
