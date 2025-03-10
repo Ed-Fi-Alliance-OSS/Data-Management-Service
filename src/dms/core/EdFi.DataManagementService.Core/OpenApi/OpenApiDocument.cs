@@ -19,9 +19,9 @@ public class OpenApiDocument(ILogger _logger)
     /// Inserts exts from extension OpenAPI fragments into the _ext section of the corresponding
     /// core OpenAPI endpoint.
     /// </summary>
-    private void InsertExts(JsonObject extList, JsonNode openApiSpecification)
+    private void InsertExts(JsonObject openApiExtensionFragmentList, JsonNode openApiCoreResources)
     {
-        foreach ((string componentSchemaName, JsonNode? extObject) in extList)
+        foreach ((string componentSchemaName, JsonNode? extObject) in openApiExtensionFragmentList)
         {
             if (extObject == null)
             {
@@ -32,18 +32,18 @@ public class OpenApiDocument(ILogger _logger)
 
             // Get the component.schema location for _ext insert
             JsonObject locationForExt =
-                openApiSpecification
+                openApiCoreResources
                     .SelectNodeFromPath($"$.components.schemas.{componentSchemaName}.properties", _logger)
                     ?.AsObject()
                 ?? throw new InvalidOperationException(
-                    $"OpenAPI extension fragment expects Core to have '$.components.schemas.EdFi_{componentSchemaName}.properties'. Extension fragment validation failed?"
+                    $"OpenAPI extension fragment expects Core to have '$.components.schemas.{componentSchemaName}.properties'. Extension fragment validation failed?"
                 );
 
             // If _ext has already been added by another extension, we don't support a second one
             if (locationForExt["_ext"] != null)
             {
                 throw new InvalidOperationException(
-                    $"OpenAPI extension fragment tried to add a second _ext to '$.components.schemas.EdFi_{componentSchemaName}.properties', which is not supported. Extension fragment validation failed?"
+                    $"OpenAPI extension fragment tried to add a second _ext to '$.components.schemas.{componentSchemaName}.properties', which is not supported. Extension fragment validation failed?"
                 );
             }
 
@@ -55,7 +55,7 @@ public class OpenApiDocument(ILogger _logger)
     /// Inserts new endpoint paths from extension OpenAPI fragments into the paths section of the corresponding
     /// core OpenAPI endpoint.
     /// </summary>
-    private void InsertNewPaths(JsonObject newPaths, JsonNode openApiSpecification)
+    private void InsertNewPaths(JsonObject newPaths, JsonNode openApiCoreResources)
     {
         foreach ((string pathName, JsonNode? pathObject) in newPaths)
         {
@@ -66,7 +66,7 @@ public class OpenApiDocument(ILogger _logger)
                 );
             }
 
-            JsonObject locationForPaths = openApiSpecification
+            JsonObject locationForPaths = openApiCoreResources
                 .SelectRequiredNodeFromPath("$.paths", _logger)
                 .AsObject();
 
@@ -86,7 +86,7 @@ public class OpenApiDocument(ILogger _logger)
     /// Inserts new schema objects from extension OpenAPI fragments into the components.schemas section of the
     /// core OpenAPI specification.
     /// </summary>
-    private void InsertNewSchemas(JsonObject newSchemas, JsonNode openApiSpecification)
+    private void InsertNewSchemas(JsonObject newSchemas, JsonNode openApiCoreResources)
     {
         foreach ((string schemaName, JsonNode? schemaObject) in newSchemas)
         {
@@ -97,7 +97,7 @@ public class OpenApiDocument(ILogger _logger)
                 );
             }
 
-            JsonObject locationForSchemas = openApiSpecification
+            JsonObject locationForSchemas = openApiCoreResources
                 .SelectRequiredNodeFromPath("$.components.schemas", _logger)
                 .AsObject();
 
@@ -117,10 +117,10 @@ public class OpenApiDocument(ILogger _logger)
     /// Inserts new global tag objects from extension OpenAPI fragments into the tags section of the
     /// core OpenAPI specification.
     /// </summary>
-    private void InsertNewTags(JsonArray newTagObjects, JsonNode openApiSpecification)
+    private void InsertNewTags(JsonArray newTagObjects, JsonNode openApiCoreResources)
     {
         // This is where the extension tags will be added
-        JsonArray globalTags = openApiSpecification.SelectRequiredNodeFromPath("$.tags", _logger).AsArray();
+        JsonArray globalTags = openApiCoreResources.SelectRequiredNodeFromPath("$.tags", _logger).AsArray();
 
         // Helper to test for tag uniqueness
         HashSet<string> existingTagNames = [];
@@ -169,25 +169,29 @@ public class OpenApiDocument(ILogger _logger)
     }
 
     /// <summary>
-    /// Finds the CoreOpenApiSpecification in an Core ApiSchema document.
+    /// Finds the openApiExtensionDescriptors and openApiExtensionResources in extension ApiSchemaDocument.
     /// </summary>
-    public JsonNode FindCoreOpenApiSpecification(JsonNode coreApiSchemaRootNode)
+    public List<JsonNode> FindOpenApiExtensionFragments(JsonNode extensionApiSchemaRootNode)
     {
-        return coreApiSchemaRootNode.SelectRequiredNodeFromPath(
-            "$.projectSchema.coreOpenApiSpecification",
-            _logger
-        );
-    }
+        string[] paths = new string[]
+        {
+            "$.projectSchema.openApiExtensionResourceFragments",
+            "$.projectSchema.openApiExtensionDescriptorFragments",
+        };
 
-    /// <summary>
-    /// Finds the OpenApiExtensionFragments in an extension ApiSchemaDocument.
-    /// </summary>
-    public JsonNode FindOpenApiExtensionFragments(JsonNode extensionApiSchemaRootNode)
-    {
-        return extensionApiSchemaRootNode.SelectRequiredNodeFromPath(
-            "$.projectSchema.openApiExtensionFragments",
-            _logger
-        );
+        List<JsonNode> selectedNodes = new List<JsonNode>();
+
+        // Iterate over the paths and select the nodes
+        foreach (var path in paths)
+        {
+            JsonNode node = extensionApiSchemaRootNode.SelectRequiredNodeFromPath(path, _logger);
+            if (node != null)
+            {
+                selectedNodes.Add(node.DeepClone());
+            }
+        }
+
+        return selectedNodes;
     }
 
     /// <summary>
@@ -196,35 +200,44 @@ public class OpenApiDocument(ILogger _logger)
     public JsonNode CreateDocument(ApiSchemaNodes apiSchemas)
     {
         // Get the core OpenAPI spec as a copy since we are going to modify it
-        JsonNode openApiSpecification = FindCoreOpenApiSpecification(apiSchemas.CoreApiSchemaRootNode)
-            .DeepClone();
-
+        JsonNode openApiCoreResources = apiSchemas.CoreApiSchemaRootNode.SelectRequiredNodeFromPath(
+            "$.projectSchema.openApiCoreResources",
+            _logger
+        );
+        JsonArray combinedSchema = new JsonArray();
         // Get each extension OpenAPI fragment to insert into core OpenAPI spec
         foreach (JsonNode extensionApiSchemaRootNode in apiSchemas.ExtensionApiSchemaRootNodes)
         {
-            JsonNode extensionFragments = FindOpenApiExtensionFragments(extensionApiSchemaRootNode);
-
-            InsertExts(
-                extensionFragments.SelectRequiredNodeFromPath("$.exts", _logger).AsObject(),
-                openApiSpecification
+            List<JsonNode> openApiExtensionFragments = FindOpenApiExtensionFragments(
+                extensionApiSchemaRootNode
             );
 
-            InsertNewPaths(
-                extensionFragments.SelectRequiredNodeFromPath("$.newPaths", _logger).AsObject(),
-                openApiSpecification
-            );
+            foreach (JsonNode openApiExtensionFragment in openApiExtensionFragments)
+            {
+                InsertExts(
+                    openApiExtensionFragment.SelectRequiredNodeFromPath("$.exts", _logger).AsObject(),
+                    openApiCoreResources
+                );
 
-            InsertNewSchemas(
-                extensionFragments.SelectRequiredNodeFromPath("$.newSchemas", _logger).AsObject(),
-                openApiSpecification
-            );
+                InsertNewPaths(
+                    openApiExtensionFragment.SelectRequiredNodeFromPath("$.newPaths", _logger).AsObject(),
+                    openApiCoreResources
+                );
 
-            InsertNewTags(
-                extensionFragments.SelectRequiredNodeFromPath("$.newTags", _logger).AsArray(),
-                openApiSpecification
-            );
+                InsertNewSchemas(
+                    openApiExtensionFragment.SelectRequiredNodeFromPath("$.newSchemas", _logger).AsObject(),
+                    openApiCoreResources
+                );
+
+                InsertNewTags(
+                    openApiExtensionFragment.SelectRequiredNodeFromPath("$.newTags", _logger).AsArray(),
+                    openApiCoreResources
+                );
+            }
+            combinedSchema.Add(extensionApiSchemaRootNode);
         }
 
-        return openApiSpecification;
+        combinedSchema.Add(apiSchemas.CoreApiSchemaRootNode);
+        return combinedSchema;
     }
 }

@@ -69,7 +69,7 @@ public partial class XsdMetadataEndpointModule : IEndpointModule
         {
             var baseUrl = httpContext.Request.UrlWithPathSegment().Replace("files", "");
             var withFullPath = new List<string>();
-            var xsdFiles = contentProvider.Files("ApiSchema.xsd", ".xsd");
+            var xsdFiles = contentProvider.Files("ApiSchema.xsd", ".xsd", section);
             withFullPath.AddRange(from xsdFile in xsdFiles select $"{baseUrl}{xsdFile}");
             await httpContext.Response.WriteAsSerializedJsonAsync(withFullPath);
         }
@@ -90,7 +90,8 @@ public partial class XsdMetadataEndpointModule : IEndpointModule
         }
         var fileName = match.Groups["fileName"].Value;
         var fileFullName = $"{fileName}.xsd";
-        var files = contentProvider.Files(fileFullName, ".xsd");
+        string section = match.Groups["section"].Value;
+        var files = contentProvider.Files(fileFullName, ".xsd", section);
         if (files.Any())
         {
             var content = contentProvider.LoadXsdContent(fileFullName);
