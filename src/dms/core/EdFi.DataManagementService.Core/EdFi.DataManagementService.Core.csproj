@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
@@ -24,6 +24,7 @@
     <PackageReference Include="Npgsql" />
     <PackageReference Include="Polly.Core" />
     <PackageReference Include="Polly.Extensions" />
+    <PackageReference Include="Sandwych.QuickGraph.Core" />
     <PackageReference Include="Serilog" />
     <PackageReference Include="Serilog.Extensions.Logging" />
     <PackageReference Include="Serilog.Settings.Configuration" />
