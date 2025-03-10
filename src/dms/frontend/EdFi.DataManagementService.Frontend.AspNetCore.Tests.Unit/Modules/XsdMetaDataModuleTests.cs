@@ -58,7 +58,7 @@ public class XsdMetaDataModuleTests
         var files = new List<string> { "file1.xsd", "file2.xsd", "file3.xsd" };
 
         _contentProvider = A.Fake<IContentProvider>();
-        A.CallTo(() => _contentProvider.Files(A<string>.Ignored, ".xsd")).Returns(files);
+        A.CallTo(() => _contentProvider.Files(A<string>.Ignored, ".xsd", "ed-fi")).Returns(files);
     }
 
     [Test]
@@ -185,7 +185,7 @@ public class XsdMetaDataModuleTests
         A.CallTo(() => _contentProvider!.LoadXsdContent(A<string>.Ignored)).Returns(_fileStream);
 
         var files = new List<string> { "text.xsd" };
-        A.CallTo(() => _contentProvider!.Files(A<string>.Ignored, ".xsd")).Returns(files);
+        A.CallTo(() => _contentProvider!.Files(A<string>.Ignored, ".xsd", "ed-fi")).Returns(files);
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -215,7 +215,7 @@ public class XsdMetaDataModuleTests
     {
         // Arrange
         var files = new List<string>();
-        A.CallTo(() => _contentProvider!.Files(A<string>.Ignored, ".xsd")).Returns(files);
+        A.CallTo(() => _contentProvider!.Files(A<string>.Ignored, ".xsd", "ed-fi")).Returns(files);
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
