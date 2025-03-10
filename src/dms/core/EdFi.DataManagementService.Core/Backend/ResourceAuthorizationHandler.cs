@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
@@ -20,7 +19,13 @@ public class ResourceAuthorizationHandler(
     ILogger logger
 ) : IResourceAuthorizationHandler
 {
-    public ResourceAuthorizationResult Authorize(JsonNode securityElements)
+    public bool IsRelationshipWithEdOrg =>
+        Enumerable.Any(
+            authorizationStrategyEvaluators,
+            a => Enumerable.Any(a.Filters, f => f.FilterPath == "EducationOrganization")
+        );
+
+    public ResourceAuthorizationResult Authorize(string[] namespaces, long[] educationOrganizationIds)
     {
         var andFilters = new List<(AuthorizationFilter Filter, bool IsAuthorized)>();
         var orFilters = new List<(AuthorizationFilter Filter, bool IsAuthorized)>();
@@ -30,7 +35,7 @@ public class ResourceAuthorizationHandler(
             foreach (var filter in evaluator.Filters)
             {
                 logger.LogDebug("Evaluating filter: {Filter}", filter);
-                bool isAuthorized = EvaluateFilter(filter, securityElements);
+                bool isAuthorized = EvaluateFilter(filter, namespaces, educationOrganizationIds);
 
                 if (evaluator.Operator == FilterOperator.And)
                 {
@@ -56,15 +61,22 @@ public class ResourceAuthorizationHandler(
         return new ResourceAuthorizationResult.Authorized();
     }
 
-    private static bool EvaluateFilter(AuthorizationFilter filter, JsonNode securityElements)
+    private static bool EvaluateFilter(
+        AuthorizationFilter filter,
+        string[] namespaces,
+        long[] educationOrganizationIds
+    )
     {
-        var valuesArray = securityElements[filter.FilterPath]?.AsArray();
-        if (valuesArray == null)
-        {
-            return false;
-        }
+        string[] values = [];
 
-        string[] values = ExtractValuesFromSecurityElements(valuesArray);
+        if (filter.FilterPath == "Namespace")
+        {
+            values = namespaces;
+        }
+        else if (filter.FilterPath == "EducationOrganization")
+        {
+            values = educationOrganizationIds.Select(e => e.ToString()).ToArray();
+        }
 
         return filter.Comparison switch
         {
@@ -72,11 +84,6 @@ public class ResourceAuthorizationHandler(
             FilterComparison.StartsWith => Array.Exists(values, v => v.StartsWith(filter.Value)),
             _ => false,
         };
-    }
-
-    private static string[] ExtractValuesFromSecurityElements(JsonArray valuesArray)
-    {
-        return valuesArray.Select(v => v?.ToString() ?? string.Empty).ToArray();
     }
 
     private ResourceAuthorizationResult.NotAuthorized CreateNotAuthorizedResult(

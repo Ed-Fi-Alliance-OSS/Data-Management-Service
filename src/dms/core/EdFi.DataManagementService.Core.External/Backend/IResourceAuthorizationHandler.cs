@@ -12,5 +12,7 @@ namespace EdFi.DataManagementService.Core.External.Backend;
 /// </summary>
 public interface IResourceAuthorizationHandler
 {
-    ResourceAuthorizationResult Authorize(JsonNode securityElements);
+    ResourceAuthorizationResult Authorize(string[] namespaces, long[] educationOrganizationIds);
+
+    bool IsRelationshipWithEdOrg { get; }
 }

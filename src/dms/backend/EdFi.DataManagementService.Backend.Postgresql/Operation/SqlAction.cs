@@ -683,4 +683,61 @@ public class SqlAction() : ISqlAction
         await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
+
+    public async Task<long[]> GetAncestorEducationOrganizationIds(
+        PartitionKey documentPartitionKey,
+        DocumentUuid documentUuid,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        TraceId traceId
+    )
+    {
+        await using NpgsqlCommand command = new(
+            $@"
+               WITH DocumentSecurityEdOrgs AS (
+                    -- Keep the values as JSONB elements directly without converting to int and back
+                    SELECT jsonb_array_elements(securityelements->'EducationOrganization') AS EdOrgIdJson
+                    FROM dms.document 
+                    WHERE DocumentUuid = $1 AND DocumentPartitionKey = $2
+                ),
+                MatchingHierarchies AS (
+                    -- Get all hierarchies that contain the education organization IDs
+                    SELECT l.Hierarchy
+                    FROM dms.EducationOrganizationHierarchyTermsLookup l
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM DocumentSecurityEdOrgs e
+                        WHERE l.Hierarchy @> e.EdOrgIdJson
+                    )
+                )
+                -- Extract all elements from all hierarchies as BIGINT
+                SELECT DISTINCT (elem #>> '{{}}')::BIGINT as EducationOrganizationId
+                FROM MatchingHierarchies,
+                jsonb_array_elements(Hierarchy) elem
+                ORDER BY EducationOrganizationId;
+            ",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = documentUuid.Value },
+                new() { Value = documentPartitionKey.Value }
+            },
+        };
+        await command.PrepareAsync();
+
+        await command.PrepareAsync();
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+
+        List<long> edOrgIds = [];
+
+        while (await reader.ReadAsync())
+        {
+            edOrgIds.Add(reader.GetInt64(reader.GetOrdinal("EducationOrganizationId")));
+        }
+
+        return edOrgIds.ToArray();
+    }
 }
