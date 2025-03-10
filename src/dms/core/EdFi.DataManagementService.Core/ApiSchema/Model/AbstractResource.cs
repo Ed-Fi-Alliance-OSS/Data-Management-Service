@@ -3,9 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-namespace EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Model;
+
+namespace EdFi.DataManagementService.Core.ApiSchema.Model;
 
 /// <summary>
-/// Represents the fully qualified name that includes the project name and the resource name.
+/// Represents an AbstractResource, such as an EducationOrganization.
 /// </summary>
-public record struct FullResourceName(ProjectName ProjectName, ResourceName ResourceName);
+public record struct AbstractResource(ResourceName ResourceName, IEnumerable<JsonPath> IdentityJsonPaths);

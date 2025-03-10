@@ -67,6 +67,17 @@ public class ApiSchemaBuilder
     }
 
     /// <summary>
+    /// Returns all the projects as <see cref="ApiSchemaNodes"/>.
+    /// </summary>
+    internal ApiSchemaNodes AsApiSchemaNodes()
+    {
+        return new ApiSchemaNodes(
+            ToApiSchemaRootNode(_coreProjectNode!),
+            _extensionProjectNodes.Select(ToApiSchemaRootNode).ToArray()
+        );
+    }
+
+    /// <summary>
     /// Returns the first project as an ApiSchema root node
     /// </summary>
     internal JsonNode AsSingleApiSchemaRootNode()
@@ -86,7 +97,11 @@ public class ApiSchemaBuilder
     ///
     /// projectName should be the ProjectName for a project, e.g. Ed-Fi, TPDM, Michigan
     /// </summary>
-    public ApiSchemaBuilder WithStartProject(string projectName = "Ed-Fi", string projectVersion = "5.0.0", JsonObject? abstractResources = null)
+    public ApiSchemaBuilder WithStartProject(
+        string projectName = "Ed-Fi",
+        string projectVersion = "5.0.0",
+        JsonObject? abstractResources = null
+    )
     {
         if (_currentProjectNode != null)
         {
@@ -152,16 +167,10 @@ public class ApiSchemaBuilder
         };
 
         string endpointName = ToEndpointName(resourceName);
-        _currentProjectNode["resourceNameMapping"]![RemoveDescriptorSuffix(resourceName)] = endpointName;
+        _currentProjectNode["resourceNameMapping"]![resourceName] = endpointName;
         _currentProjectNode["resourceSchemas"]![endpointName] = _currentResourceNode;
         _currentProjectNode["caseInsensitiveEndpointNameMapping"]![endpointName.ToLower()] = endpointName;
         return this;
-
-        #region Remove this workaround after DMS-543 gets closed
-        string RemoveDescriptorSuffix(string name) => isDescriptor
-            ? name[..^10]
-            : name;
-        #endregion
     }
 
     /// <summary>

@@ -65,12 +65,28 @@ internal class ProjectSchema(JsonNode _projectSchemaNode, ILogger _logger)
 
     private readonly Lazy<IEnumerable<AbstractResource>> _abstractResources = new(() =>
     {
-        return _projectSchemaNode.SelectRequiredNodeFromPath("$.abstractResources", _logger)
+        return _projectSchemaNode
+            .SelectRequiredNodeFromPath("$.abstractResources", _logger)
             .AsObject()
-            .Select(ar => new AbstractResource(new ResourceName(ar.Key),
-                ar.Value!.SelectNodesFromArrayPathCoerceToStrings("$.identityJsonPaths", _logger)
-                    .Select(ijp => new JsonPath(ijp))));
+            .Select(abstractResourceNode => AbstractResourceFrom(abstractResourceNode, _logger));
     });
+
+    private static AbstractResource AbstractResourceFrom(
+        KeyValuePair<string, JsonNode?> abstractResourceNode,
+        ILogger logger
+    )
+    {
+        ResourceName resourceName = new(abstractResourceNode.Key);
+        JsonNode abstractResourceNodeValue =
+            abstractResourceNode.Value
+            ?? throw new InvalidOperationException("The JSON for abstractResources is malformed");
+        return new(
+            resourceName,
+            abstractResourceNodeValue
+                .SelectNodesFromArrayPathCoerceToStrings("$.identityJsonPaths", logger)
+                .Select(identityJsonPath => new JsonPath(identityJsonPath))
+        );
+    }
 
     /// <summary>
     /// The AbstractResources for this ProjectSchema, taken from abstractResources

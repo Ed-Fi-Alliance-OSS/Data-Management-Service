@@ -3,12 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Core.ApiSchema.ResourceLoadOrder;
+using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using QuickGraph;
-using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.ApiSchema.ResourceLoadOrder
 {
@@ -115,7 +115,10 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.ApiSchema.ResourceLoadOrder
                 clonedGraph = _graph.Clone();
                 clonedGraph.Edges.Any(Is_C2_to_E2).Should().BeTrue();
                 removedEdges = clonedGraph.BreakCycles(Is_C2_to_E2, _logger);
-                clonedGraph.Edges.Any(Is_C2_to_E2).Should().BeFalse("Removable edge C2-to-E2 was not removed.");
+                clonedGraph
+                    .Edges.Any(Is_C2_to_E2)
+                    .Should()
+                    .BeFalse("Removable edge C2-to-E2 was not removed.");
                 clonedGraph.Edges.Count().Should().Be(_graph.Edges.Count() - 1);
                 removedEdges.Single(Is_C2_to_E2).Should().NotBeNull();
 
@@ -134,7 +137,10 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.ApiSchema.ResourceLoadOrder
                 clonedGraph.Edges.Count(Is_any_cycle_edge).Should().Be(3);
 
                 var removedEdges = clonedGraph.BreakCycles(Is_any_cycle_edge, _logger);
-                clonedGraph.Edges.Any(Is_E2_to_B).Should().BeFalse("Deepest removable edge B-to-C2 was not the edge removed.");
+                clonedGraph
+                    .Edges.Any(Is_E2_to_B)
+                    .Should()
+                    .BeFalse("Deepest removable edge B-to-C2 was not the edge removed.");
                 clonedGraph.Edges.Count().Should().Be(_graph.Edges.Count() - 1);
                 removedEdges.Single(Is_E2_to_B).Should().NotBeNull();
             }
@@ -149,10 +155,13 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.ApiSchema.ResourceLoadOrder
             }
 
             private static bool Is_B_to_C2(IEdge<string> e) => e is { Source: "B", Target: "C2" };
+
             private static bool Is_C2_to_E2(IEdge<string> e) => e is { Source: "C2", Target: "E2" };
+
             private static bool Is_E2_to_B(IEdge<string> e) => e is { Source: "E2", Target: "B" };
 
-            private static bool Is_any_cycle_edge(IEdge<string> e) => Is_B_to_C2(e) || Is_C2_to_E2(e) || Is_E2_to_B(e);
+            private static bool Is_any_cycle_edge(IEdge<string> e) =>
+                Is_B_to_C2(e) || Is_C2_to_E2(e) || Is_E2_to_B(e);
         }
 
         [TestFixture]
@@ -214,8 +223,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.ApiSchema.ResourceLoadOrder
             {
                 var clonedGraph = _graph!.Clone();
 
-                IReadOnlyList<IEdge<string>> removedEdges = clonedGraph
-                    .BreakCycles(_ => true, _logger);
+                IReadOnlyList<IEdge<string>> removedEdges = clonedGraph.BreakCycles(_ => true, _logger);
 
                 Console.WriteLine("Removed edges:");
                 foreach (IEdge<string> removedEdge in removedEdges)

@@ -5,11 +5,11 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
-using EdFi.DataManagementService.Core.ApiSchema.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Validation;
 using FakeItEasy;
@@ -55,7 +55,12 @@ public class APISchemaFileTests
                 new AuthorizationStrategiesProvider(),
                 new NamedAuthorizationServiceFactory(serviceProvider),
                 ResiliencePipeline.Empty,
-                new Calculator(NullLogger<Calculator>.Instance, [], [])
+                new ResourceLoadOrderCalculator(
+                    A.Fake<IApiSchemaProvider>(),
+                    [],
+                    [],
+                    NullLogger<ResourceLoadOrderCalculator>.Instance
+                )
             );
         }
 

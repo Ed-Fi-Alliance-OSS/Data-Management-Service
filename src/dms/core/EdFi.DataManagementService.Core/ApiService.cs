@@ -6,7 +6,6 @@
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.ApiSchema;
-using EdFi.DataManagementService.Core.ApiSchema.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -16,6 +15,7 @@ using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.OpenApi;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Validation;
 using Microsoft.Extensions.DependencyInjection;
@@ -42,7 +42,7 @@ internal class ApiService(
     IAuthorizationStrategiesProvider _authorizationStrategiesProvider,
     IAuthorizationServiceFactory _authorizationServiceFactory,
     [FromKeyedServices("backendResiliencePipeline")] ResiliencePipeline _resiliencePipeline,
-    Calculator _resourceLoadCalculator
+    ResourceLoadOrderCalculator _resourceLoadCalculator
 ) : IApiService
 {
     /// <summary>
@@ -329,18 +329,21 @@ internal class ApiService(
     /// <returns>JSON array ordered by dependency sequence</returns>
     public JsonArray GetDependencies()
     {
-        var apiSchemaDocuments = new ApiSchemaDocuments(
-            new ApiSchemaNodes(_apiSchemaProvider.GetApiSchemaNodes().CoreApiSchemaRootNode,
-                _apiSchemaProvider.GetApiSchemaNodes().ExtensionApiSchemaRootNodes), _logger);
-
-        var loadOrder = _resourceLoadCalculator.GetGroupedLoadOrder(apiSchemaDocuments);
-
-        return new JsonArray(loadOrder.Select(r => JsonValue.Create(new
-        {
-            resource = r.Resource,
-            order = r.Order,
-            operations = r.Operations,
-        })).ToArray<JsonNode?>());
+        return new JsonArray(
+            _resourceLoadCalculator
+                .GetLoadOrder()
+                .Select(loadOrder =>
+                    JsonValue.Create(
+                        new
+                        {
+                            resource = loadOrder.Resource,
+                            order = loadOrder.Group,
+                            operations = loadOrder.Operations,
+                        }
+                    )
+                )
+                .ToArray<JsonNode?>()
+        );
     }
 
     /// <summary>

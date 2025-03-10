@@ -4,10 +4,10 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.ApiSchema;
-using EdFi.DataManagementService.Core.ApiSchema.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.AuthorizationFilters;
 using EdFi.DataManagementService.Core.Security.AuthorizationValidation;
@@ -46,10 +46,12 @@ public static class DmsCoreServiceExtensions
             .AddTransient<IEqualityConstraintValidator, EqualityConstraintValidator>()
             .AddTransient<IAuthorizationStrategiesProvider, AuthorizationStrategiesProvider>()
             .AddSingleton<IAuthorizationServiceFactory, NamedAuthorizationServiceFactory>()
-            .AddSingleton<IGraphTransformer, PersonAuthorizationGraphTransformer>()
-            .AddSingleton<IOrderTransformer, PersonAuthorizationOrderTransformer>()
-            .AddSingleton<Calculator>()
-            .AddSingleton<PersonAuthorizationGraphTransformer>()
+            .AddSingleton<
+                IResourceDependencyGraphTransformer,
+                PersonAuthorizationDependencyGraphTransformer
+            >()
+            .AddSingleton<IResourceLoadOrderTransformer, PersonAuthorizationLoadOrderTransformer>()
+            .AddSingleton<ResourceLoadOrderCalculator>()
             .AddTransient<NoFurtherAuthorizationRequiredValidator>()
             .AddTransient<NamespaceBasedValidator>()
             .AddTransient<RelationshipsWithEdOrgsOnlyValidator>()
