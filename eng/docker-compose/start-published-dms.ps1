@@ -21,6 +21,11 @@ param (
     [Switch]
     $EnableOpenSearchUI,
 
+    # Search engine type ("OpenSearch" or "ElasticSearch")
+    [string]
+    [ValidateSet("OpenSearch", "ElasticSearch")]
+    $SearchEngine = "OpenSearch",
+
     # Enable the DMS Configuration Service
     [Switch]
     $EnableConfig
@@ -30,16 +35,22 @@ $files = @(
     "-f",
     "postgresql.yml",
     "-f",
-    "kafka-opensearch.yml",
-    "-f",
     "published-dms.yml",
     "-f",
     "keycloak.yml"
 )
 
-if($EnableOpenSearchUI)
-{
-    $files += @("-f", "kafka-opensearch-ui.yml")
+if ($SearchEngine -eq "ElasticSearch") {
+    $files += @("-f", "kafka-elasticsearch.yml")
+    if ($EnableSearchEngineUI) {
+        $files += @("-f", "kafka-elasticsearch-ui.yml")
+    }
+}
+else {
+    $files += @("-f", "kafka-opensearch.yml")
+    if ($EnableSearchEngineUI) {
+        $files += @("-f", "kafka-opensearch-ui.yml")
+    }
 }
 
 if ($EnableConfig) {
@@ -62,6 +73,10 @@ else {
     Write-Output "Starting published DMS"
     docker compose $files --env-file $EnvironmentFile up -d
 
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to start Published Docker environment, with exit code $LASTEXITCODE."
+    }
+
     Start-Sleep 20
-    ./setup-connectors.ps1 $EnvironmentFile
+    ./setup-connectors.ps1 $EnvironmentFile $SearchEngine
 }

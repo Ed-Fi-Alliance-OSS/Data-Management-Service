@@ -504,6 +504,14 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             (responseJson as JsonObject)?.Remove("correlationId");
             (expectedBodyJson as JsonObject)?.Remove("correlationId");
 
+            // The version value is retrieved from the DMS assembly,
+            // so it will not not match value when testing against a published DMS.
+            if (IsDiscoveryEndpoint)
+            {
+                (responseJson as JsonObject)?.Remove("version");
+                (expectedBodyJson as JsonObject)?.Remove("version");
+            }
+
             AreEqual(expectedBodyJson, responseJson)
                 .Should()
                 .BeTrue($"Expected:\n{expectedBodyJson}\n\nActual:\n{responseJson}");
