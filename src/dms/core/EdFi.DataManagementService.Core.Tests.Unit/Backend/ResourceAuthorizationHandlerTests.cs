@@ -27,13 +27,7 @@ public class ResourceAuthorizationHandlerTests
         [SetUp]
         public void Setup()
         {
-            JsonNode? securityElements = JsonNode.Parse(
-                """
-                {
-                  "Namespace": ["uri://ed-fi.org"]
-                }
-                """
-            )!;
+            string[] namespaceSecurityElements = ["uri://ed-fi.org"];
 
             var authStrategyEvaluators = clientNamespacePrefixes
                 .Split(',')
@@ -44,7 +38,7 @@ public class ResourceAuthorizationHandlerTests
                 .ToArray();
 
             var handler = new ResourceAuthorizationHandler(authStrategyEvaluators, NullLogger.Instance);
-            _resourceAuthorizationResult = handler.Authorize(securityElements);
+            _resourceAuthorizationResult = handler.Authorize(namespaceSecurityElements, []);
         }
 
         [Test]
@@ -66,13 +60,7 @@ public class ResourceAuthorizationHandlerTests
         [SetUp]
         public void Setup()
         {
-            JsonNode? securityElements = JsonNode.Parse(
-                """
-                {
-                  "Namespace": ["uri://i-match-nothing.org"]
-                }
-                """
-            )!;
+            string[] namespaceSecurityElements = ["uri://i-match-nothing.org"];
 
             var authStrategyEvaluators = clientNamespacePrefixes
                 .Split(',')
@@ -83,7 +71,7 @@ public class ResourceAuthorizationHandlerTests
                 .ToArray();
 
             var handler = new ResourceAuthorizationHandler(authStrategyEvaluators, NullLogger.Instance);
-            _resourceAuthorizationResult = handler.Authorize(securityElements);
+            _resourceAuthorizationResult = handler.Authorize(namespaceSecurityElements, []);
         }
 
         [Test]
@@ -101,13 +89,7 @@ public class ResourceAuthorizationHandlerTests
         [SetUp]
         public void Setup()
         {
-            JsonNode? edFiDoc = JsonNode.Parse(
-                """
-                {
-                  "Namespace": ["uri://i-match-nothing.org"]
-                }
-                """
-            )!;
+            string[] namespaceSecurityElements = ["uri://i-match-nothing.org"];
 
             var authStrategyEvaluators = ""
                 .Split(',')
@@ -118,7 +100,7 @@ public class ResourceAuthorizationHandlerTests
                 .ToArray();
 
             var handler = new ResourceAuthorizationHandler(authStrategyEvaluators, NullLogger.Instance);
-            _resourceAuthorizationResult = handler.Authorize(edFiDoc);
+            _resourceAuthorizationResult = handler.Authorize(namespaceSecurityElements, []);
         }
 
         [Test]

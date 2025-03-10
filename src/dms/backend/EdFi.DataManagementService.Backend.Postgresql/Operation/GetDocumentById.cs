@@ -53,9 +53,29 @@ public class GetDocumentById(ISqlAction _sqlAction, ILogger<GetDocumentById> _lo
                 return new GetResult.GetFailureNotExists();
             }
 
-            JsonNode securityElements = documentSummary.SecurityElements.Deserialize<JsonNode>()!;
+            long[] educationOrganizationSecurityElements = [];
 
-            var getAuthorizationResult = getRequest.ResourceAuthorizationHandler.Authorize(securityElements);
+            JsonNode securityElements = documentSummary.SecurityElements.Deserialize<JsonNode>()!;
+            string[] namespaceSecurityElements = securityElements["Namespace"]!
+                .AsArray()
+                .Select(v => v!.GetValue<string>())
+                .ToArray();
+
+            if (getRequest.ResourceAuthorizationHandler.IsRelationshipWithEdOrg)
+            {
+                educationOrganizationSecurityElements = await _sqlAction.GetAncestorEducationOrganizationIds(
+                    PartitionKeyFor(getRequest.DocumentUuid),
+                    getRequest.DocumentUuid,
+                    connection,
+                    transaction,
+                    getRequest.TraceId
+                );
+            }
+
+            var getAuthorizationResult = getRequest.ResourceAuthorizationHandler.Authorize(
+                namespaceSecurityElements,
+                educationOrganizationSecurityElements
+            );
 
             if (getAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
             {
