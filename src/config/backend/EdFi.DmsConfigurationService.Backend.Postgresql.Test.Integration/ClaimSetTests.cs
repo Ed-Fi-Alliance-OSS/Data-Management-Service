@@ -9,6 +9,7 @@ using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using AuthorizationStrategy = EdFi.DmsConfigurationService.DataModel.Model.ClaimSets.AuthorizationStrategy;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration;
 
