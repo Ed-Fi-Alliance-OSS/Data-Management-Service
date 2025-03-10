@@ -21,6 +21,7 @@ permissions: read-all
 jobs:
   build-sdk:
     name: Build And Pack DMS Core SDK
+    if: startsWith(github.event.release.tag_name, 'dms-')
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -28,6 +29,8 @@ jobs:
     steps:
       - name: Checkout the repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
 
       - name: Set SDK Version Numbers
         id: versions
