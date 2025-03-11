@@ -42,7 +42,7 @@ public class Claim
     public DefaultAuthorization? DefaultAuthorization { get; set; }
 
     [JsonPropertyName("claimSets")]
-    public List<ClaimSet> ClaimSets { get; set; } = new();
+    public List<ClaimSet> ClaimSets { get; set; } = [];
 
     private List<Claim> _claims = new();
 
@@ -70,7 +70,7 @@ public class Claim
 public class DefaultAuthorization
 {
     [JsonPropertyName("action")]
-    public List<DefaultAction> Actions { get; set; } = new();
+    public List<DefaultAction> Actions { get; set; } = [];
 }
 
 public class DefaultAction
@@ -79,7 +79,7 @@ public class DefaultAction
     public required string Name { get; set; }
 
     [JsonPropertyName("authorizationStrategies")]
-    public List<AuthorizationStrategy> AuthorizationStrategies { get; set; } = new();
+    public List<AuthorizationStrategy> AuthorizationStrategies { get; set; } = [];
 }
 
 public class ClaimSetAction
@@ -88,7 +88,7 @@ public class ClaimSetAction
     public required string Name { get; set; }
 
     [JsonPropertyName("authorizationStrategyOverrides")]
-    public List<AuthorizationStrategy> AuthorizationStrategyOverrides { get; set; } = new();
+    public List<AuthorizationStrategy> AuthorizationStrategyOverrides { get; set; } = [];
 }
 
 public class AuthorizationStrategy
@@ -103,5 +103,5 @@ public class ClaimSet
     public required string Name { get; set; }
 
     [JsonPropertyName("actions")]
-    public List<ClaimSetAction> Actions { get; set; } = new();
+    public List<ClaimSetAction> Actions { get; set; } = [];
 }

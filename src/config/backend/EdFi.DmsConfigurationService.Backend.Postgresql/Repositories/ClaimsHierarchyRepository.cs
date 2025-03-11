@@ -26,7 +26,7 @@ public class ClaimsHierarchyRepository(
             // Initial implementation assumes a basic implementation with single record.
             string sql = "SELECT Hierarchy FROM dmscs.ClaimsHierarchy";
 
-            string? hierarchyJson = await connection.QuerySingleAsync<string>(sql);
+            string? hierarchyJson = await connection.QuerySingleOrDefaultAsync<string>(sql);
 
             if (hierarchyJson == null)
             {
