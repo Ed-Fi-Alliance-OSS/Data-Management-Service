@@ -47,6 +47,7 @@ public class ClaimsHierarchyModuleTests
                     );
 
                     collection.AddTransient(_ => _claimsHierarchyRepository);
+                    collection.AddTransient(_ => _responseFactory);
                 }
             );
         });
@@ -77,8 +78,8 @@ public class ClaimsHierarchyModuleTests
             .Returns(new ClaimsHierarchyResult.Success(claims));
 
         var suppliedAuthorizationMetadataResponse = new AuthorizationMetadataResponse(
-            new List<AuthorizationMetadataResponse.Claim>() { new("ClaimOne", 1) },
-            [
+            Claims: [new("ClaimOne", 1)],
+            Authorizations: [
                 new AuthorizationMetadataResponse.Authorization(
                     1,
                     [
