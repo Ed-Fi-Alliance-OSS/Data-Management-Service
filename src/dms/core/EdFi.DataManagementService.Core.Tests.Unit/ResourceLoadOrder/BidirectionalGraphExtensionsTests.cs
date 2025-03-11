@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using QuickGraph;
 
-namespace EdFi.DataManagementService.Core.Tests.Unit.ApiSchema.ResourceLoadOrder
+namespace EdFi.DataManagementService.Core.Tests.Unit.ResourceLoadOrder
 {
     public class BidirectionalGraphExtensionsTests
     {

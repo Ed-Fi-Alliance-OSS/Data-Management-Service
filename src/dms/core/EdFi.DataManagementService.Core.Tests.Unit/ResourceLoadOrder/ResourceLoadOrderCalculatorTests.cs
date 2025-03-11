@@ -12,14 +12,14 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using QuickGraph;
 
-namespace EdFi.DataManagementService.Core.Tests.Unit.ApiSchema.ResourceLoadOrder;
+namespace EdFi.DataManagementService.Core.Tests.Unit.ResourceLoadOrder;
 
-public class ResourceLoadCalculatorTests
+public class ResourceLoadOrderCalculatorTests
 {
     private ResourceLoadOrderCalculator? _resourceLoadCalculator;
 
     [TestFixture]
-    public class GivenAnApiSchemaWithReferenceToAbstractResource : ResourceLoadCalculatorTests
+    public class GivenAnApiSchemaWithReferenceToAbstractResource : ResourceLoadOrderCalculatorTests
     {
         private readonly ApiSchemaNodes _apiSchemaNodes = new ApiSchemaBuilder()
             .WithStartProject(
@@ -106,7 +106,7 @@ public class ResourceLoadCalculatorTests
     }
 
     [TestFixture]
-    public class GivenAnApiSchemaWithAuthorizationConcerns : ResourceLoadCalculatorTests
+    public class GivenAnApiSchemaWithAuthorizationConcerns : ResourceLoadOrderCalculatorTests
     {
         private readonly ApiSchemaNodes _apiSchemaNodes = new ApiSchemaBuilder()
             .WithStartProject()
@@ -233,7 +233,7 @@ public class ResourceLoadCalculatorTests
     }
 
     [TestFixture]
-    public class GivenAnApiSchemaWithExtension : ResourceLoadCalculatorTests
+    public class GivenAnApiSchemaWithExtension : ResourceLoadOrderCalculatorTests
     {
         private readonly ApiSchemaNodes _apiSchemaNodes = new ApiSchemaBuilder()
             .WithStartProject()
@@ -297,7 +297,7 @@ public class ResourceLoadCalculatorTests
     }
 
     [TestFixture]
-    public class GivenAnApiSchemaWithBreakableCycle : ResourceLoadCalculatorTests
+    public class GivenAnApiSchemaWithBreakableCycle : ResourceLoadOrderCalculatorTests
     {
         private readonly ApiSchemaNodes _apiSchemaNodes = new ApiSchemaBuilder()
             .WithStartProject()
@@ -362,7 +362,7 @@ public class ResourceLoadCalculatorTests
     }
 
     [TestFixture]
-    public class GivenAnApiSchemaWithUnbreakableCycle : ResourceLoadCalculatorTests
+    public class GivenAnApiSchemaWithUnbreakableCycle : ResourceLoadOrderCalculatorTests
     {
         private readonly ApiSchemaNodes _apiSchemaNodes = new ApiSchemaBuilder()
             .WithStartProject()
@@ -414,7 +414,7 @@ public class ResourceLoadCalculatorTests
     }
 
     [TestFixture]
-    public class GivenAnApiSchemaWithSchoolYearType : ResourceLoadCalculatorTests
+    public class GivenAnApiSchemaWithSchoolYearType : ResourceLoadOrderCalculatorTests
     {
         private readonly ApiSchemaNodes _apiSchemaNodes = new ApiSchemaBuilder()
             .WithStartProject()
