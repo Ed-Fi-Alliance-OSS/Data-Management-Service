@@ -242,7 +242,7 @@ function UnitTests {
 }
 
 function IntegrationTests {
-    Invoke-Execute { RunTests -Filter "*.Test.Integration" }
+    Invoke-Execute { RunTests -Filter "*.Tests.Integration" }
 }
 
 function RunE2E {
