@@ -694,26 +694,25 @@ public class SqlAction() : ISqlAction
     {
         await using NpgsqlCommand command = new(
             $@"
-               WITH DocumentSecurityEdOrgs AS (
-                    -- Keep the values as JSONB elements directly without converting to int and back
-                    SELECT jsonb_array_elements(securityelements->'EducationOrganization') AS EdOrgIdJson
-                    FROM dms.document 
+                WITH RECURSIVE ParentHierarchy(Id, EducationOrganizationId, ParentId) AS (
+                -- Base: start with IDs from SecurityElements
+                SELECT h.Id, h.EducationOrganizationId, h.ParentId
+                FROM dms.EducationOrganizationHierarchy h
+                WHERE h.EducationOrganizationId IN (
+                    SELECT jsonb_array_elements(securityelements->'EducationOrganization')::text::BIGINT
+                    FROM dms.document
                     WHERE DocumentUuid = $1 AND DocumentPartitionKey = $2
-                ),
-                MatchingHierarchies AS (
-                    -- Get all hierarchies that contain the education organization IDs
-                    SELECT l.Hierarchy
-                    FROM dms.EducationOrganizationHierarchyTermsLookup l
-                    WHERE EXISTS (
-                        SELECT 1
-                        FROM DocumentSecurityEdOrgs e
-                        WHERE l.Hierarchy @> e.EdOrgIdJson
-                    )
                 )
-                -- Extract all elements from all hierarchies as BIGINT
-                SELECT DISTINCT (elem #>> '{{}}')::BIGINT as EducationOrganizationId
-                FROM MatchingHierarchies,
-                jsonb_array_elements(Hierarchy) elem
+                
+                UNION ALL
+                
+                -- Recursive: find all parents
+                SELECT parent.Id, parent.EducationOrganizationId, parent.ParentId
+                FROM dms.EducationOrganizationHierarchy parent
+                JOIN ParentHierarchy child ON parent.Id = child.ParentId
+                )
+                SELECT DISTINCT EducationOrganizationId 
+                FROM ParentHierarchy
                 ORDER BY EducationOrganizationId;
             ",
             connection,

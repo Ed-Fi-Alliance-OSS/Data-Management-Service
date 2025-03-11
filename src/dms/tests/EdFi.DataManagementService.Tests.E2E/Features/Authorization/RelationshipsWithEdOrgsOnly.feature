@@ -593,7 +593,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   []
                   """
 
-    Rule: Search for a resource in the EducationOrganizationHierarchy with RelationshipsWithEdOrgsOnly authorization
+    Rule: Access a resource in the EducationOrganizationHierarchy with RelationshipsWithEdOrgsOnly authorization
         Background:
             # Build a hierarchy
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2, 201, 20101"
@@ -606,9 +606,18 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        | localEducationAgencyReference    |
                   | 20101    | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | { "localEducationAgencyId": 201} |
-              And the system has these "academicWeeks"
-                  | weekIdentifier | schoolReference       | beginDate  | endDate    | totalInstructionalDays |
-                  | week 1         | { "schoolId": 20101 } | 2023-08-01 | 2023-08-07 | 5                      |
+              And a POST request is made to "/ed-fi/academicWeeks" with
+                  """
+                  {
+                      "schoolReference": {
+                          "schoolId": 20101
+                      },
+                      "beginDate": "2023-08-01",
+                      "endDate": "2023-08-07",
+                      "totalInstructionalDays": 5,
+                      "weekIdentifier": "week 1"
+                  }
+                  """
         @addwait
         Scenario: 13 Ensure client with access to state education agency 2 gets query results for school level classPeriods
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2"
@@ -629,11 +638,32 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                     }
                   ]
                   """
+        Scenario: 14 Ensure client with access to state education agency 2 can get by id school level classPeriods
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2"
+             When a GET request is made to "/ed-fi/academicWeeks/{id}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                   {
+                    "beginDate": "2023-08-01",
+                    "endDate": "2023-08-07",
+                    "totalInstructionalDays": 5,
+                    "id": "{id}",
+                    "weekIdentifier": "week 1",
+                    "schoolReference": {
+                        "schoolId": 20101
+                     }
+                    }
+                  """
+        Scenario: 15 Ensure client with access to state education agency 2 can delete school level classPeriods
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2"
+             When a DELETE request is made to "/ed-fi/academicWeeks/{id}"
+             Then it should respond with 204
 
     Rule: Search for a resource up the EducationOrganizationHierarchy with RelationshipsWithEdOrgsOnly authorization
         Background:
-            # Build a hierarchy
-            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2, 201, 20101"
+                  # Build a hierarchy
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2, 201, 301, 20101"
               And the system has these "stateEducationAgencies"
                   | stateEducationAgencyId | nameOfInstitution | categories                                                                                                            |
                   | 2                      | Test state        | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#State" }] |
@@ -646,8 +676,24 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the system has these "academicWeeks"
                   | weekIdentifier | schoolReference       | beginDate  | endDate    | totalInstructionalDays |
                   | week 1         | { "schoolId": 20101 } | 2023-08-01 | 2023-08-07 | 5                      |
+              And a POST request is made to "/ed-fi/localEducationAgencies" with
+                  """
+                  {
+                      "localEducationAgencyId": 301,
+                      "nameOfInstitution": "Test LEA 301",
+                      "stateEducationAgencyReference": {
+                          "stateEducationAgencyId": 2
+                      },
+                      "categories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#District"
+                          }
+                      ],
+                      "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC"
+                  }
+                  """
         @addwait
-        Scenario: 14 Ensure client with access to school 20101 does not gets query results for LEA because it is up the hierarchy
+        Scenario: 16 Ensure client with access to school 20101 does not gets query results for LEA because it is up the hierarchy
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "20101"
              When a GET request is made to "/ed-fi/localEducationAgencies"
              Then it should respond with 200
@@ -656,11 +702,47 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   [
                   ]
                   """
+        Scenario: 17 Ensure client with access to school 20101 cannot get by id LEA because it is up the hierarchy
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "20101"
+             When a GET request is made to "/ed-fi/localEducationAgencies/{id}"
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                    "detail": "Access to the resource could not be authorized.",
+                    "type": "urn:ed-fi:api:security:authorization:",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "correlationId": "0HNB05S3Q7LS5:00000084",
+                    "validationErrors": {},
+                    "errors": [
+                      "Access to the resource item could not be authorized based on the caller's EducationOrganizationIds claims: '20101'."
+                    ]
+                  }
+                  """
+        Scenario: 18 Ensure client with access to school 20101 cannot delete by id LEA because it is up the hierarchy
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "20101"
+             When a DELETE request is made to "/ed-fi/localEducationAgencies/{id}"
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                    "detail": "Access to the resource could not be authorized.",
+                    "type": "urn:ed-fi:api:security:authorization:",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "correlationId": "0HNB05S3Q7LS5:00000084",
+                    "validationErrors": {},
+                    "errors": [
+                      "Access to the resource item could not be authorized based on the caller's EducationOrganizationIds claims: '20101'."
+                    ]
+                  }
+                  """
 
     @ignore
     Rule: Search for a resource in the EducationOrganizationHierarchy with RelationshipsWithEdOrgsOnly authorization and LONG schoolId
         Background:
-            # Build a hierarchy
+                  # Build a hierarchy
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2, 201, 201019999999"
               And the system has these "stateEducationAgencies"
                   | stateEducationAgencyId | nameOfInstitution | categories                                                                                                            |
@@ -674,14 +756,14 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the system has these "academicWeeks"
                   | weekIdentifier | schoolReference              | beginDate  | endDate    | totalInstructionalDays |
                   | week 1         | { "schoolId": 201019999999 } | 2023-08-01 | 2023-08-07 | 5                      |
-        @addwait
-        @ignore
-        # DMS-556
-        # Kafka bug when mixed INT and BIGINT in the hierarchy array
-        # SEA and LEA below have INT id's while School has BIGINT. This hierarchy row will not replicate to OpenSearch
-        # Couldn't process json field: array=BsonArray{values=[BsonInt32{value=2}, BsonInt32{value=201}, BsonInt64{value=201019999999}]}   [com.redhat.insights.expandjsonsmt.SchemaParser]
-        # org.apache.kafka.connect.errors.ConnectException: Field is not a homogenous array (BsonInt32{value=201} x INT64).
-        Scenario: 14 Ensure client with access to state education agency 244901 gets query results for school level classPeriods
+                  @addwait
+                  @ignore
+                  # DMS-556
+                  # Kafka bug when mixed INT and BIGINT in the hierarchy array
+                  # SEA and LEA below have INT id's while School has BIGINT. This hierarchy row will not replicate to OpenSearch
+                  # Couldn't process json field: array=BsonArray{values=[BsonInt32{value=2}, BsonInt32{value=201}, BsonInt64{value=201019999999}]}   [com.redhat.insights.expandjsonsmt.SchemaParser]
+                  # org.apache.kafka.connect.errors.ConnectException: Field is not a homogenous array (BsonInt32{value=201} x INT64).
+        Scenario: 19 Ensure client with access to state education agency 244901 gets query results for school level classPeriods
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2"
              When a GET request is made to "/ed-fi/academicWeeks"
              Then it should respond with 200
