@@ -163,7 +163,7 @@ public record ClaimSetImportResult
 
 public record AuthorizationStrategyGetResult
 {
-    public record Success(IEnumerable<AuthorizationStrategy> AuthorizationStrategy) : AuthorizationStrategyGetResult();
+    public record Success(IEnumerable<DataModel.Model.ClaimSets.AuthorizationStrategy> AuthorizationStrategy) : AuthorizationStrategyGetResult();
 
     public record FailureUnknown(string FailureMessage) : AuthorizationStrategyGetResult();
 }

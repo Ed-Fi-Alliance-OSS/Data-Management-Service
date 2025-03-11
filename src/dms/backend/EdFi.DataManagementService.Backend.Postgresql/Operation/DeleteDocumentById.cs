@@ -52,10 +52,28 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
                 return new DeleteResult.DeleteFailureNotExists();
             }
 
+            long[] educationOrganizationSecurityElements = [];
+
             JsonNode securityElements = documentSummary.SecurityElements.Deserialize<JsonNode>()!;
+            string[] namespaceSecurityElements = securityElements["Namespace"]!
+                .AsArray()
+                .Select(v => v!.GetValue<string>())
+                .ToArray();
+
+            if (deleteRequest.ResourceAuthorizationHandler.IsRelationshipWithEdOrg)
+            {
+                educationOrganizationSecurityElements = await _sqlAction.GetAncestorEducationOrganizationIds(
+                    PartitionKeyFor(deleteRequest.DocumentUuid),
+                    deleteRequest.DocumentUuid,
+                    connection,
+                    transaction,
+                    deleteRequest.TraceId
+                );
+            }
 
             var deleteAuthorizationResult = deleteRequest.ResourceAuthorizationHandler.Authorize(
-                securityElements
+                namespaceSecurityElements,
+                educationOrganizationSecurityElements
             );
 
             if (deleteAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
@@ -63,7 +81,12 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
                 return new DeleteResult.DeleteFailureNotAuthorized(notAuthorized.ErrorMessages);
             }
 
-            if (deleteRequest.ResourceInfo.EducationOrganizationHierarchyInfo.IsInEducationOrganizationHierarchy)
+            if (
+                deleteRequest
+                    .ResourceInfo
+                    .EducationOrganizationHierarchyInfo
+                    .IsInEducationOrganizationHierarchy
+            )
             {
                 await _sqlAction.DeleteEducationOrganizationHierarchy(
                     deleteRequest.ResourceInfo.ProjectName.Value,

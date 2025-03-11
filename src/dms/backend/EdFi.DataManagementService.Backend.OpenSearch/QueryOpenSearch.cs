@@ -32,6 +32,21 @@ namespace EdFi.DataManagementService.Backend.OpenSearch;
 ///            "match_phrase": {
 ///              "edfidoc.currentSchoolYear": false
 ///            }
+///          },
+///          {
+///            "bool": {
+///              "should": [
+///                {
+///                  "terms": {
+///                    "securityelements.EducationOrganization": {
+///                      "index": "edfi.dms.educationorganizationhierarchytermslookup",
+///                      "id": "6001010",
+///                      "path": "hierarchy.array"
+///                    }
+///                  }
+///                }
+///              ]
+///            }
 ///          }
 ///        ]
 ///      }
@@ -118,38 +133,55 @@ public static partial class QueryOpenSearch
                 }
             }
 
-            foreach (var strategyEvaluator in queryRequest.AuthorizationStrategyEvaluators)
-            {
-                if (strategyEvaluator.Filters.Length != 0)
+            IEnumerable<JsonObject?> authorizationFilters = queryRequest
+                .AuthorizationStrategyEvaluators.Select(strategyEvaluator =>
                 {
-                    JsonObject[] possibleFilters = strategyEvaluator
-                        .Filters.Select(filter => new JsonObject
+                    IEnumerable<JsonObject> namespaceFilters = strategyEvaluator
+                        .Filters.Where(f => f.FilterPath == "Namespace")
+                        .Select(filter => new JsonObject
                         {
                             ["match_phrase"] = new JsonObject
                             {
-                                [$@"securityelements.{filter.FilterPath}"] = filter.Value,
+                                [$"securityelements.{filter.FilterPath}"] = filter.Value,
                             },
-                        })
-                        .ToArray();
-                    if (strategyEvaluator.Operator.Equals(FilterOperator.Or))
-                    {
-                        terms.Add(
-                            new JsonObject
+                        });
+
+                    IEnumerable<JsonObject> edOrgFilters = strategyEvaluator
+                        .Filters.Where(f => f.FilterPath == "EducationOrganization")
+                        .Select(filter => new JsonObject
+                        {
+                            ["terms"] = new JsonObject
                             {
-                                ["bool"] = new JsonObject { ["should"] = new JsonArray(possibleFilters) },
-                            }
-                        );
-                    }
-                    if (strategyEvaluator.Operator.Equals(FilterOperator.And))
+                                [$"securityelements.{filter.FilterPath}"] = new JsonObject
+                                {
+                                    ["index"] = "edfi.dms.educationorganizationhierarchytermslookup",
+                                    ["id"] = filter.Value,
+                                    ["path"] = "hierarchy.array",
+                                },
+                            },
+                        });
+
+                    JsonObject[] strategyFilters = namespaceFilters.Union(edOrgFilters).ToArray();
+
+                    if (strategyFilters.Any())
                     {
-                        terms.Add(
-                            new JsonObject
-                            {
-                                ["bool"] = new JsonObject { ["must"] = new JsonArray(possibleFilters) },
-                            }
-                        );
+                        // Use the appropriate boolean operator based on the strategy
+                        string boolOperator =
+                            strategyEvaluator.Operator == FilterOperator.Or ? "should" : "must";
+
+                        return new JsonObject
+                        {
+                            ["bool"] = new JsonObject { [boolOperator] = new JsonArray(strategyFilters) },
+                        };
                     }
-                }
+
+                    return null;
+                })
+                .Where(filter => filter != null);
+
+            foreach (JsonObject? filter in authorizationFilters)
+            {
+                terms.Add(filter);
             }
 
             JsonObject query = new()
@@ -168,6 +200,8 @@ public static partial class QueryOpenSearch
             {
                 query.Add(new("from", queryRequest.PaginationParameters.Offset));
             }
+
+            logger.LogDebug("Query - {TraceId} - {Query}", queryRequest.TraceId.Value, query.ToJsonString());
 
             BytesResponse response = await client.Http.PostAsync<BytesResponse>(
                 $"/{indexName}/_search",

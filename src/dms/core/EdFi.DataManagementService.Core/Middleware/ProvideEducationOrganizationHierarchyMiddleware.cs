@@ -40,8 +40,8 @@ internal class ProvideEducationOrganizationHierarchyMiddleware(ILogger _logger) 
             return new EducationOrganizationHierarchyInfo(false, default, []);
         }
 
-        int educationOrganizationId = ExtractEducationOrganizationId(context);
-        int[] parentIds = FindParentEducationOrganizationIds(context);
+        long educationOrganizationId = ExtractEducationOrganizationId(context);
+        long[] parentIds = FindParentEducationOrganizationIds(context);
 
         _logger.LogDebug(
             "Resource {ResourceName} with Id: {Id} IS in EducationOrganizationHierarchy and has parentIds: [{ParentIds}] - {TraceId}",
@@ -54,17 +54,17 @@ internal class ProvideEducationOrganizationHierarchyMiddleware(ILogger _logger) 
         return new EducationOrganizationHierarchyInfo(true, educationOrganizationId, parentIds);
     }
 
-    private int ExtractEducationOrganizationId(PipelineContext context)
+    private long ExtractEducationOrganizationId(PipelineContext context)
     {
         (DocumentIdentity documentIdentity, _) = context.ResourceSchema.ExtractIdentities(
             context.ParsedBody,
             logger: _logger
         );
 
-        return int.Parse(documentIdentity.DocumentIdentityElements[0].IdentityValue);
+        return long.Parse(documentIdentity.DocumentIdentityElements[0].IdentityValue);
     }
 
-    private static int[] FindParentEducationOrganizationIds(PipelineContext context)
+    private static long[] FindParentEducationOrganizationIds(PipelineContext context)
     {
         if (context.DocumentSecurityElements?.EducationOrganization == null)
         {

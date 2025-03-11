@@ -36,6 +36,5 @@
     "behavior.on.null.values": "delete",
     "drop.invalid.message": "true",
     "index.write.method": "upsert"
-
   }
 }

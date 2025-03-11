@@ -584,8 +584,8 @@ public class SqlAction() : ISqlAction
     public async Task<int> InsertEducationOrganizationHierarchy(
         string projectName,
         string resourceName,
-        int educationOrganizationId,
-        int[] parentEducationOrganizationIds,
+        long educationOrganizationId,
+        long[] parentEducationOrganizationIds,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     )
@@ -612,8 +612,8 @@ public class SqlAction() : ISqlAction
     public async Task<int> UpdateEducationOrganizationHierarchy(
         string projectName,
         string resourceName,
-        int educationOrganizationId,
-        int[] parentEducationOrganizationIds,
+        long educationOrganizationId,
+        long[] parentEducationOrganizationIds,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     )
@@ -631,7 +631,7 @@ public class SqlAction() : ISqlAction
             {
                 new() { Value = projectName },
                 new() { Value = resourceName },
-                new() { Value = educationOrganizationId }
+                new() { Value = educationOrganizationId },
             },
         };
         await deleteCommand.PrepareAsync();
@@ -659,7 +659,7 @@ public class SqlAction() : ISqlAction
     public async Task<int> DeleteEducationOrganizationHierarchy(
         string projectName,
         string resourceName,
-        int educationOrganizationId,
+        long educationOrganizationId,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     )
@@ -682,5 +682,60 @@ public class SqlAction() : ISqlAction
         };
         await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task<long[]> GetAncestorEducationOrganizationIds(
+        PartitionKey documentPartitionKey,
+        DocumentUuid documentUuid,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        TraceId traceId
+    )
+    {
+        await using NpgsqlCommand command = new(
+            $"""
+                WITH RECURSIVE ParentHierarchy(Id, EducationOrganizationId, ParentId) AS (
+                SELECT h.Id, h.EducationOrganizationId, h.ParentId
+                FROM dms.EducationOrganizationHierarchy h
+                WHERE h.EducationOrganizationId IN (
+                    SELECT jsonb_array_elements(securityelements->'EducationOrganization')::text::BIGINT
+                    FROM dms.document
+                    WHERE DocumentUuid = $1 AND DocumentPartitionKey = $2
+                )
+
+                UNION ALL
+
+                SELECT parent.Id, parent.EducationOrganizationId, parent.ParentId
+                FROM dms.EducationOrganizationHierarchy parent
+                JOIN ParentHierarchy child ON parent.Id = child.ParentId
+                )
+                SELECT EducationOrganizationId
+                FROM ParentHierarchy
+                ORDER BY EducationOrganizationId
+                {SqlFor(LockOption.BlockUpdateDelete)};
+            """,
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = documentUuid.Value },
+                new() { Value = documentPartitionKey.Value },
+            },
+        };
+        await command.PrepareAsync();
+
+        await command.PrepareAsync();
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+
+        List<long> edOrgIds = [];
+
+        while (await reader.ReadAsync())
+        {
+            edOrgIds.Add(reader.GetInt64(reader.GetOrdinal("EducationOrganizationId")));
+        }
+
+        return edOrgIds.Distinct().ToArray();
     }
 }

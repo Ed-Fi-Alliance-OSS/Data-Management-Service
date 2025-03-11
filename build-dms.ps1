@@ -86,7 +86,11 @@ param(
 
     # Only required with E2E testing.
     [switch]
-    $EnableElasticSearch
+    $EnableElasticSearch,
+
+    # Only required with E2E testing.
+    [switch]
+    $UsePublishedImage
 )
 
 $solutionRoot = "$PSScriptRoot/src/dms"
@@ -238,7 +242,7 @@ function UnitTests {
 }
 
 function IntegrationTests {
-    Invoke-Execute { RunTests -Filter "*.Test.Integration" }
+    Invoke-Execute { RunTests -Filter "*.Tests.Integration" }
 }
 
 function RunE2E {
@@ -246,7 +250,10 @@ function RunE2E {
 }
 
 function E2ETests {
-    Invoke-Step { DockerBuild }
+    if (-not $UsePublishedImage)
+    {
+        Invoke-Step { DockerBuild }
+    }
 
     # Clean up all the containers and volumes
     Invoke-Execute {
@@ -254,30 +261,30 @@ function E2ETests {
             Push-Location eng/docker-compose/
             ./start-local-dms.ps1 -SearchEngine "OpenSearch" -EnableConfig -d -v
             ./start-local-dms.ps1 -SearchEngine "ElasticSearch" -EnableConfig -d -v
+            ./start-published-dms.ps1 -SearchEngine "OpenSearch" -EnableConfig -d -v
+            ./start-published-dms.ps1 -SearchEngine "ElasticSearch" -EnableConfig -d -v
         }
         finally {
             Pop-Location
         }
     }
 
-    if ($EnableOpenSearch) {
-        Invoke-Execute {
-            try {
-                Push-Location eng/docker-compose/
-                ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "OpenSearch" -EnableConfig -r
-                Start-Sleep 20
-                ./setup-keycloak.ps1
-            }
-            finally {
-                Pop-Location
-            }
+    if ($EnableOpenSearch -or $EnableElasticSearch) {
+
+        $searchEngine = "OpenSearch"
+        if ($EnableElasticSearch) {
+            $searchEngine = "ElasticSearch"
         }
-    }
-    elseif ($EnableElasticSearch) {
+
         Invoke-Execute {
             try {
                 Push-Location eng/docker-compose/
-                ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "ElasticSearch" -EnableConfig -r
+                if ($UsePublishedImage) {
+                    ./start-published-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig
+                } else {
+                    ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig -r
+                }
+
                 Start-Sleep 20
                 ./setup-keycloak.ps1
             }
@@ -361,10 +368,13 @@ function Invoke-TestExecution {
         $EnableOpenSearch,
 
         [switch]
-        $EnableElasticSearch
+        $EnableElasticSearch,
+
+        [switch]
+        $UsePublishedImage
     )
     switch ($Filter) {
-        E2ETests { Invoke-Step { E2ETests -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch } }
+        E2ETests { Invoke-Step { E2ETests -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage } }
         UnitTests { Invoke-Step { UnitTests } }
         IntegrationTests { Invoke-Step { IntegrationTests } }
         Default { "Unknown Test Type" }
@@ -445,7 +455,7 @@ Invoke-Main {
             Invoke-Publish
         }
         UnitTest { Invoke-TestExecution UnitTests }
-        E2ETest { Invoke-TestExecution E2ETests -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch }
+        E2ETest { Invoke-TestExecution E2ETests -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage }
         IntegrationTest { Invoke-TestExecution IntegrationTests }
         Coverage { Invoke-Coverage }
         Package { Invoke-BuildPackage }

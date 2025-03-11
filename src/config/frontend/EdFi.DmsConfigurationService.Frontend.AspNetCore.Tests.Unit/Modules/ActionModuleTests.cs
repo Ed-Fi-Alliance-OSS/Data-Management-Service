@@ -54,6 +54,12 @@ public class RegisterActionEndpointTests
                     Name = "Delete",
                     Uri = "uri://ed-fi.org/api/actions/delete",
                 },
+                new Action
+                {
+                    Id = 5,
+                    Name = "ReadChanges",
+                    Uri = "uri://ed-fi.org/api/actions/readChanges",
+                },
             ];
         }
 

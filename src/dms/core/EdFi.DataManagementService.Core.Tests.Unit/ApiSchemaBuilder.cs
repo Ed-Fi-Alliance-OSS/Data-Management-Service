@@ -695,16 +695,16 @@ public class ApiSchemaBuilder
     }
 
     /// <summary>
-    /// Adds a core OpenAPI specification to a project definition.
+    /// Adds a core OpenAPI CoreResources to a project definition.
     /// </summary>
-    public ApiSchemaBuilder WithCoreOpenApiSpecification(JsonNode schemas, JsonNode paths, JsonArray tags)
+    public ApiSchemaBuilder WithOpenApiCoreResources(JsonNode schemas, JsonNode paths, JsonArray tags)
     {
         if (_currentProjectNode == null)
         {
             throw new InvalidOperationException();
         }
 
-        _currentProjectNode["coreOpenApiSpecification"] = new JsonObject
+        _currentProjectNode["openApiCoreResources"] = new JsonObject
         {
             ["components"] = new JsonObject { ["schemas"] = schemas },
             ["paths"] = paths,
@@ -714,9 +714,28 @@ public class ApiSchemaBuilder
     }
 
     /// <summary>
-    /// Adds OpenAPI extension fragments to a project definition.
+    /// Adds a core OpenAPI Descriptors to a project definition.
     /// </summary>
-    public ApiSchemaBuilder WithOpenApiExtensionFragments(
+    public ApiSchemaBuilder WithOpenApiCoreDescriptors(JsonNode schemas, JsonNode paths, JsonArray tags)
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentProjectNode["openApiCoreDescriptors"] = new JsonObject
+        {
+            ["components"] = new JsonObject { ["schemas"] = schemas },
+            ["paths"] = paths,
+            ["tags"] = tags,
+        };
+        return this;
+    }
+
+    /// <summary>
+    /// Adds OpenAPI extension Resource fragments to a project definition.
+    /// </summary>
+    public ApiSchemaBuilder WithOpenApiExtensionResourceFragments(
         JsonNode exts,
         JsonNode newPaths,
         JsonNode newSchemas,
@@ -728,7 +747,32 @@ public class ApiSchemaBuilder
             throw new InvalidOperationException();
         }
 
-        _currentProjectNode["openApiExtensionFragments"] = new JsonObject
+        _currentProjectNode["openApiExtensionResourceFragments"] = new JsonObject
+        {
+            ["exts"] = exts,
+            ["newPaths"] = newPaths,
+            ["newSchemas"] = newSchemas,
+            ["newTags"] = newTags,
+        };
+        return this;
+    }
+
+    /// <summary>
+    /// Adds OpenAPI Extension Descriptor fragments to a project definition.
+    /// </summary>
+    public ApiSchemaBuilder WithOpenApiExtensionDescriptorFragments(
+        JsonNode exts,
+        JsonNode newPaths,
+        JsonNode newSchemas,
+        JsonNode newTags
+    )
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentProjectNode["openApiExtensionDescriptorFragments"] = new JsonObject
         {
             ["exts"] = exts,
             ["newPaths"] = newPaths,

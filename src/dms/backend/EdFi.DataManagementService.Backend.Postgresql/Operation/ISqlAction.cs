@@ -129,8 +129,8 @@ public interface ISqlAction
     public Task<int> InsertEducationOrganizationHierarchy(
         string projectName,
         string resourceName,
-        int educationOrganizationId,
-        int[] parentEducationOrganizationIds,
+        long educationOrganizationId,
+        long[] parentEducationOrganizationIds,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     );
@@ -138,8 +138,8 @@ public interface ISqlAction
     public Task<int> UpdateEducationOrganizationHierarchy(
         string projectName,
         string resourceName,
-        int educationOrganizationId,
-        int[] parentEducationOrganizationIds,
+        long educationOrganizationId,
+        long[] parentEducationOrganizationIds,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     );
@@ -147,8 +147,16 @@ public interface ISqlAction
     public Task<int> DeleteEducationOrganizationHierarchy(
         string projectName,
         string resourceName,
-        int educationOrganizationId,
+        long educationOrganizationId,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
+    );
+
+    public Task<long[]> GetAncestorEducationOrganizationIds(
+        PartitionKey documentPartitionKey,
+        DocumentUuid documentUuid,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        TraceId traceId
     );
 }

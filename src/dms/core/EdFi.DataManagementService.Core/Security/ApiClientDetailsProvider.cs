@@ -32,7 +32,7 @@ public class ApiClientDetailsProvider() : IApiClientDetailsProvider
         ClientAuthorizations clientAuthorizations = new(
             tokenId,
             claimSetName,
-            edOrgIds.Select(x => new EducationOrganizationId(int.Parse(x))).ToList(),
+            edOrgIds.Select(x => new EducationOrganizationId(long.Parse(x))).ToList(),
             namespacePrefixes.Select(x => new NamespacePrefix(x)).ToList()
         );
         return clientAuthorizations;

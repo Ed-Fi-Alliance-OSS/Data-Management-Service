@@ -6,4 +6,4 @@
 namespace EdFi.DataManagementService.Core.External.Model;
 
 // An int type branded as a EducationOrganizationId, which is a unit of security authorization.
-public record struct EducationOrganizationId(int Value);
+public record struct EducationOrganizationId(long Value);
