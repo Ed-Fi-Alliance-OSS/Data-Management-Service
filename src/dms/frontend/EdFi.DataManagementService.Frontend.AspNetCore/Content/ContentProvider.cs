@@ -38,28 +38,20 @@ public interface IContentProvider
     /// </summary>
     /// <param name="fileNamePattern"></param>
     /// <param name="fileExtension"></param>
-    /// <param name="section"></param>
     /// <returns></returns>
-    IEnumerable<string> Files(string fileNamePattern, string fileExtension, string section = "Core");
+    IEnumerable<string> Files(string fileNamePattern, string fileExtension);
 }
 
 /// <summary>
 /// Loads and parses the file content.
 /// </summary>
-public class ContentProvider(ILogger<ContentProvider> _logger, IAssemblyProvider _assemblyProvider)
-    : IContentProvider
+public class ContentProvider(ILogger<ContentProvider> _logger, IAssemblyProvider _assemblyProvider) : IContentProvider
 {
-    private Type _dataStandardMarker = typeof(DataStandard52.ApiSchema.Core.Marker);
-    public const string tpdmSectionName = "tpdm";
+    private readonly Type _dataStandardMarker = typeof(DataStandard52.ApiSchema.Core.Marker);
 
-    public IEnumerable<string> Files(string fileNamePattern, string fileExtension, string section = "Core")
+    public IEnumerable<string> Files(string fileNamePattern, string fileExtension)
     {
         var files = new List<string>();
-        if (section.Equals(tpdmSectionName, StringComparison.OrdinalIgnoreCase))
-        {
-            _dataStandardMarker = typeof(DataStandard52.ApiSchema.TPDM.Marker);
-        }
-
         var assembly = _assemblyProvider.GetAssemblyByType(_dataStandardMarker);
         foreach (string resourceName in assembly.GetManifestResourceNames())
         {
