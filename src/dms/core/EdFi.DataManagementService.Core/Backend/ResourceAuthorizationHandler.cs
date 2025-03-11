@@ -19,16 +19,22 @@ public class ResourceAuthorizationHandler(
     ILogger logger
 ) : IResourceAuthorizationHandler
 {
+    private static class FilterPaths
+    {
+        public const string Namespace = "Namespace";
+        public const string EducationOrganization = "EducationOrganization";
+    }
+
     public bool IsRelationshipWithEdOrg =>
         Enumerable.Any(
             authorizationStrategyEvaluators,
-            a => Enumerable.Any(a.Filters, f => f.FilterPath == "EducationOrganization")
+            a => Enumerable.Any(a.Filters, f => f.FilterPath == FilterPaths.EducationOrganization)
         );
 
     public ResourceAuthorizationResult Authorize(string[] namespaces, long[] educationOrganizationIds)
     {
-        var andFilters = new List<(AuthorizationFilter Filter, bool IsAuthorized)>();
-        var orFilters = new List<(AuthorizationFilter Filter, bool IsAuthorized)>();
+        List<(AuthorizationFilter Filter, bool IsAuthorized)> andFilters = [];
+        List<(AuthorizationFilter Filter, bool IsAuthorized)> orFilters = [];
 
         foreach (var evaluator in authorizationStrategyEvaluators)
         {
@@ -53,7 +59,7 @@ public class ResourceAuthorizationHandler(
             return CreateNotAuthorizedResult(andFilters);
         }
 
-        if (orFilters.Any() && orFilters.TrueForAll(f => !f.IsAuthorized))
+        if (orFilters.Any() && Enumerable.All(orFilters, f => !f.IsAuthorized))
         {
             return CreateNotAuthorizedResult(orFilters);
         }
@@ -67,36 +73,59 @@ public class ResourceAuthorizationHandler(
         long[] educationOrganizationIds
     )
     {
-        string[] values = [];
+        switch (filter.FilterPath)
+        {
+            case FilterPaths.Namespace:
+                return filter.Comparison switch
+                {
+                    FilterComparison.Equals => namespaces.Contains(filter.Value),
+                    FilterComparison.StartsWith => namespaces
+                        .ToList()
+                        .Exists(v => v.StartsWith(filter.Value)),
+                    _ => false,
+                };
 
-        if (filter.FilterPath == "Namespace")
-        {
-            values = namespaces;
-        }
-        else if (filter.FilterPath == "EducationOrganization")
-        {
-            values = educationOrganizationIds.Select(e => e.ToString()).ToArray();
-        }
+            case FilterPaths.EducationOrganization when long.TryParse(filter.Value, out long edOrgIdValue):
+                return filter.Comparison switch
+                {
+                    FilterComparison.Equals => educationOrganizationIds.Contains(edOrgIdValue),
+                    _ => false,
+                };
 
-        return filter.Comparison switch
-        {
-            FilterComparison.Equals => Array.Exists(values, v => v.Equals(filter.Value)),
-            FilterComparison.StartsWith => Array.Exists(values, v => v.StartsWith(filter.Value)),
-            _ => false,
-        };
+            default:
+                return false;
+        }
     }
 
     private ResourceAuthorizationResult.NotAuthorized CreateNotAuthorizedResult(
         IEnumerable<(AuthorizationFilter Filter, bool IsAuthorized)> evaluations
     )
     {
-        var claimValues = authorizationStrategyEvaluators
-            .SelectMany(e => e.Filters.Select(f => $"'{f.Value}'"))
-            .Distinct();
+        List<string> failedPaths = evaluations
+            .SelectMany(e => new[] { e.Filter })
+            .Select(f => f.FilterPath)
+            .Distinct()
+            .ToList();
 
-        var errorMessages = evaluations
+        Dictionary<string, List<string>> claimsByPath = failedPaths.ToDictionary(
+            path => path,
+            path =>
+                authorizationStrategyEvaluators
+                    .SelectMany(e => e.Filters)
+                    .Where(f => f.FilterPath == path)
+                    .Select(f => $"'{f.Value}'")
+                    .Distinct()
+                    .ToList()
+        );
+
+        string[] errorMessages = evaluations
             .Where(e => !e.IsAuthorized)
-            .Select(e => e.Filter.ErrorMessageTemplate.Replace("{claims}", string.Join(", ", claimValues)))
+            .Select(e =>
+            {
+                string claims = string.Join(", ", claimsByPath[e.Filter.FilterPath]);
+                return e.Filter.ErrorMessageTemplate.Replace("{claims}", claims);
+            })
+            .Distinct()
             .ToArray();
 
         return new ResourceAuthorizationResult.NotAuthorized(errorMessages);

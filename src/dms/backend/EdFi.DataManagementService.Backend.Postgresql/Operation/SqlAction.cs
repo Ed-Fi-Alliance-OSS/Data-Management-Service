@@ -693,9 +693,8 @@ public class SqlAction() : ISqlAction
     )
     {
         await using NpgsqlCommand command = new(
-            $@"
+            $"""
                 WITH RECURSIVE ParentHierarchy(Id, EducationOrganizationId, ParentId) AS (
-                -- Base: start with IDs from SecurityElements
                 SELECT h.Id, h.EducationOrganizationId, h.ParentId
                 FROM dms.EducationOrganizationHierarchy h
                 WHERE h.EducationOrganizationId IN (
@@ -703,18 +702,18 @@ public class SqlAction() : ISqlAction
                     FROM dms.document
                     WHERE DocumentUuid = $1 AND DocumentPartitionKey = $2
                 )
-                
+
                 UNION ALL
-                
-                -- Recursive: find all parents
+
                 SELECT parent.Id, parent.EducationOrganizationId, parent.ParentId
                 FROM dms.EducationOrganizationHierarchy parent
                 JOIN ParentHierarchy child ON parent.Id = child.ParentId
                 )
-                SELECT DISTINCT EducationOrganizationId 
+                SELECT EducationOrganizationId
                 FROM ParentHierarchy
-                ORDER BY EducationOrganizationId;
-            ",
+                ORDER BY EducationOrganizationId
+                {SqlFor(LockOption.BlockUpdateDelete)};
+            """,
             connection,
             transaction
         )
@@ -722,7 +721,7 @@ public class SqlAction() : ISqlAction
             Parameters =
             {
                 new() { Value = documentUuid.Value },
-                new() { Value = documentPartitionKey.Value }
+                new() { Value = documentPartitionKey.Value },
             },
         };
         await command.PrepareAsync();
@@ -737,6 +736,6 @@ public class SqlAction() : ISqlAction
             edOrgIds.Add(reader.GetInt64(reader.GetOrdinal("EducationOrganizationId")));
         }
 
-        return edOrgIds.ToArray();
+        return edOrgIds.Distinct().ToArray();
     }
 }
