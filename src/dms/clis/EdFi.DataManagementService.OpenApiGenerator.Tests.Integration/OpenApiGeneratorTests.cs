@@ -3,9 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using FakeItEasy;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json.Linq;
 
 namespace EdFi.DataManagementService.OpenApiGenerator.Tests.Integration;
 
@@ -203,11 +203,11 @@ public class OpenApiGeneratorTests
             _generator.Generate(coreSchemaPath, extensionSchemaPath);
 
             // Read and parse the JSON schema to validate keys
-            JObject coreSchema = JObject.Parse(File.ReadAllText(coreSchemaPath));
+            JsonNode? coreSchema = JsonObject.Parse(File.ReadAllText(coreSchemaPath));
 
             // Check if openApiCoreDescriptors and openApiCoreResources keys exist in the core schema
-            bool coreDescriptorsExist = coreSchema["projectSchema"]?["openApiCoreDescriptors"] != null;
-            bool coreResourcesExist = coreSchema["projectSchema"]?["openApiCoreResources"] != null;
+            bool coreDescriptorsExist = coreSchema?["projectSchema"]?["openApiCoreDescriptors"] != null;
+            bool coreResourcesExist = coreSchema?["projectSchema"]?["openApiCoreResources"] != null;
 
             // Assert
             Assert.That(coreDescriptorsExist, "openApiCoreDescriptors key is missing.");
@@ -233,12 +233,12 @@ public class OpenApiGeneratorTests
             _generator.Generate(coreSchemaPath, extensionSchemaPath);
 
             // Read and parse the JSON schema to validate keys in extension schema
-            JObject extensionSchema = JObject.Parse(extensionSchemaJson);
+            JsonNode? extensionSchema = JsonObject.Parse(extensionSchemaJson);
 
             bool extensionDescriptorsExist =
-                extensionSchema["projectSchema"]?["openApiExtensionDescriptorFragments"] != null;
+                extensionSchema?["projectSchema"]?["openApiExtensionDescriptorFragments"] != null;
             bool extensionResourcesExist =
-                extensionSchema["projectSchema"]?["openApiExtensionResourceFragments"] != null;
+                extensionSchema?["projectSchema"]?["openApiExtensionResourceFragments"] != null;
 
             // Assert that both keys exist in the extension schema
             Assert.That(extensionDescriptorsExist, "openApiExtensionDescriptorFragments key is missing.");
