@@ -39,13 +39,13 @@ public class ClaimSetTests : DatabaseTest
         [Test]
         public async Task Should_get_test_claimSet_from_get_all()
         {
-            var getResul = await _repository.QueryClaimSet(
+            var getResult = await _repository.QueryClaimSet(
                 new PagingQuery() { Limit = 25, Offset = 0 },
                 false
             );
-            getResul.Should().BeOfType<ClaimSetQueryResult.Success>();
+            getResult.Should().BeOfType<ClaimSetQueryResult.Success>();
 
-            object claimSetFromDb = ((ClaimSetQueryResult.Success)getResul).ClaimSetResponses.First();
+            object claimSetFromDb = ((ClaimSetQueryResult.Success)getResult).ClaimSetResponses.First();
             claimSetFromDb.Should().NotBeNull();
             claimSetFromDb.Should().BeOfType<ClaimSetResponseReduced>();
 

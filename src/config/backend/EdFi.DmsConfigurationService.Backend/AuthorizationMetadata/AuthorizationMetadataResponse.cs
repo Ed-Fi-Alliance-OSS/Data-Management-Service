@@ -3,7 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-namespace EdFi.DmsConfigurationService.DataModel.Model.AuthorizationMetadata;
+namespace EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
 
 public record AuthorizationMetadataResponse(
     List<AuthorizationMetadataResponse.Claim> Claims,
@@ -17,6 +17,21 @@ public record AuthorizationMetadataResponse(
         private readonly Lazy<int> _hashCode = new(() => ComputeHashCode(Actions));
 
         public override int GetHashCode() => _hashCode.Value;
+
+        public virtual bool Equals(Authorization? other)
+        {
+            if (other is null)
+            {
+                return false;
+            }
+
+            if (ReferenceEquals(this, other))
+            {
+                return true;
+            }
+
+            return _hashCode.Value.Equals(other._hashCode.Value);
+        }
 
         private static int ComputeHashCode(Action[] actions)
         {

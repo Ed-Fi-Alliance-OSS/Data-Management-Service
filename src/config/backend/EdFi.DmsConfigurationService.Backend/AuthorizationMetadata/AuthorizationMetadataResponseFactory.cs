@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend.Repositories;
-using EdFi.DmsConfigurationService.DataModel.Model.AuthorizationMetadata;
 
 namespace EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
 
@@ -42,7 +41,7 @@ public class AuthorizationMetadataResponseFactory : IAuthorizationMetadataRespon
             if (claim.Claims.Count > 0)
             {
                 // Perform depth-first processing of the hierarchy
-                foreach (var childClaim in claim.Claims!)
+                foreach (var childClaim in claim.Claims)
                 {
                     AddLeafClaims(childClaim);
                 }
@@ -106,22 +105,24 @@ public class AuthorizationMetadataResponseFactory : IAuthorizationMetadataRespon
                     int ApplyAuthorizationToResponse(AuthorizationMetadataResponse.Authorization proposedAuthorization)
                     {
                         // Look for an existing equivalent authorization
-                        if (!authorizationIdByHashCode.TryGetValue(
+                        if (authorizationIdByHashCode.TryGetValue(
                                 proposedAuthorization.GetHashCode(),
-                                out int authorizationId))
+                                out int existingAuthorizationId))
                         {
-                            // Assign the next id
-                            authorizationId = nextAuthorizationId++;
-                            var newAuthorization = proposedAuthorization with { Id = authorizationId };
-
-                            // Capture this unique authorization's Id (for reuse by other claims)
-                            authorizationIdByHashCode.Add(newAuthorization.GetHashCode(), authorizationId);
-
-                            // Add the authorization to the response
-                            responseAuthorizations.Add(newAuthorization);
+                            return existingAuthorizationId;
                         }
 
-                        return authorizationId;
+                        // Assign the next id
+                        int newAuthorizationId = nextAuthorizationId++;
+                        var newAuthorization = proposedAuthorization with { Id = newAuthorizationId };
+
+                        // Capture this unique authorization's Id (for reuse by other claims)
+                        authorizationIdByHashCode.Add(newAuthorization.GetHashCode(), newAuthorizationId);
+
+                        // Add the authorization to the response
+                        responseAuthorizations.Add(newAuthorization);
+
+                        return newAuthorizationId;
                     }
 
                     AuthorizationMetadataResponse.Authorization GetProposedAuthorization()
