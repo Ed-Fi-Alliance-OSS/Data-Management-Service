@@ -15,6 +15,7 @@ using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.OpenApi;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Validation;
 using Microsoft.Extensions.DependencyInjection;
@@ -40,7 +41,8 @@ internal class ApiService(
     IOptions<AppSettings> _appSettings,
     IAuthorizationStrategiesProvider _authorizationStrategiesProvider,
     IAuthorizationServiceFactory _authorizationServiceFactory,
-    [FromKeyedServices("backendResiliencePipeline")] ResiliencePipeline _resiliencePipeline
+    [FromKeyedServices("backendResiliencePipeline")] ResiliencePipeline _resiliencePipeline,
+    ResourceLoadOrderCalculator _resourceLoadCalculator
 ) : IApiService
 {
     /// <summary>
@@ -327,11 +329,21 @@ internal class ApiService(
     /// <returns>JSON array ordered by dependency sequence</returns>
     public JsonArray GetDependencies()
     {
-        DependencyCalculator dependencyCalculator = new(
-            _apiSchemaProvider.GetApiSchemaNodes().CoreApiSchemaRootNode,
-            _logger
+        return new JsonArray(
+            _resourceLoadCalculator
+                .GetLoadOrder()
+                .Select(loadOrder =>
+                    JsonValue.Create(
+                        new
+                        {
+                            resource = loadOrder.Resource,
+                            order = loadOrder.Group,
+                            operations = loadOrder.Operations,
+                        }
+                    )
+                )
+                .ToArray<JsonNode?>()
         );
-        return dependencyCalculator.GetDependenciesFromResourceSchema();
     }
 
     /// <summary>
