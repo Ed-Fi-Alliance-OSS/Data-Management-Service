@@ -9,7 +9,7 @@ INSERT INTO dmscs.claimshierarchy(
   {
     "name": "http://ed-fi.org/ods/identity/claims/domains/edFiTypes",
     "defaultAuthorization": {
-      "action": [
+      "actions": [
         {
           "name": "Read",
           "authorizationStrategies": [
@@ -121,7 +121,7 @@ INSERT INTO dmscs.claimshierarchy(
   {
     "name": "http://ed-fi.org/ods/identity/claims/domains/systemDescriptors",
     "defaultAuthorization": {
-      "action": [
+      "actions": [
         {
           "name": "Create",
           "authorizationStrategies": [
@@ -494,7 +494,7 @@ INSERT INTO dmscs.claimshierarchy(
       {
         "name": "http://ed-fi.org/ods/identity/claims/ed-fi/crisisTypeDescriptor",
         "defaultAuthorization": {
-          "action": [
+          "actions": [
             {
               "name": "Create",
               "authorizationStrategies": [
@@ -779,7 +779,7 @@ INSERT INTO dmscs.claimshierarchy(
       {
         "name": "http://ed-fi.org/ods/identity/claims/ed-fi/nonMedicalImmunizationExemptionDescriptor",
         "defaultAuthorization": {
-          "action": [
+          "actions": [
             {
               "name": "Create",
               "authorizationStrategies": [
@@ -1094,7 +1094,7 @@ INSERT INTO dmscs.claimshierarchy(
       {
         "name": "http://ed-fi.org/ods/identity/claims/ed-fi/imunizationTypeDescriptor",
         "defaultAuthorization": {
-          "action": [
+          "actions": [
             {
               "name": "Create",
               "authorizationStrategies": [
@@ -1211,7 +1211,7 @@ INSERT INTO dmscs.claimshierarchy(
   {
     "name": "http://ed-fi.org/ods/identity/claims/domains/managedDescriptors",
     "defaultAuthorization": {
-      "action": [
+      "actions": [
         {
           "name": "Create",
           "authorizationStrategies": [
@@ -1459,7 +1459,7 @@ INSERT INTO dmscs.claimshierarchy(
   {
     "name": "http://ed-fi.org/ods/identity/claims/domains/educationOrganizations",
     "defaultAuthorization": {
-      "action": [
+      "actions": [
         {
           "name": "Create",
           "authorizationStrategies": [
@@ -1748,7 +1748,7 @@ INSERT INTO dmscs.claimshierarchy(
       {
         "name": "http://ed-fi.org/ods/identity/claims/ed-fi/organizationDepartment",
         "defaultAuthorization": {
-          "action": [
+          "actions": [
             {
               "name": "Create",
               "authorizationStrategies": [
@@ -1887,7 +1887,7 @@ INSERT INTO dmscs.claimshierarchy(
   {
     "name": "http://ed-fi.org/ods/identity/claims/domains/people",
     "defaultAuthorization": {
-      "action": [
+      "actions": [
         {
           "name": "Create",
           "authorizationStrategies": [
@@ -2080,7 +2080,7 @@ INSERT INTO dmscs.claimshierarchy(
       {
         "name": "http://ed-fi.org/ods/identity/claims/tpdm/candidate",
         "defaultAuthorization": {
-          "action": [
+          "actions": [
             {
               "name": "Create",
               "authorizationStrategies": [
@@ -2148,7 +2148,7 @@ INSERT INTO dmscs.claimshierarchy(
   {
     "name": "http://ed-fi.org/ods/identity/claims/domains/relationshipBasedData",
     "defaultAuthorization": {
-      "action": [
+      "actions": [
         {
           "name": "Create",
           "authorizationStrategies": [
@@ -2287,7 +2287,7 @@ INSERT INTO dmscs.claimshierarchy(
       {
         "name": "http://ed-fi.org/ods/identity/claims/domains/surveyDomain",
         "defaultAuthorization": {
-          "action": [
+          "actions": [
             {
               "name": "Create",
               "authorizationStrategies": [
@@ -2591,7 +2591,7 @@ INSERT INTO dmscs.claimshierarchy(
       {
         "name": "http://ed-fi.org/ods/identity/claims/ed-fi/course",
         "defaultAuthorization": {
-          "action": [
+          "actions": [
             {
               "name": "Read",
               "authorizationStrategies": [
@@ -2648,7 +2648,7 @@ INSERT INTO dmscs.claimshierarchy(
       {
         "name": "http://ed-fi.org/ods/identity/claims/ed-fi/descriptorMapping",
         "defaultAuthorization": {
-          "action": [
+          "actions": [
             {
               "name": "Create",
               "authorizationStrategies": [
@@ -2764,7 +2764,7 @@ INSERT INTO dmscs.claimshierarchy(
       {
         "name": "http://ed-fi.org/ods/identity/claims/ed-fi/gradebookEntry",
         "defaultAuthorization": {
-          "action": [
+          "actions": [
             {
               "name": "Create",
               "authorizationStrategies": [
@@ -2855,7 +2855,7 @@ INSERT INTO dmscs.claimshierarchy(
       {
         "name": "http://ed-fi.org/ods/identity/claims/ed-fi/person",
         "defaultAuthorization": {
-          "action": [
+          "actions": [
             {
               "name": "Create",
               "authorizationStrategies": [
@@ -2935,7 +2935,7 @@ INSERT INTO dmscs.claimshierarchy(
       {
         "name": "http://ed-fi.org/ods/identity/claims/ed-fi/program",
         "defaultAuthorization": {
-          "action": [
+          "actions": [
             {
               "name": "Read",
               "authorizationStrategies": [
@@ -3128,7 +3128,7 @@ INSERT INTO dmscs.claimshierarchy(
       {
         "name": "http://ed-fi.org/ods/identity/claims/ed-fi/studentSpecialEducationProgramEligibilityAssociation",
         "defaultAuthorization": {
-          "action": [
+          "actions": [
             {
               "name": "Create",
               "authorizationStrategies": [
@@ -3228,7 +3228,7 @@ INSERT INTO dmscs.claimshierarchy(
   {
     "name": "http://ed-fi.org/ods/identity/claims/domains/assessmentMetadata",
     "defaultAuthorization": {
-      "action": [
+      "actions": [
         {
           "name": "Create",
           "authorizationStrategies": [
@@ -3457,7 +3457,7 @@ INSERT INTO dmscs.claimshierarchy(
   {
     "name": "http://ed-fi.org/ods/identity/claims/services/identity",
     "defaultAuthorization": {
-      "action": [
+      "actions": [
         {
           "name": "Create",
           "authorizationStrategies": [
@@ -3504,7 +3504,7 @@ INSERT INTO dmscs.claimshierarchy(
   {
     "name": "http://ed-fi.org/ods/identity/claims/domains/educationStandards",
     "defaultAuthorization": {
-      "action": [
+      "actions": [
         {
           "name": "Create",
           "authorizationStrategies": [
@@ -3672,7 +3672,7 @@ INSERT INTO dmscs.claimshierarchy(
       {
         "name": "http://ed-fi.org/ods/identity/claims/ed-fi/credential",
         "defaultAuthorization": {
-          "action": [
+          "actions": [
             {
               "name": "Create",
               "authorizationStrategies": [
@@ -3801,7 +3801,7 @@ INSERT INTO dmscs.claimshierarchy(
   {
     "name": "http://ed-fi.org/ods/identity/claims/domains/primaryRelationships",
     "defaultAuthorization": {
-      "action": [
+      "actions": [
         {
           "name": "Create",
           "authorizationStrategies": [
@@ -3932,7 +3932,7 @@ INSERT INTO dmscs.claimshierarchy(
       {
         "name": "http://ed-fi.org/ods/identity/claims/ed-fi/studentContactAssociation",
         "defaultAuthorization": {
-          "action": [
+          "actions": [
             {
               "name": "Create",
               "authorizationStrategies": [
@@ -4027,7 +4027,7 @@ INSERT INTO dmscs.claimshierarchy(
   {
     "name": "http://ed-fi.org/ods/identity/claims/ed-fi/educationContent",
     "defaultAuthorization": {
-      "action": [
+      "actions": [
         {
           "name": "Create",
           "authorizationStrategies": [
@@ -4231,7 +4231,7 @@ INSERT INTO dmscs.claimshierarchy(
       {
         "name": "http://ed-fi.org/ods/identity/claims/domains/finance/dimensions",
         "defaultAuthorization": {
-          "action": [
+          "actions": [
             {
               "name": "Create",
               "authorizationStrategies": [
@@ -4314,7 +4314,7 @@ INSERT INTO dmscs.claimshierarchy(
       {
         "name": "http://ed-fi.org/ods/identity/claims/domains/finance/locals",
         "defaultAuthorization": {
-          "action": [
+          "actions": [
             {
               "name": "Create",
               "authorizationStrategies": [
@@ -4380,7 +4380,7 @@ INSERT INTO dmscs.claimshierarchy(
           {
             "name": "http://ed-fi.org/ods/identity/claims/ed-fi/chartOfAccount",
             "defaultAuthorization": {
-              "action": [
+              "actions": [
                 {
                   "name": "Read",
                   "authorizationStrategies": [
@@ -4420,7 +4420,7 @@ INSERT INTO dmscs.claimshierarchy(
   {
     "name": "http://ed-fi.org/ods/identity/claims/ed-fi/crisisEvent",
     "defaultAuthorization": {
-      "action": [
+      "actions": [
         {
           "name": "Create",
           "authorizationStrategies": [
@@ -4536,7 +4536,7 @@ INSERT INTO dmscs.claimshierarchy(
   {
     "name": "http://ed-fi.org/ods/identity/claims/ed-fi/studentHealth",
     "defaultAuthorization": {
-      "action": [
+      "actions": [
         {
           "name": "Create",
           "authorizationStrategies": [
@@ -4686,7 +4686,7 @@ INSERT INTO dmscs.claimshierarchy(
       {
         "name": "http://ed-fi.org/ods/identity/claims/domains/tpdm/performanceEvaluation",
         "defaultAuthorization": {
-          "action": [
+          "actions": [
             {
               "name": "Create",
               "authorizationStrategies": [
@@ -4781,7 +4781,7 @@ INSERT INTO dmscs.claimshierarchy(
       {
         "name": "http://ed-fi.org/ods/identity/claims/domains/tpdm/noFurtherAuthorizationRequiredData",
         "defaultAuthorization": {
-          "action": [
+          "actions": [
             {
               "name": "Create",
               "authorizationStrategies": [
@@ -4865,7 +4865,7 @@ INSERT INTO dmscs.claimshierarchy(
       {
         "name": "http://ed-fi.org/ods/identity/claims/tpdm/educatorPreparationProgram",
         "defaultAuthorization": {
-          "action": [
+          "actions": [
             {
               "name": "Create",
               "authorizationStrategies": [

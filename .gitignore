@@ -129,6 +129,9 @@ _ReSharper*/
 *.[Rr]e[Ss]harper
 *.DotSettings.user
 
+# Rider is a .NET IDE
+**/.idea/
+
 # TeamCity is a build add-in
 _TeamCity*
 
