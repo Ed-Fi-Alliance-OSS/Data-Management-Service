@@ -21,16 +21,24 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
-public class ResourceUpsertAuthorizationMiddlewareTests
+public class ResourceUpsertNamespaceBasedAuthorizationMiddlewareTests
 {
     private PipelineContext _context = No.PipelineContext();
 
     internal static IPipelineStep NoFurtherAuthorizationMiddleware()
     {
         var authorizationServiceFactory = A.Fake<IAuthorizationServiceFactory>();
-        A.CallTo(() => authorizationServiceFactory.GetByName<IAuthorizationValidator>("NoFurtherAuthorizationRequired"))
+        A.CallTo(
+                () =>
+                    authorizationServiceFactory.GetByName<IAuthorizationValidator>(
+                        "NoFurtherAuthorizationRequired"
+                    )
+            )
             .Returns(new NoFurtherAuthorizationRequiredValidator());
-        return new ResourceUpsertAuthorizationMiddleware(authorizationServiceFactory, NullLogger.Instance);
+        return new ResourceUpsertNamespaceBasedAuthorizationMiddleware(
+            authorizationServiceFactory,
+            NullLogger.Instance
+        );
     }
 
     internal static IPipelineStep NullValidatorMiddleware()
@@ -38,12 +46,15 @@ public class ResourceUpsertAuthorizationMiddlewareTests
         var authorizationServiceFactory = A.Fake<IAuthorizationServiceFactory>();
         A.CallTo(() => authorizationServiceFactory.GetByName<IAuthorizationValidator>(A<string>.Ignored))
             .Returns(null);
-        return new ResourceUpsertAuthorizationMiddleware(authorizationServiceFactory, NullLogger.Instance);
+        return new ResourceUpsertNamespaceBasedAuthorizationMiddleware(
+            authorizationServiceFactory,
+            NullLogger.Instance
+        );
     }
 
     [TestFixture]
     public class GivenMatchingResourceActionClaimActionAuthStrategy
-        : ResourceUpsertAuthorizationMiddlewareTests
+        : ResourceUpsertNamespaceBasedAuthorizationMiddlewareTests
     {
         [SetUp]
         public async Task Setup()
@@ -63,7 +74,7 @@ public class ResourceUpsertAuthorizationMiddlewareTests
                     new EndpointName("schools"),
                     new DocumentUuid()
                 ),
-                ResourceActionAuthStrategies = ["NoFurtherAuthorizationRequired"]
+                ResourceActionAuthStrategies = ["NoFurtherAuthorizationRequired"],
             };
             await NoFurtherAuthorizationMiddleware().Execute(_context, TestHelper.NullNext);
         }
@@ -76,7 +87,8 @@ public class ResourceUpsertAuthorizationMiddlewareTests
     }
 
     [TestFixture]
-    public class GivenNoResourceActionClaimActionAuthStrategies : ResourceUpsertAuthorizationMiddlewareTests
+    public class GivenNoResourceActionClaimActionAuthStrategies
+        : ResourceUpsertNamespaceBasedAuthorizationMiddlewareTests
     {
         [SetUp]
         public async Task Setup()
@@ -97,7 +109,7 @@ public class ResourceUpsertAuthorizationMiddlewareTests
                     new DocumentUuid()
                 ),
                 ResourceClaim = new ResourceClaim() { Name = "schools" },
-                ResourceActionAuthStrategies = ["SomeAuthStrategy"]
+                ResourceActionAuthStrategies = ["NamespaceBased"],
             };
             await NullValidatorMiddleware().Execute(_context, TestHelper.NullNext);
             Console.Write(_context.FrontendResponse);
@@ -118,12 +130,12 @@ public class ResourceUpsertAuthorizationMiddlewareTests
 
     [TestFixture]
     public class GivenNoValidResourceActionClaimActionAuthStrategyHandler
-        : ResourceUpsertAuthorizationMiddlewareTests
+        : ResourceUpsertNamespaceBasedAuthorizationMiddlewareTests
     {
         [SetUp]
         public async Task Setup()
         {
-            var authStrategy = "NotValidAuthStrategy";
+            var authStrategy = "NamespaceBased";
             var claimSetCacheService = A.Fake<IClaimSetCacheService>();
             A.CallTo(() => claimSetCacheService.GetClaimSets())
                 .Returns(
@@ -153,7 +165,7 @@ public class ResourceUpsertAuthorizationMiddlewareTests
             var authorizationServiceFactory = A.Fake<IAuthorizationServiceFactory>();
             A.CallTo(() => authorizationServiceFactory.GetByName<IAuthorizationValidator>(A<string>.Ignored))
                 .Returns(null);
-            var authMiddleware = new ResourceUpsertAuthorizationMiddleware(
+            var authMiddleware = new ResourceUpsertNamespaceBasedAuthorizationMiddleware(
                 authorizationServiceFactory,
                 NullLogger.Instance
             );
@@ -173,7 +185,7 @@ public class ResourceUpsertAuthorizationMiddlewareTests
                     new EndpointName("schools"),
                     new DocumentUuid()
                 ),
-                ResourceActionAuthStrategies = ["NotValidAuthStrategy"]
+                ResourceActionAuthStrategies = ["NamespaceBased"],
             };
             await authMiddleware.Execute(_context, TestHelper.NullNext);
         }
@@ -203,29 +215,34 @@ public class ResourceUpsertAuthorizationMiddlewareTests
             response
                 .Should()
                 .Contain(
-                    "\"errors\":[\"Could not find authorization strategy implementation for the following strategy: 'NotValidAuthStrategy'.\"]"
+                    "\"errors\":[\"Could not find authorization strategy implementation for the following strategy: 'NamespaceBased'.\"]"
                 );
         }
     }
 
     [TestFixture]
-    public class Given_Request_Not_Authorized : ResourceUpsertAuthorizationMiddlewareTests
+    public class Given_Request_Not_Authorized : ResourceUpsertNamespaceBasedAuthorizationMiddlewareTests
     {
         [SetUp]
         public async Task Setup()
         {
-            string authStrategy = "AnyAuthStrategy";
+            string authStrategy = "NamespaceBased";
 
             var authorizationServiceFactory = A.Fake<IAuthorizationServiceFactory>();
 
             var notAuthorizedValidator = A.Fake<IAuthorizationValidator>();
-            A.CallTo(() =>
-                notAuthorizedValidator.ValidateAuthorization(A<DocumentSecurityElements>.Ignored,
-                    A<ClientAuthorizations>.Ignored)).Returns(new AuthorizationResult(false));
+            A.CallTo(
+                    () =>
+                        notAuthorizedValidator.ValidateAuthorization(
+                            A<DocumentSecurityElements>.Ignored,
+                            A<ClientAuthorizations>.Ignored
+                        )
+                )
+                .Returns(new AuthorizationResult(false));
             A.CallTo(() => authorizationServiceFactory.GetByName<IAuthorizationValidator>(authStrategy))
                 .Returns(notAuthorizedValidator);
 
-            var authMiddleware = new ResourceUpsertAuthorizationMiddleware(
+            var authMiddleware = new ResourceUpsertNamespaceBasedAuthorizationMiddleware(
                 authorizationServiceFactory,
                 NullLogger.Instance
             );

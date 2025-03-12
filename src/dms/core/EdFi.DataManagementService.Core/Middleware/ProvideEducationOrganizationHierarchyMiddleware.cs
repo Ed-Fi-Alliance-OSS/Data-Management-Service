@@ -10,6 +10,12 @@ using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
+/// <summary>
+/// This middleware determines if the resource in the request is a type of
+/// EducationOrganization, and if so it provides the EdOrg id and any parent
+/// EdOrg ids from the payload to the context EducationOrganizationHierarchyInfo
+/// for authorization challenges later in the request pipeline.
+/// </summary>
 internal class ProvideEducationOrganizationHierarchyMiddleware(ILogger _logger) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)

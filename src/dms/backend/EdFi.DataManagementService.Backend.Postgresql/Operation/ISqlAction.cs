@@ -159,4 +159,11 @@ public interface ISqlAction
         NpgsqlTransaction transaction,
         TraceId traceId
     );
+
+    public Task<long[]> GetAncestorEducationOrganizationIdsForUpsert(
+        long[] educationOrganizationIds,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        TraceId traceId
+    );
 }

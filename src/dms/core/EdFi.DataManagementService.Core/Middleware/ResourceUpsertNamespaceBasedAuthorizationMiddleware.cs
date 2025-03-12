@@ -17,7 +17,7 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// <summary>
 /// Authorize the request bodies based on the client's authorization information.
 /// </summary>
-internal class ResourceUpsertAuthorizationMiddleware(
+internal class ResourceUpsertNamespaceBasedAuthorizationMiddleware(
     IAuthorizationServiceFactory _authorizationServiceFactory,
     ILogger _logger
 ) : IPipelineStep
@@ -27,14 +27,16 @@ internal class ResourceUpsertAuthorizationMiddleware(
         try
         {
             _logger.LogDebug(
-                "Entering ResourceAuthorizationMiddleware - {TraceId}",
+                "Entering ResourceUpsertNamespaceBasedAuthorizationMiddleware - {TraceId}",
                 context.FrontendRequest.TraceId.Value
             );
 
-            List<AuthorizationResult> authResultsAcrossAuthStrategies = [];
+            string authorizationStrategy = "NamespaceBased";
 
-            foreach (string authorizationStrategy in context.ResourceActionAuthStrategies)
+            if (context.ResourceActionAuthStrategies.Contains(authorizationStrategy))
             {
+                List<AuthorizationResult> authResultsAcrossAuthStrategies = [];
+
                 var authStrategyHandler = _authorizationServiceFactory.GetByName<IAuthorizationValidator>(
                     authorizationStrategy
                 );
@@ -60,24 +62,24 @@ internal class ResourceUpsertAuthorizationMiddleware(
                     context.FrontendRequest.ClientAuthorizations
                 );
                 authResultsAcrossAuthStrategies.Add(authorizationResult);
-            }
 
-            if (!authResultsAcrossAuthStrategies.TrueForAll(x => x.IsAuthorized))
-            {
-                string[] errors = authResultsAcrossAuthStrategies
-                    .Where(x => !string.IsNullOrEmpty(x.ErrorMessage))
-                    .Select(x => x.ErrorMessage)
-                    .ToArray();
-                context.FrontendResponse = new FrontendResponse(
-                    StatusCode: (int)HttpStatusCode.Forbidden,
-                    Body: FailureResponse.ForForbidden(
-                        traceId: context.FrontendRequest.TraceId,
-                        errors: errors
-                    ),
-                    Headers: [],
-                    ContentType: "application/problem+json"
-                );
-                return;
+                if (!authResultsAcrossAuthStrategies.TrueForAll(x => x.IsAuthorized))
+                {
+                    string[] errors = authResultsAcrossAuthStrategies
+                        .Where(x => !string.IsNullOrEmpty(x.ErrorMessage))
+                        .Select(x => x.ErrorMessage)
+                        .ToArray();
+                    context.FrontendResponse = new FrontendResponse(
+                        StatusCode: (int)HttpStatusCode.Forbidden,
+                        Body: FailureResponse.ForForbidden(
+                            traceId: context.FrontendRequest.TraceId,
+                            errors: errors
+                        ),
+                        Headers: [],
+                        ContentType: "application/problem+json"
+                    );
+                    return;
+                }
             }
 
             await next();

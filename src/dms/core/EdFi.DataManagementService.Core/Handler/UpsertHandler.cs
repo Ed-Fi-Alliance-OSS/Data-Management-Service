@@ -46,7 +46,11 @@ internal class UpsertHandler(
                     TraceId: context.FrontendRequest.TraceId,
                     DocumentUuid: candidateDocumentUuid,
                     DocumentSecurityElements: context.DocumentSecurityElements,
-                    UpdateCascadeHandler: updateCascadeHandler
+                    UpdateCascadeHandler: updateCascadeHandler,
+                    ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
+                        context.AuthorizationStrategyEvaluators,
+                        _logger
+                    )
                 )
             );
         });

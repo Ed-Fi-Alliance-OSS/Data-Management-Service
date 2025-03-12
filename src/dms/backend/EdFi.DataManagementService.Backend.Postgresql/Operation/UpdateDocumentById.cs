@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
@@ -79,7 +80,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
 
         try
         {
-            var validationResult = await _sqlAction.UpdateDocumentValidation(
+            UpdateDocumentValidationResult validationResult = await _sqlAction.UpdateDocumentValidation(
                 updateRequest.DocumentUuid,
                 documentPartitionKey,
                 updateRequest.DocumentInfo.ReferentialId,
@@ -145,6 +146,36 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 updateRequest.TraceId
             );
 
+            if (documentFromDb == null)
+            {
+                return new UpdateResult.UpdateFailureNotExists();
+            }
+
+            // If this update is part of RelationshipWithEdOrg strategy, verify the access to the hierarchy.
+            if (updateRequest.ResourceAuthorizationHandler.IsRelationshipWithEdOrg)
+            {
+                long[] educationOrganizationSecurityElements =
+                    await _sqlAction.GetAncestorEducationOrganizationIdsForUpsert(
+                        updateRequest
+                            .DocumentSecurityElements.EducationOrganization.Select(e => e.Id.Value)
+                            .ToArray(),
+                        connection,
+                        transaction,
+                        updateRequest.TraceId
+                    );
+
+                ResourceAuthorizationResult getAuthorizationResult =
+                    updateRequest.ResourceAuthorizationHandler.Authorize(
+                        updateRequest.DocumentSecurityElements.Namespace,
+                        educationOrganizationSecurityElements
+                    );
+
+                if (getAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
+                {
+                    return new UpdateResult.UpdateFailureNotAuthorized(notAuthorized.ErrorMessages);
+                }
+            }
+
             int rowsAffected = await _sqlAction.UpdateDocumentEdfiDoc(
                 PartitionKeyFor(updateRequest.DocumentUuid).Value,
                 updateRequest.DocumentUuid.Value,
@@ -155,7 +186,12 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 updateRequest.TraceId
             );
 
-            if (updateRequest.ResourceInfo.EducationOrganizationHierarchyInfo.IsInEducationOrganizationHierarchy)
+            if (
+                updateRequest
+                    .ResourceInfo
+                    .EducationOrganizationHierarchyInfo
+                    .IsInEducationOrganizationHierarchy
+            )
             {
                 await _sqlAction.UpdateEducationOrganizationHierarchy(
                     updateRequest.ResourceInfo.ProjectName.Value,
@@ -170,11 +206,6 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
             switch (rowsAffected)
             {
                 case 1:
-                    if (documentFromDb == null)
-                    {
-                        throw new InvalidOperationException("documentFromDb.Id should never be null");
-                    }
-
                     long documentId = documentFromDb.Id.GetValueOrDefault();
 
                     if (
