@@ -7,11 +7,5 @@ namespace EdFi.DataManagementService.Core.Security.Model;
 
 public class AuthorizationStrategy
 {
-    public int AuthStrategyId { get; set; }
-
     public required string AuthStrategyName { get; set; }
-
-    public string? DisplayName { get; set; }
-
-    public bool IsInheritedFromParent { get; set; }
 }
