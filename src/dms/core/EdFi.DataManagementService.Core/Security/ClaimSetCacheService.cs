@@ -26,7 +26,7 @@ public class ClaimSetCacheService(
         {
             return claimSets;
         }
-        var result = await securityMetadataProvider.GetAllClaimSets();
+        var result = await securityMetadataProvider.GetAuthorizationMetadata();
 
         if (result.Count > 0)
         {
