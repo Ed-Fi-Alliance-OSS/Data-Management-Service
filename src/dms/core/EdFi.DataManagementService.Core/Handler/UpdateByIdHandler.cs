@@ -43,7 +43,11 @@ internal class UpdateByIdHandler(
                     EdfiDoc: context.ParsedBody,
                     DocumentSecurityElements: context.DocumentSecurityElements,
                     TraceId: context.FrontendRequest.TraceId,
-                    UpdateCascadeHandler: updateCascadeHandler
+                    UpdateCascadeHandler: updateCascadeHandler,
+                    ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
+                        context.AuthorizationStrategyEvaluators,
+                        _logger
+                    )
                 )
             )
         );

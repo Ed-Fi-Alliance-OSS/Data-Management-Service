@@ -52,6 +52,11 @@ public record UpdateResult
     public record UpdateFailureImmutableIdentity(string FailureMessage) : UpdateResult();
 
     /// <summary>
+    /// A failure because the client is not authorized to update the document
+    /// </summary>
+    public record UpdateFailureNotAuthorized(string[] ErrorMessages) : UpdateResult();
+
+    /// <summary>
     /// A failure of unknown category
     /// </summary>
     /// <param name="FailureMessage">A message providing failure information</param>
