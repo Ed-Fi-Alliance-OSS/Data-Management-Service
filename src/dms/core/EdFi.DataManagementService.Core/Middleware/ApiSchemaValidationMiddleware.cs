@@ -37,10 +37,10 @@ internal class ApiSchemaValidationMiddleware(
 
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
-        _logger.LogDebug(
-            "Entering ApiSchemaValidationMiddleware- {TraceId}",
-            context.FrontendRequest.TraceId.Value
-        );
+        //_logger.LogDebug(
+        //    "Entering ApiSchemaValidationMiddleware- {TraceId}",
+        //    context.FrontendRequest.TraceId.Value
+        //);
 
         if (SchemaValidationFailures.Any())
         {
