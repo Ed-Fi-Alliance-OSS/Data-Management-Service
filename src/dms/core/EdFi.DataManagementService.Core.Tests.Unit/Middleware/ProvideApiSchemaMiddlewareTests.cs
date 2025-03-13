@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -63,9 +64,7 @@ public class ProvideApiSchemaMiddlewareTests
                                     (
                                         "postSecondaryInstitutionId",
                                         new JsonSchemaBuilder()
-                                            .Description(
-                                                "The ID of the post secondary institution. It must be distinct from any other identifier assigned to educational organizations, such as a LocalEducationAgencyId, to prevent duplication."
-                                            )
+                                            .Description("The ID of the post secondary institution.")
                                             .Type(SchemaValueType.Integer)
                                     )
                                 )
