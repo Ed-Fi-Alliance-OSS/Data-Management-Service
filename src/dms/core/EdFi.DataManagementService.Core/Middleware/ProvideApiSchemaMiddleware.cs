@@ -37,6 +37,7 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
             InsertTypeCoercionExts(extensionResourceSchemas, coreResourceSchemas, "dateTimeJsonPaths");
             InsertTypeCoercionExts(extensionResourceSchemas, coreResourceSchemas, "booleanJsonPaths");
             InsertTypeCoercionExts(extensionResourceSchemas, coreResourceSchemas, "numericJsonPaths");
+            InsertJSONSchemaExts(extensionResourceSchemas, coreResourceSchemas, "jsonSchemaForInsert");
         }
 
         context.ApiSchemaDocuments = new ApiSchemaDocuments(ApiSchemaNodes, _logger);
@@ -109,6 +110,97 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
                                 if (resourceSchemasNode != null)
                                 {
                                     resourceSchemasNode[coreResourceName] = coreSchema.DeepClone();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private void InsertJSONSchemaExts(
+        JsonNode extensionResourceSchemas,
+        JsonNode coreResourceSchemas,
+        string jsonSchemaForInsertKey
+    )
+    {
+        var validExtensionResourceSchemas = extensionResourceSchemas
+            .AsObject()
+            .Where(ext => ext.Value?["isResourceExtension"]?.GetValue<bool>() == true)
+            .Where(ext =>
+                ext.Value?[jsonSchemaForInsertKey]?["properties"]?["_ext"]?["properties"]
+                    is JsonObject { Count: > 0 }
+            )
+            .ToList();
+
+        foreach (KeyValuePair<string, JsonNode?> keyValueExtension in validExtensionResourceSchemas)
+        {
+            string extensionResourceName = keyValueExtension.Key;
+            JsonNode? extSchema = keyValueExtension.Value;
+            if (extSchema != null)
+            {
+                JsonNode? extensionSchemaForInsertProperties = extSchema[jsonSchemaForInsertKey]
+                    ?["properties"]
+                    ?["_ext"]
+                    ?["properties"];
+
+                foreach (KeyValuePair<string, JsonNode?> keyValueCore in coreResourceSchemas.AsObject())
+                {
+                    string coreResourceName = keyValueCore.Key;
+                    JsonNode? coreSchema = keyValueCore.Value;
+                    if (
+                        extensionResourceName.Equals(coreResourceName, StringComparison.OrdinalIgnoreCase)
+                        && coreSchema != null
+                    )
+                    {
+                        JsonNode? coreSchemaForInsertProperties = coreSchema[jsonSchemaForInsertKey]?[
+                            "properties"
+                        ];
+
+                        bool propertiesAdded = false;
+                        if (
+                            extensionSchemaForInsertProperties is JsonObject extensionProperties
+                            && coreSchemaForInsertProperties is JsonObject coreProperties
+                        )
+                        {
+                            JsonObject clonedCoreProperties = coreProperties.DeepClone().AsObject();
+                            foreach (var extensionProperty in extensionProperties.AsObject())
+                            {
+                                clonedCoreProperties.Add(
+                                    extensionProperty.Key,
+                                    extensionProperty.Value?.DeepClone()
+                                );
+                                propertiesAdded = true;
+                            }
+
+                            if (propertiesAdded && ApiSchemaNodes != null)
+                            {
+                                if (coreSchema[jsonSchemaForInsertKey] is not JsonObject jsonPathObject)
+                                {
+                                    jsonPathObject = new JsonObject();
+                                    coreSchema[jsonSchemaForInsertKey] = jsonPathObject;
+                                }
+
+                                if (jsonPathObject["properties"] is not JsonObject propertiesObject)
+                                {
+                                    propertiesObject = new JsonObject();
+                                    jsonPathObject["properties"] = propertiesObject;
+                                }
+
+                                propertiesObject.Clear();
+                                foreach (var property in clonedCoreProperties)
+                                {
+                                    propertiesObject[property.Key] = property.Value?.DeepClone();
+                                }
+
+                                JsonNode coreApiSchemaRootNode = ApiSchemaNodes.CoreApiSchemaRootNode;
+                                if (
+                                    coreApiSchemaRootNode["projectSchema"]?["resourceSchemas"]
+                                    is JsonObject resourceSchemas
+                                )
+                                {
+                                    resourceSchemas[coreResourceName] = coreSchema.DeepClone();
                                 }
                             }
                         }
