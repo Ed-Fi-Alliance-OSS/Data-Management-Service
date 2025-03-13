@@ -29,18 +29,6 @@ public class ResourceActionAuthorizationMiddlewareTests
     internal static IPipelineStep Middleware()
     {
         var expectedAuthStrategy = "NoFurtherAuthorizationRequired";
-
-        var authStrategyList = new List<string> { expectedAuthStrategy };
-        var authorizationStrategiesProvider = A.Fake<IAuthorizationStrategiesProvider>();
-        A.CallTo(
-                () =>
-                    authorizationStrategiesProvider.GetAuthorizationStrategies(
-                        A<ResourceClaim>.Ignored,
-                        A<string>.Ignored
-                    )
-            )
-            .Returns(authStrategyList);
-
         var claimSetCacheService = A.Fake<IClaimSetCacheService>();
         A.CallTo(() => claimSetCacheService.GetClaimSets())
             .Returns(
@@ -49,71 +37,31 @@ public class ResourceActionAuthorizationMiddlewareTests
                         Name: "SIS-Vendor",
                         ResourceClaims:
                         [
-                            new ResourceClaim()
-                            {
-                                Name = "schools",
-                                Actions = [new(Enabled: true, Name: "Create")],
-                                DefaultAuthorizationStrategiesForCrud =
-                                [
-                                    new(
-                                        ActionId: 1,
-                                        ActionName: "Create",
-                                        AuthorizationStrategies:
-                                        [
-                                            new() { AuthStrategyName = expectedAuthStrategy },
-                                        ]
-                                    ),
-                                ],
-                            },
+                            new ResourceClaim(
+                                "schools",
+                                "Create",
+                                [new AuthorizationStrategy(expectedAuthStrategy)]
+                            ),
                         ]
                     ),
                 ]
             );
-        return new ResourceActionAuthorizationMiddleware(authorizationStrategiesProvider, claimSetCacheService, NullLogger.Instance);
+        return new ResourceActionAuthorizationMiddleware(claimSetCacheService, NullLogger.Instance);
     }
 
     internal static IPipelineStep NoAuthStrategyMiddleware()
     {
-        var expectedAuthStrategy = "NoFurtherAuthorizationRequired";
-        var authorizationStrategiesProvider = A.Fake<IAuthorizationStrategiesProvider>();
-        A.CallTo(
-                () =>
-                    authorizationStrategiesProvider.GetAuthorizationStrategies(
-                        A<ResourceClaim>.Ignored,
-                        A<string>.Ignored
-                    )
-            )
-            .Returns([]);
-
         var claimSetCacheService = A.Fake<IClaimSetCacheService>();
         A.CallTo(() => claimSetCacheService.GetClaimSets())
             .Returns(
                 [
                     new ClaimSet(
                         Name: "SIS-Vendor",
-                        ResourceClaims:
-                        [
-                            new ResourceClaim()
-                            {
-                                Name = "schools",
-                                Actions = [new(Enabled: true, Name: "Create")],
-                                DefaultAuthorizationStrategiesForCrud =
-                                [
-                                    new(
-                                        ActionId: 1,
-                                        ActionName: "Create",
-                                        AuthorizationStrategies:
-                                        [
-                                            new() { AuthStrategyName = expectedAuthStrategy },
-                                        ]
-                                    ),
-                                ],
-                            },
-                        ]
+                        ResourceClaims: [new ResourceClaim("schools", "Create", [])]
                     ),
                 ]
             );
-        return new ResourceActionAuthorizationMiddleware(authorizationStrategiesProvider, claimSetCacheService, NullLogger.Instance);
+        return new ResourceActionAuthorizationMiddleware(claimSetCacheService, NullLogger.Instance);
     }
 
     [TestFixture]
@@ -309,18 +257,11 @@ public class ResourceActionAuthorizationMiddlewareTests
         public async Task Setup()
         {
             var claimSetCacheService = A.Fake<IClaimSetCacheService>();
-            var authorizationStrategiesProvider = A.Fake<AuthorizationStrategiesProvider>();
             A.CallTo(() => claimSetCacheService.GetClaimSets())
                 .Returns(
-                    [
-                        new ClaimSet(
-                            Name: "SIS-Vendor",
-                            ResourceClaims: [new ResourceClaim() { Name = "schools", Actions = null }]
-                        ),
-                    ]
+                    [new ClaimSet(Name: "SIS-Vendor", ResourceClaims: [new ResourceClaim("schools", "", [])])]
                 );
             var authMiddleware = new ResourceActionAuthorizationMiddleware(
-                authorizationStrategiesProvider,
                 claimSetCacheService,
                 NullLogger.Instance
             );

@@ -28,7 +28,12 @@ public class ResourceUpsertAuthorizationMiddlewareTests
     internal static IPipelineStep NoFurtherAuthorizationMiddleware()
     {
         var authorizationServiceFactory = A.Fake<IAuthorizationServiceFactory>();
-        A.CallTo(() => authorizationServiceFactory.GetByName<IAuthorizationValidator>("NoFurtherAuthorizationRequired"))
+        A.CallTo(
+                () =>
+                    authorizationServiceFactory.GetByName<IAuthorizationValidator>(
+                        "NoFurtherAuthorizationRequired"
+                    )
+            )
             .Returns(new NoFurtherAuthorizationRequiredValidator());
         return new ResourceUpsertAuthorizationMiddleware(authorizationServiceFactory, NullLogger.Instance);
     }
@@ -63,7 +68,7 @@ public class ResourceUpsertAuthorizationMiddlewareTests
                     new EndpointName("schools"),
                     new DocumentUuid()
                 ),
-                ResourceActionAuthStrategies = ["NoFurtherAuthorizationRequired"]
+                ResourceActionAuthStrategies = ["NoFurtherAuthorizationRequired"],
             };
             await NoFurtherAuthorizationMiddleware().Execute(_context, TestHelper.NullNext);
         }
@@ -96,8 +101,7 @@ public class ResourceUpsertAuthorizationMiddlewareTests
                     new EndpointName("schools"),
                     new DocumentUuid()
                 ),
-                ResourceClaim = new ResourceClaim() { Name = "schools" },
-                ResourceActionAuthStrategies = ["SomeAuthStrategy"]
+                ResourceActionAuthStrategies = ["SomeAuthStrategy"],
             };
             await NullValidatorMiddleware().Execute(_context, TestHelper.NullNext);
             Console.Write(_context.FrontendResponse);
@@ -132,24 +136,15 @@ public class ResourceUpsertAuthorizationMiddlewareTests
                             Name: "SIS-Vendor",
                             ResourceClaims:
                             [
-                                new ResourceClaim()
-                                {
-                                    Name = "schools",
-                                    Actions = [new(Enabled: true, Name: "Create")],
-                                },
+                                new ResourceClaim(
+                                    "schools",
+                                    "Create",
+                                    [new AuthorizationStrategy(authStrategy)]
+                                ),
                             ]
                         ),
                     ]
                 );
-            var authorizationStrategiesProvider = A.Fake<IAuthorizationStrategiesProvider>();
-            A.CallTo(
-                    () =>
-                        authorizationStrategiesProvider.GetAuthorizationStrategies(
-                            A<ResourceClaim>.Ignored,
-                            A<string>.Ignored
-                        )
-                )
-                .Returns([authStrategy]);
             var authorizationServiceFactory = A.Fake<IAuthorizationServiceFactory>();
             A.CallTo(() => authorizationServiceFactory.GetByName<IAuthorizationValidator>(A<string>.Ignored))
                 .Returns(null);
@@ -173,7 +168,7 @@ public class ResourceUpsertAuthorizationMiddlewareTests
                     new EndpointName("schools"),
                     new DocumentUuid()
                 ),
-                ResourceActionAuthStrategies = ["NotValidAuthStrategy"]
+                ResourceActionAuthStrategies = ["NotValidAuthStrategy"],
             };
             await authMiddleware.Execute(_context, TestHelper.NullNext);
         }
@@ -219,9 +214,14 @@ public class ResourceUpsertAuthorizationMiddlewareTests
             var authorizationServiceFactory = A.Fake<IAuthorizationServiceFactory>();
 
             var notAuthorizedValidator = A.Fake<IAuthorizationValidator>();
-            A.CallTo(() =>
-                notAuthorizedValidator.ValidateAuthorization(A<DocumentSecurityElements>.Ignored,
-                    A<ClientAuthorizations>.Ignored)).Returns(new AuthorizationResult(false));
+            A.CallTo(
+                    () =>
+                        notAuthorizedValidator.ValidateAuthorization(
+                            A<DocumentSecurityElements>.Ignored,
+                            A<ClientAuthorizations>.Ignored
+                        )
+                )
+                .Returns(new AuthorizationResult(false));
             A.CallTo(() => authorizationServiceFactory.GetByName<IAuthorizationValidator>(authStrategy))
                 .Returns(notAuthorizedValidator);
 
