@@ -35,12 +35,11 @@ public class ProvideApiSchemaMiddlewareTests
         {
             public ApiSchemaNodes GetApiSchemaNodes()
             {
-                var coreJsonSchemaForInsert = new JsonSchemaBuilder();
-                coreJsonSchemaForInsert.Title("Ed-Fi.School");
-                coreJsonSchemaForInsert.Description("This entity represents an educational organization");
-                coreJsonSchemaForInsert.Schema("https://json-schema.org/draft/2020-12/schema");
-                coreJsonSchemaForInsert.AdditionalProperties(false);
-                coreJsonSchemaForInsert
+                var coreJsonSchemaForInsert = new JsonSchemaBuilder()
+                    .Title("Ed-Fi.School")
+                    .Description("This entity represents an educational organization")
+                    .Schema("https://json-schema.org/draft/2020-12/schema")
+                    .AdditionalProperties(false)
                     .Properties(
                         ("schoolId", new JsonSchemaBuilder().Type(SchemaValueType.Integer)),
                         ("nameOfInstitution", new JsonSchemaBuilder().Type(SchemaValueType.String))
