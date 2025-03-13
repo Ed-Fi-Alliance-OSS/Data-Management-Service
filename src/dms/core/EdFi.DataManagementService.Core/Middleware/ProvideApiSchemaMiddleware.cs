@@ -19,8 +19,11 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
     {
         var apiSchemaNodes = _apiSchemaProvider.GetApiSchemaNodes();
 
-        List<JsonNode> coreResources = apiSchemaNodes
-            .CoreApiSchemaRootNode.SelectRequiredNodeFromPath("$.projectSchema.resourceSchemas", _logger)
+        // Clone to not mutate the original schema
+        var coreApiSchema = apiSchemaNodes.CoreApiSchemaRootNode.DeepClone();
+
+        List<JsonNode> coreResources = coreApiSchema
+            .SelectRequiredNodeFromPath("$.projectSchema.resourceSchemas", _logger)
             .SelectNodesFromPropertyValues();
 
         foreach (JsonNode extension in apiSchemaNodes.ExtensionApiSchemaRootNodes)
@@ -35,7 +38,7 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
             CopyResourceExtensionNodeToCore(extensionResources, coreResources, "documentPathsMapping");
         }
 
-        return new ApiSchemaDocuments(apiSchemaNodes, _logger);
+        return new ApiSchemaDocuments(apiSchemaNodes with { CoreApiSchemaRootNode = coreApiSchema }, _logger);
     });
 
     public async Task Execute(PipelineContext context, Func<Task> next)
@@ -50,8 +53,9 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
     }
 
     /// <summary>
-    /// Copies the <i>JsonNode</i> present at the <i>nodeKey</i> from resource extensions into
-    /// core resources.
+    /// Copies the <see cref="JsonNode"/> present at the <paramref name="nodeKey"/> from
+    /// <paramref name="extensionResources"/> into <paramref name="coreResources"/>.
+    /// Note that <paramref name="coreResources"/> gets mutated in the process.
     /// </summary>
     private static void CopyResourceExtensionNodeToCore(
         List<JsonNode> extensionResources,
@@ -82,20 +86,13 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
                     var targetObject = targetCoreNode.AsObject();
                     foreach (var sourceObject in sourceExtensionNode.AsObject())
                     {
-                        targetObject[sourceObject.Key] = sourceObject.Value?.DeepClone();
+                        targetObject.Add(new(sourceObject.Key, sourceObject.Value?.DeepClone()));
                     }
                     break;
                 case JsonValueKind.Array:
                     var targetArray = targetCoreNode.AsArray();
                     foreach (var sourceItem in sourceExtensionNode.AsArray())
                     {
-                        bool itemAlreadyExists = targetArray.Any(item =>
-                            sourceItem?.GetValue<string>() == item?.GetValue<string>()
-                        );
-                        if (itemAlreadyExists)
-                        {
-                            continue;
-                        }
                         targetArray.Add(sourceItem?.DeepClone());
                     }
                     break;
