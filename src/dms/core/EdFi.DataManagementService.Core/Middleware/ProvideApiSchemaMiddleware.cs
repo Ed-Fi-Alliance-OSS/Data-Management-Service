@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Helpers;
@@ -14,12 +15,28 @@ namespace EdFi.DataManagementService.Core.Middleware;
 internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider, ILogger _logger)
     : IPipelineStep
 {
-    private readonly Lazy<ApiSchemaNodes> _lazyApiSchemaNodes = new(() =>
+    private readonly Lazy<ApiSchemaDocuments> _apiSchemaDocuments = new(() =>
     {
-        return _apiSchemaProvider.GetApiSchemaNodes();
-    });
+        var apiSchemaNodes = _apiSchemaProvider.GetApiSchemaNodes();
 
-    public ApiSchemaNodes ApiSchemaNodes => _lazyApiSchemaNodes.Value;
+        List<JsonNode> coreResources = apiSchemaNodes
+            .CoreApiSchemaRootNode.SelectRequiredNodeFromPath("$.projectSchema.resourceSchemas", _logger)
+            .SelectNodesFromPropertyValues();
+
+        foreach (JsonNode extension in apiSchemaNodes.ExtensionApiSchemaRootNodes)
+        {
+            List<JsonNode> extensionResources = extension
+                .SelectRequiredNodeFromPath("$.projectSchema.resourceSchemas", _logger)
+                .SelectNodesFromPropertyValues();
+
+            CopyResourceExtensionNodeToCore(extensionResources, coreResources, "dateTimeJsonPaths");
+            CopyResourceExtensionNodeToCore(extensionResources, coreResources, "booleanJsonPaths");
+            CopyResourceExtensionNodeToCore(extensionResources, coreResources, "numericJsonPaths");
+            CopyResourceExtensionNodeToCore(extensionResources, coreResources, "documentPathsMapping");
+        }
+
+        return new ApiSchemaDocuments(apiSchemaNodes, _logger);
+    });
 
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
@@ -28,92 +45,64 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
             context.FrontendRequest.TraceId.Value
         );
 
-        JsonNode coreResourceSchemas = FindResourceSchemas(ApiSchemaNodes.CoreApiSchemaRootNode).DeepClone();
-
-        foreach (JsonNode extensionApiSchemaRootNode in ApiSchemaNodes.ExtensionApiSchemaRootNodes)
-        {
-            JsonNode extensionResourceSchemas = FindResourceSchemas(extensionApiSchemaRootNode);
-
-            InsertTypeCoercionExts(extensionResourceSchemas, coreResourceSchemas, "dateTimeJsonPaths");
-            InsertTypeCoercionExts(extensionResourceSchemas, coreResourceSchemas, "booleanJsonPaths");
-            InsertTypeCoercionExts(extensionResourceSchemas, coreResourceSchemas, "numericJsonPaths");
-        }
-
-        context.ApiSchemaDocuments = new ApiSchemaDocuments(ApiSchemaNodes, _logger);
+        context.ApiSchemaDocuments = _apiSchemaDocuments.Value;
         await next();
     }
 
-    public JsonNode FindResourceSchemas(JsonNode coreApiSchemaRootNode)
-    {
-        return coreApiSchemaRootNode.SelectRequiredNodeFromPath("$.projectSchema.resourceSchemas", _logger);
-    }
-
-    private void InsertTypeCoercionExts(
-        JsonNode extensionResourceSchemas,
-        JsonNode coreResourceSchemas,
-        string jsonPathKey
+    /// <summary>
+    /// Copies the <i>JsonNode</i> present at the <i>nodeKey</i> from resource extensions into
+    /// core resources.
+    /// </summary>
+    private static void CopyResourceExtensionNodeToCore(
+        List<JsonNode> extensionResources,
+        List<JsonNode> coreResources,
+        string nodeKey
     )
     {
-        var validExtensionResourceSchemas = extensionResourceSchemas
-            .AsObject()
-            .Where(ext => ext.Value?["isResourceExtension"]?.GetValue<bool>() == true)
-            .Where(ext => ext.Value?[jsonPathKey] is JsonArray { Count: > 0 })
-            .ToList();
+        Dictionary<string, JsonNode> coreResourceByName = coreResources.ToDictionary(coreResource =>
+            coreResource.GetRequiredNode("resourceName").GetValue<string>()
+        );
 
-        foreach (KeyValuePair<string, JsonNode?> keyValueExtension in validExtensionResourceSchemas)
+        foreach (
+            JsonNode extensionResource in extensionResources.Where(extensionResource =>
+                extensionResource.GetRequiredNode("isResourceExtension").GetValue<bool>()
+            )
+        )
         {
-            string extensionResourceName = keyValueExtension.Key;
-            JsonNode? extSchema = keyValueExtension.Value;
-            if (extSchema != null)
+            var coreResource = coreResourceByName[
+                extensionResource.GetRequiredNode("resourceName").GetValue<string>()
+            ];
+            var sourceExtensionNode = extensionResource.GetRequiredNode(nodeKey);
+            var targetCoreNode = coreResource.GetRequiredNode(nodeKey);
+            var nodeValueKind = targetCoreNode.GetValueKind();
+
+            switch (nodeValueKind)
             {
-                JsonNode? extensionJsonPaths = extSchema[jsonPathKey];
-                if (extensionJsonPaths is JsonArray extensionJsonArray)
-                {
-                    foreach (KeyValuePair<string, JsonNode?> keyValueCore in coreResourceSchemas.AsObject())
+                case JsonValueKind.Object:
+                    var targetObject = targetCoreNode.AsObject();
+                    foreach (var sourceObject in sourceExtensionNode.AsObject())
                     {
-                        string coreResourceName = keyValueCore.Key;
-                        JsonNode? coreSchema = keyValueCore.Value;
-                        if (
-                            extensionResourceName.Equals(coreResourceName, StringComparison.OrdinalIgnoreCase)
-                            && coreSchema != null
-                        )
-                        {
-                            JsonArray coreJsonPaths = coreSchema[jsonPathKey] as JsonArray ?? new JsonArray();
-                            bool pathsAdded = false;
-
-                            foreach (var path in extensionJsonArray)
-                            {
-                                if (path != null)
-                                {
-                                    JsonNode clonedPath = path.DeepClone();
-
-                                    if (!coreJsonPaths.Contains(clonedPath))
-                                    {
-                                        coreJsonPaths.Add(clonedPath);
-                                        pathsAdded = true;
-                                    }
-                                }
-                            }
-
-                            if (pathsAdded && ApiSchemaNodes != null)
-                            {
-                                JsonNode clonedCoreJsonPaths = coreJsonPaths.DeepClone();
-
-                                coreSchema[jsonPathKey] = clonedCoreJsonPaths;
-
-                                JsonNode coreApiSchemaRootNode = ApiSchemaNodes.CoreApiSchemaRootNode;
-                                JsonNode? resourceSchemasNode = coreApiSchemaRootNode["projectSchema"]?[
-                                    "resourceSchemas"
-                                ];
-
-                                if (resourceSchemasNode != null)
-                                {
-                                    resourceSchemasNode[coreResourceName] = coreSchema.DeepClone();
-                                }
-                            }
-                        }
+                        targetObject[sourceObject.Key] = sourceObject.Value?.DeepClone();
                     }
-                }
+                    break;
+                case JsonValueKind.Array:
+                    var targetArray = targetCoreNode.AsArray();
+                    foreach (var sourceItem in sourceExtensionNode.AsArray())
+                    {
+                        bool itemAlreadyExists = targetArray.Any(item =>
+                            sourceItem?.GetValue<string>() == item?.GetValue<string>()
+                        );
+                        if (itemAlreadyExists)
+                        {
+                            continue;
+                        }
+                        targetArray.Add(sourceItem?.DeepClone());
+                    }
+                    break;
+                default:
+                    throw new InvalidOperationException(
+                        $"The value type '{nodeValueKind}' is not supported."
+                    );
             }
         }
     }

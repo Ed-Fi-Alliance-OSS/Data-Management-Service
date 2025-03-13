@@ -254,6 +254,18 @@ internal static class JsonHelpers
     }
 
     /// <summary>
+    /// Helper that returns the JsonNode present at the given key (similar to someNode['someKey']).
+    /// Throws if the value does not exist or is null.
+    /// </summary>
+    public static JsonNode GetRequiredNode(this JsonNode jsonNode, string key)
+    {
+        return (
+            jsonNode[key]
+            ?? throw new InvalidOperationException($"Node with key '{key}' cannot be null or undefined")
+        );
+    }
+
+    /// <summary>
     /// Helper to get value from json node. Throws if the node does not exist.
     /// </summary>
     public static T SelectNodeValue<T>(this JsonNode jsonNode, string jsonPathString)

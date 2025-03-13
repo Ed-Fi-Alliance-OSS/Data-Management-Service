@@ -3,11 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.ApiSchema.Helpers;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
-using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -18,102 +19,88 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [TestFixture]
 public class ProvideApiSchemaMiddlewareTests
 {
-    internal static IPipelineStep ProvideMiddleware(IApiSchemaProvider provider)
-    {
-        return new ProvideApiSchemaMiddleware(provider, NullLogger.Instance);
-    }
+    // SUT
+    private ProvideApiSchemaMiddleware? _provideApiSchemaMiddleware;
 
     [TestFixture]
-    public class Given_An_Api_Schema_Provider_Is_Injected : ParsePathMiddlewareTests
+    public class Given_An_Api_Schema_With_Resource_Extensions : ProvideApiSchemaMiddlewareTests
     {
-        private readonly PipelineContext _context = No.PipelineContext();
-
-        internal class Provider : IApiSchemaProvider
-        {
-            public ApiSchemaNodes GetApiSchemaNodes()
-            {
-                JsonNode _apiSchemaRootNode = new ApiSchemaBuilder()
-                    .WithStartProject("Ed-Fi", "5.0.0")
-                    .WithStartResource("School")
-                    .WithBooleanJsonPaths(new[] { "$.gradeLevels[*].isSecondary" })
-                    .WithNumericJsonPaths(new[] { "$.schoolId" })
-                    .WithDateTimeJsonPaths(new[] { "$.beginDate" })
-                    .WithEndResource()
-                    .WithEndProject()
-                    .AsSingleApiSchemaRootNode();
-
-                JsonNode _extensionApiSchemaRootNode = new ApiSchemaBuilder()
-                    .WithStartProject("tpdm", "5.0.0")
-                    .WithStartResource("School")
-                    .WithBooleanJsonPaths(new[] { "$.gradeLevels[*].isSecondary" })
-                    .WithNumericJsonPaths(new[] { "$.schoolId" })
-                    .WithDateTimeJsonPaths(new[] { "$.beginDate" })
-                    .WithEndResource()
-                    .WithEndProject()
-                    .AsSingleApiSchemaRootNode();
-
-                return new ApiSchemaNodes(_apiSchemaRootNode, new[] { _extensionApiSchemaRootNode });
-            }
-        }
+        private readonly ApiSchemaNodes _apiSchemaNodes = new ApiSchemaBuilder()
+            .WithStartProject("Ed-Fi", "5.0.0")
+            .WithStartResource("School")
+            .WithEndResource()
+            .WithEndProject()
+            .WithStartProject("tpdm", "5.0.0")
+            .WithStartResource("School", isResourceExtension: true)
+            .WithBooleanJsonPaths(["$._ext.tpdm.gradeLevels[*].isSecondary"])
+            .WithNumericJsonPaths(["$._ext.tpdm.schoolId"])
+            .WithDateTimeJsonPaths(["$._ext.tpdm.beginDate"])
+            .WithStartDocumentPathsMapping()
+            .WithDocumentPathReference(
+                "Person",
+                [new("$._ext.tpdm.personId", "$._ext.tpdm.personReference.personId")]
+            )
+            .WithEndDocumentPathsMapping()
+            .WithEndResource()
+            .WithEndProject()
+            .AsApiSchemaNodes();
 
         [SetUp]
-        public async Task Setup()
+        public void Setup()
         {
-            var provider = new Provider();
-            var apiSchemaNodes = provider.GetApiSchemaNodes();
+            var fakeApiSchemaProvider = A.Fake<IApiSchemaProvider>();
+            A.CallTo(() => fakeApiSchemaProvider.GetApiSchemaNodes()).Returns(_apiSchemaNodes);
 
-            _context.ApiSchemaDocuments = new ApiSchemaDocuments(apiSchemaNodes, NullLogger.Instance);
-
-            var middleware = ProvideMiddleware(provider);
-            await middleware.Execute(_context, NullNext);
+            _provideApiSchemaMiddleware = new ProvideApiSchemaMiddleware(
+                fakeApiSchemaProvider,
+                NullLogger<ProvideApiSchemaMiddleware>.Instance
+            );
         }
 
         [Test]
-        public void It_has_the_root_node_from_the_provider()
+        public async Task Copies_paths_to_core()
         {
-            _context.Should().NotBeNull();
-            _context.ApiSchemaDocuments.Should().NotBeNull();
+            // Act
+            var fakePipelineContext = A.Fake<PipelineContext>();
+            await _provideApiSchemaMiddleware!.Execute(fakePipelineContext, NullNext);
 
-            _context
-                .ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(new("ed-fi"))
+            // Assert
+            fakePipelineContext.ApiSchemaDocuments.Should().NotBeNull();
+
+            var coreSchoolResource = fakePipelineContext
+                .ApiSchemaDocuments.GetCoreProjectSchema()
+                .FindResourceSchemaNodeByResourceName(new ResourceName("School"));
+
+            coreSchoolResource!
+                .GetRequiredNode("booleanJsonPaths")
+                .AsArray()
+                .Select(node => node!.GetValue<string>())
                 .Should()
-                .NotBeNull();
-        }
+                .ContainSingle("$._ext.tpdm.gradeLevels[*].isSecondary");
 
-        [Test]
-        public void It_updates_core_resource_schemas_with_extension_json_paths()
-        {
-            var provider = new Provider();
-            var apiSchemaNodes = provider.GetApiSchemaNodes();
+            coreSchoolResource!
+                .GetRequiredNode("numericJsonPaths")
+                .AsArray()
+                .Select(node => node!.GetValue<string>())
+                .Should()
+                .ContainSingle("$._ext.tpdm.schoolId");
 
-            var coreResourceSchemas = apiSchemaNodes
-                .CoreApiSchemaRootNode
-                ?["projectSchema"]
-                ?["resourceSchemas"];
-            coreResourceSchemas.Should().NotBeNull();
+            coreSchoolResource!
+                .GetRequiredNode("dateTimeJsonPaths")
+                .AsArray()
+                .Select(node => node!.GetValue<string>())
+                .Should()
+                .ContainSingle("$._ext.tpdm.beginDate");
 
-            var extensionResourceSchema = apiSchemaNodes
-                .ExtensionApiSchemaRootNodes[0]
-                ?["projectSchema"]
-                ?["resourceSchemas"]
-                ?["schools"];
-            extensionResourceSchema.Should().NotBeNull();
-
-            var dateTimeJsonPaths = extensionResourceSchema?["dateTimeJsonPaths"] as JsonArray;
-            var booleanJsonPaths = extensionResourceSchema?["booleanJsonPaths"] as JsonArray;
-            var numericJsonPaths = extensionResourceSchema?["numericJsonPaths"] as JsonArray;
-
-            dateTimeJsonPaths.Should().NotBeNull();
-            booleanJsonPaths.Should().NotBeNull();
-            numericJsonPaths.Should().NotBeNull();
-
-            var dateTimePaths = dateTimeJsonPaths?.Select(p => p?.ToString()).ToList();
-            var booleanPaths = booleanJsonPaths?.Select(p => p?.ToString()).ToList();
-            var numericPaths = numericJsonPaths?.Select(p => p?.ToString()).ToList();
-
-            dateTimePaths.Should().Contain("$.beginDate");
-            booleanPaths.Should().Contain("$.gradeLevels[*].isSecondary");
-            numericPaths.Should().Contain("$.schoolId");
+            coreSchoolResource!
+                .GetRequiredNode("documentPathsMapping")
+                .AsObject()
+                .GetRequiredNode("Person")
+                .GetRequiredNode("referenceJsonPaths")[0]!
+                .GetRequiredNode("referenceJsonPath")
+                .GetValue<string>()
+                .Should()
+                .Be("$._ext.tpdm.personReference.personId");
         }
     }
 }
