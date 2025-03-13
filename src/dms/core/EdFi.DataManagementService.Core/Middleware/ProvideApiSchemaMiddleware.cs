@@ -87,8 +87,11 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
                                 if (path != null)
                                 {
                                     JsonNode clonedPath = path.DeepClone();
+                                    bool pathExists = coreJsonPaths.Any(existingPath =>
+                                        existingPath?.ToString() == clonedPath.ToString()
+                                    );
 
-                                    if (!coreJsonPaths.Contains(clonedPath))
+                                    if (!pathExists)
                                     {
                                         coreJsonPaths.Add(clonedPath);
                                         pathsAdded = true;
@@ -167,11 +170,17 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
                             JsonObject clonedCoreProperties = coreProperties.DeepClone().AsObject();
                             foreach (var extensionProperty in extensionProperties.AsObject())
                             {
-                                clonedCoreProperties.Add(
-                                    extensionProperty.Key,
-                                    extensionProperty.Value?.DeepClone()
+                                bool extensionPropertyExists = clonedCoreProperties.Any(a =>
+                                    a.Key == extensionProperty.Key
                                 );
-                                propertiesAdded = true;
+                                if (!extensionPropertyExists)
+                                {
+                                    clonedCoreProperties.Add(
+                                        extensionProperty.Key,
+                                        extensionProperty.Value?.DeepClone()
+                                    );
+                                    propertiesAdded = true;
+                                }
                             }
 
                             if (propertiesAdded && ApiSchemaNodes != null)
