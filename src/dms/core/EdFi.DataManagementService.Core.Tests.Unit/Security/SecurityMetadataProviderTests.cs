@@ -29,67 +29,55 @@ public class SecurityMetadataProviderTests
             var clientSecret = "secret";
             var scope = "fullaccess";
             string? expectedToken = "valid-token";
-            var jsonContent = """
-                [
-                {
-                    "id": 1,
-                    "Name": "Test-11",
-                    "resourceClaims": [
-                     {
-                        "name": "Test ResourceClaim",
-                        "actions": [
-                          {
-                            "name": "Create",
-                            "enabled": true
-                          }
-                        ]
-                        }
-                    ]
-                },
-                {
-                    "id": 2,
-                    "Name": "Test-22",
-                    "resourceClaims": [
-                     {
-                        "name": "Test ResourceClaim",
-                        "actions": [
-                              {
-                                "name": "Create",
-                                "enabled": true
-                              },
-                              {
-                                "name": "Delete",
-                                "enabled": true
-                              },
-                              {
-                                "name": "Update",
-                                "enabled": true
-                              },
-                              {
-                                "name": "Read",
-                                "enabled": true
-                              }],
-                        "children": [],
-                        "authorizationStrategyOverridesForCRUD": [],
-                        "_defaultAuthorizationStrategiesForCRUD": [
-                            {
-                            "actionId": 1,
-                            "actionName": "Create",
-                            "authorizationStrategies": [
-                                {
-                                "authStrategyId": 1,
-                                "authStrategyName": "NoFurtherAuthorizationRequired",
-                                "isInheritedFromParent": false
-                                }
-                            ]
-                            }
-                        ]
-                     }]
-                   }
-                ]
-                """;
 
-            _handler = new TestHttpMessageHandler(HttpStatusCode.OK, jsonContent);
+            var fakeClaimSets = new List<ClaimSet> { new("ClaimSet1", []), new("ClaimSet2", []) };
+            var fakeClaimsForClaimSet1 = new List<AuthorizationMetadataResponse.Claim>
+            {
+                new("resource1", 1),
+                new("resource2", 1),
+                new("resource3", 2),
+            };
+            var fakeClaimsForClaimSet2 = new List<AuthorizationMetadataResponse.Claim>
+            {
+                new("resource4", 1),
+                new("resource5", 1),
+            };
+            var fakeActionsForAuth1 = new AuthorizationMetadataResponse.Action[]
+            {
+                new("Read", [new AuthorizationStrategy("authStrategy1")]),
+                new("Delete", [new AuthorizationStrategy("authStrategy2")]),
+            };
+
+            var fakeActionsForAuth2 = new AuthorizationMetadataResponse.Action[]
+            {
+                new("Read", [new AuthorizationStrategy("authStrategy1")]),
+                new("Update", [new AuthorizationStrategy("authStrategy3")]),
+            };
+            var fakeAuthorizations = new List<AuthorizationMetadataResponse.Authorization>
+            {
+                new(1, fakeActionsForAuth1),
+                new(2, fakeActionsForAuth2),
+            };
+            var fakeAuthorizationMetadataForClaimSet1 = new AuthorizationMetadataResponse(
+                fakeClaimsForClaimSet1,
+                fakeAuthorizations
+            );
+            var fakeAuthorizationMetadataForClaimSet2 = new AuthorizationMetadataResponse(
+                fakeClaimsForClaimSet2,
+                fakeAuthorizations
+            );
+            _handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
+            _handler.SetResponse("https://api.example.com/v2/claimSets", fakeClaimSets);
+
+            _handler.SetResponse(
+                $"https://api.example.com/v2/authorizationMetadata?claimSetName=ClaimSet1",
+                fakeAuthorizationMetadataForClaimSet1
+            );
+            _handler.SetResponse(
+                $"https://api.example.com/v2/authorizationMetadata?claimSetName=ClaimSet2",
+                fakeAuthorizationMetadataForClaimSet2
+            );
+
             var configServiceHandler = new ConfigurationServiceResponseHandler(
                 NullLogger<ConfigurationServiceResponseHandler>.Instance
             )
@@ -128,15 +116,17 @@ public class SecurityMetadataProviderTests
         {
             _claims.Should().NotBeNull();
             _claims.Should().HaveCount(2);
-            _claims![0].Name.Should().Be("Test-11");
+            _claims![0].Name.Should().Be("ClaimSet1");
             _claims![0].ResourceClaims.Should().NotBeNull();
-            _claims![0].ResourceClaims!.Should().HaveCount(1);
-            _claims![1].Name.Should().Be("Test-22");
+            _claims![0].ResourceClaims!.Should().HaveCount(6);
+            _claims![0].ResourceClaims![0].Should().NotBeNull();
+            _claims![0].ResourceClaims![0].Name.Should().Be("resource1");
+
+            _claims![1].Name.Should().Be("ClaimSet2");
             _claims![1].ResourceClaims.Should().NotBeNull();
-            _claims![1].ResourceClaims!.Should().HaveCount(1);
+            _claims![1].ResourceClaims!.Should().HaveCount(4);
             _claims![1].ResourceClaims![0].Should().NotBeNull();
-            _claims![1].ResourceClaims![0].DefaultAuthorizationStrategiesForCrud.Should().NotBeNull();
-            _claims![1].ResourceClaims![0].DefaultAuthorizationStrategiesForCrud.Should().HaveCount(1);
+            _claims![1].ResourceClaims![0].Name.Should().Be("resource4");
         }
     }
 

@@ -8,20 +8,42 @@ using System.Text;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Security;
 
-public class TestHttpMessageHandler(HttpStatusCode httpStatusCode, string? responseContent = null)
-    : HttpMessageHandler
+public class TestHttpMessageHandler : HttpMessageHandler
 {
-    private readonly HttpStatusCode _httpStatusCode = httpStatusCode;
+    private readonly HttpStatusCode _httpStatusCode;
+    private readonly Dictionary<string, string> _responses = [];
+
+    public TestHttpMessageHandler(HttpStatusCode httpStatusCode, string? responseContent = null)
+    {
+        _httpStatusCode = httpStatusCode;
+        if (responseContent != null)
+        {
+            _responses["default"] = responseContent;
+        }
+    }
+
+    public void SetResponse(string url, object responseObject)
+    {
+        var content = System.Text.Json.JsonSerializer.Serialize(responseObject);
+        _responses[url] = content;
+    }
 
     protected override Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken
     )
     {
-        if (_httpStatusCode.Equals(HttpStatusCode.OK))
+        if (
+            _httpStatusCode.Equals(HttpStatusCode.OK)
+            && _responses.TryGetValue(request.RequestUri!.ToString(), out var content)
+        )
         {
-            var content = new StringContent(responseContent!, Encoding.UTF8, "application/json");
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
+            return Task.FromResult(
+                new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(content, Encoding.UTF8, "application/json"),
+                }
+            );
         }
 
         return _httpStatusCode switch

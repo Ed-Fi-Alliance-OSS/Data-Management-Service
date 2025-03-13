@@ -19,7 +19,6 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// Authorizes requests resource and action based on the client's authorization information.
 /// </summary>
 internal class ResourceActionAuthorizationMiddleware(
-    IAuthorizationStrategiesProvider _authorizationStrategiesProvider,
     IClaimSetCacheService _claimSetCacheService,
     ILogger _logger
 ) : IPipelineStep
@@ -65,16 +64,18 @@ internal class ResourceActionAuthorizationMiddleware(
                 RespondAuthorizationError();
                 return;
             }
-
-            ResourceClaim? resourceClaim = claimSet.ResourceClaims.SingleOrDefault(r =>
-                string.Equals(
-                    r.Name,
-                    context.PathComponents.EndpointName.Value,
-                    StringComparison.InvariantCultureIgnoreCase
+            // Create resource claim URI
+            ResourceClaim[] matchingClaims = claimSet
+                .ResourceClaims.Where(r =>
+                    string.Equals(
+                        r.Name,
+                        context.PathComponents.EndpointName.Value,
+                        StringComparison.InvariantCultureIgnoreCase
+                    )
                 )
-            );
+                .ToArray();
 
-            if (resourceClaim == null)
+            if (matchingClaims.Length == 0)
             {
                 _logger.LogDebug(
                     "ResourceActionAuthorizationMiddleware: No ResourceClaim matching Endpoint {Endpoint} - {TraceId}",
@@ -85,32 +86,20 @@ internal class ResourceActionAuthorizationMiddleware(
                 return;
             }
 
-            context.ResourceClaim = resourceClaim;
+            var resourceClaimName = matchingClaims.SingleOrDefault()?.Name;
 
-            List<ResourceClaimAction>? resourceActions = resourceClaim.Actions;
-            if (resourceActions == null)
-            {
-                _logger.LogDebug(
-                    "ResourceAuthorizationMiddleware: No actions on the resource claim {ResourceClaim} - {TraceId}",
-                    resourceClaim.Name,
-                    context.FrontendRequest.TraceId.Value
-                );
-                RespondAuthorizationError();
-                return;
-            }
             var actionName = ActionResolver.Resolve(context.Method).ToString();
-            var isActionAuthorized =
-                resourceActions.SingleOrDefault(x =>
-                    string.Equals(x.Name, actionName, StringComparison.InvariantCultureIgnoreCase)
-                    && x.Enabled
-                ) != null;
 
-            if (!isActionAuthorized)
+            var authorizedAction = matchingClaims.SingleOrDefault(x =>
+                string.Equals(x.Action, actionName, StringComparison.InvariantCultureIgnoreCase)
+            );
+
+            if (authorizedAction == null)
             {
                 _logger.LogDebug(
                     "ResourceAuthorizationMiddleware: Can not perform {RequestMethod} on the resource {ResourceName} - {TraceId}",
                     context.Method.ToString(),
-                    resourceClaim.Name,
+                    resourceClaimName,
                     context.FrontendRequest.TraceId.Value
                 );
                 context.FrontendResponse = new FrontendResponse(
@@ -119,7 +108,7 @@ internal class ResourceActionAuthorizationMiddleware(
                         traceId: context.FrontendRequest.TraceId,
                         errors:
                         [
-                            $"The API client's assigned claim set (currently '{claimSetName}') must grant permission of the '{actionName}' action on one of the following resource claims: {resourceClaim.Name}",
+                            $"The API client's assigned claim set (currently '{claimSetName}') must grant permission of the '{actionName}' action on one of the following resource claims: {resourceClaimName}",
                         ],
                         typeExtension: "access-denied:action"
                     ),
@@ -129,8 +118,9 @@ internal class ResourceActionAuthorizationMiddleware(
                 return;
             }
 
-            IReadOnlyList<string> resourceActionAuthStrategies =
-                _authorizationStrategiesProvider.GetAuthorizationStrategies(resourceClaim, actionName);
+            IReadOnlyList<string> resourceActionAuthStrategies = authorizedAction
+                .AuthorizationStrategies.Select(auth => auth.AuthStrategyName)
+                .ToList();
 
             if (resourceActionAuthStrategies.Count == 0)
             {
@@ -140,7 +130,7 @@ internal class ResourceActionAuthorizationMiddleware(
                         traceId: context.FrontendRequest.TraceId,
                         errors:
                         [
-                            $"No authorization strategies were defined for the requested action '{actionName}' against resource ['{resourceClaim.Name}'] matched by the caller's claim '{claimSetName}'.",
+                            $"No authorization strategies were defined for the requested action '{actionName}' against resource ['{resourceClaimName}'] matched by the caller's claim '{claimSetName}'.",
                         ]
                     ),
                     Headers: [],

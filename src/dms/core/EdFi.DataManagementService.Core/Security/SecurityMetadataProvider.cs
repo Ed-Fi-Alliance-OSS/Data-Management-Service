@@ -12,7 +12,6 @@ namespace EdFi.DataManagementService.Core.Security;
 public interface ISecurityMetadataProvider
 {
     Task<IList<ClaimSet>> GetAllClaimSets();
-    Task<IList<ClaimSet>> GetAuthorizationMetadata();
 }
 
 public class SecurityMetadataProvider(
@@ -37,23 +36,14 @@ public class SecurityMetadataProvider(
     public async Task<IList<ClaimSet>> GetAllClaimSets()
     {
         await SetAuthorizationHeader();
-        return await GetClaimSets();
-    }
 
-    private async Task<IList<ClaimSet>> GetClaimSets()
-    {
         var claimsEndpoint = "v2/claimSets";
-        var response = await configurationServiceApiClient.Client.GetAsync(claimsEndpoint);
-        var jsonString = await response.Content.ReadAsStringAsync();
-        List<ClaimSet> claimSets = JsonSerializer.Deserialize<List<ClaimSet>>(jsonString, _jsonOptions) ?? [];
-        return claimSets;
-    }
+        var claimSetsResponse = await configurationServiceApiClient.Client.GetAsync(claimsEndpoint);
+        var responseJsonString = await claimSetsResponse.Content.ReadAsStringAsync();
+        List<ClaimSet> claimSets =
+            JsonSerializer.Deserialize<List<ClaimSet>>(responseJsonString, _jsonOptions) ?? [];
 
-    public async Task<IList<ClaimSet>> GetAuthorizationMetadata()
-    {
-        await SetAuthorizationHeader();
-        var claimSets = await GetClaimSets();
-        var claimSet1List = new List<ClaimSet>();
+        var claimSetAuthorizationMetadata = new List<ClaimSet>();
         foreach (var claimSetName in claimSets.Select(x => x.Name))
         {
             var authorizationMetadataEndpoint = $"v2/authorizationMetadata?claimSetName={claimSetName}";
@@ -65,7 +55,7 @@ public class SecurityMetadataProvider(
             );
             if (authorizationMetadataResponse != null)
             {
-                var claimSet1 = new ClaimSet(claimSetName, []);
+                var claimSet = new ClaimSet(claimSetName, []);
                 foreach (var claim in authorizationMetadataResponse.Claims)
                 {
                     var authorization = authorizationMetadataResponse.Authorizations.Find(a =>
@@ -80,12 +70,13 @@ public class SecurityMetadataProvider(
                                 new ResourceClaim(claim.Name, action.Name, action.AuthorizationStrategies)
                             );
                         }
+                        claimSet.ResourceClaims.AddRange(resourceClaims);
                     }
                 }
-                claimSet1List.Add(claimSet1);
+                claimSetAuthorizationMetadata.Add(claimSet);
             }
         }
 
-        return claimSet1List;
+        return claimSetAuthorizationMetadata;
     }
 }

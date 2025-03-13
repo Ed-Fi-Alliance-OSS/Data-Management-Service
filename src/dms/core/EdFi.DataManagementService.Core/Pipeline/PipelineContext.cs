@@ -97,11 +97,6 @@ internal class PipelineContext(FrontendRequest _frontendRequest, RequestMethod _
     public DocumentSecurityElements DocumentSecurityElements { get; set; } = No.DocumentSecurityElements;
 
     /// <summary>
-    /// ResourceClaims for the request
-    /// </summary>
-    public ResourceClaim ResourceClaim { get; set; } = No.ResourceClaim;
-
-    /// <summary>
     /// ResourceActionAuthStrategies for the request
     /// </summary>
     public IReadOnlyList<string> ResourceActionAuthStrategies { get; set; } = [];

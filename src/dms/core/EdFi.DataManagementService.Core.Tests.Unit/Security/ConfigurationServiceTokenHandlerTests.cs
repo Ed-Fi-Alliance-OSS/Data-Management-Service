@@ -29,11 +29,12 @@ public class ConfigurationServiceTokenHandlerTests
         {
             var httpClientFactory = A.Fake<IHttpClientFactory>();
 
-            var json = JsonSerializer.Serialize(new { Access_Token = "valid-token", Expires_in = 1800 });
-            var httpClient = new HttpClient(new TestHttpMessageHandler(HttpStatusCode.OK, json))
-            {
-                BaseAddress = new Uri("https://api.example.com"),
-            };
+            var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
+            handler.SetResponse(
+                "https://api.example.com/connect/token",
+                new { Access_Token = "valid-token", Expires_in = 1800 }
+            );
+            var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com") };
 
             A.CallTo(() => httpClientFactory.CreateClient(A<string>.Ignored)).Returns(httpClient);
 

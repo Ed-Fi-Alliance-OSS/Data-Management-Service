@@ -101,7 +101,6 @@ public class ResourceUpsertAuthorizationMiddlewareTests
                     new EndpointName("schools"),
                     new DocumentUuid()
                 ),
-                ResourceClaim = new ResourceClaim() { Name = "schools" },
                 ResourceActionAuthStrategies = ["SomeAuthStrategy"],
             };
             await NullValidatorMiddleware().Execute(_context, TestHelper.NullNext);
@@ -137,24 +136,15 @@ public class ResourceUpsertAuthorizationMiddlewareTests
                             Name: "SIS-Vendor",
                             ResourceClaims:
                             [
-                                new ResourceClaim()
-                                {
-                                    Name = "schools",
-                                    Actions = [new(Enabled: true, Name: "Create")],
-                                },
+                                new ResourceClaim(
+                                    "schools",
+                                    "Create",
+                                    [new AuthorizationStrategy(authStrategy)]
+                                ),
                             ]
                         ),
                     ]
                 );
-            var authorizationStrategiesProvider = A.Fake<IAuthorizationStrategiesProvider>();
-            A.CallTo(
-                    () =>
-                        authorizationStrategiesProvider.GetAuthorizationStrategies(
-                            A<ResourceClaim>.Ignored,
-                            A<string>.Ignored
-                        )
-                )
-                .Returns([authStrategy]);
             var authorizationServiceFactory = A.Fake<IAuthorizationServiceFactory>();
             A.CallTo(() => authorizationServiceFactory.GetByName<IAuthorizationValidator>(A<string>.Ignored))
                 .Returns(null);

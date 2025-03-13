@@ -52,7 +52,6 @@ public class APISchemaFileTests
                 new EqualityConstraintValidator(),
                 NullLogger<ApiService>.Instance,
                 Options.Create(new AppSettings { AllowIdentityUpdateOverrides = "" }),
-                new AuthorizationStrategiesProvider(),
                 new NamedAuthorizationServiceFactory(serviceProvider),
                 ResiliencePipeline.Empty,
                 new ResourceLoadOrderCalculator(

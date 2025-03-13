@@ -5,7 +5,4 @@
 
 namespace EdFi.DataManagementService.Core.Security.Model;
 
-public class AuthorizationStrategy
-{
-    public required string AuthStrategyName { get; set; }
-}
+public record AuthorizationStrategy(string AuthStrategyName);
