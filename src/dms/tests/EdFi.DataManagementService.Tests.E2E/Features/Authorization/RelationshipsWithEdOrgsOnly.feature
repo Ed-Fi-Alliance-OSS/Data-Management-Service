@@ -307,7 +307,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                       "schoolReference": {
                           "schoolId": 255901001
                       },
-                      "bellScheduleName": "Test Schedule",
+                      "bellScheduleName": "Test Schedule 06",
                       "totalInstructionalTime": 325,
                       "classPeriods": [
                           {
@@ -329,7 +329,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                       "schoolReference": {
                           "schoolId": 255901002
                       },
-                      "bellScheduleName": "Test Schedule",
+                      "bellScheduleName": "Test Schedule 06",
                       "totalInstructionalTime": 325,
                       "classPeriods": [
                           {

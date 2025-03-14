@@ -25,6 +25,7 @@ public class RelationshipsWithEdOrgsOnlyFiltersProvider : IAuthorizationFiltersP
                     "EducationOrganization",
                     edOrgId.Value.ToString(),
                     "Access to the resource item could not be authorized based on the caller's EducationOrganizationIds claims: {claims}.",
+                    "No relationships have been established between the caller's education organization id claims ({claims}) and properties of the resource item.",
                     FilterComparison.Equals
                 )
             );
