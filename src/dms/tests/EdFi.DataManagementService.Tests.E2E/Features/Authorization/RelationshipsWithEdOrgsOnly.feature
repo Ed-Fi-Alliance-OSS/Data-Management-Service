@@ -739,7 +739,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   }
                   """
 
-    @ignore
+
     Rule: Search for a resource in the EducationOrganizationHierarchy with RelationshipsWithEdOrgsOnly authorization and LONG schoolId
         Background:
                   # Build a hierarchy
@@ -757,7 +757,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   | weekIdentifier | schoolReference              | beginDate  | endDate    | totalInstructionalDays |
                   | week 1         | { "schoolId": 201019999999 } | 2023-08-01 | 2023-08-07 | 5                      |
                   @addwait
-                  @ignore
+
                   # DMS-556
                   # Kafka bug when mixed INT and BIGINT in the hierarchy array
                   # SEA and LEA below have INT id's while School has BIGINT. This hierarchy row will not replicate to OpenSearch
