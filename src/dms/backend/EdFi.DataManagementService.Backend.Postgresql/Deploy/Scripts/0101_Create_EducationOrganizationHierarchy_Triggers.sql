@@ -12,7 +12,7 @@ BEGIN
  IF (TG_OP = 'INSERT') THEN
     -- Add the new record, hierarchies always start with themselves as the single element in the array
     INSERT INTO dms.EducationOrganizationHierarchyTermsLookup(Id, Hierarchy)
-    VALUES (NEW.EducationOrganizationId, jsonb_build_array(NEW.EducationOrganizationId));
+    VALUES (NEW.EducationOrganizationId, jsonb_build_array(NEW.EducationOrganizationId::TEXT));
 
     -- Find all ancestors of the new education organization using recursive CTE
     WITH RECURSIVE ancestors AS (
@@ -33,7 +33,7 @@ BEGIN
     SET Hierarchy = jsonb_insert(
         Hierarchy,
         '{-1}',  -- Insert at the end
-        to_jsonb(NEW.EducationOrganizationId),
+        to_jsonb(NEW.EducationOrganizationId::TEXT),
         true
     )
     WHERE Id IN (SELECT EducationOrganizationId FROM ancestors);
@@ -58,7 +58,7 @@ BEGIN
     SET Hierarchy = (
         SELECT jsonb_agg(elem)
         FROM jsonb_array_elements(Hierarchy) elem
-        WHERE elem <> to_jsonb(OLD.EducationOrganizationId)
+        WHERE elem <> to_jsonb(OLD.EducationOrganizationId::TEXT)
     )
     WHERE Id IN (SELECT EducationOrganizationId FROM old_ancestors);
 
@@ -81,7 +81,7 @@ BEGIN
     SET Hierarchy = jsonb_insert(
         Hierarchy,
         '{-1}',  -- Insert at the end
-        to_jsonb(NEW.EducationOrganizationId),
+        to_jsonb(NEW.EducationOrganizationId::TEXT),
         true
     )
     WHERE Id IN (SELECT EducationOrganizationId FROM new_ancestors);
@@ -110,7 +110,7 @@ BEGIN
     SET Hierarchy = (
         SELECT jsonb_agg(elem)
         FROM jsonb_array_elements(Hierarchy) elem
-        WHERE elem <> to_jsonb(OLD.EducationOrganizationId)
+        WHERE elem <> to_jsonb(OLD.EducationOrganizationId::TEXT)
     )
     WHERE Id IN (SELECT EducationOrganizationId FROM ancestors);
  END IF;
@@ -123,3 +123,4 @@ CREATE OR REPLACE TRIGGER EducationOrganizationHierarchyTrigger
 AFTER INSERT OR UPDATE OR DELETE ON dms.EducationOrganizationHierarchy
     FOR EACH ROW
     EXECUTE PROCEDURE dms.EducationOrganizationHierarchyTriggerFunction();
+
