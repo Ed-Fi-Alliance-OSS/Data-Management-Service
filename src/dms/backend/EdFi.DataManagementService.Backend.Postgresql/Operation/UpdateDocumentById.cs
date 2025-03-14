@@ -80,6 +80,31 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
 
         try
         {
+            // If this update is part of RelationshipWithEdOrg strategy, verify the access to the hierarchy.
+            if (updateRequest.ResourceAuthorizationHandler.IsRelationshipWithEdOrg)
+            {
+                long[] educationOrganizationSecurityElements =
+                    await _sqlAction.GetAncestorEducationOrganizationIdsForUpsert(
+                        updateRequest
+                            .DocumentSecurityElements.EducationOrganization.Select(e => e.Id.Value)
+                            .ToArray(),
+                        connection,
+                        transaction,
+                        updateRequest.TraceId
+                    );
+
+                ResourceAuthorizationResult getAuthorizationResult =
+                    updateRequest.ResourceAuthorizationHandler.Authorize(
+                        updateRequest.DocumentSecurityElements.Namespace,
+                        educationOrganizationSecurityElements
+                    );
+
+                if (getAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
+                {
+                    return new UpdateResult.UpdateFailureNotAuthorized(notAuthorized.RelationshipErrorMessages);
+                }
+            }
+
             UpdateDocumentValidationResult validationResult = await _sqlAction.UpdateDocumentValidation(
                 updateRequest.DocumentUuid,
                 documentPartitionKey,
@@ -149,31 +174,6 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
             if (documentFromDb == null)
             {
                 return new UpdateResult.UpdateFailureNotExists();
-            }
-
-            // If this update is part of RelationshipWithEdOrg strategy, verify the access to the hierarchy.
-            if (updateRequest.ResourceAuthorizationHandler.IsRelationshipWithEdOrg)
-            {
-                long[] educationOrganizationSecurityElements =
-                    await _sqlAction.GetAncestorEducationOrganizationIdsForUpsert(
-                        updateRequest
-                            .DocumentSecurityElements.EducationOrganization.Select(e => e.Id.Value)
-                            .ToArray(),
-                        connection,
-                        transaction,
-                        updateRequest.TraceId
-                    );
-
-                ResourceAuthorizationResult getAuthorizationResult =
-                    updateRequest.ResourceAuthorizationHandler.Authorize(
-                        updateRequest.DocumentSecurityElements.Namespace,
-                        educationOrganizationSecurityElements
-                    );
-
-                if (getAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
-                {
-                    return new UpdateResult.UpdateFailureNotAuthorized(notAuthorized.ErrorMessages);
-                }
             }
 
             int rowsAffected = await _sqlAction.UpdateDocumentEdfiDoc(

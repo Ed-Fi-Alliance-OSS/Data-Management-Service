@@ -121,6 +121,11 @@ internal class UpsertHandler(
                 Headers: []
             ),
             UpsertFailureWriteConflict => new(StatusCode: 409, Body: null, Headers: []),
+            UpsertFailureNotAuthorized failure => new(
+                StatusCode: 403,
+                Body: ForForbidden(traceId: context.FrontendRequest.TraceId, errors: failure.ErrorMessages),
+                Headers: []
+            ),
             UnknownFailure failure => new(
                 StatusCode: 500,
                 Body: ToJsonError(failure.FailureMessage, context.FrontendRequest.TraceId),

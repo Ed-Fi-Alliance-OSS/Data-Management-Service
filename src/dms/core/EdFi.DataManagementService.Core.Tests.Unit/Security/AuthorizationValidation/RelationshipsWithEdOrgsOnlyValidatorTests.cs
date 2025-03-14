@@ -148,13 +148,8 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
         public void Should_Return_Expected_AuthorizationResult()
         {
             _expectedResult.Should().NotBeNull();
-            _expectedResult!.IsAuthorized.Should().BeFalse();
-            _expectedResult!.ErrorMessage.Should().NotBeEmpty();
-            _expectedResult!
-                .ErrorMessage.Should()
-                .Be(
-                    $"No relationships have been established between the caller's education organization id claims ('2455') and properties of the resource item."
-                );
+            _expectedResult!.IsAuthorized.Should().BeTrue();
+            _expectedResult!.ErrorMessage.Should().BeEmpty();
         }
     }
 
@@ -194,13 +189,9 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
         public void Should_Return_Expected_AuthorizationResult()
         {
             _expectedResult.Should().NotBeNull();
-            _expectedResult!.IsAuthorized.Should().BeFalse();
-            _expectedResult!.ErrorMessage.Should().NotBeEmpty();
-            _expectedResult!
-                .ErrorMessage.Should()
-                .Be(
-                    $"No relationships have been established between the caller's education organization id claims ('566', '567') and properties of the resource item."
-                );
+            //We do not compare EdOrgIds at this point. 
+            _expectedResult!.IsAuthorized.Should().BeTrue();
+            _expectedResult!.ErrorMessage.Should().BeEmpty();
         }
     }
 }

@@ -31,7 +31,15 @@ public class ResourceAuthorizationHandlerTests
             var authStrategyEvaluators = clientNamespacePrefixes
                 .Split(',')
                 .Select(namespacePrefix => new AuthorizationStrategyEvaluator(
-                    [new AuthorizationFilter("Namespace", namespacePrefix, "", FilterComparison.StartsWith)],
+                    [
+                        new AuthorizationFilter(
+                            "Namespace",
+                            namespacePrefix,
+                            "",
+                            "",
+                            FilterComparison.StartsWith
+                        ),
+                    ],
                     FilterOperator.Or
                 ))
                 .ToArray();
@@ -64,7 +72,15 @@ public class ResourceAuthorizationHandlerTests
             var authStrategyEvaluators = clientNamespacePrefixes
                 .Split(',')
                 .Select(namespacePrefix => new AuthorizationStrategyEvaluator(
-                    [new AuthorizationFilter("Namespace", namespacePrefix, "", FilterComparison.StartsWith)],
+                    [
+                        new AuthorizationFilter(
+                            "Namespace",
+                            namespacePrefix,
+                            "",
+                            "",
+                            FilterComparison.StartsWith
+                        ),
+                    ],
                     FilterOperator.Or
                 ))
                 .ToArray();
@@ -93,7 +109,15 @@ public class ResourceAuthorizationHandlerTests
             var authStrategyEvaluators = ""
                 .Split(',')
                 .Select(namespacePrefix => new AuthorizationStrategyEvaluator(
-                    [new AuthorizationFilter("Namespace", namespacePrefix, "", FilterComparison.StartsWith)],
+                    [
+                        new AuthorizationFilter(
+                            "Namespace",
+                            namespacePrefix,
+                            "",
+                            "",
+                            FilterComparison.StartsWith
+                        ),
+                    ],
                     FilterOperator.Or
                 ))
                 .ToArray();
@@ -125,7 +149,15 @@ public class ResourceAuthorizationHandlerTests
             var authStrategyEvaluators = clientEdOrgIds
                 .Split(',')
                 .Select(edOrgId => new AuthorizationStrategyEvaluator(
-                    [new AuthorizationFilter("EducationOrganization", edOrgId, "", FilterComparison.Equals)],
+                    [
+                        new AuthorizationFilter(
+                            "EducationOrganization",
+                            edOrgId,
+                            "",
+                            "",
+                            FilterComparison.Equals
+                        ),
+                    ],
                     FilterOperator.Or
                 ))
                 .ToArray();
@@ -157,7 +189,15 @@ public class ResourceAuthorizationHandlerTests
             var authStrategyEvaluators = clientEdOrgIds
                 .Split(',')
                 .Select(edOrgId => new AuthorizationStrategyEvaluator(
-                    [new AuthorizationFilter("EducationOrganization", edOrgId, "", FilterComparison.Equals)],
+                    [
+                        new AuthorizationFilter(
+                            "EducationOrganization",
+                            edOrgId,
+                            "",
+                            "",
+                            FilterComparison.Equals
+                        ),
+                    ],
                     FilterOperator.Or
                 ))
                 .ToArray();
@@ -222,9 +262,16 @@ public class ResourceAuthorizationHandlerTests
                             "Namespace",
                             "uri://ed-fi.org",
                             "",
+                            "",
                             FilterComparison.StartsWith
                         ),
-                        new AuthorizationFilter("EducationOrganization", "6001", "", FilterComparison.Equals),
+                        new AuthorizationFilter(
+                            "EducationOrganization",
+                            "6001",
+                            "",
+                            "",
+                            FilterComparison.Equals
+                        ),
                     ],
                     FilterOperator.And
                 ),
@@ -287,9 +334,16 @@ public class ResourceAuthorizationHandlerTests
                             "Namespace",
                             "uri://ed-fi.org",
                             "",
+                            "",
                             FilterComparison.StartsWith
                         ),
-                        new AuthorizationFilter("EducationOrganization", "6001", "", FilterComparison.Equals),
+                        new AuthorizationFilter(
+                            "EducationOrganization",
+                            "6001",
+                            "",
+                            "",
+                            FilterComparison.Equals
+                        ),
                     ],
                     FilterOperator.Or
                 ),

@@ -116,6 +116,14 @@ internal class UpdateByIdHandler(
                 ),
                 Headers: []
             ),
+            UpdateFailureNotAuthorized failure => new FrontendResponse(
+                StatusCode: 403,
+                Body: FailureResponse.ForForbidden(
+                    traceId: context.FrontendRequest.TraceId,
+                    errors: failure.ErrorMessages
+                ),
+                Headers: []
+            ),
             UnknownFailure failure => new FrontendResponse(
                 StatusCode: 500,
                 Body: ToJsonError(failure.FailureMessage, context.FrontendRequest.TraceId),

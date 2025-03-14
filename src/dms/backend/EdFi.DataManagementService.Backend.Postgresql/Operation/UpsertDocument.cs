@@ -314,7 +314,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
 
                 if (getAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
                 {
-                    return new UpsertResult.UpsertFailureNotAuthorized(notAuthorized.ErrorMessages);
+                    return new UpsertResult.UpsertFailureNotAuthorized(notAuthorized.RelationshipErrorMessages);
                 }
             }
 
