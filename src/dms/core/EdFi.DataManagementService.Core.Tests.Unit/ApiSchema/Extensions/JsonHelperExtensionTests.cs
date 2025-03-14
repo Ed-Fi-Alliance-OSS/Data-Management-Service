@@ -636,4 +636,50 @@ public class JsonHelperExtensionsTests
             result.Should().Be(1);
         }
     }
+
+    [TestFixture]
+    public class When_getting_a_required_node
+    {
+        [Test]
+        public void Given_key_does_not_exist__Then_throw_exception()
+        {
+            // Arrange
+            JsonNode jsonNode = JsonNode.Parse("{}")!;
+            string jsonKey = "someKey";
+
+            // Act
+            Action act = () => jsonNode.GetRequiredNode(jsonKey);
+
+            // Assert
+            act.Should().Throw<InvalidOperationException>();
+        }
+
+        [Test]
+        public void Given_value_at_key_is_null__Then_throw_exception()
+        {
+            // Arrange
+            JsonNode jsonNode = JsonNode.Parse("{ \"someKey\": null }")!;
+            string jsonKey = "someKey";
+
+            // Act
+            Action act = () => jsonNode.GetRequiredNode(jsonKey);
+
+            // Assert
+            act.Should().Throw<InvalidOperationException>();
+        }
+
+        [Test]
+        public void Given_integer_value__Then_return_integer()
+        {
+            // Arrange
+            JsonNode jsonNode = JsonNode.Parse("{ \"someKey\": 1 }")!;
+            string jsonKey = "someKey";
+
+            // Act
+            int result = jsonNode.GetRequiredNode(jsonKey).GetValue<int>();
+
+            // Assert
+            result.Should().Be(1);
+        }
+    }
 }

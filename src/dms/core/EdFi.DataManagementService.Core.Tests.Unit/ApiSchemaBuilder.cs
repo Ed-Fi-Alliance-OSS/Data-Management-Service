@@ -153,6 +153,8 @@ public class ApiSchemaBuilder
         _currentResourceNode = new JsonObject
         {
             ["allowIdentityUpdates"] = allowIdentityUpdates,
+            ["booleanJsonPaths"] = new JsonArray(),
+            ["dateTimeJsonPaths"] = new JsonArray(),
             ["documentPathsMapping"] = new JsonObject(),
             ["equalityConstraints"] = new JsonArray(),
             ["identityJsonPaths"] = new JsonArray(),
@@ -161,6 +163,7 @@ public class ApiSchemaBuilder
             ["isSchoolYearEnumeration"] = isSchoolYearEnumeration,
             ["isSubclass"] = isSubclass,
             ["jsonSchemaForInsert"] = new JsonObject(),
+            ["numericJsonPaths"] = new JsonArray(),
             ["resourceName"] = resourceName,
             ["queryFieldMapping"] = new JsonObject(),
             ["securityElements"] = new JsonObject { ["Namespace"] = new JsonArray() },
