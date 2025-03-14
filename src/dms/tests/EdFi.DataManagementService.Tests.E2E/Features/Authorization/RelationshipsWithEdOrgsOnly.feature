@@ -459,8 +459,6 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
              Then it should respond with 404
 
     Rule: GetById or Delete the resource fails with a 403 forbidden error with no matching education organization ids claim
-
-
         Background:
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901001"
               And the system has these "schools"
@@ -618,10 +616,87 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                       "weekIdentifier": "week 1"
                   }
                   """
-        @addwait
-        Scenario: 13 Ensure client with access to state education agency 2 gets query results for school level classPeriods
+
+        Scenario: 13.1 Ensure client with access to state education agency 2 can post and put classPeriods for school 20201
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2"
-             When a GET request is made to "/ed-fi/academicWeeks"
+             When a POST request is made to "/ed-fi/academicWeeks" with
+                  """
+                  {
+                      "schoolReference": {
+                          "schoolId": 20101
+                      },
+                      "beginDate": "2023-08-08",
+                      "endDate": "2023-08-14",
+                      "totalInstructionalDays": 5,
+                      "weekIdentifier": "week 2"
+                  }
+                  """
+             Then it should respond with 201 or 200
+             When a PUT request is made to "/ed-fi/academicWeeks/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "schoolReference": {
+                          "schoolId": 20101
+                      },
+                      "beginDate": "2023-08-08",
+                      "endDate": "2023-08-14",
+                      "totalInstructionalDays": 6,
+                      "weekIdentifier": "week 2"
+                  }
+                  """
+             Then it should respond with 204
+
+        Scenario: 13.2 Ensure client with access to state education agency 3 can not post or put classPeriods for school 20201
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "3"
+             When a POST request is made to "/ed-fi/academicWeeks" with
+                  """
+                  {
+                      "schoolReference": {
+                          "schoolId": 20101
+                      },
+                      "beginDate": "2023-08-08",
+                      "endDate": "2023-08-14",
+                      "totalInstructionalDays": 5,
+                      "weekIdentifier": "week 2"
+                  }
+                  """
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                      "detail": "Access to the resource could not be authorized.",
+                      "type": "urn:ed-fi:api:security:authorization:",
+                      "title": "Authorization Denied",
+                      "status": 403,
+                      "validationErrors": {},
+                      "errors": [
+                          "No relationships have been established between the caller's education organization id claims ('3') and properties of the resource item."
+                       ]
+                      }
+                  """
+
+        Scenario: 13.3 Ensure client with access to state education agency 3 can not put classPeriods for school 20201
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "3"
+             When a PUT request is made to "/ed-fi/academicWeeks/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "schoolReference": {
+                          "schoolId": 20101
+                      },
+                      "beginDate": "2023-08-08",
+                      "endDate": "2023-08-14",
+                      "totalInstructionalDays": 6,
+                      "weekIdentifier": "week 2"
+                  }
+                  """
+             Then it should respond with 403
+
+        @addwait
+        Scenario: 13.4 Ensure client with access to state education agency 2 gets query results for school level classPeriods
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2"
+             When a GET request is made to "/ed-fi/academicWeeks?weekIdentifier=week 1"
              Then it should respond with 200
               And the response body is
                   """
@@ -638,7 +713,8 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                     }
                   ]
                   """
-        Scenario: 14 Ensure client with access to state education agency 2 can get by id school level classPeriods
+
+        Scenario: 13.5 Ensure client with access to state education agency 2 can get by id school level classPeriods
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2"
              When a GET request is made to "/ed-fi/academicWeeks/{id}"
              Then it should respond with 200
@@ -655,7 +731,8 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                      }
                     }
                   """
-        Scenario: 15 Ensure client with access to state education agency 2 can delete school level classPeriods
+
+        Scenario: 13.6 Ensure client with access to state education agency 2 can delete school level classPeriods
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2"
              When a DELETE request is made to "/ed-fi/academicWeeks/{id}"
              Then it should respond with 204
@@ -693,7 +770,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   }
                   """
         @addwait
-        Scenario: 16 Ensure client with access to school 20101 does not gets query results for LEA because it is up the hierarchy
+        Scenario: 14.1 Ensure client with access to school 20101 does not gets query results for LEA because it is up the hierarchy
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "20101"
              When a GET request is made to "/ed-fi/localEducationAgencies"
              Then it should respond with 200
@@ -702,7 +779,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   [
                   ]
                   """
-        Scenario: 17 Ensure client with access to school 20101 cannot get by id LEA because it is up the hierarchy
+        Scenario: 14.2 Ensure client with access to school 20101 cannot get by id LEA because it is up the hierarchy
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "20101"
              When a GET request is made to "/ed-fi/localEducationAgencies/{id}"
              Then it should respond with 403
@@ -720,7 +797,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                     ]
                   }
                   """
-        Scenario: 18 Ensure client with access to school 20101 cannot delete by id LEA because it is up the hierarchy
+        Scenario: 14.3 Ensure client with access to school 20101 cannot delete by id LEA because it is up the hierarchy
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "20101"
              When a DELETE request is made to "/ed-fi/localEducationAgencies/{id}"
              Then it should respond with 403
@@ -738,7 +815,6 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                     ]
                   }
                   """
-
     @ignore
     Rule: Search for a resource in the EducationOrganizationHierarchy with RelationshipsWithEdOrgsOnly authorization and LONG schoolId
         Background:
