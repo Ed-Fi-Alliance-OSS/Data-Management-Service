@@ -128,6 +128,16 @@ public class ResourceAuthorizationHandler(
             .Distinct()
             .ToArray();
 
-        return new ResourceAuthorizationResult.NotAuthorized(errorMessages);
+        string[] relationshipErrorMessages = evaluations
+            .Where(e => !e.IsAuthorized)
+            .Select(e =>
+            {
+                string claims = string.Join(", ", claimsByPath[e.Filter.FilterPath]);
+                return e.Filter.RelationshipErrorMessageTemplate.Replace("{claims}", claims);
+            })
+            .Distinct()
+            .ToArray();
+
+        return new ResourceAuthorizationResult.NotAuthorized(errorMessages, relationshipErrorMessages);
     }
 }

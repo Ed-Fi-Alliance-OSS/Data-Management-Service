@@ -8,7 +8,8 @@ using EdFi.DataManagementService.Core.External.Model;
 namespace EdFi.DataManagementService.Core.Security.AuthorizationValidation;
 
 /// <summary>
-/// Validates the authorization strategy that performs namespace based authorization.
+/// Validates the authorization strategy that performs namespace based
+/// authorization.
 /// </summary>
 [AuthorizationStrategyName(AuthorizationStrategyName)]
 public class NamespaceBasedValidator : IAuthorizationValidator
@@ -20,22 +21,22 @@ public class NamespaceBasedValidator : IAuthorizationValidator
         ClientAuthorizations authorizations
     )
     {
-        var namespacePrefixesFromClaim = authorizations.NamespacePrefixes;
-        var namespacesFromRequest = securityElements.Namespace;
+        List<NamespacePrefix>? namespacePrefixesFromClaim = authorizations.NamespacePrefixes;
+        string[]? namespacesFromRequest = securityElements.Namespace;
 
-        if (namespacesFromRequest == null || namespacesFromRequest.Length == 0)
+        if (namespacesFromRequest.Length == 0)
         {
-            var error =
+            string error =
                 "No 'Namespace' (or Namespace-suffixed) property could be found on the resource in order to perform authorization. Should a different authorization strategy be used?";
             return new AuthorizationResult(false, error);
         }
-        if (namespacePrefixesFromClaim == null || namespacePrefixesFromClaim.Count == 0)
+        if (namespacePrefixesFromClaim.Count == 0)
         {
-            var noRequiredClaimError =
+            string noRequiredClaimError =
                 $"The API client has been given permissions on a resource that uses the '{AuthorizationStrategyName}' authorization strategy but the client doesn't have any namespace prefixes assigned.";
             return new AuthorizationResult(false, noRequiredClaimError);
         }
-        var allMatching = namespacesFromRequest
+        bool allMatching = namespacesFromRequest
             .ToList()
             .TrueForAll(fromRequest =>
                 namespacePrefixesFromClaim.Exists(fromClaim =>

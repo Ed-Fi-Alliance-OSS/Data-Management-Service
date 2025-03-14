@@ -43,7 +43,12 @@ internal record UpsertRequest(
     /// resource when the referenced resource's identifying
     /// values are modified
     /// </summary>
-    IUpdateCascadeHandler UpdateCascadeHandler
+    IUpdateCascadeHandler UpdateCascadeHandler,
+    /// <summary>
+    /// The backend should use this handler to determine whether
+    /// the client is authorized to get the document
+    /// </summary>
+    IResourceAuthorizationHandler ResourceAuthorizationHandler
 )
     : UpdateRequest(
         ResourceInfo,
@@ -52,6 +57,7 @@ internal record UpsertRequest(
         TraceId,
         DocumentUuid,
         DocumentSecurityElements,
-        UpdateCascadeHandler
+        UpdateCascadeHandler,
+        ResourceAuthorizationHandler
     ),
         IUpsertRequest;

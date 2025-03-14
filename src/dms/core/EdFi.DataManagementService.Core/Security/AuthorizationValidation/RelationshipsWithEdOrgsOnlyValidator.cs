@@ -9,6 +9,10 @@ namespace EdFi.DataManagementService.Core.Security.AuthorizationValidation;
 
 /// <summary>
 /// Validates the authorization strategy that performs RelationshipsWithEdOrgsOnly authorization.
+/// Validates only what can be determined from looking at the request, namely that EducationOrganizationIds
+/// exist on the resource and the client has at least one EducationOrganizationId in their claim.
+/// The remainder of the RelationshipsWithEdOrgsOnly validation will occur later in the pipeline after
+/// fetching the EdOrg hierarchy of the resource. 
 /// </summary>
 [AuthorizationStrategyName(AuthorizationStrategyName)]
 public class RelationshipsWithEdOrgsOnlyValidator : IAuthorizationValidator
@@ -38,18 +42,6 @@ public class RelationshipsWithEdOrgsOnlyValidator : IAuthorizationValidator
             return new AuthorizationResult(false, noRequiredClaimError);
         }
 
-        bool allMatching = edOrgsFromRequest.TrueForAll(fromRequest =>
-            edOrgIdsFromClaim.Exists(fromClaim => fromRequest.Value == fromClaim.Value)
-        );
-
-        if (!allMatching)
-        {
-            string claimEdOrgIds = string.Join("', '", edOrgIdsFromClaim.Select(x => x.Value));
-            return new AuthorizationResult(
-                false,
-                $"No relationships have been established between the caller's education organization id claims ('{claimEdOrgIds}') and properties of the resource item."
-            );
-        }
         return new AuthorizationResult(true);
     }
 }

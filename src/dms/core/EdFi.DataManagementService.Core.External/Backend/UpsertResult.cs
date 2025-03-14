@@ -49,6 +49,11 @@ public record UpsertResult
     public record UpsertFailureWriteConflict() : UpsertResult();
 
     /// <summary>
+    /// A failure because the client is not authorized to upsert the document
+    /// </summary>
+    public record UpsertFailureNotAuthorized(string[] ErrorMessages) : UpsertResult();
+
+    /// <summary>
     /// A failure of unknown category
     /// </summary>
     /// <param name="FailureMessage">A message providing failure information</param>

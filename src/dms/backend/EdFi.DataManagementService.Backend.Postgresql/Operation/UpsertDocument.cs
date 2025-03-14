@@ -295,6 +295,29 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 return new UpsertResult.UpsertFailureWriteConflict();
             }
 
+            if (upsertRequest.ResourceAuthorizationHandler.IsRelationshipWithEdOrg)
+            {
+                long[] ancestorEdOrgIds = await _sqlAction.GetAncestorEducationOrganizationIdsForUpsert(
+                    upsertRequest
+                        .DocumentSecurityElements.EducationOrganization.Select(e => e.Id.Value)
+                        .ToArray(),
+                    connection,
+                    transaction,
+                    upsertRequest.TraceId
+                );
+
+                ResourceAuthorizationResult getAuthorizationResult =
+                    upsertRequest.ResourceAuthorizationHandler.Authorize(
+                        upsertRequest.DocumentSecurityElements.Namespace,
+                        ancestorEdOrgIds
+                    );
+
+                if (getAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
+                {
+                    return new UpsertResult.UpsertFailureNotAuthorized(notAuthorized.RelationshipErrorMessages);
+                }
+            }
+
             // Either get the existing document uuid or use the new one provided
             if (documentFromDb == null)
             {

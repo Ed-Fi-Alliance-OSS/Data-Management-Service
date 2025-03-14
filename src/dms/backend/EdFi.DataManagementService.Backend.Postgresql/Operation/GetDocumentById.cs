@@ -72,10 +72,11 @@ public class GetDocumentById(ISqlAction _sqlAction, ILogger<GetDocumentById> _lo
                 );
             }
 
-            var getAuthorizationResult = getRequest.ResourceAuthorizationHandler.Authorize(
-                namespaceSecurityElements,
-                educationOrganizationSecurityElements
-            );
+            ResourceAuthorizationResult getAuthorizationResult =
+                getRequest.ResourceAuthorizationHandler.Authorize(
+                    namespaceSecurityElements,
+                    educationOrganizationSecurityElements
+                );
 
             if (getAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
             {

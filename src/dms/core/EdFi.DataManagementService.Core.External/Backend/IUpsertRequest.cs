@@ -50,4 +50,10 @@ public interface IUpsertRequest
     /// values are modified
     /// </summary>
     IUpdateCascadeHandler UpdateCascadeHandler { get; }
+
+    /// <summary>
+    /// The backend should use this handler to determine whether the client is
+    /// authorized to upsert the document
+    /// </summary>
+    IResourceAuthorizationHandler ResourceAuthorizationHandler { get; }
 }
