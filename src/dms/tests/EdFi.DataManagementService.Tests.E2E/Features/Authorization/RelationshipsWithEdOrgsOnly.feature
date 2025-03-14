@@ -818,8 +818,40 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                     ]
                   }
                   """
-
-    @ignore
+        Scenario: 14.4 Ensure client with access to school 20202 cannot PUT LEA because it is up the hierarchy
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "20101"
+             When a PUT request is made to "/ed-fi/localEducationAgencies/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "localEducationAgencyId": 301,
+                      "nameOfInstitution": "Test LEA 301",
+                      "stateEducationAgencyReference": {
+                          "stateEducationAgencyId": 2
+                      },
+                      "categories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#District"
+                          }
+                      ],
+                      "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC"
+                  }
+                  """
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                    "detail": "Access to the resource could not be authorized.",
+                    "type": "urn:ed-fi:api:security:authorization:",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "correlationId": "0HNB05S3Q7LS5:00000084",
+                    "validationErrors": {},
+                    "errors": [
+                      "No relationships have been established between the caller's education organization id claims ('20101') and properties of the resource item."
+                    ]
+                  }
+                  """
     Rule: Search for a resource in the EducationOrganizationHierarchy with RelationshipsWithEdOrgsOnly authorization and LONG schoolId
         Background:
                   # Build a hierarchy
@@ -836,8 +868,8 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
               And the system has these "academicWeeks"
                   | weekIdentifier | schoolReference              | beginDate  | endDate    | totalInstructionalDays |
                   | week 1         | { "schoolId": 201019999999 } | 2023-08-01 | 2023-08-07 | 5                      |
-        @addwait
 
+        @addwait
         Scenario: 19 Ensure client with access to state education agency 244901 gets query results for school level classPeriods
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2"
              When a GET request is made to "/ed-fi/academicWeeks"
