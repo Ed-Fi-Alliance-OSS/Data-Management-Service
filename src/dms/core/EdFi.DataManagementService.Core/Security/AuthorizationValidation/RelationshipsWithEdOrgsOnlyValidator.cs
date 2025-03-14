@@ -38,18 +38,6 @@ public class RelationshipsWithEdOrgsOnlyValidator : IAuthorizationValidator
             return new AuthorizationResult(false, noRequiredClaimError);
         }
 
-        bool allMatching = edOrgsFromRequest.TrueForAll(fromRequest =>
-            edOrgIdsFromClaim.Exists(fromClaim => fromRequest.Value == fromClaim.Value)
-        );
-
-        if (!allMatching)
-        {
-            string claimEdOrgIds = string.Join("', '", edOrgIdsFromClaim.Select(x => x.Value));
-            return new AuthorizationResult(
-                false,
-                $"No relationships have been established between the caller's education organization id claims ('{claimEdOrgIds}') and properties of the resource item."
-            );
-        }
         return new AuthorizationResult(true);
     }
 }

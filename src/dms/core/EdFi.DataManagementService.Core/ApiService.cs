@@ -94,10 +94,8 @@ internal class ApiService(
                     _claimSetCacheService,
                     _logger
                 ),
-                new ResourceUpsertNamespaceBasedAuthorizationMiddleware(
-                    _authorizationServiceFactory,
-                    _logger
-                ),
+                new ResourceUpsertAuthorizationMiddleware(_authorizationServiceFactory, _logger),
+                new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
                 new UpsertHandler(_documentStoreRepository, _logger, _resiliencePipeline, _apiSchemaProvider),
             ]
         );
@@ -209,10 +207,8 @@ internal class ApiService(
                     _claimSetCacheService,
                     _logger
                 ),
-                new ResourceUpsertNamespaceBasedAuthorizationMiddleware(
-                    _authorizationServiceFactory,
-                    _logger
-                ),
+                new ResourceUpsertAuthorizationMiddleware(_authorizationServiceFactory, _logger),
+                new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
                 new UpdateByIdHandler(
                     _documentStoreRepository,
                     _logger,
