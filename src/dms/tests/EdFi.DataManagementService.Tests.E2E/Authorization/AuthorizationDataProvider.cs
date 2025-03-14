@@ -15,10 +15,10 @@ public static class AuthorizationDataProvider
 
     private static readonly HttpClient _configurationServiceClient = new()
     {
-        BaseAddress = new Uri("http://localhost:8081/"),
+        BaseAddress = new Uri($"http://localhost:{AppSettings.ConfigServicePort}/"),
     };
 
-    private static readonly HttpClient _dmsClient = new() { BaseAddress = new Uri("http://localhost:8080/") };
+    private static readonly HttpClient _dmsClient = new() { BaseAddress = new Uri($"http://localhost:{AppSettings.DmsPort}/") };
 
     public static async Task Create(
         string company,
