@@ -64,14 +64,16 @@ internal class ResourceActionAuthorizationMiddleware(
                 RespondAuthorizationError();
                 return;
             }
+
+            var resourceClaimName = context.PathComponents.EndpointName.Value;
+
             // Create resource claim URI
+            var resourceClaimUri =
+                $"{Conventions.EdFiOdsResourceClaimBaseUri}/{context.PathComponents.ProjectNamespace.Value}/{context.PathComponents.EndpointName.Value}";
+
             ResourceClaim[] matchingClaims = claimSet
                 .ResourceClaims.Where(r =>
-                    string.Equals(
-                        r.Name,
-                        context.PathComponents.EndpointName.Value,
-                        StringComparison.InvariantCultureIgnoreCase
-                    )
+                    string.Equals(r.Name, resourceClaimUri, StringComparison.InvariantCultureIgnoreCase)
                 )
                 .ToArray();
 
@@ -79,14 +81,12 @@ internal class ResourceActionAuthorizationMiddleware(
             {
                 _logger.LogDebug(
                     "ResourceActionAuthorizationMiddleware: No ResourceClaim matching Endpoint {Endpoint} - {TraceId}",
-                    context.PathComponents.EndpointName.Value,
+                    resourceClaimName,
                     context.FrontendRequest.TraceId.Value
                 );
                 RespondAuthorizationError();
                 return;
             }
-
-            var resourceClaimName = matchingClaims.SingleOrDefault()?.Name;
 
             var actionName = ActionResolver.Resolve(context.Method).ToString();
 

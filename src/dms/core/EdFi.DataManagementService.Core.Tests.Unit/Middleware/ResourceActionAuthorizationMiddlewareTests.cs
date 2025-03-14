@@ -38,7 +38,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                         ResourceClaims:
                         [
                             new ResourceClaim(
-                                "schools",
+                                $"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/schools",
                                 "Create",
                                 [new AuthorizationStrategy(expectedAuthStrategy)]
                             ),
@@ -57,7 +57,14 @@ public class ResourceActionAuthorizationMiddlewareTests
                 [
                     new ClaimSet(
                         Name: "SIS-Vendor",
-                        ResourceClaims: [new ResourceClaim("schools", "Create", [])]
+                        ResourceClaims:
+                        [
+                            new ResourceClaim(
+                                $"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/schools",
+                                "Create",
+                                []
+                            ),
+                        ]
                     ),
                 ]
             );
