@@ -20,22 +20,15 @@
 
     "compact.map.entries": "true",
 
-    "transforms": "castHierarchy, removeId, toOpenSearchIndex, deletedToTombstone",
-
-    "transforms.castHierarchy.type": "org.edfi.kafka.connect.transforms.CastHierarchyToInt64",
-    "transforms.castHierarchy.predicate": "castHierarchyPredicate",
-
+    "transforms": "removeId, toOpenSearchIndex, deletedToTombstone",
     "transforms.removeId.type": "org.apache.kafka.connect.transforms.ReplaceField$Value",
     "transforms.removeId.exclude": "id",
 
     "transforms.toOpenSearchIndex.type":"org.edfi.kafka.connect.transforms.RenameDmsTopicToOpenSearchIndex",
     "transforms.toOpenSearchIndex.predicate": "documentTopicOnly",
-    "predicates": "documentTopicOnly, castHierarchyPredicate",
+    "predicates": "documentTopicOnly",
     "predicates.documentTopicOnly.type": "org.apache.kafka.connect.transforms.predicates.TopicNameMatches",
     "predicates.documentTopicOnly.pattern": "edfi\\.dms\\.document",
-
-    "predicates.castHierarchyPredicate.type": "org.apache.kafka.connect.transforms.predicates.TopicNameMatches",
-    "predicates.castHierarchyPredicate.pattern": "edfi\\.dms\\.educationorganizationhierarchytermslookup",
 
     "transforms.deletedToTombstone.type": "org.edfi.kafka.connect.transforms.DebeziumDeletedToTombstone",
 
