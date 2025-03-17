@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Pipeline;
 using FakeItEasy;
 using FluentAssertions;
+using Json.Schema;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
@@ -28,10 +29,34 @@ public class ProvideApiSchemaMiddlewareTests
         private readonly ApiSchemaNodes _apiSchemaNodes = new ApiSchemaBuilder()
             .WithStartProject("Ed-Fi", "5.0.0")
             .WithStartResource("School")
+            .WithJsonSchemaForInsert(new JsonSchemaBuilder()
+                            .Properties(
+                            (
+                                "credentialIdentifier",
+                                new JsonSchemaBuilder()
+                                    .Description("Identifier or serial number assigned to the credential.")
+                                    .Type(SchemaValueType.String)
+                            )
+                        ).Build())
             .WithEndResource()
             .WithEndProject()
             .WithStartProject("tpdm", "5.0.0")
             .WithStartResource("School", isResourceExtension: true)
+            .WithJsonSchemaForInsert(new JsonSchemaBuilder()
+                    .Properties(
+                        (
+                            "_ext",
+                            new JsonSchemaBuilder()
+                                  .Properties(
+                                    (
+                                        "boardCertificationIndicator",
+                                        new JsonSchemaBuilder()
+                                            .Description("Indicator that the credential.")
+                                            .Type(SchemaValueType.Boolean)
+                                    )
+                                )
+                        )
+                    ).Build())
             .WithBooleanJsonPaths(["$._ext.tpdm.gradeLevels[*].isSecondary"])
             .WithNumericJsonPaths(["$._ext.tpdm.schoolId"])
             .WithDateTimeJsonPaths(["$._ext.tpdm.beginDate"])
@@ -101,6 +126,16 @@ public class ProvideApiSchemaMiddlewareTests
                 .GetValue<string>()
                 .Should()
                 .Be("$._ext.tpdm.personReference.personId");
+
+            coreSchoolResource!
+                .GetRequiredNode("jsonSchemaForInsert")
+                .GetRequiredNode("properties")
+                .GetRequiredNode("boardCertificationIndicator")
+                .GetRequiredNode("description")
+                .GetValue<string>()
+                .Should()
+                .Be("Indicator that the credential.");
+
         }
     }
 }
