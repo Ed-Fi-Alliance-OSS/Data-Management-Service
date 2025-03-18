@@ -739,7 +739,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   }
                   """
 
-    @ignore
+
     Rule: Search for a resource in the EducationOrganizationHierarchy with RelationshipsWithEdOrgsOnly authorization and LONG schoolId
         Background:
                   # Build a hierarchy
@@ -757,12 +757,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   | weekIdentifier | schoolReference              | beginDate  | endDate    | totalInstructionalDays |
                   | week 1         | { "schoolId": 201019999999 } | 2023-08-01 | 2023-08-07 | 5                      |
                   @addwait
-                  @ignore
-                  # DMS-556
-                  # Kafka bug when mixed INT and BIGINT in the hierarchy array
-                  # SEA and LEA below have INT id's while School has BIGINT. This hierarchy row will not replicate to OpenSearch
-                  # Couldn't process json field: array=BsonArray{values=[BsonInt32{value=2}, BsonInt32{value=201}, BsonInt64{value=201019999999}]}   [com.redhat.insights.expandjsonsmt.SchemaParser]
-                  # org.apache.kafka.connect.errors.ConnectException: Field is not a homogenous array (BsonInt32{value=201} x INT64).
+                                   
         Scenario: 19 Ensure client with access to state education agency 244901 gets query results for school level classPeriods
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "2"
              When a GET request is made to "/ed-fi/academicWeeks"
