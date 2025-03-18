@@ -37,6 +37,7 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
             CopyResourceExtensionNodeToCore(extensionResources, coreResources, "numericJsonPaths");
             CopyResourceExtensionNodeToCore(extensionResources, coreResources, "documentPathsMapping");
             CopyResourceExtensionNodeToCore(extensionResources, coreResources, "jsonSchemaForInsert.properties");
+            CopyResourceExtensionNodeToCore(extensionResources, coreResources, "equalityConstraints");
         }
 
         return new ApiSchemaDocuments(apiSchemaNodes with { CoreApiSchemaRootNode = coreApiSchema }, _logger);

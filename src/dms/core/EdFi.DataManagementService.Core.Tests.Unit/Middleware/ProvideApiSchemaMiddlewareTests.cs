@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
+using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using FakeItEasy;
 using FluentAssertions;
@@ -29,6 +30,13 @@ public class ProvideApiSchemaMiddlewareTests
         private readonly ApiSchemaNodes _apiSchemaNodes = new ApiSchemaBuilder()
             .WithStartProject("Ed-Fi", "5.0.0")
             .WithStartResource("School")
+            .WithEqualityConstraints(new EqualityConstraint[]
+            {
+                new(
+                    new JsonPath("$.schoolReference.schoolId"),
+                    new JsonPath("$.sessionReference.schoolId")
+                ),
+            })
             .WithJsonSchemaForInsert(new JsonSchemaBuilder()
                             .Properties(
                             (
@@ -42,6 +50,13 @@ public class ProvideApiSchemaMiddlewareTests
             .WithEndProject()
             .WithStartProject("tpdm", "5.0.0")
             .WithStartResource("School", isResourceExtension: true)
+            .WithEqualityConstraints(new EqualityConstraint[]
+            {
+                new(
+                    new JsonPath("$.evaluationObjectiveRatingReference.evaluationTitle"),
+                    new JsonPath("$.evaluationElementReference.evaluationTitle")
+                ),
+            })
             .WithJsonSchemaForInsert(new JsonSchemaBuilder()
                     .Properties(
                         (
@@ -135,6 +150,20 @@ public class ProvideApiSchemaMiddlewareTests
                 .GetValue<string>()
                 .Should()
                 .Be("Indicator that the credential.");
+
+            coreSchoolResource!
+                .GetRequiredNode("equalityConstraints")
+                .AsArray()
+                .Select(node => node!.GetRequiredNode("sourceJsonPath").GetValue<string>())
+                .Should()
+                .Contain("$.evaluationObjectiveRatingReference.evaluationTitle");
+
+            coreSchoolResource!
+                .GetRequiredNode("equalityConstraints")
+                .AsArray()
+                .Select(node => node!.GetRequiredNode("targetJsonPath").GetValue<string>())
+                .Should()
+                .Contain("$.evaluationElementReference.evaluationTitle");
 
         }
     }
