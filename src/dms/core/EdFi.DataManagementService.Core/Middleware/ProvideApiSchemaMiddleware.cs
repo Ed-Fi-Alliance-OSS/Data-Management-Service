@@ -36,6 +36,7 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
             CopyResourceExtensionNodeToCore(extensionResources, coreResources, "booleanJsonPaths");
             CopyResourceExtensionNodeToCore(extensionResources, coreResources, "numericJsonPaths");
             CopyResourceExtensionNodeToCore(extensionResources, coreResources, "documentPathsMapping");
+            CopyResourceExtensionNodeToCore(extensionResources, coreResources, "jsonSchemaForInsert.properties");
         }
 
         return new ApiSchemaDocuments(apiSchemaNodes with { CoreApiSchemaRootNode = coreApiSchema }, _logger);
@@ -50,6 +51,20 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
 
         context.ApiSchemaDocuments = _apiSchemaDocuments.Value;
         await next();
+    }
+
+    /// <summary>
+    /// Copies the <see cref="JsonNode"/> present at the <paramref name="path"/> from
+    /// <paramref name="extensionResources"/> into <paramref name="resources"/>.
+    /// Note that <paramref name="path"/> gets path  in the resources.
+    /// </summary>
+    private static JsonNode GetNodeByPath(JsonNode resources, string path)
+    {
+        foreach (var key in path.Split('.'))
+        {
+            resources = resources.GetRequiredNode(key);
+        }
+        return resources;
     }
 
     /// <summary>
@@ -76,8 +91,16 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
             var coreResource = coreResourceByName[
                 extensionResource.GetRequiredNode("resourceName").GetValue<string>()
             ];
-            var sourceExtensionNode = extensionResource.GetRequiredNode(nodeKey);
-            var targetCoreNode = coreResource.GetRequiredNode(nodeKey);
+
+            var sourceExtensionNode = GetNodeByPath(extensionResource, nodeKey);
+
+            if (nodeKey.Contains("jsonSchemaForInsert", StringComparison.OrdinalIgnoreCase))
+            {
+                sourceExtensionNode = GetNodeByPath(sourceExtensionNode, "_ext.properties");
+            }
+
+            var targetCoreNode = GetNodeByPath(coreResource, nodeKey);
+
             var nodeValueKind = targetCoreNode.GetValueKind();
 
             switch (nodeValueKind)
