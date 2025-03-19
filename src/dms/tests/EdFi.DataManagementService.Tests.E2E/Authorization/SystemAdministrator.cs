@@ -11,7 +11,7 @@ public static class SystemAdministrator
 {
     public static string Token = string.Empty;
 
-    private static readonly HttpClient _client = new() { BaseAddress = new Uri("http://localhost:8081/") };
+    private static readonly HttpClient _client = new() { BaseAddress = new Uri($"http://localhost:{AppSettings.ConfigServicePort}/") };
 
     public static async Task Register(string clientId, string clientSecret)
     {

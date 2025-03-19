@@ -43,7 +43,11 @@ internal class UpdateByIdHandler(
                     EdfiDoc: context.ParsedBody,
                     DocumentSecurityElements: context.DocumentSecurityElements,
                     TraceId: context.FrontendRequest.TraceId,
-                    UpdateCascadeHandler: updateCascadeHandler
+                    UpdateCascadeHandler: updateCascadeHandler,
+                    ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
+                        context.AuthorizationStrategyEvaluators,
+                        _logger
+                    )
                 )
             )
         );
@@ -109,6 +113,14 @@ internal class UpdateByIdHandler(
                 Body: FailureResponse.ForImmutableIdentity(
                     failure.FailureMessage,
                     traceId: context.FrontendRequest.TraceId
+                ),
+                Headers: []
+            ),
+            UpdateFailureNotAuthorized failure => new FrontendResponse(
+                StatusCode: 403,
+                Body: FailureResponse.ForForbidden(
+                    traceId: context.FrontendRequest.TraceId,
+                    errors: failure.ErrorMessages
                 ),
                 Headers: []
             ),

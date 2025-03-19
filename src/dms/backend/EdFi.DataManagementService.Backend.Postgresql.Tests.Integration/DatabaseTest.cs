@@ -292,6 +292,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                 DocumentUuid = new DocumentUuid(documentUuidGuid),
                 UpdateCascadeHandler = new UpdateCascadeHandler(new ApiSchemaProvider(), NullLogger.Instance),
                 DocumentSecurityElements = documentSecurityElements,
+                ResourceAuthorizationHandler = new ResourceAuthorizationHandler([], NullLogger.Instance)
             }
         ).ActLike<IUpsertRequest>();
     }
@@ -345,6 +346,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                 DocumentUuid = new DocumentUuid(documentUuidGuid),
                 UpdateCascadeHandler = new UpdateCascadeHandler(new ApiSchemaProvider(), NullLogger.Instance),
                 DocumentSecurityElements = documentSecurityElements,
+                ResourceAuthorizationHandler = new ResourceAuthorizationHandler([], NullLogger.Instance)
             }
         ).ActLike<IUpdateRequest>();
     }

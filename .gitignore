@@ -436,3 +436,5 @@ sdk/
 
 src/dms/EdFi.DataStandard52.ApiSchema/
 
+# Locally suppress code analysis
+**/GlobalSuppressions.cs
