@@ -40,43 +40,59 @@ public class SecurityMetadataProvider(
         var claimsEndpoint = "v2/claimSets";
         var claimSetsResponse = await configurationServiceApiClient.Client.GetAsync(claimsEndpoint);
         var responseJsonString = await claimSetsResponse.Content.ReadAsStringAsync();
-        List<ClaimSet> claimSets =
-            JsonSerializer.Deserialize<List<ClaimSet>>(responseJsonString, _jsonOptions) ?? [];
+        var claimSets = JsonSerializer.Deserialize<List<ClaimSet>>(responseJsonString, _jsonOptions) ?? [];
 
         var claimSetAuthorizationMetadata = new List<ClaimSet>();
-        foreach (var claimSetName in claimSets.Select(x => x.Name))
+
+        foreach (var claimSet in claimSets)
         {
-            var authorizationMetadataEndpoint = $"/authorizationMetadata?claimSetName={claimSetName}";
-            var response = await configurationServiceApiClient.Client.GetAsync(authorizationMetadataEndpoint);
-            var jsonString = await response.Content.ReadAsStringAsync();
-            var authorizationMetadataResponse = JsonSerializer.Deserialize<AuthorizationMetadataResponse>(
-                jsonString,
-                _jsonOptions
-            );
-            if (authorizationMetadataResponse != null)
+            var authorizationMetadata = await GetAuthorizationMetadataForClaimSet(claimSet.Name);
+            if (authorizationMetadata != null)
             {
-                var claimSet = new ClaimSet(claimSetName, []);
-                foreach (var claim in authorizationMetadataResponse.Claims)
-                {
-                    var authorization = authorizationMetadataResponse.Authorizations.Find(a =>
-                        a.Id == claim.AuthorizationId
-                    );
-                    if (authorization != null)
-                    {
-                        List<ResourceClaim> resourceClaims = [];
-                        foreach (var action in authorization.Actions)
-                        {
-                            resourceClaims.Add(
-                                new ResourceClaim(claim.Name, action.Name, action.AuthorizationStrategies)
-                            );
-                        }
-                        claimSet.ResourceClaims.AddRange(resourceClaims);
-                    }
-                }
-                claimSetAuthorizationMetadata.Add(claimSet);
+                var enrichedClaimSet = EnrichClaimSetWithAuthorizationMetadata(
+                    claimSet,
+                    authorizationMetadata
+                );
+                claimSetAuthorizationMetadata.Add(enrichedClaimSet);
             }
         }
 
         return claimSetAuthorizationMetadata;
+    }
+
+    private async Task<AuthorizationMetadataResponse?> GetAuthorizationMetadataForClaimSet(
+        string claimSetName
+    )
+    {
+        var authorizationMetadataEndpoint = $"/authorizationMetadata?claimSetName={claimSetName}";
+        var response = await configurationServiceApiClient.Client.GetAsync(authorizationMetadataEndpoint);
+        var jsonString = await response.Content.ReadAsStringAsync();
+        return JsonSerializer.Deserialize<AuthorizationMetadataResponse>(jsonString, _jsonOptions);
+    }
+
+    private static ClaimSet EnrichClaimSetWithAuthorizationMetadata(
+        ClaimSet claimSet,
+        AuthorizationMetadataResponse authorizationMetadata
+    )
+    {
+        var enrichedClaimSet = new ClaimSet(claimSet.Name, []);
+
+        foreach (var claim in authorizationMetadata.Claims)
+        {
+            var authorization = authorizationMetadata.Authorizations.Find(a => a.Id == claim.AuthorizationId);
+            if (authorization != null)
+            {
+                var resourceClaims = authorization
+                    .Actions.Select(action => new ResourceClaim(
+                        claim.Name,
+                        action.Name,
+                        action.AuthorizationStrategies
+                    ))
+                    .ToList();
+                enrichedClaimSet.ResourceClaims.AddRange(resourceClaims);
+            }
+        }
+
+        return enrichedClaimSet;
     }
 }

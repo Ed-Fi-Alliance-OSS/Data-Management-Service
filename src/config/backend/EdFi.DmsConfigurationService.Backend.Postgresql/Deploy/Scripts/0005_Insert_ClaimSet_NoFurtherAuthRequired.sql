@@ -76,7 +76,7 @@ SELECT unnest(names) FROM resource_names;
 -- Step 3: Insert the generated JSON into claimset table
 INSERT INTO dmscs.claimset (claimsetname, issystemreserved, resourceclaims)
 SELECT
-    'SIS-Vendor',
+    'E2E-NoFurtherAuthRequiredClaimSet',
 	true,
     jsonb_agg(
         jsonb_build_object(

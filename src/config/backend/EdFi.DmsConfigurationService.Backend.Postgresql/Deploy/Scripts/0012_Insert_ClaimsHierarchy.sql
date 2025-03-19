@@ -3095,7 +3095,7 @@ INSERT INTO dmscs.claimshierarchy(
                 "name": "Create",
                 "authorizationStrategyOverrides": [
                   {
-                    "name": "NoFurtherAuthorizationRequired"
+                    "name": "RelationshipsWithEdOrgsOnly"
                   }
                 ]
               },
@@ -3111,7 +3111,7 @@ INSERT INTO dmscs.claimshierarchy(
                 "name": "Update",
                 "authorizationStrategyOverrides": [
                   {
-                    "name": "NoFurtherAuthorizationRequired"
+                    "name": "RelationshipsWithEdOrgsOnly"
                   }
                 ]
               },
