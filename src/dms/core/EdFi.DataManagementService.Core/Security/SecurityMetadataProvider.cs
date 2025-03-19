@@ -46,7 +46,7 @@ public class SecurityMetadataProvider(
         var claimSetAuthorizationMetadata = new List<ClaimSet>();
         foreach (var claimSetName in claimSets.Select(x => x.Name))
         {
-            var authorizationMetadataEndpoint = $"v2/authorizationMetadata?claimSetName={claimSetName}";
+            var authorizationMetadataEndpoint = $"/authorizationMetadata?claimSetName={claimSetName}";
             var response = await configurationServiceApiClient.Client.GetAsync(authorizationMetadataEndpoint);
             var jsonString = await response.Content.ReadAsStringAsync();
             var authorizationMetadataResponse = JsonSerializer.Deserialize<AuthorizationMetadataResponse>(

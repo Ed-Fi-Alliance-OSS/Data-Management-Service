@@ -4,6 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -38,7 +40,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                         ResourceClaims:
                         [
                             new ResourceClaim(
-                                $"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/schools",
+                                $"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school",
                                 "Create",
                                 [new AuthorizationStrategy(expectedAuthStrategy)]
                             ),
@@ -47,6 +49,17 @@ public class ResourceActionAuthorizationMiddlewareTests
                 ]
             );
         return new ResourceActionAuthorizationMiddleware(claimSetCacheService, NullLogger.Instance);
+    }
+
+    internal static ApiSchemaDocuments ApiSchemaDocument(string resourceName)
+    {
+        ApiSchemaDocuments apiSchemaDocument = new ApiSchemaBuilder()
+            .WithStartProject("Ed-Fi", "5.0.0")
+            .WithStartResource(resourceName)
+            .WithEndResource()
+            .WithEndProject()
+            .ToApiSchemaDocuments();
+        return apiSchemaDocument;
     }
 
     internal static IPipelineStep NoAuthStrategyMiddleware()
@@ -60,7 +73,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                         ResourceClaims:
                         [
                             new ResourceClaim(
-                                $"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/schools",
+                                $"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school",
                                 "Create",
                                 []
                             ),
@@ -85,12 +98,21 @@ public class ResourceActionAuthorizationMiddlewareTests
                 ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
             );
 
-            _context = new PipelineContext(frontEndRequest, RequestMethod.POST);
-            _context.PathComponents = new PathComponents(
-                new ProjectNamespace("ed-fi"),
-                new EndpointName("schools"),
-                new DocumentUuid()
+            _context = new PipelineContext(frontEndRequest, RequestMethod.POST)
+            {
+                PathComponents = new PathComponents(
+                    new ProjectNamespace("ed-fi"),
+                    new EndpointName("schools"),
+                    new DocumentUuid()
+                ),
+            };
+            _context.ProjectSchema = ApiSchemaDocument("School")
+                .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+            _context.ResourceSchema = new ResourceSchema(
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+                    ?? new JsonObject()
             );
+
             await Middleware().Execute(_context, NullNext);
         }
 
@@ -115,11 +137,19 @@ public class ResourceActionAuthorizationMiddlewareTests
                 ClientAuthorizations: new ClientAuthorizations("", "NO-MATCH", [], [])
             );
 
-            _context = new PipelineContext(frontEndRequest, RequestMethod.POST);
-            _context.PathComponents = new PathComponents(
-                new ProjectNamespace("ed-fi"),
-                new EndpointName("schools"),
-                new DocumentUuid()
+            _context = new PipelineContext(frontEndRequest, RequestMethod.POST)
+            {
+                PathComponents = new PathComponents(
+                    new ProjectNamespace("ed-fi"),
+                    new EndpointName("schools"),
+                    new DocumentUuid()
+                ),
+            };
+            _context.ProjectSchema = ApiSchemaDocument("School")
+                .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+            _context.ResourceSchema = new ResourceSchema(
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+                    ?? new JsonObject()
             );
             await Middleware().Execute(_context, NullNext);
         }
@@ -151,11 +181,19 @@ public class ResourceActionAuthorizationMiddlewareTests
                 ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
             );
 
-            _context = new PipelineContext(frontEndRequest, RequestMethod.POST);
-            _context.PathComponents = new PathComponents(
-                new ProjectNamespace("ed-fi"),
-                new EndpointName("stateDescriptor"),
-                new DocumentUuid()
+            _context = new PipelineContext(frontEndRequest, RequestMethod.POST)
+            {
+                PathComponents = new PathComponents(
+                    new ProjectNamespace("ed-fi"),
+                    new EndpointName("stateDescriptor"),
+                    new DocumentUuid()
+                ),
+            };
+            _context.ProjectSchema = ApiSchemaDocument("StateDescriptor")
+                .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+            _context.ResourceSchema = new ResourceSchema(
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("stateDescriptor"))
+                    ?? new JsonObject()
             );
             await Middleware().Execute(_context, NullNext);
         }
@@ -195,6 +233,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                     new DocumentUuid()
                 ),
             };
+            _context.ProjectSchema = ApiSchemaDocument("School")
+                .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+            _context.ResourceSchema = new ResourceSchema(
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+                    ?? new JsonObject()
+            );
             await Middleware().Execute(_context, NullNext);
         }
 
@@ -227,6 +271,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                     new DocumentUuid()
                 ),
             };
+            _context.ProjectSchema = ApiSchemaDocument("School")
+                .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+            _context.ResourceSchema = new ResourceSchema(
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+                    ?? new JsonObject()
+            );
             await Middleware().Execute(_context, NullNext);
         }
 
@@ -289,6 +339,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                     new DocumentUuid()
                 ),
             };
+            _context.ProjectSchema = ApiSchemaDocument("School")
+                .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+            _context.ResourceSchema = new ResourceSchema(
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+                    ?? new JsonObject()
+            );
             await authMiddleware.Execute(_context, NullNext);
         }
 
@@ -328,6 +384,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                     new DocumentUuid()
                 ),
             };
+            _context.ProjectSchema = ApiSchemaDocument("School")
+                .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+            _context.ResourceSchema = new ResourceSchema(
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+                    ?? new JsonObject()
+            );
             await Middleware().Execute(_context, NullNext);
         }
 
@@ -361,6 +423,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                     new DocumentUuid()
                 ),
             };
+            _context.ProjectSchema = ApiSchemaDocument("School")
+                .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+            _context.ResourceSchema = new ResourceSchema(
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+                    ?? new JsonObject()
+            );
             await NoAuthStrategyMiddleware().Execute(_context, NullNext);
         }
 

@@ -5,4 +5,4 @@
 
 namespace EdFi.DataManagementService.Core.Security.Model;
 
-public record AuthorizationStrategy(string AuthStrategyName);
+public record AuthorizationStrategy(string Name);
