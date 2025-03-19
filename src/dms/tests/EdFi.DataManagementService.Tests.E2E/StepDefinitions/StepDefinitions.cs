@@ -59,7 +59,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private async Task SetAuthorizationToken(
             string namespacePrefixes,
             string educationOrganizationIds,
-            string claimSetName = "SIS-Vendor"
+            string claimSetName = "E2E-NoFurtherAuthRequiredClaimSet"
         )
         {
             await AuthorizationDataProvider.Create(
