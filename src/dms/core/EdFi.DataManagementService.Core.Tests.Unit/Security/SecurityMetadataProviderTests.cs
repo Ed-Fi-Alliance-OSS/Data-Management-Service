@@ -70,11 +70,11 @@ public class SecurityMetadataProviderTests
             _handler.SetResponse("https://api.example.com/v2/claimSets", fakeClaimSets);
 
             _handler.SetResponse(
-                $"https://api.example.com/v2/authorizationMetadata?claimSetName=ClaimSet1",
+                $"https://api.example.com/authorizationMetadata?claimSetName=ClaimSet1",
                 fakeAuthorizationMetadataForClaimSet1
             );
             _handler.SetResponse(
-                $"https://api.example.com/v2/authorizationMetadata?claimSetName=ClaimSet2",
+                $"https://api.example.com/authorizationMetadata?claimSetName=ClaimSet2",
                 fakeAuthorizationMetadataForClaimSet2
             );
 

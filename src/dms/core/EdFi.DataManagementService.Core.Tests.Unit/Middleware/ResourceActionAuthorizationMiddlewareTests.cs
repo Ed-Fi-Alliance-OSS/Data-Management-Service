@@ -192,7 +192,7 @@ public class ResourceActionAuthorizationMiddlewareTests
             _context.ProjectSchema = ApiSchemaDocument("StateDescriptor")
                 .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
             _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("stateDescriptor"))
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("stateDescriptors"))
                     ?? new JsonObject()
             );
             await Middleware().Execute(_context, NullNext);
@@ -302,7 +302,7 @@ public class ResourceActionAuthorizationMiddlewareTests
             response
                 .Should()
                 .Contain(
-                    "\"errors\":[\"The API client's assigned claim set (currently 'SIS-Vendor') must grant permission of the 'Update' action on one of the following resource claims: schools\"]"
+                    "\"errors\":[\"The API client's assigned claim set (currently 'SIS-Vendor') must grant permission of the 'Update' action on one of the following resource claims: School\"]"
                 );
         }
     }
@@ -457,7 +457,7 @@ public class ResourceActionAuthorizationMiddlewareTests
             response
                 .Should()
                 .Contain(
-                    "\"errors\":[\"No authorization strategies were defined for the requested action 'Create' against resource ['schools'] matched by the caller's claim 'SIS-Vendor'.\"]"
+                    "\"errors\":[\"No authorization strategies were defined for the requested action 'Create' against resource ['School'] matched by the caller's claim 'SIS-Vendor'.\"]"
                 );
         }
     }
