@@ -65,11 +65,11 @@ internal class ResourceActionAuthorizationMiddleware(
                 return;
             }
 
-            var resourceClaimName = context.PathComponents.EndpointName.Value;
+            var resourceClaimName = context.ResourceSchema.ResourceName.Value;
 
             // Create resource claim URI
             var resourceClaimUri =
-                $"{Conventions.EdFiOdsResourceClaimBaseUri}/{context.PathComponents.ProjectNamespace.Value}/{context.PathComponents.EndpointName.Value}";
+                $"{Conventions.EdFiOdsResourceClaimBaseUri}/{context.PathComponents.ProjectNamespace.Value}/{resourceClaimName}";
 
             ResourceClaim[] matchingClaims = claimSet
                 .ResourceClaims.Where(r =>
@@ -119,7 +119,7 @@ internal class ResourceActionAuthorizationMiddleware(
             }
 
             IReadOnlyList<string> resourceActionAuthStrategies = authorizedAction
-                .AuthorizationStrategies.Select(auth => auth.AuthStrategyName)
+                .AuthorizationStrategies.Select(auth => auth.Name)
                 .ToList();
 
             if (resourceActionAuthStrategies.Count == 0)
