@@ -1,5 +1,15 @@
 #!/bin/sh
 . "$(dirname "$0")/_/husky.sh"
 
-echo "Ensuring Husky is installed..."
+echo "Checking if Husky is installed..."
+
+# Check if Husky is installed
+if ! dotnet tool list --global | grep -q husky; then
+  echo "Husky is not installed, installing Husky..."
+  dotnet tool install husky --global
+else
+  echo "Husky is already installed."
+fi
+
+# Ensures that Husky hooks are configured correctly
 dotnet husky install
