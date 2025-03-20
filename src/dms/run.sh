@@ -35,7 +35,16 @@ else
 fi
 
 if [ "$USE_API_SCHEMA_PATH" = true ]; then
-    dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p EdFi.DataStandard52.ApiSchema.Core -d ${API_SCHEMA_PATH}
+    echo "Using Api Schema Path."
+
+    CORE_PACKAGE=EdFi.DataStandard52.ApiSchema.Core
+    TPDM_PACKAGE=EdFi.DataStandard52.ApiSchema.TPDM
+
+    echo "Downloading Package ${CORE_PACKAGE}..."
+    dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p ${CORE_PACKAGE} -d ${API_SCHEMA_PATH}
+
+    echo "Downloading Package ${TPDM_PACKAGE}..."
+    dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p ${TPDM_PACKAGE} -d ${API_SCHEMA_PATH}
 fi
 
 dotnet EdFi.DataManagementService.Frontend.AspNetCore.dll
