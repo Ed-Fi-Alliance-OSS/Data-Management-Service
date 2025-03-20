@@ -21,9 +21,7 @@ public class ClaimSetDataProvider(IClaimSetRepository repository) : IClaimSetDat
 
         return result switch
         {
-            AuthorizationStrategyGetResult.Success success => success
-                .AuthorizationStrategy.Select(a => a.AuthorizationStrategyName)
-                .ToList(),
+            AuthorizationStrategyGetResult.Success success => success.AuthorizationStrategy.Select(a => a.AuthorizationStrategyName).ToList(),
             _ => new List<string>(),
         };
     }
