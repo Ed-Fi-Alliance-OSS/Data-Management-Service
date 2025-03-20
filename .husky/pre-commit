@@ -1,10 +1,21 @@
 #!/bin/sh
-dotnet tool restore
-dotnet husky install
+
+# Check if Husky is installed, if not, install it.
+if [ ! -f "$(dirname "$0")/_/husky.sh" ]; then
+    echo "Husky no está instalado. Instalándolo..."
+    dotnet tool restore
+    dotnet husky install
+fi
 
 . "$(dirname "$0")/_/husky.sh"
 
 echo 'Formatting Code'
+
+# Check if CSharpier is installed
+if ! dotnet tool list --local | grep -q "csharpier"; then
+    echo "CSharpier no está instalado. Instalándolo ahora..."
+    dotnet tool install --local csharpier
+fi
 
 # Get only modified C# files
 CHANGED_FILES=$(git diff --name-only --diff-filter=d HEAD | grep '\.cs$' || true)
