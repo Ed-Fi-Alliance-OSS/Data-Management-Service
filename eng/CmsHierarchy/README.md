@@ -1,0 +1,62 @@
+# CmsHierarchy
+
+The CmsHierarchy project provides tools for parsing XML files and transforming
+JSON files to manage claim hierarchies. This project includes the following
+features:
+
+* Parsing XML files to extract claim hierarchies
+* Transforming existing claims by applying modifications specified in JSON
+  files
+* Outputting the results to a file or as JSON content
+
+## Features
+
+### ParseXml
+
+> [!NOTE]
+> Here is the SQL script for generating the security metadata XML file
+> [Security Metadata XML File Script](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS-Implementation/blob/main/SecurityMetadata/Export/MsSql/Security-Metadata-to-XML.sql)
+
+The ParseXml command parses an XML file to extract claim hierarchies and outputs
+the result as JSON.
+
+### Transform
+
+The Transform command transforms existing claims by applying modifications
+specified in one or more JSON files and outputs the result as JSON.
+
+## Usage
+
+### Command Line Arguments
+
+The program accepts the following command line arguments:
+
+* --command: The command to execute (ParseXml or Transform)
+* --input: The input file path (XML for ParseXml, JSON for Transform). For
+  Transform, multiple JSON files can be specified, separated by semicolons (`;`)
+   > [!NOTE]
+   > For now, we are placing the ClaimSet JSON files and the
+   > AuthorizationHierarchy file into the ClaimSetFiles folder. If anyone wants
+   > to transform and inject claims, they need to place the new ClaimSet JSON
+   > file into this folder ( make sure to set `Copy to output directory`) and
+   > add the file name to the semicolon-separated list
+   > while running the command.
+* --output: The output file path for the resulting JSON
+* --outputFormat: The output format (ToFile or Json)
+
+## Example Usage
+
+```powershell
+# To parse an XML file and write the result to a file:
+dotnet run --no-launch-profile --command ParseXml --input input.xml --output output.json --outputFormat ToFile
+
+# To parse an XML file and print the result as JSON:
+dotnet run --no-launch-profile --command ParseXml --input input.xml --outputFormat Json
+
+# To transform claims using one or more JSON files and write the result to a file:
+dotnet run --no-launch-profile --command Transform --input input1.json;input2.json --output output.json --outputFormat ToFile
+
+# To transform claims using one or more JSON files and print the result as JSON:
+dotnet run --no-launch-profile --command Transform --input input1.json;input2.json --outputFormat Json
+
+```
