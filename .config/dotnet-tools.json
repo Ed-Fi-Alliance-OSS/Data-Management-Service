@@ -8,6 +8,13 @@
         "husky"
       ],
       "rollForward": false
+    },
+    "csharpier": {
+      "version": "0.30.6",
+      "commands": [
+        "dotnet-csharpier"
+      ],
+      "rollForward": false
     }
   }
 }
