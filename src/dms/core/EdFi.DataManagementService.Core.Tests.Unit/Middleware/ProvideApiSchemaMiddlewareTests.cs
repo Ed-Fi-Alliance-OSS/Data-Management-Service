@@ -60,7 +60,7 @@ public class ProvideApiSchemaMiddlewareTests
             .WithJsonSchemaForInsert(new JsonSchemaBuilder()
                     .Properties(
                         (
-                            "_ext",
+                            "_ext.tpdm",
                             new JsonSchemaBuilder()
                                   .Properties(
                                     (
