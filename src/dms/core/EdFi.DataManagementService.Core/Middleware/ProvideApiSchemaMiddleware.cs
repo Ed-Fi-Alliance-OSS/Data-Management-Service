@@ -97,7 +97,7 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
 
             if (nodeKey.Contains("jsonSchemaForInsert", StringComparison.OrdinalIgnoreCase))
             {
-                sourceExtensionNode = GetNodeByPath(sourceExtensionNode, "_ext.properties");
+                sourceExtensionNode = sourceExtensionNode.GetRequiredNode("_ext.tpdm").GetRequiredNode("properties");
             }
 
             var targetCoreNode = GetNodeByPath(coreResource, nodeKey);
