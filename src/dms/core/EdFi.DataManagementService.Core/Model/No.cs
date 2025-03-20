@@ -119,13 +119,7 @@ internal static class No
     /// <summary>
     /// The null object for ResourceClaim
     /// </summary>
-    public static readonly ResourceClaim ResourceClaim = new ResourceClaim()
-    {
-        Actions = null,
-        AuthorizationStrategyOverridesForCrud = [],
-        Children = [],
-        DefaultAuthorizationStrategiesForCrud = [],
-    };
+    public static readonly ResourceClaim ResourceClaim = new("", "", []);
 
     public static readonly EducationOrganizationHierarchyInfo EducationOrganizationHierarchyInfo =
         new EducationOrganizationHierarchyInfo(

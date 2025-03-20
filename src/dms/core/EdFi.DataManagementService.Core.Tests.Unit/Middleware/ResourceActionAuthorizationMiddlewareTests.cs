@@ -4,6 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -29,18 +31,6 @@ public class ResourceActionAuthorizationMiddlewareTests
     internal static IPipelineStep Middleware()
     {
         var expectedAuthStrategy = "NoFurtherAuthorizationRequired";
-
-        var authStrategyList = new List<string> { expectedAuthStrategy };
-        var authorizationStrategiesProvider = A.Fake<IAuthorizationStrategiesProvider>();
-        A.CallTo(
-                () =>
-                    authorizationStrategiesProvider.GetAuthorizationStrategies(
-                        A<ResourceClaim>.Ignored,
-                        A<string>.Ignored
-                    )
-            )
-            .Returns(authStrategyList);
-
         var claimSetCacheService = A.Fake<IClaimSetCacheService>();
         A.CallTo(() => claimSetCacheService.GetClaimSets())
             .Returns(
@@ -49,42 +39,31 @@ public class ResourceActionAuthorizationMiddlewareTests
                         Name: "SIS-Vendor",
                         ResourceClaims:
                         [
-                            new ResourceClaim()
-                            {
-                                Name = "schools",
-                                Actions = [new(Enabled: true, Name: "Create")],
-                                DefaultAuthorizationStrategiesForCrud =
-                                [
-                                    new(
-                                        ActionId: 1,
-                                        ActionName: "Create",
-                                        AuthorizationStrategies:
-                                        [
-                                            new() { AuthStrategyName = expectedAuthStrategy },
-                                        ]
-                                    ),
-                                ],
-                            },
+                            new ResourceClaim(
+                                $"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school",
+                                "Create",
+                                [new AuthorizationStrategy(expectedAuthStrategy)]
+                            ),
                         ]
                     ),
                 ]
             );
-        return new ResourceActionAuthorizationMiddleware(authorizationStrategiesProvider, claimSetCacheService, NullLogger.Instance);
+        return new ResourceActionAuthorizationMiddleware(claimSetCacheService, NullLogger.Instance);
+    }
+
+    internal static ApiSchemaDocuments ApiSchemaDocument(string resourceName)
+    {
+        ApiSchemaDocuments apiSchemaDocument = new ApiSchemaBuilder()
+            .WithStartProject("Ed-Fi", "5.0.0")
+            .WithStartResource(resourceName)
+            .WithEndResource()
+            .WithEndProject()
+            .ToApiSchemaDocuments();
+        return apiSchemaDocument;
     }
 
     internal static IPipelineStep NoAuthStrategyMiddleware()
     {
-        var expectedAuthStrategy = "NoFurtherAuthorizationRequired";
-        var authorizationStrategiesProvider = A.Fake<IAuthorizationStrategiesProvider>();
-        A.CallTo(
-                () =>
-                    authorizationStrategiesProvider.GetAuthorizationStrategies(
-                        A<ResourceClaim>.Ignored,
-                        A<string>.Ignored
-                    )
-            )
-            .Returns([]);
-
         var claimSetCacheService = A.Fake<IClaimSetCacheService>();
         A.CallTo(() => claimSetCacheService.GetClaimSets())
             .Returns(
@@ -93,27 +72,16 @@ public class ResourceActionAuthorizationMiddlewareTests
                         Name: "SIS-Vendor",
                         ResourceClaims:
                         [
-                            new ResourceClaim()
-                            {
-                                Name = "schools",
-                                Actions = [new(Enabled: true, Name: "Create")],
-                                DefaultAuthorizationStrategiesForCrud =
-                                [
-                                    new(
-                                        ActionId: 1,
-                                        ActionName: "Create",
-                                        AuthorizationStrategies:
-                                        [
-                                            new() { AuthStrategyName = expectedAuthStrategy },
-                                        ]
-                                    ),
-                                ],
-                            },
+                            new ResourceClaim(
+                                $"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school",
+                                "Create",
+                                []
+                            ),
                         ]
                     ),
                 ]
             );
-        return new ResourceActionAuthorizationMiddleware(authorizationStrategiesProvider, claimSetCacheService, NullLogger.Instance);
+        return new ResourceActionAuthorizationMiddleware(claimSetCacheService, NullLogger.Instance);
     }
 
     [TestFixture]
@@ -130,12 +98,21 @@ public class ResourceActionAuthorizationMiddlewareTests
                 ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
             );
 
-            _context = new PipelineContext(frontEndRequest, RequestMethod.POST);
-            _context.PathComponents = new PathComponents(
-                new ProjectNamespace("ed-fi"),
-                new EndpointName("schools"),
-                new DocumentUuid()
+            _context = new PipelineContext(frontEndRequest, RequestMethod.POST)
+            {
+                PathComponents = new PathComponents(
+                    new ProjectNamespace("ed-fi"),
+                    new EndpointName("schools"),
+                    new DocumentUuid()
+                ),
+            };
+            _context.ProjectSchema = ApiSchemaDocument("School")
+                .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+            _context.ResourceSchema = new ResourceSchema(
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+                    ?? new JsonObject()
             );
+
             await Middleware().Execute(_context, NullNext);
         }
 
@@ -160,11 +137,19 @@ public class ResourceActionAuthorizationMiddlewareTests
                 ClientAuthorizations: new ClientAuthorizations("", "NO-MATCH", [], [])
             );
 
-            _context = new PipelineContext(frontEndRequest, RequestMethod.POST);
-            _context.PathComponents = new PathComponents(
-                new ProjectNamespace("ed-fi"),
-                new EndpointName("schools"),
-                new DocumentUuid()
+            _context = new PipelineContext(frontEndRequest, RequestMethod.POST)
+            {
+                PathComponents = new PathComponents(
+                    new ProjectNamespace("ed-fi"),
+                    new EndpointName("schools"),
+                    new DocumentUuid()
+                ),
+            };
+            _context.ProjectSchema = ApiSchemaDocument("School")
+                .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+            _context.ResourceSchema = new ResourceSchema(
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+                    ?? new JsonObject()
             );
             await Middleware().Execute(_context, NullNext);
         }
@@ -196,11 +181,19 @@ public class ResourceActionAuthorizationMiddlewareTests
                 ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
             );
 
-            _context = new PipelineContext(frontEndRequest, RequestMethod.POST);
-            _context.PathComponents = new PathComponents(
-                new ProjectNamespace("ed-fi"),
-                new EndpointName("stateDescriptor"),
-                new DocumentUuid()
+            _context = new PipelineContext(frontEndRequest, RequestMethod.POST)
+            {
+                PathComponents = new PathComponents(
+                    new ProjectNamespace("ed-fi"),
+                    new EndpointName("stateDescriptor"),
+                    new DocumentUuid()
+                ),
+            };
+            _context.ProjectSchema = ApiSchemaDocument("StateDescriptor")
+                .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+            _context.ResourceSchema = new ResourceSchema(
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("stateDescriptors"))
+                    ?? new JsonObject()
             );
             await Middleware().Execute(_context, NullNext);
         }
@@ -240,6 +233,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                     new DocumentUuid()
                 ),
             };
+            _context.ProjectSchema = ApiSchemaDocument("School")
+                .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+            _context.ResourceSchema = new ResourceSchema(
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+                    ?? new JsonObject()
+            );
             await Middleware().Execute(_context, NullNext);
         }
 
@@ -272,6 +271,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                     new DocumentUuid()
                 ),
             };
+            _context.ProjectSchema = ApiSchemaDocument("School")
+                .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+            _context.ResourceSchema = new ResourceSchema(
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+                    ?? new JsonObject()
+            );
             await Middleware().Execute(_context, NullNext);
         }
 
@@ -297,7 +302,7 @@ public class ResourceActionAuthorizationMiddlewareTests
             response
                 .Should()
                 .Contain(
-                    "\"errors\":[\"The API client's assigned claim set (currently 'SIS-Vendor') must grant permission of the 'Update' action on one of the following resource claims: schools\"]"
+                    "\"errors\":[\"The API client's assigned claim set (currently 'SIS-Vendor') must grant permission of the 'Update' action on one of the following resource claims: School\"]"
                 );
         }
     }
@@ -309,18 +314,11 @@ public class ResourceActionAuthorizationMiddlewareTests
         public async Task Setup()
         {
             var claimSetCacheService = A.Fake<IClaimSetCacheService>();
-            var authorizationStrategiesProvider = A.Fake<AuthorizationStrategiesProvider>();
             A.CallTo(() => claimSetCacheService.GetClaimSets())
                 .Returns(
-                    [
-                        new ClaimSet(
-                            Name: "SIS-Vendor",
-                            ResourceClaims: [new ResourceClaim() { Name = "schools", Actions = null }]
-                        ),
-                    ]
+                    [new ClaimSet(Name: "SIS-Vendor", ResourceClaims: [new ResourceClaim("schools", "", [])])]
                 );
             var authMiddleware = new ResourceActionAuthorizationMiddleware(
-                authorizationStrategiesProvider,
                 claimSetCacheService,
                 NullLogger.Instance
             );
@@ -341,6 +339,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                     new DocumentUuid()
                 ),
             };
+            _context.ProjectSchema = ApiSchemaDocument("School")
+                .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+            _context.ResourceSchema = new ResourceSchema(
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+                    ?? new JsonObject()
+            );
             await authMiddleware.Execute(_context, NullNext);
         }
 
@@ -380,6 +384,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                     new DocumentUuid()
                 ),
             };
+            _context.ProjectSchema = ApiSchemaDocument("School")
+                .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+            _context.ResourceSchema = new ResourceSchema(
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+                    ?? new JsonObject()
+            );
             await Middleware().Execute(_context, NullNext);
         }
 
@@ -413,6 +423,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                     new DocumentUuid()
                 ),
             };
+            _context.ProjectSchema = ApiSchemaDocument("School")
+                .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+            _context.ResourceSchema = new ResourceSchema(
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+                    ?? new JsonObject()
+            );
             await NoAuthStrategyMiddleware().Execute(_context, NullNext);
         }
 
@@ -441,7 +457,7 @@ public class ResourceActionAuthorizationMiddlewareTests
             response
                 .Should()
                 .Contain(
-                    "\"errors\":[\"No authorization strategies were defined for the requested action 'Create' against resource ['schools'] matched by the caller's claim 'SIS-Vendor'.\"]"
+                    "\"errors\":[\"No authorization strategies were defined for the requested action 'Create' against resource ['School'] matched by the caller's claim 'SIS-Vendor'.\"]"
                 );
         }
     }

@@ -44,7 +44,6 @@ public static class DmsCoreServiceExtensions
             .AddTransient<IDocumentValidator, DocumentValidator>()
             .AddTransient<IMatchingDocumentUuidsValidator, MatchingDocumentUuidsValidator>()
             .AddTransient<IEqualityConstraintValidator, EqualityConstraintValidator>()
-            .AddTransient<IAuthorizationStrategiesProvider, AuthorizationStrategiesProvider>()
             .AddSingleton<IAuthorizationServiceFactory, NamedAuthorizationServiceFactory>()
             .AddSingleton<
                 IResourceDependencyGraphTransformer,

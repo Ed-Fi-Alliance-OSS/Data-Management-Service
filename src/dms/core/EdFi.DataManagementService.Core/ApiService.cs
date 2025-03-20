@@ -39,7 +39,6 @@ internal class ApiService(
     IEqualityConstraintValidator _equalityConstraintValidator,
     ILogger<ApiService> _logger,
     IOptions<AppSettings> _appSettings,
-    IAuthorizationStrategiesProvider _authorizationStrategiesProvider,
     IAuthorizationServiceFactory _authorizationServiceFactory,
     [FromKeyedServices("backendResiliencePipeline")] ResiliencePipeline _resiliencePipeline,
     ResourceLoadOrderCalculator _resourceLoadCalculator
@@ -89,11 +88,7 @@ internal class ApiService(
                 new ExtractDocumentInfoMiddleware(_logger),
                 new DisallowDuplicateReferencesMiddleware(_logger),
                 new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
-                new ResourceActionAuthorizationMiddleware(
-                    _authorizationStrategiesProvider,
-                    _claimSetCacheService,
-                    _logger
-                ),
+                new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
                 new ResourceUpsertAuthorizationMiddleware(_authorizationServiceFactory, _logger),
                 new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
                 new UpsertHandler(_documentStoreRepository, _logger, _resiliencePipeline, _apiSchemaProvider),
@@ -119,11 +114,7 @@ internal class ApiService(
                         _logger,
                         _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                     ),
-                    new ResourceActionAuthorizationMiddleware(
-                        _authorizationStrategiesProvider,
-                        _claimSetCacheService,
-                        _logger
-                    ),
+                    new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
                     new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
                     new GetByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline),
                 ]
@@ -147,11 +138,7 @@ internal class ApiService(
                         _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                     ),
                     new ValidateQueryMiddleware(_logger, _appSettings.Value.MaximumPageSize),
-                    new ResourceActionAuthorizationMiddleware(
-                        _authorizationStrategiesProvider,
-                        _claimSetCacheService,
-                        _logger
-                    ),
+                    new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
                     new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
                     new QueryRequestHandler(_queryHandler, _logger, _resiliencePipeline),
                 ]
@@ -202,11 +189,7 @@ internal class ApiService(
                 new ExtractDocumentInfoMiddleware(_logger),
                 new DisallowDuplicateReferencesMiddleware(_logger),
                 new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
-                new ResourceActionAuthorizationMiddleware(
-                    _authorizationStrategiesProvider,
-                    _claimSetCacheService,
-                    _logger
-                ),
+                new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
                 new ResourceUpsertAuthorizationMiddleware(_authorizationServiceFactory, _logger),
                 new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
                 new UpdateByIdHandler(
@@ -236,11 +219,7 @@ internal class ApiService(
                         _logger,
                         _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                     ),
-                    new ResourceActionAuthorizationMiddleware(
-                        _authorizationStrategiesProvider,
-                        _claimSetCacheService,
-                        _logger
-                    ),
+                    new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
                     new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
                     new DeleteByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline),
                 ]

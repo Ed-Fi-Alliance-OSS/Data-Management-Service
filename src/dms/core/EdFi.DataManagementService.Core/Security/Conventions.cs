@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+namespace EdFi.DataManagementService.Core.Security;
+
+public static class Conventions
+{
+    /// <summary>
+    /// Gets the base URI used to represent a resource claim in the Ed-Fi security database.
+    /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Minor Code Smell",
+        "S1075:URIs should not be hardcoded",
+        Justification = "Intentional constant"
+    )]
+    public const string EdFiOdsResourceClaimBaseUri = "http://ed-fi.org/identity/claims";
+}

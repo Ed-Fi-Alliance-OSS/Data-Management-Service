@@ -5,4 +5,7 @@
 
 namespace EdFi.DataManagementService.Core.Security.Model;
 
+/// <summary>
+/// Represents a set of claims associated with a security context
+/// </summary>
 public record ClaimSet(string Name, List<ResourceClaim> ResourceClaims);
