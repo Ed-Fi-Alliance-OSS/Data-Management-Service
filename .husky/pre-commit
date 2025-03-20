@@ -1,19 +1,12 @@
 #!/bin/sh
 
-# Check if Husky is installed, if not, install it.
-if [ ! -f "$(dirname "$0")/_/husky.sh" ]; then
-    echo "Husky no está instalado. Instalándolo..."
-    dotnet tool restore
-    dotnet husky install
-fi
-
 . "$(dirname "$0")/_/husky.sh"
 
 echo 'Formatting Code'
 
 # Check if CSharpier is installed
 if ! dotnet tool list --local | grep -q "csharpier"; then
-    echo "CSharpier no está instalado. Instalándolo ahora..."
+    echo "Installing csharpier..."
     dotnet tool install --local csharpier
 fi
 
