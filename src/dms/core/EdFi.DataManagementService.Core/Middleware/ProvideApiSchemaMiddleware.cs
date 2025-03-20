@@ -37,6 +37,7 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
             CopyResourceExtensionNodeToCore(extensionResources, coreResources, "numericJsonPaths");
             CopyResourceExtensionNodeToCore(extensionResources, coreResources, "documentPathsMapping");
             CopyResourceExtensionNodeToCore(extensionResources, coreResources, "jsonSchemaForInsert.properties");
+            CopyResourceExtensionNodeToCore(extensionResources, coreResources, "equalityConstraints");
         }
 
         return new ApiSchemaDocuments(apiSchemaNodes with { CoreApiSchemaRootNode = coreApiSchema }, _logger);
@@ -96,7 +97,7 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
 
             if (nodeKey.Contains("jsonSchemaForInsert", StringComparison.OrdinalIgnoreCase))
             {
-                sourceExtensionNode = GetNodeByPath(sourceExtensionNode, "_ext.properties");
+                sourceExtensionNode = sourceExtensionNode.GetRequiredNode("_ext.tpdm").GetRequiredNode("properties");
             }
 
             var targetCoreNode = GetNodeByPath(coreResource, nodeKey);
