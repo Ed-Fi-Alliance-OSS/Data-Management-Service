@@ -41,8 +41,7 @@ public class ResourceAuthorizationHandlerTests
                         ),
                     ],
                     FilterOperator.Or
-                ))
-                .ToArray();
+                )).ToArray();
 
             var handler = new ResourceAuthorizationHandler(authStrategyEvaluators, NullLogger.Instance);
             _resourceAuthorizationResult = handler.Authorize(namespaceSecurityElements, []);
