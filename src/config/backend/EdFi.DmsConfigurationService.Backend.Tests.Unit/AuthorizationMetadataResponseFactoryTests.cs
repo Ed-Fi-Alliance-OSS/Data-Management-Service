@@ -65,23 +65,19 @@ public class AuthorizationMetadataResponseFactoryTests
                                             new ClaimSetAction
                                             {
                                                 Name = "Read",
-                                                AuthorizationStrategyOverrides =
-                                                    new List<AuthorizationStrategy>
-                                                    {
-                                                        new AuthorizationStrategy
-                                                        {
-                                                            Name = "OverrideStrategy",
-                                                        },
-                                                    },
-                                            },
-                                        },
-                                    },
-                                },
-                            },
-                        },
-                    },
-                },
-            },
+                                                AuthorizationStrategyOverrides = new List<AuthorizationStrategy>
+                                                {
+                                                    new AuthorizationStrategy { Name = "OverrideStrategy" }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         };
 
         // Act
@@ -89,14 +85,7 @@ public class AuthorizationMetadataResponseFactoryTests
 
         // Assert
         result.Claims.Should().ContainSingle(c => c.Name == "LeafClaim");
-        result
-            .Authorizations.Should()
-            .ContainSingle(a =>
-                a.Actions.Any(ac =>
-                    ac.Name == "Read"
-                    && ac.AuthorizationStrategies.Any(astrat => astrat.Name == "OverrideStrategy")
-                )
-            );
+        result.Authorizations.Should().ContainSingle(a => a.Actions.Any(ac => ac.Name == "Read" && ac.AuthorizationStrategies.Any(astrat => astrat.Name == "OverrideStrategy")));
     }
 
     [Test]
@@ -126,16 +115,22 @@ public class AuthorizationMetadataResponseFactoryTests
                                         Name = "Read",
                                         AuthorizationStrategyOverrides = new List<AuthorizationStrategy>
                                         {
-                                            new AuthorizationStrategy { Name = "OverrideStrategy" },
-                                        },
-                                    },
-                                },
-                            },
+                                            new AuthorizationStrategy { Name = "OverrideStrategy" }
+                                        }
+                                    }
+                                }
+                            }
                         },
-                        Claims = new List<Claim> { new Claim { Name = "LeafClaim" } },
-                    },
-                },
-            },
+                        Claims = new List<Claim>
+                        {
+                            new Claim
+                            {
+                                Name = "LeafClaim",
+                            }
+                        }
+                    }
+                }
+            }
         };
 
         // Act
@@ -143,14 +138,7 @@ public class AuthorizationMetadataResponseFactoryTests
 
         // Assert
         result.Claims.Should().ContainSingle(c => c.Name == "LeafClaim");
-        result
-            .Authorizations.Should()
-            .ContainSingle(a =>
-                a.Actions.Any(ac =>
-                    ac.Name == "Read"
-                    && ac.AuthorizationStrategies.Any(astrat => astrat.Name == "OverrideStrategy")
-                )
-            );
+        result.Authorizations.Should().ContainSingle(a => a.Actions.Any(ac => ac.Name == "Read" && ac.AuthorizationStrategies.Any(astrat => astrat.Name == "OverrideStrategy")));
     }
 
     [Test]
@@ -180,11 +168,11 @@ public class AuthorizationMetadataResponseFactoryTests
                                         Name = "Read",
                                         AuthorizationStrategyOverrides = new List<AuthorizationStrategy>
                                         {
-                                            new AuthorizationStrategy { Name = "OverrideStrategy1" },
-                                        },
-                                    },
-                                },
-                            },
+                                            new AuthorizationStrategy { Name = "OverrideStrategy1" }
+                                        }
+                                    }
+                                }
+                            }
                         },
                         Claims = new List<Claim>
                         {
@@ -201,23 +189,19 @@ public class AuthorizationMetadataResponseFactoryTests
                                             new ClaimSetAction
                                             {
                                                 Name = "Read",
-                                                AuthorizationStrategyOverrides =
-                                                    new List<AuthorizationStrategy>
-                                                    {
-                                                        new AuthorizationStrategy
-                                                        {
-                                                            Name = "OverrideStrategy2",
-                                                        },
-                                                    },
-                                            },
-                                        },
-                                    },
-                                },
-                            },
-                        },
-                    },
-                },
-            },
+                                                AuthorizationStrategyOverrides = new List<AuthorizationStrategy>
+                                                {
+                                                    new AuthorizationStrategy { Name = "OverrideStrategy2" }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         };
 
         // Act
@@ -247,10 +231,10 @@ public class AuthorizationMetadataResponseFactoryTests
                             Name = "Read",
                             AuthorizationStrategies = new List<AuthorizationStrategy>
                             {
-                                new AuthorizationStrategy { Name = "DefaultStrategy" },
-                            },
-                        },
-                    },
+                                new AuthorizationStrategy { Name = "DefaultStrategy" }
+                            }
+                        }
+                    }
                 },
                 Claims = new List<Claim>
                 {
@@ -269,15 +253,18 @@ public class AuthorizationMetadataResponseFactoryTests
                                         Name = claimSetName,
                                         Actions = new List<ClaimSetAction>
                                         {
-                                            new ClaimSetAction { Name = "Read" },
-                                        },
-                                    },
-                                },
-                            },
-                        },
-                    },
-                },
-            },
+                                            new ClaimSetAction
+                                            {
+                                                Name = "Read"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         };
 
         // Act
@@ -285,14 +272,7 @@ public class AuthorizationMetadataResponseFactoryTests
 
         // Assert
         result.Claims.Should().ContainSingle(c => c.Name == "LeafClaim");
-        result
-            .Authorizations.Should()
-            .ContainSingle(a =>
-                a.Actions.Any(ac =>
-                    ac.Name == "Read"
-                    && ac.AuthorizationStrategies.Any(astrat => astrat.Name == "DefaultStrategy")
-                )
-            );
+        result.Authorizations.Should().ContainSingle(a => a.Actions.Any(ac => ac.Name == "Read" && ac.AuthorizationStrategies.Any(astrat => astrat.Name == "DefaultStrategy")));
     }
 
     [Test]
@@ -314,10 +294,10 @@ public class AuthorizationMetadataResponseFactoryTests
                             Name = "Read",
                             AuthorizationStrategies = new List<AuthorizationStrategy>
                             {
-                                new AuthorizationStrategy { Name = "HigherDefaultStrategy" },
-                            },
-                        },
-                    },
+                                new AuthorizationStrategy { Name = "HigherDefaultStrategy" }
+                            }
+                        }
+                    }
                 },
                 Claims = new List<Claim>
                 {
@@ -333,10 +313,10 @@ public class AuthorizationMetadataResponseFactoryTests
                                     Name = "Read",
                                     AuthorizationStrategies = new List<AuthorizationStrategy>
                                     {
-                                        new AuthorizationStrategy { Name = "LowerDefaultStrategy" },
-                                    },
-                                },
-                            },
+                                        new AuthorizationStrategy { Name = "LowerDefaultStrategy" }
+                                    }
+                                }
+                            }
                         },
                         Claims = new List<Claim>
                         {
@@ -350,15 +330,18 @@ public class AuthorizationMetadataResponseFactoryTests
                                         Name = claimSetName,
                                         Actions = new List<ClaimSetAction>
                                         {
-                                            new ClaimSetAction { Name = "Read" },
-                                        },
-                                    },
-                                },
-                            },
-                        },
-                    },
-                },
-            },
+                                            new ClaimSetAction
+                                            {
+                                                Name = "Read"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         };
 
         // Act
@@ -366,14 +349,7 @@ public class AuthorizationMetadataResponseFactoryTests
 
         // Assert
         result.Claims.Should().ContainSingle(c => c.Name == "LeafClaim");
-        result
-            .Authorizations.Should()
-            .ContainSingle(a =>
-                a.Actions.Any(ac =>
-                    ac.Name == "Read"
-                    && ac.AuthorizationStrategies.Any(astrat => astrat.Name == "LowerDefaultStrategy")
-                )
-            );
+        result.Authorizations.Should().ContainSingle(a => a.Actions.Any(ac => ac.Name == "Read" && ac.AuthorizationStrategies.Any(astrat => astrat.Name == "LowerDefaultStrategy")));
     }
 
     [Test]
@@ -395,18 +371,24 @@ public class AuthorizationMetadataResponseFactoryTests
                             Name = "Read",
                             AuthorizationStrategies = new List<AuthorizationStrategy>
                             {
-                                new AuthorizationStrategy { Name = "HigherDefaultStrategy" },
-                            },
-                        },
-                    },
+                                new AuthorizationStrategy { Name = "HigherDefaultStrategy" }
+                            }
+                        }
+                    }
                 },
                 ClaimSets = new List<ClaimSet>
                 {
                     new ClaimSet
                     {
                         Name = claimSetName,
-                        Actions = new List<ClaimSetAction> { new ClaimSetAction { Name = "Read" } },
-                    },
+                        Actions = new List<ClaimSetAction>
+                        {
+                            new ClaimSetAction
+                            {
+                                Name = "Read"
+                            }
+                        }
+                    }
                 },
                 Claims = new List<Claim>
                 {
@@ -422,15 +404,21 @@ public class AuthorizationMetadataResponseFactoryTests
                                     Name = "Read",
                                     AuthorizationStrategies = new List<AuthorizationStrategy>
                                     {
-                                        new AuthorizationStrategy { Name = "LowerDefaultStrategy" },
-                                    },
-                                },
-                            },
+                                        new AuthorizationStrategy { Name = "LowerDefaultStrategy" }
+                                    }
+                                }
+                            }
                         },
-                        Claims = new List<Claim> { new Claim { Name = "LeafClaim" } },
-                    },
-                },
-            },
+                        Claims = new List<Claim>
+                        {
+                            new Claim
+                            {
+                                Name = "LeafClaim"
+                            }
+                        }
+                    }
+                }
+            }
         };
 
         // Act
@@ -438,14 +426,7 @@ public class AuthorizationMetadataResponseFactoryTests
 
         // Assert
         result.Claims.Should().ContainSingle(c => c.Name == "LeafClaim");
-        result
-            .Authorizations.Should()
-            .ContainSingle(a =>
-                a.Actions.Any(ac =>
-                    ac.Name == "Read"
-                    && ac.AuthorizationStrategies.Any(astrat => astrat.Name == "LowerDefaultStrategy")
-                )
-            );
+        result.Authorizations.Should().ContainSingle(a => a.Actions.Any(ac => ac.Name == "Read" && ac.AuthorizationStrategies.Any(astrat => astrat.Name == "LowerDefaultStrategy")));
     }
 
     [Test]
@@ -467,18 +448,18 @@ public class AuthorizationMetadataResponseFactoryTests
                             Name = "Create",
                             AuthorizationStrategies = new List<AuthorizationStrategy>
                             {
-                                new AuthorizationStrategy { Name = "HigherDefaultCreateStrategy" },
-                            },
+                                new AuthorizationStrategy { Name = "HigherDefaultCreateStrategy" }
+                            }
                         },
                         new DefaultAction
                         {
                             Name = "Read",
                             AuthorizationStrategies = new List<AuthorizationStrategy>
                             {
-                                new AuthorizationStrategy { Name = "HigherDefaultReadStrategy" },
-                            },
-                        },
-                    },
+                                new AuthorizationStrategy { Name = "HigherDefaultReadStrategy" }
+                            }
+                        }
+                    }
                 },
                 ClaimSets = new List<ClaimSet>
                 {
@@ -487,10 +468,16 @@ public class AuthorizationMetadataResponseFactoryTests
                         Name = claimSetName,
                         Actions = new List<ClaimSetAction>
                         {
-                            new ClaimSetAction { Name = "Create" },
-                            new ClaimSetAction { Name = "Read" },
-                        },
-                    },
+                            new ClaimSetAction
+                            {
+                                Name = "Create"
+                            },
+                            new ClaimSetAction
+                            {
+                                Name = "Read",
+                            }
+                        }
+                    }
                 },
                 Claims = new List<Claim>
                 {
@@ -506,15 +493,21 @@ public class AuthorizationMetadataResponseFactoryTests
                                     Name = "Read",
                                     AuthorizationStrategies = new List<AuthorizationStrategy>
                                     {
-                                        new AuthorizationStrategy { Name = "LowerDefaultReadStrategy" },
-                                    },
-                                },
-                            },
+                                        new AuthorizationStrategy { Name = "LowerDefaultReadStrategy" }
+                                    }
+                                }
+                            }
                         },
-                        Claims = new List<Claim> { new Claim { Name = "LeafClaim" } },
-                    },
-                },
-            },
+                        Claims = new List<Claim>
+                        {
+                            new Claim
+                            {
+                                Name = "LeafClaim"
+                            }
+                        }
+                    }
+                }
+            }
         };
 
         // Act
@@ -556,18 +549,18 @@ public class AuthorizationMetadataResponseFactoryTests
                             Name = "Create",
                             AuthorizationStrategies = new List<AuthorizationStrategy>
                             {
-                                new AuthorizationStrategy { Name = "HigherDefaultCreateStrategy" },
-                            },
+                                new AuthorizationStrategy { Name = "HigherDefaultCreateStrategy" }
+                            }
                         },
                         new DefaultAction
                         {
                             Name = "Read",
                             AuthorizationStrategies = new List<AuthorizationStrategy>
                             {
-                                new AuthorizationStrategy { Name = "HigherDefaultReadStrategy" },
-                            },
-                        },
-                    },
+                                new AuthorizationStrategy { Name = "HigherDefaultReadStrategy" }
+                            }
+                        }
+                    }
                 },
                 ClaimSets = new List<ClaimSet>
                 {
@@ -576,17 +569,20 @@ public class AuthorizationMetadataResponseFactoryTests
                         Name = claimSetName,
                         Actions = new List<ClaimSetAction>
                         {
-                            new ClaimSetAction { Name = "Create" },
+                            new ClaimSetAction
+                            {
+                                Name = "Create"
+                            },
                             new ClaimSetAction
                             {
                                 Name = "Read",
                                 AuthorizationStrategyOverrides = new List<AuthorizationStrategy>
                                 {
-                                    new AuthorizationStrategy { Name = "OverrideReadStrategy" },
-                                },
-                            },
-                        },
-                    },
+                                    new AuthorizationStrategy { Name = "OverrideReadStrategy" }
+                                }
+                            }
+                        }
+                    }
                 },
                 Claims = new List<Claim>
                 {
@@ -602,15 +598,21 @@ public class AuthorizationMetadataResponseFactoryTests
                                     Name = "Read",
                                     AuthorizationStrategies = new List<AuthorizationStrategy>
                                     {
-                                        new AuthorizationStrategy { Name = "LowerDefaultReadStrategy" },
-                                    },
-                                },
-                            },
+                                        new AuthorizationStrategy { Name = "LowerDefaultReadStrategy" }
+                                    }
+                                }
+                            }
                         },
-                        Claims = new List<Claim> { new Claim { Name = "LeafClaim" } },
-                    },
-                },
-            },
+                        Claims = new List<Claim>
+                        {
+                            new Claim
+                            {
+                                Name = "LeafClaim"
+                            }
+                        }
+                    }
+                }
+            }
         };
 
         // Act
@@ -652,11 +654,11 @@ public class AuthorizationMetadataResponseFactoryTests
                             Name = "Read",
                             AuthorizationStrategies = new List<AuthorizationStrategy>
                             {
-                                new AuthorizationStrategy { Name = "DefaultStrategy1" },
-                                new AuthorizationStrategy { Name = "DefaultStrategy2" },
-                            },
-                        },
-                    },
+                                new AuthorizationStrategy { Name = "DefaultStrategy1"},
+                                new AuthorizationStrategy { Name = "DefaultStrategy2" }
+                            }
+                        }
+                    }
                 },
                 Claims = new List<Claim>
                 {
@@ -675,12 +677,15 @@ public class AuthorizationMetadataResponseFactoryTests
                                         Name = claimSetName,
                                         Actions = new List<ClaimSetAction>
                                         {
-                                            new ClaimSetAction { Name = "Read" },
-                                        },
-                                    },
-                                },
-                            },
-                        },
+                                            new ClaimSetAction
+                                            {
+                                                Name = "Read"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     },
                     new Claim
                     {
@@ -697,15 +702,18 @@ public class AuthorizationMetadataResponseFactoryTests
                                         Name = claimSetName,
                                         Actions = new List<ClaimSetAction>
                                         {
-                                            new ClaimSetAction { Name = "Read" },
-                                        },
-                                    },
-                                },
-                            },
-                        },
-                    },
-                },
-            },
+                                            new ClaimSetAction
+                                            {
+                                                Name = "Read"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         };
 
         // Act
@@ -721,9 +729,7 @@ public class AuthorizationMetadataResponseFactoryTests
 
         authorization.Actions.Should().ContainSingle(a => a.Name == "Read");
 
-        var authorizationStrategies = authorization.Actions.SelectMany(a =>
-            a.AuthorizationStrategies.Select(strat => strat.Name)
-        );
+        var authorizationStrategies = authorization.Actions.SelectMany(a => a.AuthorizationStrategies.Select(strat => strat.Name));
         authorizationStrategies.Should().BeEquivalentTo("DefaultStrategy1", "DefaultStrategy2");
     }
 }

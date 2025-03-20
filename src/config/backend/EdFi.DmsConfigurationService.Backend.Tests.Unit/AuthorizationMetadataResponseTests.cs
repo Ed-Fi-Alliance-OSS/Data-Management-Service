@@ -21,17 +21,15 @@ public class AuthorizationMetadataResponseTests
             Id: 0,
             Actions:
             [
-                new Action(Name: "Read", AuthorizationStrategies: [new AuthorizationStrategy("Strategy1")]),
-            ]
-        );
+                new Action(Name: "Read", AuthorizationStrategies: [new AuthorizationStrategy("Strategy1")])
+            ]);
 
         var auth2 = new AuthorizationMetadataResponse.Authorization(
             Id: 1, // Ignored for equality
             Actions:
             [
-                new Action(Name: "Read", AuthorizationStrategies: [new AuthorizationStrategy("Strategy1")]),
-            ]
-        );
+                new Action(Name: "Read", AuthorizationStrategies: [new AuthorizationStrategy("Strategy1")])
+            ]);
 
         // Act
         var hash1 = auth1.GetHashCode();
@@ -50,17 +48,15 @@ public class AuthorizationMetadataResponseTests
             Id: 0,
             Actions:
             [
-                new Action(Name: "Read", AuthorizationStrategies: [new AuthorizationStrategy("Strategy1")]),
-            ]
-        );
+                new Action(Name: "Read", AuthorizationStrategies: [new AuthorizationStrategy("Strategy1")])
+            ]);
 
         var auth2 = new AuthorizationMetadataResponse.Authorization(
             Id: 1, // Ignored for equality
             Actions:
             [
-                new Action(Name: "Create", AuthorizationStrategies: [new AuthorizationStrategy("Strategy1")]),
-            ]
-        );
+                new Action(Name: "Create", AuthorizationStrategies: [new AuthorizationStrategy("Strategy1")])
+            ]);
 
         // Act
         var hash1 = auth1.GetHashCode();
@@ -79,17 +75,16 @@ public class AuthorizationMetadataResponseTests
             Id: 0,
             Actions:
             [
-                new Action(Name: "Read", AuthorizationStrategies: [new AuthorizationStrategy("Strategy1")]),
-            ]
-        );
+                new Action(Name: "Read", AuthorizationStrategies: [new AuthorizationStrategy("Strategy1")])
+            ]);
 
         var auth2 = new AuthorizationMetadataResponse.Authorization(
             Id: 1, // Ignored for equality
             Actions:
             [
-                new Action(Name: "Read", AuthorizationStrategies: [new AuthorizationStrategy("Strategy2")]),
-            ]
-        );
+                new Action(Name: "Read", AuthorizationStrategies: [new AuthorizationStrategy("Strategy2")])
+            ]);
+
 
         // Act
         var hash1 = auth1.GetHashCode();
@@ -111,21 +106,13 @@ public class AuthorizationMetadataResponseTests
                 new Action(
                     Name: "Read",
                     AuthorizationStrategies:
-                    [
-                        new AuthorizationStrategy("Strategy1"),
-                        new AuthorizationStrategy("Strategy2"),
-                    ]
-                ),
+                    [new AuthorizationStrategy("Strategy1"), new AuthorizationStrategy("Strategy2")]),
+
                 new Action(
                     Name: "Create",
                     AuthorizationStrategies:
-                    [
-                        new AuthorizationStrategy("Strategy3"),
-                        new AuthorizationStrategy("Strategy4"),
-                    ]
-                ),
-            ]
-        );
+                    [new AuthorizationStrategy("Strategy3"), new AuthorizationStrategy("Strategy4")])
+            ]);
 
         var auth2 = new AuthorizationMetadataResponse.Authorization(
             Id: 1, // Ignored for equality
@@ -134,21 +121,13 @@ public class AuthorizationMetadataResponseTests
                 new Action(
                     Name: "Create",
                     AuthorizationStrategies:
-                    [
-                        new AuthorizationStrategy("Strategy3"),
-                        new AuthorizationStrategy("Strategy4"),
-                    ]
-                ),
+                    [new AuthorizationStrategy("Strategy3"), new AuthorizationStrategy("Strategy4")]),
+
                 new Action(
                     Name: "Read",
                     AuthorizationStrategies:
-                    [
-                        new AuthorizationStrategy("Strategy2"),
-                        new AuthorizationStrategy("Strategy1"),
-                    ]
-                ),
-            ]
-        );
+                    [new AuthorizationStrategy("Strategy2"), new AuthorizationStrategy("Strategy1")])
+            ]);
 
         // Act
         var hash1 = auth1.GetHashCode();
@@ -170,13 +149,8 @@ public class AuthorizationMetadataResponseTests
                 new Action(
                     Name: "Read",
                     AuthorizationStrategies:
-                    [
-                        new AuthorizationStrategy("Strategy1"),
-                        new AuthorizationStrategy("Strategy2"),
-                    ]
-                ),
-            ]
-        );
+                    [new AuthorizationStrategy("Strategy1"), new AuthorizationStrategy("Strategy2")])
+            ]);
 
         var auth2 = new AuthorizationMetadataResponse.Authorization(
             Id: 1, // Ignored for equality
@@ -185,13 +159,8 @@ public class AuthorizationMetadataResponseTests
                 new Action(
                     Name: "Read",
                     AuthorizationStrategies:
-                    [
-                        new AuthorizationStrategy("Strategy2"),
-                        new AuthorizationStrategy("Strategy1"),
-                    ]
-                ),
-            ]
-        );
+                    [new AuthorizationStrategy("Strategy2"), new AuthorizationStrategy("Strategy1")])
+            ]);
 
         // Act
         var hash1 = auth1.GetHashCode();
