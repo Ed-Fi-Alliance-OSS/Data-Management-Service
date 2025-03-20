@@ -12,7 +12,7 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 [TestFixture]
 public class AuthorizationMetadataResponseFactoryTests
 {
-    private IAuthorizationMetadataResponseFactory _factory;
+    private IAuthorizationMetadataResponseFactory _factory = null!;
 
     [SetUp]
     public void SetUp()
