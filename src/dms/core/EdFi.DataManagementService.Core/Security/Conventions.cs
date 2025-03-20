@@ -13,7 +13,7 @@ public static class Conventions
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Minor Code Smell",
         "S1075:URIs should not be hardcoded",
-        Justification = "<Pending>"
+        Justification = "Intentional constant"
     )]
     public const string EdFiOdsResourceClaimBaseUri = "http://ed-fi.org/identity/claims";
 }

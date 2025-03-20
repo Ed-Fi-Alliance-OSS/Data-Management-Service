@@ -65,10 +65,10 @@ internal class ResourceActionAuthorizationMiddleware(
                 return;
             }
 
-            var resourceClaimName = context.ResourceSchema.ResourceName.Value;
+            string resourceClaimName = context.ResourceSchema.ResourceName.Value;
 
             // Create resource claim URI
-            var resourceClaimUri =
+            string resourceClaimUri =
                 $"{Conventions.EdFiOdsResourceClaimBaseUri}/{context.PathComponents.ProjectNamespace.Value}/{resourceClaimName}";
 
             ResourceClaim[] matchingClaims = claimSet
@@ -88,9 +88,9 @@ internal class ResourceActionAuthorizationMiddleware(
                 return;
             }
 
-            var actionName = ActionResolver.Resolve(context.Method).ToString();
+            string actionName = ActionResolver.Resolve(context.Method).ToString();
 
-            var authorizedAction = matchingClaims.SingleOrDefault(x =>
+            ResourceClaim? authorizedAction = matchingClaims.SingleOrDefault(x =>
                 string.Equals(x.Action, actionName, StringComparison.InvariantCultureIgnoreCase)
             );
 

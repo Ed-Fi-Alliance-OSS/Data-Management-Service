@@ -24,7 +24,7 @@ public class SecurityMetadataProvider(
 
     private async Task SetAuthorizationHeader()
     {
-        var token = await configurationServiceTokenHandler.GetTokenAsync(
+        string? token = await configurationServiceTokenHandler.GetTokenAsync(
             configurationServiceContext.clientId,
             configurationServiceContext.clientSecret,
             configurationServiceContext.scope
@@ -37,19 +37,24 @@ public class SecurityMetadataProvider(
     {
         await SetAuthorizationHeader();
 
-        var claimsEndpoint = "v2/claimSets";
-        var claimSetsResponse = await configurationServiceApiClient.Client.GetAsync(claimsEndpoint);
-        var responseJsonString = await claimSetsResponse.Content.ReadAsStringAsync();
-        var claimSets = JsonSerializer.Deserialize<List<ClaimSet>>(responseJsonString, _jsonOptions) ?? [];
+        string claimsEndpoint = "v2/claimSets";
+        HttpResponseMessage claimSetsResponse = await configurationServiceApiClient.Client.GetAsync(
+            claimsEndpoint
+        );
+        string responseJsonString = await claimSetsResponse.Content.ReadAsStringAsync();
+        List<ClaimSet> claimSets =
+            JsonSerializer.Deserialize<List<ClaimSet>>(responseJsonString, _jsonOptions) ?? [];
 
-        var claimSetAuthorizationMetadata = new List<ClaimSet>();
+        List<ClaimSet> claimSetAuthorizationMetadata = [];
 
-        foreach (var claimSet in claimSets)
+        foreach (ClaimSet claimSet in claimSets)
         {
-            var authorizationMetadata = await GetAuthorizationMetadataForClaimSet(claimSet.Name);
+            AuthorizationMetadataResponse? authorizationMetadata = await GetAuthorizationMetadataForClaimSet(
+                claimSet.Name
+            );
             if (authorizationMetadata != null)
             {
-                var enrichedClaimSet = EnrichClaimSetWithAuthorizationMetadata(
+                ClaimSet enrichedClaimSet = EnrichClaimSetWithAuthorizationMetadata(
                     claimSet,
                     authorizationMetadata
                 );
@@ -64,9 +69,11 @@ public class SecurityMetadataProvider(
         string claimSetName
     )
     {
-        var authorizationMetadataEndpoint = $"/authorizationMetadata?claimSetName={claimSetName}";
-        var response = await configurationServiceApiClient.Client.GetAsync(authorizationMetadataEndpoint);
-        var jsonString = await response.Content.ReadAsStringAsync();
+        string authorizationMetadataEndpoint = $"/authorizationMetadata?claimSetName={claimSetName}";
+        HttpResponseMessage response = await configurationServiceApiClient.Client.GetAsync(
+            authorizationMetadataEndpoint
+        );
+        string jsonString = await response.Content.ReadAsStringAsync();
         return JsonSerializer.Deserialize<AuthorizationMetadataResponse>(jsonString, _jsonOptions);
     }
 
@@ -75,14 +82,15 @@ public class SecurityMetadataProvider(
         AuthorizationMetadataResponse authorizationMetadata
     )
     {
-        var enrichedClaimSet = new ClaimSet(claimSet.Name, []);
+        ClaimSet enrichedClaimSet = new(claimSet.Name, []);
 
-        foreach (var claim in authorizationMetadata.Claims)
+        foreach (AuthorizationMetadataResponse.Claim claim in authorizationMetadata.Claims)
         {
-            var authorization = authorizationMetadata.Authorizations.Find(a => a.Id == claim.AuthorizationId);
+            AuthorizationMetadataResponse.Authorization? authorization =
+                authorizationMetadata.Authorizations.Find(a => a.Id == claim.AuthorizationId);
             if (authorization != null)
             {
-                var resourceClaims = authorization
+                List<ResourceClaim> resourceClaims = authorization
                     .Actions.Select(action => new ResourceClaim(
                         claim.Name,
                         action.Name,

@@ -5,4 +5,7 @@
 
 namespace EdFi.DataManagementService.Core.Security.Model;
 
+/// <summary>
+/// Represents an authorization strategy for a resource claim action
+/// </summary>
 public record AuthorizationStrategy(string Name);
