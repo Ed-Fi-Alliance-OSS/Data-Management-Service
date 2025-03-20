@@ -8,7 +8,8 @@ using Microsoft.Extensions.Logging;
 
 namespace EdFi.DmsConfigurationService.Backend.Keycloak;
 
-public class KeycloakTokenManager(KeycloakContext keycloakContext, ILogger<KeycloakTokenManager> logger) : ITokenManager
+public class KeycloakTokenManager(KeycloakContext keycloakContext, ILogger<KeycloakTokenManager> logger)
+    : ITokenManager
 {
     public async Task<TokenResult> GetAccessTokenAsync(IEnumerable<KeyValuePair<string, string>> credentials)
     {
