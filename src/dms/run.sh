@@ -34,5 +34,8 @@ else
   echo "Skipping Data Management Service schema installation."
 fi
 
-dotnet EdFi.DataManagementService.Frontend.AspNetCore.dll
+if [ "$USE_API_SCHEMA_PATH" = true ]; then
+    dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p EdFi.DataStandard52.ApiSchema.Core -d ${API_SCHEMA_PATH}
+fi
 
+dotnet EdFi.DataManagementService.Frontend.AspNetCore.dll
