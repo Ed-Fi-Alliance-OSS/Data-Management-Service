@@ -15,6 +15,7 @@ COPY backend/EdFi.DataManagementService.Backend/ backend/EdFi.DataManagementServ
 COPY backend/EdFi.DataManagementService.Backend.Mssql/ backend/EdFi.DataManagementService.Backend.Mssql/
 COPY backend/EdFi.DataManagementService.Backend.Postgresql/ backend/EdFi.DataManagementService.Backend.Postgresql/
 COPY backend/EdFi.DataManagementService.Backend.OpenSearch/ backend/EdFi.DataManagementService.Backend.OpenSearch/
+COPY clis/EdFi.DataManagementService.ApiSchemaDownloader/ clis/EdFi.DataManagementService.ApiSchemaDownloader/
 # Named context support https://github.com/hadolint/hadolint/issues/830
 # hadolint ignore=DL3022
 COPY --from=parentdir .editorconfig .
@@ -26,7 +27,8 @@ COPY --from=parentdir Directory.Packages.props ./
 COPY --from=parentdir nuget.config .
 
 RUN dotnet restore frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj && \
-    dotnet restore backend/EdFi.DataManagementService.Backend.Installer/EdFi.DataManagementService.Backend.Installer.csproj
+    dotnet restore backend/EdFi.DataManagementService.Backend.Installer/EdFi.DataManagementService.Backend.Installer.csproj && \
+    dotnet restore clis/EdFi.DataManagementService.ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.csproj
 
 WORKDIR /source/frontend/EdFi.DataManagementService.Frontend.AspNetCore
 RUN dotnet build -c Release --no-restore && \
@@ -35,6 +37,10 @@ RUN dotnet build -c Release --no-restore && \
 WORKDIR /source/backend/EdFi.DataManagementService.Backend.Installer
 RUN dotnet build -c Release --no-restore && \
     dotnet publish -c Release -o /app/Installer --no-restore --no-build
+
+WORKDIR /source/clis/EdFi.DataManagementService.ApiSchemaDownloader
+RUN dotnet build -c Release --no-restore && \
+    dotnet publish -c Release -o /app/ApiSchemaDownloader --no-restore --no-build
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0.12-alpine3.21@sha256:accc7352721d44ef6246e91704f4efb1954f69912af2d2bd54d117fa09922a53 AS runtimebase
 
@@ -58,10 +64,10 @@ COPY --from=build /app/Frontend/*.pdb ./
 COPY --from=build /app/Frontend/appsettings.json ./
 COPY --from=build /app/Frontend/*runtimeconfig.json ./
 COPY --from=build /app/Frontend/*.deps.json ./
+COPY --from=build /app/ApiSchemaDownloader/*.* ./ApiSchemaDownloader/
 
 COPY --chmod=700 run.sh /app/run.sh
 
 EXPOSE ${ASPNETCORE_HTTP_PORTS}
 
 ENTRYPOINT ["/app/run.sh"]
-
