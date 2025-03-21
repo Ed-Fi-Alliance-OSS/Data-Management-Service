@@ -1,6 +1,6 @@
 # Setting Up Development Environment
 
-This repository includes a script to set up the development environment for new developers. The script ensures that all required .NET tools are restored and Husky is installed for managing Git hooks.
+This repository provides a script to set up the development environment for new developers. It ensures that all required .NET tools specified in the `.config/dotnet-tools.json` file are restored..
 
 
 ## Steps to Set Up
@@ -9,6 +9,7 @@ This repository includes a script to set up the development environment for new 
 2. Navigate to the `eng` folder:
    ```powershell
    cd eng
+   ```
 3. Run the setup script:
    ```shell
    ./setup-dev-environment.ps1
@@ -19,9 +20,11 @@ What the Script Does
 - Installs CSharpier.
 - Installs Husky to manage Git hooks (e.g., pre-commit hooks).
 
-Notes:
+[!Note]
 
-Ensure you have the necessary permissions to execute PowerShell scripts. If you encounter an error, you may need to enable script execution by running:
-```shell
-Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
-```
+- Ensure you have the necessary permissions to execute PowerShell scripts. If you encounter an error, you may need to enable script execution by running:
+    ```shell
+    Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+    ```
+- Why do we need Husky?
+Husky is used to enforce consistent formatting of .cs files by running tools like CSharpier during Git pre-commit hooks. This ensures that all committed code adheres to the project's formatting standards.
