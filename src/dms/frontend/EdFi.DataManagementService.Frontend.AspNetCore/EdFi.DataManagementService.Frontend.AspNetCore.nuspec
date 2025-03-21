@@ -14,5 +14,6 @@
   <files>
        <file src="**" target="DataManagementService" />
        <file src="..\..\..\backend\EdFi.DataManagementService.Backend.Installer\publish\**\*.*" target="Installer" />
+       <file src="..\..\..\clis\EdFi.DataManagementService.ApiSchemaDownloader\publish\**\*.*" target="ApiDownloader" />
   </files>
 </package>
