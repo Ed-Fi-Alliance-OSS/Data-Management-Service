@@ -10,16 +10,6 @@ if ! dotnet tool list --local | grep -q "csharpier"; then
     dotnet tool install --local csharpier
 fi
 
-# Get only modified C# files
-CHANGED_FILES=$(git diff --name-only --diff-filter=d HEAD | grep '\.cs$' || true)
+dotnet husky run --name dotnet-format-staged-files
 
-# If there are modified files, run CSharpier, otherwise skip formatting.
-if [ -n "$CHANGED_FILES" ]; then
-    echo "Running CSharpier on changed files..."
-    dotnet csharpier $CHANGED_FILES || {
-        echo "CSharpier detected unformatted files. Please run 'dotnet csharpier .' to fix."
-        exit 1
-    }
-else
-    echo "No C# files changed, skipping formatting."
-fi
+echo 'Completed pre-commit changes'
