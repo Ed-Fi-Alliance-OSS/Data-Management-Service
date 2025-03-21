@@ -72,5 +72,4 @@ dotnet run --no-launch-profile --command Transform --input input1.json;input2.js
 * Once you have the updated authorization hierarchy JSON, then update the VALUE
   in `dmscs.claimshierarchy` table [Claims Hierarchy Script](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts/0012_Insert_ClaimsHierarchy.sql)
 * Add new ClaimSet details to VALUES [Insert
-  ClaimSets](<https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/config/backend/EdFi>.
-  DmsConfigurationService.Backend.Postgresql/Deploy/Scripts/0011_Insert_Claimset.sql)
+  ClaimSets](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts/0011_Insert_Claimset.sql)
