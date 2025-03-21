@@ -52,6 +52,10 @@ RUN apk --no-cache add bash=~5 postgresql16-client=~16 gettext=~0
 FROM runtimebase AS setup
 
 ENV ASPNETCORE_HTTP_PORTS=8080
+ENV CORE_PACKAGE=EdFi.DataStandard52.ApiSchema.Core
+ENV CORE_PACKAGE_VERSION=1.0.131
+ENV TPDM_PACKAGE=EdFi.DataStandard52.ApiSchema.TPDM
+ENV TPDM_PACKAGE_VERSION=1.0.131
 
 WORKDIR /app
 

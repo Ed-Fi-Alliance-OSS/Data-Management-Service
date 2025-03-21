@@ -23,8 +23,6 @@ echo "PostgreSQL is ready."
 
 if [ "$NEED_DATABASE_SETUP" = true ]; then
 
-  DATABASE="edfi_datamanagementservice"
-
   echo "Installing Data Management Service schema."
   dotnet Installer/EdFi.DataManagementService.Backend.Installer.dll -e postgresql -c ${DATABASE_CONNECTION_STRING_ADMIN}
 
@@ -37,14 +35,11 @@ fi
 if [ "$USE_API_SCHEMA_PATH" = true ]; then
     echo "Using Api Schema Path."
 
-    CORE_PACKAGE=EdFi.DataStandard52.ApiSchema.Core
-    TPDM_PACKAGE=EdFi.DataStandard52.ApiSchema.TPDM
-
     echo "Downloading Package ${CORE_PACKAGE}..."
-    dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p ${CORE_PACKAGE} -d ${API_SCHEMA_PATH}
+    dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p ${CORE_PACKAGE} -d ${API_SCHEMA_PATH} -v ${CORE_PACKAGE_VERSION}
 
     echo "Downloading Package ${TPDM_PACKAGE}..."
-    dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p ${TPDM_PACKAGE} -d ${API_SCHEMA_PATH}
+    dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p ${TPDM_PACKAGE} -d ${API_SCHEMA_PATH} -v ${TPDM_PACKAGE_VERSION}
 fi
 
 dotnet EdFi.DataManagementService.Frontend.AspNetCore.dll
