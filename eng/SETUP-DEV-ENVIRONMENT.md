@@ -23,7 +23,7 @@ This repository provides a script to set up the development environment for new 
 - Installs Husky to manage Git hooks (e.g., pre-commit hooks).
 
 >[!Note]
-> Ensure you have the necessary permissions to execute PowerShell scripts. If > you encounter an error, you may need to enable script execution by running:
+> Ensure you have the necessary permissions to execute PowerShell scripts. If you encounter an error, you may need to enable script execution by running:
   ```powershell
     Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
   ```
