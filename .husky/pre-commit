@@ -4,12 +4,6 @@
 
 echo 'Formatting Code'
 
-# Check if CSharpier is installed
-if ! dotnet tool list --local | grep -q "csharpier"; then
-    echo "Installing csharpier..."
-    dotnet tool install --local csharpier
-fi
-
 dotnet husky run --name dotnet-format-staged-files
 
 echo 'Completed pre-commit changes'
