@@ -11,10 +11,6 @@ Script to set up the development environment for the repository.
 This script restores .NET tools and installs Husky for managing Git hooks.
 #>
 
-# Move to the root of the Git repository
-$repoRoot = git rev-parse --show-toplevel
-Set-Location $repoRoot
-
 Write-Host "Setting up the development environment..."
 
 # Restore .NET tools
