@@ -32,6 +32,7 @@ will replace [Ed-Fi ODS/API 7.x](https://techdocs.ed-fi.org/x/UQSUCg).
 - [Configuration](./docs/CONFIGURATION.md)
 - [Docker](./docs/DOCKER.md)
 - [Removing reference validation](./docs/REFERENCE-VALIDATION.md)
+- [Setting Up Development Environment](./docs/SETUP-DEV-ENVIRONMENT.md)
 
 ## Legal Information
 
