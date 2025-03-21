@@ -60,3 +60,17 @@ dotnet run --no-launch-profile --command Transform --input input1.json;input2.js
 dotnet run --no-launch-profile --command Transform --input input1.json;input2.json --outputFormat Json
 
 ```
+
+## Steps for Adding the ClaimSet as Claims to Hierarchy JSON
+
+* Create or generate the required `ClaimSet` content with existing format and
+  save it as JSON file and place it under `ClaimSetFiles` folder
+* Ensure you have the latest `AuthorizationHierarchy.json` file
+* Execute the application to process the ClaimSet and generate the updated
+  authorization hierarchy JSON
+* Use the command line arguments to specify the input and output files
+* Once you have the updated authorization hierarchy JSON, then update the VALUE
+  in `dmscs.claimshierarchy` table [Claims Hierarchy Script](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts/0012_Insert_ClaimsHierarchy.sql)
+* Add new ClaimSet details to VALUES [Insert
+  ClaimSets](<https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/config/backend/EdFi>.
+  DmsConfigurationService.Backend.Postgresql/Deploy/Scripts/0011_Insert_Claimset.sql)
