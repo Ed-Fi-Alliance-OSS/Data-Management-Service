@@ -13,6 +13,10 @@ FROM runtimebase AS setup
 
 ARG VERSION=0.0.0
 ENV ASPNETCORE_HTTP_PORTS=8080
+ENV CORE_PACKAGE=EdFi.DataStandard52.ApiSchema.Core
+ENV CORE_PACKAGE_VERSION=1.0.131
+ENV TPDM_PACKAGE=EdFi.DataStandard52.ApiSchema.TPDM
+ENV TPDM_PACKAGE_VERSION=1.0.131
 
 WORKDIR /app
 
@@ -22,6 +26,7 @@ RUN wget -O /app/EdFi.DataManagementService.zip "https://pkgs.dev.azure.com/ed-f
     unzip /app/EdFi.DataManagementService.zip -d /app/ && \
     cp -r /app/DataManagementService/. /app/ && \
     cp -r /app/Installer/. /app/. && \
+    cp -r /app/ApiDownloader/. /app/. && \
     rm -f /app/EdFi.DataManagementService.zip && \
     rm -r /app/DataManagementService
 
