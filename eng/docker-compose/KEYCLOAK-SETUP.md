@@ -52,7 +52,7 @@ Keycloak locally using docker-compose.
 7. Update DMS Configuration Service IdentitySettings section on appsettings.json:
 
    ```js
-    ConfigServiceRole: "config-service-app" (Service realm role created earlier)
+    ConfigServiceRole: "cms-client" (Service realm role created earlier)
     ClientRole: "dms-client",
     Authority: "http://your-keycloak-url:port/realms/<your-realm>"
     IdentityServer: "http://your-keycloak-url:port"
@@ -123,7 +123,7 @@ want to remove the volume, add the -v parameter.
 
  1. From the left menu, select Realm roles.
  2. Click Create role
- 3. Enter a Role Name (`config-service-app`) and Description
+ 3. Enter a Role Name (`cms-client`) and Description
  4. Click Save
 
 ### Creating a Configuration Service Client
@@ -313,7 +313,7 @@ Please refer "Creating a Configuration Service Client" section above
        IdentitySettings section in appsettings.json file as follows:
 
         ```js
-            "ConfigServiceRole": "config-service-app",
+            "ConfigServiceRole": "cms-client",
             "ClientRole": "dms-client",
             "Authority": "http://your-keycloak-url:port/realms/<your-realm>",
             "Audience": "account",
