@@ -13,6 +13,7 @@ using EdFi.DmsConfigurationService.Backend.Postgresql;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using FluentValidation;
@@ -21,6 +22,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
+using static System.Formats.Asn1.AsnWriter;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
@@ -64,7 +66,10 @@ public static class WebApplicationBuilderExtensions
 
         webApplicationBuilder.Services.AddTransient<IApplicationRepository, ApplicationRepository>();
         webApplicationBuilder.Services.AddTransient<IClaimsHierarchyRepository, ClaimsHierarchyRepository>();
-        webApplicationBuilder.Services.AddTransient<IAuthorizationMetadataResponseFactory, AuthorizationMetadataResponseFactory>();
+        webApplicationBuilder.Services.AddTransient<
+            IAuthorizationMetadataResponseFactory,
+            AuthorizationMetadataResponseFactory
+        >();
         webApplicationBuilder.Services.AddTransient<IVendorRepository, VendorRepository>();
         webApplicationBuilder.Services.AddTransient<IClaimSetDataProvider, ClaimSetDataProvider>();
         webApplicationBuilder.Services.AddTransient<IClaimSetRepository, ClaimSetRepository>();
@@ -157,11 +162,20 @@ public static class WebApplicationBuilderExtensions
 
         // Add service policy for role validation
         webApplicationBuilder.Services.AddAuthorization(options =>
+        {
             options.AddPolicy(
                 SecurityConstants.ServicePolicy,
                 policy => policy.RequireClaim(ClaimTypes.Role, identitySettings.ConfigServiceRole)
-            )
-        );
+            );
+
+            foreach (PolicyDefinition policy in AuthorizationScopePolicies.Policies)
+            {
+                options.AddPolicy(
+                    policy.PolicyName,
+                    authPolicy => authPolicy.RequireClaim("scope", policy.Scope)
+                );
+            }
+        });
 
         if (
             string.Equals(
