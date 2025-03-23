@@ -171,13 +171,9 @@ public class OpenApiDocument(ILogger _logger)
     /// <summary>
     /// Finds the openApiExtensionDescriptors and openApiExtensionResources in extension ApiSchemaDocument.
     /// </summary>
-    public List<JsonNode> FindOpenApiExtensionFragments(JsonNode extensionApiSchemaRootNode)
+    private List<JsonNode> FindOpenApiExtensionFragments(JsonNode extensionApiSchemaRootNode, string section)
     {
-        string[] paths = new string[]
-        {
-            "$.projectSchema.openApiExtensionResourceFragments",
-            "$.projectSchema.openApiExtensionDescriptorFragments",
-        };
+        string[] paths = [$"$.projectSchema.openApiExtension{section}Fragments"];
 
         List<JsonNode> selectedNodes = new List<JsonNode>();
 
@@ -194,50 +190,57 @@ public class OpenApiDocument(ILogger _logger)
         return selectedNodes;
     }
 
+    public enum DocumentSection
+    {
+        Resource,
+        Descriptor
+    }
+
     /// <summary>
     /// Creates an OpenAPI specification derived from the given core and extension ApiSchemas
     /// </summary>
-    public JsonNode CreateDocument(ApiSchemaNodes apiSchemas)
+    public JsonNode CreateDocument(ApiSchemaNodes apiSchemas, DocumentSection documentSection)
     {
         // Get the core OpenAPI spec as a copy since we are going to modify it
-        JsonNode openApiCoreResources = apiSchemas.CoreApiSchemaRootNode.SelectRequiredNodeFromPath(
-            "$.projectSchema.openApiCoreResources",
-            _logger
-        );
-        JsonArray combinedSchema = new JsonArray();
+        JsonNode openApiSpecification = apiSchemas
+            .CoreApiSchemaRootNode.SelectRequiredNodeFromPath(
+                $"$.projectSchema.openApiCore{documentSection}s",
+                _logger
+            )
+            .DeepClone();
+
         // Get each extension OpenAPI fragment to insert into core OpenAPI spec
         foreach (JsonNode extensionApiSchemaRootNode in apiSchemas.ExtensionApiSchemaRootNodes)
         {
             List<JsonNode> openApiExtensionFragments = FindOpenApiExtensionFragments(
-                extensionApiSchemaRootNode
+                extensionApiSchemaRootNode,
+                documentSection.ToString()
             );
 
             foreach (JsonNode openApiExtensionFragment in openApiExtensionFragments)
             {
                 InsertExts(
                     openApiExtensionFragment.SelectRequiredNodeFromPath("$.exts", _logger).AsObject(),
-                    openApiCoreResources
+                    openApiSpecification
                 );
 
                 InsertNewPaths(
                     openApiExtensionFragment.SelectRequiredNodeFromPath("$.newPaths", _logger).AsObject(),
-                    openApiCoreResources
+                    openApiSpecification
                 );
 
                 InsertNewSchemas(
                     openApiExtensionFragment.SelectRequiredNodeFromPath("$.newSchemas", _logger).AsObject(),
-                    openApiCoreResources
+                    openApiSpecification
                 );
 
                 InsertNewTags(
                     openApiExtensionFragment.SelectRequiredNodeFromPath("$.newTags", _logger).AsArray(),
-                    openApiCoreResources
+                    openApiSpecification
                 );
             }
-            combinedSchema.Add(extensionApiSchemaRootNode);
         }
 
-        combinedSchema.Add(apiSchemas.CoreApiSchemaRootNode);
-        return combinedSchema;
+        return openApiSpecification;
     }
 }

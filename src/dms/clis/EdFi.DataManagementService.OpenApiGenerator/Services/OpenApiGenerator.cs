@@ -41,7 +41,10 @@ public class OpenApiGenerator(ILogger<OpenApiGenerator> _logger)
 
         _logger.LogDebug("Combining core and extension schemas.");
         OpenApiDocument openApiDocument = new(_logger);
-        JsonNode combinedSchema = openApiDocument.CreateDocument(new(coreSchema, extensionSchemas));
+        JsonNode combinedSchema = openApiDocument.CreateDocument(
+            new(coreSchema, extensionSchemas),
+            OpenApiDocument.DocumentSection.Resource
+        );
 
         _logger.LogInformation("OpenAPI generation completed successfully.");
         return JsonSerializer.Serialize(combinedSchema, new JsonSerializerOptions { WriteIndented = true });

@@ -49,7 +49,12 @@ public interface IApiService
     public JsonArray GetDependencies();
 
     /// <summary>
-    /// DMS entry point to get the OpenAPI specification derived from core and extension ApiSchemas
+    /// DMS entry point to get the OpenAPI specification for resources, derived from core and extension ApiSchemas
     /// </summary>
-    public JsonNode GetOpenApiSpecification();
+    public JsonNode GetResourceOpenApiSpecification();
+
+    /// <summary>
+    /// DMS entry point to get the OpenAPI specification for descriptors, derived from core and extension ApiSchemas
+    /// </summary>
+    public JsonNode GetDescriptorOpenApiSpecification();
 }

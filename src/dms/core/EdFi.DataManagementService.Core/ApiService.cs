@@ -330,17 +330,40 @@ internal class ApiService(
     /// <summary>
     /// The OpenAPI specification derived from core and extension ApiSchemas
     /// </summary>
-    private readonly Lazy<JsonNode> _openApiSpecification = new(() =>
+    private readonly Lazy<JsonNode> _resourceOpenApiSpecification = new(() =>
     {
         OpenApiDocument openApiDocument = new(_logger);
-        return openApiDocument.CreateDocument(_apiSchemaProvider.GetApiSchemaNodes());
+        return openApiDocument.CreateDocument(
+            _apiSchemaProvider.GetApiSchemaNodes(),
+            OpenApiDocument.DocumentSection.Resource
+        );
     });
 
     /// <summary>
-    /// DMS entry point to get the OpenAPI specification derived from core and extension ApiSchemas
+    /// The OpenAPI specification derived from core and extension ApiSchemas
     /// </summary>
-    public JsonNode GetOpenApiSpecification()
+    private readonly Lazy<JsonNode> _descriptorOpenApiSpecification = new(() =>
     {
-        return _openApiSpecification.Value;
+        OpenApiDocument descriptorOpenApiDocument = new(_logger);
+        return descriptorOpenApiDocument.CreateDocument(
+            _apiSchemaProvider.GetApiSchemaNodes(),
+            OpenApiDocument.DocumentSection.Descriptor
+        );
+    });
+
+    /// <summary>
+    /// DMS entry point to get the OpenAPI specification for resources, derived from core and extension ApiSchemas
+    /// </summary>
+    public JsonNode GetResourceOpenApiSpecification()
+    {
+        return _resourceOpenApiSpecification.Value;
+    }
+
+    /// <summary>
+    /// DMS entry point to get the OpenAPI specification for descriptors, derived from core and extension ApiSchemas
+    /// </summary>
+    public JsonNode GetDescriptorOpenApiSpecification()
+    {
+        return _descriptorOpenApiSpecification.Value;
     }
 }
