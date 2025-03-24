@@ -126,14 +126,6 @@ public class MetadataModuleTests
         var contentProvider = A.Fake<IContentProvider>();
         var claimSetCacheService = A.Fake<IClaimSetCacheService>();
         A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
-        var json =
-            """{"openapi":"3.0.1", "info":"descriptors","servers":[{"url":"http://localhost:5000/data/v3"}]}""";
-        JsonNode _descriptorsJson = JsonNode.Parse(json)!;
-
-        A.CallTo(
-                () => contentProvider.LoadJsonContent(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)
-            )
-            .Returns(_descriptorsJson);
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -153,12 +145,15 @@ public class MetadataModuleTests
         var content = await response.Content.ReadAsStringAsync();
 
         var jsonContent = JsonNode.Parse(content);
-        var sectionInfo = jsonContent?["info"]?.GetValue<string>();
+        var openapiVersion = jsonContent?["openapi"]?.GetValue<string>();
+        var paths = jsonContent?["paths"]?.AsObject();
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         jsonContent.Should().NotBeNull();
-        sectionInfo.Should().Contain("descriptors");
+        openapiVersion.Should().Be("3.0.0");
+        paths.Should().NotBeNull();
+        paths?["/ed-fi/absenceEventCategoryDescriptors"].Should().NotBeNull();
     }
 
     [Test]
