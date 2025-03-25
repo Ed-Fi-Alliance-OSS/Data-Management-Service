@@ -36,7 +36,8 @@ public partial class MetadataEndpointModule : IEndpointModule
         endpoints.MapGet("/metadata", GetMetadata);
         endpoints.MapGet("/metadata/dependencies", GetDependencies);
         endpoints.MapGet("/metadata/specifications", GetSections);
-        endpoints.MapGet("/metadata/specifications/resources-spec.json", GetOpenApiSpec);
+        endpoints.MapGet("/metadata/specifications/resources-spec.json", GetResourceOpenApiSpec);
+        endpoints.MapGet("/metadata/specifications/descriptors-spec.json", GetDescriptorOpenApiSpec);
         endpoints.MapGet("/metadata/specifications/{section}-spec.json", GetSectionMetadata);
     }
 
@@ -59,9 +60,14 @@ public partial class MetadataEndpointModule : IEndpointModule
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
 
-    internal static async Task GetOpenApiSpec(HttpContext httpContext, IApiService apiService)
+    internal static async Task GetResourceOpenApiSpec(HttpContext httpContext, IApiService apiService)
     {
-        JsonNode content = apiService.GetOpenApiSpecification();
+        JsonNode content = apiService.GetResourceOpenApiSpecification();
+        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+    }
+    internal static async Task GetDescriptorOpenApiSpec(HttpContext httpContext, IApiService apiService)
+    {
+        JsonNode content = apiService.GetDescriptorOpenApiSpecification();
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
 
