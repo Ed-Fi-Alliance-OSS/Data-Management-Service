@@ -8,6 +8,10 @@ using System.Text.Json;
 using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
+<<<<<<< HEAD
+=======
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
+>>>>>>> 0bc038a6 (Enforce scope based authorization)
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
@@ -42,6 +46,7 @@ public class ClaimsHierarchyModuleTests
                         );
 
                     collection.AddAuthorization(options =>
+                    {
                         options.AddPolicy(
                             SecurityConstants.ServicePolicy,
                             policy =>
@@ -49,9 +54,9 @@ public class ClaimsHierarchyModuleTests
                                     System.Security.Claims.ClaimTypes.Role,
                                     AuthenticationConstants.Role
                                 )
-                        )
-                    );
-
+                        );
+                        AuthorizationScopePolicies.Add(options);
+                    });
                     collection.AddTransient(_ => _claimsHierarchyRepository);
                     collection.AddTransient(_ => _responseFactory);
                 }

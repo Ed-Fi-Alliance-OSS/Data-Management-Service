@@ -9,6 +9,7 @@ using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.AspNetCore.Mvc;
@@ -19,14 +20,14 @@ public class ClaimSetModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost("/v2/claimSets/", InsertClaimSet).RequireAuthorizationWithPolicy();
-        endpoints.MapGet("/v2/claimSets/", GetAll).RequireAuthorizationWithPolicy();
-        endpoints.MapGet($"/v2/claimSets/{{id}}", GetById).RequireAuthorizationWithPolicy();
-        endpoints.MapGet($"/v2/claimSets/{{id}}/export", Export).RequireAuthorizationWithPolicy();
-        endpoints.MapPut($"/v2/claimSets/{{id}}", Update).RequireAuthorizationWithPolicy();
-        endpoints.MapDelete($"/v2/claimSets/{{id}}", Delete).RequireAuthorizationWithPolicy();
-        endpoints.MapPost("/v2/claimSets/copy", Copy).RequireAuthorizationWithPolicy();
-        endpoints.MapPost("/v2/claimSets/import", Import).RequireAuthorizationWithPolicy();
+        endpoints.MapSecuredPost("/v2/claimSets/", InsertClaimSet);
+        endpoints.MapSecuredGet("/v2/claimSets/", GetAll);
+        endpoints.MapSecuredGet($"/v2/claimSets/{{id}}", GetById);
+        endpoints.MapSecuredGet($"/v2/claimSets/{{id}}/export", Export);
+        endpoints.MapSecuredPut($"/v2/claimSets/{{id}}", Update);
+        endpoints.MapSecuredDelete($"/v2/claimSets/{{id}}", Delete);
+        endpoints.MapSecuredPost("/v2/claimSets/copy", Copy);
+        endpoints.MapSecuredPost("/v2/claimSets/import", Import);
     }
 
     private static async Task<IResult> InsertClaimSet(

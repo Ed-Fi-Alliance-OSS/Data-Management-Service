@@ -7,6 +7,7 @@ using System.Net;
 using System.Security.Claims;
 using System.Text.Json;
 using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
@@ -81,11 +82,13 @@ public class RegisterActionEndpointTests
                             );
 
                         collection.AddAuthorization(options =>
+                        {
                             options.AddPolicy(
                                 SecurityConstants.ServicePolicy,
                                 policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
-                            )
-                        );
+                            );
+                            AuthorizationScopePolicies.Add(options);
+                        });
                     }
                 );
             });

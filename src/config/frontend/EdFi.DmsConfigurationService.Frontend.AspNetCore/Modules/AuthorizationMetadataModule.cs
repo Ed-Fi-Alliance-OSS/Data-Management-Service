@@ -8,6 +8,7 @@ using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
@@ -16,9 +17,7 @@ public class AuthorizationMetadataModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints
-            .MapGet("/authorizationMetadata", GetAuthorizationMetadata)
-            .RequireAuthorizationWithPolicy();
+        endpoints.MapSecuredGet("/authorizationMetadata", GetAuthorizationMetadata);
     }
 
     private async Task<IResult> GetAuthorizationMetadata(
