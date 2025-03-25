@@ -19,11 +19,18 @@ public class TestAuthHandler(
 {
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
+        // Extract scope from the request header for testing
+        var scopeHeader = Context.Request.Headers["X-Test-Scope"].ToString();
+        if (string.IsNullOrEmpty(scopeHeader))
+        {
+            return Task.FromResult(AuthenticateResult.Fail("Scope header is missing."));
+        }
+
         var claims = new[]
         {
             new Claim("client_id", AuthenticationConstants.Client_Id),
             new Claim(ClaimTypes.Role, AuthenticationConstants.Role),
-            new Claim("scope", AuthorizationScopes.AdminScope.Name),
+            new Claim("scope", scopeHeader),
         };
 
         var identity = new ClaimsIdentity(claims, AuthenticationConstants.AuthenticationSchema);

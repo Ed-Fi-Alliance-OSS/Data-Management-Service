@@ -70,7 +70,10 @@ public static class EndpointBuilderExtensions
         return endpoints
             .MapGet(pattern, handler)
             .RequireAuthorization(
-                [SecurityConstants.ServicePolicy, AuthorizationScopePolicies.LimitedAccessScopePolicy]
+                [
+                    SecurityConstants.ServicePolicy,
+                    AuthorizationScopePolicies.AdminOrAuthorizationEndpointsAccessScopePolicyOrReadOnly,
+                ]
             );
     }
 

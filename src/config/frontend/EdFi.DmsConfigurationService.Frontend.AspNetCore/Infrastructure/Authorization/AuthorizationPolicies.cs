@@ -39,9 +39,9 @@ public class ScopePolicyHandler : AuthorizationHandler<ScopePolicy>
 public static class AuthorizationScopePolicies
 {
     public const string AdminScopePolicy = "AdminScopePolicy";
-    public const string ReadOnlyScopePolicy = "ReadOnlyScopePolicy";
     public const string ReadOnlyOrAdminScopePolicy = "ReadOnlyOrAdminScopePolicy";
-    public const string LimitedAccessScopePolicy = "LimitedAccessScopePolicy";
+    public const string AdminOrAuthorizationEndpointsAccessScopePolicyOrReadOnly =
+        "AdminOrAuthorizationEndpointsAccessScopePolicyOrReadOnly";
 
     public static void Add(AuthorizationOptions options)
     {
@@ -49,12 +49,6 @@ public static class AuthorizationScopePolicies
         options.AddPolicy(
             AdminScopePolicy,
             policy => policy.Requirements.Add(new ScopePolicy(AuthorizationScopes.AdminScope.Name))
-        );
-
-        // ReadOnly scope policy (GET Access)
-        options.AddPolicy(
-            ReadOnlyScopePolicy,
-            policy => policy.Requirements.Add(new ScopePolicy(AuthorizationScopes.ReadOnlyScope.Name))
         );
 
         // Combined policy (ReadOnly or Admin)
@@ -69,10 +63,17 @@ public static class AuthorizationScopePolicies
                 )
         );
 
-        // Limited Access policy (Specific Scope)
+        // Combined policy (Limited to only authorization endpoints or Admin or ReadOnly)
         options.AddPolicy(
-            LimitedAccessScopePolicy,
-            policy => policy.Requirements.Add(new ScopePolicy(AuthorizationScopes.LimitedAccessScope.Name))
+            AdminOrAuthorizationEndpointsAccessScopePolicyOrReadOnly,
+            policy =>
+                policy.Requirements.Add(
+                    new ScopePolicy(
+                        AuthorizationScopes.AdminScope.Name,
+                        AuthorizationScopes.AuthorizationEndpointsAccessScope.Name,
+                        AuthorizationScopes.ReadOnlyScope.Name
+                    )
+                )
         );
     }
 }

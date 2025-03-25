@@ -21,7 +21,7 @@ public class ClaimSetModule : IEndpointModule
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapSecuredPost("/v2/claimSets/", InsertClaimSet);
-        endpoints.MapSecuredGet("/v2/claimSets/", GetAll);
+        endpoints.MapLimitedAccess("/v2/claimSets/", GetAll);
         endpoints.MapSecuredGet($"/v2/claimSets/{{id}}", GetById);
         endpoints.MapSecuredGet($"/v2/claimSets/{{id}}/export", Export);
         endpoints.MapSecuredPut($"/v2/claimSets/{{id}}", Update);
