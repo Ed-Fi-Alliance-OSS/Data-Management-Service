@@ -8,10 +8,8 @@ using System.Text.Json;
 using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
-<<<<<<< HEAD
-=======
+using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
->>>>>>> 0bc038a6 (Enforce scope based authorization)
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
@@ -63,7 +61,9 @@ public class ClaimsHierarchyModuleTests
             );
         });
 
-        return factory.CreateClient();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
+        return client;
     }
 
     [Test]

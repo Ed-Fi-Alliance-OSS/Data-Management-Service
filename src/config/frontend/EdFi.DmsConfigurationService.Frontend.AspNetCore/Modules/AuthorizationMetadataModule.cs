@@ -17,7 +17,7 @@ public class AuthorizationMetadataModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapSecuredGet("/authorizationMetadata", GetAuthorizationMetadata);
+        endpoints.MapLimitedAccess("/authorizationMetadata", GetAuthorizationMetadata);
     }
 
     private async Task<IResult> GetAuthorizationMetadata(

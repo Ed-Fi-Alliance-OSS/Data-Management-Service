@@ -8,6 +8,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using FakeItEasy;
@@ -98,6 +99,7 @@ public class AuthorizationStrategiesModuleTests
                 );
             });
             using var client = factory.CreateClient();
+            client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
 
             // Act
             _response = await client.GetAsync("/authorizationStrategies");
@@ -158,6 +160,7 @@ public class AuthorizationStrategiesModuleTests
                 );
             });
             using var client = factory.CreateClient();
+            client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
 
             // Act
             _response = await client.GetAsync("/authorizationStrategies");
