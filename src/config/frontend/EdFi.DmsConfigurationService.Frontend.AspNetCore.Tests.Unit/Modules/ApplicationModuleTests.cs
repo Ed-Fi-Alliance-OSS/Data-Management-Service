@@ -12,6 +12,7 @@ using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
@@ -45,11 +46,13 @@ public class ApplicationModuleTests
                         );
 
                     collection.AddAuthorization(options =>
+                    {
                         options.AddPolicy(
                             SecurityConstants.ServicePolicy,
                             policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
-                        )
-                    );
+                        );
+                        AuthorizationScopePolicies.Add(options);
+                    });
 
                     collection
                         .AddTransient((_) => _applicationRepository)

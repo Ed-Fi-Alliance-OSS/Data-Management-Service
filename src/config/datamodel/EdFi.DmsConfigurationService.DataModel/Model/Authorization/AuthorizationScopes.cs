@@ -5,28 +5,6 @@
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 
-public class AuthorizationScopePolicies
-{
-    public static readonly PolicyDefinition AdminScopePolicy = new(
-        "AdminScopePolicyPolicy",
-        AuthorizationScopes.AdminScope.Name
-    );
-    public static readonly PolicyDefinition ReadOnlyScopePolicy = new(
-        "ReadOnlyScopePolicyPolicy",
-        AuthorizationScopes.ReadOnlyScope.Name
-    );
-    public static readonly PolicyDefinition LimitedAccessScopePolicy = new(
-        "LimitedAccessScopePolicy",
-        AuthorizationScopes.LimitedAccessScope.Name
-    );
-    public static readonly IEnumerable<PolicyDefinition> Policies =
-    [
-        AdminScopePolicy,
-        ReadOnlyScopePolicy,
-        LimitedAccessScopePolicy,
-    ];
-}
-
 public record ScopeDefinition(string Name, string Description);
 
 public static class AuthorizationScopes
@@ -51,5 +29,3 @@ public static class AuthorizationScopes
         LimitedAccessScope,
     ];
 }
-
-public record PolicyDefinition(string PolicyName, string Scope);

@@ -9,6 +9,7 @@ using System.Text.Json;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
@@ -32,34 +33,39 @@ public class AuthorizationStrategiesModuleTests
         [SetUp]
         public void Setup()
         {
-            _mockAuthStrategiesResponse = [
+            _mockAuthStrategiesResponse =
+            [
                 new()
                 {
                     Id = 1,
                     AuthorizationStrategyName = "AuthStrategy1",
-                    DisplayName = "AuthStrategy1"
+                    DisplayName = "AuthStrategy1",
                 },
                 new()
                 {
                     Id = 2,
                     AuthorizationStrategyName = "AuthStrategy2",
-                    DisplayName = "AuthStrategy2"
+                    DisplayName = "AuthStrategy2",
                 },
                 new()
                 {
                     Id = 3,
                     AuthorizationStrategyName = "AuthStrategy3",
-                    DisplayName = "AuthStrategy3"
+                    DisplayName = "AuthStrategy3",
                 },
                 new()
                 {
                     Id = 4,
                     AuthorizationStrategyName = "AuthStrategy4",
-                    DisplayName = "AuthStrategy4"
+                    DisplayName = "AuthStrategy4",
                 },
             ];
             A.CallTo(() => _claimSetRepository.GetAuthorizationStrategies())
-                .Returns(Task.FromResult<AuthorizationStrategyGetResult>(new AuthorizationStrategyGetResult.Success(_mockAuthStrategiesResponse)));
+                .Returns(
+                    Task.FromResult<AuthorizationStrategyGetResult>(
+                        new AuthorizationStrategyGetResult.Success(_mockAuthStrategiesResponse)
+                    )
+                );
         }
 
         [Test]
@@ -80,10 +86,13 @@ public class AuthorizationStrategiesModuleTests
                             );
 
                         collection.AddAuthorization(options =>
+                        {
                             options.AddPolicy(
                                 SecurityConstants.ServicePolicy,
                                 policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
-                        ));
+                            );
+                            AuthorizationScopePolicies.Add(options);
+                        });
                         collection.AddTransient((_) => _claimSetRepository);
                     }
                 );
@@ -93,10 +102,7 @@ public class AuthorizationStrategiesModuleTests
             // Act
             _response = await client.GetAsync("/authorizationStrategies");
             var responseString = await _response.Content.ReadAsStringAsync();
-            var options = new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            };
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
 
             var content = JsonSerializer.Deserialize<List<AuthorizationStrategy>>(responseString, options);
 
@@ -141,11 +147,13 @@ public class AuthorizationStrategiesModuleTests
                             );
 
                         collection.AddAuthorization(options =>
+                        {
                             options.AddPolicy(
                                 SecurityConstants.ServicePolicy,
                                 policy => policy.RequireClaim(ClaimTypes.Role, "invalid-role")
-                            )
-                        );
+                            );
+                            AuthorizationScopePolicies.Add(options);
+                        });
                     }
                 );
             });

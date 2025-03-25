@@ -13,16 +13,16 @@ using EdFi.DmsConfigurationService.Backend.Postgresql;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
-using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
-using static System.Formats.Asn1.AsnWriter;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
@@ -168,14 +168,10 @@ public static class WebApplicationBuilderExtensions
                 policy => policy.RequireClaim(ClaimTypes.Role, identitySettings.ConfigServiceRole)
             );
 
-            foreach (PolicyDefinition policy in AuthorizationScopePolicies.Policies)
-            {
-                options.AddPolicy(
-                    policy.PolicyName,
-                    authPolicy => authPolicy.RequireClaim("scope", policy.Scope)
-                );
-            }
+            AuthorizationScopePolicies.Add(options);
         });
+
+        webApplicationBuilder.Services.AddSingleton<IAuthorizationHandler, ScopePolicyHandler>();
 
         if (
             string.Equals(

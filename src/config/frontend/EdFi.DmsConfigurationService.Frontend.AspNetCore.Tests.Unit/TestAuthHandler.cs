@@ -5,6 +5,7 @@
 
 using System.Security.Claims;
 using System.Text.Encodings.Web;
+using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 
@@ -13,14 +14,16 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit;
 public class TestAuthHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
     Microsoft.Extensions.Logging.ILoggerFactory loggerFactory,
-    UrlEncoder encoder) : AuthenticationHandler<AuthenticationSchemeOptions>(options, loggerFactory, encoder)
+    UrlEncoder encoder
+) : AuthenticationHandler<AuthenticationSchemeOptions>(options, loggerFactory, encoder)
 {
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         var claims = new[]
         {
             new Claim("client_id", AuthenticationConstants.Client_Id),
-            new Claim(ClaimTypes.Role, AuthenticationConstants.Role)
+            new Claim(ClaimTypes.Role, AuthenticationConstants.Role),
+            new Claim("scope", AuthorizationScopes.AdminScope.Name),
         };
 
         var identity = new ClaimsIdentity(claims, AuthenticationConstants.AuthenticationSchema);
