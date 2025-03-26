@@ -16,7 +16,6 @@ public class IdentitySettings
     public bool AllowRegistration { get; set; }
     public required string Audience { get; set; }
     public required string RoleClaimType { get; set; }
-    public required string Scope { get; set; }
     public required string ConfigServiceRole { get; set; }
     public required string ClientRole { get; set; }
 }

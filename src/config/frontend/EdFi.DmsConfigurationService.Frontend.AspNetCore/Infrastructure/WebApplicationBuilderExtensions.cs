@@ -196,8 +196,7 @@ public static class WebApplicationBuilderExtensions
                 keycloakSettings.Realm,
                 identitySettings.ClientId,
                 identitySettings.ClientSecret,
-                identitySettings.RoleClaimType,
-                identitySettings.Scope
+                identitySettings.RoleClaimType
             );
         }
     }
