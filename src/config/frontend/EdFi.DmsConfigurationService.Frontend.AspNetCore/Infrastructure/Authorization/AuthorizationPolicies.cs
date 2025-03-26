@@ -8,34 +8,6 @@ using Microsoft.AspNetCore.Authorization;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 
-public class ScopePolicy(params string[] scopes) : IAuthorizationRequirement
-{
-    public List<string> AllowedScopes { get; } = [.. scopes];
-}
-
-public class ScopePolicyHandler : AuthorizationHandler<ScopePolicy>
-{
-    protected override Task HandleRequirementAsync(
-        AuthorizationHandlerContext context,
-        ScopePolicy requirement
-    )
-    {
-        var scopeClaim = context.User.Claims.FirstOrDefault(c => c.Type == "scope");
-
-        if (scopeClaim != null)
-        {
-            var userScopes = scopeClaim.Value.Split(' ');
-
-            if (requirement.AllowedScopes.Any(scope => userScopes.Contains(scope)))
-            {
-                context.Succeed(requirement);
-            }
-        }
-
-        return Task.CompletedTask;
-    }
-}
-
 public static class AuthorizationScopePolicies
 {
     public const string AdminScopePolicy = "AdminScopePolicy";

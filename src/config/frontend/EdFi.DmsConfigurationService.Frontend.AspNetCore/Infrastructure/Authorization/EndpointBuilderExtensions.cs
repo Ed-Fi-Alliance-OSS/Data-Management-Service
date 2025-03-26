@@ -7,6 +7,9 @@ using EdFi.DmsConfigurationService.DataModel;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 
+/// <summary>
+/// EndpointBuilderExtensions can be used to apply authorization policies based on HTTP methods
+/// </summary>
 public static class EndpointBuilderExtensions
 {
     public static RouteHandlerBuilder MapSecuredGet(
