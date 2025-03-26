@@ -131,3 +131,40 @@ jobs:
         run: |
           docker push "${{ steps.prepare-tags.outputs.RELEASE_MAJOR }}"
           docker push "${{ steps.prepare-tags.outputs.RELEASE_MINOR }}"
+
+  tag-cs-image:
+    name: Release Tag Configuration Image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prepare Release Tags
+        id: prepare-tags
+        run: |
+          IMAGE_NAME="edfialliance/dms-configuration-service"
+          MAJOR_TAG="${{ github.ref_name }}"
+          MINOR_TAG=`echo $MAJOR_TAG | cut -d '.' -f 1,2`
+          PRE_IMAGE="${IMAGE_NAME}:cs-pre-${MAJOR_TAG}"
+          RELEASE_MAJOR="${IMAGE_NAME}:${MAJOR_TAG}"
+          RELEASE_MINOR="${IMAGE_NAME}:${MINOR_TAG}"
+
+          echo "PRE_IMAGE=$PRE_IMAGE" >> $GITHUB_OUTPUT
+          echo "RELEASE_MAJOR=$RELEASE_MAJOR" >> $GITHUB_OUTPUT
+          echo "RELEASE_MINOR=$RELEASE_MINOR" >> $GITHUB_OUTPUT
+
+      - name: Pull Configuration Prerelease Image
+        run: docker pull "${{ steps.prepare-tags.outputs.PRE_IMAGE }}"
+
+      - name: Tag Configuration image
+        run: |
+          docker tag "${{ steps.prepare-tags.outputs.PRE_IMAGE }}" "${{ steps.prepare-tags.outputs.RELEASE_MAJOR }}"
+          docker tag "${{ steps.prepare-tags.outputs.PRE_IMAGE }}" "${{ steps.prepare-tags.outputs.RELEASE_MINOR }}"
+
+      - name: Login to Docker hub
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          username: ${{ vars.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      - name: Push Configuration Image
+        run: |
+          docker push "${{ steps.prepare-tags.outputs.RELEASE_MAJOR }}"
+          docker push "${{ steps.prepare-tags.outputs.RELEASE_MINOR }}"
