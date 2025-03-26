@@ -5,6 +5,7 @@
 
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -12,7 +13,7 @@ public class ActionsModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/actions", GetUserActions).RequireAuthorizationWithPolicy();
+        endpoints.MapSecuredGet("/actions", GetUserActions);
     }
 
     private static IResult GetUserActions(IClaimSetRepository repository)

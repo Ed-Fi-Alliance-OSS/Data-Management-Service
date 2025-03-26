@@ -10,6 +10,7 @@ using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.Extensions.Options;
@@ -20,14 +21,12 @@ public class ApplicationModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost("/v2/applications/", InsertApplication).RequireAuthorizationWithPolicy();
-        endpoints.MapGet("/v2/applications/", GetAll).RequireAuthorizationWithPolicy();
-        endpoints.MapGet($"/v2/applications/{{id}}", GetById).RequireAuthorizationWithPolicy();
-        endpoints.MapPut($"/v2/applications/{{id}}", Update).RequireAuthorizationWithPolicy();
-        endpoints.MapDelete($"/v2/applications/{{id}}", Delete).RequireAuthorizationWithPolicy();
-        endpoints
-            .MapPut($"/v2/applications/{{id}}/reset-credential", ResetCredential)
-            .RequireAuthorizationWithPolicy();
+        endpoints.MapSecuredPost("/v2/applications/", InsertApplication);
+        endpoints.MapSecuredGet("/v2/applications/", GetAll);
+        endpoints.MapSecuredGet($"/v2/applications/{{id}}", GetById);
+        endpoints.MapSecuredPut($"/v2/applications/{{id}}", Update);
+        endpoints.MapSecuredDelete($"/v2/applications/{{id}}", Delete);
+        endpoints.MapSecuredPut($"/v2/applications/{{id}}/reset-credential", ResetCredential);
     }
 
     private async Task<IResult> InsertApplication(

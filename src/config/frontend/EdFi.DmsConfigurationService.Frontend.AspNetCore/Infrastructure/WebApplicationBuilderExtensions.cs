@@ -15,9 +15,11 @@ using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
@@ -64,7 +66,10 @@ public static class WebApplicationBuilderExtensions
 
         webApplicationBuilder.Services.AddTransient<IApplicationRepository, ApplicationRepository>();
         webApplicationBuilder.Services.AddTransient<IClaimsHierarchyRepository, ClaimsHierarchyRepository>();
-        webApplicationBuilder.Services.AddTransient<IAuthorizationMetadataResponseFactory, AuthorizationMetadataResponseFactory>();
+        webApplicationBuilder.Services.AddTransient<
+            IAuthorizationMetadataResponseFactory,
+            AuthorizationMetadataResponseFactory
+        >();
         webApplicationBuilder.Services.AddTransient<IVendorRepository, VendorRepository>();
         webApplicationBuilder.Services.AddTransient<IClaimSetDataProvider, ClaimSetDataProvider>();
         webApplicationBuilder.Services.AddTransient<IClaimSetRepository, ClaimSetRepository>();
@@ -157,11 +162,16 @@ public static class WebApplicationBuilderExtensions
 
         // Add service policy for role validation
         webApplicationBuilder.Services.AddAuthorization(options =>
+        {
             options.AddPolicy(
                 SecurityConstants.ServicePolicy,
                 policy => policy.RequireClaim(ClaimTypes.Role, identitySettings.ConfigServiceRole)
-            )
-        );
+            );
+
+            AuthorizationScopePolicies.Add(options);
+        });
+
+        webApplicationBuilder.Services.AddSingleton<IAuthorizationHandler, ScopePolicyHandler>();
 
         if (
             string.Equals(
@@ -186,8 +196,7 @@ public static class WebApplicationBuilderExtensions
                 keycloakSettings.Realm,
                 identitySettings.ClientId,
                 identitySettings.ClientSecret,
-                identitySettings.RoleClaimType,
-                identitySettings.Scope
+                identitySettings.RoleClaimType
             );
         }
     }

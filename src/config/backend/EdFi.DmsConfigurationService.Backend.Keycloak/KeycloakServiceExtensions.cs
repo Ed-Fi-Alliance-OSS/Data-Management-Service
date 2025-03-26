@@ -19,18 +19,10 @@ public static class KeycloakServiceExtensions
         string Realm,
         string ClientId,
         string ClientSecret,
-        string RoleClaimType,
-        string Scope
+        string RoleClaimType
     )
     {
-        services.AddScoped(x => new KeycloakContext(
-            Url,
-            Realm,
-            ClientId,
-            ClientSecret,
-            RoleClaimType,
-            Scope
-        ));
+        services.AddScoped(x => new KeycloakContext(Url, Realm, ClientId, ClientSecret, RoleClaimType));
 
         services.AddTransient<IClientRepository, KeycloakClientRepository>();
         services.AddTransient<ITokenManager, KeycloakTokenManager>();

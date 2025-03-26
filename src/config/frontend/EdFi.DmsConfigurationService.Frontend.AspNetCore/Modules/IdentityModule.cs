@@ -7,6 +7,7 @@ using System.Text.Json;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
+using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using EdFi.DmsConfigurationService.DataModel.Model.Register;
 using EdFi.DmsConfigurationService.DataModel.Model.Token;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
@@ -58,7 +59,7 @@ public class IdentityModule : IEndpointModule
                             model.ClientSecret!,
                             identitySettings.Value.ConfigServiceRole,
                             model.DisplayName!,
-                            identitySettings.Value.Scope,
+                            AuthorizationScopes.AdminScope.Name,
                             string.Empty,
                             string.Empty
                         );
