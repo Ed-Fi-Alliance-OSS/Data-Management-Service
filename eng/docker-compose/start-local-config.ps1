@@ -62,5 +62,12 @@ else {
     }
 
     Start-Sleep 20
+    # Create client with default edfi_admin_api/full_access scope
     ./setup-keycloak.ps1
+
+    # Create client with edfi_admin_api/readonly_access scope
+    ./setup-keycloak.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access"
+
+    # Create client with edfi_admin_api/authorization_endpoints_access scope
+    ./setup-keycloak.ps1 -NewClientId "CMSAuthEndPointsOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authorization_endpoints_access"
 }

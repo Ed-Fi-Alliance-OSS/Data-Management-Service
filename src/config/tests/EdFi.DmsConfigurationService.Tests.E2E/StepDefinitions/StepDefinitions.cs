@@ -50,6 +50,12 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         await GetClientAccessToken("DmsConfigurationService", "s3creT@09", "edfi_admin_api/full_access");
     }
 
+    [Given("client {string} credentials with {string} scope")]
+    public async Task GivenValidCredentialsWithScope(string clientId, string scope)
+    {
+        await GetClientAccessToken(clientId, "s3creT@09", scope);
+    }
+
     private async Task GetClientAccessToken(string key, string secret, string scope)
     {
         var urlEncodedData = new Dictionary<string, string>
