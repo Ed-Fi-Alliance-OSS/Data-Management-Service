@@ -5,10 +5,10 @@
 
 using System.Net;
 using System.Text.Json;
-using FakeItEasy;
 using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
@@ -21,8 +21,10 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 [TestFixture]
 public class ClaimsHierarchyModuleTests
 {
-    private readonly IClaimsHierarchyRepository _claimsHierarchyRepository = A.Fake<IClaimsHierarchyRepository>();
-    private readonly IAuthorizationMetadataResponseFactory _responseFactory = A.Fake<IAuthorizationMetadataResponseFactory>();
+    private readonly IClaimsHierarchyRepository _claimsHierarchyRepository =
+        A.Fake<IClaimsHierarchyRepository>();
+    private readonly IAuthorizationMetadataResponseFactory _responseFactory =
+        A.Fake<IAuthorizationMetadataResponseFactory>();
 
     private HttpClient SetUpClient()
     {
@@ -42,7 +44,11 @@ public class ClaimsHierarchyModuleTests
                     collection.AddAuthorization(options =>
                         options.AddPolicy(
                             SecurityConstants.ServicePolicy,
-                            policy => policy.RequireClaim(System.Security.Claims.ClaimTypes.Role, AuthenticationConstants.Role)
+                            policy =>
+                                policy.RequireClaim(
+                                    System.Security.Claims.ClaimTypes.Role,
+                                    AuthenticationConstants.Role
+                                )
                         )
                     );
 
@@ -61,17 +67,18 @@ public class ClaimsHierarchyModuleTests
         // Arrange
         using var client = SetUpClient();
 
-        Claim[] claims = [
+        Claim[] claims =
+        [
             new Claim
             {
                 Name = "Claim1",
-                Claims = [new Claim { Name = "Claim-1a"}, new Claim { Name = "Claim-1b"}]
+                Claims = [new Claim { Name = "Claim-1a" }, new Claim { Name = "Claim-1b" }],
             },
             new Claim
             {
                 Name = "Claim2",
-                Claims = [new Claim { Name = "Claim-2a"}, new Claim { Name = "Claim-2b"}]
-            }
+                Claims = [new Claim { Name = "Claim-2a" }, new Claim { Name = "Claim-2b" }],
+            },
         ];
 
         A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy())
@@ -79,15 +86,19 @@ public class ClaimsHierarchyModuleTests
 
         var suppliedAuthorizationMetadataResponse = new AuthorizationMetadataResponse(
             Claims: [new("ClaimOne", 1)],
-            Authorizations: [
+            Authorizations:
+            [
                 new AuthorizationMetadataResponse.Authorization(
                     1,
                     [
                         new AuthorizationMetadataResponse.Action(
                             "Create",
-                            new[] { new AuthorizationMetadataResponse.AuthorizationStrategy("Strategy1") })
-                    ])
-            ]);
+                            [new AuthorizationMetadataResponse.AuthorizationStrategy("Strategy1")]
+                        ),
+                    ]
+                ),
+            ]
+        );
 
         A.CallTo(() => _responseFactory.Create("ClaimSet1", claims))
             .Returns(suppliedAuthorizationMetadataResponse);
@@ -98,14 +109,11 @@ public class ClaimsHierarchyModuleTests
 
         var responseModel = JsonSerializer.Deserialize<AuthorizationMetadataResponse>(
             responseContent,
-            new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+        );
 
         // Assert
         responseMessage.StatusCode.Should().Be(HttpStatusCode.OK);
         responseModel.Should().BeEquivalentTo(suppliedAuthorizationMetadataResponse);
-        // JsonSerializer.Serialize(suppliedAuthorizationMetadataResponse))
     }
 }
