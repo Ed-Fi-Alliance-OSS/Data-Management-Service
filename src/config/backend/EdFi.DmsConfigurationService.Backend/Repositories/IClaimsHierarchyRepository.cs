@@ -50,7 +50,6 @@ public class Claim
     public List<Claim> Claims
     {
         get => _claims;
-
         set
         {
             _claims = value;
@@ -69,7 +68,7 @@ public class Claim
 
 public class DefaultAuthorization
 {
-    [JsonPropertyName("action")]
+    [JsonPropertyName("actions")]
     public List<DefaultAction> Actions { get; set; } = [];
 }
 
