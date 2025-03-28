@@ -35,7 +35,9 @@ public class OpenSearchContainerSetup : ContainerSetupBase
         OpenSearchClient openSearchClient = new();
         var indices = await openSearchClient.Cat.IndicesAsync();
 
-        foreach (var index in indices.Records.Where(x => x.Index.Contains("ed-fi$")))
+        foreach (
+            var index in indices.Records.Where(x => x.Index.Contains("ed-fi$") || x.Index.Contains("tpdm$"))
+        )
         {
             await openSearchClient.Indices.DeleteAsync(index.Index);
 
