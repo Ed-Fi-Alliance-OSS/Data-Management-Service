@@ -11,6 +11,8 @@
     <Content Include="EdFi.DataManagementService.Core.nuspec" CopyToPublishDirectory="Always" CopyToOutputDirectory="Never" />
     <PackageReference Include="Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic" />
     <PackageReference Include="EdFi.DataStandard52.ApiSchema.Core" />
+    <PackageReference Include="EdFi.DataStandard52.ApiSchema.Homograph" />
+    <PackageReference Include="EdFi.DataStandard52.ApiSchema.Sample" />
     <PackageReference Include="EdFi.DataStandard52.ApiSchema.TPDM" />
     <PackageReference Include="Microsoft.CodeAnalysis" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle">

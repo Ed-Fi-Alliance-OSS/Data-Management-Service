@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Helpers;
+using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 
@@ -32,12 +33,12 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
                 .SelectRequiredNodeFromPath("$.projectSchema.resourceSchemas", _logger)
                 .SelectNodesFromPropertyValues();
 
-            CopyResourceExtensionNodeToCore(extensionResources, coreResources, "dateTimeJsonPaths");
-            CopyResourceExtensionNodeToCore(extensionResources, coreResources, "booleanJsonPaths");
-            CopyResourceExtensionNodeToCore(extensionResources, coreResources, "numericJsonPaths");
-            CopyResourceExtensionNodeToCore(extensionResources, coreResources, "documentPathsMapping");
-            CopyResourceExtensionNodeToCore(extensionResources, coreResources, "jsonSchemaForInsert.properties");
-            CopyResourceExtensionNodeToCore(extensionResources, coreResources, "equalityConstraints");
+            CopyResourceExtensionNodeToCore(extensionResources, coreResources, "dateTimeJsonPaths", _logger);
+            CopyResourceExtensionNodeToCore(extensionResources, coreResources, "booleanJsonPaths", _logger);
+            CopyResourceExtensionNodeToCore(extensionResources, coreResources, "numericJsonPaths", _logger);
+            CopyResourceExtensionNodeToCore(extensionResources, coreResources, "documentPathsMapping", _logger);
+            CopyResourceExtensionNodeToCore(extensionResources, coreResources, "jsonSchemaForInsert.properties", _logger);
+            CopyResourceExtensionNodeToCore(extensionResources, coreResources, "equalityConstraints", _logger);
         }
 
         return new ApiSchemaDocuments(apiSchemaNodes with { CoreApiSchemaRootNode = coreApiSchema }, _logger);
@@ -76,7 +77,8 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
     private static void CopyResourceExtensionNodeToCore(
         List<JsonNode> extensionResources,
         List<JsonNode> coreResources,
-        string nodeKey
+        string nodeKey,
+        ILogger _logger
     )
     {
         Dictionary<string, JsonNode> coreResourceByName = coreResources.ToDictionary(coreResource =>
@@ -97,7 +99,18 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
 
             if (nodeKey.Contains("jsonSchemaForInsert", StringComparison.OrdinalIgnoreCase))
             {
-                sourceExtensionNode = sourceExtensionNode.GetRequiredNode("_ext.tpdm").GetRequiredNode("properties");
+                if (sourceExtensionNode != null && sourceExtensionNode["_ext.tpdm"] != null)
+                {
+                    sourceExtensionNode = sourceExtensionNode.GetRequiredNode("_ext.tpdm").GetRequiredNode("properties");
+                }
+                else if (sourceExtensionNode != null && sourceExtensionNode["_ext.sample"] != null)
+                {
+                    sourceExtensionNode = sourceExtensionNode.GetRequiredNode("_ext.sample").GetRequiredNode("properties");
+                }
+                else if (sourceExtensionNode != null && sourceExtensionNode["_ext.homograph"] != null)
+                {
+                    sourceExtensionNode = sourceExtensionNode.GetRequiredNode("_ext.homograph").GetRequiredNode("properties");
+                }
             }
 
             var targetCoreNode = GetNodeByPath(coreResource, nodeKey);
@@ -107,17 +120,33 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
             switch (nodeValueKind)
             {
                 case JsonValueKind.Object:
-                    var targetObject = targetCoreNode.AsObject();
-                    foreach (var sourceObject in sourceExtensionNode.AsObject())
+                    if (sourceExtensionNode is JsonObject sourceObject)
                     {
-                        targetObject.Add(new(sourceObject.Key, sourceObject.Value?.DeepClone()));
+                        var targetObject = targetCoreNode.AsObject();
+                        foreach (KeyValuePair<string, JsonNode?> sourceItem in sourceObject)
+                        {
+                            //DMS-591 Ticket to fix duplicate key for Sample Extension in Common extension EdFi.Address in SampleMetaEd
+                            // Remove this condition once DMS-591 is fixed
+                            if (targetObject.ContainsKey(sourceItem.Key))
+                            {
+                                _logger.LogWarning("Duplicate Key exists for Sample Extension related with Common extension EdFi.Address");
+                            }
+
+                            if (!targetObject.ContainsKey(sourceItem.Key))
+                            {
+                                targetObject.Add(new(sourceItem.Key, sourceItem.Value?.DeepClone()));
+                            }
+                        }
                     }
                     break;
                 case JsonValueKind.Array:
-                    var targetArray = targetCoreNode.AsArray();
-                    foreach (var sourceItem in sourceExtensionNode.AsArray())
+                    if (sourceExtensionNode is JsonArray sourceExtensionNodeArray)
                     {
-                        targetArray.Add(sourceItem?.DeepClone());
+                        var targetArray = targetCoreNode.AsArray();
+                        foreach (var sourceItem in sourceExtensionNodeArray)
+                        {
+                            targetArray.Add(sourceItem?.DeepClone());
+                        }
                     }
                     break;
                 default:
