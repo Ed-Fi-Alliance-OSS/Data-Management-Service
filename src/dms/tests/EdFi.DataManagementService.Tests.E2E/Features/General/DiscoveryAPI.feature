@@ -19,7 +19,17 @@ Feature: The Discovery API provides information about the application version, s
                               "name": "TPDM",
                               "version": "1.0.0",
                               "informationalVersion": ""
-                          }
+                          },
+                          {
+                              "name": "Homograph",
+                              "version": "1.0.0",
+                              "informationalVersion": ""
+                         },
+                         {
+                              "name": "Sample",
+                              "version": "1.0.0",
+                              "informationalVersion": ""
+                         }
                       ],
                       "urls": {
                           "dependencies": "{BASE_URL}/metadata/dependencies",
