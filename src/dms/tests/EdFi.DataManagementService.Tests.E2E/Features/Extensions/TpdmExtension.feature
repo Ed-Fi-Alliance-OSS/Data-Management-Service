@@ -75,7 +75,7 @@ Feature: Tpdm extension resources and descriptors
                   """
         @addwait
         Scenario: 03 Ensure clients can retrieve a descriptor by requesting through a valid codeValue
-             When a POST request is made to "/tpdm/accreditationStatusDescriptors" with
+             Given a POST request is made to "/tpdm/accreditationStatusDescriptors" with
                   """
                   {
                       "codeValue": "Not Accredited",
@@ -104,9 +104,8 @@ Feature: Tpdm extension resources and descriptors
                   ]
                   """
 
-        @addwait
         Scenario: 04 Ensure clients can delete a descriptor
-             When a POST request is made to "/tpdm/accreditationStatusDescriptors" with
+             Given a POST request is made to "/tpdm/accreditationStatusDescriptors" with
                   """
                   {
                       "codeValue": "Delete Accredited",
@@ -118,11 +117,10 @@ Feature: Tpdm extension resources and descriptors
                   }
                   """
              Then it should respond with 201
-             When a GET request is made to "/tpdm/accreditationStatusDescriptors?codeValue=Delete+Accredited"
+             When a GET request is made to "/tpdm/accreditationStatusDescriptors/{id}"
              Then it should respond with 200
               And the response body is
                   """
-                  [
                       {
                           "id": "{id}",
                           "codeValue": "Delete Accredited",
@@ -132,7 +130,6 @@ Feature: Tpdm extension resources and descriptors
                           "effectiveBeginDate": "2024-05-14",
                           "effectiveEndDate": "2024-05-14"
                       }
-                  ]
                   """
              When a DELETE request is made to "/tpdm/accreditationStatusDescriptors/{id}"
              Then it should respond with 204
@@ -201,7 +198,7 @@ Feature: Tpdm extension resources and descriptors
                   """
         @addwait
         Scenario: 07 Ensure clients can query a resource
-             When a POST request is made to "/tpdm/candidates" with
+             Given a POST request is made to "/tpdm/candidates" with
                   """
                   {
                       "candidateIdentifier": "10000414",
@@ -225,3 +222,29 @@ Feature: Tpdm extension resources and descriptors
                       }
                   ]
                   """
+
+        Scenario: 08 Ensure clients can delete a resource
+             Given a POST request is made to "/tpdm/candidates" with
+                  """
+                  {
+                      "candidateIdentifier": "10000415",
+                      "birthDate": "2005-10-03",
+                      "firstName": "ToDeleteFN",
+                      "lastSurname": "ToDeleteLN"
+                  }
+                  """
+             Then it should respond with 201
+             When a GET request is made to "/tpdm/candidates/{id}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                      {
+                          "id": "{id}",
+                          "candidateIdentifier": "10000415",
+                          "birthDate": "2005-10-03",
+                          "firstName": "ToDeleteFN",
+                          "lastSurname": "ToDeleteLN"
+                      }
+                  """
+             When a DELETE request is made to "/tpdm/candidates/{id}"
+             Then it should respond with 204
