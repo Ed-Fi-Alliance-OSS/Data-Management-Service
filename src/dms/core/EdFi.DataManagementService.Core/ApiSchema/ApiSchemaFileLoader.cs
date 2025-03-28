@@ -151,14 +151,48 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
                     "Could not load assembly-bundled ApiSchema file for TPDM"
                 );
 
-            JsonNode[] extensionApiSchemaNodes = tpdmAssembly
+            JsonNode[] tpdmExtensionApiSchemaNodes = tpdmAssembly
                 .GetManifestResourceNames()
-                .Where(str => str.EndsWith("ApiSchema-EXTENSION.json"))
+                .Where(str => str.EndsWith("ApiSchema-TPDM-EXTENSION.json"))
                 .Select(resourceName =>
                 {
                     JsonNode coreSchemaNode = LoadFromAssembly(resourceName, tpdmAssembly);
                     return coreSchemaNode;
-                })
+                }).ToArray();
+
+            Assembly homographAssembly =
+                Assembly.GetAssembly(typeof(DataStandard52.ApiSchema.Homograph.Marker))
+                ?? throw new InvalidOperationException(
+                    "Could not load assembly-bundled ApiSchema file for Homograph"
+                );
+
+            JsonNode[] homographExtensionApiSchemaNodes = homographAssembly
+                .GetManifestResourceNames()
+                .Where(str => str.EndsWith("ApiSchema-Homograph-EXTENSION.json"))
+                .Select(resourceName =>
+                {
+                    JsonNode coreSchemaNode = LoadFromAssembly(resourceName, homographAssembly);
+                    return coreSchemaNode;
+                }).ToArray();
+
+            Assembly sampleAssembly =
+                Assembly.GetAssembly(typeof(DataStandard52.ApiSchema.Sample.Marker))
+                ?? throw new InvalidOperationException(
+                    "Could not load assembly-bundled ApiSchema file for Sample"
+                );
+
+            JsonNode[] sampleExtensionApiSchemaNodes = sampleAssembly
+                .GetManifestResourceNames()
+                .Where(str => str.EndsWith("ApiSchema-Sample-EXTENSION.json"))
+                .Select(resourceName =>
+                {
+                    JsonNode coreSchemaNode = LoadFromAssembly(resourceName, sampleAssembly);
+                    return coreSchemaNode;
+                }).ToArray();
+
+            JsonNode[] extensionApiSchemaNodes = tpdmExtensionApiSchemaNodes
+                .Concat(homographExtensionApiSchemaNodes)
+                .Concat(sampleExtensionApiSchemaNodes)
                 .ToArray();
 
             extensionApiSchemaNodes =
