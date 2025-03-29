@@ -36,7 +36,11 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
             CopyResourceExtensionNodeToCore(extensionResources, coreResources, "booleanJsonPaths");
             CopyResourceExtensionNodeToCore(extensionResources, coreResources, "numericJsonPaths");
             CopyResourceExtensionNodeToCore(extensionResources, coreResources, "documentPathsMapping");
-            CopyResourceExtensionNodeToCore(extensionResources, coreResources, "jsonSchemaForInsert.properties");
+            CopyResourceExtensionNodeToCore(
+                extensionResources,
+                coreResources,
+                "jsonSchemaForInsert.properties"
+            );
             CopyResourceExtensionNodeToCore(extensionResources, coreResources, "equalityConstraints");
         }
 
@@ -94,11 +98,6 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
             ];
 
             var sourceExtensionNode = GetNodeByPath(extensionResource, nodeKey);
-
-            if (nodeKey.Contains("jsonSchemaForInsert", StringComparison.OrdinalIgnoreCase))
-            {
-                sourceExtensionNode = sourceExtensionNode.GetRequiredNode("_ext.tpdm").GetRequiredNode("properties");
-            }
 
             var targetCoreNode = GetNodeByPath(coreResource, nodeKey);
 
