@@ -24,6 +24,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		Directory.Packages.props = Directory.Packages.props
 	EndProjectSection
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.Backend.NormalizedSqlServer", "backend\NormalizedSqlServer\EdFi.DataManagementService.Backend.NormalizedSqlServer.csproj", "{0BF06AAE-BFE3-4669-8E79-0B8348D66EAA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -50,6 +52,10 @@ Global
 		{AF9E2120-206E-4318-8A2B-2DB798D39C4D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{AF9E2120-206E-4318-8A2B-2DB798D39C4D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{AF9E2120-206E-4318-8A2B-2DB798D39C4D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0BF06AAE-BFE3-4669-8E79-0B8348D66EAA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0BF06AAE-BFE3-4669-8E79-0B8348D66EAA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0BF06AAE-BFE3-4669-8E79-0B8348D66EAA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0BF06AAE-BFE3-4669-8E79-0B8348D66EAA}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -60,6 +66,7 @@ Global
 		{3B8DB16B-0A35-4565-B8CA-73DE662424BC} = {75AE8F7B-B980-48AE-8518-073830FA6471}
 		{53914CA2-E0E6-4D84-8899-D9C5CE40AA76} = {5B7BB270-905C-4D2F-BD3C-3374707FE1E3}
 		{AF9E2120-206E-4318-8A2B-2DB798D39C4D} = {71E181BF-2E72-45F2-9DAD-6B1D18FAD164}
+		{0BF06AAE-BFE3-4669-8E79-0B8348D66EAA} = {75AE8F7B-B980-48AE-8518-073830FA6471}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {CAB3D5DE-BC6C-44FD-831C-9C7BE3935343}
