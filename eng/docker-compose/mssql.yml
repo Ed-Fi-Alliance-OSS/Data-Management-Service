@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+services:
+
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-CU18-ubuntu-22.04@sha256:ea73825f3d88a23c355ac2f9fdc6bd960fec90171c12c572109b36a558f77bb8
+    container_name: mssql
+    volumes:
+      - dms-mssql:/var/opt/mssql
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=${MSSQL_SA_PASSWORD:-abcdefgh1!}
+      - MSSQL_PID=Express
+    ports:
+      # - '127.0.0.1:1435:1433'
+      - '1435:1433'
+    healthcheck:
+      test: ${MSSQL_HEALTH_CHECK}
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - dms
+
+volumes:
+  dms-mssql:
+
+networks:
+  dms:
+    external: true

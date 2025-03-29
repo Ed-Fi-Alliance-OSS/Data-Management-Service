@@ -1,0 +1,95 @@
+{
+    "id": "4f720ef47b2c41d4b06b4d3efa725abc",
+    "educationOrganizationReference": {
+      "educationOrganizationId": 255901
+    },
+    "studentReference": {
+      "studentUniqueId": "604824"
+    },
+    "hispanicLatinoEthnicity": true,
+    "internetAccessInResidence": true,
+    "internetAccessTypeInResidenceDescriptor": "uri://ed-fi.org/InternetAccessTypeInResidenceDescriptor#Other",
+    "internetPerformanceInResidenceDescriptor": "uri://ed-fi.org/InternetPerformanceInResidenceDescriptor#Sometimes",
+    "primaryLearningDeviceAwayFromSchoolDescriptor": "uri://ed-fi.org/PrimaryLearningDeviceAwayFromSchoolDescriptor#None",
+    "sexDescriptor": "uri://ed-fi.org/SexDescriptor#Female",
+    "supporterMilitaryConnectionDescriptor": "uri://ed-fi.org/SupporterMilitaryConnectionDescriptor#Reserve",
+    "addresses": [
+      {
+        "addressTypeDescriptor": "uri://ed-fi.org/AddressTypeDescriptor#Home",
+        "city": "Grand Bend",
+        "postalCode": "78834",
+        "stateAbbreviationDescriptor": "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
+        "streetNumberName": "980 Green New Boulevard",
+        "nameOfCounty": "WILLISTON",
+        "periods": []
+      }
+    ],
+    "ancestryEthnicOrigins": [],
+    "cohortYears": [],
+    "disabilities": [],
+    "displacedStudents": [],
+    "electronicMails": [
+      {
+        "electronicMailAddress": "vevqpza@example.com",
+        "electronicMailTypeDescriptor": "uri://ed-fi.org/ElectronicMailTypeDescriptor#Home/Personal"
+      }
+    ],
+    "internationalAddresses": [],
+    "languages": [],
+    "races": [
+      {
+        "raceDescriptor": "uri://ed-fi.org/RaceDescriptor#Asian"
+      }
+    ],
+    "studentCharacteristics": [],
+    "studentIdentificationCodes": [
+      {
+        "assigningOrganizationIdentificationCode": "Local",
+        "studentIdentificationSystemDescriptor": "uri://ed-fi.org/StudentIdentificationSystemDescriptor#Local",
+        "identificationCode": "824"
+      },
+      {
+        "assigningOrganizationIdentificationCode": "SSN",
+        "studentIdentificationSystemDescriptor": "uri://ed-fi.org/StudentIdentificationSystemDescriptor#SSN",
+        "identificationCode": "1990607651"
+      }
+    ],
+    "studentIndicators": [
+      {
+        "indicatorName": "Primary Learning Device Away From School",
+        "indicator": "None",
+        "indicatorGroup": "Digital Equity",
+        "periods": []
+      },
+      {
+        "indicatorName": "Internet Access In Residence",
+        "indicator": "true",
+        "indicatorGroup": "Digital Equity",
+        "periods": []
+      },
+      {
+        "indicatorName": "Internet Access Type In Residence",
+        "indicator": "Other",
+        "indicatorGroup": "Digital Equity",
+        "periods": []
+      },
+      {
+        "indicatorName": "Internet Performance In Residence",
+        "indicator": "Sometimes",
+        "indicatorGroup": "Digital Equity",
+        "periods": []
+      }
+    ],
+    "telephones": [
+      {
+        "telephoneNumber": "(950) 615 3165",
+        "telephoneNumberTypeDescriptor": "uri://ed-fi.org/TelephoneNumberTypeDescriptor#Home",
+        "orderOfPriority": 1
+      },
+      {
+        "telephoneNumber": "(950) 708 2926",
+        "telephoneNumberTypeDescriptor": "uri://ed-fi.org/TelephoneNumberTypeDescriptor#Mobile"
+      }
+    ],
+    "tribalAffiliations": []
+  }
