@@ -167,6 +167,7 @@ public class ApiSchemaBuilder
             ["resourceName"] = resourceName,
             ["queryFieldMapping"] = new JsonObject(),
             ["securityElements"] = new JsonObject { ["Namespace"] = new JsonArray() },
+            ["authorizationSecurable"] = new JsonObject { ["Student"] = new JsonArray() },
         };
 
         string endpointName = ToEndpointName(resourceName);
@@ -327,6 +328,24 @@ public class ApiSchemaBuilder
             jsonPaths
                 .Select(x => new JsonObject { ["metaEdName"] = x.Item1, ["jsonPath"] = x.Item2 })
                 .ToArray()
+        );
+
+        return this;
+    }
+
+    public ApiSchemaBuilder WithStudentAuthorizationSecurablePaths(string[] jsonPaths)
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentResourceNode["authorizationSecurable"]!["Student"] = new JsonArray(
+            jsonPaths.Select(x => JsonValue.Create(x)).ToArray()
         );
 
         return this;
