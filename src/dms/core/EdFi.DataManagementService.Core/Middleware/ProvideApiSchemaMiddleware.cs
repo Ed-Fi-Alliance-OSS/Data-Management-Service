@@ -26,22 +26,29 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
             .SelectRequiredNodeFromPath("$.projectSchema.resourceSchemas", _logger)
             .SelectNodesFromPropertyValues();
 
+        string[] nodeKeys =
+        [
+            "dateTimeJsonPaths",
+            "booleanJsonPaths",
+            "numericJsonPaths",
+            "documentPathsMapping",
+            "jsonSchemaForInsert.properties",
+            "equalityConstraints",
+        ];
+
         foreach (JsonNode extension in apiSchemaNodes.ExtensionApiSchemaRootNodes)
         {
             List<JsonNode> extensionResources = extension
                 .SelectRequiredNodeFromPath("$.projectSchema.resourceSchemas", _logger)
                 .SelectNodesFromPropertyValues();
 
-            CopyResourceExtensionNodeToCore(extensionResources, coreResources, "dateTimeJsonPaths");
-            CopyResourceExtensionNodeToCore(extensionResources, coreResources, "booleanJsonPaths");
-            CopyResourceExtensionNodeToCore(extensionResources, coreResources, "numericJsonPaths");
-            CopyResourceExtensionNodeToCore(extensionResources, coreResources, "documentPathsMapping");
-            CopyResourceExtensionNodeToCore(
-                extensionResources,
-                coreResources,
-                "jsonSchemaForInsert.properties"
-            );
-            CopyResourceExtensionNodeToCore(extensionResources, coreResources, "equalityConstraints");
+            // Iterates over a list of node keys and calls
+            // CopyResourceExtensionNodeToCore for each key, transferring
+            // data from extensionResources to coreResources
+            foreach (var nodeKey in nodeKeys)
+            {
+                CopyResourceExtensionNodeToCore(extensionResources, coreResources, nodeKey, _logger);
+            }
         }
 
         return new ApiSchemaDocuments(apiSchemaNodes with { CoreApiSchemaRootNode = coreApiSchema }, _logger);
@@ -80,7 +87,8 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
     private static void CopyResourceExtensionNodeToCore(
         List<JsonNode> extensionResources,
         List<JsonNode> coreResources,
-        string nodeKey
+        string nodeKey,
+        ILogger _logger
     )
     {
         Dictionary<string, JsonNode> coreResourceByName = coreResources.ToDictionary(coreResource =>
@@ -109,7 +117,46 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
                     var targetObject = targetCoreNode.AsObject();
                     foreach (var sourceObject in sourceExtensionNode.AsObject())
                     {
-                        targetObject.Add(new(sourceObject.Key, sourceObject.Value?.DeepClone()));
+                        // DMS-591 Ticket to fix duplicate key for Sample Extension in Common extension EdFi.Address in SampleMetaEd
+                        // Remove this condition once DMS-591 is fixed
+                        if (
+                            targetObject.ContainsKey(sourceObject.Key)
+                            && !string.Equals(
+                                sourceObject.Key,
+                                "_ext",
+                                StringComparison.InvariantCultureIgnoreCase
+                            )
+                        )
+                        {
+                            _logger.LogWarning(
+                                "Duplicate Key exists for Sample Extension related with Common extension EdFi.Address. Key:{Key}",
+                                sourceObject.Key
+                            );
+                        }
+                        else
+                        {
+                            // If _ext exists in the target, merge its properties from the source.
+                            // Otherwise, add _ext with its properties.
+                            if (
+                                string.Equals(
+                                    sourceObject.Key,
+                                    "_ext",
+                                    StringComparison.InvariantCultureIgnoreCase
+                                )
+                                && targetObject["_ext"]?["properties"] is JsonObject existingProps
+                                && sourceObject.Value?.DeepClone()?["properties"] is JsonObject newProps
+                            )
+                            {
+                                foreach (var item in newProps)
+                                {
+                                    existingProps[item.Key] = item.Value?.DeepClone();
+                                }
+                            }
+                            else
+                            {
+                                targetObject.Add(new(sourceObject.Key, sourceObject.Value?.DeepClone()));
+                            }
+                        }
                     }
                     break;
                 case JsonValueKind.Array:
