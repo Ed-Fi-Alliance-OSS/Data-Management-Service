@@ -30,48 +30,64 @@ public class ProvideApiSchemaMiddlewareTests
         private readonly ApiSchemaNodes _apiSchemaNodes = new ApiSchemaBuilder()
             .WithStartProject("Ed-Fi", "5.0.0")
             .WithStartResource("School")
-            .WithEqualityConstraints(new EqualityConstraint[]
-            {
-                new(
-                    new JsonPath("$.schoolReference.schoolId"),
-                    new JsonPath("$.sessionReference.schoolId")
-                ),
-            })
-            .WithJsonSchemaForInsert(new JsonSchemaBuilder()
-                            .Properties(
-                            (
-                                "credentialIdentifier",
-                                new JsonSchemaBuilder()
-                                    .Description("Identifier or serial number assigned to the credential.")
-                                    .Type(SchemaValueType.String)
-                            )
-                        ).Build())
+            .WithEqualityConstraints(
+                [new(new JsonPath("$.schoolReference.schoolId"), new JsonPath("$.sessionReference.schoolId"))]
+            )
+            .WithJsonSchemaForInsert(
+                new JsonSchemaBuilder()
+                    .Properties(
+                        (
+                            "credentialIdentifier",
+                            new JsonSchemaBuilder()
+                                .Description("Identifier or serial number assigned to the credential.")
+                                .Type(SchemaValueType.String)
+                        )
+                    )
+                    .Build()
+            )
             .WithEndResource()
             .WithEndProject()
             .WithStartProject("tpdm", "5.0.0")
             .WithStartResource("School", isResourceExtension: true)
-            .WithEqualityConstraints(new EqualityConstraint[]
-            {
-                new(
-                    new JsonPath("$.evaluationObjectiveRatingReference.evaluationTitle"),
-                    new JsonPath("$.evaluationElementReference.evaluationTitle")
-                ),
-            })
-            .WithJsonSchemaForInsert(new JsonSchemaBuilder()
+            .WithEqualityConstraints(
+                [
+                    new(
+                        new JsonPath("$.evaluationObjectiveRatingReference.evaluationTitle"),
+                        new JsonPath("$.evaluationElementReference.evaluationTitle")
+                    ),
+                ]
+            )
+            .WithJsonSchemaForInsert(
+                new JsonSchemaBuilder()
                     .Properties(
-                        (
-                            "_ext.tpdm",
-                            new JsonSchemaBuilder()
-                                  .Properties(
-                                    (
-                                        "boardCertificationIndicator",
-                                        new JsonSchemaBuilder()
-                                            .Description("Indicator that the credential.")
-                                            .Type(SchemaValueType.Boolean)
-                                    )
+                        new Dictionary<string, JsonSchema>
+                        {
+                            {
+                                "_ext",
+                                new JsonSchemaBuilder().Properties(
+                                    new Dictionary<string, JsonSchema>
+                                    {
+                                        {
+                                            "tpdm",
+                                            new JsonSchemaBuilder().Properties(
+                                                new Dictionary<string, JsonSchema>
+                                                {
+                                                    {
+                                                        "boardCertificationIndicator",
+                                                        new JsonSchemaBuilder()
+                                                            .Description("Indicator that the credential")
+                                                            .Type(SchemaValueType.Boolean)
+                                                    },
+                                                }
+                                            )
+                                        },
+                                    }
                                 )
-                        )
-                    ).Build())
+                            },
+                        }
+                    )
+                    .Build()
+            )
             .WithBooleanJsonPaths(["$._ext.tpdm.gradeLevels[*].isSecondary"])
             .WithNumericJsonPaths(["$._ext.tpdm.schoolId"])
             .WithDateTimeJsonPaths(["$._ext.tpdm.beginDate"])
@@ -79,6 +95,72 @@ public class ProvideApiSchemaMiddlewareTests
             .WithDocumentPathReference(
                 "Person",
                 [new("$._ext.tpdm.personId", "$._ext.tpdm.personReference.personId")]
+            )
+            .WithEndDocumentPathsMapping()
+            .WithEndResource()
+            .WithEndProject()
+            .WithStartProject("sample", "1.0.0")
+            .WithStartResource("School", isResourceExtension: true)
+            .WithJsonSchemaForInsert(
+                new JsonSchemaBuilder()
+                    .Properties(
+                        new Dictionary<string, JsonSchema>
+                        {
+                            {
+                                "_ext",
+                                new JsonSchemaBuilder().Properties(
+                                    new Dictionary<string, JsonSchema>
+                                    {
+                                        {
+                                            "sample",
+                                            new JsonSchemaBuilder().Properties(
+                                                new Dictionary<string, JsonSchema>
+                                                {
+                                                    {
+                                                        "directlyOwnedBuses",
+                                                        new JsonSchemaBuilder().Items(
+                                                            new JsonSchemaBuilder().Properties(
+                                                                new Dictionary<string, JsonSchema>
+                                                                {
+                                                                    {
+                                                                        "directlyOwnedBusReference",
+                                                                        new JsonSchemaBuilder().Properties(
+                                                                            new Dictionary<string, JsonSchema>
+                                                                            {
+                                                                                {
+                                                                                    "busId",
+                                                                                    new JsonSchemaBuilder()
+                                                                                        .Description(
+                                                                                            "The unique identifier for the bus"
+                                                                                        )
+                                                                                        .Type(
+                                                                                            SchemaValueType.Boolean
+                                                                                        )
+                                                                                },
+                                                                            }
+                                                                        )
+                                                                    },
+                                                                }
+                                                            )
+                                                        )
+                                                    },
+                                                }
+                                            )
+                                        },
+                                    }
+                                )
+                            },
+                        }
+                    )
+                    .Build()
+            )
+            .WithBooleanJsonPaths(
+                ["$._ext.sample.cteProgramService.primaryIndicator", "$._ext.sample.isExemplary"]
+            )
+            .WithStartDocumentPathsMapping()
+            .WithDocumentPathReference(
+                "DirectlyOwnedBus",
+                [new("$.busId", "$._ext.sample.directlyOwnedBuses[*].directlyOwnedBusReference.busId")]
             )
             .WithEndDocumentPathsMapping()
             .WithEndResource()
@@ -111,12 +193,14 @@ public class ProvideApiSchemaMiddlewareTests
                 .ApiSchemaDocuments.GetCoreProjectSchema()
                 .FindResourceSchemaNodeByResourceName(new ResourceName("School"));
 
-            coreSchoolResource!
+            var booleanJsonPaths = coreSchoolResource!
                 .GetRequiredNode("booleanJsonPaths")
                 .AsArray()
-                .Select(node => node!.GetValue<string>())
-                .Should()
-                .ContainSingle("$._ext.tpdm.gradeLevels[*].isSecondary");
+                .Select(node => node!.GetValue<string>());
+            booleanJsonPaths.Should().NotBeNull();
+            booleanJsonPaths.Should().Contain("$._ext.tpdm.gradeLevels[*].isSecondary");
+            booleanJsonPaths.Should().Contain("$._ext.sample.cteProgramService.primaryIndicator");
+            booleanJsonPaths.Should().Contain("$._ext.sample.isExemplary");
 
             coreSchoolResource!
                 .GetRequiredNode("numericJsonPaths")
@@ -143,13 +227,47 @@ public class ProvideApiSchemaMiddlewareTests
                 .Be("$._ext.tpdm.personReference.personId");
 
             coreSchoolResource!
+                .GetRequiredNode("documentPathsMapping")
+                .AsObject()
+                .GetRequiredNode("DirectlyOwnedBus")
+                .GetRequiredNode("referenceJsonPaths")[0]!
+                .GetRequiredNode("referenceJsonPath")
+                .GetValue<string>()
+                .Should()
+                .Be("$._ext.sample.directlyOwnedBuses[*].directlyOwnedBusReference.busId");
+
+            // check tpdm extension
+            coreSchoolResource!
                 .GetRequiredNode("jsonSchemaForInsert")
+                .GetRequiredNode("properties")
+                .GetRequiredNode("_ext")
+                .GetRequiredNode("properties")
+                .GetRequiredNode("tpdm")
                 .GetRequiredNode("properties")
                 .GetRequiredNode("boardCertificationIndicator")
                 .GetRequiredNode("description")
                 .GetValue<string>()
                 .Should()
-                .Be("Indicator that the credential.");
+                .Be("Indicator that the credential");
+
+            // check sample extension
+            coreSchoolResource!
+                .GetRequiredNode("jsonSchemaForInsert")
+                .GetRequiredNode("properties")
+                .GetRequiredNode("_ext")
+                .GetRequiredNode("properties")
+                .GetRequiredNode("sample")
+                .GetRequiredNode("properties")
+                .GetRequiredNode("directlyOwnedBuses")
+                .GetRequiredNode("items")
+                .GetRequiredNode("properties")
+                .GetRequiredNode("directlyOwnedBusReference")
+                .GetRequiredNode("properties")
+                .GetRequiredNode("busId")
+                .GetRequiredNode("description")
+                .GetValue<string>()
+                .Should()
+                .Be("The unique identifier for the bus");
 
             coreSchoolResource!
                 .GetRequiredNode("equalityConstraints")
@@ -164,7 +282,6 @@ public class ProvideApiSchemaMiddlewareTests
                 .Select(node => node!.GetRequiredNode("targetJsonPath").GetValue<string>())
                 .Should()
                 .Contain("$.evaluationElementReference.evaluationTitle");
-
         }
     }
 }
