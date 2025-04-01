@@ -23,7 +23,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
         {
             var validator = new RelationshipsWithEdOrgsOnlyValidator();
             _expectedResult = validator.ValidateAuthorization(
-                new DocumentSecurityElements([], []),
+                new DocumentSecurityElements([], [], []),
                 new ClientAuthorizations(
                     "",
                     "",
@@ -64,7 +64,8 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                             new ResourceName("School"),
                             new EducationOrganizationId(255901)
                         ),
-                    ]
+                    ],
+                    []
                 ),
                 new ClientAuthorizations("", "", [], [])
             );
@@ -101,7 +102,8 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                             new ResourceName("School"),
                             new EducationOrganizationId(255901)
                         ),
-                    ]
+                    ],
+                    []
                 ),
                 new ClientAuthorizations("", "", [new EducationOrganizationId(255901)], [])
             );
@@ -133,7 +135,8 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                             new ResourceName("School"),
                             new EducationOrganizationId(289766)
                         ),
-                    ]
+                    ],
+                    []
                 ),
                 new ClientAuthorizations(
                     "",
@@ -174,7 +177,8 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                             new ResourceName("School"),
                             new EducationOrganizationId(244)
                         ),
-                    ]
+                    ],
+                    []
                 ),
                 new ClientAuthorizations(
                     "",
@@ -189,7 +193,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
         public void Should_Return_Expected_AuthorizationResult()
         {
             _expectedResult.Should().NotBeNull();
-            //We do not compare EdOrgIds at this point. 
+            //We do not compare EdOrgIds at this point.
             _expectedResult!.IsAuthorized.Should().BeTrue();
             _expectedResult!.ErrorMessage.Should().BeEmpty();
         }

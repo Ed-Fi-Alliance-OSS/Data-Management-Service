@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Backend;
@@ -48,7 +49,11 @@ internal record UpsertRequest(
     /// The backend should use this handler to determine whether
     /// the client is authorized to get the document
     /// </summary>
-    IResourceAuthorizationHandler ResourceAuthorizationHandler
+    IResourceAuthorizationHandler ResourceAuthorizationHandler,
+    /// <summary>
+    /// The AuthorizationPathways the resource is part of.
+    /// </summary>
+    IReadOnlyList<IAuthorizationPathway> ResourceAuthorizationPathways
 )
     : UpdateRequest(
         ResourceInfo,
@@ -58,6 +63,7 @@ internal record UpsertRequest(
         DocumentUuid,
         DocumentSecurityElements,
         UpdateCascadeHandler,
-        ResourceAuthorizationHandler
+        ResourceAuthorizationHandler,
+        ResourceAuthorizationPathways
     ),
         IUpsertRequest;

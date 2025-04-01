@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Frontend;
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Security.Model;
@@ -114,7 +115,7 @@ internal static class No
     /// <summary>
     /// The null object for DocumentSecurityElements
     /// </summary>
-    public static readonly DocumentSecurityElements DocumentSecurityElements = new([], []);
+    public static readonly DocumentSecurityElements DocumentSecurityElements = new([], [], []);
 
     /// <summary>
     /// The null object for ResourceClaim
@@ -135,4 +136,9 @@ internal static class No
     {
         return new PipelineContext(CreateFrontendRequest(traceId), RequestMethod.GET);
     }
+
+    /// <summary>
+    /// The null object for AuthorizationPathways
+    /// </summary>
+    public static readonly IReadOnlyList<IAuthorizationPathway> AuthorizationPathways = [];
 }

@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Frontend;
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 
@@ -105,4 +106,10 @@ internal class PipelineContext(FrontendRequest _frontendRequest, RequestMethod _
     /// </summary>
     public EducationOrganizationHierarchyInfo EducationOrganizationHierarchyInfo { get; set; } =
         No.EducationOrganizationHierarchyInfo;
+
+    /// <summary>
+    /// The AuthorizationPathways the resource is part of.
+    /// </summary>
+    public IReadOnlyList<IAuthorizationPathway> AuthorizationPathways { get; set; } =
+        No.AuthorizationPathways;
 }

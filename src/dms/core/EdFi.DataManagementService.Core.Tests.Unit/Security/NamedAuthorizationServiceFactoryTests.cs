@@ -43,7 +43,7 @@ public class NamedAuthorizationServiceFactoryTests
                 as NoFurtherAuthorizationRequiredValidator;
             handler.Should().NotBeNull();
             var authResult = handler!.ValidateAuthorization(
-                new DocumentSecurityElements([], []),
+                new DocumentSecurityElements([], [], []),
                 new ClientAuthorizations("", "", [], [])
             );
             authResult.Should().NotBeNull();
@@ -58,7 +58,7 @@ public class NamedAuthorizationServiceFactoryTests
                 as NamespaceBasedValidator;
             handler.Should().NotBeNull();
             var authResult = handler!.ValidateAuthorization(
-                new DocumentSecurityElements(["uri://namespace/resource"], []),
+                new DocumentSecurityElements(["uri://namespace/resource"], [], []),
                 new ClientAuthorizations("", "", [], [new NamespacePrefix("uri://namespace")])
             );
             authResult.Should().NotBeNull();
@@ -80,7 +80,8 @@ public class NamedAuthorizationServiceFactoryTests
                             new ResourceName("School"),
                             new EducationOrganizationId(255901)
                         ),
-                    ]
+                    ],
+                    []
                 ),
                 new ClientAuthorizations("", "", [new EducationOrganizationId(255901)], [])
             );

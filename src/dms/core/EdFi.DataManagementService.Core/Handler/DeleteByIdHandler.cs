@@ -37,7 +37,8 @@ internal class DeleteByIdHandler(
                     ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
                         context.AuthorizationStrategyEvaluators,
                         _logger
-                    )
+                    ),
+                    ResourceAuthorizationPathways: context.AuthorizationPathways
                 )
             )
         );

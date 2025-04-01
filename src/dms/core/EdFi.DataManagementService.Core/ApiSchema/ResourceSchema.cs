@@ -60,9 +60,9 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
     private readonly Lazy<bool> _isResourceExtension = new(() =>
     {
         return _resourceSchemaNode["isResourceExtension"]?.GetValue<bool>()
-               ?? throw new InvalidOperationException(
-                   "Expected isResourceExtension to be on ResourceSchema, invalid ApiSchema"
-               );
+            ?? throw new InvalidOperationException(
+                "Expected isResourceExtension to be on ResourceSchema, invalid ApiSchema"
+            );
     });
 
     /// <summary>
@@ -377,4 +377,33 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
     /// </summary>
     public IEnumerable<EducationOrganizationSecurityElementPath> EducationOrganizationSecurityElementPaths =>
         _educationOrganizationSecurityElementPaths.Value;
+
+    private readonly Lazy<IEnumerable<JsonPath>> _studentSecurityElementPaths = new(() =>
+    {
+        return _resourceSchemaNode["securityElements"]
+                ?["Student"]?.AsArray()
+                .GetValues<string>()
+                .Select(path => new JsonPath(path))
+            ?? throw new InvalidOperationException(
+                "Expected securityElements.Student to be on ResourceSchema, invalid ApiSchema"
+            );
+    });
+
+    /// <summary>
+    /// A list of the JsonPaths that are student security elements, for authorization.
+    /// </summary>
+    public IEnumerable<JsonPath> StudentSecurityElementPaths => _studentSecurityElementPaths.Value;
+
+    private readonly Lazy<IEnumerable<string>> _authorizationPathways = new(() =>
+    {
+        return _resourceSchemaNode["authorizationPathways"]?.AsArray().GetValues<string>()
+            ?? throw new InvalidOperationException(
+                "Expected authorizationPathways to be on ResourceSchema, invalid ApiSchema"
+            );
+    });
+
+    /// <summary>
+    /// The AuthorizationPathways the resource is part of.
+    /// </summary>
+    public IEnumerable<string> AuthorizationPathways => _authorizationPathways.Value;
 }
