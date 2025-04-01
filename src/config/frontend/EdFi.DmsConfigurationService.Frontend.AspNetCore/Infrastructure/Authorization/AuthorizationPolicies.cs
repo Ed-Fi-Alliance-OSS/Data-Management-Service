@@ -12,8 +12,8 @@ public static class AuthorizationScopePolicies
 {
     public const string AdminScopePolicy = "AdminScopePolicy";
     public const string ReadOnlyOrAdminScopePolicy = "ReadOnlyOrAdminScopePolicy";
-    public const string AdminOrAuthorizationEndpointsAccessScopePolicyOrReadOnly =
-        "AdminOrAuthorizationEndpointsAccessScopePolicyOrReadOnly";
+    public const string AdminOrAuthMetadataReadOnlyAccessScopePolicyOrReadOnly =
+        "AdminOrAuthMetadataReadOnlyAccessScopePolicyOrReadOnly";
 
     public static void Add(AuthorizationOptions options)
     {
@@ -37,12 +37,12 @@ public static class AuthorizationScopePolicies
 
         // Combined policy (Limited to only authorization endpoints or Admin or ReadOnly)
         options.AddPolicy(
-            AdminOrAuthorizationEndpointsAccessScopePolicyOrReadOnly,
+            AdminOrAuthMetadataReadOnlyAccessScopePolicyOrReadOnly,
             policy =>
                 policy.Requirements.Add(
                     new ScopePolicy(
                         AuthorizationScopes.AdminScope.Name,
-                        AuthorizationScopes.AuthorizationEndpointsAccessScope.Name,
+                        AuthorizationScopes.AuthMetadataReadOnlyAccessScope.Name,
                         AuthorizationScopes.ReadOnlyScope.Name
                     )
                 )

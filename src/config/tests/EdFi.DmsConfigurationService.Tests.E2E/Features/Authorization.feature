@@ -127,10 +127,10 @@ Rule: Authorized with read only scope. Should have access to all the GET endpoin
 Rule: Authorized with authorization endpoints only scope. Should have read access to only v2/claimsets and /authorizationMetadata endpoints
 
  Background:
-        Given client "CMSAuthEndPointsOnlyAccess" credentials with "edfi_admin_api/authorization_endpoints_access" scope
+        Given client "CMSAuthEndPointsOnlyAccess" credentials with "edfi_admin_api/authMetadata_readonly_access" scope
               And token received
 
-        Scenario: 07 Ensure clients can GETALL claim sets 
+        Scenario: 07 Ensure clients can GETALL claim sets
               When a GET request is made to "/v2/claimSets"
               Then it should respond with 200
 

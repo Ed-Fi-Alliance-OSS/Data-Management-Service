@@ -75,7 +75,7 @@ public static class EndpointBuilderExtensions
             .RequireAuthorization(
                 [
                     SecurityConstants.ServicePolicy,
-                    AuthorizationScopePolicies.AdminOrAuthorizationEndpointsAccessScopePolicyOrReadOnly,
+                    AuthorizationScopePolicies.AdminOrAuthMetadataReadOnlyAccessScopePolicyOrReadOnly,
                 ]
             );
     }

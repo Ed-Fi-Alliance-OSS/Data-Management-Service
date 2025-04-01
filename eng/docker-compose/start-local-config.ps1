@@ -68,6 +68,6 @@ else {
     # Create client with edfi_admin_api/readonly_access scope
     ./setup-keycloak.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access"
 
-    # Create client with edfi_admin_api/authorization_endpoints_access scope
-    ./setup-keycloak.ps1 -NewClientId "CMSAuthEndPointsOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authorization_endpoints_access"
+    # Create client with edfi_admin_api/authMetadata_readonly_access scope
+    ./setup-keycloak.ps1 -NewClientId "CMSAuthEndPointsOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
 }

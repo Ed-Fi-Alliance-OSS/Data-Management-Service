@@ -17,8 +17,8 @@ public static class AuthorizationScopes
         "edfi_admin_api/readonly_access",
         "Read only access"
     );
-    public static readonly ScopeDefinition AuthorizationEndpointsAccessScope = new(
-        "edfi_admin_api/authorization_endpoints_access",
+    public static readonly ScopeDefinition AuthMetadataReadOnlyAccessScope = new(
+        "edfi_admin_api/authMetadata_readonly_access",
         "Limited access to specific endpoints"
     );
 
@@ -26,6 +26,6 @@ public static class AuthorizationScopes
     [
         AdminScope,
         ReadOnlyScope,
-        AuthorizationEndpointsAccessScope,
+        AuthMetadataReadOnlyAccessScope,
     ];
 }

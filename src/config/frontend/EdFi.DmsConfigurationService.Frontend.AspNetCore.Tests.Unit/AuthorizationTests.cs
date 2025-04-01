@@ -358,7 +358,7 @@ public class AuthorizationTests
         public async Task Should_return_proper_success_responses_for_read_end_points()
         {
             // Arrange
-            using var client = SetUpClient(AuthorizationScopes.AuthorizationEndpointsAccessScope.Name);
+            using var client = SetUpClient(AuthorizationScopes.AuthMetadataReadOnlyAccessScope.Name);
 
             //Act
             var getAuthorizationMetaDataResponse = await client.GetAsync(
@@ -375,7 +375,7 @@ public class AuthorizationTests
         public async Task Should_return_forbidden_response_for_get_end_point_with_no_access()
         {
             // Arrange
-            using var client = SetUpClient(AuthorizationScopes.AuthorizationEndpointsAccessScope.Name);
+            using var client = SetUpClient(AuthorizationScopes.AuthMetadataReadOnlyAccessScope.Name);
 
             // Act
             var getResponse = await client.GetAsync("/v2/vendors?offset=0&limit=25");
@@ -388,7 +388,7 @@ public class AuthorizationTests
         public async Task Should_return_forbidden_response_for_post_end_point()
         {
             // Arrange
-            using var client = SetUpClient(AuthorizationScopes.AuthorizationEndpointsAccessScope.Name);
+            using var client = SetUpClient(AuthorizationScopes.AuthMetadataReadOnlyAccessScope.Name);
             A.CallTo(() => _httpContext.Request.Path).Returns("/v2/vendors");
 
             //Act
@@ -416,7 +416,7 @@ public class AuthorizationTests
         public async Task Should_return_forbidden_response_for_put_end_point()
         {
             // Arrange
-            using var client = SetUpClient(AuthorizationScopes.AuthorizationEndpointsAccessScope.Name);
+            using var client = SetUpClient(AuthorizationScopes.AuthMetadataReadOnlyAccessScope.Name);
             A.CallTo(() => _httpContext.Request.Path).Returns("/v2/vendors");
 
             //Act
@@ -445,7 +445,7 @@ public class AuthorizationTests
         public async Task Should_return_forbidden_response_for_delete_end_point()
         {
             // Arrange
-            using var client = SetUpClient(AuthorizationScopes.AuthorizationEndpointsAccessScope.Name);
+            using var client = SetUpClient(AuthorizationScopes.AuthMetadataReadOnlyAccessScope.Name);
             A.CallTo(() => _httpContext.Request.Path).Returns("/v2/vendors");
 
             //Act
