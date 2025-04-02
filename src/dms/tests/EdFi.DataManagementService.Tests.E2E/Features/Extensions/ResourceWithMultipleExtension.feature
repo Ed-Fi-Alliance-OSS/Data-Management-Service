@@ -1,6 +1,5 @@
 Feature: Resource with multiple extensions
 
-# All the scenarios will be enabled by DMS-582
         Background:
             Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org, uri://tpdm.ed-fi.org"
             And the system has these descriptors
@@ -10,7 +9,6 @@ Feature: Resource with multiple extensions
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution |
                   | uri://ed-fi.org/GradeLevelDescriptor#Postsecondary                                 |
 
-        @ignore 
         Scenario: 01 Ensure clients can create a resource with tpdm extension reference
              When a POST request is made to "/ed-fi/postSecondaryInstitutions" with
                   """
@@ -99,7 +97,7 @@ Feature: Resource with multiple extensions
                   }
                   """
 
-    @ignore 
+    @ignore
     Scenario: 02 Ensure clients can not create a resource when tpdm extension reference is unavailable
              When a POST request is made to "/ed-fi/schools" with
              """
@@ -127,7 +125,7 @@ Feature: Resource with multiple extensions
              """
              Then it should respond with 409
 
-      @ignore 
+      @ignore
       Scenario: 03 Ensure clients can not create a resource when sample extension reference is unavailable
              When a POST request is made to "/ed-fi/schools" with
              """
