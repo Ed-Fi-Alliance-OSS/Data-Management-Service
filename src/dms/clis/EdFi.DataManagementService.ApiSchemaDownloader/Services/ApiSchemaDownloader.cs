@@ -19,8 +19,6 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader.Services
         private readonly ILogger<ApiSchemaDownloader> _logger =
             logger ?? throw new ArgumentNullException(nameof(logger));
 
-        public const string packageName = "EdFi.DataStandard52.ApiSchema";
-
         public void ExtractApiSchemaJsonFromAssembly(string packageId, string packagePath, string outputDir)
         {
             _logger.LogInformation(
@@ -59,7 +57,7 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader.Services
 
                 var resourceNames = assembly
                     .GetManifestResourceNames()
-                    .Where(name => name.StartsWith(packageName, StringComparison.OrdinalIgnoreCase))
+                    .Where(name => name.StartsWith(packageId, StringComparison.OrdinalIgnoreCase))
                     .ToList();
 
                 if (!resourceNames.Any())
@@ -80,7 +78,7 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader.Services
                 {
                     string outputFilePath = Path.Combine(
                         outputDir,
-                        resourceName.Replace(packageName + ".", "")
+                        resourceName.Replace(packageId + ".", "")
                     );
 
                     if (resourceName.EndsWith(".xsd"))

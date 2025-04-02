@@ -40,6 +40,12 @@ if [ "$USE_API_SCHEMA_PATH" = true ]; then
 
     echo "Downloading Package ${TPDM_PACKAGE}..."
     dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p ${TPDM_PACKAGE} -d ${API_SCHEMA_PATH} -v ${TPDM_PACKAGE_VERSION}
+
+    echo "Downloading Package ${Sample_PACKAGE}..."
+    dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p ${Sample_PACKAGE} -d ${API_SCHEMA_PATH} -v ${Sample_PACKAGE_VERSION}
+
+    echo "Downloading Package ${Homograph_PACKAGE}..."
+    dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p ${Homograph_PACKAGE} -d ${API_SCHEMA_PATH} -v ${Homograph_PACKAGE_VERSION}
 fi
 
 dotnet EdFi.DataManagementService.Frontend.AspNetCore.dll
