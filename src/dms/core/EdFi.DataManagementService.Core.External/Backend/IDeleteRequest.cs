@@ -32,7 +32,7 @@ public interface IDeleteRequest
     /// <summary>
     /// The AuthorizationPathways the resource is part of.
     /// </summary>
-    IReadOnlyList<IAuthorizationPathway> ResourceAuthorizationPathways { get; }
+    IReadOnlyList<AuthorizationPathway> ResourceAuthorizationPathways { get; }
 
     /// <summary>
     /// The request TraceId

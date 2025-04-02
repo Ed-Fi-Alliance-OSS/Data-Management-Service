@@ -44,7 +44,7 @@ internal class ProvideAuthorizationPathwayMiddleware(ILogger _logger) : IPipelin
     /// <summary>
     /// Builds the StudentSchoolAssociationAuthorizationPathway from the DocumentSecurityElements.
     /// </summary>
-    public StudentSchoolAssociationAuthorizationPathway BuildStudentSchoolAssociationAuthorizationPathway(
+    private static AuthorizationPathway.StudentSchoolAssociation BuildStudentSchoolAssociationAuthorizationPathway(
         DocumentSecurityElements documentSecurityElements,
         RequestMethod requestMethod
     )
@@ -62,9 +62,9 @@ internal class ProvideAuthorizationPathwayMiddleware(ILogger _logger) : IPipelin
             );
         }
 
-        return new StudentSchoolAssociationAuthorizationPathway(
+        return new AuthorizationPathway.StudentSchoolAssociation(
             documentSecurityElements.StudentId.FirstOrDefault(),
-            documentSecurityElements.EducationOrganization.FirstOrDefault()?.Id
+            documentSecurityElements.EducationOrganization.FirstOrDefault()?.Id ?? default
         );
     }
 }

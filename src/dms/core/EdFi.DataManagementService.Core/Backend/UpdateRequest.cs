@@ -52,5 +52,5 @@ internal record UpdateRequest(
     /// <summary>
     /// The AuthorizationPathways the resource is part of.
     /// </summary>
-    IReadOnlyList<IAuthorizationPathway> ResourceAuthorizationPathways
+    IReadOnlyList<AuthorizationPathway> ResourceAuthorizationPathways
 ) : IUpdateRequest;

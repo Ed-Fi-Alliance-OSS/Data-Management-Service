@@ -140,5 +140,5 @@ internal static class No
     /// <summary>
     /// The null object for AuthorizationPathways
     /// </summary>
-    public static readonly IReadOnlyList<IAuthorizationPathway> AuthorizationPathways = [];
+    public static readonly IReadOnlyList<AuthorizationPathway> AuthorizationPathways = [];
 }

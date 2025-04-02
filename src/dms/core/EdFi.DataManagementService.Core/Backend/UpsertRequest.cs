@@ -53,7 +53,7 @@ internal record UpsertRequest(
     /// <summary>
     /// The AuthorizationPathways the resource is part of.
     /// </summary>
-    IReadOnlyList<IAuthorizationPathway> ResourceAuthorizationPathways
+    IReadOnlyList<AuthorizationPathway> ResourceAuthorizationPathways
 )
     : UpdateRequest(
         ResourceInfo,

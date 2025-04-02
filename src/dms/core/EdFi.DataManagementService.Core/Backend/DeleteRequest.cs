@@ -20,6 +20,6 @@ internal record DeleteRequest(
     DocumentUuid DocumentUuid,
     ResourceInfo ResourceInfo,
     IResourceAuthorizationHandler ResourceAuthorizationHandler,
-    IReadOnlyList<IAuthorizationPathway> ResourceAuthorizationPathways,
+    IReadOnlyList<AuthorizationPathway> ResourceAuthorizationPathways,
     TraceId TraceId
 ) : IDeleteRequest;
