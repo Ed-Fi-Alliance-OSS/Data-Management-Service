@@ -122,12 +122,21 @@ internal static class No
     /// </summary>
     public static readonly ResourceClaim ResourceClaim = new("", "", []);
 
+    /// <summary>
+    /// The null object for EducationOrganizationHierarchyInfo
+    /// </summary>
     public static readonly EducationOrganizationHierarchyInfo EducationOrganizationHierarchyInfo =
         new EducationOrganizationHierarchyInfo(
             IsInEducationOrganizationHierarchy: false,
             Id: default,
             ParentIds: []
         );
+
+    /// <summary>
+    /// The null object for StudentAuthorizationSecurableInfo
+    /// </summary>
+    public static readonly StudentAuthorizationSecurableInfo StudentAuthorizationSecurableInfo =
+        new StudentAuthorizationSecurableInfo(IsStudentAuthorizationSecurable: false, StudentUniqueId: "");
 
     /// <summary>
     /// A constructor of a PipelineContext initialized with null objects

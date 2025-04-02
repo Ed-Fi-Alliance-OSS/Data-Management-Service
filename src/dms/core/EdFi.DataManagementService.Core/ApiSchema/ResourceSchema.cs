@@ -371,6 +371,23 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
             );
     });
 
+    private readonly Lazy<IEnumerable<JsonPath>> _studentAuthorizationSecurablePaths = new(() =>
+    {
+        return _resourceSchemaNode["authorizationSecurable"]
+                ?["Student"]?.AsArray()
+                .GetValues<string>()
+                .Select(x => new JsonPath(x))
+            ?? throw new InvalidOperationException(
+                "Expected authorizationsecurable.Student to be on ResourceSchema, invalid ApiSchema"
+            );
+    });
+
+    /// <summary>
+    /// A list of the JsonPaths that are authorizationSecurable for type Student
+    /// </summary>
+    public IEnumerable<JsonPath> StudentAuthorizationSecurablePaths =>
+        _studentAuthorizationSecurablePaths.Value;
+
     /// <summary>
     /// A list of the ResourceNames and JsonPaths that are education organization security elements, for authorization.
     /// Note these can be array paths.
