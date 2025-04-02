@@ -156,7 +156,7 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader.Tests.Unit
 
                 // Act
                 _downloader.ExtractApiSchemaJsonFromAssembly(
-                    "EdFi.DataStandard52.ApiSchema.Core",
+                    "EdFi.DataStandard52.ApiSchema",
                     packagePath,
                     _tempDirectory
                 );
