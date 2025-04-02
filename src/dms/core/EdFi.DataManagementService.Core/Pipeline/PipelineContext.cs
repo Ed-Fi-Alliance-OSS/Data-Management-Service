@@ -105,4 +105,10 @@ internal class PipelineContext(FrontendRequest _frontendRequest, RequestMethod _
     /// </summary>
     public EducationOrganizationHierarchyInfo EducationOrganizationHierarchyInfo { get; set; } =
         No.EducationOrganizationHierarchyInfo;
+
+    /// <summary>
+    /// Student Authorization Securable info for the submitted document
+    /// </summary>
+    public StudentAuthorizationSecurableInfo StudentAuthorizationSecurableInfo { get; set; } =
+        No.StudentAuthorizationSecurableInfo;
 }
