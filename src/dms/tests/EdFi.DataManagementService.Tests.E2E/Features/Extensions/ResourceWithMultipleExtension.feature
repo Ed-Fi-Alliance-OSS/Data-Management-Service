@@ -97,7 +97,6 @@ Feature: Resource with multiple extensions
                   }
                   """
 
-    @ignore
     Scenario: 02 Ensure clients can not create a resource when tpdm extension reference is unavailable
              When a POST request is made to "/ed-fi/schools" with
              """
@@ -125,7 +124,6 @@ Feature: Resource with multiple extensions
              """
              Then it should respond with 409
 
-      @ignore
       Scenario: 03 Ensure clients can not create a resource when sample extension reference is unavailable
              When a POST request is made to "/ed-fi/schools" with
              """
