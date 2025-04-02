@@ -25,6 +25,7 @@ public class ExtractSecurityElementsTests
             .WithStartResource("ResourceWithNamespaceNotAsSecurityElement")
             .WithNamespaceSecurityElements([])
             .WithEducationOrganizationSecurityElements([])
+            .WithStudentSecurityElements([])
             .WithStartDocumentPathsMapping()
             .WithDocumentPathScalar("Namespace", "$.namespace")
             .WithEndDocumentPathsMapping()
@@ -46,6 +47,7 @@ public class ExtractSecurityElementsTests
                 .WithStartResource("Assessment")
                 .WithNamespaceSecurityElements(["$.namespace"])
                 .WithEducationOrganizationSecurityElements([])
+                .WithStudentSecurityElements([])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("AssessmentIdentifier", "$.assessmentIdentifier")
                 .WithDocumentPathScalar("Namespace", "$.namespace")
@@ -85,6 +87,7 @@ public class ExtractSecurityElementsTests
                 .WithStartResource("Assessment")
                 .WithNamespaceSecurityElements(["$.namespace"])
                 .WithEducationOrganizationSecurityElements([])
+                .WithStudentSecurityElements([])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("AssessmentIdentifier", "$.assessmentIdentifier")
                 .WithDocumentPathScalar("Namespace", "$.namespace")
@@ -124,6 +127,7 @@ public class ExtractSecurityElementsTests
                 .WithStartResource("Assessment")
                 .WithNamespaceSecurityElements([])
                 .WithEducationOrganizationSecurityElements([])
+                .WithStudentSecurityElements([])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("AssessmentIdentifier", "$.assessmentIdentifier")
                 .WithDocumentPathScalar("Namespace", "$.namespace")
@@ -162,6 +166,7 @@ public class ExtractSecurityElementsTests
                 .WithStartResource("AcademicWeek")
                 .WithNamespaceSecurityElements([])
                 .WithEducationOrganizationSecurityElements([("School", "$.schoolReference.schoolId")])
+                .WithStudentSecurityElements([])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("EducationOrganization", "$.schoolReference.schoolId")
                 .WithEndDocumentPathsMapping()
@@ -190,7 +195,6 @@ public class ExtractSecurityElementsTests
         {
             documentSecurityElements.EducationOrganization.Should().HaveCount(1);
             documentSecurityElements.EducationOrganization[0].Id.Value.Should().Be(12345);
-
         }
     }
 
@@ -208,6 +212,7 @@ public class ExtractSecurityElementsTests
                 .WithStartResource("AcademicWeek")
                 .WithNamespaceSecurityElements([])
                 .WithEducationOrganizationSecurityElements([("school", "$.schoolReference.schoolId")])
+                .WithStudentSecurityElements([])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("EducationOrganization", "$.schoolReference.schoolId")
                 .WithEndDocumentPathsMapping()
@@ -250,6 +255,7 @@ public class ExtractSecurityElementsTests
                 .WithStartResource("AcademicWeek")
                 .WithNamespaceSecurityElements([])
                 .WithEducationOrganizationSecurityElements([])
+                .WithStudentSecurityElements([])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("EducationOrganization", "$.schoolReference.schoolId")
                 .WithEndDocumentPathsMapping()
@@ -277,6 +283,127 @@ public class ExtractSecurityElementsTests
         public void It_has_no_educationOrganization()
         {
             documentSecurityElements.EducationOrganization.Should().HaveCount(0);
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_courseTranscript_resource_that_has_studentId : ExtractSecurityElementsTests
+    {
+        private DocumentSecurityElements documentSecurityElements = No.DocumentSecurityElements;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("CourseTranscript")
+                .WithNamespaceSecurityElements([])
+                .WithEducationOrganizationSecurityElements([])
+                .WithStudentSecurityElements(["$.studentReference.studentId"])
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "courseTranscripts");
+
+            string body = """
+                {
+                    "studentReference": {
+                        "studentId": "12345"
+                    }
+                }
+                """;
+
+            documentSecurityElements = resourceSchema.ExtractSecurityElements(
+                JsonNode.Parse(body)!,
+                NullLogger.Instance
+            );
+        }
+
+        [Test]
+        public void It_has_extracted_studentId()
+        {
+            documentSecurityElements.StudentId.Should().HaveCount(1);
+            documentSecurityElements.StudentId[0].Value.Should().Be("12345");
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_courseTranscript_resource_that_does_not_have_studentId : ExtractSecurityElementsTests
+    {
+        private DocumentSecurityElements documentSecurityElements = No.DocumentSecurityElements;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("CourseTranscript")
+                .WithNamespaceSecurityElements([])
+                .WithEducationOrganizationSecurityElements([])
+                .WithStudentSecurityElements(["$.studentReference.studentId"])
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "courseTranscripts");
+
+            string body = """
+                {
+                }
+                """;
+
+            documentSecurityElements = resourceSchema.ExtractSecurityElements(
+                JsonNode.Parse(body)!,
+                NullLogger.Instance
+            );
+        }
+
+        [Test]
+        public void It_has_no_studentId()
+        {
+            documentSecurityElements.StudentId.Should().HaveCount(0);
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_resource_that_has_studentId_not_as_a_security_element : ExtractSecurityElementsTests
+    {
+        private DocumentSecurityElements documentSecurityElements = No.DocumentSecurityElements;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("CourseTranscript")
+                .WithNamespaceSecurityElements([])
+                .WithEducationOrganizationSecurityElements([])
+                .WithStudentSecurityElements([])
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "courseTranscripts");
+
+            string body = """
+                {
+                    "studentReference": {
+                        "studentId": "12345"
+                    }
+                }
+                """;
+
+            documentSecurityElements = resourceSchema.ExtractSecurityElements(
+                JsonNode.Parse(body)!,
+                NullLogger.Instance
+            );
+        }
+
+        [Test]
+        public void It_has_no_studentId()
+        {
+            documentSecurityElements.StudentId.Should().HaveCount(0);
         }
     }
 }

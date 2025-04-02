@@ -47,7 +47,8 @@ internal class UpdateByIdHandler(
                     ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
                         context.AuthorizationStrategyEvaluators,
                         _logger
-                    )
+                    ),
+                    ResourceAuthorizationPathways: context.AuthorizationPathways
                 )
             )
         );

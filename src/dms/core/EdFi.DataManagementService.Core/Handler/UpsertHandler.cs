@@ -50,7 +50,8 @@ internal class UpsertHandler(
                     ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
                         context.AuthorizationStrategyEvaluators,
                         _logger
-                    )
+                    ),
+                    ResourceAuthorizationPathways: context.AuthorizationPathways
                 )
             );
         });

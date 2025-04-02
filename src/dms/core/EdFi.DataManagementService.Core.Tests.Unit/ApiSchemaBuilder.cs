@@ -167,6 +167,7 @@ public class ApiSchemaBuilder
             ["resourceName"] = resourceName,
             ["queryFieldMapping"] = new JsonObject(),
             ["securityElements"] = new JsonObject { ["Namespace"] = new JsonArray() },
+            ["authorizationPathways"] = new JsonArray(),
             ["authorizationSecurable"] = new JsonObject { ["Student"] = new JsonArray() },
         };
 
@@ -346,6 +347,48 @@ public class ApiSchemaBuilder
 
         _currentResourceNode["authorizationSecurable"]!["Student"] = new JsonArray(
             jsonPaths.Select(x => JsonValue.Create(x)).ToArray()
+        );
+
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a StudentSecurityElements section to a resource
+    /// </summary>
+    public ApiSchemaBuilder WithStudentSecurityElements(string[] jsonPaths)
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentResourceNode["securityElements"]!["Student"] = new JsonArray(
+            jsonPaths.Select(x => JsonValue.Create(x)).ToArray()
+        );
+
+        return this;
+    }
+
+    /// <summary>
+    /// Adds an AuthorizationPathways section to a resource
+    /// </summary>
+    public ApiSchemaBuilder WithAuthorizationPathways(string[] authorizationPathways)
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentResourceNode["authorizationPathways"] = new JsonArray(
+            authorizationPathways.Select(x => JsonValue.Create(x)).ToArray()
         );
 
         return this;

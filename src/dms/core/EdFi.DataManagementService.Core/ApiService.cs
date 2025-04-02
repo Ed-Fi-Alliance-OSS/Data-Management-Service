@@ -92,6 +92,7 @@ internal class ApiService(
                 new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
                 new ResourceUpsertAuthorizationMiddleware(_authorizationServiceFactory, _logger),
                 new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
+                new ProvideAuthorizationPathwayMiddleware(_logger),
                 new UpsertHandler(_documentStoreRepository, _logger, _resiliencePipeline, _apiSchemaProvider),
             ]
         );
@@ -194,6 +195,7 @@ internal class ApiService(
                 new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
                 new ResourceUpsertAuthorizationMiddleware(_authorizationServiceFactory, _logger),
                 new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
+                new ProvideAuthorizationPathwayMiddleware(_logger),
                 new UpdateByIdHandler(
                     _documentStoreRepository,
                     _logger,
@@ -223,6 +225,7 @@ internal class ApiService(
                     ),
                     new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
                     new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
+                    new ProvideAuthorizationPathwayMiddleware(_logger),
                     new DeleteByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline),
                 ]
             )
