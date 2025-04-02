@@ -4,7 +4,7 @@
 -- See the LICENSE and NOTICES files in the project root for more information.
 
 CREATE TABLE dms.Document (
-  Id BIGINT GENERATED ALWAYS AS IDENTITY(START WITH 1 INCREMENT BY 1),
+  Id BIGINT UNIQUE GENERATED ALWAYS AS IDENTITY(START WITH 1 INCREMENT BY 1),
   DocumentPartitionKey SMALLINT NOT NULL,
   DocumentUuid UUID NOT NULL,
   ResourceName VARCHAR(256) NOT NULL,
