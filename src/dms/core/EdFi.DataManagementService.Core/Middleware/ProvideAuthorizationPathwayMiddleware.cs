@@ -18,7 +18,7 @@ internal class ProvideAuthorizationPathwayMiddleware(ILogger _logger) : IPipelin
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         _logger.LogDebug(
-            "Entering ExtractAuthorizationPathwayMiddleware - {TraceId}",
+            $"Entering {nameof(ProvideAuthorizationPathwayMiddleware)} - {{TraceId}}",
             context.FrontendRequest.TraceId.Value
         );
 
@@ -42,7 +42,7 @@ internal class ProvideAuthorizationPathwayMiddleware(ILogger _logger) : IPipelin
     }
 
     /// <summary>
-    /// Builds the StudentSchoolAssociationAuthorizationPathway from the DocumentSecurityElements.
+    /// Builds the StudentSchoolAssociation AuthorizationPathway from the DocumentSecurityElements.
     /// </summary>
     private static AuthorizationPathway.StudentSchoolAssociation BuildStudentSchoolAssociationAuthorizationPathway(
         DocumentSecurityElements documentSecurityElements,

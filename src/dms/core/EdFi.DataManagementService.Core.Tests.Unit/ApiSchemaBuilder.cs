@@ -374,7 +374,7 @@ public class ApiSchemaBuilder
     }
 
     /// <summary>
-    /// Adds AuthorizationPathways section to a resource
+    /// Adds an AuthorizationPathways section to a resource
     /// </summary>
     public ApiSchemaBuilder WithAuthorizationPathways(string[] authorizationPathways)
     {
