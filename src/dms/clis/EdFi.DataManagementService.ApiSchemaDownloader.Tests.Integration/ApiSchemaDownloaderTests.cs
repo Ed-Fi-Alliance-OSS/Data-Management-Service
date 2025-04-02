@@ -62,7 +62,7 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader.Tests.Unit
             public async Task ShouldReturnWhenPackageFound()
             {
                 // Arrange
-                string packageId = "EdFi.DataStandard52.ApiSchema.Core";
+                string packageId = "EdFi.DataStandard52.ApiSchema";
                 string feedUrl =
                     "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json";
 
@@ -86,8 +86,8 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader.Tests.Unit
             public async Task ShouldReturnWhenPackageVersionFound()
             {
                 // Arrange
-                string packageId = "EdFi.DataStandard52.ApiSchema.Core";
-                string packageVersion = "1.0.102";
+                string packageId = "EdFi.DataStandard52.ApiSchema";
+                string packageVersion = "1.0.169";
                 string feedUrl =
                     "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json";
 
@@ -142,7 +142,7 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader.Tests.Unit
             public async Task Should_Extract_Embedded_Resources_Correctly()
             {
                 // Arrange
-                string packageId = "EdFi.DataStandard52.ApiSchema.Core";
+                string packageId = "EdFi.DataStandard52.ApiSchema";
                 string feedUrl =
                     "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json";
 
@@ -156,7 +156,7 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader.Tests.Unit
 
                 // Act
                 _downloader.ExtractApiSchemaJsonFromAssembly(
-                    "EdFi.DataStandard52.ApiSchema.Core",
+                    "EdFi.DataStandard52.ApiSchema",
                     packagePath,
                     _tempDirectory
                 );

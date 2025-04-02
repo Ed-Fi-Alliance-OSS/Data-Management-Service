@@ -2,34 +2,44 @@ Feature: The Discovery API provides information about the application version, s
 
         @API-062
         Scenario: 01 GET / returns the root Discovery API document
-             When a GET request is made to "/"
-             Then it should respond with 200
-              And the general response body is
-                  """
-                  {
-                      "version": "1.0.0",
-                      "applicationName": "Ed-Fi Alliance Data Management Service",
-                      "dataModels": [
-                          {
-                              "name": "Ed-Fi",
-                              "version": "5.2.0",
-                              "informationalVersion": "The Ed-Fi Data Standard v5.2.0"
-                          },
-                          {
-                              "name": "TPDM",
-                              "version": "1.0.0",
-                              "informationalVersion": ""
-                          }
-                      ],
-                      "urls": {
-                          "dependencies": "{BASE_URL}/metadata/dependencies",
-                          "openApiMetadata": "{BASE_URL}/metadata/specifications",
-                          "oauth": "http://dms-keycloak:8080/realms/edfi/protocol/openid-connect/token",
-                          "dataManagementApi": "{BASE_URL}/data",
-                          "xsdMetadata": "{BASE_URL}/metadata/xsd"
-                      }
-                  }
-                  """
+                When a GET request is made to "/"
+                Then it should respond with 200
+                And the general response body is
+                    """
+                    {
+                        "version": "1.0.0",
+                        "applicationName": "Ed-Fi Alliance Data Management Service",
+                        "dataModels": [
+                            {
+                                "name": "Ed-Fi",
+                                "version": "5.2.0",
+                                "informationalVersion": "The Ed-Fi Data Standard v5.2.0"
+                            },
+                            {
+                                "name": "TPDM",
+                                "version": "1.0.0",
+                                "informationalVersion": ""
+                            },
+                            {
+                                "name": "Homograph",
+                                "version": "1.0.0",
+                                "informationalVersion": ""
+                            },
+                            {
+                                "name": "Sample",
+                                "version": "1.0.0",
+                                "informationalVersion": ""
+                            }
+                        ],
+                        "urls": {
+                            "dependencies": "{BASE_URL}/metadata/dependencies",
+                            "openApiMetadata": "{BASE_URL}/metadata/specifications",
+                            "oauth": "http://dms-keycloak:8080/realms/edfi/protocol/openid-connect/token",
+                            "dataManagementApi": "{BASE_URL}/data",
+                            "xsdMetadata": "{BASE_URL}/metadata/xsd"
+                        }
+                    }
+                    """
 
         @API-063
         Scenario: 02 GET /metadata returns the metadata URL list
