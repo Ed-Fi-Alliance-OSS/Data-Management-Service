@@ -77,7 +77,78 @@ Feature: Resource with Tpdm extension
                   }
                   """
 
-    Scenario: 02 Ensure clients can not create a resource when tpdm extension reference is unavailable
+     @addwait
+     Scenario: 02 Ensure clients can get a resource with query
+             When a POST request is made to "/ed-fi/postSecondaryInstitutions" with
+                  """
+                 {
+                    "postSecondaryInstitutionId": 7000608,
+                    "nameOfInstitution": "The University of Texas at Austin",
+                    "operationalStatusDescriptor": "uri://ed-fi.org/OperationalStatusDescriptor#Active",
+                    "shortNameOfInstitution": "UT-Austin",
+                    "postSecondaryInstitutionLevelDescriptor": "uri://ed-fi.org/PostSecondaryInstitutionLevelDescriptor#Four or more years",
+                    "categories": [
+                      {
+                        "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution"
+                      }
+                    ]
+                  }
+                  """
+             Then it should respond with 201
+             Given a POST request is made to "/ed-fi/schools" with
+             """
+             {
+              "schoolId": "8",
+              "nameOfInstitution": "Test College",
+              "educationOrganizationCategories": [
+                {
+                  "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution"
+                }
+              ],
+              "gradeLevels": [
+                {
+                  "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
+                }
+              ],
+              "_ext": {
+                "tpdm": {
+                  "postSecondaryInstitutionReference": {
+                    "postSecondaryInstitutionId": 7000608
+                  }
+                }
+                }
+              }
+             """
+             Then it should respond with 201
+             When a GET request is made to "/ed-fi/schools?nameOfInstitution=Test+College"
+             Then it should respond with 200
+             And the response body is
+                  """
+                  [{
+                     "id": "{id}",
+                     "schoolId": 8,
+                      "nameOfInstitution": "Test College",
+                      "educationOrganizationCategories": [
+                        {
+                          "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution"
+                        }
+                      ],
+                      "gradeLevels": [
+                        {
+                          "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
+                        }
+                      ],
+                      "_ext": {
+                        "tpdm": {
+                          "postSecondaryInstitutionReference": {
+                            "postSecondaryInstitutionId": 7000608
+                          }
+                        }
+                        }
+                  }]
+                  """
+
+    Scenario: 03 Ensure clients can not create a resource when tpdm extension reference is unavailable
              When a POST request is made to "/ed-fi/schools" with
              """
              {
