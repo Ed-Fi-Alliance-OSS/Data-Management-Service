@@ -166,6 +166,39 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             );
         }
 
+        foreach (var authorizationPathway in upsertRequest.ResourceAuthorizationPathways)
+        {
+            switch (authorizationPathway)
+            {
+                case AuthorizationPathway.StudentSchoolAssociation studentSchoolAssociation:
+                    _logger.LogDebug("AuthorizationPathway : StudentSchoolAssociation");
+
+                    if (studentSchoolAssociation is not { StudentId: not null, SchoolId: not null })
+                    {
+                        _logger.LogError(
+                            "Missing StudentId or SchoolId from AuthorizationPathway.StudentSchoolAssociation"
+                        );
+                        return new UpsertResult.UnknownFailure(
+                            "Missing StudentId or SchoolId from AuthorizationPathway.StudentSchoolAssociation"
+                        );
+                    }
+
+                    string studentId = studentSchoolAssociation.StudentId.Value.Value;
+                    long schoolId = studentSchoolAssociation.SchoolId.Value.Value;
+
+                    await _sqlAction.InsertStudentSchoolAssociationAuthorization(
+                        studentId,
+                        schoolId,
+                        newDocumentId,
+                        documentPartitionKey,
+                        connection,
+                        transaction,
+                        traceId
+                    );
+                    break;
+            }
+        }
+
         _logger.LogDebug("Upsert success as insert - {TraceId}", upsertRequest.TraceId.Value);
         return new UpsertResult.InsertSuccess(upsertRequest.DocumentUuid);
     }
@@ -314,7 +347,9 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
 
                 if (getAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
                 {
-                    return new UpsertResult.UpsertFailureNotAuthorized(notAuthorized.RelationshipErrorMessages);
+                    return new UpsertResult.UpsertFailureNotAuthorized(
+                        notAuthorized.RelationshipErrorMessages
+                    );
                 }
             }
 

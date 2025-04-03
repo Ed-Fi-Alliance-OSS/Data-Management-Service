@@ -783,4 +783,34 @@ public class SqlAction() : ISqlAction
 
         return edOrgIds.Distinct().ToArray();
     }
+
+    public async Task<int> InsertStudentSchoolAssociationAuthorization(
+        string studentUniqueId,
+        long schoolId,
+        long studentSchoolAssociationId,
+        int studentSchoolAssociationPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        TraceId traceId
+    )
+    {
+        await using NpgsqlCommand command = new(
+            $@"INSERT INTO dms.studentSchoolAssociationAuthorization(
+	            studentUniqueId, schoolId, studentSchoolAssociationId, studentSchoolAssociationPartitionKey)
+	            VALUES ($1, $2, $3, $4);",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = studentUniqueId },
+                new() { Value = schoolId },
+                new() { Value = studentSchoolAssociationId },
+                new() { Value = studentSchoolAssociationPartitionKey },
+            },
+        };
+        await command.PrepareAsync();
+        return await command.ExecuteNonQueryAsync();
+    }
 }

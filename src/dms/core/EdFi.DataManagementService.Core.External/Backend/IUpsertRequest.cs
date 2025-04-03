@@ -56,4 +56,9 @@ public interface IUpsertRequest
     /// authorized to upsert the document
     /// </summary>
     IResourceAuthorizationHandler ResourceAuthorizationHandler { get; }
+
+    /// <summary>
+    /// The AuthorizationPathways the resource is part of.
+    /// </summary>
+    IReadOnlyList<AuthorizationPathway> ResourceAuthorizationPathways { get; }
 }
