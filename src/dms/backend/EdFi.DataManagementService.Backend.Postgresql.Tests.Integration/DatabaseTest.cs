@@ -259,6 +259,7 @@ public abstract class DatabaseTest : DatabaseTestBase
         bool isInEducationOrganizationHierarchy = false,
         long educationOrganizationId = 0,
         long[]? parentEducationOrganizationIds = null,
+        List<AuthorizationPathway>? resourceAuthorizationPathways = null,
         TraceId? traceId = null
     )
     {
@@ -293,7 +294,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                 UpdateCascadeHandler = new UpdateCascadeHandler(new ApiSchemaProvider(), NullLogger.Instance),
                 DocumentSecurityElements = documentSecurityElements,
                 ResourceAuthorizationHandler = new ResourceAuthorizationHandler([], NullLogger.Instance),
-                ResourceAuthorizationPathways = new List<AuthorizationPathway>(),
+                ResourceAuthorizationPathways = resourceAuthorizationPathways ?? [],
             }
         ).ActLike<IUpsertRequest>();
     }
