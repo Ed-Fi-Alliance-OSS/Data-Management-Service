@@ -4,7 +4,7 @@
 -- See the LICENSE and NOTICES files in the project root for more information.
 
 CREATE TABLE dms.Document (
-  Id BIGINT UNIQUE GENERATED ALWAYS AS IDENTITY(START WITH 1 INCREMENT BY 1),
+  Id BIGINT GENERATED ALWAYS AS IDENTITY(START WITH 1 INCREMENT BY 1),
   DocumentPartitionKey SMALLINT NOT NULL,
   DocumentUuid UUID NOT NULL,
   ResourceName VARCHAR(256) NOT NULL,
@@ -38,6 +38,8 @@ CREATE TABLE dms.Document_15 PARTITION OF dms.Document FOR VALUES WITH (MODULUS 
 
 -- GET/UPDATE/DELETE by id lookup support, DocumentUuid uniqueness validation
 CREATE UNIQUE INDEX UX_Document_DocumentUuid ON dms.Document (DocumentPartitionKey, DocumentUuid);
+-- Authorization tables cascade delete support
+CREATE UNIQUE INDEX UX_Document_DocumentId ON dms.Document (DocumentPartitionKey, Id);
 
 -- Set REPLICA IDENTITY FULL to all partitions so all columns are
 -- available through replication to e.g. Debezium
