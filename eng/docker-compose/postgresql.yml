@@ -4,27 +4,27 @@
 # See the LICENSE and NOTICES files in the project root for more information.
 
 services:
-
   db:
-    hostname: dms-postgresql
-    container_name: dms-postgresql
     image: postgres:16.3-alpine
-    restart: always
+    container_name: dms-postgresql
+    volumes:
+      - dms-postgresql:/var/lib/postgresql/data
+      - ./postgresql-init.sh:/docker-entrypoint-initdb.d/postgresql-init.sh
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-abcdefgh1!}
       POSTGRES_DB_NAME: ${POSTGRES_DB_NAME:-edfi_datamanagementservice}
     ports:
-      - ${POSTGRES_PORT:-5432}:5432
-    volumes:
-      - dms-postgresql:/var/lib/postgresql/data
-      - ./postgresql-init.sh:/docker-entrypoint-initdb.d/postgresql-init.sh
+      - '12.7.0.0.1:${POSTGRES_PORT:-5432}:5432'
     networks:
       - dms
+    restart: always
+    hostname: dms-postgresql
+networks:
+  dms:
+    external: true
 
 volumes:
   dms-postgresql:
 
-networks:
-  dms:
-    external: true
+

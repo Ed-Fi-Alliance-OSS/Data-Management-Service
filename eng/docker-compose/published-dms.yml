@@ -6,15 +6,6 @@
 services:
   dms:
     image: edfialliance/data-management-service:${DMS_IMAGE_TAG:-pre}
-    hostname: dms
-    ports:
-      - 8080:8080
-    restart: unless-stopped
-    healthcheck:
-      test: curl -s http://localhost:8080/health >/dev/null || exit 1
-      interval: 30s
-      timeout: 10s
-      retries: 50
     environment:
       ASPNETCORE_HTTP_PORTS: ${ASPNETCORE_HTTP_PORTS:-8080}
       OAUTH_TOKEN_ENDPOINT: ${OAUTH_TOKEN_ENDPOINT:-http://localhost:8045/realms/edfi/protocol/openid-connect/token}
@@ -52,8 +43,17 @@ services:
       CACHE_EXPIRATION_MINUTES: ${CACHE_EXPIRATION_MINUTES:-10}
       USE_API_SCHEMA_PATH: ${USE_API_SCHEMA_PATH:-false}
       API_SCHEMA_PATH: ${API_SCHEMA_PATH:-}
+    ports:
+      - '127.0.0.1:8080:8080'
     networks:
       - dms
+    restart: unless-stopped
+    healthcheck:
+      test: curl -s http://localhost:8080/health >/dev/null || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 50
+    hostname: dms
 
 networks:
   dms:

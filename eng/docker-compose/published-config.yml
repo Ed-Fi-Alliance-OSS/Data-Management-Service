@@ -6,16 +6,7 @@
 services:
   config:
     image: edfialliance/dms-configuration-service:${DMS_IMAGE_TAG:-pre}
-    hostname: config
     container_name: dms-config-service
-    ports:
-      - ${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}
-    restart: unless-stopped
-    healthcheck:
-      test: curl -s http://localhost:8081/health >/dev/null || exit 1
-      interval: 30s
-      timeout: 10s
-      retries: 50
     environment:
       ASPNETCORE_HTTP_PORTS: ${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}
       OAUTH_TOKEN_ENDPOINT: ${OAUTH_TOKEN_ENDPOINT:-http://localhost:8045/realms/edfi/protocol/openid-connect/token}
@@ -37,8 +28,17 @@ services:
       KEYCLOAK_REALM: ${KEYCLOAK_REALM:-edfi}
       # Segment of the url to use as base for all request. The default path base is deliberately blank on the following line
       DMS_CONFIG_PATH_BASE: ${DMS_CONFIG_PATH_BASE:-}
+    ports:
+      - '127.0.0.1:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}'
     networks:
       - dms
+    restart: unless-stopped
+    healthcheck:
+      test: curl -s http://localhost:8081/health >/dev/null || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 50
+    hostname: config
 
 networks:
   dms:
