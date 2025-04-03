@@ -71,7 +71,7 @@ else {
     docker network create dms
 
     Write-Output "Starting published DMS"
-    docker compose $files --env-file $EnvironmentFile up -d
+    docker compose $files --env-file $EnvironmentFile -p dms-published up -d
 
     if ($LASTEXITCODE -ne 0) {
         throw "Unable to start Published Docker environment, with exit code $LASTEXITCODE."
