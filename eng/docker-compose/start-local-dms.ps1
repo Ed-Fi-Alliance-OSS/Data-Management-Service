@@ -90,7 +90,7 @@ else {
     Start-Sleep 20
     ./setup-connectors.ps1 $EnvironmentFile $SearchEngine
 
-    Start-Sleep 20
+    Start-Sleep 5
     # Create client with default edfi_admin_api/full_access scope
     ./setup-keycloak.ps1
 
