@@ -813,4 +813,34 @@ public class SqlAction() : ISqlAction
         await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
+
+    public async Task<int> UpdateStudentSchoolAssociationAuthorization(
+        string studentUniqueId,
+        long schoolId,
+        long studentSchoolAssociationId,
+        int studentSchoolAssociationPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        TraceId traceId
+    )
+    {
+        await using NpgsqlCommand command = new(
+            $@"UPDATE dms.studentSchoolAssociationAuthorization
+	            SET studentUniqueId = $1, schoolId = $2
+                WHERE studentSchoolAssociationId = $3 AND studentSchoolAssociationPartitionKey = $4",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = studentUniqueId },
+                new() { Value = schoolId },
+                new() { Value = studentSchoolAssociationId },
+                new() { Value = studentSchoolAssociationPartitionKey },
+            },
+        };
+        await command.PrepareAsync();
+        return await command.ExecuteNonQueryAsync();
+    }
 }
