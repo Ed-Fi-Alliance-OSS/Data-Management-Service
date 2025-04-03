@@ -10,7 +10,7 @@ services:
       additional_contexts:
         parentdir: ../../src/
     environment:
-      ASPNETCORE_HTTP_PORTS: ${ASPNETCORE_HTTP_PORTS:-8080}
+      ASPNETCORE_HTTP_PORTS: ${DMS_HTTP_PORTS:-8080}
       OAUTH_TOKEN_ENDPOINT: ${OAUTH_TOKEN_ENDPOINT:-http://host.docker.internal:8080/oauth/token}
       NEED_DATABASE_SETUP: ${NEED_DATABASE_SETUP:-true}
       BYPASS_STRING_COERCION: ${BYPASS_STRING_COERCION:-false}
@@ -46,7 +46,7 @@ services:
       USE_API_SCHEMA_PATH: ${USE_API_SCHEMA_PATH:-false}
       API_SCHEMA_PATH: ${API_SCHEMA_PATH:-}
     ports:
-      - '127.0.0.1:8080:8080'
+      - '127.0.0.1:${DMS_HTTP_PORTS}:${DMS_HTTP_PORTS}'
     networks:
       - dms
     restart: unless-stopped
