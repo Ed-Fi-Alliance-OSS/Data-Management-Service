@@ -293,6 +293,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                 UpdateCascadeHandler = new UpdateCascadeHandler(new ApiSchemaProvider(), NullLogger.Instance),
                 DocumentSecurityElements = documentSecurityElements,
                 ResourceAuthorizationHandler = new ResourceAuthorizationHandler([], NullLogger.Instance),
+                ResourceAuthorizationPathways = new List<AuthorizationPathway>(),
             }
         ).ActLike<IUpsertRequest>();
     }
