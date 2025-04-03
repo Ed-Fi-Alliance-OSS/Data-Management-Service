@@ -5,7 +5,7 @@
 
 services:
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.5.1
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.5.1@sha256:d784066422aec9f66ae424f692d2416057e78853ab015915a04530570c955cc8
     container_name: dms-search
     volumes:
       - esdata:/usr/share/elasticsearch/data

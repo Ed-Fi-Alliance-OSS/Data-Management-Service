@@ -5,7 +5,7 @@
 
 services:
   keycloak:
-    image: quay.io/keycloak/keycloak:25.0@sha256:410fce4b9b40e1f4e7f90b44acedbaa6d935bacea432a6884769067b253d46fb
+    image: quay.io/keycloak/keycloak:26.1@sha256:044a457e04987e1fff756be3d2fa325a4ef420fa356b7034ecc9f1b693c32761
     container_name: dms-keycloak
     volumes:
       - dms-keycloak:/var/lib/keycloak/data

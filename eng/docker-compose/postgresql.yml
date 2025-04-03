@@ -5,7 +5,7 @@
 
 services:
   db:
-    image: postgres:16.3-alpine
+    image: postgres:16.8-alpine@sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0
     container_name: dms-postgresql
     volumes:
       - dms-postgresql:/var/lib/postgresql/data
