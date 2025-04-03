@@ -48,7 +48,7 @@ param (
 
     # Role name for Config Service accounts
     [string]
-    $ConfigServiceRole = "config-service-app",
+    $ConfigServiceRole = "cms-client",
 
     # Admin API's client scope
     [string]

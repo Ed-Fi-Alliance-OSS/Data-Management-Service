@@ -177,7 +177,7 @@ $parameters = @{
     # password during the Keycloak setup, please ensure you use that specific value instead of the default 
     # 'admin' password when running this script.)
     NewClientRole = "dms-client"               # Client role (default: dms-client), If you want to setup 
-    # Configuration service client, then use "config-service-app"
+    # Configuration service client, then use "cms-client"
     NewClientId = "test-client"                # Client id (default: test-client)
     NewClientName = "test-client"              # Client name (default: Test client)
     NewClientSecret = "s3creT@09"              # Client secret (default: s3creT@09)

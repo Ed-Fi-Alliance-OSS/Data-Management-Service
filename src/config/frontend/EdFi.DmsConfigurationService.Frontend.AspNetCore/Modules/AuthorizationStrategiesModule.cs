@@ -5,6 +5,7 @@
 
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -12,9 +13,7 @@ public class AuthorizationStrategiesModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints
-            .MapGet("/authorizationStrategies", GetAuthorizationStrategies)
-            .RequireAuthorizationWithPolicy();
+        endpoints.MapSecuredGet("/authorizationStrategies", GetAuthorizationStrategies);
     }
 
     public static async Task<IResult> GetAuthorizationStrategies(

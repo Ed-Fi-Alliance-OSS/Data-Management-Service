@@ -11,8 +11,9 @@ using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
+using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
-using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
@@ -46,11 +47,13 @@ public class VendorModuleTests
                         );
 
                     collection.AddAuthorization(options =>
+                    {
                         options.AddPolicy(
                             SecurityConstants.ServicePolicy,
                             policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
-                        )
-                    );
+                        );
+                        AuthorizationScopePolicies.Add(options);
+                    });
                     collection
                         .AddTransient((_) => _httpContext)
                         .AddTransient((_) => _vendorRepository)
@@ -58,7 +61,9 @@ public class VendorModuleTests
                 }
             );
         });
-        return factory.CreateClient();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
+        return client;
     }
 
     [TestFixture]

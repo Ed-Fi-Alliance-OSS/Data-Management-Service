@@ -10,6 +10,5 @@ public record KeycloakContext(
     string Realm,
     string ClientId,
     string ClientSecret,
-    string RoleClaimType,
-    string Scope
+    string RoleClaimType
 );

@@ -9,9 +9,9 @@ using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using FluentValidation;
 using FluentValidation.Results;
-using Keycloak.Net.Models.Clients;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -19,14 +19,12 @@ public class VendorModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost("/v2/vendors/", InsertVendor).RequireAuthorizationWithPolicy();
-        endpoints.MapGet("/v2/vendors/", GetAll).RequireAuthorizationWithPolicy();
-        endpoints.MapGet($"/v2/vendors/{{id}}", GetById).RequireAuthorizationWithPolicy();
-        endpoints.MapPut($"/v2/vendors/{{id}}", Update).RequireAuthorizationWithPolicy();
-        endpoints.MapDelete($"/v2/vendors/{{id}}", Delete).RequireAuthorizationWithPolicy();
-        endpoints
-            .MapGet($"/v2/vendors/{{id}}/applications", GetApplicationsByVendorId)
-            .RequireAuthorizationWithPolicy();
+        endpoints.MapSecuredPost("/v2/vendors/", InsertVendor);
+        endpoints.MapSecuredGet("/v2/vendors/", GetAll);
+        endpoints.MapSecuredGet($"/v2/vendors/{{id}}", GetById);
+        endpoints.MapSecuredPut($"/v2/vendors/{{id}}", Update);
+        endpoints.MapSecuredDelete($"/v2/vendors/{{id}}", Delete);
+        endpoints.MapSecuredGet($"/v2/vendors/{{id}}/applications", GetApplicationsByVendorId);
     }
 
     private static async Task<IResult> InsertVendor(

@@ -15,7 +15,7 @@
 #    },
 #    "IdentitySettings": {
 #        "AllowRegistration": "true",
-#        "ConfigServiceRole": "config-service-app",
+#        "ConfigServiceRole": "cms-client",
 #        "ClientRole": "dms-client",
 #        "Authority": "http://localhost:8045/realms/edfi",
 #        "Audience": "account",

@@ -294,9 +294,6 @@ function E2ETests {
                 } else {
                     ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig -r
                 }
-
-                Start-Sleep 20
-                ./setup-keycloak.ps1
             }
             finally {
                 Pop-Location

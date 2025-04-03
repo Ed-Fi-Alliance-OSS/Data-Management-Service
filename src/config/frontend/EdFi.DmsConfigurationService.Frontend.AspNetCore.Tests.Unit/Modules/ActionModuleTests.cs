@@ -4,9 +4,13 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Net.Http;
 using System.Security.Claims;
+using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
@@ -67,6 +71,7 @@ public class RegisterActionEndpointTests
         public async Task Given_valid_token_and_role()
         {
             // Arrange
+
             await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -81,15 +86,18 @@ public class RegisterActionEndpointTests
                             );
 
                         collection.AddAuthorization(options =>
+                        {
                             options.AddPolicy(
                                 SecurityConstants.ServicePolicy,
                                 policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
-                            )
-                        );
+                            );
+                            AuthorizationScopePolicies.Add(options);
+                        });
                     }
                 );
             });
             using var client = factory.CreateClient();
+            client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
 
             // Act
             _response = await client.GetAsync("/actions");
@@ -146,6 +154,7 @@ public class RegisterActionEndpointTests
                 );
             });
             using var client = factory.CreateClient();
+            client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
 
             // Act
             _response = await client.GetAsync("/actions");

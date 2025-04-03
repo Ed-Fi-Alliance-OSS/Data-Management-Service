@@ -8,6 +8,8 @@ using System.Text.Json;
 using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
@@ -42,6 +44,7 @@ public class ClaimsHierarchyModuleTests
                         );
 
                     collection.AddAuthorization(options =>
+                    {
                         options.AddPolicy(
                             SecurityConstants.ServicePolicy,
                             policy =>
@@ -49,16 +52,18 @@ public class ClaimsHierarchyModuleTests
                                     System.Security.Claims.ClaimTypes.Role,
                                     AuthenticationConstants.Role
                                 )
-                        )
-                    );
-
+                        );
+                        AuthorizationScopePolicies.Add(options);
+                    });
                     collection.AddTransient(_ => _claimsHierarchyRepository);
                     collection.AddTransient(_ => _responseFactory);
                 }
             );
         });
 
-        return factory.CreateClient();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
+        return client;
     }
 
     [Test]
