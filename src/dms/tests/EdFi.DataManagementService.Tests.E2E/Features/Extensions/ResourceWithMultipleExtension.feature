@@ -25,6 +25,7 @@ Feature: Resource with multiple extensions
                     ]
                   }
                   """
+              Then it should respond with 201
               When a POST request is made to "/sample/buses" with
                   """
                  {
@@ -148,6 +149,7 @@ Feature: Resource with multiple extensions
                                 }
                             }]
                         }
-              }
+                }
+             }
              """
              Then it should respond with 409
