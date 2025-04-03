@@ -173,18 +173,8 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 case AuthorizationPathway.StudentSchoolAssociation studentSchoolAssociation:
                     _logger.LogDebug("AuthorizationPathway : StudentSchoolAssociation");
 
-                    if (studentSchoolAssociation is not { StudentId: not null, SchoolId: not null })
-                    {
-                        _logger.LogError(
-                            "Missing StudentId or SchoolId from AuthorizationPathway.StudentSchoolAssociation"
-                        );
-                        return new UpsertResult.UnknownFailure(
-                            "Missing StudentId or SchoolId from AuthorizationPathway.StudentSchoolAssociation"
-                        );
-                    }
-
-                    string studentId = studentSchoolAssociation.StudentId.Value.Value;
-                    long schoolId = studentSchoolAssociation.SchoolId.Value.Value;
+                    string studentId = studentSchoolAssociation.StudentId.Value;
+                    long schoolId = studentSchoolAssociation.SchoolId.Value;
 
                     await _sqlAction.InsertStudentSchoolAssociationAuthorization(
                         studentId,
@@ -277,18 +267,8 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 case AuthorizationPathway.StudentSchoolAssociation studentSchoolAssociation:
                     _logger.LogDebug("AuthorizationPathway : StudentSchoolAssociation");
 
-                    if (studentSchoolAssociation is not { StudentId: not null, SchoolId: not null })
-                    {
-                        _logger.LogError(
-                            "Missing StudentId or SchoolId from AuthorizationPathway.StudentSchoolAssociation"
-                        );
-                        return new UpsertResult.UnknownFailure(
-                            "Missing StudentId or SchoolId from AuthorizationPathway.StudentSchoolAssociation"
-                        );
-                    }
-
-                    string studentId = studentSchoolAssociation.StudentId.Value.Value;
-                    long schoolId = studentSchoolAssociation.SchoolId.Value.Value;
+                    string studentId = studentSchoolAssociation.StudentId.Value;
+                    long schoolId = studentSchoolAssociation.SchoolId.Value;
 
                     await _sqlAction.InsertStudentSchoolAssociationAuthorization(
                         studentId,

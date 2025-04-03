@@ -13,9 +13,9 @@ public record AuthorizationPathway
     /// <summary>
     /// Authorization Pathway that uses StudentSchoolAssociation to calculate the EducationOrganizations that can reach the related Securable Document(s).
     /// </summary>
-    /// <param name="StudentId">Extracted from the request body. Has its default value if the request method is GET or DELETE.</param>
-    /// <param name="SchoolId">Extracted from the request body. Has its default value if the request method is GET or DELETE.</param>
-    public record StudentSchoolAssociation(StudentId? StudentId, EducationOrganizationId? SchoolId)
+    /// <param name="StudentId">Extracted from the request body.</param>
+    /// <param name="SchoolId">Extracted from the request body.</param>
+    public record StudentSchoolAssociation(StudentId StudentId, EducationOrganizationId SchoolId)
         : AuthorizationPathway;
 
     private AuthorizationPathway() { }
