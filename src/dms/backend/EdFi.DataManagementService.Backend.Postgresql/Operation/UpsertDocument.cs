@@ -166,6 +166,29 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             );
         }
 
+        foreach (var authorizationPathway in upsertRequest.ResourceAuthorizationPathways)
+        {
+            switch (authorizationPathway)
+            {
+                case AuthorizationPathway.StudentSchoolAssociation studentSchoolAssociation:
+                    _logger.LogDebug("AuthorizationPathway : StudentSchoolAssociation");
+
+                    string studentId = studentSchoolAssociation.StudentId.Value;
+                    long schoolId = studentSchoolAssociation.SchoolId.Value;
+
+                    await _sqlAction.InsertStudentSchoolAssociationAuthorization(
+                        studentId,
+                        schoolId,
+                        newDocumentId,
+                        documentPartitionKey,
+                        connection,
+                        transaction,
+                        traceId
+                    );
+                    break;
+            }
+        }
+
         _logger.LogDebug("Upsert success as insert - {TraceId}", upsertRequest.TraceId.Value);
         return new UpsertResult.InsertSuccess(upsertRequest.DocumentUuid);
     }
@@ -235,6 +258,29 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 connection,
                 transaction
             );
+        }
+
+        foreach (var authorizationPathway in upsertRequest.ResourceAuthorizationPathways)
+        {
+            switch (authorizationPathway)
+            {
+                case AuthorizationPathway.StudentSchoolAssociation studentSchoolAssociation:
+                    _logger.LogDebug("AuthorizationPathway : StudentSchoolAssociation");
+
+                    string studentId = studentSchoolAssociation.StudentId.Value;
+                    long schoolId = studentSchoolAssociation.SchoolId.Value;
+
+                    await _sqlAction.InsertStudentSchoolAssociationAuthorization(
+                        studentId,
+                        schoolId,
+                        documentId,
+                        documentPartitionKey,
+                        connection,
+                        transaction,
+                        traceId
+                    );
+                    break;
+            }
         }
 
         _logger.LogDebug("Upsert success as update - {TraceId}", upsertRequest.TraceId.Value);
@@ -314,7 +360,9 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
 
                 if (getAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
                 {
-                    return new UpsertResult.UpsertFailureNotAuthorized(notAuthorized.RelationshipErrorMessages);
+                    return new UpsertResult.UpsertFailureNotAuthorized(
+                        notAuthorized.RelationshipErrorMessages
+                    );
                 }
             }
 

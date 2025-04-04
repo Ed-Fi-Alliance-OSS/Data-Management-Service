@@ -38,6 +38,8 @@ CREATE TABLE dms.Document_15 PARTITION OF dms.Document FOR VALUES WITH (MODULUS 
 
 -- GET/UPDATE/DELETE by id lookup support, DocumentUuid uniqueness validation
 CREATE UNIQUE INDEX UX_Document_DocumentUuid ON dms.Document (DocumentPartitionKey, DocumentUuid);
+-- Authorization tables cascade delete support
+CREATE UNIQUE INDEX UX_Document_DocumentId ON dms.Document (DocumentPartitionKey, Id);
 
 -- Set REPLICA IDENTITY FULL to all partitions so all columns are
 -- available through replication to e.g. Debezium

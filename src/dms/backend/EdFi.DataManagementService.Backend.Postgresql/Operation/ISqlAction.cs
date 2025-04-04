@@ -166,4 +166,24 @@ public interface ISqlAction
         NpgsqlTransaction transaction,
         TraceId traceId
     );
+
+    public Task<int> InsertStudentSchoolAssociationAuthorization(
+        string studentUniqueId,
+        long schoolId,
+        long studentSchoolAssociationId,
+        int studentSchoolAssociationPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        TraceId traceId
+    );
+
+    public Task<int> UpdateStudentSchoolAssociationAuthorization(
+        string studentUniqueId,
+        long schoolId,
+        long studentSchoolAssociationId,
+        int studentSchoolAssociationPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        TraceId traceId
+    );
 }

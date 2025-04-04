@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Npgsql;
 using NUnit.Framework;
@@ -1000,6 +1001,65 @@ public class UpsertTests : DatabaseTest
         public void It_should_be_a_reference_failure()
         {
             _upsertResult!.Should().BeOfType<UpsertResult.UpsertFailureDescriptorReference>();
+        }
+    }
+
+    [TestFixture]
+    public class Given_An_Upsert_Of_A_StudentSchoolAssociation_Authorization_Document : UpsertTests
+    {
+        private UpsertResult? _upsertResult;
+        private GetResult? _getResult;
+
+        private static readonly Guid _documentUuidGuid = Guid.NewGuid();
+        private static readonly Guid _referentialIdGuid = Guid.NewGuid();
+        private static readonly string _edFiDocString = """{"abc":1}""";
+
+        [SetUp]
+        public async Task Setup()
+        {
+            //First upsert school
+            IUpsertRequest schoolUpsertRequest = CreateUpsertRequest(
+                "school",
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                _edFiDocString,
+                isInEducationOrganizationHierarchy: true,
+                educationOrganizationId: 999
+            );
+            await CreateUpsert().Upsert(schoolUpsertRequest, Connection!, Transaction!);
+
+            IUpsertRequest upsertRequest = CreateUpsertRequest(
+                _defaultResourceName,
+                _documentUuidGuid,
+                _referentialIdGuid,
+                _edFiDocString,
+                resourceAuthorizationPathways:
+                [
+                    new AuthorizationPathway.StudentSchoolAssociation(
+                        new StudentId("0123"),
+                        new EducationOrganizationId(999)
+                    ),
+                ]
+            );
+            _upsertResult = await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+
+            // Confirm it's there
+            IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
+            _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
+        }
+
+        [Test]
+        public void It_should_be_a_successful_insert()
+        {
+            _upsertResult!.Should().BeOfType<UpsertResult.InsertSuccess>();
+        }
+
+        [Test]
+        public void It_should_be_found_by_get()
+        {
+            _getResult!.Should().BeOfType<GetResult.GetSuccess>();
+            (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
+            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":1");
         }
     }
 
