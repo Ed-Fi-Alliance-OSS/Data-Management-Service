@@ -1,5 +1,6 @@
 Feature: Sample extension resources
 
+     # Update busRoutes scenarios to remove busReference fields, as described in DMS-610
     Rule: busRoutes scenarios
         Background:
             Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
@@ -466,6 +467,7 @@ Feature: Sample extension resources
                   """
 
     Rule: busRoutes scenarios
+        # remove the ignore tag after fixing bug described in DMS-610
         @ignore
         Scenario: 10 Create Staff with Duplicate Extension Items
             Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
