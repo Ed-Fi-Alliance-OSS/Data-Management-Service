@@ -25,6 +25,11 @@ internal class ProvideEducationOrganizationHierarchyMiddleware(ILogger _logger) 
             context.FrontendRequest.TraceId.Value
         );
 
+        // Skip this logic if the path contains "homograph/schools"
+        if (context.FrontendRequest.Path.Contains("homograph/schools"))
+        {
+            return;
+        }
         context.EducationOrganizationHierarchyInfo = GetHierarchyInfo(context);
 
         await next();
