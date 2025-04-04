@@ -10,6 +10,10 @@ namespace EdFi.DataManagementService.Core.External.Model;
 /// </summary>
 public record AuthorizationStrategyEvaluator(
     /// <summary>
+    /// The JSON element to specify authorization name
+    /// </summary>
+    string AuthorizationStrategyName,
+    /// <summary>
     /// Authorization filters to be applied
     /// </summary>
     AuthorizationFilter[] Filters,

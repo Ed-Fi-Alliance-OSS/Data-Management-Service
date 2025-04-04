@@ -80,31 +80,15 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
 
         try
         {
-            // If this update is part of RelationshipWithEdOrg strategy, verify the access to the hierarchy.
-            if (updateRequest.ResourceAuthorizationHandler.IsRelationshipWithEdOrg)
+            ResourceAuthorizationResult getAuthorizationResult =
+                await updateRequest.ResourceAuthorizationHandler.Authorize(
+                    updateRequest.DocumentSecurityElements,
+                    updateRequest.TraceId
+                );
+
+            if (getAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
             {
-                long[] educationOrganizationSecurityElements =
-                    await _sqlAction.GetAncestorEducationOrganizationIdsForUpsert(
-                        updateRequest
-                            .DocumentSecurityElements.EducationOrganization.Select(e => e.Id.Value)
-                            .ToArray(),
-                        connection,
-                        transaction,
-                        updateRequest.TraceId
-                    );
-
-                ResourceAuthorizationResult getAuthorizationResult =
-                    updateRequest.ResourceAuthorizationHandler.Authorize(
-                        updateRequest.DocumentSecurityElements.Namespace,
-                        educationOrganizationSecurityElements
-                    );
-
-                if (getAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
-                {
-                    return new UpdateResult.UpdateFailureNotAuthorized(
-                        notAuthorized.RelationshipErrorMessages
-                    );
-                }
+                return new UpdateResult.UpdateFailureNotAuthorized(notAuthorized.ErrorMessages);
             }
 
             UpdateDocumentValidationResult validationResult = await _sqlAction.UpdateDocumentValidation(

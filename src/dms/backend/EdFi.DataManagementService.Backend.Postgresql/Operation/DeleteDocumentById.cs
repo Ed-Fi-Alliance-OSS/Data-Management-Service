@@ -6,6 +6,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
@@ -52,28 +53,11 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
                 return new DeleteResult.DeleteFailureNotExists();
             }
 
-            long[] educationOrganizationSecurityElements = [];
+            var securityElements = documentSummary.SecurityElements.Deserialize<DocumentSecurityElements>()!;
 
-            JsonNode securityElements = documentSummary.SecurityElements.Deserialize<JsonNode>()!;
-            string[] namespaceSecurityElements = securityElements["Namespace"]!
-                .AsArray()
-                .Select(v => v!.GetValue<string>())
-                .ToArray();
-
-            if (deleteRequest.ResourceAuthorizationHandler.IsRelationshipWithEdOrg)
-            {
-                educationOrganizationSecurityElements = await _sqlAction.GetAncestorEducationOrganizationIds(
-                    PartitionKeyFor(deleteRequest.DocumentUuid),
-                    deleteRequest.DocumentUuid,
-                    connection,
-                    transaction,
-                    deleteRequest.TraceId
-                );
-            }
-
-            var deleteAuthorizationResult = deleteRequest.ResourceAuthorizationHandler.Authorize(
-                namespaceSecurityElements,
-                educationOrganizationSecurityElements
+            var deleteAuthorizationResult = await deleteRequest.ResourceAuthorizationHandler.Authorize(
+                securityElements,
+                deleteRequest.TraceId
             );
 
             if (deleteAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)

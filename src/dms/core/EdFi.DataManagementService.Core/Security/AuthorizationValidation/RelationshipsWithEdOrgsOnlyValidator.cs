@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Security.AuthorizationValidation;
@@ -12,19 +13,20 @@ namespace EdFi.DataManagementService.Core.Security.AuthorizationValidation;
 /// Validates only what can be determined from looking at the request, namely that EducationOrganizationIds
 /// exist on the resource and the client has at least one EducationOrganizationId in their claim.
 /// The remainder of the RelationshipsWithEdOrgsOnly validation will occur later in the pipeline after
-/// fetching the EdOrg hierarchy of the resource. 
+/// fetching the EdOrg hierarchy of the resource.
 /// </summary>
 [AuthorizationStrategyName(AuthorizationStrategyName)]
-public class RelationshipsWithEdOrgsOnlyValidator : IAuthorizationValidator
+public class RelationshipsWithEdOrgsOnlyValidator(IAuthorizationRepository authorizationRepository)
+    : IAuthorizationValidator
 {
     private const string AuthorizationStrategyName = "RelationshipsWithEdOrgsOnly";
 
-    public AuthorizationResult ValidateAuthorization(
+    public async Task<AuthorizationResult> ValidateAuthorization(
         DocumentSecurityElements securityElements,
-        ClientAuthorizations authorizations
+        AuthorizationFilter[] authorizationFilters,
+        TraceId traceId
     )
     {
-        List<EducationOrganizationId> edOrgIdsFromClaim = authorizations.EducationOrganizationIds;
         List<EducationOrganizationId> edOrgsFromRequest = securityElements
             .EducationOrganization.Select(e => e.Id)
             .ToList();
@@ -35,13 +37,27 @@ public class RelationshipsWithEdOrgsOnlyValidator : IAuthorizationValidator
                 "No 'EducationOrganizationIds' property could be found on the resource in order to perform authorization. Should a different authorization strategy be used?";
             return new AuthorizationResult(false, error);
         }
-        if (edOrgIdsFromClaim.Count == 0)
-        {
-            string noRequiredClaimError =
-                $"The API client has been given permissions on a resource that uses the '{AuthorizationStrategyName}' authorization strategy but the client doesn't have any education organizations assigned.";
-            return new AuthorizationResult(false, noRequiredClaimError);
-        }
 
+        // Retrieve the hierarchy of the education organization ids from the request
+        var edOrgIdValues = edOrgsFromRequest.Select(e => e.Value).ToArray();
+
+        var ancestorEducationOrganizationIds =
+            await authorizationRepository.GetAncestorEducationOrganizationIds(edOrgIdValues, traceId);
+
+        bool isAuthorized = authorizationFilters
+            .Select(filter => long.TryParse(filter.Value, out var edOrgId) ? edOrgId : (long?)null)
+            .Where(edOrgId => edOrgId.HasValue)
+            .Any(edOrgId =>
+                edOrgId != null && ancestorEducationOrganizationIds.ToList().Contains(edOrgId.Value)
+            );
+
+        if (!isAuthorized)
+        {
+            string edOrgIdsFromClaim = string.Join(", ", authorizationFilters.Select(x => $"'{x.Value}'"));
+            var error =
+                $"No relationships have been established between the caller's education organization id claims ({edOrgIdsFromClaim}) and properties of the resource item.";
+            return new AuthorizationResult(false, error);
+        }
         return new AuthorizationResult(true);
     }
 }

@@ -15,11 +15,12 @@ public class NoFurtherAuthorizationRequiredValidator : IAuthorizationValidator
 {
     private const string AuthorizationStrategyName = "NoFurtherAuthorizationRequired";
 
-    public AuthorizationResult ValidateAuthorization(
+    public async Task<AuthorizationResult> ValidateAuthorization(
         DocumentSecurityElements securityElements,
-        ClientAuthorizations authorizations
+        AuthorizationFilter[] authorizationFilters,
+        TraceId traceId
     )
     {
-        return new AuthorizationResult(true);
+        return await Task.FromResult(new AuthorizationResult(true));
     }
 }
