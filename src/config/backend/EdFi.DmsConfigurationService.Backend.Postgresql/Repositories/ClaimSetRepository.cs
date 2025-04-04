@@ -89,18 +89,6 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         }
     }
 
-    private static string SerializeResourceClaim(List<ResourceClaim>? resourceClaims)
-    {
-        return JsonSerializer.Serialize(
-            resourceClaims,
-            new JsonSerializerOptions
-            {
-                WriteIndented = false,
-                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-            }
-        );
-    }
-
     public async Task<ClaimSetInsertResult> InsertClaimSet(ClaimSetInsertCommand command)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
@@ -145,7 +133,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            string baseSql = """
+            string sql = """
                 SELECT c.Id, c.ClaimSetName, c.IsSystemReserved
                     ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName))
                         FROM dmscs.application a WHERE a.ClaimSetName = c.ClaimSetName ) as applications
@@ -154,7 +142,6 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                 LIMIT @Limit OFFSET @Offset;
                 """;
 
-            string sql = string.Format(baseSql);
             var claimSets = await connection.QueryAsync(sql, param: query);
 
             if (verbose)
@@ -194,15 +181,13 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            string baseSql = """
+            string sql = """
                 SELECT c.Id, c.ClaimSetName, c.IsSystemReserved
                     ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName))
                         FROM dmscs.application a WHERE a.ClaimSetName = c.ClaimSetName ) as applications
                 FROM dmscs.ClaimSet c
                 WHERE c.Id = @Id
                 """;
-
-            string sql = string.Format(baseSql);
 
             var claimSets = await connection.QueryAsync<dynamic>(sql, param: new { Id = id });
 

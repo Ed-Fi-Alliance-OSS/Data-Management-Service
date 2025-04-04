@@ -16,6 +16,5 @@ public class ClaimSetExportResponse
     public required bool IsSystemReserved { get; set; }
     [JsonPropertyName("_applications")]
     public JsonElement? Applications { get; set; }
-    public required JsonElement ResourceClaims { get; set; }
 }
 

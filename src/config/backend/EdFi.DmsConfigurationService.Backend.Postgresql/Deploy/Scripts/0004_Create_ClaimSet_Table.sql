@@ -7,8 +7,6 @@ CREATE TABLE IF NOT EXISTS dmscs.ClaimSet
     CONSTRAINT claimset_pkey PRIMARY KEY (id)
 );
 
-ALTER TABLE dmscs.ClaimSet ADD CONSTRAINT uq_ClaimSetName UNIQUE (ClaimSetName);
-
 CREATE UNIQUE INDEX idx_ClaimSetName ON dmscs.ClaimSet (ClaimSetName);
 
 COMMENT ON COLUMN dmscs.claimset.id
