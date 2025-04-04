@@ -15,6 +15,7 @@ on:
       - "src/dms/**/*.csproj"
       - "src/dms/**/*.sql"
       - "src/**/Directory.Packages.props"
+      - "src/dms/**/*.feature"
   pull_request:
     branches:
       - main
@@ -24,6 +25,7 @@ on:
       - "src/dms/**/*.sql"
       - ".github/**/*dms*.yml"
       - "src/**/Directory.Packages.props"
+      - "src/dms/**/*.feature"
   workflow_dispatch:
 
 concurrency:
