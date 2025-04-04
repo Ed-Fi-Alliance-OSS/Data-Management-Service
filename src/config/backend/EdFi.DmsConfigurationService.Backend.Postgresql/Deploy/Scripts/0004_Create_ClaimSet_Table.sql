@@ -4,7 +4,6 @@ CREATE TABLE IF NOT EXISTS dmscs.ClaimSet
     Id bigint NOT NULL GENERATED ALWAYS AS IDENTITY ( INCREMENT 1 START 1 MINVALUE 1 MAXVALUE 9223372036854775807 CACHE 1 ),
     ClaimSetName VARCHAR(256) NOT NULL,
     IsSystemReserved BOOLEAN NOT NULL,
-	  ResourceClaims JSONB NOT NULL,
     CONSTRAINT claimset_pkey PRIMARY KEY (id)
 );
 
@@ -20,6 +19,3 @@ COMMENT ON COLUMN dmscs.claimset.ClaimSetName
 
 COMMENT ON COLUMN dmscs.claimset.IsSystemReserved
     IS 'Is system reserved';
-
-COMMENT ON COLUMN dmscs.claimset.ResourceClaims
-    IS 'Contains a collection of Resource Claims in json format.';
