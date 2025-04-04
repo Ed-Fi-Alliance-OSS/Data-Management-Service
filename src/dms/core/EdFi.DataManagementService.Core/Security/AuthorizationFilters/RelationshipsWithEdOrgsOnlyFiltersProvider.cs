@@ -18,19 +18,20 @@ public class RelationshipsWithEdOrgsOnlyFiltersProvider : IAuthorizationFiltersP
     public AuthorizationStrategyEvaluator GetFilters(ClientAuthorizations authorizations)
     {
         var filters = new List<AuthorizationFilter>();
-        foreach (var edOrgId in authorizations.EducationOrganizationIds)
+        var edOrgIdsFromClaim = authorizations
+            .EducationOrganizationIds.Select(e => e.Value.ToString())
+            .ToList();
+        if (edOrgIdsFromClaim.Count == 0)
         {
-            filters.Add(
-                new AuthorizationFilter(
-                    "EducationOrganization",
-                    edOrgId.Value.ToString(),
-                    "Access to the resource item could not be authorized based on the caller's EducationOrganizationIds claims: {claims}.",
-                    "No relationships have been established between the caller's education organization id claims ({claims}) and properties of the resource item.",
-                    FilterComparison.Equals
-                )
-            );
+            string noRequiredClaimError =
+                $"The API client has been given permissions on a resource that uses the '{AuthorizationStrategyName}' authorization strategy but the client doesn't have any education organizations assigned.";
+            throw new Exception(noRequiredClaimError);
+        }
+        foreach (var edOrgId in edOrgIdsFromClaim)
+        {
+            filters.Add(new AuthorizationFilter("EducationOrganization", edOrgId));
         }
 
-        return new AuthorizationStrategyEvaluator([.. filters], FilterOperator.Or);
+        return new AuthorizationStrategyEvaluator(AuthorizationStrategyName, [.. filters], FilterOperator.Or);
     }
 }

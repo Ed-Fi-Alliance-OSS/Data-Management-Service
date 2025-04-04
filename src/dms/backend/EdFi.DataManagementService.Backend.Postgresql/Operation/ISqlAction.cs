@@ -151,19 +151,4 @@ public interface ISqlAction
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     );
-
-    public Task<long[]> GetAncestorEducationOrganizationIds(
-        PartitionKey documentPartitionKey,
-        DocumentUuid documentUuid,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        TraceId traceId
-    );
-
-    public Task<long[]> GetAncestorEducationOrganizationIdsForUpsert(
-        long[] educationOrganizationIds,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        TraceId traceId
-    );
 }

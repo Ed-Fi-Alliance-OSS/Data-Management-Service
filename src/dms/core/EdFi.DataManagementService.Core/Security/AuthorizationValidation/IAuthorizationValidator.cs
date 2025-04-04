@@ -12,8 +12,9 @@ namespace EdFi.DataManagementService.Core.Security.AuthorizationValidation;
 /// </summary>
 public interface IAuthorizationValidator
 {
-    AuthorizationResult ValidateAuthorization(
+    Task<AuthorizationResult> ValidateAuthorization(
         DocumentSecurityElements securityElements,
-        ClientAuthorizations authorizations
+        AuthorizationFilter[] authorizationFilters,
+        TraceId traceId
     );
 }

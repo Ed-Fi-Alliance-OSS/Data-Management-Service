@@ -5,7 +5,10 @@
 
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Security.AuthorizationValidation;
 using Microsoft.Extensions.Logging;
+using Serilog.Core;
 
 namespace EdFi.DataManagementService.Core.Backend;
 
@@ -16,128 +19,66 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// </summary>
 public class ResourceAuthorizationHandler(
     AuthorizationStrategyEvaluator[] authorizationStrategyEvaluators,
+    IAuthorizationServiceFactory authorizationServiceFactory,
     ILogger logger
 ) : IResourceAuthorizationHandler
 {
-    private static class FilterPaths
+    public async Task<ResourceAuthorizationResult> Authorize(
+        DocumentSecurityElements documentSecurityElements,
+        TraceId traceId
+    )
     {
-        public const string Namespace = "Namespace";
-        public const string EducationOrganization = "EducationOrganization";
-    }
-
-    public bool IsRelationshipWithEdOrg =>
-        Enumerable.Any(
-            authorizationStrategyEvaluators,
-            a => Enumerable.Any(a.Filters, f => f.FilterPath == FilterPaths.EducationOrganization)
-        );
-
-    public ResourceAuthorizationResult Authorize(string[] namespaces, long[] educationOrganizationIds)
-    {
-        List<(AuthorizationFilter Filter, bool IsAuthorized)> andFilters = [];
-        List<(AuthorizationFilter Filter, bool IsAuthorized)> orFilters = [];
+        logger.LogInformation("Entering ResourceAuthorizationHandler. TraceId:{TraceId}", traceId.Value);
+        List<AuthorizationResult> andResults = [];
+        List<AuthorizationResult> orResults = [];
 
         foreach (var evaluator in authorizationStrategyEvaluators)
         {
-            foreach (var filter in evaluator.Filters)
-            {
-                logger.LogDebug("Evaluating filter: {Filter}", filter);
-                bool isAuthorized = EvaluateFilter(filter, namespaces, educationOrganizationIds);
+            var validator =
+                authorizationServiceFactory.GetByName<IAuthorizationValidator>(
+                    evaluator.AuthorizationStrategyName
+                )
+                ?? throw new Exception(
+                    $"Could not find authorization strategy implementation for the following strategy: '{evaluator.AuthorizationStrategyName}'."
+                );
 
-                if (evaluator.Operator == FilterOperator.And)
-                {
-                    andFilters.Add((filter, isAuthorized));
-                }
-                else
-                {
-                    orFilters.Add((filter, isAuthorized));
-                }
+            var authResult = await validator.ValidateAuthorization(
+                documentSecurityElements,
+                evaluator.Filters,
+                traceId
+            );
+
+            if (evaluator.Operator == FilterOperator.And)
+            {
+                andResults.Add(authResult);
+            }
+            else
+            {
+                orResults.Add(authResult);
             }
         }
 
-        if (andFilters.Exists(f => !f.IsAuthorized))
+        if (andResults.Exists(f => !f.IsAuthorized))
         {
-            return CreateNotAuthorizedResult(andFilters);
+            return CreateNotAuthorizedResult(andResults);
         }
 
-        if (orFilters.Any() && Enumerable.All(orFilters, f => !f.IsAuthorized))
+        if (orResults.Any() && Enumerable.All(orResults, f => !f.IsAuthorized))
         {
-            return CreateNotAuthorizedResult(orFilters);
+            return CreateNotAuthorizedResult(orResults);
         }
 
         return new ResourceAuthorizationResult.Authorized();
     }
 
-    private static bool EvaluateFilter(
-        AuthorizationFilter filter,
-        string[] namespaces,
-        long[] educationOrganizationIds
+    private static ResourceAuthorizationResult.NotAuthorized CreateNotAuthorizedResult(
+        IEnumerable<AuthorizationResult> results
     )
     {
-        switch (filter.FilterPath)
-        {
-            case FilterPaths.Namespace:
-                return filter.Comparison switch
-                {
-                    FilterComparison.Equals => namespaces.Contains(filter.Value),
-                    FilterComparison.StartsWith => namespaces
-                        .ToList()
-                        .Exists(v => v.StartsWith(filter.Value)),
-                    _ => false,
-                };
-
-            case FilterPaths.EducationOrganization when long.TryParse(filter.Value, out long edOrgIdValue):
-                return filter.Comparison switch
-                {
-                    FilterComparison.Equals => educationOrganizationIds.Contains(edOrgIdValue),
-                    _ => false,
-                };
-
-            default:
-                return false;
-        }
-    }
-
-    private ResourceAuthorizationResult.NotAuthorized CreateNotAuthorizedResult(
-        IEnumerable<(AuthorizationFilter Filter, bool IsAuthorized)> evaluations
-    )
-    {
-        List<string> failedPaths = evaluations
-            .SelectMany(e => new[] { e.Filter })
-            .Select(f => f.FilterPath)
-            .Distinct()
-            .ToList();
-
-        Dictionary<string, List<string>> claimsByPath = failedPaths.ToDictionary(
-            path => path,
-            path =>
-                authorizationStrategyEvaluators
-                    .SelectMany(e => e.Filters)
-                    .Where(f => f.FilterPath == path)
-                    .Select(f => $"'{f.Value}'")
-                    .Distinct()
-                    .ToList()
-        );
-
-        string[] errorMessages = evaluations
-            .Where(e => !e.IsAuthorized)
-            .Select(e =>
-            {
-                string claims = string.Join(", ", claimsByPath[e.Filter.FilterPath]);
-                return e.Filter.ErrorMessageTemplate.Replace("{claims}", claims);
-            })
-            .Distinct()
+        string[] errors = results
+            .Where(x => !string.IsNullOrEmpty(x.ErrorMessage))
+            .Select(x => x.ErrorMessage)
             .ToArray();
-
-        string[] relationshipErrorMessages = evaluations
-            .Where(e => !e.IsAuthorized)
-            .Select(e =>
-            {
-                string claims = string.Join(", ", claimsByPath[e.Filter.FilterPath]);
-                return e.Filter.RelationshipErrorMessageTemplate.Replace("{claims}", claims);
-            })
-            .Distinct()
-            .ToArray();
-
-        return new ResourceAuthorizationResult.NotAuthorized(errorMessages, relationshipErrorMessages);
+        return new ResourceAuthorizationResult.NotAuthorized(errors);
     }
 }

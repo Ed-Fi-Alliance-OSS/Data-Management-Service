@@ -76,7 +76,7 @@ internal class ProvideAuthorizationFiltersMiddleware(
                 StatusCode: 500,
                 Body: new JsonObject
                 {
-                    ["message"] = "Error while authorizing the request.",
+                    ["message"] = $"Error while authorizing the request.{ex.Message}",
                     ["traceId"] = context.FrontendRequest.TraceId.Value,
                 },
                 Headers: []

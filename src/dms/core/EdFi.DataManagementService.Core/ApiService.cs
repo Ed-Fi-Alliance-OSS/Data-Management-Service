@@ -90,10 +90,15 @@ internal class ApiService(
                 new DisallowDuplicateReferencesMiddleware(_logger),
                 new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
                 new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
-                new ResourceUpsertAuthorizationMiddleware(_authorizationServiceFactory, _logger),
                 new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
                 new ProvideAuthorizationPathwayMiddleware(_logger),
-                new UpsertHandler(_documentStoreRepository, _logger, _resiliencePipeline, _apiSchemaProvider),
+                new UpsertHandler(
+                    _documentStoreRepository,
+                    _logger,
+                    _resiliencePipeline,
+                    _apiSchemaProvider,
+                    _authorizationServiceFactory
+                ),
             ]
         );
 
@@ -118,7 +123,12 @@ internal class ApiService(
                     ),
                     new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
                     new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
-                    new GetByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline),
+                    new GetByIdHandler(
+                        _documentStoreRepository,
+                        _logger,
+                        _resiliencePipeline,
+                        _authorizationServiceFactory
+                    ),
                 ]
             )
     );
@@ -193,14 +203,14 @@ internal class ApiService(
                 new DisallowDuplicateReferencesMiddleware(_logger),
                 new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
                 new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
-                new ResourceUpsertAuthorizationMiddleware(_authorizationServiceFactory, _logger),
                 new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
                 new ProvideAuthorizationPathwayMiddleware(_logger),
                 new UpdateByIdHandler(
                     _documentStoreRepository,
                     _logger,
                     _resiliencePipeline,
-                    _apiSchemaProvider
+                    _apiSchemaProvider,
+                    _authorizationServiceFactory
                 ),
             ]
         );
@@ -226,7 +236,12 @@ internal class ApiService(
                     new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
                     new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
                     new ProvideAuthorizationPathwayMiddleware(_logger),
-                    new DeleteByIdHandler(_documentStoreRepository, _logger, _resiliencePipeline),
+                    new DeleteByIdHandler(
+                        _documentStoreRepository,
+                        _logger,
+                        _resiliencePipeline,
+                        _authorizationServiceFactory
+                    ),
                 ]
             )
     );

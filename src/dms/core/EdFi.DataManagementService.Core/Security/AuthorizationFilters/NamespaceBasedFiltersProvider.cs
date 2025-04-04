@@ -18,19 +18,18 @@ public class NamespaceBasedFiltersProvider : IAuthorizationFiltersProvider
     public AuthorizationStrategyEvaluator GetFilters(ClientAuthorizations authorizations)
     {
         var filters = new List<AuthorizationFilter>();
-        foreach (var namespacePrefix in authorizations.NamespacePrefixes)
+        var namespacePrefixesFromClaim = authorizations.NamespacePrefixes;
+        if (namespacePrefixesFromClaim.Count == 0)
         {
-            filters.Add(
-                new AuthorizationFilter(
-                    "Namespace",
-                    namespacePrefix.Value,
-                    "Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: {claims}.",
-                    "",
-                    FilterComparison.StartsWith
-                )
-            );
+            string noRequiredClaimError =
+                $"The API client has been given permissions on a resource that uses the '{AuthorizationStrategyName}' authorization strategy but the client doesn't have any namespace prefixes assigned.";
+            throw new Exception(noRequiredClaimError);
+        }
+        foreach (var namespacePrefix in namespacePrefixesFromClaim)
+        {
+            filters.Add(new AuthorizationFilter("NameSpace", namespacePrefix.Value));
         }
 
-        return new AuthorizationStrategyEvaluator([.. filters], FilterOperator.Or);
+        return new AuthorizationStrategyEvaluator(AuthorizationStrategyName, [.. filters], FilterOperator.Or);
     }
 }

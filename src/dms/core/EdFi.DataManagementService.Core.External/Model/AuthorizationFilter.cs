@@ -17,17 +17,5 @@ public record AuthorizationFilter(
     /// <summary>
     /// The expected value used
     /// </summary>
-    string Value,
-    /// <summary>
-    /// The error message template to send to the client on authorization failure
-    /// </summary>
-    string ErrorMessageTemplate,
-    /// <summary>
-    /// The error message template to send to the client on authorization failure based on relationship
-    /// </summary>
-    string RelationshipErrorMessageTemplate,
-    /// <summary>
-    /// How the filter is applied. StartsWith in the case of Namespace vs Equals in the case of EdOrg
-    /// </summary>
-    FilterComparison Comparison = FilterComparison.Equals
+    string Value
 );
