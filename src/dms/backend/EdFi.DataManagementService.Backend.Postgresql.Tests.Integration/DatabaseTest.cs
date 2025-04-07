@@ -169,7 +169,7 @@ public abstract class DatabaseTest : DatabaseTestBase
         bool allowIdentityUpdates = false,
         bool isInEducationOrganizationHierarchy = false,
         long educationOrganizationId = 0,
-        long[]? parentEducationOrganizationIds = null
+        long? parentEducationOrganizationId = null
     )
     {
         return new(
@@ -181,7 +181,7 @@ public abstract class DatabaseTest : DatabaseTestBase
             EducationOrganizationHierarchyInfo: new(
                 isInEducationOrganizationHierarchy,
                 educationOrganizationId,
-                parentEducationOrganizationIds ?? []
+                parentEducationOrganizationId
             )
         );
     }
@@ -258,7 +258,7 @@ public abstract class DatabaseTest : DatabaseTestBase
         DocumentSecurityElements? documentSecurityElements = null,
         bool isInEducationOrganizationHierarchy = false,
         long educationOrganizationId = 0,
-        long[]? parentEducationOrganizationIds = null,
+        long? parentEducationOrganizationId = null,
         TraceId? traceId = null
     )
     {
@@ -278,7 +278,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                     allowIdentityUpdates,
                     isInEducationOrganizationHierarchy,
                     educationOrganizationId,
-                    parentEducationOrganizationIds ?? []
+                    parentEducationOrganizationId
                 ),
                 DocumentInfo = CreateDocumentInfo(
                     referentialIdGuid,

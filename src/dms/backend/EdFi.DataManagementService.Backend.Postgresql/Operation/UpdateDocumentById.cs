@@ -101,7 +101,9 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
 
                 if (getAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
                 {
-                    return new UpdateResult.UpdateFailureNotAuthorized(notAuthorized.RelationshipErrorMessages);
+                    return new UpdateResult.UpdateFailureNotAuthorized(
+                        notAuthorized.RelationshipErrorMessages
+                    );
                 }
             }
 
@@ -197,7 +199,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                     updateRequest.ResourceInfo.ProjectName.Value,
                     updateRequest.ResourceInfo.ResourceName.Value,
                     updateRequest.ResourceInfo.EducationOrganizationHierarchyInfo.Id,
-                    updateRequest.ResourceInfo.EducationOrganizationHierarchyInfo.ParentIds,
+                    updateRequest.ResourceInfo.EducationOrganizationHierarchyInfo.ParentId,
                     connection,
                     transaction
                 );
