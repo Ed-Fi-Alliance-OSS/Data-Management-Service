@@ -1,0 +1,16 @@
+# This script assumes that all ports are using the default values. Does not read
+# anything from .env.
+
+### DMS
+GET http://localhost:8080/health
+
+### Config Service
+GET http://localhost:8081/health
+
+# Observation: DMS is running a database health check, while Config Service is running a simple health check.
+
+### Keycloak realm
+GET http://localhost:8045/realms/edfi
+
+### OpenSearch
+GET http://localhost:9200/

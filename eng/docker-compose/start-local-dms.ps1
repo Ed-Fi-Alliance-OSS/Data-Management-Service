@@ -64,15 +64,18 @@ if ($EnableConfig) {
 if ($d) {
     if ($v) {
         Write-Output "Shutting down with volume delete"
-        docker compose $files down -v
+        docker compose $files -p dms-local down -v
     }
     else {
         Write-Output "Shutting down"
-        docker compose $files down
+        docker compose $files -p dms-local down
     }
 }
 else {
-    docker network create dms
+    $existingNetwork = docker network ls --filter name="dms" -q
+    if (! $existingNetwork) {
+        docker network create dms
+    }
 
     $upArgs = @(
         "--detach"
@@ -81,7 +84,7 @@ else {
 
     Write-Output "Starting locally-built DMS"
 
-    docker compose $files --env-file $EnvironmentFile up $upArgs
+    docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs
 
     if ($LASTEXITCODE -ne 0) {
         throw "Unable to start local Docker environment, with exit code $LASTEXITCODE."
