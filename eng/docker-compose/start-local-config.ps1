@@ -61,7 +61,7 @@ else {
         throw "Unable to start local Docker environment, with exit code $LASTEXITCODE."
     }
 
-    Start-Sleep 20
+    Start-Sleep 25
     # Create client with default edfi_admin_api/full_access scope
     ./setup-keycloak.ps1
 
