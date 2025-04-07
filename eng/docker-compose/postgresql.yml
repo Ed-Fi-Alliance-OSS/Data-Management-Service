@@ -15,7 +15,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-abcdefgh1!}
       POSTGRES_DB_NAME: ${POSTGRES_DB_NAME:-edfi_datamanagementservice}
     ports:
-      - '12.7.0.0.1:${POSTGRES_PORT:-5432}:5432'
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
     networks:
       - dms
     restart: always
