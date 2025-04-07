@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 
@@ -21,9 +22,10 @@ public class RelationshipsWithEdOrgsOnlyValidator(IAuthorizationRepository autho
 {
     private const string AuthorizationStrategyName = "RelationshipsWithEdOrgsOnly";
 
-    public async Task<AuthorizationResult> ValidateAuthorization(
+    public async Task<ResourceAuthorizationResult> ValidateAuthorization(
         DocumentSecurityElements securityElements,
         AuthorizationFilter[] authorizationFilters,
+        OperationType operationType,
         TraceId traceId
     )
     {
@@ -35,7 +37,7 @@ public class RelationshipsWithEdOrgsOnlyValidator(IAuthorizationRepository autho
         {
             string error =
                 "No 'EducationOrganizationIds' property could be found on the resource in order to perform authorization. Should a different authorization strategy be used?";
-            return new AuthorizationResult(false, error);
+            return new ResourceAuthorizationResult.NotAuthorized([error]);
         }
 
         // Retrieve the hierarchy of the education organization ids from the request
@@ -53,11 +55,13 @@ public class RelationshipsWithEdOrgsOnlyValidator(IAuthorizationRepository autho
 
         if (!isAuthorized)
         {
-            string edOrgIdsFromClaim = string.Join(", ", authorizationFilters.Select(x => $"'{x.Value}'"));
-            var error =
-                $"No relationships have been established between the caller's education organization id claims ({edOrgIdsFromClaim}) and properties of the resource item.";
-            return new AuthorizationResult(false, error);
+            string edOrgIdsFromFilters = string.Join(", ", authorizationFilters.Select(x => $"'{x.Value}'"));
+            string error =
+                (operationType == OperationType.Get || operationType == OperationType.Delete)
+                    ? $"Access to the resource item could not be authorized based on the caller's EducationOrganizationIds claims: {edOrgIdsFromFilters}."
+                    : $"No relationships have been established between the caller's education organization id claims ({edOrgIdsFromFilters}) and properties of the resource item.";
+            return new ResourceAuthorizationResult.NotAuthorized([error]);
         }
-        return new AuthorizationResult(true);
+        return new ResourceAuthorizationResult.Authorized();
     }
 }

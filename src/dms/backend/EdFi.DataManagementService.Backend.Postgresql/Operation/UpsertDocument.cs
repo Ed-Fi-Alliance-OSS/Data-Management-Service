@@ -298,6 +298,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             ResourceAuthorizationResult getAuthorizationResult =
                 await upsertRequest.ResourceAuthorizationHandler.Authorize(
                     upsertRequest.DocumentSecurityElements,
+                    OperationType.Upsert,
                     upsertRequest.TraceId
                 );
 

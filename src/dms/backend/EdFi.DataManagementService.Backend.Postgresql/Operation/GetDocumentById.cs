@@ -54,10 +54,14 @@ public class GetDocumentById(ISqlAction _sqlAction, ILogger<GetDocumentById> _lo
                 return new GetResult.GetFailureNotExists();
             }
 
-            var securityElements = documentSummary.SecurityElements.Deserialize<DocumentSecurityElements>()!;
+            var securityElements = documentSummary.SecurityElements.ToDocumentSecurityElements()!;
 
             ResourceAuthorizationResult getAuthorizationResult =
-                await getRequest.ResourceAuthorizationHandler.Authorize(securityElements, getRequest.TraceId);
+                await getRequest.ResourceAuthorizationHandler.Authorize(
+                    securityElements,
+                    OperationType.Get,
+                    getRequest.TraceId
+                );
 
             if (getAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
             {

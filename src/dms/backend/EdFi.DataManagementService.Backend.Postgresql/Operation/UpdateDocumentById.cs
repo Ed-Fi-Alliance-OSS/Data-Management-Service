@@ -83,6 +83,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
             ResourceAuthorizationResult getAuthorizationResult =
                 await updateRequest.ResourceAuthorizationHandler.Authorize(
                     updateRequest.DocumentSecurityElements,
+                    OperationType.Update,
                     updateRequest.TraceId
                 );
 

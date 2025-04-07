@@ -19,6 +19,7 @@ public interface IResourceAuthorizationHandler
     /// <returns></returns>
     Task<ResourceAuthorizationResult> Authorize(
         DocumentSecurityElements documentSecurityElements,
+        OperationType operationType,
         TraceId traceId
     );
 }

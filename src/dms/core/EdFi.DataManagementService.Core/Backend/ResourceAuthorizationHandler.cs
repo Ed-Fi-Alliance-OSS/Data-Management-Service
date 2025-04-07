@@ -8,7 +8,6 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.AuthorizationValidation;
 using Microsoft.Extensions.Logging;
-using Serilog.Core;
 
 namespace EdFi.DataManagementService.Core.Backend;
 
@@ -25,12 +24,13 @@ public class ResourceAuthorizationHandler(
 {
     public async Task<ResourceAuthorizationResult> Authorize(
         DocumentSecurityElements documentSecurityElements,
+        OperationType operationType,
         TraceId traceId
     )
     {
         logger.LogInformation("Entering ResourceAuthorizationHandler. TraceId:{TraceId}", traceId.Value);
-        List<AuthorizationResult> andResults = [];
-        List<AuthorizationResult> orResults = [];
+        List<ResourceAuthorizationResult> andResults = [];
+        List<ResourceAuthorizationResult> orResults = [];
 
         foreach (var evaluator in authorizationStrategyEvaluators)
         {
@@ -38,13 +38,14 @@ public class ResourceAuthorizationHandler(
                 authorizationServiceFactory.GetByName<IAuthorizationValidator>(
                     evaluator.AuthorizationStrategyName
                 )
-                ?? throw new Exception(
+                ?? throw new AuthorizationException(
                     $"Could not find authorization strategy implementation for the following strategy: '{evaluator.AuthorizationStrategyName}'."
                 );
 
             var authResult = await validator.ValidateAuthorization(
                 documentSecurityElements,
                 evaluator.Filters,
+                operationType,
                 traceId
             );
 
@@ -58,12 +59,12 @@ public class ResourceAuthorizationHandler(
             }
         }
 
-        if (andResults.Exists(f => !f.IsAuthorized))
+        if (andResults.Exists(f => f is ResourceAuthorizationResult.NotAuthorized))
         {
             return CreateNotAuthorizedResult(andResults);
         }
 
-        if (orResults.Any() && Enumerable.All(orResults, f => !f.IsAuthorized))
+        if (orResults.Count != 0 && orResults.TrueForAll(f => f is ResourceAuthorizationResult.NotAuthorized))
         {
             return CreateNotAuthorizedResult(orResults);
         }
@@ -72,12 +73,12 @@ public class ResourceAuthorizationHandler(
     }
 
     private static ResourceAuthorizationResult.NotAuthorized CreateNotAuthorizedResult(
-        IEnumerable<AuthorizationResult> results
+        IEnumerable<ResourceAuthorizationResult> results
     )
     {
         string[] errors = results
-            .Where(x => !string.IsNullOrEmpty(x.ErrorMessage))
-            .Select(x => x.ErrorMessage)
+            .OfType<ResourceAuthorizationResult.NotAuthorized>()
+            .SelectMany(x => x.ErrorMessages)
             .ToArray();
         return new ResourceAuthorizationResult.NotAuthorized(errors);
     }

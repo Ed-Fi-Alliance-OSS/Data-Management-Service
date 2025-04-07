@@ -53,10 +53,11 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
                 return new DeleteResult.DeleteFailureNotExists();
             }
 
-            var securityElements = documentSummary.SecurityElements.Deserialize<DocumentSecurityElements>()!;
+            var securityElements = documentSummary.SecurityElements.ToDocumentSecurityElements()!;
 
             var deleteAuthorizationResult = await deleteRequest.ResourceAuthorizationHandler.Authorize(
                 securityElements,
+                OperationType.Delete,
                 deleteRequest.TraceId
             );
 

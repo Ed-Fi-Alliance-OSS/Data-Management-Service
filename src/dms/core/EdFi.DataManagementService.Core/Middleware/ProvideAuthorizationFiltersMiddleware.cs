@@ -65,6 +65,18 @@ internal class ProvideAuthorizationFiltersMiddleware(
 
             await next();
         }
+        catch (AuthorizationException ex)
+        {
+            context.FrontendResponse = new FrontendResponse(
+                StatusCode: (int)HttpStatusCode.Forbidden,
+                Body: FailureResponse.ForForbidden(
+                    traceId: context.FrontendRequest.TraceId,
+                    errors: [ex.Message]
+                ),
+                Headers: [],
+                ContentType: "application/problem+json"
+            );
+        }
         catch (Exception ex)
         {
             _logger.LogError(

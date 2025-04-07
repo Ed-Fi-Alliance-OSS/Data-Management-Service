@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Security.AuthorizationValidation;
@@ -16,9 +17,10 @@ public class NamespaceBasedValidator : IAuthorizationValidator
 {
     private const string AuthorizationStrategyName = "NamespaceBased";
 
-    public async Task<AuthorizationResult> ValidateAuthorization(
+    public async Task<ResourceAuthorizationResult> ValidateAuthorization(
         DocumentSecurityElements securityElements,
         AuthorizationFilter[] authorizationFilters,
+        OperationType operationType,
         TraceId traceId
     )
     {
@@ -28,7 +30,7 @@ public class NamespaceBasedValidator : IAuthorizationValidator
         {
             string error =
                 "No 'Namespace' (or Namespace-suffixed) property could be found on the resource in order to perform authorization. Should a different authorization strategy be used?";
-            return await Task.FromResult(new AuthorizationResult(false, error));
+            return await Task.FromResult(new ResourceAuthorizationResult.NotAuthorized([error]));
         }
 
         bool allMatching = namespacesFromRequest
@@ -48,12 +50,13 @@ public class NamespaceBasedValidator : IAuthorizationValidator
                 authorizationFilters.Select(x => $"'{x.Value}'")
             );
             return await Task.FromResult(
-                new AuthorizationResult(
-                    false,
-                    $"Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: {claimNamespacePrefixes}."
+                new ResourceAuthorizationResult.NotAuthorized(
+                    [
+                        $"Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: {claimNamespacePrefixes}.",
+                    ]
                 )
             );
         }
-        return await Task.FromResult(new AuthorizationResult(true));
+        return await Task.FromResult(new ResourceAuthorizationResult.Authorized());
     }
 }
