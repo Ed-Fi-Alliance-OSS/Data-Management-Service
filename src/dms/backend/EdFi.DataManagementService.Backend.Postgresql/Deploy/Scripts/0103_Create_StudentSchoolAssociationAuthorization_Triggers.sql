@@ -20,7 +20,7 @@ BEGIN
             (NEW.EdfiDoc->'schoolReference'->>'schoolId')::BIGINT,
             (
                 SELECT jsonb_agg(EducationOrganizationId)
-                FROM dms.GetEducationOrganizationAncestors(NEW.DocumentUuid, NEW.DocumentPartitionKey)
+                FROM dms.GetEducationOrganizationAncestors((NEW.EdfiDoc->'schoolReference'->>'schoolId')::BIGINT)
             ),
             NEW.Id,
             NEW.DocumentPartitionKey
@@ -32,7 +32,7 @@ BEGIN
             HierarchySchoolId = (NEW.EdfiDoc->'schoolReference'->>'schoolId')::BIGINT,
             StudentSchoolAuthorizationEducationOrganizationIds = (
                 SELECT jsonb_agg(EducationOrganizationId)
-                FROM dms.GetEducationOrganizationAncestors(NEW.DocumentUuid, NEW.DocumentPartitionKey)
+                FROM dms.GetEducationOrganizationAncestors((NEW.EdfiDoc->'schoolReference'->>'schoolId')::BIGINT)
             )
         WHERE
             StudentSchoolAssociationId = NEW.Id AND

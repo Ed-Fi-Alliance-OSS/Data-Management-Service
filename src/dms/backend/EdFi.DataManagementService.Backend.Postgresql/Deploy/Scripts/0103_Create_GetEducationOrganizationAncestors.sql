@@ -4,28 +4,38 @@
 -- See the LICENSE and NOTICES files in the project root for more information.
 
 CREATE OR REPLACE FUNCTION dms.GetEducationOrganizationAncestors(
-    p_documentUuid UUID,
-    p_documentPartitionKey SMALLINT
+    p_educationOrganizationId BIGINT
 )
 RETURNS TABLE (EducationOrganizationId BIGINT)
 AS $$
 BEGIN
     RETURN QUERY
-    WITH RECURSIVE ParentHierarchy(Id, EducationOrganizationId, ParentId) AS (
-        SELECT h.Id, h.EducationOrganizationId, h.ParentId
-        FROM dms.EducationOrganizationHierarchy h
-        WHERE h.EducationOrganizationId IN (
-            SELECT jsonb_array_elements(d.securityelements->'EducationOrganization')::text::BIGINT
-            FROM dms.document d
-            WHERE d.DocumentUuid = p_documentUuid AND d.DocumentPartitionKey = p_documentPartitionKey
-        )
-        UNION ALL
-        SELECT parent.Id, parent.EducationOrganizationId, parent.ParentId
-        FROM dms.EducationOrganizationHierarchy parent
-        JOIN ParentHierarchy child ON parent.Id = child.ParentId
-    )
-    SELECT ph.EducationOrganizationId
-    FROM ParentHierarchy ph
-    ORDER BY ph.EducationOrganizationId;
+    WITH RECURSIVE OrganizationHierarchy AS (
+    -- Base case: start with the given organization
+    SELECT
+        eoh.Id,
+        eoh.EducationOrganizationId,
+        eoh.ParentId
+    FROM
+        dms.EducationOrganizationHierarchy eoh
+    WHERE
+        eoh.EducationOrganizationId = p_educationOrganizationId
+
+    UNION ALL
+
+    -- Recursive case: get all ancestors
+    SELECT
+        parent.Id,
+        parent.EducationOrganizationId,
+        parent.ParentId
+    FROM
+        dms.EducationOrganizationHierarchy parent
+    JOIN
+        OrganizationHierarchy child ON child.ParentId = parent.Id
+)
+-- Return all unique ancestor organization IDs including the starting organization
+SELECT DISTINCT oh.EducationOrganizationId
+FROM OrganizationHierarchy oh
+ORDER BY oh.EducationOrganizationId;
 END;
 $$ LANGUAGE plpgsql;
