@@ -1,0 +1,236 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * Licensed to the Ed-Fi Alliance under one or more agreements.
+ * The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+ * See the LICENSE and NOTICES files in the project root for more information.
+ */
+
+#5126 or 8081
+@configPort=8081
+
+#5198 or 8080
+@dmsPort=8080
+@sysAdminId=sys-admin
+@sysAdminSecret=SdfH)98&Jk
+@encodedSysAdminSecret=SdfH%2998%26Jk
+
+#
+# Create a new system administrator and create a token
+#
+
+### Create the system administrator credentials
+POST http://localhost:{{configPort}}/connect/register
+Content-Type: application/x-www-form-urlencoded
+
+ClientId={{sysAdminId}}
+&ClientSecret={{encodedSysAdminSecret}}
+&DisplayName=System Administrator
+
+### Create a token
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{sysAdminId}}
+&client_secret={{encodedSysAdminSecret}}
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+
+###
+@configToken={{configTokenRequest.response.body.access_token}}
+
+#
+# Create vendor, application, and new DMS client credentials
+#
+
+### Create a new vendor
+# @name createVendor
+POST http://localhost:{{configPort}}/v2/vendors
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "company": "Demo Vendor",
+    "contactName": "George Washington",
+    "contactEmailAddress": "george@example.com",
+    "namespacePrefixes": "uri://ed-fi.org"
+}
+
+###
+@vendorLocation={{createVendor.response.headers.location}}
+
+### Retrieve the vendor so that we can extract the Id
+# @name getVendor
+GET {{vendorLocation}}
+Authorization: bearer {{configToken}}
+
+###
+@vendorId={{getVendor.response.body.id}}
+
+### Create a new application
+# @name createApplication
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "vendorId": {{vendorId}},
+    "applicationName": "Demo application",
+    "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
+    "educationOrganizationIds": [6001010]
+}
+
+###
+@clientKey={{createApplication.response.body.key}}
+@clientSecret={{createApplication.response.body.secret}}
+@applicationLocation={{createApplication.response.headers.location}}
+
+### Read the Token URL from the Discovery API
+# @name discovery
+GET http://localhost:{{dmsPort}}
+
+###
+@dataApi={{discovery.response.body.urls.dataManagementApi}}
+
+### Create a DMS token
+# @name dmsTokenRequest
+POST http://localhost:{{dmsPort}}/oauth/token
+Authorization: basic {{clientKey}}:{{clientSecret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@dmsToken={{dmsTokenRequest.response.body.access_token}}
+
+### Create descriptor
+#
+POST {{dataApi}}/ed-fi/educationOrganizationCategoryDescriptors
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org/educationOrganizationCategoryDescriptor",
+    "codeValue": "XYZ",
+    "shortDescription": "XYZ"
+}
+
+### Create descriptor
+POST {{dataApi}}/ed-fi/gradeLevelDescriptors
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org/gradeLevelDescriptor",
+    "codeValue": "Tenth Grade",
+    "shortDescription": "Tenth Grade"
+}
+
+### Create School
+# @name createSchool
+POST {{dataApi}}/ed-fi/schools
+Authorization: bearer {{dmsToken}}
+
+{
+    "schoolId": 6001010,
+    "nameOfInstitution": "Bayside High School",
+    "educationOrganizationCategories": [
+        {
+            "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/educationOrganizationCategoryDescriptor#XYZ"
+        }
+    ],
+    "gradeLevels": [
+        {
+            "gradeLevelDescriptor": "uri://ed-fi.org/gradeLevelDescriptor#Tenth Grade"
+        }
+    ]
+}
+
+### Create Student
+# @name createStudent
+POST {{dataApi}}/ed-fi/students
+Authorization: bearer {{dmsToken}}
+
+{
+    "studentUniqueId": "604823",
+    "birthDate": "2008-09-13",
+    "firstName": "Lisa",
+    "lastSurname": "Woods",
+    "middleName": "Sybil",
+    "personalTitlePrefix": "Ms",
+    "preferredFirstName": "Lisarae",
+    "preferredLastSurname": "Woodlock",
+    "identificationDocuments": [],
+    "otherNames": [],
+    "personalIdentificationDocuments": [],
+    "visas": []
+}
+
+### Create Student
+# @name createStudent2
+POST {{dataApi}}/ed-fi/students
+Authorization: bearer {{dmsToken}}
+
+{
+    "studentUniqueId": "604824",
+    "birthDate": "2008-09-13",
+    "firstName": "Lisa",
+    "lastSurname": "Woods",
+    "middleName": "Sybil",
+    "personalTitlePrefix": "Ms",
+    "preferredFirstName": "Lisarae",
+    "preferredLastSurname": "Woodlock",
+    "identificationDocuments": [],
+    "otherNames": [],
+    "personalIdentificationDocuments": [],
+    "visas": []
+}
+
+### Create StudentSchoolAssociation
+# @name createStudentSchoolAssociation
+POST {{dataApi}}/ed-fi/studentSchoolAssociations
+Authorization: bearer {{dmsToken}}
+
+{
+    "entryDate": "2021-08-23",
+    "entryGradeLevelDescriptor": "uri://ed-fi.org/gradeLevelDescriptor#Tenth Grade",
+    "schoolReference": {
+      "schoolId": 6001010
+    },
+    "studentReference": {
+      "studentUniqueId": "604823"
+    }
+}
+
+### GET StudentSchoolAssociation
+# @name getStudentSchoolAssociation
+GET {{createStudentSchoolAssociation.response.headers.location}}
+Authorization: bearer {{dmsToken}}
+
+### Update StudentSchoolAssociation
+# @name createStudentSchoolAssociation
+PUT {{createStudentSchoolAssociation.response.headers.location}}
+Authorization: bearer {{dmsToken}}
+
+{
+    "id": "{{getStudentSchoolAssociation.response.body.id}}",
+    "entryDate": "2021-08-23",
+    "entryGradeLevelDescriptor": "uri://ed-fi.org/gradeLevelDescriptor#Tenth Grade",
+    "schoolReference": {
+      "schoolId": 6001010
+    },
+    "studentReference": {
+      "studentUniqueId": "604824"
+    }
+}
+
+### Verify StudentSchoolAssociationAuthorization Table
+### SELECT * FROM dms.studentschoolassociationauthorization;
+
+### Delete Student
+DELETE {{createStudentSchoolAssociation.response.headers.location}}
+Authorization: bearer {{dmsToken}}
+
+### Verify StudentSchoolAssociationAuthorization Table
+### SELECT * FROM dms.studentschoolassociationauthorization;
