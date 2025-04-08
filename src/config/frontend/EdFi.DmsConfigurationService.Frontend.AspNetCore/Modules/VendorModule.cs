@@ -40,23 +40,25 @@ public class VendorModule : IEndpointModule
         var request = httpContext.Request;
         return insertResult switch
         {
-            VendorInsertResult.Success success => Results.Created(
+            VendorInsertResult.Success success when success.IsNewVendor => Results.Created(
                 $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
                 null
             ),
+            VendorInsertResult.Success success when !success.IsNewVendor => Results.Ok(
+               null
+            ),
             VendorInsertResult.FailureDuplicateCompanyName => Results.Json(
             FailureResponse.ForDataValidation(
-                new[]
-                {
+                [
                                 new ValidationFailure(
                                     "Name",
                                     "A vendor name already exists in the database. Please enter a unique name."
                                 ),
-                },
+                ],
                 httpContext.TraceIdentifier
             ),
-    statusCode: (int)HttpStatusCode.BadRequest
-),
+                statusCode: (int)HttpStatusCode.BadRequest
+            ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }

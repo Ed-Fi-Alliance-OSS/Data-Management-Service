@@ -22,10 +22,11 @@ public interface IVendorRepository
 public record VendorInsertResult
 {
     /// <summary>
-    /// Successful insert.
+    /// Successful insert or update.
     /// </summary>
-    /// <param name="Id">The Id of the inserted record.</param>
-    public record Success(long Id) : VendorInsertResult();
+    /// <param name="Id">The Id of the inserted or updated record.</param>
+    /// <param name="IsNewVendor">Flag indicating whether it's a new vendor.</param>
+    public record Success(long Id, bool IsNewVendor) : VendorInsertResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught
