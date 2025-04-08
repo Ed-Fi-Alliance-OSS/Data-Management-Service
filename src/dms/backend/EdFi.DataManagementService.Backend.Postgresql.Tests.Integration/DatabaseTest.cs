@@ -398,7 +398,8 @@ public abstract class DatabaseTest : DatabaseTestBase
     protected static IDeleteRequest CreateDeleteRequest(
         string resourceName,
         Guid documentUuidGuid,
-        TraceId? traceId = null
+        TraceId? traceId = null,
+        bool isEdOrgHierarchy = false
     )
     {
         if (traceId == null)
@@ -412,6 +413,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                 TraceId = traceId,
                 DocumentUuid = new DocumentUuid(documentUuidGuid),
                 ResourceAuthorizationHandler = new ResourceAuthorizationHandler([], NullLogger.Instance),
+                IsEdOrgHierarchy = new IsEdOrgHierarchy(isEdOrgHierarchy),
             }
         ).ActLike<IDeleteRequest>();
     }
