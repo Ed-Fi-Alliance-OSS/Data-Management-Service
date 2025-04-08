@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.External.Backend;
@@ -38,4 +37,9 @@ public interface IDeleteRequest
     /// The request TraceId
     /// </summary>
     TraceId TraceId { get; }
+
+    /// <summary>
+    /// Determine whether is an EdOrgHierarchy
+    /// </summary>
+    IsEdOrgHierarchy IsEdOrgHierarchy { get; }
 }

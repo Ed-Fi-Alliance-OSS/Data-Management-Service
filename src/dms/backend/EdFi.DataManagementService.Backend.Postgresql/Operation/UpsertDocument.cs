@@ -161,6 +161,8 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 upsertRequest.ResourceInfo.ResourceName.Value,
                 upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.Id,
                 upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.ParentIds,
+                newDocumentId,
+                documentPartitionKey,
                 connection,
                 transaction
             );
@@ -232,6 +234,8 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 upsertRequest.ResourceInfo.ResourceName.Value,
                 upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.Id,
                 upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.ParentIds,
+                documentId,
+                documentPartitionKey,
                 connection,
                 transaction
             );
@@ -314,7 +318,9 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
 
                 if (getAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
                 {
-                    return new UpsertResult.UpsertFailureNotAuthorized(notAuthorized.RelationshipErrorMessages);
+                    return new UpsertResult.UpsertFailureNotAuthorized(
+                        notAuthorized.RelationshipErrorMessages
+                    );
                 }
             }
 

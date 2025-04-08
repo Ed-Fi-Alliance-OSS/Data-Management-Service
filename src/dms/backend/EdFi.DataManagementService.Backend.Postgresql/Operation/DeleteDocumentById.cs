@@ -60,7 +60,7 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
                 .Select(v => v!.GetValue<string>())
                 .ToArray();
 
-            if (deleteRequest.ResourceAuthorizationHandler.IsRelationshipWithEdOrg)
+            if (deleteRequest.IsEdOrgHierarchy.Value)
             {
                 educationOrganizationSecurityElements = await _sqlAction.GetAncestorEducationOrganizationIds(
                     PartitionKeyFor(deleteRequest.DocumentUuid),
@@ -81,17 +81,15 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
                 return new DeleteResult.DeleteFailureNotAuthorized(notAuthorized.ErrorMessages);
             }
 
-            if (
-                deleteRequest
-                    .ResourceInfo
-                    .EducationOrganizationHierarchyInfo
-                    .IsInEducationOrganizationHierarchy
-            )
+            if (deleteRequest.IsEdOrgHierarchy.Value && documentSummary.DocumentId != null)
             {
+                long documentId = documentSummary.DocumentId.Value;
+
                 await _sqlAction.DeleteEducationOrganizationHierarchy(
                     deleteRequest.ResourceInfo.ProjectName.Value,
                     deleteRequest.ResourceInfo.ResourceName.Value,
-                    deleteRequest.ResourceInfo.EducationOrganizationHierarchyInfo.Id,
+                    documentId,
+                    documentPartitionKey.Value,
                     connection,
                     transaction
                 );

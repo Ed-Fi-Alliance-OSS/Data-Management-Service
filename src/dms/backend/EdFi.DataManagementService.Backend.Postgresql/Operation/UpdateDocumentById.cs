@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
@@ -101,7 +100,9 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
 
                 if (getAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
                 {
-                    return new UpdateResult.UpdateFailureNotAuthorized(notAuthorized.RelationshipErrorMessages);
+                    return new UpdateResult.UpdateFailureNotAuthorized(
+                        notAuthorized.RelationshipErrorMessages
+                    );
                 }
             }
 
@@ -191,6 +192,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                     .ResourceInfo
                     .EducationOrganizationHierarchyInfo
                     .IsInEducationOrganizationHierarchy
+                && documentFromDb.Id != null
             )
             {
                 await _sqlAction.UpdateEducationOrganizationHierarchy(
@@ -198,6 +200,8 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                     updateRequest.ResourceInfo.ResourceName.Value,
                     updateRequest.ResourceInfo.EducationOrganizationHierarchyInfo.Id,
                     updateRequest.ResourceInfo.EducationOrganizationHierarchyInfo.ParentIds,
+                    documentFromDb.Id.Value,
+                    documentFromDb.DocumentPartitionKey,
                     connection,
                     transaction
                 );

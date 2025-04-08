@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
@@ -38,7 +39,12 @@ internal class DeleteByIdHandler(
                         context.AuthorizationStrategyEvaluators,
                         _logger
                     ),
-                    ResourceAuthorizationPathways: context.AuthorizationPathways
+                    ResourceAuthorizationPathways: context.AuthorizationPathways,
+                    IsEdOrgHierarchy: new IsEdOrgHierarchy(
+                        context.ProjectSchema.EducationOrganizationTypes.Contains(
+                            context.ResourceSchema.ResourceName
+                        )
+                    )
                 )
             )
         );
