@@ -5,6 +5,9 @@
 
 INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved)
 VALUES
+    ('E2E-NameSpaceBasedClaimSet', TRUE),
+    ('E2E-NoFurtherAuthRequiredClaimSet', TRUE),
+    ('E2E-RelationshipsWithEdOrgsOnlyClaimSet', TRUE),
     ('SISVendor', TRUE),
     ('EdFiSandbox', TRUE),
     ('RosterVendor', TRUE),
