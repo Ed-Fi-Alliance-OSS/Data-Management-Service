@@ -8,51 +8,53 @@ using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using Npgsql;
 
-namespace EdFi.DataManagementService.Backend.Postgresql
+namespace EdFi.DataManagementService.Backend.Postgresql;
+
+/// <summary>
+/// Implements IAuthorizationRepository to retrieve the authorization related data from the database.
+/// </summary>
+public class PostgresqlAuthorizationRepository(NpgsqlDataSource _dataSource) : IAuthorizationRepository
 {
-    public class PostgresqlAuthorizationRepository(NpgsqlDataSource _dataSource) : IAuthorizationRepository
+    public async Task<long[]> GetAncestorEducationOrganizationIds(
+        long[] educationOrganizationIds,
+        TraceId traceId
+    )
     {
-        public async Task<long[]> GetAncestorEducationOrganizationIds(
-            long[] educationOrganizationIds,
-            TraceId traceId
+        await using var connection = await _dataSource.OpenConnectionAsync();
+        await using NpgsqlCommand command = new(
+            $"""
+                WITH RECURSIVE ParentHierarchy(Id, EducationOrganizationId, ParentId) AS (
+                SELECT h.Id, h.EducationOrganizationId, h.ParentId
+                FROM dms.EducationOrganizationHierarchy h
+                WHERE h.EducationOrganizationId = ANY($1)
+
+                UNION ALL
+
+                SELECT parent.Id, parent.EducationOrganizationId, parent.ParentId
+                FROM dms.EducationOrganizationHierarchy parent
+                JOIN ParentHierarchy child ON parent.Id = child.ParentId
+                )
+                SELECT EducationOrganizationId
+                FROM ParentHierarchy
+                ORDER BY EducationOrganizationId
+                {SqlBuilder.SqlFor(LockOption.BlockUpdateDelete)};
+            """,
+            connection
         )
         {
-            await using var connection = await _dataSource.OpenConnectionAsync();
-            await using NpgsqlCommand command = new(
-                $"""
-                    WITH RECURSIVE ParentHierarchy(Id, EducationOrganizationId, ParentId) AS (
-                    SELECT h.Id, h.EducationOrganizationId, h.ParentId
-                    FROM dms.EducationOrganizationHierarchy h
-                    WHERE h.EducationOrganizationId = ANY($1)
+            Parameters = { new() { Value = educationOrganizationIds } },
+        };
+        await command.PrepareAsync();
 
-                    UNION ALL
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
-                    SELECT parent.Id, parent.EducationOrganizationId, parent.ParentId
-                    FROM dms.EducationOrganizationHierarchy parent
-                    JOIN ParentHierarchy child ON parent.Id = child.ParentId
-                    )
-                    SELECT EducationOrganizationId
-                    FROM ParentHierarchy
-                    ORDER BY EducationOrganizationId
-                    {SqlBuilder.SqlFor(LockOption.BlockUpdateDelete)};
-                """,
-                connection
-            )
-            {
-                Parameters = { new() { Value = educationOrganizationIds } },
-            };
-            await command.PrepareAsync();
+        List<long> edOrgIds = [];
 
-            await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
-
-            List<long> edOrgIds = [];
-
-            while (await reader.ReadAsync())
-            {
-                edOrgIds.Add(reader.GetInt64(reader.GetOrdinal("EducationOrganizationId")));
-            }
-
-            return edOrgIds.Distinct().ToArray();
+        while (await reader.ReadAsync())
+        {
+            edOrgIds.Add(reader.GetInt64(reader.GetOrdinal("EducationOrganizationId")));
         }
+
+        return edOrgIds.Distinct().ToArray();
     }
 }

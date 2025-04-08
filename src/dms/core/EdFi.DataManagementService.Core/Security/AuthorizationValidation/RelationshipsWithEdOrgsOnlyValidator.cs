@@ -10,11 +10,7 @@ using EdFi.DataManagementService.Core.External.Model;
 namespace EdFi.DataManagementService.Core.Security.AuthorizationValidation;
 
 /// <summary>
-/// Validates the authorization strategy that performs RelationshipsWithEdOrgsOnly authorization.
-/// Validates only what can be determined from looking at the request, namely that EducationOrganizationIds
-/// exist on the resource and the client has at least one EducationOrganizationId in their claim.
-/// The remainder of the RelationshipsWithEdOrgsOnly validation will occur later in the pipeline after
-/// fetching the EdOrg hierarchy of the resource.
+/// validates whether a client is authorized to access a resource based on relationships with education organizations.
 /// </summary>
 [AuthorizationStrategyName(AuthorizationStrategyName)]
 public class RelationshipsWithEdOrgsOnlyValidator(IAuthorizationRepository authorizationRepository)

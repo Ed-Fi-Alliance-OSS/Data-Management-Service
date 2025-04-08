@@ -13,8 +13,7 @@ namespace EdFi.DataManagementService.Core.External.Backend;
 public interface IResourceAuthorizationHandler
 {
     /// <summary>
-    /// Determine whether the authorization conditions are met for the given
-    /// namespaces and educationOrganizationIds
+    /// Determines whether a client is authorized to perform a specific operation on a resource.
     /// </summary>
     /// <returns></returns>
     Task<ResourceAuthorizationResult> Authorize(

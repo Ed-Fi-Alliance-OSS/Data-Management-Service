@@ -5,6 +5,9 @@
 
 namespace EdFi.DataManagementService.Core.Security;
 
+/// <summary>
+/// Backend factory class that does not provide any authorization services.
+/// </summary>
 public class NoAuthorizationServiceFactory : IAuthorizationServiceFactory
 {
     public T? GetByName<T>(string authorizationStrategyName)

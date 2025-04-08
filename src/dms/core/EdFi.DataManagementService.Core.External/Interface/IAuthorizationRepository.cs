@@ -8,7 +8,7 @@ using EdFi.DataManagementService.Core.External.Model;
 namespace EdFi.DataManagementService.Core.External.Interface;
 
 /// <summary>
-/// The repository DMS Core uses to access a document store.
+/// The repository DMS Core uses to access a authorization data.
 /// </summary>
 public interface IAuthorizationRepository
 {
