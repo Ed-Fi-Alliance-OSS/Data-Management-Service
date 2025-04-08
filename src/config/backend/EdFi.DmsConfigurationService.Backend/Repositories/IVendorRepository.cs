@@ -31,6 +31,11 @@ public record VendorInsertResult
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : VendorInsertResult();
+
+    /// <summary>
+    /// Company Name must be unique
+    /// </summary>
+    public record FailureDuplicateCompanyName() : VendorInsertResult();
 }
 
 public record VendorQueryResult

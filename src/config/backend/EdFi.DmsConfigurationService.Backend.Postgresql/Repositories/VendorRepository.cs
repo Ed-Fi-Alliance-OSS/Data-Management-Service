@@ -50,6 +50,12 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
 
                 return new VendorInsertResult.Success(id);
             }
+            catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("uq_company"))
+            {
+                logger.LogWarning(ex, "Company Name must be unique");
+                await transaction.RollbackAsync();
+                return new VendorInsertResult.FailureDuplicateCompanyName();
+            }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Insert vendor failure");

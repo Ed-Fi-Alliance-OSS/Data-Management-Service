@@ -44,6 +44,19 @@ public class VendorModule : IEndpointModule
                 $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
                 null
             ),
+            VendorInsertResult.FailureDuplicateCompanyName => Results.Json(
+            FailureResponse.ForDataValidation(
+                new[]
+                {
+                                new ValidationFailure(
+                                    "Name",
+                                    "A vendor name already exists in the database. Please enter a unique name."
+                                ),
+                },
+                httpContext.TraceIdentifier
+            ),
+    statusCode: (int)HttpStatusCode.BadRequest
+),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
