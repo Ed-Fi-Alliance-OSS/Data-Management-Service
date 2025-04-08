@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Security;
 using ImpromptuInterface;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
@@ -295,7 +296,11 @@ public abstract class DatabaseTest : DatabaseTestBase
                 DocumentUuid = new DocumentUuid(documentUuidGuid),
                 UpdateCascadeHandler = new UpdateCascadeHandler(new ApiSchemaProvider(), NullLogger.Instance),
                 DocumentSecurityElements = documentSecurityElements,
-                ResourceAuthorizationHandler = new ResourceAuthorizationHandler([], NullLogger.Instance),
+                ResourceAuthorizationHandler = new ResourceAuthorizationHandler(
+                    [],
+                    new NoAuthorizationServiceFactory(),
+                    NullLogger.Instance
+                ),
             }
         ).ActLike<IUpsertRequest>();
     }
@@ -360,7 +365,11 @@ public abstract class DatabaseTest : DatabaseTestBase
                 DocumentUuid = new DocumentUuid(documentUuidGuid),
                 UpdateCascadeHandler = new UpdateCascadeHandler(new ApiSchemaProvider(), NullLogger.Instance),
                 DocumentSecurityElements = documentSecurityElements,
-                ResourceAuthorizationHandler = new ResourceAuthorizationHandler([], NullLogger.Instance),
+                ResourceAuthorizationHandler = new ResourceAuthorizationHandler(
+                    [],
+                    new NoAuthorizationServiceFactory(),
+                    NullLogger.Instance
+                ),
             }
         ).ActLike<IUpdateRequest>();
     }
@@ -382,7 +391,11 @@ public abstract class DatabaseTest : DatabaseTestBase
                 ResourceInfo = CreateResourceInfo(resourceName),
                 TraceId = traceId,
                 DocumentUuid = new DocumentUuid(documentUuidGuid),
-                ResourceAuthorizationHandler = new ResourceAuthorizationHandler([], NullLogger.Instance),
+                ResourceAuthorizationHandler = new ResourceAuthorizationHandler(
+                    [],
+                    new NoAuthorizationServiceFactory(),
+                    NullLogger.Instance
+                ),
             }
         ).ActLike<IGetRequest>();
     }
@@ -425,7 +438,11 @@ public abstract class DatabaseTest : DatabaseTestBase
                 ResourceInfo = CreateResourceInfo(resourceName),
                 TraceId = traceId,
                 DocumentUuid = new DocumentUuid(documentUuidGuid),
-                ResourceAuthorizationHandler = new ResourceAuthorizationHandler([], NullLogger.Instance),
+                ResourceAuthorizationHandler = new ResourceAuthorizationHandler(
+                    [],
+                    new NoAuthorizationServiceFactory(),
+                    NullLogger.Instance
+                ),
             }
         ).ActLike<IDeleteRequest>();
     }

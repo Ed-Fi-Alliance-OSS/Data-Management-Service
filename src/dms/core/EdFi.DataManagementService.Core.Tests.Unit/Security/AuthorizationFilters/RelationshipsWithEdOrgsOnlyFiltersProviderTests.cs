@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.AuthorizationFilters;
 using FluentAssertions;
 using NUnit.Framework;
@@ -40,6 +41,29 @@ public class RelationshipsWithEdOrgsOnlyFiltersProviderTests
             _expectedResult!.Filters[0].Value.Should().Be("255901");
             _expectedResult!.Filters[1].Value.Should().Be("255902");
             _expectedResult!.Filters.Select(x => x.FilterPath).Should().AllBe("EducationOrganization");
+        }
+    }
+
+    [TestFixture]
+    public class Given_Claim_Has_No_EducationOrganizations
+    {
+        [Test]
+        public void Should_Throw_AuthorizationException()
+        {
+            // Arrange
+            var filtersProvider = new RelationshipsWithEdOrgsOnlyFiltersProvider();
+            var clientAuthorizations = new ClientAuthorizations("", "", [], []);
+
+            // Act & Assert
+            var exception = Assert.Throws<AuthorizationException>(
+                () => filtersProvider.GetFilters(clientAuthorizations)
+            );
+            exception.Should().NotBeNull();
+            exception!
+                .Message.Should()
+                .Be(
+                    "The API client has been given permissions on a resource that uses the 'RelationshipsWithEdOrgsOnly' authorization strategy but the client doesn't have any education organizations assigned."
+                );
         }
     }
 }

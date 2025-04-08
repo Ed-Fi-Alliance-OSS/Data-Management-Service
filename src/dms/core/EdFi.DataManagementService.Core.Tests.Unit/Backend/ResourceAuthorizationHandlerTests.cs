@@ -6,6 +6,9 @@
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Security.AuthorizationValidation;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -15,37 +18,50 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Backend;
 [TestFixture]
 public class ResourceAuthorizationHandlerTests
 {
-    [TestFixture("uri://ed-fi.org")]
-    [TestFixture("uri://ed-fi.org,uri://test.org")]
-    [TestFixture("uri://test.org,uri://ed-fi.org")]
-    public class Given_An_EdFi_Doc_With_Matching_ClientAuthorization_Namespace(string clientNamespacePrefixes)
+    private readonly IAuthorizationServiceFactory _authorizationServiceFactory =
+        A.Fake<IAuthorizationServiceFactory>();
+
+    public class Given_An_EdFi_Doc_With_Matching_ClientAuthorization_Namespace
         : ResourceAuthorizationHandlerTests
     {
         private ResourceAuthorizationResult? _resourceAuthorizationResult;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
-            string[] namespaceSecurityElements = ["uri://ed-fi.org"];
+            var documentSecurityElements = new DocumentSecurityElements(["uri://ed-fi.org"], [], []);
 
-            var authStrategyEvaluators = clientNamespacePrefixes
-                .Split(',')
-                .Select(namespacePrefix => new AuthorizationStrategyEvaluator(
-                    [
-                        new AuthorizationFilter(
-                            "Namespace",
-                            namespacePrefix,
-                            "",
-                            "",
-                            FilterComparison.StartsWith
-                        ),
-                    ],
-                    FilterOperator.Or
-                ))
-                .ToArray();
+            var evaluator = new AuthorizationStrategyEvaluator(
+                "NamespaceBased",
+                [new AuthorizationFilter("Namespace", "uri://ed-fi.org")],
+                FilterOperator.Or
+            );
 
-            var handler = new ResourceAuthorizationHandler(authStrategyEvaluators, NullLogger.Instance);
-            _resourceAuthorizationResult = handler.Authorize(namespaceSecurityElements, []);
+            var validator = A.Fake<IAuthorizationValidator>();
+            A.CallTo(
+                    () =>
+                        validator.ValidateAuthorization(
+                            documentSecurityElements,
+                            evaluator.Filters,
+                            OperationType.Get,
+                            A<TraceId>.Ignored
+                        )
+                )
+                .Returns(new ResourceAuthorizationResult.Authorized());
+
+            A.CallTo(() => _authorizationServiceFactory.GetByName<IAuthorizationValidator>("NamespaceBased"))
+                .Returns(validator);
+
+            var handler = new ResourceAuthorizationHandler(
+                [evaluator],
+                _authorizationServiceFactory,
+                NullLogger.Instance
+            );
+            _resourceAuthorizationResult = await handler.Authorize(
+                documentSecurityElements,
+                OperationType.Get,
+                new TraceId("trace-id")
+            );
         }
 
         [Test]
@@ -55,75 +71,82 @@ public class ResourceAuthorizationHandlerTests
         }
     }
 
-    [TestFixture("uri://ed-fi.org")]
-    [TestFixture("uri://ed-fi.org,uri://test.org")]
-    [TestFixture("uri://test.org,uri://ed-fi.org")]
-    public class Given_An_EdFi_Doc_With_No_Matching_ClientAuthorization_Namespace(
-        string clientNamespacePrefixes
-    ) : ResourceAuthorizationHandlerTests
+    public class Given_An_EdFi_Doc_With_No_Matching_ClientAuthorization_Namespace
+        : ResourceAuthorizationHandlerTests
     {
         private ResourceAuthorizationResult? _resourceAuthorizationResult;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
-            string[] namespaceSecurityElements = ["uri://i-match-nothing.org"];
+            var documentSecurityElements = new DocumentSecurityElements(["uri://not-matching.org"], [], []);
 
-            var authStrategyEvaluators = clientNamespacePrefixes
-                .Split(',')
-                .Select(namespacePrefix => new AuthorizationStrategyEvaluator(
-                    [
-                        new AuthorizationFilter(
-                            "Namespace",
-                            namespacePrefix,
-                            "",
-                            "",
-                            FilterComparison.StartsWith
-                        ),
-                    ],
-                    FilterOperator.Or
-                ))
-                .ToArray();
+            var evaluator = new AuthorizationStrategyEvaluator(
+                "NamespaceBased",
+                [new AuthorizationFilter("Namespace", "uri://ed-fi.org")],
+                FilterOperator.Or
+            );
 
-            var handler = new ResourceAuthorizationHandler(authStrategyEvaluators, NullLogger.Instance);
-            _resourceAuthorizationResult = handler.Authorize(namespaceSecurityElements, []);
+            var validator = A.Fake<IAuthorizationValidator>();
+            A.CallTo(
+                    () =>
+                        validator.ValidateAuthorization(
+                            documentSecurityElements,
+                            evaluator.Filters,
+                            OperationType.Upsert,
+                            A<TraceId>.Ignored
+                        )
+                )
+                .Returns(new ResourceAuthorizationResult.NotAuthorized(["Not authorized"]));
+
+            A.CallTo(() => _authorizationServiceFactory.GetByName<IAuthorizationValidator>("NamespaceBased"))
+                .Returns(validator);
+
+            var handler = new ResourceAuthorizationHandler(
+                [evaluator],
+                _authorizationServiceFactory,
+                NullLogger.Instance
+            );
+
+            _resourceAuthorizationResult = await handler.Authorize(
+                documentSecurityElements,
+                OperationType.Upsert,
+                new TraceId("trace-id")
+            );
         }
 
         [Test]
         public void Result_should_be_authorized()
         {
             _resourceAuthorizationResult.Should().BeOfType<ResourceAuthorizationResult.NotAuthorized>();
+            if (_resourceAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
+            {
+                notAuthorized!.ErrorMessages.Should().HaveCount(1);
+                notAuthorized!.ErrorMessages[0].Should().Be("Not authorized");
+            }
         }
     }
 
     [TestFixture]
-    public class Given_An_EdFi_Doc_With_No_ClientAuthorization_Namespace() : ResourceAuthorizationHandlerTests
+    public class Given_An_EdFi_Doc_With_No_Authorization_Evaluators() : ResourceAuthorizationHandlerTests
     {
         private ResourceAuthorizationResult? _resourceAuthorizationResult;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
-            string[] namespaceSecurityElements = ["uri://i-match-nothing.org"];
+            var documentSecurityElements = new DocumentSecurityElements(["uri://not-matching.org"], [], []);
 
-            var authStrategyEvaluators = ""
-                .Split(',')
-                .Select(namespacePrefix => new AuthorizationStrategyEvaluator(
-                    [
-                        new AuthorizationFilter(
-                            "Namespace",
-                            namespacePrefix,
-                            "",
-                            "",
-                            FilterComparison.StartsWith
-                        ),
-                    ],
-                    FilterOperator.Or
-                ))
-                .ToArray();
-
-            var handler = new ResourceAuthorizationHandler(authStrategyEvaluators, NullLogger.Instance);
-            _resourceAuthorizationResult = handler.Authorize(namespaceSecurityElements, []);
+            var handler = new ResourceAuthorizationHandler(
+                [],
+                _authorizationServiceFactory,
+                NullLogger.Instance
+            );
+            _resourceAuthorizationResult = await handler.Authorize(
+                documentSecurityElements,
+                OperationType.Get,
+                new TraceId("trace")
+            );
         }
 
         [Test]
@@ -133,37 +156,60 @@ public class ResourceAuthorizationHandlerTests
         }
     }
 
-    [TestFixture("6001")]
-    [TestFixture("6001,7001")]
-    [TestFixture("7001,6001")]
-    public class Given_An_EdFi_Doc_With_Matching_ClientAuthorization_EdOrg(string clientEdOrgIds)
-        : ResourceAuthorizationHandlerTests
+    [TestFixture]
+    public class Given_An_EdFi_Doc_With_Matching_ClientAuthorization_EdOrg : ResourceAuthorizationHandlerTests
     {
         private ResourceAuthorizationResult? _resourceAuthorizationResult;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
-            long[] edOrgSecurityElements = [6001];
+            var documentSecurityElements = new DocumentSecurityElements(
+                [],
+                [
+                    new EducationOrganizationSecurityElement(
+                        new ResourceName("School"),
+                        new EducationOrganizationId(6001)
+                    ),
+                ],
+                []
+            );
 
-            var authStrategyEvaluators = clientEdOrgIds
-                .Split(',')
-                .Select(edOrgId => new AuthorizationStrategyEvaluator(
-                    [
-                        new AuthorizationFilter(
-                            "EducationOrganization",
-                            edOrgId,
-                            "",
-                            "",
-                            FilterComparison.Equals
-                        ),
-                    ],
-                    FilterOperator.Or
-                ))
-                .ToArray();
+            var authStrategyEvaluators = new AuthorizationStrategyEvaluator(
+                "RelationshipsWithEdOrgsOnly",
+                [new AuthorizationFilter("EducationOrganization", "6001")],
+                FilterOperator.Or
+            );
 
-            var handler = new ResourceAuthorizationHandler(authStrategyEvaluators, NullLogger.Instance);
-            _resourceAuthorizationResult = handler.Authorize([], edOrgSecurityElements);
+            var validator = A.Fake<IAuthorizationValidator>();
+            A.CallTo(
+                    () =>
+                        validator.ValidateAuthorization(
+                            documentSecurityElements,
+                            authStrategyEvaluators.Filters,
+                            OperationType.Get,
+                            A<TraceId>.Ignored
+                        )
+                )
+                .Returns(new ResourceAuthorizationResult.Authorized());
+            A.CallTo(
+                    () =>
+                        _authorizationServiceFactory.GetByName<IAuthorizationValidator>(
+                            "RelationshipsWithEdOrgsOnly"
+                        )
+                )
+                .Returns(validator);
+
+            var handler = new ResourceAuthorizationHandler(
+                [authStrategyEvaluators],
+                _authorizationServiceFactory,
+                NullLogger.Instance
+            );
+            _resourceAuthorizationResult = await handler.Authorize(
+                documentSecurityElements,
+                OperationType.Get,
+                new TraceId("trace-id")
+            );
         }
 
         [Test]
@@ -173,211 +219,162 @@ public class ResourceAuthorizationHandlerTests
         }
     }
 
-    [TestFixture("6001")]
-    [TestFixture("6001,7001")]
-    [TestFixture("7001,6001")]
-    public class Given_An_EdFi_Doc_With_No_Matching_ClientAuthorization_EdOrg(string clientEdOrgIds)
+    [TestFixture]
+    public class Given_An_EdFi_Doc_With_No_Matching_ClientAuthorization_EdOrg
         : ResourceAuthorizationHandlerTests
     {
         private ResourceAuthorizationResult? _resourceAuthorizationResult;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
-            long[] edOrgSecurityElements = [9999];
+            var documentSecurityElements = new DocumentSecurityElements(
+                [],
+                [
+                    new EducationOrganizationSecurityElement(
+                        new ResourceName("School"),
+                        new EducationOrganizationId(9999)
+                    ),
+                ],
+                []
+            );
+            var authStrategyEvaluators = new AuthorizationStrategyEvaluator(
+                "RelationshipsWithEdOrgsOnly",
+                [new AuthorizationFilter("EducationOrganization", "6001")],
+                FilterOperator.Or
+            );
 
-            var authStrategyEvaluators = clientEdOrgIds
-                .Split(',')
-                .Select(edOrgId => new AuthorizationStrategyEvaluator(
-                    [
-                        new AuthorizationFilter(
-                            "EducationOrganization",
-                            edOrgId,
-                            "",
-                            "",
-                            FilterComparison.Equals
-                        ),
-                    ],
-                    FilterOperator.Or
-                ))
-                .ToArray();
+            var validator = A.Fake<IAuthorizationValidator>();
+            A.CallTo(
+                    () =>
+                        validator.ValidateAuthorization(
+                            documentSecurityElements,
+                            authStrategyEvaluators.Filters,
+                            OperationType.Get,
+                            A<TraceId>.Ignored
+                        )
+                )
+                .Returns(new ResourceAuthorizationResult.NotAuthorized(["Not authorized"]));
+            A.CallTo(
+                    () =>
+                        _authorizationServiceFactory.GetByName<IAuthorizationValidator>(
+                            "RelationshipsWithEdOrgsOnly"
+                        )
+                )
+                .Returns(validator);
 
-            var handler = new ResourceAuthorizationHandler(authStrategyEvaluators, NullLogger.Instance);
-            _resourceAuthorizationResult = handler.Authorize([], edOrgSecurityElements);
+            var handler = new ResourceAuthorizationHandler(
+                [authStrategyEvaluators],
+                _authorizationServiceFactory,
+                NullLogger.Instance
+            );
+            _resourceAuthorizationResult = await handler.Authorize(
+                documentSecurityElements,
+                OperationType.Get,
+                new TraceId("trace-id")
+            );
         }
 
         [Test]
         public void Result_should_be_not_authorized()
         {
             _resourceAuthorizationResult.Should().BeOfType<ResourceAuthorizationResult.NotAuthorized>();
+            if (_resourceAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
+            {
+                notAuthorized!.ErrorMessages.Should().HaveCount(1);
+                notAuthorized!.ErrorMessages[0].Should().Be("Not authorized");
+            }
         }
     }
 
-    [TestFixture]
-    public class Given_An_EdFi_Doc_With_No_ClientAuthorization_EdOrg() : ResourceAuthorizationHandlerTests
+    [TestFixture()]
+    public class Given_And_Results_With_Both_Authorized_Should_Return_Authorized()
+        : ResourceAuthorizationHandlerTests
     {
         private ResourceAuthorizationResult? _resourceAuthorizationResult;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
-            long[] edOrgSecurityElements = [6001];
+            var documentSecurityElements = new DocumentSecurityElements(
+                [],
+                [
+                    new EducationOrganizationSecurityElement(
+                        new ResourceName("School"),
+                        new EducationOrganizationId(9999)
+                    ),
+                ],
+                [new StudentId("9879898")]
+            );
 
-            var authStrategyEvaluators = new AuthorizationStrategyEvaluator[0];
-
-            var handler = new ResourceAuthorizationHandler(authStrategyEvaluators, NullLogger.Instance);
-            _resourceAuthorizationResult = handler.Authorize([], edOrgSecurityElements);
-        }
-
-        [Test]
-        public void Result_should_be_authorized()
-        {
-            _resourceAuthorizationResult.Should().BeOfType<ResourceAuthorizationResult.Authorized>();
-        }
-    }
-
-    [TestFixture]
-    public class Given_An_EdFi_Doc_With_Both_Namespace_And_EdOrg_Authorizations()
-        : ResourceAuthorizationHandlerTests
-    {
-        private ResourceAuthorizationResult? _namespaceAndEdOrgMatch;
-        private ResourceAuthorizationResult? _namespaceMatchEdOrgNoMatch;
-        private ResourceAuthorizationResult? _namespaceNoMatchEdOrgMatch;
-        private ResourceAuthorizationResult? _neitherMatch;
-
-        [SetUp]
-        public void Setup()
-        {
-            string[] namespaceElements = ["uri://ed-fi.org"];
-            long[] edOrgElements = [6001];
-            string[] nonMatchingNamespaceElements = ["uri://i-match-nothing.org"];
-            long[] nonMatchingEdOrgElements = [9999];
-
-            // Create evaluators with both namespace and edorg filters
-            var evaluators = new[]
+            var authStrategyEvaluators = new[]
             {
                 new AuthorizationStrategyEvaluator(
-                    [
-                        new AuthorizationFilter(
-                            "Namespace",
-                            "uri://ed-fi.org",
-                            "",
-                            "",
-                            FilterComparison.StartsWith
-                        ),
-                        new AuthorizationFilter(
-                            "EducationOrganization",
-                            "6001",
-                            "",
-                            "",
-                            FilterComparison.Equals
-                        ),
-                    ],
+                    "RelationshipsWithEdOrgsOnly",
+                    [new AuthorizationFilter("EducationOrganization", "9999")],
+                    FilterOperator.And
+                ),
+                new AuthorizationStrategyEvaluator(
+                    "RelationshipsWithPeopleOnly",
+                    [new AuthorizationFilter("Student", "9879898")],
                     FilterOperator.And
                 ),
             };
 
-            var handler = new ResourceAuthorizationHandler(evaluators, NullLogger.Instance);
-            _namespaceAndEdOrgMatch = handler.Authorize(namespaceElements, edOrgElements);
-            _namespaceMatchEdOrgNoMatch = handler.Authorize(namespaceElements, nonMatchingEdOrgElements);
-            _namespaceNoMatchEdOrgMatch = handler.Authorize(nonMatchingNamespaceElements, edOrgElements);
-            _neitherMatch = handler.Authorize(nonMatchingNamespaceElements, nonMatchingEdOrgElements);
+            var validatorForEdOrg = A.Fake<IAuthorizationValidator>();
+            A.CallTo(
+                    () =>
+                        validatorForEdOrg.ValidateAuthorization(
+                            documentSecurityElements,
+                            authStrategyEvaluators[0].Filters,
+                            OperationType.Get,
+                            A<TraceId>.Ignored
+                        )
+                )
+                .Returns(new ResourceAuthorizationResult.Authorized());
+            A.CallTo(
+                    () =>
+                        _authorizationServiceFactory.GetByName<IAuthorizationValidator>(
+                            "RelationshipsWithEdOrgsOnly"
+                        )
+                )
+                .Returns(validatorForEdOrg);
+
+            var validatorForStudent = A.Fake<IAuthorizationValidator>();
+            A.CallTo(
+                    () =>
+                        validatorForStudent.ValidateAuthorization(
+                            documentSecurityElements,
+                            authStrategyEvaluators[1].Filters,
+                            OperationType.Get,
+                            A<TraceId>.Ignored
+                        )
+                )
+                .Returns(new ResourceAuthorizationResult.Authorized());
+            A.CallTo(
+                    () =>
+                        _authorizationServiceFactory.GetByName<IAuthorizationValidator>(
+                            "RelationshipsWithPeopleOnly"
+                        )
+                )
+                .Returns(validatorForStudent);
+
+            var handler = new ResourceAuthorizationHandler(
+                authStrategyEvaluators,
+                _authorizationServiceFactory,
+                NullLogger.Instance
+            );
+            _resourceAuthorizationResult = await handler.Authorize(
+                documentSecurityElements,
+                OperationType.Get,
+                new TraceId("trace-id")
+            );
         }
 
         [Test]
         public void When_both_match_should_be_authorized()
         {
-            _namespaceAndEdOrgMatch.Should().BeOfType<ResourceAuthorizationResult.Authorized>();
-        }
-
-        [Test]
-        public void When_only_namespace_matches_should_be_not_authorized()
-        {
-            _namespaceMatchEdOrgNoMatch.Should().BeOfType<ResourceAuthorizationResult.NotAuthorized>();
-        }
-
-        [Test]
-        public void When_only_edorg_matches_should_be_not_authorized()
-        {
-            _namespaceNoMatchEdOrgMatch.Should().BeOfType<ResourceAuthorizationResult.NotAuthorized>();
-        }
-
-        [Test]
-        public void When_neither_matches_should_be_not_authorized()
-        {
-            _neitherMatch.Should().BeOfType<ResourceAuthorizationResult.NotAuthorized>();
-        }
-    }
-
-    [TestFixture]
-    public class Given_An_EdFi_Doc_With_EdOrg_Or_Namespace_Authorization() : ResourceAuthorizationHandlerTests
-    {
-        private ResourceAuthorizationResult? _namespaceAndEdOrgMatch;
-        private ResourceAuthorizationResult? _namespaceMatchEdOrgNoMatch;
-        private ResourceAuthorizationResult? _namespaceNoMatchEdOrgMatch;
-        private ResourceAuthorizationResult? _neitherMatch;
-
-        [SetUp]
-        public void Setup()
-        {
-            string[] namespaceElements = ["uri://ed-fi.org"];
-            long[] edOrgElements = [6001];
-            string[] nonMatchingNamespaceElements = ["uri://i-match-nothing.org"];
-            long[] nonMatchingEdOrgElements = [9999];
-
-            // Create evaluators with namespace OR edorg filters
-            var evaluators = new[]
-            {
-                new AuthorizationStrategyEvaluator(
-                    [
-                        new AuthorizationFilter(
-                            "Namespace",
-                            "uri://ed-fi.org",
-                            "",
-                            "",
-                            FilterComparison.StartsWith
-                        ),
-                        new AuthorizationFilter(
-                            "EducationOrganization",
-                            "6001",
-                            "",
-                            "",
-                            FilterComparison.Equals
-                        ),
-                    ],
-                    FilterOperator.Or
-                ),
-            };
-
-            var handler = new ResourceAuthorizationHandler(evaluators, NullLogger.Instance);
-            _namespaceAndEdOrgMatch = handler.Authorize(namespaceElements, edOrgElements);
-            _namespaceMatchEdOrgNoMatch = handler.Authorize(namespaceElements, nonMatchingEdOrgElements);
-            _namespaceNoMatchEdOrgMatch = handler.Authorize(nonMatchingNamespaceElements, edOrgElements);
-            _neitherMatch = handler.Authorize(nonMatchingNamespaceElements, nonMatchingEdOrgElements);
-        }
-
-        [Test]
-        public void When_both_match_should_be_authorized()
-        {
-            _namespaceAndEdOrgMatch.Should().BeOfType<ResourceAuthorizationResult.Authorized>();
-        }
-
-        [Test]
-        public void When_only_namespace_matches_should_be_authorized()
-        {
-            _namespaceMatchEdOrgNoMatch.Should().BeOfType<ResourceAuthorizationResult.Authorized>();
-        }
-
-        [Test]
-        public void When_only_edorg_matches_should_be_authorized()
-        {
-            _namespaceNoMatchEdOrgMatch.Should().BeOfType<ResourceAuthorizationResult.Authorized>();
-        }
-
-        [Test]
-        public void When_neither_matches_should_be_not_authorized()
-        {
-            _neitherMatch.Should().BeOfType<ResourceAuthorizationResult.NotAuthorized>();
+            _resourceAuthorizationResult.Should().BeOfType<ResourceAuthorizationResult.Authorized>();
         }
     }
 }

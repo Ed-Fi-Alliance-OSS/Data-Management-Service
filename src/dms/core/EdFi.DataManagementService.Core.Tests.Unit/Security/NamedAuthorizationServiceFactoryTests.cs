@@ -3,10 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.AuthorizationFilters;
 using EdFi.DataManagementService.Core.Security.AuthorizationValidation;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -30,6 +33,17 @@ public class NamedAuthorizationServiceFactoryTests
             services.AddTransient<NamespaceBasedValidator>();
             services.AddTransient<RelationshipsWithEdOrgsOnlyValidator>();
 
+            var fakeAuthorizationRepository = A.Fake<IAuthorizationRepository>();
+            A.CallTo(
+                    () =>
+                        fakeAuthorizationRepository.GetAncestorEducationOrganizationIds(
+                            A<long[]>.Ignored,
+                            A<TraceId>.Ignored
+                        )
+                )
+                .Returns(Task.FromResult(new long[] { 255901, 255902 }));
+            services.AddTransient(_ => fakeAuthorizationRepository);
+
             serviceProvider = services.BuildServiceProvider();
 
             handlerProvider = new NamedAuthorizationServiceFactory(serviceProvider);
@@ -42,12 +56,16 @@ public class NamedAuthorizationServiceFactoryTests
                 handlerProvider!.GetByName<IAuthorizationValidator>("NoFurtherAuthorizationRequired")
                 as NoFurtherAuthorizationRequiredValidator;
             handler.Should().NotBeNull();
-            var authResult = handler!.ValidateAuthorization(
-                new DocumentSecurityElements([], [], []),
-                new ClientAuthorizations("", "", [], [])
-            );
+            var authResult = handler!
+                .ValidateAuthorization(
+                    new DocumentSecurityElements([], [], []),
+                    [],
+                    OperationType.Get,
+                    new TraceId(Guid.NewGuid().ToString())
+                )
+                .Result;
             authResult.Should().NotBeNull();
-            authResult.IsAuthorized.Should().BeTrue();
+            authResult.Should().BeOfType<ResourceAuthorizationResult.Authorized>();
         }
 
         [Test]
@@ -57,12 +75,15 @@ public class NamedAuthorizationServiceFactoryTests
                 handlerProvider!.GetByName<IAuthorizationValidator>("NamespaceBased")
                 as NamespaceBasedValidator;
             handler.Should().NotBeNull();
-            var authResult = handler!.ValidateAuthorization(
-                new DocumentSecurityElements(["uri://namespace/resource"], [], []),
-                new ClientAuthorizations("", "", [], [new NamespacePrefix("uri://namespace")])
-            );
+            var authResult = handler!
+                .ValidateAuthorization(
+                    new DocumentSecurityElements(["uri://namespace/resource"], [], []),
+                    [],
+                    OperationType.Get,
+                    new TraceId(Guid.NewGuid().ToString())
+                )
+                .Result;
             authResult.Should().NotBeNull();
-            authResult.IsAuthorized.Should().BeTrue();
         }
 
         [Test]
@@ -72,21 +93,24 @@ public class NamedAuthorizationServiceFactoryTests
                 handlerProvider!.GetByName<IAuthorizationValidator>("RelationshipsWithEdOrgsOnly")
                 as RelationshipsWithEdOrgsOnlyValidator;
             handler.Should().NotBeNull();
-            var authResult = handler!.ValidateAuthorization(
-                new DocumentSecurityElements(
+            var authResult = handler!
+                .ValidateAuthorization(
+                    new DocumentSecurityElements(
+                        [],
+                        [
+                            new EducationOrganizationSecurityElement(
+                                new ResourceName("School"),
+                                new EducationOrganizationId(255901)
+                            ),
+                        ],
+                        []
+                    ),
                     [],
-                    [
-                        new EducationOrganizationSecurityElement(
-                            new ResourceName("School"),
-                            new EducationOrganizationId(255901)
-                        ),
-                    ],
-                    []
-                ),
-                new ClientAuthorizations("", "", [new EducationOrganizationId(255901)], [])
-            );
+                    OperationType.Get,
+                    new TraceId(Guid.NewGuid().ToString())
+                )
+                .Result;
             authResult.Should().NotBeNull();
-            authResult.IsAuthorized.Should().BeTrue();
         }
     }
 
