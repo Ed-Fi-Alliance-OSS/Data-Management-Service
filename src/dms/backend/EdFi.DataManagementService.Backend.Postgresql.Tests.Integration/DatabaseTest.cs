@@ -166,6 +166,7 @@ public abstract class DatabaseTest : DatabaseTestBase
 
     protected static ResourceInfo CreateResourceInfo(
         string resourceName,
+        string projectName = "ProjectName",
         bool allowIdentityUpdates = false,
         bool isInEducationOrganizationHierarchy = false,
         long educationOrganizationId = 0,
@@ -175,7 +176,7 @@ public abstract class DatabaseTest : DatabaseTestBase
         return new(
             ResourceVersion: new("5.0.0"),
             AllowIdentityUpdates: allowIdentityUpdates,
-            ProjectName: new("ProjectName"),
+            ProjectName: new(projectName),
             ResourceName: new(resourceName),
             IsDescriptor: false,
             EducationOrganizationHierarchyInfo: new(
@@ -259,7 +260,8 @@ public abstract class DatabaseTest : DatabaseTestBase
         bool isInEducationOrganizationHierarchy = false,
         long educationOrganizationId = 0,
         long? parentEducationOrganizationId = null,
-        TraceId? traceId = null
+        TraceId? traceId = null,
+        string projectName = "ProjectName"
     )
     {
         if (documentSecurityElements == null)
@@ -275,6 +277,7 @@ public abstract class DatabaseTest : DatabaseTestBase
             {
                 ResourceInfo = CreateResourceInfo(
                     resourceName,
+                    projectName,
                     allowIdentityUpdates,
                     isInEducationOrganizationHierarchy,
                     educationOrganizationId,
@@ -318,7 +321,11 @@ public abstract class DatabaseTest : DatabaseTestBase
         bool allowIdentityUpdates = false,
         DocumentIdentityElement[]? documentIdentityElements = null,
         DocumentSecurityElements? documentSecurityElements = null,
-        TraceId? traceId = null
+        bool isInEducationOrganizationHierarchy = false,
+        long educationOrganizationId = 0,
+        long? parentEducationOrganizationId = null,
+        TraceId? traceId = null,
+        string projectName = "ProjectName"
     )
     {
         if (documentSecurityElements == null)
@@ -333,7 +340,14 @@ public abstract class DatabaseTest : DatabaseTestBase
         return (
             new
             {
-                ResourceInfo = CreateResourceInfo(resourceName, allowIdentityUpdates),
+                ResourceInfo = CreateResourceInfo(
+                    resourceName,
+                    projectName,
+                    allowIdentityUpdates,
+                    isInEducationOrganizationHierarchy,
+                    educationOrganizationId,
+                    parentEducationOrganizationId
+                ),
                 DocumentInfo = CreateDocumentInfo(
                     referentialIdGuid,
                     documentReferences,
