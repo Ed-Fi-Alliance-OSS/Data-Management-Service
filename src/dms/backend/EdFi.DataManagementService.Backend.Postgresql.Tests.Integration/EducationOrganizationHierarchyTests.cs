@@ -26,7 +26,7 @@ public class EducationOrganizationHierarchyTests : DatabaseTest
                 """{"abc":1}""",
                 isInEducationOrganizationHierarchy: true,
                 educationOrganizationId: 100,
-                parentEducationOrganizationIds: []
+                parentEducationOrganizationId: null
             );
             _upsertResult = await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
         }
@@ -53,7 +53,7 @@ public class EducationOrganizationHierarchyTests : DatabaseTest
                 """{"abc":1}""",
                 isInEducationOrganizationHierarchy: true,
                 educationOrganizationId: 100,
-                parentEducationOrganizationIds: []
+                parentEducationOrganizationId: null
             );
             await CreateUpsert().Upsert(edOrgUpsertRequest, Connection!, Transaction!);
 
@@ -64,7 +64,7 @@ public class EducationOrganizationHierarchyTests : DatabaseTest
                 """{"abc":1}""",
                 isInEducationOrganizationHierarchy: true,
                 educationOrganizationId: 1000,
-                parentEducationOrganizationIds: [100]
+                parentEducationOrganizationId: 100
             );
             _upsertResult = await CreateUpsert().Upsert(schoolUpsertRequest, Connection!, Transaction!);
             await Transaction!.CommitAsync();

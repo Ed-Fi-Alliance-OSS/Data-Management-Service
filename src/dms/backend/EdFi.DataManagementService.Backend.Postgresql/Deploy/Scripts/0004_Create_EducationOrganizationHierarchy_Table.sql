@@ -13,3 +13,5 @@ CREATE TABLE dms.EducationOrganizationHierarchy(
     DocumentPartitionKey SMALLINT NOT NULL,
     UNIQUE (ProjectName, ResourceName, EducationOrganizationId, ParentId)
 );
+
+CREATE UNIQUE INDEX UX_EducationOrganizationHierarchy_EducationOrganizationId ON dms.EducationOrganizationHierarchy (EducationOrganizationId);

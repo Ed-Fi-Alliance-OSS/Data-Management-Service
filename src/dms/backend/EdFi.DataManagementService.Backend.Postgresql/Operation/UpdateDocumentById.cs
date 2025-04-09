@@ -199,7 +199,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                     updateRequest.ResourceInfo.ProjectName.Value,
                     updateRequest.ResourceInfo.ResourceName.Value,
                     updateRequest.ResourceInfo.EducationOrganizationHierarchyInfo.Id,
-                    updateRequest.ResourceInfo.EducationOrganizationHierarchyInfo.ParentIds,
+                    updateRequest.ResourceInfo.EducationOrganizationHierarchyInfo.ParentId,
                     documentFromDb.Id.Value,
                     documentFromDb.DocumentPartitionKey,
                     connection,
