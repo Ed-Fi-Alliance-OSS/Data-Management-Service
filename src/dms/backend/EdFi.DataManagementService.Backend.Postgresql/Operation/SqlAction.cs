@@ -48,6 +48,9 @@ public class SqlAction() : ISqlAction
             SecurityElements: await reader.GetFieldValueAsync<JsonElement>(
                 reader.GetOrdinal("SecurityElements")
             ),
+            StudentSchoolAuthorizationEdOrgIds: await reader.GetFieldValueAsync<JsonElement?>(
+                reader.GetOrdinal("StudentSchoolAuthorizationEdOrgIds")
+            ),
             CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
             LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt")),
             LastModifiedTraceId: reader.GetString(reader.GetOrdinal("LastModifiedTraceId"))
@@ -231,12 +234,12 @@ public class SqlAction() : ISqlAction
         await using var command = new NpgsqlCommand(
             @"
             WITH Documents AS (
-            INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, IsDescriptor, ProjectName, EdfiDoc, SecurityElements, LastModifiedTraceId)
-              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, IsDescriptor, ProjectName, EdfiDoc, SecurityElements, StudentSchoolAuthorizationEdOrgIds, LastModifiedTraceId)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
               RETURNING Id
             )
             INSERT INTO dms.Alias (ReferentialPartitionKey, ReferentialId, DocumentId, DocumentPartitionKey)
-              SELECT $10, $11, Id, $1 FROM Documents RETURNING DocumentId;
+              SELECT $11, $12, Id, $1 FROM Documents RETURNING DocumentId;
             ",
             connection,
             transaction
@@ -252,6 +255,12 @@ public class SqlAction() : ISqlAction
                 new() { Value = document.ProjectName },
                 new() { Value = document.EdfiDoc },
                 new() { Value = document.SecurityElements },
+                new()
+                {
+                    Value = document.StudentSchoolAuthorizationEdOrgIds.HasValue
+                        ? document.StudentSchoolAuthorizationEdOrgIds
+                        : DBNull.Value,
+                },
                 new() { Value = document.LastModifiedTraceId },
                 new() { Value = referentialPartitionKey },
                 new() { Value = referentialId },
@@ -776,5 +785,34 @@ public class SqlAction() : ISqlAction
         }
 
         return edOrgIds.Distinct().ToArray();
+    }
+
+    public async Task<JsonElement> GetStudentSchoolAuthorizationEducationOrganizationIds(
+        string studentUniqueId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        TraceId traceId
+    )
+    {
+        await using NpgsqlCommand command = new(
+            $"""
+                SELECT StudentSchoolAuthorizationEducationOrganizationIds
+                FROM dms.StudentSchoolAssociationAuthorization
+                WHERE StudentUniqueId = $1
+            """,
+            connection,
+            transaction
+        )
+        {
+            Parameters = { new() { Value = studentUniqueId } },
+        };
+
+        await command.PrepareAsync();
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+
+        await reader.ReadAsync();
+        return await reader.GetFieldValueAsync<JsonElement>(
+            reader.GetOrdinal("StudentSchoolAuthorizationEducationOrganizationIds")
+        );
     }
 }

@@ -4,7 +4,7 @@
 -- See the LICENSE and NOTICES files in the project root for more information.
 
 CREATE TABLE dms.StudentSchoolAssociationAuthorization(
-    Id BIGINT UNIQUE  GENERATED ALWAYS AS IDENTITY(START WITH 1 INCREMENT BY 1),
+    Id BIGINT UNIQUE GENERATED ALWAYS AS IDENTITY(START WITH 1 INCREMENT BY 1),
     StudentUniqueId VARCHAR(32) NOT NULL,
     HierarchySchoolId BIGINT NOT NULL REFERENCES dms.EducationOrganizationHierarchy(EducationOrganizationId) ON DELETE CASCADE,
     StudentSchoolAuthorizationEducationOrganizationIds JSONB NOT NULL,

@@ -170,7 +170,9 @@ public abstract class DatabaseTest : DatabaseTestBase
         bool allowIdentityUpdates = false,
         bool isInEducationOrganizationHierarchy = false,
         long educationOrganizationId = 0,
-        long? parentEducationOrganizationId = null
+        long? parentEducationOrganizationId = default,
+        bool isStudentAuthorizationSecurable = false,
+        string? studentId = default
     )
     {
         return new(
@@ -183,7 +185,8 @@ public abstract class DatabaseTest : DatabaseTestBase
                 isInEducationOrganizationHierarchy,
                 educationOrganizationId,
                 parentEducationOrganizationId
-            )
+            ),
+            StudentAuthorizationSecurableInfo: new(isStudentAuthorizationSecurable, studentId)
         );
     }
 
