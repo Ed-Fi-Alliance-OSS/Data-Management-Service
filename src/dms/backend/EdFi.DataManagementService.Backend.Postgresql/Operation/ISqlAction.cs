@@ -166,4 +166,11 @@ public interface ISqlAction
         NpgsqlTransaction transaction,
         TraceId traceId
     );
+
+    public Task<JsonElement> GetStudentSchoolAuthorizationEducationOrganizationIds(
+        string studentUniqueId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        TraceId traceId
+    );
 }
