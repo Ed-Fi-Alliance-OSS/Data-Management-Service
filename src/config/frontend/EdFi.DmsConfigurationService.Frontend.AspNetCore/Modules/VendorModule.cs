@@ -42,10 +42,20 @@ public class VendorModule : IEndpointModule
         {
             VendorInsertResult.Success success when success.IsNewVendor => Results.Created(
                 $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
-                new { Id = success.Id, Status = 201, Title = "New Vendor {entity.Company} has been created successfully." }
+                new
+                {
+                    Id = success.Id,
+                    Status = 201,
+                    Title = $"New Vendor {entity.Company} has been created successfully.",
+                }
             ),
             VendorInsertResult.Success success when !success.IsNewVendor => Results.Ok(
-               new { Id = success.Id, Status = 200, Title = "Vendor {entity.Company} has been updated successfully." }
+                new
+
+                    Id = success.Id,
+                    Status = 200,
+                    Title = $"Vendor {entity.Company} has been updated successfully.",
+                }
             ),
             VendorInsertResult.FailureDuplicateCompanyName => Results.Json(
             FailureResponse.ForDataValidation(
