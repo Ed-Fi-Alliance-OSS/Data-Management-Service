@@ -51,7 +51,7 @@ public class VendorModule : IEndpointModule
             ),
             VendorInsertResult.Success success when !success.IsNewVendor => Results.Ok(
                 new
-
+                {
                     Id = success.Id,
                     Status = 200,
                     Title = $"Vendor {entity.Company} has been updated successfully.",
