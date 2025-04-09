@@ -13,6 +13,7 @@ CREATE TABLE dms.Document (
   ProjectName VARCHAR(256) NOT NULL,
   EdfiDoc JSONB NOT NULL,
   SecurityElements JSONB NOT NULL,
+  StudentSchoolAuthorizationEdOrgIds JSONB NULL,
   CreatedAt TIMESTAMP NOT NULL DEFAULT NOW(),
   LastModifiedAt TIMESTAMP NOT NULL DEFAULT NOW(),
   LastModifiedTraceId VARCHAR(128) NOT NULL,

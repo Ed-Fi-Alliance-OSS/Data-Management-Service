@@ -76,6 +76,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 ProjectName: upsertRequest.ResourceInfo.ProjectName.Value,
                 EdfiDoc: JsonSerializer.Deserialize<JsonElement>(upsertRequest.EdfiDoc),
                 SecurityElements: upsertRequest.DocumentSecurityElements.ToJsonElement(),
+                StudentSchoolAuthorizationEdOrgIds: default,
                 LastModifiedTraceId: traceId.Value
             ),
             PartitionKeyFor(upsertRequest.DocumentInfo.ReferentialId).Value,
