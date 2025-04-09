@@ -32,7 +32,9 @@ internal static class SecurityHelper
                         .ToArray()
                 ),
                 ["StudentUsi"] = new JsonArray(
-                    documentSecurityElements.StudentUsi.Select(usi => JsonValue.Create(usi.Value)).ToArray()
+                    documentSecurityElements
+                        .StudentUniqueId.Select(usi => JsonValue.Create(usi.Value))
+                        .ToArray()
                 ),
             }.ToJsonString()
         );
@@ -58,8 +60,10 @@ internal static class SecurityHelper
                 .ToArray() ?? [];
 
         var studentUsi =
-            jsonObject["StudentUsi"]?.AsArray().Select(id => new StudentUsi(id!.GetValue<string>())).ToArray()
-            ?? [];
+            jsonObject["StudentUsi"]
+                ?.AsArray()
+                .Select(id => new StudentUniqueId(id!.GetValue<string>()))
+                .ToArray() ?? [];
 
         return new DocumentSecurityElements(namespaces, educationOrganizations, studentUsi);
     }

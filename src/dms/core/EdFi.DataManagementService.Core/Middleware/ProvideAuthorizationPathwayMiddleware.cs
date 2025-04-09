@@ -52,7 +52,7 @@ internal class ProvideAuthorizationPathwayMiddleware(ILogger _logger) : IPipelin
         if (
             requestMethod is RequestMethod.POST or RequestMethod.PUT
             && (
-                !documentSecurityElements.StudentUsi.Any()
+                !documentSecurityElements.StudentUniqueId.Any()
                 || !documentSecurityElements.EducationOrganization.Any()
             )
         )
@@ -63,7 +63,7 @@ internal class ProvideAuthorizationPathwayMiddleware(ILogger _logger) : IPipelin
         }
 
         return new AuthorizationPathway.StudentSchoolAssociation(
-            documentSecurityElements.StudentUsi.FirstOrDefault(),
+            documentSecurityElements.StudentUniqueId.FirstOrDefault(),
             documentSecurityElements.EducationOrganization.FirstOrDefault()?.Id ?? default
         );
     }

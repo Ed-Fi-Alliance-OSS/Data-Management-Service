@@ -52,13 +52,13 @@ internal static class SecurityElementsExtractor
             );
         }
 
-        HashSet<StudentUsi> studentSecurityElements = [];
+        HashSet<StudentUniqueId> studentSecurityElements = [];
         foreach (var securityElementPath in resourceSchema.StudentSecurityElementPaths)
         {
             studentSecurityElements.UnionWith(
                 documentBody
                     .SelectNodesFromArrayPathCoerceToStrings(securityElementPath.Value, logger)
-                    .Select(studentId => new StudentUsi(studentId))
+                    .Select(studentId => new StudentUniqueId(studentId))
             );
         }
 
