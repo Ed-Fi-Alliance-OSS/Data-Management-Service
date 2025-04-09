@@ -24,5 +24,9 @@ public record ResourceInfo(
     /// If a resource is part of the EducationOrganization hierarchy, information about its
     /// place in that hierarchy for security.
     /// </summary>
-    EducationOrganizationHierarchyInfo EducationOrganizationHierarchyInfo
+    EducationOrganizationHierarchyInfo EducationOrganizationHierarchyInfo,
+    /// <summary>
+    /// If a resource is StudentSecurable Document and it's studentUniqueId
+    /// </summary>
+    StudentAuthorizationSecurableInfo StudentAuthorizationSecurableInfo
 ) : BaseResourceInfo(ProjectName, ResourceName, IsDescriptor);

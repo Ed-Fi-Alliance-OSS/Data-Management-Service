@@ -56,6 +56,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
         IUpsertRequest upsertRequest,
         DocumentReferenceIds documentReferenceIds,
         DocumentReferenceIds descriptorReferenceIds,
+        JsonElement? studentSchoolAuthorizationEducationOrganizationIds,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         TraceId traceId
@@ -76,7 +77,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 ProjectName: upsertRequest.ResourceInfo.ProjectName.Value,
                 EdfiDoc: JsonSerializer.Deserialize<JsonElement>(upsertRequest.EdfiDoc),
                 SecurityElements: upsertRequest.DocumentSecurityElements.ToJsonElement(),
-                StudentSchoolAuthorizationEdOrgIds: default,
+                StudentSchoolAuthorizationEdOrgIds: studentSchoolAuthorizationEducationOrganizationIds,
                 LastModifiedTraceId: traceId.Value
             ),
             PartitionKeyFor(upsertRequest.DocumentInfo.ReferentialId).Value,
@@ -180,6 +181,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
         IUpsertRequest upsertRequest,
         DocumentReferenceIds documentReferenceIds,
         DocumentReferenceIds descriptorReferenceIds,
+        JsonElement? studentSchoolAuthorizationEducationOrganizationIds,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         TraceId traceId
@@ -312,6 +314,19 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 return new UpsertResult.UpsertFailureNotAuthorized(notAuthorized.ErrorMessages);
             }
 
+            JsonElement? studentSchoolAuthorizationEducationOrganizationIds = null;
+
+            if (upsertRequest.ResourceInfo.StudentAuthorizationSecurableInfo.IsStudentAuthorizationSecurable)
+            {
+                studentSchoolAuthorizationEducationOrganizationIds =
+                    await _sqlAction.GetStudentSchoolAuthorizationEducationOrganizationIds(
+                        upsertRequest.ResourceInfo.StudentAuthorizationSecurableInfo.StudentUniqueId ?? "",
+                        connection,
+                        transaction,
+                        upsertRequest.TraceId
+                    );
+            }
+
             // Either get the existing document uuid or use the new one provided
             if (documentFromDb == null)
             {
@@ -319,6 +334,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                     upsertRequest,
                     documentReferenceIds,
                     descriptorReferenceIds,
+                    studentSchoolAuthorizationEducationOrganizationIds,
                     connection,
                     transaction,
                     upsertRequest.TraceId
@@ -336,6 +352,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 upsertRequest,
                 documentReferenceIds,
                 descriptorReferenceIds,
+                studentSchoolAuthorizationEducationOrganizationIds,
                 connection,
                 transaction,
                 upsertRequest.TraceId

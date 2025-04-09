@@ -225,12 +225,12 @@ public class SqlAction() : ISqlAction
         await using var command = new NpgsqlCommand(
             @"
             WITH Documents AS (
-            INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, IsDescriptor, ProjectName, EdfiDoc, SecurityElements, LastModifiedTraceId)
-              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, IsDescriptor, ProjectName, EdfiDoc, SecurityElements, StudentSchoolAuthorizationEdOrgIds, LastModifiedTraceId)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
               RETURNING Id
             )
             INSERT INTO dms.Alias (ReferentialPartitionKey, ReferentialId, DocumentId, DocumentPartitionKey)
-              SELECT $10, $11, Id, $1 FROM Documents RETURNING DocumentId;
+              SELECT $11, $12, Id, $1 FROM Documents RETURNING DocumentId;
             ",
             connection,
             transaction
@@ -246,6 +246,12 @@ public class SqlAction() : ISqlAction
                 new() { Value = document.ProjectName },
                 new() { Value = document.EdfiDoc },
                 new() { Value = document.SecurityElements },
+                new()
+                {
+                    Value = document.StudentSchoolAuthorizationEdOrgIds.HasValue
+                        ? document.StudentSchoolAuthorizationEdOrgIds
+                        : DBNull.Value,
+                },
                 new() { Value = document.LastModifiedTraceId },
                 new() { Value = referentialPartitionKey },
                 new() { Value = referentialId },
@@ -681,54 +687,11 @@ public class SqlAction() : ISqlAction
         return await command.ExecuteNonQueryAsync();
     }
 
-    public async Task<long[]> GetAncestorEducationOrganizationIds(
-        long[] educationOrganizationIds,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction
-    )
-    {
-        await using NpgsqlCommand command = new(
-            $"""
-                WITH RECURSIVE ParentHierarchy(Id, EducationOrganizationId, ParentId) AS (
-                SELECT h.Id, h.EducationOrganizationId, h.ParentId
-                FROM dms.EducationOrganizationHierarchy h
-                WHERE h.EducationOrganizationId = ANY($1)
-
-                UNION ALL
-
-                SELECT parent.Id, parent.EducationOrganizationId, parent.ParentId
-                FROM dms.EducationOrganizationHierarchy parent
-                JOIN ParentHierarchy child ON parent.Id = child.ParentId
-                )
-                SELECT EducationOrganizationId
-                FROM ParentHierarchy
-                ORDER BY EducationOrganizationId
-                {SqlBuilder.SqlFor(LockOption.BlockUpdateDelete)};
-            """,
-            connection,
-            transaction
-        )
-        {
-            Parameters = { new() { Value = educationOrganizationIds } },
-        };
-        await command.PrepareAsync();
-
-        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
-
-        List<long> edOrgIds = [];
-
-        while (await reader.ReadAsync())
-        {
-            edOrgIds.Add(reader.GetInt64(reader.GetOrdinal("EducationOrganizationId")));
-        }
-
-        return edOrgIds.Distinct().ToArray();
-    }
-
     public async Task<JsonElement?> GetStudentSchoolAuthorizationEducationOrganizationIds(
         string studentUniqueId,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction transaction,
+        TraceId traceId
     )
     {
         await using NpgsqlCommand command = new(

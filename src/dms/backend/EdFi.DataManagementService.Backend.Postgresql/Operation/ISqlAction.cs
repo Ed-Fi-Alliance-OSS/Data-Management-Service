@@ -157,15 +157,10 @@ public interface ISqlAction
         NpgsqlTransaction transaction
     );
 
-    public Task<long[]> GetAncestorEducationOrganizationIds(
-        long[] educationOrganizationIds,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction
-    );
-
-    public Task<JsonElement?> GetStudentSchoolAuthorizationEducationOrganizationIds(
+    public Task<JsonElement> GetStudentSchoolAuthorizationEducationOrganizationIds(
         string studentUniqueId,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction transaction,
+        TraceId traceId
     );
 }
