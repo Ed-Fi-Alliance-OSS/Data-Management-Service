@@ -71,7 +71,7 @@ Authorization: bearer {{configToken}}
     "vendorId": {{vendorId}},
     "applicationName": "Demo application",
     "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
-    "educationOrganizationIds": [6001010]
+    "educationOrganizationIds": [6001010, 60010, 600]
 }
 
 ###

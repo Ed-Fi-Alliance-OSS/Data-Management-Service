@@ -585,14 +585,14 @@ public class SqlAction() : ISqlAction
         string projectName,
         string resourceName,
         long educationOrganizationId,
-        long[] parentEducationOrganizationIds,
+        long? parentEducationOrganizationId,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     )
     {
         await using NpgsqlCommand command = new(
             $@"INSERT INTO dms.EducationOrganizationHierarchy(ProjectName, ResourceName, EducationOrganizationId, ParentId)
-	            VALUES ($1, $2, $3, (SELECT Id FROM dms.EducationOrganizationHierarchy WHERE EducationOrganizationId = ANY($4)));",
+	            VALUES ($1, $2, $3, (SELECT Id FROM dms.EducationOrganizationHierarchy WHERE EducationOrganizationId = $4));",
             connection,
             transaction
         )
@@ -602,7 +602,12 @@ public class SqlAction() : ISqlAction
                 new() { Value = projectName },
                 new() { Value = resourceName },
                 new() { Value = educationOrganizationId },
-                new() { Value = parentEducationOrganizationIds },
+                new()
+                {
+                    Value = parentEducationOrganizationId.HasValue
+                        ? parentEducationOrganizationId.Value
+                        : DBNull.Value,
+                },
             },
         };
         await command.PrepareAsync();
@@ -613,16 +618,17 @@ public class SqlAction() : ISqlAction
         string projectName,
         string resourceName,
         long educationOrganizationId,
-        long[] parentEducationOrganizationIds,
+        long? parentEducationOrganizationId,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     )
     {
-        await using NpgsqlCommand deleteCommand = new(
-            $@"DELETE FROM dms.EducationOrganizationHierarchy
-	            WHERE ProjectName = $1
+        await using NpgsqlCommand updateCommand = new(
+            $@"UPDATE dms.EducationOrganizationHierarchy
+                SET ParentId = (SELECT Id FROM dms.EducationOrganizationHierarchy WHERE EducationOrganizationId = $4)
+                WHERE ProjectName = $1
                 AND ResourceName = $2
-                AND EducationOrganizationId = $3",
+                AND EducationOrganizationId = $3;",
             connection,
             transaction
         )
@@ -632,28 +638,16 @@ public class SqlAction() : ISqlAction
                 new() { Value = projectName },
                 new() { Value = resourceName },
                 new() { Value = educationOrganizationId },
+                new()
+                {
+                    Value = parentEducationOrganizationId.HasValue
+                        ? parentEducationOrganizationId.Value
+                        : DBNull.Value,
+                },
             },
         };
-        await deleteCommand.PrepareAsync();
-        await deleteCommand.ExecuteNonQueryAsync();
-
-        await using NpgsqlCommand insertCommand = new(
-            $@"INSERT INTO dms.EducationOrganizationHierarchy(ProjectName, ResourceName, EducationOrganizationId, ParentId)
-	            VALUES ($1, $2, $3, (SELECT Id FROM dms.EducationOrganizationHierarchy WHERE EducationOrganizationId = ANY($4)));",
-            connection,
-            transaction
-        )
-        {
-            Parameters =
-            {
-                new() { Value = projectName },
-                new() { Value = resourceName },
-                new() { Value = educationOrganizationId },
-                new() { Value = parentEducationOrganizationIds },
-            },
-        };
-        await insertCommand.PrepareAsync();
-        return await insertCommand.ExecuteNonQueryAsync();
+        await updateCommand.PrepareAsync();
+        return await updateCommand.ExecuteNonQueryAsync();
     }
 
     public async Task<int> DeleteEducationOrganizationHierarchy(

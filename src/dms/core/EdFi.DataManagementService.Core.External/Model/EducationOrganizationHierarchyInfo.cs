@@ -11,5 +11,5 @@ namespace EdFi.DataManagementService.Core.External.Model;
 public record EducationOrganizationHierarchyInfo(
     bool IsInEducationOrganizationHierarchy,
     long Id,
-    long[] ParentIds
+    long? ParentId
 );

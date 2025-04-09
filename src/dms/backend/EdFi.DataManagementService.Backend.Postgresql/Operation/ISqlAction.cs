@@ -130,7 +130,7 @@ public interface ISqlAction
         string projectName,
         string resourceName,
         long educationOrganizationId,
-        long[] parentEducationOrganizationIds,
+        long? parentEducationOrganizationId,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     );
@@ -139,7 +139,7 @@ public interface ISqlAction
         string projectName,
         string resourceName,
         long educationOrganizationId,
-        long[] parentEducationOrganizationIds,
+        long? parentEducationOrganizationId,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     );

@@ -11,3 +11,5 @@ CREATE TABLE dms.EducationOrganizationHierarchy(
     ParentId BIGINT REFERENCES dms.EducationOrganizationHierarchy(Id) ON DELETE CASCADE,
     UNIQUE (ProjectName, ResourceName, EducationOrganizationId, ParentId)
 );
+
+CREATE UNIQUE INDEX UX_EducationOrganizationHierarchy_EducationOrganizationId ON dms.EducationOrganizationHierarchy (EducationOrganizationId);
