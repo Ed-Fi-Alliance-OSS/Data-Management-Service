@@ -9,6 +9,7 @@ Feature: Resources "Create" Operation validations
                   | uri://ed-fi.org/StateAbbreviationDescriptor#TX                                             |
                   | uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider |
                   | uri://ed-fi.org/GradeLevelDescriptor#Postsecondary                                         |
+                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School                             |
 
     Rule: Resources
 
@@ -786,3 +787,27 @@ Feature: Resources "Create" Operation validations
                       "namespace": "uri://ed-fi.org"
                   }
                   """
+
+    Scenario: 30 Insert the same school after deletion
+     Given the system has these "schools"
+                  | schoolId      | nameOfInstitution | gradeLevels                                                                        | educationOrganizationCategories                                                                                        |
+                  | 255901001     | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+       When a DELETE request is made to referenced resource "/ed-fi/schools/{id}"
+       And a POST request is made to "/ed-fi/schools" with
+          """
+                {
+               "schoolId":255901001,
+               "nameOfInstitution":"Test school",
+               "gradeLevels":[    
+                  {
+                     "gradeLevelDescriptor":"uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
+                  }
+               ],
+               "educationOrganizationCategories":[
+                  {
+                     "educationOrganizationCategoryDescriptor":"uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                  }
+               ]
+            }
+          """
+          Then it should respond with 200 or 201
