@@ -15,6 +15,9 @@ COMMENT ON COLUMN dmscs.Vendor.Company IS 'Vendor or company name';
 COMMENT ON COLUMN dmscs.Vendor.ContactName IS 'Vendor contact name';
 COMMENT ON COLUMN dmscs.Vendor.ContactEmailAddress IS 'Vendor contact email id';
 
+ALTER TABLE dmscs.Vendor ADD CONSTRAINT uq_Company UNIQUE (Company);
+
+CREATE UNIQUE INDEX idx_Company ON dmscs.Vendor (Company);
 
 CREATE TABLE dmscs.VendorNamespacePrefix (
     VendorId BIGINT NOT NULL,

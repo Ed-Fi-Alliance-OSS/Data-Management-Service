@@ -25,13 +25,40 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             await using var transaction = await connection.BeginTransactionAsync();
             try
             {
-                var sql = """
+                long id = 0;
+                bool isNewVendor = false;
+                var sql = "SELECT Id FROM dmscs.Vendor WHERE Company = @Company";
+                var existingVendorId = await connection.ExecuteScalarAsync<long?>(sql, new { command.Company });
+
+                if (existingVendorId.HasValue)
+                {
+                    sql = """
+                        UPDATE dmscs.Vendor
+                        SET ContactName=@ContactName, ContactEmailAddress=@ContactEmailAddress
+                        WHERE Id = @Id;
+                        """;
+                    await connection.ExecuteAsync(sql, new
+                    {
+                        command.ContactName,
+                        command.ContactEmailAddress,
+                        Id = existingVendorId.Value
+                    });
+
+                    sql = "DELETE FROM dmscs.VendorNamespacePrefix WHERE VendorId = @VendorId";
+                    await connection.ExecuteAsync(sql, new { VendorId = existingVendorId.Value });
+                    id = existingVendorId.Value;
+                }
+                else
+                {
+                    sql = """
                     INSERT INTO dmscs.Vendor (Company, ContactName, ContactEmailAddress)
                     VALUES (@Company, @ContactName, @ContactEmailAddress)
                     RETURNING Id;
                     """;
 
-                var id = await connection.ExecuteScalarAsync<long>(sql, command);
+                    id = await connection.ExecuteScalarAsync<long>(sql, command);
+                    isNewVendor = true;
+                }
 
                 sql = """
                     INSERT INTO dmscs.VendorNamespacePrefix (VendorId, NamespacePrefix)
@@ -48,7 +75,13 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                 await connection.ExecuteAsync(sql, namespacePrefixes);
                 await transaction.CommitAsync();
 
-                return new VendorInsertResult.Success(id);
+                return new VendorInsertResult.Success(id, isNewVendor);
+            }
+            catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("uq_company"))
+            {
+                logger.LogWarning(ex, "Company Name must be unique");
+                await transaction.RollbackAsync();
+                return new VendorInsertResult.FailureDuplicateCompanyName();
             }
             catch (Exception ex)
             {
