@@ -6,17 +6,18 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Helpers;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Extraction;
 
 /// <summary>
-/// Extracts the StudentAuthorizationSecurableInfo from a resource
+/// Extracts the AuthorizationSecurableInfo from a resource
 /// </summary>
-internal static class StudentAuthorizationSecurableExtractor
+internal static class AuthorizationSecurableExtractor
 {
-    public static StudentAuthorizationSecurableInfo ExtractStudentAuthorizationSecurableInfo(
+    public static AuthorizationSecurableInfo[] ExtractAuthorizationSecurableInfo(
         this ResourceSchema resourceSchema,
         JsonNode documentBody,
         ILogger logger
@@ -39,9 +40,12 @@ internal static class StudentAuthorizationSecurableExtractor
             );
         }
 
-        return new StudentAuthorizationSecurableInfo(
-            IsStudentAuthorizationSecurable: studentUniqueIds.Count > 0,
-            StudentUniqueId: studentUniqueIds.FirstOrDefault()
-        );
+        return
+        [
+            new AuthorizationSecurableInfo(
+                SecurityElementNameConstants.StudentUsi,
+                studentUniqueIds.FirstOrDefault()
+            ),
+        ];
     }
 }

@@ -28,7 +28,8 @@ public class RelationshipsWithEdOrgsOnlyFiltersProviderTests
                     "",
                     [new EducationOrganizationId(255901), new EducationOrganizationId(255902)],
                     []
-                )
+                ),
+                []
             );
         }
 
@@ -56,7 +57,7 @@ public class RelationshipsWithEdOrgsOnlyFiltersProviderTests
 
             // Act & Assert
             var exception = Assert.Throws<AuthorizationException>(
-                () => filtersProvider.GetFilters(clientAuthorizations)
+                () => filtersProvider.GetFilters(clientAuthorizations, [])
             );
             exception.Should().NotBeNull();
             exception!

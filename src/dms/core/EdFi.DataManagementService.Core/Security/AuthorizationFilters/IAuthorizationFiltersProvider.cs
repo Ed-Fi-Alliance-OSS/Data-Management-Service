@@ -12,5 +12,8 @@ namespace EdFi.DataManagementService.Core.Security.AuthorizationFilters;
 /// </summary>
 public interface IAuthorizationFiltersProvider
 {
-    AuthorizationStrategyEvaluator GetFilters(ClientAuthorizations authorizations);
+    AuthorizationStrategyEvaluator GetFilters(
+        ClientAuthorizations authorizations,
+        AuthorizationSecurableInfo[] authorizationSecurableInfos
+    );
 }

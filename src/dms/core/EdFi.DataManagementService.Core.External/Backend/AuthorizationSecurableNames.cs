@@ -3,9 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-namespace EdFi.DataManagementService.Core.External.Model;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
 
-/// <summary>
-/// A string type branded as a StudentId, which is a unit of security authorization.
-/// </summary>
-public record struct StudentId(string Value);
+namespace EdFi.DataManagementService.Core.External.Backend;
+
+public class AuthorizationSecurableNames { }

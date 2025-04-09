@@ -86,7 +86,7 @@ internal class ApiService(
                     _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                 ),
                 new ExtractDocumentInfoMiddleware(_logger),
-                new ExtractStudentAuthorizationSecurableInfoMiddleware(_logger),
+                new ExtractAuthorizationSecurableInfoMiddleware(_logger),
                 new DisallowDuplicateReferencesMiddleware(_logger),
                 new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
                 new ResourceActionAuthorizationMiddleware(
@@ -211,7 +211,7 @@ internal class ApiService(
                     _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                 ),
                 new ExtractDocumentInfoMiddleware(_logger),
-                new ExtractStudentAuthorizationSecurableInfoMiddleware(_logger),
+                new ExtractAuthorizationSecurableInfoMiddleware(_logger),
                 new DisallowDuplicateReferencesMiddleware(_logger),
                 new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
                 new ResourceActionAuthorizationMiddleware(
