@@ -323,8 +323,8 @@ public class ExtractSecurityElementsTests
         [Test]
         public void It_has_extracted_studentId()
         {
-            documentSecurityElements.StudentUsi.Should().HaveCount(1);
-            documentSecurityElements.StudentUsi[0].Value.Should().Be("12345");
+            documentSecurityElements.StudentUniqueId.Should().HaveCount(1);
+            documentSecurityElements.StudentUniqueId[0].Value.Should().Be("12345");
         }
     }
 
@@ -362,7 +362,7 @@ public class ExtractSecurityElementsTests
         [Test]
         public void It_has_no_studentId()
         {
-            documentSecurityElements.StudentUsi.Should().HaveCount(0);
+            documentSecurityElements.StudentUniqueId.Should().HaveCount(0);
         }
     }
 
@@ -403,7 +403,7 @@ public class ExtractSecurityElementsTests
         [Test]
         public void It_has_no_studentId()
         {
-            documentSecurityElements.StudentUsi.Should().HaveCount(0);
+            documentSecurityElements.StudentUniqueId.Should().HaveCount(0);
         }
     }
 }
