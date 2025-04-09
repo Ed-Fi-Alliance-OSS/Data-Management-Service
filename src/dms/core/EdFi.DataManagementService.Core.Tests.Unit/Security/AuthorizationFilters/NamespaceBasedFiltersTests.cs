@@ -28,7 +28,8 @@ public class NamespaceBasedFiltersTests
                     "",
                     [],
                     [new NamespacePrefix("uri://namespace1"), new NamespacePrefix("uri://namespace2")]
-                )
+                ),
+                []
             );
         }
 
@@ -55,7 +56,7 @@ public class NamespaceBasedFiltersTests
 
             // Act & Assert
             var exception = Assert.Throws<AuthorizationException>(
-                () => filters.GetFilters(clientAuthorizations)
+                () => filters.GetFilters(clientAuthorizations, [])
             );
             exception.Should().NotBeNull();
             exception!

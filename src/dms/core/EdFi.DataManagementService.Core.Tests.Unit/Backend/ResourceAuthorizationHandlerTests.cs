@@ -304,7 +304,7 @@ public class ResourceAuthorizationHandlerTests
                         new EducationOrganizationId(9999)
                     ),
                 ],
-                [new StudentId("9879898")]
+                [new StudentUsi("9879898")]
             );
 
             var authStrategyEvaluators = new[]

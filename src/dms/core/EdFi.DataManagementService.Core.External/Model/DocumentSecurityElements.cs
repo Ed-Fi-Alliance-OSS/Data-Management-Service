@@ -14,8 +14,8 @@ public record DocumentSecurityElements(
     string[] Namespace,
     // A list of the EducationOrganizations extracted from the document
     EducationOrganizationSecurityElement[] EducationOrganization,
-    // A list of the StudentIds extracted from the document
-    StudentId[] StudentId
+    // A list of the Student unique ids extracted from the document
+    StudentUsi[] StudentUsi
 );
 
 /// <summary>

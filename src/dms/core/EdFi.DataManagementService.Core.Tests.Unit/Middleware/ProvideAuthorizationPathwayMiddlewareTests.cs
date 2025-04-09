@@ -52,7 +52,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
                         new EducationOrganizationId(123)
                     ),
                 ],
-                [new StudentId("987")]
+                [new StudentUsi("987")]
             );
             _context.Method = RequestMethod.POST;
         }
@@ -72,7 +72,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
 
             var pathway = (AuthorizationPathway.StudentSchoolAssociation)
                 _context.AuthorizationPathways.Single();
-            pathway.StudentId.Should().Be(new StudentId("987"));
+            pathway.StudentUsi.Should().Be(new StudentUsi("987"));
             pathway.SchoolId.Should().Be(new EducationOrganizationId(123));
         }
     }
@@ -106,7 +106,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
 
             var pathway = (AuthorizationPathway.StudentSchoolAssociation)
                 _context.AuthorizationPathways.Single();
-            pathway.StudentId.Should().Be(default(StudentId));
+            pathway.StudentUsi.Should().Be(default(StudentUsi));
             pathway.SchoolId.Should().Be(default(EducationOrganizationId));
         }
     }
@@ -171,7 +171,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
                         new EducationOrganizationId(123)
                     ),
                 ],
-                [new StudentId("987")]
+                [new StudentUsi("987")]
             );
             _context.Method = RequestMethod.POST;
         }
@@ -233,7 +233,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
                 _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("StudentSchoolAssociations"))!
             );
 
-            _context.DocumentSecurityElements = new DocumentSecurityElements([], [], [new StudentId("987")]);
+            _context.DocumentSecurityElements = new DocumentSecurityElements([], [], [new StudentUsi("987")]);
             _context.Method = RequestMethod.POST;
         }
 

@@ -15,7 +15,10 @@ public class NoFurtherAuthorizationRequiredFiltersProvider : IAuthorizationFilte
 {
     private const string AuthorizationStrategyName = "NoFurtherAuthorizationRequired";
 
-    public AuthorizationStrategyEvaluator GetFilters(ClientAuthorizations authorizations)
+    public AuthorizationStrategyEvaluator GetFilters(
+        ClientAuthorizations authorizations,
+        AuthorizationSecurableInfo[] authorizationSecurableInfos
+    )
     {
         return new AuthorizationStrategyEvaluator(AuthorizationStrategyName, [], FilterOperator.Or);
     }

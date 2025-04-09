@@ -6,6 +6,6 @@
 namespace EdFi.DataManagementService.Core.External.Model;
 
 /// <summary>
-/// Metadata about whether a document is considered "student authorization securable".
+/// A string type branded as a StudentId, which is a unit of security authorization.
 /// </summary>
-public record AuthorizationSecurableInfo(string SecurableKey, string? UniqueId);
+public record struct StudentUsi(string Value);

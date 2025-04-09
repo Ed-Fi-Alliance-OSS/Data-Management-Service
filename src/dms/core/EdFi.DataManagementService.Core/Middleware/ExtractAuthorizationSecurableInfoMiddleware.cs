@@ -10,10 +10,10 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DataManagementService.Core.Middleware;
 
 /// <summary>
-/// Extracts StudentAuthorizationSecurableInfo from a valid document
+/// Extracts resource authorization securable info from a valid document
 /// </summary>
 /// <param name="_logger"></param>
-internal class ExtractStudentAuthorizationSecurableInfoMiddleware(ILogger _logger) : IPipelineStep
+internal class ExtractAuthorizationSecurableInfoMiddleware(ILogger _logger) : IPipelineStep
 {
     /// <summary>
     ///  Builds StudentAuthorizationSecurableInfo from context.ParsedBody
@@ -21,12 +21,14 @@ internal class ExtractStudentAuthorizationSecurableInfoMiddleware(ILogger _logge
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         _logger.LogDebug(
-            "Entering ExtractStudentAuthorizationSecurableInfoMiddleware - {TraceId}",
+            "Entering ExtractAuthorizationSecurableInfoMiddleware - {TraceId}",
             context.FrontendRequest.TraceId.Value
         );
 
-        context.StudentAuthorizationSecurableInfo =
-            context.ResourceSchema.ExtractStudentAuthorizationSecurableInfo(context.ParsedBody, _logger);
+        context.AuthorizationSecurableInfo = context.ResourceSchema.ExtractAuthorizationSecurableInfo(
+            context.ParsedBody,
+            _logger
+        );
         await next();
     }
 }

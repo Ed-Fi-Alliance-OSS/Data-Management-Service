@@ -9,4 +9,5 @@ public static class SecurityElementNameConstants
 {
     public const string EducationOrganization = "EducationOrganization";
     public const string Namespace = "Namespace";
+    public const string StudentUsi = "StudentUsi";
 }
