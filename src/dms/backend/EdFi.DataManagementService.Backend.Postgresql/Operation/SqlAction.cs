@@ -38,6 +38,9 @@ public class SqlAction() : ISqlAction
             SecurityElements: await reader.GetFieldValueAsync<JsonElement>(
                 reader.GetOrdinal("SecurityElements")
             ),
+            StudentSchoolAuthorizationEdOrgIds: await reader.GetFieldValueAsync<JsonElement?>(
+                reader.GetOrdinal("StudentSchoolAuthorizationEdOrgIds")
+            ),
             CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
             LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt")),
             LastModifiedTraceId: reader.GetString(reader.GetOrdinal("LastModifiedTraceId"))
