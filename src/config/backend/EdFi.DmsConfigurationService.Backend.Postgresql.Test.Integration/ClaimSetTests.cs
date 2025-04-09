@@ -208,34 +208,10 @@ public class ClaimSetTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            var resourceClaims = new List<ResourceClaim>
-            {
-                new()
-                {
-                    Name = "resourceClaim1",
-                    Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
-                    DefaultAuthorizationStrategiesForCRUD =
-                    [
-                        new()
-                        {
-                            AuthorizationStrategies = new List<AuthorizationStrategy>
-                            {
-                                new()
-                                {
-                                    Id = 1,
-                                    AuthorizationStrategyName = "AuthStrategy1",
-                                    DisplayName = "AuthStrategy1",
-                                },
-                            },
-                        },
-                    ],
-                },
-            };
 
             ClaimSetImportCommand claimSet = new()
             {
-                Name = "Test-Import-ClaimSet",
-                ResourceClaims = resourceClaims,
+                Name = "Test-Import-ClaimSet"
             };
 
             var result = await _repository.Import(claimSet);
@@ -264,40 +240,14 @@ public class ClaimSetTests : DatabaseTest
 
             var response = (ClaimSetResponse)claimSetFromDb;
             response.Name.Should().Be("Test-Import-ClaimSet");
-            response.ResourceClaims.Should().NotBeNull();
         }
 
         [Test]
         public async Task Should_get_duplicate_failure()
         {
-            var resourceClaims = new List<ResourceClaim>
-            {
-                new()
-                {
-                    Name = "resourceClaim1",
-                    Actions = [new ResourceClaimAction { Enabled = true, Name = "Create" }],
-                    DefaultAuthorizationStrategiesForCRUD =
-                    [
-                        new()
-                        {
-                            AuthorizationStrategies = new List<AuthorizationStrategy>
-                            {
-                                new()
-                                {
-                                    Id = 1,
-                                    AuthorizationStrategyName = "AuthStrategy1",
-                                    DisplayName = "AuthStrategy1",
-                                },
-                            },
-                        },
-                    ],
-                },
-            };
-
             ClaimSetImportCommand claimSetDup = new()
             {
-                Name = "Test-Import-ClaimSet",
-                ResourceClaims = resourceClaims,
+                Name = "Test-Import-ClaimSet"
             };
 
             var resultDup = await _repository.Import(claimSetDup);

@@ -28,40 +28,8 @@ public class ClaimSetCommandValidator<T> : AbstractValidator<T>
             .When(m => !string.IsNullOrEmpty(m.Name))
             .WithMessage(ValidationConstants.ClaimSetNameNoWhiteSpaceMessage);
 
-        RuleFor(c => c.ResourceClaims)
-            .Cascade(CascadeMode.Stop)
-            .NotEmpty()
-            .When(_ => !isResourceClaimsOptional)
-            .WithMessage("Resource claims are required.");
-
-        var resourceClaimValidator = new ResourceClaimValidator();
         List<string> dbActions = claimSetDataProvider.GetActions();
         List<string> dbAuthStrategies = claimSetDataProvider.GetAuthorizationStrategies().Result;
 
-        RuleForEach(c => c.ResourceClaims)
-            .Custom(
-                (resourceClaim, context) =>
-                {
-                    var parentContext = context;
-                    var instance = parentContext.InstanceToValidate;
-
-                    if (instance == null)
-                    {
-                        return;
-                    }
-
-                    var existingResourceClaims = instance.ResourceClaims ?? [];
-
-                    resourceClaimValidator.Validate(
-                        dbActions,
-                        dbAuthStrategies,
-                        resourceClaim,
-                        existingResourceClaims,
-                        parentContext,
-                        instance.Name
-                    );
-                }
-            )
-            .When(c => c.ResourceClaims != null && c.ResourceClaims.Any());
     }
 }
