@@ -52,24 +52,20 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
                 return new DeleteResult.DeleteFailureNotExists();
             }
 
-            long[] educationOrganizationSecurityElements = [];
-
             JsonNode securityElements = documentSummary.SecurityElements.Deserialize<JsonNode>()!;
             string[] namespaceSecurityElements = securityElements["Namespace"]!
                 .AsArray()
                 .Select(v => v!.GetValue<string>())
                 .ToArray();
 
-            if (deleteRequest.IsEdOrgHierarchy.Value)
-            {
-                educationOrganizationSecurityElements = await _sqlAction.GetAncestorEducationOrganizationIds(
+            long[] educationOrganizationSecurityElements =
+                await _sqlAction.GetAncestorEducationOrganizationIds(
                     PartitionKeyFor(deleteRequest.DocumentUuid),
                     deleteRequest.DocumentUuid,
                     connection,
                     transaction,
                     deleteRequest.TraceId
                 );
-            }
 
             var deleteAuthorizationResult = deleteRequest.ResourceAuthorizationHandler.Authorize(
                 namespaceSecurityElements,
