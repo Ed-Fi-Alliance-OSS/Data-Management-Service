@@ -7,5 +7,4 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 public interface IClaimSetCommand
 {
     string Name { get; }
-    List<ResourceClaim>? ResourceClaims { get; }
 }

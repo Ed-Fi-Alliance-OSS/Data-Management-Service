@@ -210,6 +210,14 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
 
             _ids[identifier] = id;
         }
+        else if (apiResponse.Status == 200)
+        {
+            var jsonResponse = apiResponse.JsonAsync().Result;
+            if (jsonResponse.HasValue && jsonResponse.Value.TryGetProperty("id", out var idProperty))
+            {
+                _ids["vendorId"] = idProperty.GetInt32().ToString();
+            }
+        }
     }
 
     [Then("it should respond with {int}")]
