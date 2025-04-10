@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
+using EdFi.DataManagementService.Core.Security;
 using Microsoft.Extensions.Logging;
 using Polly;
 using static EdFi.DataManagementService.Core.External.Backend.DeleteResult;
@@ -21,7 +22,8 @@ namespace EdFi.DataManagementService.Core.Handler;
 internal class DeleteByIdHandler(
     IDocumentStoreRepository _documentStoreRepository,
     ILogger _logger,
-    ResiliencePipeline _resiliencePipeline
+    ResiliencePipeline _resiliencePipeline,
+    IAuthorizationServiceFactory authorizationServiceFactory
 ) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
@@ -36,6 +38,7 @@ internal class DeleteByIdHandler(
                     TraceId: context.FrontendRequest.TraceId,
                     ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
                         context.AuthorizationStrategyEvaluators,
+                        authorizationServiceFactory,
                         _logger
                     ),
                     ResourceAuthorizationPathways: context.AuthorizationPathways

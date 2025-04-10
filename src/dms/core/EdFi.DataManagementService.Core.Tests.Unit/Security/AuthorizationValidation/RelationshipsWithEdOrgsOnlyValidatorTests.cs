@@ -3,9 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.AuthorizationValidation;
+using FakeItEasy;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -13,23 +15,22 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Security.AuthorizationValid
 
 public class RelationshipsWithEdOrgsOnlyValidatorTests
 {
+    private readonly IAuthorizationRepository _authorizationRepository = A.Fake<IAuthorizationRepository>();
+
     [TestFixture]
-    public class Given_Request_Has_No_EducationOrganizations
+    public class Given_Request_Has_No_EducationOrganizations : RelationshipsWithEdOrgsOnlyValidatorTests
     {
-        private AuthorizationResult? _expectedResult;
+        private ResourceAuthorizationResult? _expectedResult;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
-            var validator = new RelationshipsWithEdOrgsOnlyValidator();
-            _expectedResult = validator.ValidateAuthorization(
+            var validator = new RelationshipsWithEdOrgsOnlyValidator(_authorizationRepository);
+            _expectedResult = await validator.ValidateAuthorization(
                 new DocumentSecurityElements([], [], []),
-                new ClientAuthorizations(
-                    "",
-                    "",
-                    [new EducationOrganizationId(299501)],
-                    [new NamespacePrefix("uri://namespace")]
-                )
+                [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "299501")],
+                OperationType.Get,
+                new TraceId("trace-id")
             );
         }
 
@@ -37,64 +38,39 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
         public void Should_Return_Expected_AuthorizationResult()
         {
             _expectedResult.Should().NotBeNull();
-            _expectedResult!.IsAuthorized.Should().BeFalse();
-            _expectedResult!.ErrorMessage.Should().NotBeEmpty();
-            _expectedResult!
-                .ErrorMessage.Should()
-                .Be(
-                    "No 'EducationOrganizationIds' property could be found on the resource in order to perform authorization. Should a different authorization strategy be used?"
-                );
-        }
-    }
-
-    [TestFixture]
-    public class Given_Claim_Has_No_EducationOrganizations
-    {
-        private AuthorizationResult? _expectedResult;
-
-        [SetUp]
-        public void Setup()
-        {
-            var validator = new RelationshipsWithEdOrgsOnlyValidator();
-            _expectedResult = validator.ValidateAuthorization(
-                new DocumentSecurityElements(
-                    [],
-                    [
-                        new EducationOrganizationSecurityElement(
-                            new ResourceName("School"),
-                            new EducationOrganizationId(255901)
-                        ),
-                    ],
-                    []
-                ),
-                new ClientAuthorizations("", "", [], [])
-            );
-        }
-
-        [Test]
-        public void Should_Return_Expected_AuthorizationResult()
-        {
-            _expectedResult.Should().NotBeNull();
-            _expectedResult!.IsAuthorized.Should().BeFalse();
-            _expectedResult!.ErrorMessage.Should().NotBeEmpty();
-            _expectedResult!
-                .ErrorMessage.Should()
-                .Be(
-                    $"The API client has been given permissions on a resource that uses the 'RelationshipsWithEdOrgsOnly' authorization strategy but the client doesn't have any education organizations assigned."
-                );
+            _expectedResult!.GetType().Should().Be(typeof(ResourceAuthorizationResult.NotAuthorized));
+            if (_expectedResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
+            {
+                notAuthorized!.ErrorMessages.Should().HaveCount(1);
+                notAuthorized!
+                    .ErrorMessages[0]
+                    .Should()
+                    .Be(
+                        "No 'EducationOrganizationIds' property could be found on the resource in order to perform authorization. Should a different authorization strategy be used?"
+                    );
+            }
         }
     }
 
     [TestFixture]
     public class Given_Matching_EducationOrganizations_Between_Request_And_Claim
+        : RelationshipsWithEdOrgsOnlyValidatorTests
     {
-        private AuthorizationResult? _expectedResult;
+        private ResourceAuthorizationResult? _expectedResult;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
-            var validator = new RelationshipsWithEdOrgsOnlyValidator();
-            _expectedResult = validator.ValidateAuthorization(
+            A.CallTo(
+                    () =>
+                        _authorizationRepository.GetAncestorEducationOrganizationIds(
+                            A<long[]>.Ignored,
+                            A<TraceId>.Ignored
+                        )
+                )
+                .Returns([255901L]);
+            var validator = new RelationshipsWithEdOrgsOnlyValidator(_authorizationRepository);
+            _expectedResult = await validator.ValidateAuthorization(
                 new DocumentSecurityElements(
                     [],
                     [
@@ -105,7 +81,9 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     ],
                     []
                 ),
-                new ClientAuthorizations("", "", [new EducationOrganizationId(255901)], [])
+                [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "255901")],
+                OperationType.Get,
+                new TraceId("trace-id")
             );
         }
 
@@ -113,21 +91,29 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
         public void Should_Return_Success_AuthorizationResult()
         {
             _expectedResult.Should().NotBeNull();
-            _expectedResult!.IsAuthorized.Should().BeTrue();
-            _expectedResult!.ErrorMessage.Should().BeEmpty();
+            _expectedResult!.GetType().Should().Be(typeof(ResourceAuthorizationResult.Authorized));
         }
     }
 
     [TestFixture]
-    public class Given_Non_Matching_EducationOrganization_Between_Request_And_Claim
+    public class Given_Non_Matching_EducationOrganization_Between_Get_Request_And_Claim
+        : RelationshipsWithEdOrgsOnlyValidatorTests
     {
-        private AuthorizationResult? _expectedResult;
+        private ResourceAuthorizationResult? _expectedResult;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
-            var validator = new RelationshipsWithEdOrgsOnlyValidator();
-            _expectedResult = validator.ValidateAuthorization(
+            A.CallTo(
+                    () =>
+                        _authorizationRepository.GetAncestorEducationOrganizationIds(
+                            A<long[]>.Ignored,
+                            A<TraceId>.Ignored
+                        )
+                )
+                .Returns([289766L]);
+            var validator = new RelationshipsWithEdOrgsOnlyValidator(_authorizationRepository);
+            _expectedResult = await validator.ValidateAuthorization(
                 new DocumentSecurityElements(
                     ["uri://not-matching/resource"],
                     [
@@ -138,34 +124,49 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     ],
                     []
                 ),
-                new ClientAuthorizations(
-                    "",
-                    "",
-                    [new EducationOrganizationId(2455)],
-                    [new NamespacePrefix("uri://namespace")]
-                )
+                [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "2455")],
+                OperationType.Get,
+                new TraceId("trace-id")
             );
         }
 
         [Test]
         public void Should_Return_Expected_AuthorizationResult()
         {
-            _expectedResult.Should().NotBeNull();
-            _expectedResult!.IsAuthorized.Should().BeTrue();
-            _expectedResult!.ErrorMessage.Should().BeEmpty();
+            _expectedResult!.GetType().Should().Be(typeof(ResourceAuthorizationResult.NotAuthorized));
+            if (_expectedResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
+            {
+                notAuthorized!.ErrorMessages.Should().HaveCount(1);
+                notAuthorized!
+                    .ErrorMessages[0]
+                    .Should()
+                    .Be(
+                        "Access to the resource item could not be authorized based on the caller's EducationOrganizationIds claims: '2455'."
+                    );
+            }
         }
     }
 
     [TestFixture]
-    public class Given_Non_Matching_EducationOrganizations_Between_Request_And_Claim
+    public class Given_Non_Matching_EducationOrganizations_Between_Upsert_Request_And_Claim
+        : RelationshipsWithEdOrgsOnlyValidatorTests
     {
-        private AuthorizationResult? _expectedResult;
+        private ResourceAuthorizationResult? _expectedResult;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
-            var validator = new RelationshipsWithEdOrgsOnlyValidator();
-            _expectedResult = validator.ValidateAuthorization(
+            A.CallTo(
+                    () =>
+                        _authorizationRepository.GetAncestorEducationOrganizationIds(
+                            A<long[]>.Ignored,
+                            A<TraceId>.Ignored
+                        )
+                )
+                .Returns([233L, 244L]);
+
+            var validator = new RelationshipsWithEdOrgsOnlyValidator(_authorizationRepository);
+            _expectedResult = await validator.ValidateAuthorization(
                 new DocumentSecurityElements(
                     [],
                     [
@@ -180,22 +181,69 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     ],
                     []
                 ),
-                new ClientAuthorizations(
-                    "",
-                    "",
-                    [new EducationOrganizationId(566), new EducationOrganizationId(567)],
-                    []
-                )
+                [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "567")],
+                OperationType.Upsert,
+                new TraceId("trace-id")
             );
         }
 
         [Test]
         public void Should_Return_Expected_AuthorizationResult()
         {
+            _expectedResult!.GetType().Should().Be(typeof(ResourceAuthorizationResult.NotAuthorized));
+            if (_expectedResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
+            {
+                notAuthorized!.ErrorMessages.Should().HaveCount(1);
+                notAuthorized!
+                    .ErrorMessages[0]
+                    .Should()
+                    .Be(
+                        "No relationships have been established between the caller's education organization id claims ('567') and properties of the resource item."
+                    );
+            }
+        }
+    }
+
+    [TestFixture]
+    public class Given_EducationOrganizations_Have_Child_Relationship_With_EdOrgId_From_Claim
+        : RelationshipsWithEdOrgsOnlyValidatorTests
+    {
+        private ResourceAuthorizationResult? _expectedResult;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            A.CallTo(
+                    () =>
+                        _authorizationRepository.GetAncestorEducationOrganizationIds(
+                            A<long[]>.Ignored,
+                            A<TraceId>.Ignored
+                        )
+                )
+                .Returns([299L, 255901L]);
+            var validator = new RelationshipsWithEdOrgsOnlyValidator(_authorizationRepository);
+            _expectedResult = await validator.ValidateAuthorization(
+                new DocumentSecurityElements(
+                    [],
+                    [
+                        new EducationOrganizationSecurityElement(
+                            new ResourceName("School"),
+                            new EducationOrganizationId(255901)
+                        ),
+                    ],
+                    []
+                ),
+                [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "299")],
+                OperationType.Get,
+                new TraceId("trace-id")
+            );
+        }
+
+        [Test]
+        public void Should_Return_Success_AuthorizationResult()
+        {
             _expectedResult.Should().NotBeNull();
-            //We do not compare EdOrgIds at this point.
-            _expectedResult!.IsAuthorized.Should().BeTrue();
-            _expectedResult!.ErrorMessage.Should().BeEmpty();
+            _expectedResult!.GetType().Should().Be(typeof(ResourceAuthorizationResult.Authorized));
         }
     }
 }

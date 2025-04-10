@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Security;
 using FluentAssertions;
 using Json.More;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -43,7 +44,8 @@ public class UpdateByIdHandlerTests
             documentStoreRepository,
             NullLogger.Instance,
             ResiliencePipeline.Empty,
-            new Provider()
+            new Provider(),
+            new NoAuthorizationServiceFactory()
         );
     }
 

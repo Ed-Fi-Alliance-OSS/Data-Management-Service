@@ -3,8 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.AuthorizationValidation;
 using FluentAssertions;
 using NUnit.Framework;
@@ -16,15 +16,17 @@ public class NamespaceBasedValidatorTests
     [TestFixture]
     public class Given_Request_Has_No_Namespaces
     {
-        private AuthorizationResult? _expectedResult;
+        private ResourceAuthorizationResult? _expectedResult;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             var validator = new NamespaceBasedValidator();
-            _expectedResult = validator.ValidateAuthorization(
+            _expectedResult = await validator.ValidateAuthorization(
                 new DocumentSecurityElements([], [], []),
-                new ClientAuthorizations("", "", [], [new NamespacePrefix("uri://namespace")])
+                [new AuthorizationFilter(SecurityElementNameConstants.Namespace, "uri://namespace")],
+                OperationType.Get,
+                new TraceId("trace id")
             );
         }
 
@@ -32,57 +34,34 @@ public class NamespaceBasedValidatorTests
         public void Should_Return_Expected_AuthorizationResult()
         {
             _expectedResult.Should().NotBeNull();
-            _expectedResult!.IsAuthorized.Should().BeFalse();
-            _expectedResult!.ErrorMessage.Should().NotBeEmpty();
-            _expectedResult!
-                .ErrorMessage.Should()
-                .Be(
-                    "No 'Namespace' (or Namespace-suffixed) property could be found on the resource in order to perform authorization. Should a different authorization strategy be used?"
-                );
-        }
-    }
-
-    [TestFixture]
-    public class Given_Claim_Has_No_NamespacePrefixes
-    {
-        private AuthorizationResult? _expectedResult;
-
-        [SetUp]
-        public void Setup()
-        {
-            var validator = new NamespaceBasedValidator();
-            _expectedResult = validator.ValidateAuthorization(
-                new DocumentSecurityElements(["uri://namespace/resource"], [], []),
-                new ClientAuthorizations("", "", [], [])
-            );
-        }
-
-        [Test]
-        public void Should_Return_Expected_AuthorizationResult()
-        {
-            _expectedResult.Should().NotBeNull();
-            _expectedResult!.IsAuthorized.Should().BeFalse();
-            _expectedResult!.ErrorMessage.Should().NotBeEmpty();
-            _expectedResult!
-                .ErrorMessage.Should()
-                .Be(
-                    "The API client has been given permissions on a resource that uses the 'NamespaceBased' authorization strategy but the client doesn't have any namespace prefixes assigned."
-                );
+            _expectedResult!.GetType().Should().Be(typeof(ResourceAuthorizationResult.NotAuthorized));
+            if (_expectedResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
+            {
+                notAuthorized!.ErrorMessages.Should().HaveCount(1);
+                notAuthorized!
+                    .ErrorMessages[0]
+                    .Should()
+                    .Be(
+                        "No 'Namespace' (or Namespace-suffixed) property could be found on the resource in order to perform authorization. Should a different authorization strategy be used?"
+                    );
+            }
         }
     }
 
     [TestFixture]
     public class Given_Matching_NamespacePrefix_And_Namespace
     {
-        private AuthorizationResult? _expectedResult;
+        private ResourceAuthorizationResult? _expectedResult;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             var validator = new NamespaceBasedValidator();
-            _expectedResult = validator.ValidateAuthorization(
+            _expectedResult = await validator.ValidateAuthorization(
                 new DocumentSecurityElements(["uri://namespace/resource"], [], []),
-                new ClientAuthorizations("", "", [], [new NamespacePrefix("uri://namespace")])
+                [new AuthorizationFilter(SecurityElementNameConstants.Namespace, "uri://namespace")],
+                OperationType.Get,
+                new TraceId("trace id")
             );
         }
 
@@ -90,23 +69,24 @@ public class NamespaceBasedValidatorTests
         public void Should_Return_Success_AuthorizationResult()
         {
             _expectedResult.Should().NotBeNull();
-            _expectedResult!.IsAuthorized.Should().BeTrue();
-            _expectedResult!.ErrorMessage.Should().BeEmpty();
+            _expectedResult!.GetType().Should().Be(typeof(ResourceAuthorizationResult.Authorized));
         }
     }
 
     [TestFixture]
     public class Given_Non_Matching_NamespacePrefix_And_Namespace
     {
-        private AuthorizationResult? _expectedResult;
+        private ResourceAuthorizationResult? _expectedResult;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             var validator = new NamespaceBasedValidator();
-            _expectedResult = validator.ValidateAuthorization(
+            _expectedResult = await validator.ValidateAuthorization(
                 new DocumentSecurityElements(["uri://not-matching/resource"], [], []),
-                new ClientAuthorizations("", "", [], [new NamespacePrefix("uri://namespace")])
+                [new AuthorizationFilter(SecurityElementNameConstants.Namespace, "uri://namespace")],
+                OperationType.Get,
+                new TraceId("trace id")
             );
         }
 
@@ -114,51 +94,58 @@ public class NamespaceBasedValidatorTests
         public void Should_Return_Expected_AuthorizationResult()
         {
             _expectedResult.Should().NotBeNull();
-            _expectedResult!.IsAuthorized.Should().BeFalse();
-            _expectedResult!.ErrorMessage.Should().NotBeEmpty();
-            _expectedResult!
-                .ErrorMessage.Should()
-                .Be(
-                    "Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: 'uri://namespace'."
-                );
+            _expectedResult!.GetType().Should().Be(typeof(ResourceAuthorizationResult.NotAuthorized));
+            if (_expectedResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
+            {
+                notAuthorized!.ErrorMessages.Should().HaveCount(1);
+                notAuthorized!
+                    .ErrorMessages[0]
+                    .Should()
+                    .Be(
+                        "Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: 'uri://namespace'."
+                    );
+            }
         }
     }
 
     [TestFixture]
     public class Given_Non_Matching_NamespacePrefixes_And_Namespaces
     {
-        private AuthorizationResult? _expectedResult;
+        private ResourceAuthorizationResult? _expectedResult;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             var validator = new NamespaceBasedValidator();
-            _expectedResult = validator.ValidateAuthorization(
+            _expectedResult = await validator.ValidateAuthorization(
                 new DocumentSecurityElements(
                     ["uri://matching/resource", "uri://not-matching1/resource"],
                     [],
                     []
                 ),
-                new ClientAuthorizations(
-                    "",
-                    "",
-                    [],
-                    [new NamespacePrefix("uri://matching"), new NamespacePrefix("uri://matching1")]
-                )
+                [
+                    new AuthorizationFilter(SecurityElementNameConstants.Namespace, "uri://matching"),
+                    new AuthorizationFilter(SecurityElementNameConstants.Namespace, "uri://matching1"),
+                ],
+                OperationType.Get,
+                new TraceId("trace id")
             );
         }
 
         [Test]
         public void Should_Return_Expected_AuthorizationResult()
         {
-            _expectedResult.Should().NotBeNull();
-            _expectedResult!.IsAuthorized.Should().BeFalse();
-            _expectedResult!.ErrorMessage.Should().NotBeEmpty();
-            _expectedResult!
-                .ErrorMessage.Should()
-                .Be(
-                    "Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: 'uri://matching', 'uri://matching1'."
-                );
+            _expectedResult!.GetType().Should().Be(typeof(ResourceAuthorizationResult.NotAuthorized));
+            if (_expectedResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
+            {
+                notAuthorized!.ErrorMessages.Should().HaveCount(1);
+                notAuthorized!
+                    .ErrorMessages[0]
+                    .Should()
+                    .Be(
+                        "Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: 'uri://matching', 'uri://matching1'."
+                    );
+            }
         }
     }
 }

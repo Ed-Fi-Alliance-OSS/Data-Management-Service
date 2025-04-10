@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.External.Model;
+
 namespace EdFi.DataManagementService.Core.External.Backend;
 
 /// <summary>
@@ -11,17 +13,12 @@ namespace EdFi.DataManagementService.Core.External.Backend;
 public interface IResourceAuthorizationHandler
 {
     /// <summary>
-    /// Determine whether the authorization conditions are met for the given
-    /// namespaces and educationOrganizationIds
+    /// Determines whether a client is authorized to perform a specific operation on a resource.
     /// </summary>
     /// <returns></returns>
-    ResourceAuthorizationResult Authorize(string[] namespaces, long[] educationOrganizationIds);
-
-    /// <summary>
-    /// Returns whether this handler expects to evaluate education
-    /// organizations, based on the authorization strategy used to create it. We
-    /// won't bother to hydrate the education organization hierarchy data if
-    /// this is false.
-    /// </summary>
-    bool IsRelationshipWithEdOrg { get; }
+    Task<ResourceAuthorizationResult> Authorize(
+        DocumentSecurityElements documentSecurityElements,
+        OperationType operationType,
+        TraceId traceId
+    );
 }

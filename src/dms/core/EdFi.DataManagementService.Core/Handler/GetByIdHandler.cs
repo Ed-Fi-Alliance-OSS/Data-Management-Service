@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
+using EdFi.DataManagementService.Core.Security;
 using Microsoft.Extensions.Logging;
 using Polly;
 using static EdFi.DataManagementService.Core.External.Backend.GetResult;
@@ -21,7 +22,8 @@ namespace EdFi.DataManagementService.Core.Handler;
 internal class GetByIdHandler(
     IDocumentStoreRepository _documentStoreRepository,
     ILogger _logger,
-    ResiliencePipeline _resiliencePipeline
+    ResiliencePipeline _resiliencePipeline,
+    IAuthorizationServiceFactory authorizationServiceFactory
 ) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
@@ -35,6 +37,7 @@ internal class GetByIdHandler(
                     ResourceInfo: context.ResourceInfo,
                     ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
                         context.AuthorizationStrategyEvaluators,
+                        authorizationServiceFactory,
                         _logger
                     ),
                     TraceId: context.FrontendRequest.TraceId
