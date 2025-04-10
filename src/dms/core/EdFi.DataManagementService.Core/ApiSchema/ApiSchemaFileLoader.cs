@@ -4,9 +4,12 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Reflection;
+using System.Runtime.Loader;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Model;
+using Microsoft.CodeAnalysis;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -124,82 +127,52 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
         }
         else
         {
-            Assembly coreAssembly =
-                Assembly.GetAssembly(typeof(DataStandard52.ApiSchema.Marker))
-                ?? throw new InvalidOperationException(
-                    "Could not load assembly-bundled ApiSchema file for Core"
-                );
-
-            JsonNode coreApiSchemaNode = coreAssembly
-                .GetManifestResourceNames()
-                .Where(str => str.EndsWith("ApiSchema.json"))
-                .Select(resourceName =>
-                {
-                    JsonNode coreSchemaNode = LoadFromAssembly(resourceName, coreAssembly);
-                    return coreSchemaNode;
-                })
-                .Single();
-
-            if (coreApiSchemaNode == null)
+            if (string.IsNullOrEmpty(appSettings.Value.PluginFolder))
             {
-                throw new InvalidOperationException("Core ApiSchema not found in the assembly.");
+                throw new InvalidOperationException("PluginFolder is not configured.");
+            }
+            JsonNode coreApiSchemaNode = new JsonObject();
+            JsonNode[] extensionApiSchemaNodes = Array.Empty<JsonNode>();
+
+            var projectDirectory = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "../../../"));
+            var relativeToProject = Path.GetFullPath(Path.Combine(projectDirectory, appSettings.Value.PluginFolder));
+
+            if (!Directory.Exists(relativeToProject))
+            {
+                throw new InvalidOperationException("relativeToProject is not exists.");
             }
 
-            Assembly tpdmAssembly =
-                Assembly.GetAssembly(typeof(TPDM.ApiSchema.Marker))
-                ?? throw new InvalidOperationException(
-                    "Could not load assembly-bundled ApiSchema file for TPDM"
+            string pluginApiSchemaPath = Path.GetFullPath(relativeToProject);
+            var assemblies = Directory.GetFiles(pluginApiSchemaPath, "*.dll", SearchOption.AllDirectories);
+            var pluginAssemblyLoadContext = new PluginAssemblyLoadContext();
+            foreach (var assemblyPath in assemblies)
+            {
+                var assembly = pluginAssemblyLoadContext.LoadFromAssemblyPath(assemblyPath);
+
+                var manifestResourceNames = assembly.GetManifestResourceNames();
+
+                var coreSchemaResourceName = Array.Find(
+                    manifestResourceNames,
+                    str => str.EndsWith("ApiSchema.json")
                 );
 
-            JsonNode[] tpdmExtensionApiSchemaNodes = tpdmAssembly
-                .GetManifestResourceNames()
-                .Where(str => str.EndsWith("ApiSchema-TPDM-EXTENSION.json"))
-                .Select(resourceName =>
-                {
-                    JsonNode coreSchemaNode = LoadFromAssembly(resourceName, tpdmAssembly);
-                    return coreSchemaNode;
-                }).ToArray();
-
-            Assembly homographAssembly =
-                Assembly.GetAssembly(typeof(Homograph.ApiSchema.Marker))
-                ?? throw new InvalidOperationException(
-                    "Could not load assembly-bundled ApiSchema file for Homograph"
+                var extensionSchemaResourceName = Array.Find(
+                    manifestResourceNames,
+                    str => str.Contains(".ApiSchema-") && str.EndsWith("EXTENSION.json")
                 );
 
-            JsonNode[] homographExtensionApiSchemaNodes = homographAssembly
-                .GetManifestResourceNames()
-                .Where(str => str.EndsWith("ApiSchema-Homograph-EXTENSION.json"))
-                .Select(resourceName =>
+                if (coreSchemaResourceName != null)
                 {
-                    JsonNode coreSchemaNode = LoadFromAssembly(resourceName, homographAssembly);
-                    return coreSchemaNode;
-                }).ToArray();
-
-            Assembly sampleAssembly =
-                Assembly.GetAssembly(typeof(Sample.ApiSchema.Marker))
-                ?? throw new InvalidOperationException(
-                    "Could not load assembly-bundled ApiSchema file for Sample"
-                );
-
-            JsonNode[] sampleExtensionApiSchemaNodes = sampleAssembly
-                .GetManifestResourceNames()
-                .Where(str => str.EndsWith("ApiSchema-Sample-EXTENSION.json"))
-                .Select(resourceName =>
+                    _logger.LogInformation("Loading {CoreSchemaResourceName} from assembly", coreSchemaResourceName);
+                    coreApiSchemaNode = LoadFromAssembly(coreSchemaResourceName, assembly);
+                }
+                else if (extensionSchemaResourceName != null)
                 {
-                    JsonNode coreSchemaNode = LoadFromAssembly(resourceName, sampleAssembly);
-                    return coreSchemaNode;
-                }).ToArray();
-
-            JsonNode[] extensionApiSchemaNodes = tpdmExtensionApiSchemaNodes
-                .Concat(homographExtensionApiSchemaNodes)
-                .Concat(sampleExtensionApiSchemaNodes)
-                .ToArray();
-
-            extensionApiSchemaNodes =
-                extensionApiSchemaNodes.Length > 0
-                    ? extensionApiSchemaNodes
-                    : throw new InvalidOperationException("ApiSchema-EXTENSION not found in the assembly.");
-
+                    _logger.LogInformation("Loading {ExtensionSchemaResourceName} from assembly", extensionSchemaResourceName);
+                    var extensionNodes = LoadFromAssembly(extensionSchemaResourceName, assembly);
+                    extensionApiSchemaNodes = extensionApiSchemaNodes.Concat(new[] { extensionNodes }).ToArray();
+                }
+            }
             return new ApiSchemaNodes(coreApiSchemaNode, extensionApiSchemaNodes);
         }
     });
@@ -210,5 +183,13 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
     public ApiSchemaNodes GetApiSchemaNodes()
     {
         return _apiSchemaNodes.Value;
+    }
+
+    /// <summary>
+    /// Returns PluginAssemblyLoadContext for loading Assembly Context
+    /// </summary>
+    private sealed class PluginAssemblyLoadContext : AssemblyLoadContext
+    {
+        public PluginAssemblyLoadContext() : base(isCollectible: true) { }
     }
 }

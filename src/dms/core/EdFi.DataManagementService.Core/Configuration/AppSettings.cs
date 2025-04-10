@@ -36,5 +36,10 @@ namespace EdFi.DataManagementService.Core.Configuration
         /// including both core and extension files.
         /// </summary>
         public string? ApiSchemaPath { get; set; }
+
+        /// <summary>
+        /// Provides the plugin folder file system path for both core and extension packages exists.
+        /// </summary>
+        public string? PluginFolder { get; set; }
     }
 }
