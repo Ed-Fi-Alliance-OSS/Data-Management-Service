@@ -48,6 +48,7 @@ internal class UpdateByIdHandler(
                     UpdateCascadeHandler: updateCascadeHandler,
                     ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
                         context.AuthorizationStrategyEvaluators,
+                        context.AuthorizationSecurableInfo,
                         authorizationServiceFactory,
                         _logger
                     ),

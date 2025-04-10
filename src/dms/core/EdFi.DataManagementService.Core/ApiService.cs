@@ -86,7 +86,7 @@ internal class ApiService(
                     _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                 ),
                 new ExtractDocumentInfoMiddleware(_logger),
-                new ExtractAuthorizationSecurableInfoMiddleware(_logger),
+                new ProvideAuthorizationSecurableInfoMiddleware(_logger),
                 new DisallowDuplicateReferencesMiddleware(_logger),
                 new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
                 new ResourceActionAuthorizationMiddleware(
@@ -131,6 +131,7 @@ internal class ApiService(
                         _appSettings.Value.DisablePersonAuthorizationStrategies
                     ),
                     new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
+                    new ProvideAuthorizationSecurableInfoMiddleware(_logger),
                     new GetByIdHandler(
                         _documentStoreRepository,
                         _logger,
@@ -211,7 +212,7 @@ internal class ApiService(
                     _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                 ),
                 new ExtractDocumentInfoMiddleware(_logger),
-                new ExtractAuthorizationSecurableInfoMiddleware(_logger),
+                new ProvideAuthorizationSecurableInfoMiddleware(_logger),
                 new DisallowDuplicateReferencesMiddleware(_logger),
                 new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
                 new ResourceActionAuthorizationMiddleware(
@@ -256,6 +257,7 @@ internal class ApiService(
                     ),
                     new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
                     new ProvideAuthorizationPathwayMiddleware(_logger),
+                    new ProvideAuthorizationSecurableInfoMiddleware(_logger),
                     new DeleteByIdHandler(
                         _documentStoreRepository,
                         _logger,

@@ -20,6 +20,7 @@ public class NamespaceBasedValidator : IAuthorizationValidator
     public async Task<ResourceAuthorizationResult> ValidateAuthorization(
         DocumentSecurityElements securityElements,
         AuthorizationFilter[] authorizationFilters,
+        AuthorizationSecurableInfo[] authorizationSecurableInfos,
         OperationType operationType,
         TraceId traceId
     )

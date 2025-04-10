@@ -18,15 +18,15 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
-public class ExtractAuthorizationSecurableInfoMiddlewareTests
+public class ProvideAuthorizationSecurableInfoMiddlewareTests
 {
     internal static IPipelineStep BuildMiddleware()
     {
-        return new ExtractAuthorizationSecurableInfoMiddleware(NullLogger.Instance);
+        return new ProvideAuthorizationSecurableInfoMiddleware(NullLogger.Instance);
     }
 
     [TestFixture]
-    public class Given_a_document_with_a_StudentUniqueId : ExtractAuthorizationSecurableInfoMiddlewareTests
+    public class Given_a_document_with_a_StudentUniqueId : ProvideAuthorizationSecurableInfoMiddlewareTests
     {
         private PipelineContext context = No.PipelineContext();
 
@@ -74,17 +74,17 @@ public class ExtractAuthorizationSecurableInfoMiddlewareTests
         [Test]
         public void It_has_extracted_the_StudentUniqueId()
         {
-            context.AuthorizationSecurableInfo[0].UniqueId.Should().Be("12345");
+            context.AuthorizationSecurableInfo[0].Should().Be("12345");
             context
                 .AuthorizationSecurableInfo[0]
                 .SecurableKey.Should()
-                .Be(SecurityElementNameConstants.StudentUsi);
+                .Be(SecurityElementNameConstants.StudentUniqueId);
         }
     }
 
     [TestFixture]
     public class Given_a_document_without_StudentAuthorizationSecurablePaths
-        : ExtractAuthorizationSecurableInfoMiddlewareTests
+        : ProvideAuthorizationSecurableInfoMiddlewareTests
     {
         private PipelineContext context = No.PipelineContext();
 
@@ -132,13 +132,13 @@ public class ExtractAuthorizationSecurableInfoMiddlewareTests
         [Test]
         public void It_does_not_extract_StudentUniqueId()
         {
-            context.AuthorizationSecurableInfo[0].UniqueId.Should().BeNull();
+            context.AuthorizationSecurableInfo[0].Should().BeNull();
         }
     }
 
     [TestFixture]
     public class Given_a_document_with_multiple_StudentUniqueId_paths
-        : ExtractAuthorizationSecurableInfoMiddlewareTests
+        : ProvideAuthorizationSecurableInfoMiddlewareTests
     {
         private PipelineContext context = No.PipelineContext();
 
@@ -187,13 +187,13 @@ public class ExtractAuthorizationSecurableInfoMiddlewareTests
         [Test]
         public void It_has_extracted_the_StudentUniqueId()
         {
-            context.AuthorizationSecurableInfo[0].UniqueId.Should().Be("12345");
+            context.AuthorizationSecurableInfo[0].Should().Be("12345");
         }
     }
 
     [TestFixture]
     public class Given_an_invalid_document_with_multiple_StudentUniqueId_paths_and_different_ids
-        : ExtractAuthorizationSecurableInfoMiddlewareTests
+        : ProvideAuthorizationSecurableInfoMiddlewareTests
     {
         private PipelineContext context = No.PipelineContext();
 

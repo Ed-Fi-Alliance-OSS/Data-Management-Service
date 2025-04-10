@@ -25,6 +25,7 @@ public class NamespaceBasedValidatorTests
             _expectedResult = await validator.ValidateAuthorization(
                 new DocumentSecurityElements([], [], []),
                 [new AuthorizationFilter(SecurityElementNameConstants.Namespace, "uri://namespace")],
+                [],
                 OperationType.Get,
                 new TraceId("trace id")
             );
@@ -60,6 +61,7 @@ public class NamespaceBasedValidatorTests
             _expectedResult = await validator.ValidateAuthorization(
                 new DocumentSecurityElements(["uri://namespace/resource"], [], []),
                 [new AuthorizationFilter(SecurityElementNameConstants.Namespace, "uri://namespace")],
+                [],
                 OperationType.Get,
                 new TraceId("trace id")
             );
@@ -85,6 +87,7 @@ public class NamespaceBasedValidatorTests
             _expectedResult = await validator.ValidateAuthorization(
                 new DocumentSecurityElements(["uri://not-matching/resource"], [], []),
                 [new AuthorizationFilter(SecurityElementNameConstants.Namespace, "uri://namespace")],
+                [],
                 OperationType.Get,
                 new TraceId("trace id")
             );
@@ -127,6 +130,7 @@ public class NamespaceBasedValidatorTests
                     new AuthorizationFilter(SecurityElementNameConstants.Namespace, "uri://matching"),
                     new AuthorizationFilter(SecurityElementNameConstants.Namespace, "uri://matching1"),
                 ],
+                [],
                 OperationType.Get,
                 new TraceId("trace id")
             );

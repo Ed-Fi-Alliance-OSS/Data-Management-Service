@@ -38,6 +38,7 @@ internal class DeleteByIdHandler(
                     TraceId: context.FrontendRequest.TraceId,
                     ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
                         context.AuthorizationStrategyEvaluators,
+                        context.AuthorizationSecurableInfo,
                         authorizationServiceFactory,
                         _logger
                     ),

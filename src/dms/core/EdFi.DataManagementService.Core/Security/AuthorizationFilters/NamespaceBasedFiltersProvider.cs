@@ -16,10 +16,7 @@ public class NamespaceBasedFiltersProvider : IAuthorizationFiltersProvider
 {
     private const string AuthorizationStrategyName = "NamespaceBased";
 
-    public AuthorizationStrategyEvaluator GetFilters(
-        ClientAuthorizations authorizations,
-        AuthorizationSecurableInfo[] authorizationSecurableInfos
-    )
+    public AuthorizationStrategyEvaluator GetFilters(ClientAuthorizations authorizations)
     {
         var filters = new List<AuthorizationFilter>();
         var namespacePrefixesFromClaim = authorizations.NamespacePrefixes;
