@@ -10,4 +10,7 @@ public static class SecurityElementNameConstants
     public const string EducationOrganization = "EducationOrganization";
     public const string Namespace = "Namespace";
     public const string StudentUniqueId = "StudentUniqueId";
+    public const string StaffUniqueId = "StaffUniqueId";
+    public const string ParentUniqueId = "ParentUniqueId";
+    public const string ContactUniqueId = "ContactUniqueId";
 }

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DataManagementService.Backend.Postgresql.Operation;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
@@ -56,5 +57,32 @@ public class PostgresqlAuthorizationRepository(NpgsqlDataSource _dataSource) : I
         }
 
         return edOrgIds.Distinct().ToArray();
+    }
+
+    public async Task<JsonElement> GetEducationOrganizationsForStudent(
+        string studentUniqueId,
+        TraceId traceId
+    )
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync();
+        await using NpgsqlCommand command = new(
+            $"""
+                SELECT StudentSchoolAuthorizationEducationOrganizationIds
+                FROM dms.StudentSchoolAssociationAuthorization
+                WHERE StudentUniqueId = $1
+            """,
+            connection
+        )
+        {
+            Parameters = { new() { Value = studentUniqueId } },
+        };
+
+        await command.PrepareAsync();
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+
+        await reader.ReadAsync();
+        return await reader.GetFieldValueAsync<JsonElement>(
+            reader.GetOrdinal("StudentSchoolAuthorizationEducationOrganizationIds")
+        );
     }
 }

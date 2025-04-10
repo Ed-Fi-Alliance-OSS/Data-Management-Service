@@ -60,6 +60,7 @@ public class NamedAuthorizationServiceFactoryTests
                 .ValidateAuthorization(
                     new DocumentSecurityElements([], [], []),
                     [],
+                    [],
                     OperationType.Get,
                     new TraceId(Guid.NewGuid().ToString())
                 )
@@ -78,6 +79,7 @@ public class NamedAuthorizationServiceFactoryTests
             var authResult = handler!
                 .ValidateAuthorization(
                     new DocumentSecurityElements(["uri://namespace/resource"], [], []),
+                    [],
                     [],
                     OperationType.Get,
                     new TraceId(Guid.NewGuid().ToString())
@@ -105,6 +107,7 @@ public class NamedAuthorizationServiceFactoryTests
                         ],
                         []
                     ),
+                    [],
                     [],
                     OperationType.Get,
                     new TraceId(Guid.NewGuid().ToString())
@@ -166,7 +169,7 @@ public class NamedAuthorizationServiceFactoryTests
                 handlerProvider!.GetByName<IAuthorizationFiltersProvider>("NoFurtherAuthorizationRequired")
                 as NoFurtherAuthorizationRequiredFiltersProvider;
             handler.Should().NotBeNull();
-            var filters = handler!.GetFilters(new ClientAuthorizations("", "", [], []), []);
+            var filters = handler!.GetFilters(new ClientAuthorizations("", "", [], []));
             filters.Should().NotBeNull();
             filters.Filters.Should().BeEmpty();
         }
@@ -179,8 +182,7 @@ public class NamedAuthorizationServiceFactoryTests
                 as NamespaceBasedFiltersProvider;
             handler.Should().NotBeNull();
             var filters = handler!.GetFilters(
-                new ClientAuthorizations("", "", [], [new NamespacePrefix("uri://namespace")]),
-                []
+                new ClientAuthorizations("", "", [], [new NamespacePrefix("uri://namespace")])
             );
             filters.Should().NotBeNull();
             filters.Filters.Should().NotBeEmpty();
@@ -197,8 +199,7 @@ public class NamedAuthorizationServiceFactoryTests
                 as RelationshipsWithEdOrgsOnlyFiltersProvider;
             handler.Should().NotBeNull();
             var filters = handler!.GetFilters(
-                new ClientAuthorizations("", "", [new EducationOrganizationId(255901)], []),
-                []
+                new ClientAuthorizations("", "", [new EducationOrganizationId(255901)], [])
             );
             filters.Should().NotBeNull();
             filters.Filters.Should().NotBeEmpty();

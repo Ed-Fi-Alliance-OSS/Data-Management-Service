@@ -29,6 +29,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
             _expectedResult = await validator.ValidateAuthorization(
                 new DocumentSecurityElements([], [], []),
                 [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "299501")],
+                [],
                 OperationType.Get,
                 new TraceId("trace-id")
             );
@@ -82,6 +83,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     []
                 ),
                 [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "255901")],
+                [],
                 OperationType.Get,
                 new TraceId("trace-id")
             );
@@ -125,6 +127,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     []
                 ),
                 [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "2455")],
+                [],
                 OperationType.Get,
                 new TraceId("trace-id")
             );
@@ -182,6 +185,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     []
                 ),
                 [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "567")],
+                [],
                 OperationType.Upsert,
                 new TraceId("trace-id")
             );
@@ -234,6 +238,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     []
                 ),
                 [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "299")],
+                [],
                 OperationType.Get,
                 new TraceId("trace-id")
             );

@@ -137,7 +137,7 @@ internal static class No
     /// </summary>
     public static readonly AuthorizationSecurableInfo[] AuthorizationSecurableInfo =
     [
-        new AuthorizationSecurableInfo("", ""),
+        new AuthorizationSecurableInfo(""),
     ];
 
     /// <summary>

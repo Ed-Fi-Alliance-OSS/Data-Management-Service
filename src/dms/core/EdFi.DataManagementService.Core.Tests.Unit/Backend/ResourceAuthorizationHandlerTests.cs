@@ -36,6 +36,7 @@ public class ResourceAuthorizationHandlerTests
                 [new AuthorizationFilter("Namespace", "uri://ed-fi.org")],
                 FilterOperator.Or
             );
+            var authorizationSecurableInfo = new AuthorizationSecurableInfo[] { new("") };
 
             var validator = A.Fake<IAuthorizationValidator>();
             A.CallTo(
@@ -43,6 +44,7 @@ public class ResourceAuthorizationHandlerTests
                         validator.ValidateAuthorization(
                             documentSecurityElements,
                             evaluator.Filters,
+                            authorizationSecurableInfo,
                             OperationType.Get,
                             A<TraceId>.Ignored
                         )
@@ -54,6 +56,7 @@ public class ResourceAuthorizationHandlerTests
 
             var handler = new ResourceAuthorizationHandler(
                 [evaluator],
+                authorizationSecurableInfo,
                 _authorizationServiceFactory,
                 NullLogger.Instance
             );
@@ -86,6 +89,7 @@ public class ResourceAuthorizationHandlerTests
                 [new AuthorizationFilter("Namespace", "uri://ed-fi.org")],
                 FilterOperator.Or
             );
+            var authorizationSecurableInfo = new AuthorizationSecurableInfo[] { new("") };
 
             var validator = A.Fake<IAuthorizationValidator>();
             A.CallTo(
@@ -93,6 +97,7 @@ public class ResourceAuthorizationHandlerTests
                         validator.ValidateAuthorization(
                             documentSecurityElements,
                             evaluator.Filters,
+                            authorizationSecurableInfo,
                             OperationType.Upsert,
                             A<TraceId>.Ignored
                         )
@@ -104,6 +109,7 @@ public class ResourceAuthorizationHandlerTests
 
             var handler = new ResourceAuthorizationHandler(
                 [evaluator],
+                authorizationSecurableInfo,
                 _authorizationServiceFactory,
                 NullLogger.Instance
             );
@@ -138,6 +144,7 @@ public class ResourceAuthorizationHandlerTests
             var documentSecurityElements = new DocumentSecurityElements(["uri://not-matching.org"], [], []);
 
             var handler = new ResourceAuthorizationHandler(
+                [],
                 [],
                 _authorizationServiceFactory,
                 NullLogger.Instance
@@ -180,13 +187,14 @@ public class ResourceAuthorizationHandlerTests
                 [new AuthorizationFilter("EducationOrganization", "6001")],
                 FilterOperator.Or
             );
-
+            var authorizationSecurableInfo = new AuthorizationSecurableInfo[] { new("") };
             var validator = A.Fake<IAuthorizationValidator>();
             A.CallTo(
                     () =>
                         validator.ValidateAuthorization(
                             documentSecurityElements,
                             authStrategyEvaluators.Filters,
+                            authorizationSecurableInfo,
                             OperationType.Get,
                             A<TraceId>.Ignored
                         )
@@ -202,6 +210,7 @@ public class ResourceAuthorizationHandlerTests
 
             var handler = new ResourceAuthorizationHandler(
                 [authStrategyEvaluators],
+                authorizationSecurableInfo,
                 _authorizationServiceFactory,
                 NullLogger.Instance
             );
@@ -243,13 +252,14 @@ public class ResourceAuthorizationHandlerTests
                 [new AuthorizationFilter("EducationOrganization", "6001")],
                 FilterOperator.Or
             );
-
+            var authorizationSecurableInfo = new AuthorizationSecurableInfo[] { new("") };
             var validator = A.Fake<IAuthorizationValidator>();
             A.CallTo(
                     () =>
                         validator.ValidateAuthorization(
                             documentSecurityElements,
                             authStrategyEvaluators.Filters,
+                            authorizationSecurableInfo,
                             OperationType.Get,
                             A<TraceId>.Ignored
                         )
@@ -265,6 +275,7 @@ public class ResourceAuthorizationHandlerTests
 
             var handler = new ResourceAuthorizationHandler(
                 [authStrategyEvaluators],
+                authorizationSecurableInfo,
                 _authorizationServiceFactory,
                 NullLogger.Instance
             );
@@ -320,13 +331,14 @@ public class ResourceAuthorizationHandlerTests
                     FilterOperator.And
                 ),
             };
-
+            var authorizationSecurableInfo = new AuthorizationSecurableInfo[] { new("") };
             var validatorForEdOrg = A.Fake<IAuthorizationValidator>();
             A.CallTo(
                     () =>
                         validatorForEdOrg.ValidateAuthorization(
                             documentSecurityElements,
                             authStrategyEvaluators[0].Filters,
+                            authorizationSecurableInfo,
                             OperationType.Get,
                             A<TraceId>.Ignored
                         )
@@ -346,6 +358,7 @@ public class ResourceAuthorizationHandlerTests
                         validatorForStudent.ValidateAuthorization(
                             documentSecurityElements,
                             authStrategyEvaluators[1].Filters,
+                            authorizationSecurableInfo,
                             OperationType.Get,
                             A<TraceId>.Ignored
                         )
@@ -361,6 +374,7 @@ public class ResourceAuthorizationHandlerTests
 
             var handler = new ResourceAuthorizationHandler(
                 authStrategyEvaluators,
+                authorizationSecurableInfo,
                 _authorizationServiceFactory,
                 NullLogger.Instance
             );

@@ -16,10 +16,7 @@ public class RelationshipsWithEdOrgsOnlyFiltersProvider : IAuthorizationFiltersP
 {
     private const string AuthorizationStrategyName = "RelationshipsWithEdOrgsOnly";
 
-    public AuthorizationStrategyEvaluator GetFilters(
-        ClientAuthorizations authorizations,
-        AuthorizationSecurableInfo[] authorizationSecurableInfos
-    )
+    public AuthorizationStrategyEvaluator GetFilters(ClientAuthorizations authorizations)
     {
         var filters = new List<AuthorizationFilter>();
         var edOrgIdsFromClaim = authorizations

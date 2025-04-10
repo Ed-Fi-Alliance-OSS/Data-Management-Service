@@ -16,10 +16,7 @@ public class RelationshipsWithEdOrgsAndPeopleFiltersProvider : IAuthorizationFil
 {
     private const string AuthorizationStrategyName = "RelationshipsWithEdOrgsAndPeople";
 
-    public AuthorizationStrategyEvaluator GetFilters(
-        ClientAuthorizations authorizations,
-        AuthorizationSecurableInfo[] authorizationSecurableInfos
-    )
+    public AuthorizationStrategyEvaluator GetFilters(ClientAuthorizations authorizations)
     {
         var filters = new List<AuthorizationFilter>();
         var edOrgIdsFromClaim = authorizations
@@ -34,18 +31,6 @@ public class RelationshipsWithEdOrgsAndPeopleFiltersProvider : IAuthorizationFil
         foreach (var edOrgId in edOrgIdsFromClaim)
         {
             filters.Add(new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, edOrgId));
-        }
-        foreach (var authorizationSecurableInfo in authorizationSecurableInfos)
-        {
-            if (authorizationSecurableInfo.UniqueId != null)
-            {
-                filters.Add(
-                    new AuthorizationFilter(
-                        authorizationSecurableInfo.SecurableKey,
-                        authorizationSecurableInfo.UniqueId
-                    )
-                );
-            }
         }
 
         return new AuthorizationStrategyEvaluator(AuthorizationStrategyName, [.. filters], FilterOperator.Or);

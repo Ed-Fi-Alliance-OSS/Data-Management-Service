@@ -57,10 +57,7 @@ internal class ProvideAuthorizationFiltersMiddleware(
                 }
 
                 authorizationStrategyEvaluators.Add(
-                    authFiltersProvider.GetFilters(
-                        context.FrontendRequest.ClientAuthorizations,
-                        context.AuthorizationSecurableInfo
-                    )
+                    authFiltersProvider.GetFilters(context.FrontendRequest.ClientAuthorizations)
                 );
             }
 
