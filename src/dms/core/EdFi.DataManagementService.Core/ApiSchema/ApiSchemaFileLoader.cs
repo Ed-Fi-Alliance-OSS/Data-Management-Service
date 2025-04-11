@@ -59,12 +59,12 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
             throw new InvalidOperationException("relativeToProject is not exists.");
         }
 
-        string pluginApiSchemaPath = Path.GetFullPath(relativeToProject);
-        var assemblies = Directory.GetFiles(pluginApiSchemaPath, "*.dll", SearchOption.AllDirectories);
-        var pluginAssemblyLoadContext = new PluginAssemblyLoadContext();
+        string apiSchemaPath = Path.GetFullPath(relativeToProject);
+        var assemblies = Directory.GetFiles(apiSchemaPath, "*.dll", SearchOption.AllDirectories);
+        var apiSchemaAssemblyLoadContext = new ApiSchemaAssemblyLoadContext();
         foreach (var assemblyPath in assemblies)
         {
-            var assembly = pluginAssemblyLoadContext.LoadFromAssemblyPath(assemblyPath);
+            var assembly = apiSchemaAssemblyLoadContext.LoadFromAssemblyPath(assemblyPath);
 
             var manifestResourceNames = assembly.GetManifestResourceNames();
 
@@ -102,10 +102,10 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
     }
 
     /// <summary>
-    /// Returns PluginAssemblyLoadContext for loading Assembly Context
+    /// Returns ApiSchemaAssemblyLoadContext for loading Assembly Context
     /// </summary>
-    private sealed class PluginAssemblyLoadContext : AssemblyLoadContext
+    private sealed class ApiSchemaAssemblyLoadContext : AssemblyLoadContext
     {
-        public PluginAssemblyLoadContext() : base(isCollectible: true) { }
+        public ApiSchemaAssemblyLoadContext() : base(isCollectible: true) { }
     }
 }
