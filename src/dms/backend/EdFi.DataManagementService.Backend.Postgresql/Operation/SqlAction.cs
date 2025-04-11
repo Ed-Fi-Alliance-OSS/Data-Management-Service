@@ -21,16 +21,6 @@ public record UpdateDocumentValidationResult(bool DocumentExists, bool Referenti
 /// </summary>
 public class SqlAction() : ISqlAction
 {
-    private static string SqlFor(LockOption lockOption)
-    {
-        return lockOption switch
-        {
-            LockOption.None => "",
-            LockOption.BlockUpdateDelete => "FOR NO KEY UPDATE",
-            _ => throw new InvalidOperationException("Unknown lock option type"),
-        };
-    }
-
     /// <summary>
     /// Returns a Document from a data reader row for the Document table
     /// </summary>
@@ -118,7 +108,7 @@ public class SqlAction() : ISqlAction
         await using NpgsqlCommand command = new(
             $@"SELECT * FROM dms.Document d
                 INNER JOIN dms.Alias a ON a.DocumentId = d.Id AND a.DocumentPartitionKey = d.DocumentPartitionKey
-                WHERE a.ReferentialPartitionKey = $1 AND a.ReferentialId = $2 {SqlFor(LockOption.BlockUpdateDelete)};",
+                WHERE a.ReferentialPartitionKey = $1 AND a.ReferentialId = $2 {SqlBuilder.SqlFor(LockOption.BlockUpdateDelete)};",
             connection,
             transaction
         )
@@ -309,7 +299,7 @@ public class SqlAction() : ISqlAction
         TraceId traceId
     )
     {
-        string sqlForLockOption = SqlFor(LockOption.BlockUpdateDelete);
+        string sqlForLockOption = SqlBuilder.SqlFor(LockOption.BlockUpdateDelete);
         if (sqlForLockOption != "")
         {
             // Only lock the Documents table
@@ -520,7 +510,7 @@ public class SqlAction() : ISqlAction
                        AND d2.DocumentPartitionKey = r.ReferencedDocumentPartitionKey
                        WHERE d2.DocumentUuid = $1 AND d2.DocumentPartitionKey = $2) AS re
                      ON re.ParentDocumentId = d.id AND re.ParentDocumentPartitionKey = d.DocumentPartitionKey
-                   ORDER BY d.ResourceName {SqlFor(LockOption.BlockUpdateDelete)};",
+                   ORDER BY d.ResourceName {SqlBuilder.SqlFor(LockOption.BlockUpdateDelete)};",
             connection,
             transaction
         )
@@ -557,7 +547,7 @@ public class SqlAction() : ISqlAction
             $@"SELECT * FROM dms.Document d
                                 INNER JOIN dms.Reference r ON d.Id = r.ParentDocumentId And d.DocumentPartitionKey = r.ParentDocumentPartitionKey
                                 WHERE r.ReferencedDocumentId = $1 AND r.ReferencedDocumentPartitionKey = $2
-                                ORDER BY d.ResourceName {SqlFor(LockOption.BlockUpdateDelete)};",
+                                ORDER BY d.ResourceName {SqlBuilder.SqlFor(LockOption.BlockUpdateDelete)};",
             connection,
             transaction
         )
@@ -686,105 +676,5 @@ public class SqlAction() : ISqlAction
         };
         await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
-    }
-
-    public async Task<long[]> GetAncestorEducationOrganizationIds(
-        PartitionKey documentPartitionKey,
-        DocumentUuid documentUuid,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        TraceId traceId
-    )
-    {
-        await using NpgsqlCommand command = new(
-            $"""
-                WITH RECURSIVE ParentHierarchy(Id, EducationOrganizationId, ParentId) AS (
-                SELECT h.Id, h.EducationOrganizationId, h.ParentId
-                FROM dms.EducationOrganizationHierarchy h
-                WHERE h.EducationOrganizationId IN (
-                    SELECT jsonb_array_elements(securityelements->'EducationOrganization')::text::BIGINT
-                    FROM dms.document
-                    WHERE DocumentUuid = $1 AND DocumentPartitionKey = $2
-                )
-
-                UNION ALL
-
-                SELECT parent.Id, parent.EducationOrganizationId, parent.ParentId
-                FROM dms.EducationOrganizationHierarchy parent
-                JOIN ParentHierarchy child ON parent.Id = child.ParentId
-                )
-                SELECT EducationOrganizationId
-                FROM ParentHierarchy
-                ORDER BY EducationOrganizationId
-                {SqlFor(LockOption.BlockUpdateDelete)};
-            """,
-            connection,
-            transaction
-        )
-        {
-            Parameters =
-            {
-                new() { Value = documentUuid.Value },
-                new() { Value = documentPartitionKey.Value },
-            },
-        };
-        await command.PrepareAsync();
-
-        await command.PrepareAsync();
-        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
-
-        List<long> edOrgIds = [];
-
-        while (await reader.ReadAsync())
-        {
-            edOrgIds.Add(reader.GetInt64(reader.GetOrdinal("EducationOrganizationId")));
-        }
-
-        return edOrgIds.Distinct().ToArray();
-    }
-
-    public async Task<long[]> GetAncestorEducationOrganizationIdsForUpsert(
-        long[] educationOrganizationIds,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        TraceId traceId
-    )
-    {
-        await using NpgsqlCommand command = new(
-            $"""
-                WITH RECURSIVE ParentHierarchy(Id, EducationOrganizationId, ParentId) AS (
-                SELECT h.Id, h.EducationOrganizationId, h.ParentId
-                FROM dms.EducationOrganizationHierarchy h
-                WHERE h.EducationOrganizationId = ANY($1)
-
-                UNION ALL
-
-                SELECT parent.Id, parent.EducationOrganizationId, parent.ParentId
-                FROM dms.EducationOrganizationHierarchy parent
-                JOIN ParentHierarchy child ON parent.Id = child.ParentId
-                )
-                SELECT EducationOrganizationId
-                FROM ParentHierarchy
-                ORDER BY EducationOrganizationId
-                {SqlFor(LockOption.BlockUpdateDelete)};
-            """,
-            connection,
-            transaction
-        )
-        {
-            Parameters = { new() { Value = educationOrganizationIds } },
-        };
-        await command.PrepareAsync();
-
-        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
-
-        List<long> edOrgIds = new();
-
-        while (await reader.ReadAsync())
-        {
-            edOrgIds.Add(reader.GetInt64(reader.GetOrdinal("EducationOrganizationId")));
-        }
-
-        return edOrgIds.Distinct().ToArray();
     }
 }

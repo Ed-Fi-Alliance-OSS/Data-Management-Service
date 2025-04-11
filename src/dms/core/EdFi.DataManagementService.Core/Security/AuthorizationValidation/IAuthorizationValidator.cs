@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Security.AuthorizationValidation;
@@ -12,8 +13,10 @@ namespace EdFi.DataManagementService.Core.Security.AuthorizationValidation;
 /// </summary>
 public interface IAuthorizationValidator
 {
-    AuthorizationResult ValidateAuthorization(
+    Task<ResourceAuthorizationResult> ValidateAuthorization(
         DocumentSecurityElements securityElements,
-        ClientAuthorizations authorizations
+        AuthorizationFilter[] authorizationFilters,
+        OperationType operationType,
+        TraceId traceId
     );
 }

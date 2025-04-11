@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
@@ -53,29 +54,13 @@ public class GetDocumentById(ISqlAction _sqlAction, ILogger<GetDocumentById> _lo
                 return new GetResult.GetFailureNotExists();
             }
 
-            long[] educationOrganizationSecurityElements = [];
-
-            JsonNode securityElements = documentSummary.SecurityElements.Deserialize<JsonNode>()!;
-            string[] namespaceSecurityElements = securityElements["Namespace"]!
-                .AsArray()
-                .Select(v => v!.GetValue<string>())
-                .ToArray();
-
-            if (getRequest.ResourceAuthorizationHandler.IsRelationshipWithEdOrg)
-            {
-                educationOrganizationSecurityElements = await _sqlAction.GetAncestorEducationOrganizationIds(
-                    PartitionKeyFor(getRequest.DocumentUuid),
-                    getRequest.DocumentUuid,
-                    connection,
-                    transaction,
-                    getRequest.TraceId
-                );
-            }
+            var securityElements = documentSummary.SecurityElements.ToDocumentSecurityElements()!;
 
             ResourceAuthorizationResult getAuthorizationResult =
-                getRequest.ResourceAuthorizationHandler.Authorize(
-                    namespaceSecurityElements,
-                    educationOrganizationSecurityElements
+                await getRequest.ResourceAuthorizationHandler.Authorize(
+                    securityElements,
+                    OperationType.Get,
+                    getRequest.TraceId
                 );
 
             if (getAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)

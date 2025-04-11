@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Security;
 using Microsoft.Extensions.Logging;
 using Polly;
 using static EdFi.DataManagementService.Core.External.Backend.UpsertResult;
@@ -24,7 +25,8 @@ internal class UpsertHandler(
     IDocumentStoreRepository _documentStoreRepository,
     ILogger _logger,
     ResiliencePipeline _resiliencePipeline,
-    IApiSchemaProvider _apiSchemaProvider
+    IApiSchemaProvider _apiSchemaProvider,
+    IAuthorizationServiceFactory authorizationServiceFactory
 ) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
@@ -49,6 +51,7 @@ internal class UpsertHandler(
                     UpdateCascadeHandler: updateCascadeHandler,
                     ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
                         context.AuthorizationStrategyEvaluators,
+                        authorizationServiceFactory,
                         _logger
                     ),
                     ResourceAuthorizationPathways: context.AuthorizationPathways
