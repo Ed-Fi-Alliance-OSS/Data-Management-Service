@@ -37,7 +37,7 @@ jobs:
 
       - name: DMS Build
         id: build_step
-        run: ./build-dms.ps1 Build -Configuration Debug
+        run: ./build-dms.ps1 Build -Configuration Release
 
       - name: Install Coverlet Reference
         if: success()
@@ -47,7 +47,7 @@ jobs:
 
       - name: Run DMS Unit Tests
         id: unit_test_step
-        run: ./build-dms.ps1 UnitTest -Configuration Debug
+        run: ./build-dms.ps1 UnitTest -Configuration Release
 
       - name: Run ElasticSearch End to End Tests
         if: success()

@@ -38,7 +38,7 @@ jobs:
 
       - name: DMS Build
         id: build_step
-        run: ./build-dms.ps1 Build -Configuration Debug
+        run: ./build-dms.ps1 Build -Configuration Release
 
       - name: Run OpenSearch End to End Tests
         if: success()
