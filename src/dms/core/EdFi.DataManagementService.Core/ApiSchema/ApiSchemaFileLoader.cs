@@ -8,8 +8,6 @@ using System.Runtime.Loader;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.Configuration;
-using EdFi.DataManagementService.Core.External.Model;
-using Microsoft.CodeAnalysis;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
