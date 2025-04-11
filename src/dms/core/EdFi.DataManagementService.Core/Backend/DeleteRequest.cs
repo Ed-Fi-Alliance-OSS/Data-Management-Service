@@ -16,7 +16,7 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// <param name="ResourceAuthorizationHandler">The handler to authorize the delete request for a resource in the database</param>
 /// <param name="ResourceAuthorizationPathways">The AuthorizationPathways the resource is part of.</param>
 /// <param name="TraceId">The request TraceId</param>
-/// <param name="IsEdOrgHierarchy">The request IsEdOrgHierarchy</param>
+/// <param name="DeleteInEdOrgHierarchy">The request IsEdOrgHierarchy</param>
 internal record DeleteRequest(
     DocumentUuid DocumentUuid,
     ResourceInfo ResourceInfo,
