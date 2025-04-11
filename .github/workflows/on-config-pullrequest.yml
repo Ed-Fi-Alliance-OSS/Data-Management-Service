@@ -55,7 +55,7 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Build
-        run: ./build-config.ps1 Build -Configuration Debug
+        run: ./build-config.ps1 Build -Configuration Release
 
       - name: Install Coverlet Reference
         if: success()
@@ -64,7 +64,7 @@ jobs:
           dotnet tool install --global dotnet-reportgenerator-globaltool
 
       - name: Run Unit Tests
-        run: ./build-config.ps1 UnitTest -Configuration Debug
+        run: ./build-config.ps1 UnitTest -Configuration Release
 
       - name: Generate Coverage Report
         if: ${{ hashFiles('coverage.cobertura.xml') != '' }}
@@ -114,11 +114,11 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Build
-        run: ./build-config.ps1 Build -Configuration Debug
+        run: ./build-config.ps1 Build -Configuration Release
 
       - name: Run Integration Tests
         if: success()
-        run: ./build-config.ps1 IntegrationTest -Configuration Debug
+        run: ./build-config.ps1 IntegrationTest -Configuration Release
 
       - name: Upload Integration Test Results
         if: always()
@@ -146,7 +146,7 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Build
-        run: ./build-config.ps1 Build -Configuration Debug
+        run: ./build-config.ps1 Build -Configuration Release
 
       - name: Run End to End Tests
         if: success()

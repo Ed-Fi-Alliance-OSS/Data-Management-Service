@@ -49,7 +49,7 @@ try
         string feedUrl = options.FeedUrl;
 
         // Output directory for the downloaded package and extracted files
-        string outputDir = Path.Combine(Path.GetTempPath(), "DownloadedPackages");
+        string outputDir = Path.Combine(options.ApiSchemaFolder, "DownloadedPackages", packageId);
         Directory.CreateDirectory(outputDir);
 
         // Download the package
@@ -62,8 +62,6 @@ try
         Console.WriteLine($"Package downloaded to: {packagePath}");
         logger.LogInformation("Package downloaded to: {PackagePath}", packagePath);
 
-        // Ensure the output directory for API schema extraction exists
-        Directory.CreateDirectory(options.ApiSchemaFolder);
 
         // Extract the API schema
         downloader.ExtractApiSchemaJsonFromAssembly(packageId, packagePath, options.ApiSchemaFolder);
