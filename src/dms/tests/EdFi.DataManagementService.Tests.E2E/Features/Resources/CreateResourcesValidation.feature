@@ -787,13 +787,29 @@ Feature: Resources "Create" Operation validations
                       "namespace": "uri://ed-fi.org"
                   }
                   """
-
+    @addwait
     Scenario: 30 Insert the same school after deletion
-     Given the system has these "schools"
-                  | schoolId      | nameOfInstitution | gradeLevels                                                                        | educationOrganizationCategories                                                                                        |
-                  | 255901001     | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
-       When a DELETE request is made to referenced resource "/ed-fi/schools/{id}"
-       And a POST request is made to "/ed-fi/schools" with
+        When a POST request is made to "/ed-fi/schools" with
+          """
+                {
+               "schoolId":255901001,
+               "nameOfInstitution":"Test school",
+               "gradeLevels":[    
+                  {
+                     "gradeLevelDescriptor":"uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
+                  }
+               ],
+               "educationOrganizationCategories":[
+                  {
+                     "educationOrganizationCategoryDescriptor":"uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                  }
+               ]
+            }
+          """
+       Then it should respond with 201
+       When a DELETE request is made to "/ed-fi/schools/{id}"
+       Then it should respond with 204
+       When a POST request is made to "/ed-fi/schools" with
           """
                 {
                "schoolId":255901001,

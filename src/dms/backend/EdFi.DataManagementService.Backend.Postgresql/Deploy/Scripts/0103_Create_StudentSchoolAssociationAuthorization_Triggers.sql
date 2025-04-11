@@ -45,7 +45,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE TRIGGER StudentSchoolAssociationAuthorizationTrigger
+DROP TRIGGER IF EXISTS StudentSchoolAssociationAuthorizationTrigger ON dms.Document;
+
+CREATE TRIGGER StudentSchoolAssociationAuthorizationTrigger
 AFTER INSERT OR UPDATE ON dms.Document
     FOR EACH ROW
     WHEN (NEW.ProjectName = 'Ed-Fi' AND NEW.ResourceName = 'StudentSchoolAssociation')
