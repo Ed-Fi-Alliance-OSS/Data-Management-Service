@@ -24,6 +24,9 @@ internal static class AuthorizationSecurableExtractor
         {
             return [];
         }
+
+        // The IsStudentSecurable flag is currently determined based on the presence of the path element
+        // in the authorization securable element.
         return [new AuthorizationSecurableInfo(SecurityElementNameConstants.StudentUniqueId)];
     }
 }

@@ -17,7 +17,6 @@ public interface IAuthorizationValidator
         DocumentSecurityElements securityElements,
         AuthorizationFilter[] authorizationFilters,
         AuthorizationSecurableInfo[] authorizationSecurableInfos,
-        OperationType operationType,
-        TraceId traceId
+        OperationType operationType
     );
 }

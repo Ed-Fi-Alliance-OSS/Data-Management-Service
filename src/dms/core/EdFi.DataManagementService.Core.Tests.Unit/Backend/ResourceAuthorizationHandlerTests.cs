@@ -45,8 +45,7 @@ public class ResourceAuthorizationHandlerTests
                             documentSecurityElements,
                             evaluator.Filters,
                             authorizationSecurableInfo,
-                            OperationType.Get,
-                            A<TraceId>.Ignored
+                            OperationType.Get
                         )
                 )
                 .Returns(new ResourceAuthorizationResult.Authorized());
@@ -98,8 +97,7 @@ public class ResourceAuthorizationHandlerTests
                             documentSecurityElements,
                             evaluator.Filters,
                             authorizationSecurableInfo,
-                            OperationType.Upsert,
-                            A<TraceId>.Ignored
+                            OperationType.Upsert
                         )
                 )
                 .Returns(new ResourceAuthorizationResult.NotAuthorized(["Not authorized"]));
@@ -195,8 +193,7 @@ public class ResourceAuthorizationHandlerTests
                             documentSecurityElements,
                             authStrategyEvaluators.Filters,
                             authorizationSecurableInfo,
-                            OperationType.Get,
-                            A<TraceId>.Ignored
+                            OperationType.Get
                         )
                 )
                 .Returns(new ResourceAuthorizationResult.Authorized());
@@ -260,8 +257,7 @@ public class ResourceAuthorizationHandlerTests
                             documentSecurityElements,
                             authStrategyEvaluators.Filters,
                             authorizationSecurableInfo,
-                            OperationType.Get,
-                            A<TraceId>.Ignored
+                            OperationType.Get
                         )
                 )
                 .Returns(new ResourceAuthorizationResult.NotAuthorized(["Not authorized"]));
@@ -339,8 +335,7 @@ public class ResourceAuthorizationHandlerTests
                             documentSecurityElements,
                             authStrategyEvaluators[0].Filters,
                             authorizationSecurableInfo,
-                            OperationType.Get,
-                            A<TraceId>.Ignored
+                            OperationType.Get
                         )
                 )
                 .Returns(new ResourceAuthorizationResult.Authorized());
@@ -359,8 +354,7 @@ public class ResourceAuthorizationHandlerTests
                             documentSecurityElements,
                             authStrategyEvaluators[1].Filters,
                             authorizationSecurableInfo,
-                            OperationType.Get,
-                            A<TraceId>.Ignored
+                            OperationType.Get
                         )
                 )
                 .Returns(new ResourceAuthorizationResult.Authorized());

@@ -21,8 +21,7 @@ public class NamespaceBasedValidator : IAuthorizationValidator
         DocumentSecurityElements securityElements,
         AuthorizationFilter[] authorizationFilters,
         AuthorizationSecurableInfo[] authorizationSecurableInfos,
-        OperationType operationType,
-        TraceId traceId
+        OperationType operationType
     )
     {
         string[]? namespacesFromRequest = securityElements.Namespace;

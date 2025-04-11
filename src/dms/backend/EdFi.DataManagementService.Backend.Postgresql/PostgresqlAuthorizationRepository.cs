@@ -6,7 +6,6 @@
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.Postgresql.Operation;
 using EdFi.DataManagementService.Core.External.Interface;
-using EdFi.DataManagementService.Core.External.Model;
 using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
@@ -16,10 +15,7 @@ namespace EdFi.DataManagementService.Backend.Postgresql;
 /// </summary>
 public class PostgresqlAuthorizationRepository(NpgsqlDataSource _dataSource) : IAuthorizationRepository
 {
-    public async Task<long[]> GetAncestorEducationOrganizationIds(
-        long[] educationOrganizationIds,
-        TraceId traceId
-    )
+    public async Task<long[]> GetAncestorEducationOrganizationIds(long[] educationOrganizationIds)
     {
         await using var connection = await _dataSource.OpenConnectionAsync();
         await using NpgsqlCommand command = new(
@@ -59,10 +55,7 @@ public class PostgresqlAuthorizationRepository(NpgsqlDataSource _dataSource) : I
         return edOrgIds.Distinct().ToArray();
     }
 
-    public async Task<JsonElement> GetEducationOrganizationsForStudent(
-        string studentUniqueId,
-        TraceId traceId
-    )
+    public async Task<JsonElement> GetEducationOrganizationsForStudent(string studentUniqueId)
     {
         await using var connection = await _dataSource.OpenConnectionAsync();
         await using NpgsqlCommand command = new(

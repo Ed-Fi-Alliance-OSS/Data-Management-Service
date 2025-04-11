@@ -24,15 +24,14 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
         DocumentSecurityElements securityElements,
         AuthorizationFilter[] authorizationFilters,
         AuthorizationSecurableInfo[] authorizationSecurableInfos,
-        OperationType operationType,
-        TraceId traceId
+        OperationType operationType
     )
     {
-        bool isSecurableWithStudent = authorizationSecurableInfos
+        bool isStudentSecurable = authorizationSecurableInfos
             .AsEnumerable()
             .Any(x => x.SecurableKey == SecurityElementNameConstants.StudentUniqueId);
 
-        if (!isSecurableWithStudent)
+        if (isStudentSecurable)
         {
             if (securityElements.Student.Length == 0)
             {
@@ -43,17 +42,20 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
 
             var studentUniqueId = securityElements.Student[0].Value;
             var associatedEducationOrgIdsJson =
-                await authorizationRepository.GetEducationOrganizationsForStudent(studentUniqueId, traceId);
+                await authorizationRepository.GetEducationOrganizationsForStudent(studentUniqueId);
             var educationOrgIds = JsonSerializer.Deserialize<long[]>(associatedEducationOrgIdsJson);
 
-            var isAuthorized = authorizationFilters
-                .Select(filter => long.TryParse(filter.Value, out var edOrgId) ? edOrgId : (long?)null)
-                .Where(edOrgId => edOrgId.HasValue)
-                .Any(edOrgId =>
-                    edOrgId != null && educationOrgIds != null && educationOrgIds.Contains(edOrgId.Value)
-                );
+            var authorizedEdOrgIds = authorizationFilters
+                .Select(f => long.TryParse(f.Value, out var id) ? (long?)id : null)
+                .Where(id => id.HasValue)
+                .Select(id => id!.Value);
 
-            if (educationOrgIds == null || educationOrgIds.Length == 0 || !isAuthorized)
+            bool isAuthorized =
+                educationOrgIds != null
+                && educationOrgIds.Length > 0
+                && authorizedEdOrgIds.Any(id => educationOrgIds.Contains(id));
+
+            if (!isAuthorized)
             {
                 string edOrgIdsFromFilters = string.Join(
                     ", ",

@@ -22,8 +22,7 @@ public class RelationshipsWithEdOrgsOnlyValidator(IAuthorizationRepository autho
         DocumentSecurityElements securityElements,
         AuthorizationFilter[] authorizationFilters,
         AuthorizationSecurableInfo[] authorizationSecurableInfos,
-        OperationType operationType,
-        TraceId traceId
+        OperationType operationType
     )
     {
         List<EducationOrganizationId> edOrgsFromRequest = securityElements
@@ -41,7 +40,7 @@ public class RelationshipsWithEdOrgsOnlyValidator(IAuthorizationRepository autho
         var edOrgIdValues = edOrgsFromRequest.Select(e => e.Value).ToArray();
 
         var ancestorEducationOrganizationIds =
-            await authorizationRepository.GetAncestorEducationOrganizationIds(edOrgIdValues, traceId);
+            await authorizationRepository.GetAncestorEducationOrganizationIds(edOrgIdValues);
 
         bool isAuthorized = authorizationFilters
             .Select(filter => long.TryParse(filter.Value, out var edOrgId) ? edOrgId : (long?)null)

@@ -34,13 +34,7 @@ public class NamedAuthorizationServiceFactoryTests
             services.AddTransient<RelationshipsWithEdOrgsOnlyValidator>();
 
             var fakeAuthorizationRepository = A.Fake<IAuthorizationRepository>();
-            A.CallTo(
-                    () =>
-                        fakeAuthorizationRepository.GetAncestorEducationOrganizationIds(
-                            A<long[]>.Ignored,
-                            A<TraceId>.Ignored
-                        )
-                )
+            A.CallTo(() => fakeAuthorizationRepository.GetAncestorEducationOrganizationIds(A<long[]>.Ignored))
                 .Returns(Task.FromResult(new long[] { 255901, 255902 }));
             services.AddTransient(_ => fakeAuthorizationRepository);
 
@@ -57,13 +51,7 @@ public class NamedAuthorizationServiceFactoryTests
                 as NoFurtherAuthorizationRequiredValidator;
             handler.Should().NotBeNull();
             var authResult = handler!
-                .ValidateAuthorization(
-                    new DocumentSecurityElements([], [], []),
-                    [],
-                    [],
-                    OperationType.Get,
-                    new TraceId(Guid.NewGuid().ToString())
-                )
+                .ValidateAuthorization(new DocumentSecurityElements([], [], []), [], [], OperationType.Get)
                 .Result;
             authResult.Should().NotBeNull();
             authResult.Should().BeOfType<ResourceAuthorizationResult.Authorized>();
@@ -81,8 +69,7 @@ public class NamedAuthorizationServiceFactoryTests
                     new DocumentSecurityElements(["uri://namespace/resource"], [], []),
                     [],
                     [],
-                    OperationType.Get,
-                    new TraceId(Guid.NewGuid().ToString())
+                    OperationType.Get
                 )
                 .Result;
             authResult.Should().NotBeNull();
@@ -109,8 +96,7 @@ public class NamedAuthorizationServiceFactoryTests
                     ),
                     [],
                     [],
-                    OperationType.Get,
-                    new TraceId(Guid.NewGuid().ToString())
+                    OperationType.Get
                 )
                 .Result;
             authResult.Should().NotBeNull();

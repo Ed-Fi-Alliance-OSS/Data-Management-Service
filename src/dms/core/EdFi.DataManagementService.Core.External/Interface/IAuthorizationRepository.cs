@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
-using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.External.Interface;
 
@@ -13,6 +12,6 @@ namespace EdFi.DataManagementService.Core.External.Interface;
 /// </summary>
 public interface IAuthorizationRepository
 {
-    public Task<long[]> GetAncestorEducationOrganizationIds(long[] educationOrganizationIds, TraceId traceId);
-    public Task<JsonElement> GetEducationOrganizationsForStudent(string studentUniqueId, TraceId traceId);
+    public Task<long[]> GetAncestorEducationOrganizationIds(long[] educationOrganizationIds);
+    public Task<JsonElement> GetEducationOrganizationsForStudent(string studentUniqueId);
 }

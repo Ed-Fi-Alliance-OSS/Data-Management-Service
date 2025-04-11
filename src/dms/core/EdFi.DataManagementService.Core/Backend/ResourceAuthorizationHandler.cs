@@ -47,8 +47,7 @@ public class ResourceAuthorizationHandler(
                 documentSecurityElements,
                 evaluator.Filters,
                 authorizationSecurableInfos,
-                operationType,
-                traceId
+                operationType
             );
 
             if (evaluator.Operator == FilterOperator.And)
