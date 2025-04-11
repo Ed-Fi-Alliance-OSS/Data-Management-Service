@@ -40,6 +40,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\clis\EdFi.DataManagementService.ApiSchemaDownloader\EdFi.DataManagementService.ApiSchemaDownloader.csproj" />
     <ProjectReference Include="..\EdFi.DataManagementService.Frontend.AspNetCore\EdFi.DataManagementService.Frontend.AspNetCore.csproj" />
   </ItemGroup>
 
