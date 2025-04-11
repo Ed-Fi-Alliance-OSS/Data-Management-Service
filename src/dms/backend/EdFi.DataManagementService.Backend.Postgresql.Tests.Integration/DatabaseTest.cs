@@ -426,7 +426,7 @@ public abstract class DatabaseTest : DatabaseTestBase
         string resourceName,
         Guid documentUuidGuid,
         TraceId? traceId = null,
-        bool isEdOrgHierarchy = false
+        bool deleteInEdOrgHierarchy = false
     )
     {
         if (traceId == null)
@@ -444,7 +444,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                     new NoAuthorizationServiceFactory(),
                     NullLogger.Instance
                 ),
-                IsEdOrgHierarchy = new IsEdOrgHierarchy(isEdOrgHierarchy),
+                DeleteInEdOrgHierarchy = deleteInEdOrgHierarchy,
             }
         ).ActLike<IDeleteRequest>();
     }

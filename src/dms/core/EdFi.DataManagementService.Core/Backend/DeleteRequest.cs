@@ -23,5 +23,5 @@ internal record DeleteRequest(
     IResourceAuthorizationHandler ResourceAuthorizationHandler,
     IReadOnlyList<AuthorizationPathway> ResourceAuthorizationPathways,
     TraceId TraceId,
-    IsEdOrgHierarchy IsEdOrgHierarchy
+    bool DeleteInEdOrgHierarchy
 ) : IDeleteRequest;

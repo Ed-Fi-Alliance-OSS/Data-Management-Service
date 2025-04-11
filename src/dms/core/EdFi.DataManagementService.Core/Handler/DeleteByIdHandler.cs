@@ -43,7 +43,7 @@ internal class DeleteByIdHandler(
                         _logger
                     ),
                     ResourceAuthorizationPathways: context.AuthorizationPathways,
-                    IsEdOrgHierarchy: new IsEdOrgHierarchy(
+                    DeleteInEdOrgHierarchy: (
                         context.ProjectSchema.EducationOrganizationTypes.Contains(
                             context.ResourceSchema.ResourceName
                         )

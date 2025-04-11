@@ -39,7 +39,7 @@ public interface IDeleteRequest
     TraceId TraceId { get; }
 
     /// <summary>
-    /// Determine whether is an EdOrgHierarchy
+    /// Determine whether is a deletable Education Organization hierarchy
     /// </summary>
-    IsEdOrgHierarchy IsEdOrgHierarchy { get; }
+    bool DeleteInEdOrgHierarchy { get; }
 }
