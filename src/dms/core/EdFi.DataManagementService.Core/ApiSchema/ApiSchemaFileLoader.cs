@@ -6,7 +6,6 @@
 using System.Reflection;
 using System.Runtime.Loader;
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -41,138 +40,57 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
     }
 
     /// <summary>
-    /// Finds and reads all *.ApiSchema.json files in the given directory path.
-    /// Returns the parsed files as JsonNodes
-    /// </summary>
-    private static List<JsonNode> ReadApiSchemaFiles(string directoryPath)
-    {
-        List<JsonNode> fileContents = [];
-
-        try
-        {
-            IEnumerable<string> matchingFilePaths = Directory.EnumerateFiles(
-                directoryPath,
-                "ApiSchema*.json",
-                SearchOption.AllDirectories
-            );
-
-            foreach (string filePath in matchingFilePaths)
-            {
-                try
-                {
-                    // Read all text from the file into a string.
-                    string fileContent = File.ReadAllText(filePath);
-
-                    JsonNode parsedFileContent =
-                        JsonNode.Parse(fileContent)
-                        ?? throw new InvalidOperationException(
-                            $"Unable to parse ApiSchema file at '{filePath}'"
-                        );
-
-                    fileContents.Add(parsedFileContent);
-                }
-                catch (IOException ex)
-                {
-                    throw new InvalidOperationException($"Error reading file '{filePath}'", ex);
-                }
-                catch (UnauthorizedAccessException ex)
-                {
-                    throw new InvalidOperationException($"Access denied to file '{filePath}'", ex);
-                }
-            }
-        }
-        catch (DirectoryNotFoundException ex)
-        {
-            throw new InvalidOperationException($"Directory not found: '{directoryPath}'", ex);
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            throw new InvalidOperationException($"Access denied to directory '{directoryPath}'", ex);
-        }
-
-        return fileContents;
-    }
-
-    /// <summary>
     /// Returns core and extension ApiSchema JsonNodes
     /// </summary>
     private readonly Lazy<ApiSchemaNodes> _apiSchemaNodes = new(() =>
     {
-        if (appSettings.Value.UseApiSchemaPath)
+        if (string.IsNullOrEmpty(appSettings.Value.PluginFolder))
         {
-            string apiSchemaPath =
-                appSettings.Value.ApiSchemaPath
-                ?? throw new InvalidOperationException("No ApiSchemaPath configuration is set");
+            throw new InvalidOperationException("PluginFolder is not configured.");
+        }
+        JsonNode coreApiSchemaNode = new JsonObject();
+        JsonNode[] extensionApiSchemaNodes = Array.Empty<JsonNode>();
 
-            if (!Directory.Exists(apiSchemaPath))
-            {
-                throw new InvalidOperationException($"The directory {apiSchemaPath} does not exist.");
-            }
+        var projectDirectory = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "../../../"));
+        var relativeToProject = Path.GetFullPath(Path.Combine(projectDirectory, appSettings.Value.PluginFolder));
 
-            List<JsonNode> apiSchemaNodes = ReadApiSchemaFiles(apiSchemaPath);
+        if (!Directory.Exists(relativeToProject))
+        {
+            throw new InvalidOperationException("relativeToProject is not exists.");
+        }
 
-            JsonNode coreApiSchemaNode = apiSchemaNodes.First(node =>
-                !node.SelectRequiredNodeFromPathAs<bool>("$.projectSchema.isExtensionProject", _logger)
+        string pluginApiSchemaPath = Path.GetFullPath(relativeToProject);
+        var assemblies = Directory.GetFiles(pluginApiSchemaPath, "*.dll", SearchOption.AllDirectories);
+        var pluginAssemblyLoadContext = new PluginAssemblyLoadContext();
+        foreach (var assemblyPath in assemblies)
+        {
+            var assembly = pluginAssemblyLoadContext.LoadFromAssemblyPath(assemblyPath);
+
+            var manifestResourceNames = assembly.GetManifestResourceNames();
+
+            var coreSchemaResourceName = Array.Find(
+                manifestResourceNames,
+                str => str.EndsWith("ApiSchema.json")
             );
 
-            JsonNode[] extensionApiSchemaNodes = apiSchemaNodes
-                .Where(node =>
-                    node.SelectRequiredNodeFromPathAs<bool>("$.projectSchema.isExtensionProject", _logger)
-                )
-                .ToArray();
+            var extensionSchemaResourceName = Array.Find(
+                manifestResourceNames,
+                str => str.Contains(".ApiSchema-") && str.EndsWith("EXTENSION.json")
+            );
 
-            return new(coreApiSchemaNode, extensionApiSchemaNodes);
+            if (coreSchemaResourceName != null)
+            {
+                _logger.LogInformation("Loading {CoreSchemaResourceName} from assembly", coreSchemaResourceName);
+                coreApiSchemaNode = LoadFromAssembly(coreSchemaResourceName, assembly);
+            }
+            else if (extensionSchemaResourceName != null)
+            {
+                _logger.LogInformation("Loading {ExtensionSchemaResourceName} from assembly", extensionSchemaResourceName);
+                var extensionNodes = LoadFromAssembly(extensionSchemaResourceName, assembly);
+                extensionApiSchemaNodes = extensionApiSchemaNodes.Concat(new[] { extensionNodes }).ToArray();
+            }
         }
-        else
-        {
-            if (string.IsNullOrEmpty(appSettings.Value.PluginFolder))
-            {
-                throw new InvalidOperationException("PluginFolder is not configured.");
-            }
-            JsonNode coreApiSchemaNode = new JsonObject();
-            JsonNode[] extensionApiSchemaNodes = Array.Empty<JsonNode>();
-
-            var projectDirectory = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "../../../"));
-            var relativeToProject = Path.GetFullPath(Path.Combine(projectDirectory, appSettings.Value.PluginFolder));
-
-            if (!Directory.Exists(relativeToProject))
-            {
-                throw new InvalidOperationException("relativeToProject is not exists.");
-            }
-
-            string pluginApiSchemaPath = Path.GetFullPath(relativeToProject);
-            var assemblies = Directory.GetFiles(pluginApiSchemaPath, "*.dll", SearchOption.AllDirectories);
-            var pluginAssemblyLoadContext = new PluginAssemblyLoadContext();
-            foreach (var assemblyPath in assemblies)
-            {
-                var assembly = pluginAssemblyLoadContext.LoadFromAssemblyPath(assemblyPath);
-
-                var manifestResourceNames = assembly.GetManifestResourceNames();
-
-                var coreSchemaResourceName = Array.Find(
-                    manifestResourceNames,
-                    str => str.EndsWith("ApiSchema.json")
-                );
-
-                var extensionSchemaResourceName = Array.Find(
-                    manifestResourceNames,
-                    str => str.Contains(".ApiSchema-") && str.EndsWith("EXTENSION.json")
-                );
-
-                if (coreSchemaResourceName != null)
-                {
-                    _logger.LogInformation("Loading {CoreSchemaResourceName} from assembly", coreSchemaResourceName);
-                    coreApiSchemaNode = LoadFromAssembly(coreSchemaResourceName, assembly);
-                }
-                else if (extensionSchemaResourceName != null)
-                {
-                    _logger.LogInformation("Loading {ExtensionSchemaResourceName} from assembly", extensionSchemaResourceName);
-                    var extensionNodes = LoadFromAssembly(extensionSchemaResourceName, assembly);
-                    extensionApiSchemaNodes = extensionApiSchemaNodes.Concat(new[] { extensionNodes }).ToArray();
-                }
-            }
-            return new ApiSchemaNodes(coreApiSchemaNode, extensionApiSchemaNodes);
-        }
+        return new ApiSchemaNodes(coreApiSchemaNode, extensionApiSchemaNodes);
     });
 
     /// <summary>
