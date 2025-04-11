@@ -26,8 +26,8 @@ namespace EdFi.DataManagementService.Core.Configuration
         public int MaximumPageSize { get; set; }
 
         /// <summary>
-        /// Provides the plugin folder file system path for both core and extension packages exists.
+        /// Provides the ApiSchemaPath folder file system path for both core and extension packages exists.
         /// </summary>
-        public string? PluginFolder { get; set; }
+        public string? ApiSchemaPath { get; set; }
     }
 }
