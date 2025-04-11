@@ -58,7 +58,7 @@ public class SqlAction() : ISqlAction
     )
     {
         await using NpgsqlCommand command = new(
-            $@"SELECT EdfiDoc, SecurityElements, LastModifiedAt, LastModifiedTraceId  FROM dms.Document WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 AND ResourceName = $3 {SqlBuilder.SqlFor(LockOption.BlockUpdateDelete)};",
+            $@"SELECT EdfiDoc, SecurityElements, LastModifiedAt, LastModifiedTraceId, Id  FROM dms.Document WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 AND ResourceName = $3 {SqlBuilder.SqlFor(LockOption.BlockUpdateDelete)};",
             connection,
             transaction
         )
@@ -88,7 +88,8 @@ public class SqlAction() : ISqlAction
                 reader.GetOrdinal("SecurityElements")
             ),
             LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt")),
-            LastModifiedTraceId: reader.GetString(reader.GetOrdinal("LastModifiedTraceId"))
+            LastModifiedTraceId: reader.GetString(reader.GetOrdinal("LastModifiedTraceId")),
+            DocumentId: reader.GetInt64(reader.GetOrdinal("Id"))
         );
     }
 
@@ -576,13 +577,15 @@ public class SqlAction() : ISqlAction
         string resourceName,
         long educationOrganizationId,
         long? parentEducationOrganizationId,
+        long documentId,
+        short documentPartitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     )
     {
         await using NpgsqlCommand command = new(
-            $@"INSERT INTO dms.EducationOrganizationHierarchy(ProjectName, ResourceName, EducationOrganizationId, ParentId)
-	            VALUES ($1, $2, $3, (SELECT Id FROM dms.EducationOrganizationHierarchy WHERE EducationOrganizationId = $4));",
+            $@"INSERT INTO dms.EducationOrganizationHierarchy(ProjectName, ResourceName, EducationOrganizationId, ParentId, DocumentId, DocumentPartitionKey)
+	            VALUES ($1, $2, $3, (SELECT Id FROM dms.EducationOrganizationHierarchy WHERE EducationOrganizationId = $4), $5, $6);",
             connection,
             transaction
         )
@@ -598,6 +601,8 @@ public class SqlAction() : ISqlAction
                         ? parentEducationOrganizationId.Value
                         : DBNull.Value,
                 },
+                new() { Value = documentId },
+                new() { Value = documentPartitionKey },
             },
         };
         await command.PrepareAsync();
@@ -609,6 +614,8 @@ public class SqlAction() : ISqlAction
         string resourceName,
         long educationOrganizationId,
         long? parentEducationOrganizationId,
+        long documentId,
+        short documentPartitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     )
@@ -643,7 +650,8 @@ public class SqlAction() : ISqlAction
     public async Task<int> DeleteEducationOrganizationHierarchy(
         string projectName,
         string resourceName,
-        long educationOrganizationId,
+        long documentId,
+        short documentPartitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     )
@@ -652,7 +660,8 @@ public class SqlAction() : ISqlAction
             $@"DELETE FROM dms.EducationOrganizationHierarchy
 	            WHERE ProjectName = $1
                 AND ResourceName = $2
-                AND EducationOrganizationId = $3;",
+                AND DocumentId = $3
+                AND DocumentPartitionKey = $4;",
             connection,
             transaction
         )
@@ -661,7 +670,8 @@ public class SqlAction() : ISqlAction
             {
                 new() { Value = projectName },
                 new() { Value = resourceName },
-                new() { Value = educationOrganizationId },
+                new() { Value = documentId },
+                new() { Value = documentPartitionKey },
             },
         };
         await command.PrepareAsync();

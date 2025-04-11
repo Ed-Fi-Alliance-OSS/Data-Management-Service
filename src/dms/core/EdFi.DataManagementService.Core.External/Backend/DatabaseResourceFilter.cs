@@ -11,7 +11,5 @@ using System.Threading.Tasks;
 
 namespace EdFi.DataManagementService.Core.External.Backend
 {
-    internal class DatabaseResourceFilter
-    {
-    }
+    internal class DatabaseResourceFilter { }
 }

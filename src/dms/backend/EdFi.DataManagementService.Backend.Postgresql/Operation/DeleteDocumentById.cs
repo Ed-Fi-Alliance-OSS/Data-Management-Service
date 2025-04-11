@@ -3,10 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Backend;
-using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
@@ -66,17 +63,15 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
                 return new DeleteResult.DeleteFailureNotAuthorized(notAuthorized.ErrorMessages);
             }
 
-            if (
-                deleteRequest
-                    .ResourceInfo
-                    .EducationOrganizationHierarchyInfo
-                    .IsInEducationOrganizationHierarchy
-            )
+            if (deleteRequest.DeleteInEdOrgHierarchy && documentSummary.DocumentId != null)
             {
+                long documentId = documentSummary.DocumentId.Value;
+
                 await _sqlAction.DeleteEducationOrganizationHierarchy(
                     deleteRequest.ResourceInfo.ProjectName.Value,
                     deleteRequest.ResourceInfo.ResourceName.Value,
-                    deleteRequest.ResourceInfo.EducationOrganizationHierarchyInfo.Id,
+                    documentId,
+                    documentPartitionKey.Value,
                     connection,
                     transaction
                 );

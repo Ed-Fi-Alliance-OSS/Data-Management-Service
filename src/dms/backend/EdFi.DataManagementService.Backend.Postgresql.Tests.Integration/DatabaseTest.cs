@@ -425,7 +425,8 @@ public abstract class DatabaseTest : DatabaseTestBase
     protected static IDeleteRequest CreateDeleteRequest(
         string resourceName,
         Guid documentUuidGuid,
-        TraceId? traceId = null
+        TraceId? traceId = null,
+        bool deleteInEdOrgHierarchy = false
     )
     {
         if (traceId == null)
@@ -443,6 +444,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                     new NoAuthorizationServiceFactory(),
                     NullLogger.Instance
                 ),
+                DeleteInEdOrgHierarchy = deleteInEdOrgHierarchy,
             }
         ).ActLike<IDeleteRequest>();
     }

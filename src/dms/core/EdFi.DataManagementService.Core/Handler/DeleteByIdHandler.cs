@@ -41,7 +41,12 @@ internal class DeleteByIdHandler(
                         authorizationServiceFactory,
                         _logger
                     ),
-                    ResourceAuthorizationPathways: context.AuthorizationPathways
+                    ResourceAuthorizationPathways: context.AuthorizationPathways,
+                    DeleteInEdOrgHierarchy: (
+                        context.ProjectSchema.EducationOrganizationTypes.Contains(
+                            context.ResourceSchema.ResourceName
+                        )
+                    )
                 )
             )
         );

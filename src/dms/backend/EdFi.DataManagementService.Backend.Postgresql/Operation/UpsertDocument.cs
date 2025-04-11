@@ -161,6 +161,8 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 upsertRequest.ResourceInfo.ResourceName.Value,
                 upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.Id,
                 upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.ParentId,
+                newDocumentId,
+                documentPartitionKey,
                 connection,
                 transaction
             );
@@ -232,6 +234,8 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 upsertRequest.ResourceInfo.ResourceName.Value,
                 upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.Id,
                 upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.ParentId,
+                documentId,
+                documentPartitionKey,
                 connection,
                 transaction
             );

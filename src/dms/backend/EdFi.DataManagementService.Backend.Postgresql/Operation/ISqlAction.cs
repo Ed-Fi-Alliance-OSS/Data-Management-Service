@@ -131,6 +131,8 @@ public interface ISqlAction
         string resourceName,
         long educationOrganizationId,
         long? parentEducationOrganizationId,
+        long documentId,
+        short documentPartitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     );
@@ -140,6 +142,8 @@ public interface ISqlAction
         string resourceName,
         long educationOrganizationId,
         long? parentEducationOrganizationId,
+        long documentId,
+        short documentPartitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     );
@@ -147,7 +151,8 @@ public interface ISqlAction
     public Task<int> DeleteEducationOrganizationHierarchy(
         string projectName,
         string resourceName,
-        long educationOrganizationId,
+        long documentId,
+        short documentPartitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     );

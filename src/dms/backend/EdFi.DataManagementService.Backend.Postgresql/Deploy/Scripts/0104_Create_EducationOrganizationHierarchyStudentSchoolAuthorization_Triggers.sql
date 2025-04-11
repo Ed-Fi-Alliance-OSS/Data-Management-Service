@@ -84,7 +84,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE TRIGGER EducationOrganizationHierarchy_StudentSchoolAuthorizationTrigger
+DROP TRIGGER IF EXISTS EducationOrganizationHierarchy_StudentSchoolAuthorizationTrigger ON dms.EducationOrganizationHierarchy;
+
+CREATE TRIGGER EducationOrganizationHierarchy_StudentSchoolAuthorizationTrigger
 AFTER UPDATE OR DELETE ON dms.EducationOrganizationHierarchy
     FOR EACH ROW
     EXECUTE PROCEDURE dms.EducationOrganizationHierarchyStudentSchoolAuthorizationTriggerFunction();
