@@ -44,15 +44,15 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
     /// </summary>
     private readonly Lazy<ApiSchemaNodes> _apiSchemaNodes = new(() =>
     {
-        if (string.IsNullOrEmpty(appSettings.Value.PluginFolder))
+        if (string.IsNullOrEmpty(appSettings.Value.ApiSchemaPath))
         {
-            throw new InvalidOperationException("PluginFolder is not configured.");
+            throw new InvalidOperationException("ApiSchemaPath is not configured.");
         }
         JsonNode coreApiSchemaNode = new JsonObject();
         JsonNode[] extensionApiSchemaNodes = Array.Empty<JsonNode>();
 
         var projectDirectory = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "../../../"));
-        var relativeToProject = Path.GetFullPath(Path.Combine(projectDirectory, appSettings.Value.PluginFolder));
+        var relativeToProject = Path.GetFullPath(Path.Combine(projectDirectory, appSettings.Value.ApiSchemaPath));
 
         if (!Directory.Exists(relativeToProject))
         {
