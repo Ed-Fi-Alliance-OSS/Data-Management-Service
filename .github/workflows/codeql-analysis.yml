@@ -63,8 +63,8 @@ jobs:
       # Therefore rebuilding here, even though also built above.
       - name: Build
         run: |
-             ./build-config.ps1 Build -Configuration Debug
-             ./build-dms.ps1 Build -Configuration Debug
+             ./build-config.ps1 Build -Configuration Release
+             ./build-dms.ps1 Build -Configuration Release
 
       - name: Perform CodeQL Analysis
         if: success()
