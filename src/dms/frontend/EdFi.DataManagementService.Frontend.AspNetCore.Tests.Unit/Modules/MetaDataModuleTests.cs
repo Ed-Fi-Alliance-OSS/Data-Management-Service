@@ -91,9 +91,8 @@ public class MetadataModuleTests
     private string _outputDirectory = null!;
 
     [SetUp]
-    public void SetUp()
+    public async Task SetUp()
     {
-
         _fakeLogger = A.Fake<ILogger<ApiSchemaDownloader.Services.ApiSchemaDownloader>>();
 
         _downloader = new ApiSchemaDownloader.Services.ApiSchemaDownloader(_fakeLogger);
@@ -102,13 +101,12 @@ public class MetadataModuleTests
         _outputDirectory = Path.Combine(projectDirectory, "../../EdFi.DataStandard52.ApiSchema/Plugin");
         Directory.CreateDirectory(_outputDirectory);
 
-
         string packageId = "EdFi.DataStandard52.ApiSchema";
         string packageVersion = "1.0.169";
         string feedUrl =
             "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json";
 
-        _downloader.DownloadNuGetPackageAsync(
+        await _downloader.DownloadNuGetPackageAsync(
                             packageId,
                             packageVersion,
                             feedUrl,
@@ -116,13 +114,12 @@ public class MetadataModuleTests
                         );
 
         packageId = "EdFi.TPDM.ApiSchema";
-        _downloader.DownloadNuGetPackageAsync(
+        await _downloader.DownloadNuGetPackageAsync(
                     packageId,
                     packageVersion,
                     feedUrl,
                     _outputDirectory
                 );
-
     }
 
     [Test]
