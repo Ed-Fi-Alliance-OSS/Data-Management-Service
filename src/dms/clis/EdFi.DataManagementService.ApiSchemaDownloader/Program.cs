@@ -49,7 +49,7 @@ try
         string feedUrl = options.FeedUrl;
 
         // Output directory for the downloaded package and extracted files
-        string outputDir = Path.Combine(options.ApiSchemaFolder, "Plugin/" + packageId);
+        string outputDir = Path.Combine(options.ApiSchemaFolder, "Plugin", packageId);
         Directory.CreateDirectory(outputDir);
 
         // Download the package
