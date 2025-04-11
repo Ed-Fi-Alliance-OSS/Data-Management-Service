@@ -810,4 +810,4 @@ Feature: Resources "Create" Operation validations
                ]
             }
           """
-          Then it should respond with 200 or 201
+          Then it should respond with 201
