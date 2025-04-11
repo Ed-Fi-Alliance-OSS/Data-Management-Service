@@ -58,7 +58,7 @@ public class SqlAction() : ISqlAction
     )
     {
         await using NpgsqlCommand command = new(
-            $@"SELECT EdfiDoc, SecurityElements, LastModifiedAt, LastModifiedTraceId, Id  FROM dms.Document WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 AND ResourceName = $3 {SqlFor(LockOption.BlockUpdateDelete)};",
+            $@"SELECT EdfiDoc, SecurityElements, LastModifiedAt, LastModifiedTraceId, Id  FROM dms.Document WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 AND ResourceName = $3 {SqlBuilder.SqlFor(LockOption.BlockUpdateDelete)};",
             connection,
             transaction
         )
