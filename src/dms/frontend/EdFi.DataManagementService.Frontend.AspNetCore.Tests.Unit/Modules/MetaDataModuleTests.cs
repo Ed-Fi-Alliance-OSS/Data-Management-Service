@@ -98,7 +98,7 @@ public class MetadataModuleTests
         _downloader = new ApiSchemaDownloader.Services.ApiSchemaDownloader(_fakeLogger);
 
         var projectDirectory = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "../../../"));
-        _outputDirectory = Path.Combine(projectDirectory, "../../EdFi.DataStandard52.ApiSchema/Plugin");
+        _outputDirectory = Path.Combine(projectDirectory, "../../EdFi.DataStandard52.ApiSchema/");
         Directory.CreateDirectory(_outputDirectory);
 
         string packageId = "EdFi.DataStandard52.ApiSchema";
